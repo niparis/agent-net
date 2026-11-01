@@ -353,6 +353,9 @@ Each part fits one worker. Each part starts with failing tests, uses fake harnes
 - Tests: a proposal with a bad ID is refused at once; an approved proposal runs the stored call exactly once with actor `owner (CTO proposal p_N)`; a decline and an expiry run nothing; the 21st open proposal is refused; a duplicate is refused; approve-all stops at the first failure; the outcome note never holds the call's result data (fixture result with a marker); an approval from an agent client or a CTO process is refused by the owner gate.
 
 **Part 3. Every CTO change becomes a proposal.**
+
+Status: implemented. Every current owner-only CTO change uses the proposal runner. Public-only reads and the network session remain later parts.
+
 - The class table. Every change tool of today's CTO server stores a proposal instead of running. `message {as_owner: true}` is a proposal.
 - Tests: a test fails on any tool or action without a class; for each proposal-class tool, a call with a fake backend makes one proposal and calls no backend method; talk tools still run.
 
