@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
@@ -44,6 +46,10 @@ func pipe(t *testing.T) (r, w *os.File) {
 }
 
 func newRig(t *testing.T, h *handover, call Caller) *rig {
+	return newRigServer(t, h, New(call, ""))
+}
+
+func newRigServer(t *testing.T, h *handover, srv *mcp.Server) *rig {
 	t.Helper()
 	inR, inW := pipe(t)
 	outR, outW := pipe(t)
@@ -83,7 +89,6 @@ func newRig(t *testing.T, h *handover, call Caller) *rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	rg.cancel = cancel
 	t.Cleanup(cancel)
-	srv := New(call, "")
 	go func() { rg.done <- srv.Run(ctx, stdioTransport{rg.conn}) }()
 	return rg
 }
