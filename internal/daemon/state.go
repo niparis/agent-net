@@ -41,6 +41,7 @@ CREATE INDEX IF NOT EXISTS cto_history_harness ON cto_history(harness,kind,id);
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS worker_idle_notice (worker_id TEXT PRIMARY KEY, since INTEGER NOT NULL, notice_key TEXT NOT NULL, report TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (harness, native_id));
 CREATE TABLE IF NOT EXISTS workers (
 	id TEXT PRIMARY KEY, harness TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL,
 	model TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL, native_id TEXT NOT NULL DEFAULT '',
@@ -165,6 +166,35 @@ CREATE TABLE IF NOT EXISTS workers (
 }
 
 func (s *state) close() error { return s.db.Close() }
+
+// sessionActivity loads when each known session last did something, keyed by
+// harness and native ID. It survives a daemon restart: a restart must not make
+// an idle session look active.
+func (s *state) sessionActivity() (map[string]time.Time, error) {
+	rows, err := s.db.Query(`SELECT harness, native_id, at FROM session_activity`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var harness, native string
+		var at int64
+		if err := rows.Scan(&harness, &native, &at); err != nil {
+			return nil, err
+		}
+		out[key(harness, native)] = time.Unix(0, at)
+	}
+	return out, rows.Err()
+}
+
+// saveSessionActivity keeps the newer of the stored and given time.
+func (s *state) saveSessionActivity(harness, native string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO session_activity (harness, native_id, at) VALUES (?,?,?)
+		ON CONFLICT (harness, native_id) DO UPDATE SET at=MAX(session_activity.at, excluded.at)`,
+		harness, native, at.UnixNano())
+	return err
+}
 
 func (s *state) isDelivered(id string) bool {
 	var n int

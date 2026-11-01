@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,9 +35,28 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 		w.Since = time.Now().Unix()
 	}
 	d.mu.Lock()
+	started := w != nil && !sameWaiting(ls.info.Waiting, w)
 	ls.info.Waiting = w
+	harness, native := ls.info.Harness, ls.info.NativeID
+	at := time.Now()
+	if started {
+		d.recordActivityLocked(ls, at)
+	}
 	d.mu.Unlock()
+	if started {
+		d.saveActivity(harness, native, at)
+	}
 	d.pushSession(ls)
+}
+
+// sameWaiting says whether a report describes the wait already stored, so a
+// re-report does not count as new activity.
+func sameWaiting(a, b *protocol.Waiting) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Explicit == b.Explicit && a.Kind == b.Kind && a.Text == b.Text &&
+		a.Since == b.Since && a.Urgency == b.Urgency && slices.Equal(a.Options, b.Options)
 }
 
 // waitingCall serves MethodWaiting. A plugin reports for the session it is

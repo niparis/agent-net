@@ -165,6 +165,18 @@ func (a *Adapter) poll() {
 		info := protocol.SessionInfo{Harness: "claude", NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd,
 			Name: title, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
 			Model: a.models.Model(sf.SessionID, sf.Cwd)}
+		// Real activity, from the harness: the transcript or the session file.
+		// Polling the same idle session does not move it.
+		active := time.Time{}
+		if fi, err := e.Info(); err == nil {
+			active = fi.ModTime()
+		}
+		if t := a.models.LastWrite(sf.SessionID, sf.Cwd); t.After(active) {
+			active = t
+		}
+		if !active.IsZero() {
+			info.LastActive = active.Unix()
+		}
 		seenModels[sf.SessionID] = true
 		byNative[sf.SessionID] = found{pid: sf.PID, sock: sf.MessagingSocketPath, info: info, kind: sf.Kind, job: sf.JobID}
 		if sf.MessagingSocketPath != "" {
