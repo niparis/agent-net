@@ -326,3 +326,18 @@ func TestWorkerRotationCloneIsIndependent(t *testing.T) {
 		t.Fatalf("clone shares state: %+v", a)
 	}
 }
+
+func TestWorkerEffectiveDifficulty(t *testing.T) {
+	for _, tc := range []struct {
+		level   string
+		touches []string
+		want    string
+	}{
+		{"normal", []string{"db"}, "hard"}, {"normal", []string{"ui"}, "normal"}, {"normal", nil, "normal"}, {"very_complex", []string{"hot-path"}, "very_complex"},
+	} {
+		got, _ := WorkerEffectiveDifficulty(tc.level, tc.touches)
+		if got != tc.want {
+			t.Errorf("%s %v: got %s, want %s", tc.level, tc.touches, got, tc.want)
+		}
+	}
+}
