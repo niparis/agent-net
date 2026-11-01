@@ -1165,6 +1165,19 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	eventually(t, "the restarted daemon is linked to the gateway", w.d.Connected)
 	var sent protocol.MessageSent
 	json.Unmarshal(w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: live.SessionID, Body: "still there?"}), &sent)
+	if sent.Message == nil && sent.Queued {
+		// Connected does not mean the outbox has drained. A lost-worker
+		// notice may still be queued, so this send can be queued behind it.
+		eventually(t, "the queued message is delivered", func() bool {
+			for _, m := range w.messagesOf(t, live.SessionID) {
+				if m.From == owner && m.Body == "still there?" {
+					sent.Message = &m
+					return true
+				}
+			}
+			return false
+		})
+	}
 	if sent.Message == nil {
 		t.Fatalf("owner_send did not deliver: %+v", sent)
 	}
