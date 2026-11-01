@@ -36,7 +36,12 @@ func TestCTONetworkMessages(t *testing.T) {
 	}
 	send := func(asOwner bool) protocol.Message {
 		t.Helper()
-		raw, _ := json.Marshal(map[string]any{"action": "send", "to": target, "body": "network hello", "as_owner": asOwner})
+		args := map[string]any{"action": "send", "to": target, "body": "network hello", "as_owner": asOwner}
+		if !asOwner {
+			args["sender_cto"] = true
+			args["sender"] = w.ownerID()
+		}
+		raw, _ := json.Marshal(args)
 		result, err := w.d.runCTOTool(context.Background(), "message", raw)
 		if err != nil {
 			t.Fatal(err)
@@ -65,6 +70,28 @@ func TestCTONetworkMessages(t *testing.T) {
 	if err != nil || !strings.Contains(string(b), "network hello") {
 		t.Fatalf("own messages: %s %v", b, err)
 	}
+	// A reply belongs to the CTO's conversation, including approved replies.
+	incoming := sendResult(t, peer.mustCall("send", map[string]string{"to": id, "body": "question for CTO"}))
+	raw, _ := json.Marshal(map[string]any{"action": "reply", "message_id": incoming.ID, "body": "approved answer", "as_owner": true})
+	proposal, err := w.d.runCTOTool(context.Background(), "message", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approveCTOToolResult(t, w.d, proposal.(string))
+	select {
+	case reply := <-peer.Pushes:
+		if reply.From != id || !reply.FromCTO || reply.ParentID != incoming.ID || reply.Body != "approved answer" {
+			t.Fatalf("approved reply: %+v", reply)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("missing approved reply")
+	}
+	status, err := w.d.readCTOTool(context.Background(), "message_status", json.RawMessage(fmt.Sprintf(`{"message_id":%q}`, incoming.ID)))
+	b, _ = json.Marshal(status)
+	if err != nil || !strings.Contains(string(b), "question for CTO") {
+		t.Fatalf("own status: %s %v", b, err)
+	}
+
 }
 
 func TestCTONetworkRefusesOlderGateway(t *testing.T) {
@@ -87,6 +114,20 @@ func TestCTONetworkRefusesOlderGateway(t *testing.T) {
 			if d.ctoSessionID() != "" {
 				t.Fatal("old gateway registered CTO")
 			}
+			// A reconnect to an older gateway must also refuse sends from a saved ID.
+			if _, err := d.st.db.Exec(`INSERT INTO cto_network(id,session_id) VALUES(1,'s_cto')`); err != nil {
+				t.Fatal(err)
+			}
+			for _, approved := range []bool{false, true} {
+				_, err := d.send(context.Background(), protocol.MsgSend{Sender: "s_cto", Recipient: "s_peer", Body: "hello", FromCTO: approved})
+				if err == nil || !strings.Contains(err.Error(), "upgrade the gateway") {
+					t.Fatalf("send (approved=%v): %v", approved, err)
+				}
+			}
+			if d.st.outboxLen() != 0 {
+				t.Fatal("CTO send entered the offline outbox")
+			}
+
 		})
 	}
 }

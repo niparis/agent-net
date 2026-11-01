@@ -314,6 +314,10 @@ CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id IN
 UPDATE profiles SET name = '';
 `, `
 ALTER TABLE sessions ADD COLUMN last_active INTEGER NOT NULL DEFAULT 0;
+`, `
+-- Reserve CTO for the network session, including names saved before part 6.
+UPDATE profiles SET name = '' WHERE name = 'CTO';
+UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harness <> 'cto';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

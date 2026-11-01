@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
+	"path/filepath"
 	"testing"
 )
 
@@ -11,6 +13,9 @@ func TestCTONetworkSession(t *testing.T) {
 	s, _ := newTestStore(t)
 	agent, peer := twoSessions(t, s)
 	node := mustNode(t, s, agent)
+	if err := s.SetCTOTitle("Atlas"); err != nil {
+		t.Fatal(err)
+	}
 	id, err := s.RegisterCTOSession(node)
 	if err != nil {
 		t.Fatal(err)
@@ -109,5 +114,37 @@ func TestCTOSessionMovesWithoutChangingIdentity(t *testing.T) {
 	saved, ok, err := s.Message(m.ID)
 	if err != nil || !ok || saved.From != moved {
 		t.Fatalf("lost conversation: %+v %v", saved, err)
+	}
+}
+
+func TestCTOReservedNameUpgrade(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gateway.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations[:len(migrations)-1] {
+		if _, err := db.Exec(migration); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(?)`, len(migrations)-1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO nodes(id,hostname,os,token_hash,created_at) VALUES('n_old','test','linux','hash',1); INSERT INTO sessions(id,node_id,harness,native_id,name,last_seen,online) VALUES('s_old','n_old','pi','native','CTO',1,1); INSERT INTO profiles(session_id,name,updated_at) VALUES('s_old','CTO',1)`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a, _, err := s.Agent("s_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Profile.Name == "CTO" {
+		t.Fatal("an old session retained the reserved CTO name")
 	}
 }
