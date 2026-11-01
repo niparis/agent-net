@@ -164,3 +164,11 @@ func TestFormatWorkerNotice(t *testing.T) {
 		t.Error("ValidHandbackStatus")
 	}
 }
+
+func TestOperatorMethodsExcludeAgentOnlyCalls(t *testing.T) {
+	for _, method := range OperatorMethods {
+		if method == OpLearn || method == OpRate {
+			t.Errorf("agent-only method %s is listed as an operator method", method)
+		}
+	}
+}
