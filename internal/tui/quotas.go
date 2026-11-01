@@ -251,12 +251,8 @@ const workerShareCellWidth = 5
 func (m Model) workerCandidateTiers(level string, candidates []protocol.WorkerModelCandidate) (normal, protected []protocol.WorkerModelCandidate) {
 	for _, c := range candidates {
 		if len(m.snap.ProtectedProviders.Providers) > 0 {
-			score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, m.snap.Scores)
-			if !ok {
-				continue
-			}
-			fit, _ := protocol.DifficultyFit(score.Score, level, m.snap.DifficultyMinimums)
-			if fit != "good" && fit != "excellent" {
+			_, _, adequate, ok := protocol.WorkerCandidateFit(c, level, m.snap.Scores, m.snap.DifficultyMinimums)
+			if !ok || !adequate {
 				continue
 			}
 		}

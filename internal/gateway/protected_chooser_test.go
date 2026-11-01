@@ -43,7 +43,7 @@ func TestProtectedChooserRotatesOrdinaryModels(t *testing.T) {
 		{Name: "claude", Harness: "opencode", Model: "anthropic/claude-sonnet", Provider: "anthropic"},
 	}
 	scores := []protocol.ModelScore{{Match: "terra", Score: 42.3}, {Match: "deepseek", Score: 32.5}, {Match: "claude", Score: 55}}
-	q := terraFivePercentBehind()
+	q := terraWellBehindPace()
 	rotation := &protocol.WorkerRotation{}
 	counts := map[string]int{}
 	for i := 0; i < 20; i++ {
@@ -61,9 +61,11 @@ func TestProtectedChooserRotatesOrdinaryModels(t *testing.T) {
 	}
 }
 
-func terraFivePercentBehind() *protocol.Quotas {
+// terraWellBehindPace puts codex thirty points behind its weekly pace, enough
+// to outweigh the over-qualification penalty that favours weaker adequate models.
+func terraWellBehindPace() *protocol.Quotas {
 	const now = int64(1000000)
-	q := &protocol.Quotas{GeneratedAt: now, Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 45, ResetsAt: now + 84*3600}}}}}
+	q := &protocol.Quotas{GeneratedAt: now, Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 20, ResetsAt: now + 84*3600}}}}}
 	return q
 }
 

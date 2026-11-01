@@ -25,15 +25,8 @@ func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level str
 	var ordinary, protected []protocol.WorkerModelCandidate
 	var skipped []string
 	for _, c := range candidates {
-		score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
-		if !ok {
-			continue
-		}
-		fit, err := protocol.DifficultyFit(score.Score, level, minimums)
-		if err != nil {
-			return protocol.WorkerModelChoice{}, "", err
-		}
-		if fit != "good" && fit != "excellent" {
+		_, _, adequate, ok := protocol.WorkerCandidateFit(c, level, scores, minimums)
+		if !ok || !adequate {
 			continue
 		}
 		if isProtected(c.Harness, c.Model, setting) {
