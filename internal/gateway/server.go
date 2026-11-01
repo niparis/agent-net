@@ -841,7 +841,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetNodeLaunch(nc.id, p.Launch)
 
-	case protocol.FrameSessionStart, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
+	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
 		return g.handleSessionRelay(ctx, nc, typ, raw)
 
 	case "query.projects":

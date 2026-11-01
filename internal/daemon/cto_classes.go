@@ -56,7 +56,7 @@ var ctoChangeActions = map[string]map[string]string{
 		"edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set",
 		"undo": "graph_undo",
 	},
-	"session_change": {"rename": "session_rename", "trust": "session_trust", "policy": "session_policy"},
+	"session_change": {"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start"},
 	"worker_change":  {"start": "worker_start", "stop": "worker_stop"},
 	"answer":         {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
 	"tools_change": {
@@ -71,20 +71,20 @@ var ctoChangeActions = map[string]map[string]string{
 		"cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename",
 		"invite": "invite", "onboarding": "onboarding_restart",
 	},
-	"project_change": {"add": "project_add", "remove": "project_remove", "display": "project_display_set"},
+	"project_change": {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
 }
 
 var ctoActions = map[string]map[string][]string{
 	"message":         {"action": {"send", "reply"}},
 	"ui":              {"action": {"show", "notice"}},
 	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"}},
-	"session_change":  {"action": {"rename", "trust", "policy"}},
+	"session_change":  {"action": {"rename", "trust", "policy", "session_start"}},
 	"worker_change":   {"action": {"start", "stop"}},
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"tools_change":    {"action": {"plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},
 	"mcp_change":      {"action": {"add", "remove", "test", "enable"}},
 	"settings_change": {"area": {"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"}},
-	"project_change":  {"action": {"add", "remove", "display"}},
+	"project_change":  {"action": {"add", "remove", "display", "create"}},
 }
 
 func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {

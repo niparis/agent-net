@@ -145,3 +145,16 @@ func TestProposalGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("proposal_confirm_%d", w), m.View())
 	}
 }
+
+func TestProposalSessionStartGoldens(t *testing.T) {
+	for _, w := range []int{80, 120} {
+		m := newModel(w, 34)
+		p := proposalFixture()
+		p.Tool, p.Action = "session_change", "session_start"
+		p.Args = json.RawMessage(`{"action":"session_start","project":"garden","node_id":"build-vm","harness":"claude","folder":"worktree","first_message":"Review the garden planner and report what needs fixing"}`)
+		m.proposals = []protocol.CTOProposal{p}
+		m.selected = proposalKey(p)
+		m.selIdx = 0
+		golden(t, fmt.Sprintf("proposal_session_start_%d", w), m.View())
+	}
+}
