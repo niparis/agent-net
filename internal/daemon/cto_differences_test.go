@@ -37,7 +37,7 @@ func TestCTOToolsDifferencesFindsTwoCopiesAndHonoursAccepted(t *testing.T) {
 		ToLookAt int `json:"to_look_at"`
 	}
 	read := func() (r reply, size int) {
-		v, err := n.d.runCTOToolRaw(context.Background(), "tools_differences", json.RawMessage(`{}`))
+		v, err := n.d.toolDifferences(context.Background(), 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestCTOToolsDifferencesCapsTheAnswerAndReadsEveryPage(t *testing.T) {
 		Next        int                     `json:"next"`
 	}
 	eventually(t, "the pairs are found", func() bool {
-		v, err := n.d.runCTOToolRaw(context.Background(), "tools_differences", json.RawMessage(`{}`))
+		v, err := n.d.toolDifferences(context.Background(), 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,11 +112,11 @@ func TestCTOToolsDifferencesCapsTheAnswerAndReadsEveryPage(t *testing.T) {
 	if len(r.Differences) != 20 || r.Next != 20 || r.NotListed != r.ToLookAt-20 {
 		t.Fatalf("listed %d, not listed %d, to look at %d", len(r.Differences), r.NotListed, r.ToLookAt)
 	}
-	v, err := n.d.runCTOToolRaw(context.Background(), "tools_differences", json.RawMessage(`{"offset":20,"limit":60}`))
+	v, err := n.d.toolDifferences(context.Background(), 20, 60)
 	if err != nil {
 		t.Fatal(err)
 	}
-	all, err := n.d.runCTOToolRaw(context.Background(), "tools_differences", json.RawMessage(`{"limit":60}`))
+	all, err := n.d.toolDifferences(context.Background(), 0, 60)
 	if err != nil {
 		t.Fatal(err)
 	}

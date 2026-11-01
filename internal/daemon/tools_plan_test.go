@@ -123,13 +123,8 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 	if err := g.gw.Store().SetCharter("architect", "needs", "Need a review skill", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	list, err := n.d.runCTOToolRaw(context.Background(), "tools_list", json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := json.Marshal(list)
-	if !strings.Contains(string(b), "Need a review skill") || !strings.Contains(string(b), `"state":"unverified"`) {
-		t.Fatalf("needs missing: %s", b)
+	if _, err := n.d.runCTOToolRaw(context.Background(), "tools_list", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("CTO read owner-only tools inventory")
 	}
 	raw, err := cli.call("tools_items", map[string]any{})
 	if err != nil {
@@ -149,7 +144,7 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b = approveCTOToolResult(t, n.d, value)
+	b := approveCTOToolResult(t, n.d, value)
 	var p protocol.ToolPlan
 	if json.Unmarshal(b, &p) != nil || !strings.HasPrefix(p.Actor, "owner (CTO proposal p_") {
 		t.Fatalf("CTO actor: %s", b)

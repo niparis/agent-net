@@ -40,6 +40,10 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 
 // executeCTOTool is used only for immediate reads/talk or by the approved runner.
 func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if ctoToolClasses[name] == ctoRead {
+		return d.readCTOTool(ctx, name, raw)
+	}
+
 	var args map[string]any
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &args) != nil {
 		return nil, errors.New("bad CTO tool arguments")
@@ -54,7 +58,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		res, _, err := lc.dispatchOwner(ctx, name, raw)
 		return res, err
 	}
-	if ctoLocalMethods[name] && name != "nodes" && name != "projects" {
+	if ctoLocalMethods[name] {
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
@@ -69,84 +73,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, errors.New("message needs action send or reply")
 		}
 		return d.executeCTOTool(ctx, q.Action, raw)
-	case "charter_suggestions":
-		owner := d.ownerSessionID()
-		if owner == "" {
-			return nil, errNotConnected
-		}
-		rawSignals, err := d.call(ctx, "signal.list", map[string]string{"owner": owner})
-		if err != nil {
-			return nil, err
-		}
-		var signals []protocol.CharterSignal
-		if err = json.Unmarshal(rawSignals, &signals); err != nil {
-			return nil, err
-		}
-		rawGraph, err := d.call(ctx, "graph.read", protocol.GraphRead{})
-		if err != nil {
-			return nil, err
-		}
-		var graph protocol.GraphGot
-		if err = json.Unmarshal(rawGraph, &graph); err != nil {
-			return nil, err
-		}
-		result := charterSuggestions(graph.Graph, signals)
-		if learned, err := d.call(ctx, "learned.list", map[string]string{"owner": owner}); err == nil {
-			var suggestions []protocol.LearnedSuggestion
-			if json.Unmarshal(learned, &suggestions) == nil {
-				for _, v := range suggestions {
-					if v.Status == "pending" && v.Severity == "major" {
-						result.PendingMajors = append(result.PendingMajors, v)
-					}
-				}
-			}
-		}
-		for {
-			b, _ := json.Marshal(result)
-			if len(b) < 19000 {
-				break
-			}
-			if len(result.Suggestions) > 0 {
-				result.Suggestions = result.Suggestions[:len(result.Suggestions)-1]
-			} else if len(result.Evidence) > 0 {
-				result.Evidence = result.Evidence[:len(result.Evidence)-1]
-			} else if len(result.PendingMajors) > 0 {
-				result.PendingMajors = result.PendingMajors[:len(result.PendingMajors)-1]
-			} else {
-				break
-			}
-		}
-		return result, nil
-	case "tools_list":
-		data, err := d.call(ctx, "query.tools_items", json.RawMessage(raw))
-		if err != nil {
-			return nil, err
-		}
-		var page protocol.ToolsPage
-		if err = json.Unmarshal(data, &page); err != nil {
-			return nil, err
-		}
-		needs, err := d.call(ctx, "query.tools_needs", struct{}{})
-		if err != nil {
-			return nil, err
-		}
-		var advisory []protocol.ToolNeed
-		if err = json.Unmarshal(needs, &advisory); err != nil {
-			return nil, err
-		}
-		return map[string]any{"items": page.Items, "next": page.Next, "unmet_needs": advisory}, nil
-	case "tools_differences":
-		var p struct {
-			Offset int `json:"offset"`
-			Limit  int `json:"limit"`
-		}
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad pagination")
-		}
-		if p.Offset < 0 {
-			return nil, errors.New("bad pagination")
-		}
-		return d.toolDifferences(ctx, p.Offset, p.Limit)
 	case "ui_show", "ui_notice":
 		var q protocol.UIRequest
 		if json.Unmarshal(raw, &q) != nil {
@@ -219,7 +145,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, errNotConnected
 		}
 		return d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid})
-	case "graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo":
+	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo":
 		delete(args, "by")
 		if name == "graph_undo" {
 			args["history_id"] = args["id"]
@@ -229,128 +155,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if actor := proposalActor(ctx); actor != "" {
 			args["by"] = actor
 		}
-		if name != "graph_get" && name != "charter_history" && name != "edge_history" {
-			return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
-		}
-		return d.call(ctx, strings.ReplaceAll(name, "_", "."), args)
-	case "nodes":
-		data, err := d.call(ctx, "query.nodes", nil)
-		if err != nil {
-			return nil, err
-		}
-		var nodes protocol.NodesInfo
-		if err = json.Unmarshal(data, &nodes); err != nil {
-			return nil, err
-		}
-		var opt struct {
-			Models *struct {
-				Machine string `json:"machine"`
-				Harness string `json:"harness"`
-			} `json:"models"`
-		}
-		if err = json.Unmarshal(raw, &opt); err != nil && len(raw) > 0 {
-			return nil, err
-		}
-		if opt.Models != nil {
-			for _, n := range nodes.Nodes {
-				if n.Hostname == opt.Models.Machine || n.NodeID == opt.Models.Machine {
-					for _, h := range n.Harnesses {
-						if h.Name == opt.Models.Harness {
-							return map[string]any{"machine": n.Hostname, "harness": h.Name, "models": h.Models}, nil
-						}
-					}
-				}
-			}
-			return nil, errors.New("machine or harness not found")
-		}
-		data, err = d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true})
-		if err != nil {
-			return nil, err
-		}
-		var agents protocol.AgentsResult
-		if err = json.Unmarshal(data, &agents); err != nil {
-			return nil, err
-		}
-		return compactCTONodes(nodes, agents.Agents), nil
-	case "agents":
-		data, err := d.call(ctx, "query.agents", args)
-		if err != nil {
-			return nil, err
-		}
-		var agents protocol.AgentsResult
-		if err = json.Unmarshal(data, &agents); err != nil {
-			return nil, err
-		}
-		return compactCTOAgents(agents.Agents), nil
-	case "feed":
-		var p struct {
-			Limit  int   `json:"limit"`
-			Before int64 `json:"before"`
-		}
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad pagination")
-		}
-		limit := ctoLimit(p.Limit)
-		data, err := d.call(ctx, "query.events", protocol.QueryEvents{Limit: limit + 1, BeforeID: p.Before})
-		if err != nil {
-			return nil, err
-		}
-		var r protocol.EventsResult
-		if err = json.Unmarshal(data, &r); err != nil {
-			return nil, err
-		}
-		for i, j := 0, len(r.Events)-1; i < j; i, j = i+1, j-1 {
-			r.Events[i], r.Events[j] = r.Events[j], r.Events[i]
-		}
-		next := int64(0)
-		if len(r.Events) > limit {
-			r.Events = r.Events[:limit]
-			next = r.Events[len(r.Events)-1].ID
-		}
-		return map[string]any{"events": r.Events, "next_before": next}, nil
-	case "projects":
-		var p struct {
-			Name   string `json:"name"`
-			Limit  int    `json:"limit"`
-			Before string `json:"before"`
-		}
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad pagination")
-		}
-		data, err := d.call(ctx, "query.projects", protocol.QueryProjects{Name: p.Name})
-		if err != nil {
-			return nil, err
-		}
-		var r protocol.ProjectsResult
-		if err = json.Unmarshal(data, &r); err != nil {
-			return nil, err
-		}
-		page, next := ctoPage(r.Projects, p.Limit, p.Before, func(v protocol.ProjectView) string { return v.Name + "|" + v.NodeID + "|" + v.Path })
-		return map[string]any{"projects": page, "next_before": next}, nil
-	case "workers":
-		var p struct {
-			Limit  int    `json:"limit"`
-			Before string `json:"before"`
-		}
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad pagination")
-		}
-		r, err := d.workersView(ctx, protocol.WorkersQuery{Recent: true})
-		if err != nil {
-			return nil, err
-		}
-		page, next := ctoPage(r.Workers, p.Limit, p.Before, func(v protocol.WorkerView) string { return fmt.Sprintf("%020d|%s", v.StartedAt, v.SessionID) })
-		return map[string]any{"workers": page, "next_before": next}, nil
-	case "needs_you":
-		data, err := d.call(ctx, "query.agents", protocol.QueryAgents{OnlineOnly: true})
-		if err != nil {
-			return nil, err
-		}
-		var a protocol.AgentsResult
-		if err = json.Unmarshal(data, &a); err != nil {
-			return nil, err
-		}
-		return compactCTONeedsYou(a.Agents, time.Now()), nil
+		return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
 	case "send":
 		var p struct {
 			To   string `json:"to"`
@@ -368,7 +173,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, err
 		}
 		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
-	case "worker_profile_list", "worker_profile_add", "worker_profile_remove":
+	case "worker_profile_add", "worker_profile_remove":
 		var p protocol.WorkerProfileRequest
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
 			return nil, errors.New("bad worker profile request")
@@ -377,10 +182,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if sid == "" {
 			return nil, errNotConnected
 		}
-		action := map[string]string{"worker_profile_list": "worker.profile.list", "worker_profile_add": "worker.profile.add", "worker_profile_remove": "worker.profile.remove"}[name]
+		action := map[string]string{"worker_profile_add": "worker.profile.add", "worker_profile_remove": "worker.profile.remove"}[name]
 		return d.call(ctx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
-	case "protected_providers_get":
-		return d.protectedProviders(ctx, nil)
 	case "protected_providers_set":
 		var p protocol.ProtectedProviders
 		if json.Unmarshal(raw, &p) != nil {
@@ -527,16 +330,15 @@ func (d *Daemon) recordCTOAction(text string) error {
 // These allowlists are reachable only from ctoTool's process-tree check.
 var ctoOwnerMethods = map[string]bool{
 	"notification_settings": true, "onboarding_restart": true,
-	"mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true,
-	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true,
-	"usage": true, "usage_top": true, "counts": true, "graph_view": true, "session_text": true, "session_enter": true,
-	"session_trust": true, "session_policy": true, "session_rename": true, "node_rename": true, "project_display_get": true, "project_display_set": true, "integrations_get": true, "integrations_set": true,
-	"held_list": true, "held_answer": true, "node_settings_get": true, "node_settings_set": true,
-	"playbook_get": true, "playbook_set": true, "cto_settings": true, "cto_enter": true, "cto_send": true, "cto_new": true, "cto_events": true, "cto_graph_history": true,
+	"mcp_import": true, "mcp_native_remove": true, "tools_plan": true, "tools_apply": true, "tools_undo": true,
+	"inbox_answer": true, "outcome_overrule": true,
+	"session_trust": true, "session_policy": true, "session_rename": true, "node_rename": true, "project_display_set": true, "integrations_set": true,
+	"held_answer": true, "node_settings_set": true,
+	"playbook_set": true, "cto_settings": true, "cto_send": true, "cto_new": true,
 }
 var ctoLocalMethods = map[string]bool{
-	"info": true, "nodes": true, "projects": true, "project_add": true, "project_remove": true,
-	"get": true, "messages": true, "message_status": true, "mcp_list": true, "mcp_add": true,
+	"project_add": true, "project_remove": true,
+	"mcp_add":    true,
 	"mcp_remove": true, "mcp_test": true, "mcp_enable": true, "mcp_call": true,
 }
 

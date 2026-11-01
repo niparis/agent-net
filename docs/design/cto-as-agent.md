@@ -358,12 +358,14 @@ Each part fits one worker. Each part starts with failing tests, uses fake harnes
 
 **Part 3. Every CTO change becomes a proposal.**
 
-Status: implemented. Every current owner-only CTO change uses the proposal runner. Public-only reads and the network session remain later parts.
+Status: implemented. Every current owner-only CTO change uses the proposal runner. Part 4 limits reads; the network session remains a later part.
 
 - The class table. Every change tool of today's CTO server stores a proposal instead of running. `message {as_owner: true}` is a proposal.
 - Tests: a test fails on any tool or action without a class; for each proposal-class tool, a call with a fake backend makes one proposal and calls no backend method; talk tools still run.
 
 **Part 4. Reads limited to public data.**
+
+Status: implemented. Reads use ordinary agent dispatch with a private CTO caller, plus static charter guidance and the CTO timeline. Owner-only views are removed. Caller-scoped reads fail closed until part 6 registers the CTO on the network. Parity and canary tests cover every remaining view.
 - Remove the owner-only reads of section 11. Build each remaining read from the function that serves the matching agent tool, with the CTO session as caller.
 - Tests: the parity test pins each read view to its agent tool; the canary test of section 6 over every read view; a view without a source fails the parity test.
 

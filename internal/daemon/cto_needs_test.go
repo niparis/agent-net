@@ -62,21 +62,7 @@ func TestCTONeedsYouThroughGateway(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	v, err := n.d.runCTOToolRaw(context.Background(), "needs_you", json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out struct {
-		Agents []json.RawMessage `json:"agents"`
-	}
-	if err := json.Unmarshal(b, &out); err != nil {
-		t.Fatal(err)
-	}
-	if len(out.Agents) != 50 || len(b) >= 20000 {
-		t.Fatalf("%d agents, %d bytes", len(out.Agents), len(b))
+	if _, err := n.d.runCTOToolRaw(context.Background(), "needs_you", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("CTO read owner-only waiting questions")
 	}
 }

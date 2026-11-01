@@ -839,6 +839,16 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 				d.notifyWaiting(agents.Agents)
 			}
 		}
+		if err == nil && client != "cli" {
+			var page protocol.AgentsResult
+			if err = json.Unmarshal(result, &page); err != nil {
+				return nil, err
+			}
+			for i := range page.Agents {
+				page.Agents[i].Waiting = nil
+			}
+			return page, nil
+		}
 		return result, err
 
 	case "projects":
@@ -860,7 +870,18 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
 			return nil, errors.New("get needs session_id")
 		}
-		return d.call(ctx, "query.agent", p)
+		data, err := d.call(ctx, "query.agent", p)
+		if err != nil || client == "cli" {
+			return data, err
+		}
+		var result struct {
+			Agent protocol.AgentView `json:"agent"`
+		}
+		if err = json.Unmarshal(data, &result); err != nil {
+			return nil, err
+		}
+		result.Agent.Waiting = nil
+		return result, nil
 
 	case "send":
 		sid, err := lc.boundID()
@@ -934,6 +955,23 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, errors.New("message_status needs message_id")
 		}
 		data, err := d.call(ctx, "query.message", p)
+		if client != "cli" {
+			if err != nil {
+				return nil, err
+			}
+			sid, boundErr := lc.boundID()
+			if boundErr != nil {
+				return nil, boundErr
+			}
+			var result protocol.MessageResult
+			if err = json.Unmarshal(data, &result); err != nil {
+				return nil, err
+			}
+			if result.Message.From != sid && result.Message.To != sid {
+				return nil, errors.New("message is not in this session's conversations")
+			}
+			return result, nil
+		}
 		if err == nil || !strings.Contains(err.Error(), "unknown message") {
 			return data, err
 		}
