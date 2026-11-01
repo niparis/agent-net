@@ -43,6 +43,7 @@ type Operator interface {
 	// session has registered or why it failed. Owner only.
 	SessionStart(ctx context.Context, req protocol.SessionStartRequest) (protocol.StartedSession, error)
 	// SessionStartGet reads the state of a start by its ID. Owner only.
+	SessionResume(ctx context.Context, req protocol.SessionResumeRequest) (protocol.StartedSession, error)
 	SessionStartGet(ctx context.Context, id string) (protocol.StartedSession, error)
 	// Workers lists the workers on the network with their owners.
 	Workers(ctx context.Context, q protocol.WorkersQuery) ([]protocol.WorkerView, error)

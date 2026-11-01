@@ -244,6 +244,7 @@ type PendingRequest struct {
 }
 
 type AgentView struct {
+	NativeID           string           `json:"native_id,omitempty"`
 	Pending            []PendingRequest `json:"pending,omitempty"`
 	ProjectDisplayName string           `json:"project_display_name,omitempty"`
 	Charter            AgentCharter     `json:"charter"`

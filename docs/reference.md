@@ -1536,7 +1536,7 @@ current PATH. A daemon upgrade adds PATH to older service files.
 
 `session_start` starts Claude in an existing project folder on this machine.
 This is the daemon part of the [accepted session-start design](design/start-sessions.md);
-the TUI form and starts on other machines are not built yet.
+starts on other machines are not built yet.
 
 The request is `{"project":"shop","harness":"claude","model":"haiku","first_message":"Inspect this project"}`.
 Project is a known local project name or its exact path. Ambiguous names are
@@ -1555,7 +1555,16 @@ memory for this daemon run. A daemon restart loses the records; Claude's
 session remains discoverable as a normal session. Cancelling the requesting
 socket does not cancel the background launch.
 
-Both methods require the owner's CLI connection and refuse agent callers,
+`session_resume {"session_id":"<agent-net session id>"}` resumes an offline
+local Claude conversation in its original folder. It returns the same starting
+record and uses `session_start_get` for completion. If Claude creates a copy,
+the record reports the new native and agent-net session IDs. A missing folder
+is reported. The TUI resumes and enters an offline local Claude row on Enter
+or `e`; after more than an hour offline it asks for confirmation first.
+Offline OpenCode and Codex rows keep their existing enter plans. Other offline
+harnesses and remote Claude rows cannot yet be resumed here.
+
+All three methods require the owner's CLI connection and refuse agent callers,
 including CLI commands inside agent, Codex app-server and OpenCode serve
 process trees. They are not agent tools. The session uses Claude's normal
 project settings and MCP servers, with no worker brief, hand-back, worktree,

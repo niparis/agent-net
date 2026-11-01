@@ -673,7 +673,7 @@ The owner-only skill comparison summary sends up to 12,000 bytes of skill text t
 
 ### Starting an owner session
 
-`session_start` and `session_start_get` use the owner gate. Agent connections
+`session_start`, `session_resume` and `session_start_get` use the owner gate. Agent connections
 are refused. A CLI inside an agent session, a Codex app-server process tree
 or an OpenCode serve process tree is refused too. No agent tool exposes these
 methods. An owner session has the owner's normal harness permissions, so an
@@ -686,6 +686,12 @@ parameter. It creates no folder, worktree or trust entry. Folder creation and
 its home-folder and symlink checks belong to a later part of the design.
 The model and optional first message are separate command arguments, with
 `--` before the message. There is no shell interpolation.
+
+Resume accepts only a stored offline local Claude session ID. The daemon uses
+the stored native ID and folder, checks that the folder still exists, and
+passes the native ID as a separate argument to Claude. The gateway's session
+views include native IDs so the local daemon can resolve an offline row after a
+restart. Enrolled machines and their agent connections can read those IDs.
 
 Claude loads the owner's own settings and MCP servers. The launch adds no
 worker settings, MCP override, brief or hand-back tools. Normal discovery

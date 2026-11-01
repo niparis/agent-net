@@ -189,10 +189,11 @@ type fakeSource struct {
 	enterErr  error
 
 	// What session_start was asked, and the start or error it answers with.
-	sessionStarts []protocol.SessionStartRequest
-	sessionStart  protocol.StartedSession
-	sessionErr    error
-	sessionGetErr error
+	sessionResumes []protocol.SessionResumeRequest
+	sessionStarts  []protocol.SessionStartRequest
+	sessionStart   protocol.StartedSession
+	sessionErr     error
+	sessionGetErr  error
 
 	// The graph the map reads, and the error it answers with.
 	graph    protocol.GraphView
@@ -327,6 +328,11 @@ func (f *fakeSource) SessionStart(_ context.Context, r protocol.SessionStartRequ
 	}
 	return f.sessionStart, nil
 }
+func (f *fakeSource) SessionResume(_ context.Context, r protocol.SessionResumeRequest) (protocol.StartedSession, error) {
+	f.sessionResumes = append(f.sessionResumes, r)
+	return f.sessionStart, f.sessionErr
+}
+
 func (f *fakeSource) SessionStartGet(_ context.Context, id string) (protocol.StartedSession, error) {
 	if f.sessionGetErr != nil {
 		return protocol.StartedSession{}, f.sessionGetErr

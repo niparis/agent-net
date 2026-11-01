@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,7 @@ func TestSessionStartServiceHosts(t *testing.T) {
 		d := &Daemon{}
 		d.inSession = d.insideSession
 		lc := &localConn{d: d, client: "cli", peerPID: 300}
-		for _, method := range []string{"session_start", "session_start_get"} {
+		for _, method := range []string{"session_start", "session_start_get", "session_resume"} {
 			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{}`))
 			if !handled || err == nil || !strings.Contains(err.Error(), "inside an agent session") {
 				t.Errorf("%v %s: handled=%v err=%v", args, method, handled, err)
@@ -34,7 +35,7 @@ func TestSessionStartServiceHosts(t *testing.T) {
 }
 
 func TestSessionStartOwnerGate(t *testing.T) {
-	for _, method := range []string{"session_start", "session_start_get"} {
+	for _, method := range []string{"session_start", "session_start_get", "session_resume"} {
 		for _, client := range []string{"mcp", "pi", "opencode", "cli"} {
 			d := &Daemon{inSession: func(int) bool { return true }}
 			lc := &localConn{d: d, client: client}
@@ -146,5 +147,66 @@ func TestSessionStartClaude(t *testing.T) {
 				t.Error("daemon stop ended owner session")
 			}
 		})
+	}
+}
+
+func TestSessionResumeClaude(t *testing.T) {
+	for _, copySession := range []bool{false, true} {
+		t.Run(fmt.Sprint("copy=", copySession), func(t *testing.T) {
+			if copySession {
+				t.Setenv("FAKE_CLAUDE_NEW_RESUME_ID", "1")
+			}
+			g := startGateway(t, t.TempDir(), "")
+			c := startClaudeNode(t, g, shortSet)
+			t.Setenv("AGENT_NET_WORKER", "must-not-reach-owner")
+			repo := newRepo(t, "shop")
+			native := "11111111-0000-4000-8000-000000000000"
+			id, err := g.gw.Store().UpsertSession(c.d.cfg.NodeID, protocol.SessionInfo{Harness: "claude", NativeID: native, Cwd: repo, Name: "shop"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := g.gw.Store().SetSessionOffline(c.d.cfg.NodeID, id); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				raw, _ := os.ReadFile(filepath.Join(repo, "fake-claude.json"))
+				var rec fakeClaudeRecord
+				if json.Unmarshal(raw, &rec) == nil && rec.Pgid > 1 {
+					syscall.Kill(-rec.Pgid, syscall.SIGKILL)
+				}
+			})
+			var r sessionStartTestResult
+			mustJSON(t, c.cli.mustCall("session_resume", map[string]string{"session_id": id}), &r)
+			eventually(t, "resumed session", func() bool {
+				mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+				if r.Status == "failed" {
+					t.Fatalf("resume: %+v", r)
+				}
+				return r.Status == "started"
+			})
+			rec := readClaude(t, repo)
+			if argValue(rec.Args, "--resume") != native || rec.Cwd != repo || r.NativeID != rec.Session || (r.NativeID != native) != copySession {
+				t.Fatalf("resume %+v record %+v", r, rec)
+			}
+			if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.Env["AGENT_NET_WORKER"] != "" || argValue(rec.Args, "--mcp-config") != "" || argValue(rec.Args, "--settings") != "" {
+				t.Fatalf("owner settings: %+v", rec)
+			}
+		})
+	}
+}
+
+func TestSessionResumeMissingFolder(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	id, err := g.gw.Store().UpsertSession(c.d.cfg.NodeID, protocol.SessionInfo{Harness: "claude", NativeID: "old", Cwd: filepath.Join(t.TempDir(), "gone")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = g.gw.Store().SetSessionOffline(c.d.cfg.NodeID, id); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.cli.call("session_resume", map[string]string{"session_id": id})
+	if err == nil || !strings.Contains(err.Error(), "folder is gone") {
+		t.Fatalf("missing folder: %v", err)
 	}
 }

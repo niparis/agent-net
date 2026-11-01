@@ -289,6 +289,15 @@ func (s *Client) SessionStart(ctx context.Context, req protocol.SessionStartRequ
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) SessionResume(ctx context.Context, req protocol.SessionResumeRequest) (protocol.StartedSession, error) {
+	var out protocol.StartedSession
+	raw, err := s.action(ctx, protocol.OpSessionResume, req)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) SessionStartGet(ctx context.Context, id string) (protocol.StartedSession, error) {
 	var out protocol.StartedSession
 	raw, err := s.action(ctx, protocol.OpSessionStartGet, protocol.SessionStartQuery{ID: id})

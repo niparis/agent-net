@@ -45,6 +45,9 @@ func (f *fakeOp) StopWorker(_ context.Context, s string) error { f.stopped = s; 
 func (f *fakeOp) SessionStart(context.Context, protocol.SessionStartRequest) (protocol.StartedSession, error) {
 	return protocol.StartedSession{}, f.err
 }
+func (f *fakeOp) SessionResume(context.Context, protocol.SessionResumeRequest) (protocol.StartedSession, error) {
+	return protocol.StartedSession{}, f.err
+}
 func (f *fakeOp) SessionStartGet(context.Context, string) (protocol.StartedSession, error) {
 	return protocol.StartedSession{}, f.err
 }

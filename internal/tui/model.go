@@ -107,6 +107,7 @@ type Model struct {
 	selIdx                    int    // position in the visible list, to move on when the session leaves
 	selNeeds                  bool   // whether the selected visible row is in the Needs you section
 	tableTop                  int    // first table row on screen
+	resumeConfirm             *protocol.AgentView
 	showOffline               bool
 	activeOnly                bool
 	hiddenSessions            map[string]bool
@@ -691,6 +692,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return next, cmd
 
+	case resumeMsg:
+		return m.onResume(msg)
 	case sessionStartedMsg:
 		return m.onSessionStarted(msg)
 	case actionMsg:
@@ -900,6 +903,14 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.Type == tea.KeyCtrlC {
 		m.quitting = true
 		return m, tea.Quit
+	}
+	if m.resumeConfirm != nil {
+		a := *m.resumeConfirm
+		m.resumeConfirm = nil
+		if k.String() == "enter" {
+			return m.resumeClaude(a)
+		}
+		return m, nil
 	}
 	if m.proposalConfirm {
 		return m.proposalConfirmKey(k)
