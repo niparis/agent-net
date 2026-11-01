@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -569,5 +570,32 @@ func TestCleanupWorktreeUsesConfiguredDefaultBranch(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("worktree merged into default remains: %v", err)
+	}
+}
+
+// A project that agent-net only saw (a session works there, nobody registered
+// it) still gets its ended worker worktrees cleaned: they are the daemon's own.
+// Its declared folders are not trimmed without registration.
+func TestCleanupSeenProjectRemovesEndedWorktree(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	project := newRepo(t, "project")
+	helloPi(t, w.node, "p1", project, false)
+	eventually(t, "project seen", func() bool {
+		raw, err := w.d.call(context.Background(), "query.projects", struct{}{})
+		return err == nil && strings.Contains(string(raw), `"source":"seen"`)
+	})
+	dir := filepath.Join(w.cfg.StateDir, "worktrees", "w_seen")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_seen", dir)
+	row := workerRow{ID: "w_seen", Harness: "test", Project: "project", Path: dir, MainPath: project, Worktree: dir, Branch: "agent-net/w_seen", StartedAt: time.Now(), LastActive: time.Now(), EndedReason: "stopped"}
+	if err := w.d.st.saveWorker(row); err != nil {
+		t.Fatal(err)
+	}
+	w.d.cleanupProjects(context.Background())
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("ended worktree in a seen project remains: %v", err)
 	}
 }

@@ -97,11 +97,16 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 		return
 	}
 	for _, p := range result.Projects {
-		if p.NodeID != d.cfg.NodeID || (p.Source != protocol.SourceRegistered && p.Source != protocol.SourceBoth) {
+		if p.NodeID != d.cfg.NodeID {
 			continue
 		}
 		now := time.Now()
-		d.cleanupProjectFolders(p.Path, now)
+		// Folder trimming needs the owner's registration. The worktrees below
+		// are the daemon's own, made for its workers, so they are cleaned in
+		// every project on this machine, registered or only seen.
+		if p.Source == protocol.SourceRegistered || p.Source == protocol.SourceBoth {
+			d.cleanupProjectFolders(p.Path, now)
+		}
 		if err := d.observeLegacyWorktrees(ctx, p.Path, now); err != nil {
 			if d.log != nil {
 				d.Logf("worker.cleanup project=%q error=%v", p.Path, err)
