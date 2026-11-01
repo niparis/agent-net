@@ -7,6 +7,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCTONetworkSession(t *testing.T) {
@@ -123,12 +124,12 @@ func TestCTOReservedNameUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, migration := range migrations[:len(migrations)-1] {
+	for _, migration := range migrations[:len(migrations)-2] {
 		if _, err := db.Exec(migration); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.Exec(`CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(?)`, len(migrations)-1); err != nil {
+	if _, err := db.Exec(`CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(?)`, len(migrations)-2); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO nodes(id,hostname,os,token_hash,created_at) VALUES('n_old','test','linux','hash',1); INSERT INTO sessions(id,node_id,harness,native_id,name,last_seen,online) VALUES('s_old','n_old','pi','native','CTO',1,1); INSERT INTO profiles(session_id,name,updated_at) VALUES('s_old','CTO',1)`); err != nil {
@@ -146,5 +147,58 @@ func TestCTOReservedNameUpgrade(t *testing.T) {
 	}
 	if a.Profile.Name == "CTO" {
 		t.Fatal("an old session retained the reserved CTO name")
+	}
+}
+
+func TestCTOLegacyReplyRoutesToRegisteredSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	agent, peer := twoSessions(t, s)
+	node := mustNode(t, s, agent)
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _, err := s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: peer, Body: "legacy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE owner_settings SET updated_at=? WHERE key='cto_legacy_route_start'`, s.now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE messages SET sender_cto=1,created_at=? WHERE id=?`, s.now().Add(-time.Second).UnixNano(), root.ID); err != nil {
+		t.Fatal(err)
+	}
+	cto, err := s.RegisterCTOSession(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: owner, ParentID: root.ID, Body: "answer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.To != cto {
+		t.Fatalf("reply went to %s, want CTO %s", reply.To, cto)
+	}
+	answer, _, err := s.StoreMessage(protocol.MsgSend{Sender: cto, Recipient: peer, ParentID: reply.ID, Body: "follow up"})
+	if err != nil || answer.To != peer {
+		t.Fatalf("CTO follow up: %+v %v", answer, err)
+	}
+	if _, err := s.db.Exec(`UPDATE owner_settings SET updated_at=? WHERE key='cto_legacy_route_start'`, s.now().Add(-31*24*time.Hour).UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET created_at=? WHERE id=?`, s.now().Add(-32*24*time.Hour).UnixNano(), root.ID); err != nil {
+		t.Fatal(err)
+	}
+	expired, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: owner, ParentID: root.ID, Body: "late reply"})
+	if err != nil || expired.To != owner {
+		t.Fatalf("expired route: %+v %v", expired, err)
+	}
+}
+
+func TestCTOLegacyWindowStartsOnGatewayUpgrade(t *testing.T) {
+	s, _ := newTestStore(t)
+	var started int64
+	if err := s.db.QueryRow(`SELECT updated_at FROM owner_settings WHERE key='cto_legacy_route_start'`).Scan(&started); err != nil || started == 0 {
+		t.Fatalf("upgrade timestamp: %d %v", started, err)
 	}
 }

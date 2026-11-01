@@ -318,7 +318,7 @@ ALTER TABLE sessions ADD COLUMN last_active INTEGER NOT NULL DEFAULT 0;
 -- Reserve CTO for the network session, including names saved before part 6.
 UPDATE profiles SET name = '' WHERE name = 'CTO';
 UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harness <> 'cto';
-`}
+`, `SELECT 1 /* CTO legacy route upgrade */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -366,6 +366,12 @@ func (s *Store) migrate() error {
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+		if strings.Contains(migrations[i], "CTO legacy route upgrade") {
+			if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_legacy_route_start','',?) ON CONFLICT(key) DO NOTHING`, s.now().UnixNano()); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
 		}
 		var merges, conflicts [][2]string
 		if strings.Contains(migrations[i], "project identity migration") {
@@ -1314,6 +1320,22 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		}
 		if parent.To != p.Sender || parent.From != p.Recipient {
 			return msg, false, reject("a reply must come from the parent's recipient and go to its sender")
+		}
+		// Before the network CTO existed, its messages came from the owner.
+		// Route replies to those roots to the registered identity for 30 days
+		// from the gateway upgrade. The parent check above still applies.
+		var legacyCTO string
+		err = tx.QueryRow(`SELECT c.value FROM owner_settings c JOIN owner_settings start ON start.key='cto_legacy_route_start'
+			JOIN messages root ON root.conversation_id=? AND root.parent_id=''
+			JOIN sessions sender ON sender.id=root.sender
+			WHERE c.key='cto_session' AND root.sender_cto=1 AND sender.harness=? AND root.sender=?
+			AND root.created_at<=start.updated_at AND ?>=start.updated_at AND ?<start.updated_at+?`,
+			parent.ConversationID, protocol.OwnerHarness, m.To, now.UnixNano(), now.UnixNano(), int64(30*24*time.Hour)).Scan(&legacyCTO)
+		if err != nil && err != sql.ErrNoRows {
+			return msg, false, err
+		}
+		if legacyCTO != "" && m.To == parent.From {
+			m.To = legacyCTO
 		}
 		m.ParentID = parent.ID
 		m.ConversationID = parent.ConversationID
