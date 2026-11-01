@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -38,7 +40,11 @@ func TestProjectsSkipSessionsInTempFolders(t *testing.T) {
 
 // TMPDIR names one more temporary folder, wherever it is.
 func TestProjectsSkipSessionsUnderTMPDIR(t *testing.T) {
-	dir := "/custom-tmp-for-agent-net-test"
+	// A real folder: t.TempDir and the store use TMPDIR too.
+	dir := filepath.Join(t.TempDir(), "custom-tmp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("TMPDIR", dir)
 	s, _ := newTestStore(t)
 	s.tempFolders = nil // the system temporary folders
