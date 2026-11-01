@@ -1,7 +1,8 @@
 # 0042 - A kitty pixel renderer for the Graph tab
 
 **Date:** 2026-11-01
-**Status:** Accepted. Part 1 is the static picture; animation comes later.
+**Status:** Accepted. Part 1 is the static picture; part 2 adds motion and
+detail in pixel mode only.
 
 The Graph tab already splits its state, a Scene and a renderer, so the drawing
 can change without touching the graph logic. Braille works everywhere but is
@@ -32,8 +33,46 @@ multiplexer veto; `braille` always falls back. Unknown or missing state falls
 back to Braille, so the existing goldens and the Braille behaviour do not
 change.
 
+## Motion and detail (part 2)
+
+All of this is pixel only. The Braille picture, its colours, its labels and its
+goldens stay as they were. The scene carries the extra fields; Braille ignores
+them.
+
+- **Message traffic.** Every message that Braille animates is a small glowing
+  dot with a short fading tail. It follows the quadratic curve of its edge, or
+  a straight line when the two nodes have no edge. Requests are the accent
+  colour `#5fc4c9`, replies `#7ccf8a`, deploys `#f0b35a`, and the owner's words
+  stay gold. When the message arrives, a ring expands at the target and fades.
+- **Busy nodes.** The green glow breathes slowly with a 2.2 second period. The
+  phase comes from the scene time, so `space` freezes it with the traffic.
+- **Smooth camera.** `+`, `-`, `0` and selecting a node ease the camera over
+  300 ms with a smoothstep. The target is kept in `State.Camera`; a separate
+  tween holds the picture the scene is drawn with. The ease runs only in pixel
+  mode, so Braille still jumps.
+- **Zoom-in cards.** Past 1.9 times the fitted zoom, every node with a charter
+  gets a rounded card next to it. The first line is the maturity in caps and
+  the session count; the purpose follows in at most two lines. The box is drawn
+  in the image; the text is ordinary terminal cells, laid out by `PixelLabels`
+  beside the node and cleared of any label it covers.
+
+## Frame budget
+
+A pixel frame is not free. The benchmark `BenchmarkRasterizeFrame120x34` draws
+120 by 34 cells with 20 nodes, edges, a busy node, a comet and a ripple. On the
+development machine it takes about 85 ms, above the 30 ms target. Pixel frames
+therefore run at 8 a second (125 ms), not 15. Idle ticks stay at 250 ms.
+
+Two hashes keep the work down. `HashScene` covers everything the picture draws
+and lets the host reuse the last placeholder rows without rasterizing an
+unchanged scene. `HashImage` covers the RGBA pixels and stops a retransmission
+when a rasterized frame happens to be identical. A tick is scheduled only while
+the Graph tab is shown, and `State.Moving` reports traffic in flight, a busy
+pulse, or a running camera ease. When nothing moves the host stays on the idle
+tick and sends no image.
+
 ## Out of scope
 
-Part 1 has no animation, no traffic comets and no zoom-in cards. It does not
-re-detect on terminal resize or font change; that can come with the animated
-part.
+The renderer is still chosen once at start. It does not re-detect on terminal
+resize or font change; a resize is handled by drawing a new image at the new
+cell size, not by probing the terminal again.

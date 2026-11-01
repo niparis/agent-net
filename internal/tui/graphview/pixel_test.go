@@ -24,7 +24,7 @@ func pixelScene() Scene {
 			{Name: "green", Label: "green", Position: Point{.82, .26}, HasCharter: true, Card: SceneCard{Maturity: "growing"}},
 			{Name: "grey", Label: "grey", Position: Point{.22, .80}, Wildcard: true},
 			{Name: "hex", Label: "hex", Position: Point{.80, .78}, Architect: true, HasCharter: true, Card: SceneCard{Maturity: "mature"}},
-			{Name: "busy", Label: "busy", Position: Point{.50, .18}, Role: "busy"},
+			{Name: "busy", Label: "busy", Position: Point{.50, .18}, Role: "busy", PulsePhase: .5},
 		},
 		Edges: []SceneEdge{
 			{From: Point{.20, .28}, To: Point{.50, .50}, Kind: "depends", Selected: true},
@@ -40,11 +40,16 @@ func pixelScene() Scene {
 }
 
 func TestRasterizeGolden(t *testing.T) {
-	img := Rasterize(pixelScene(), Size{Width: 40, Height: 16}, PixelMetrics{CellWidth: 8, CellHeight: 16})
+	checkPixelGolden(t, pixelScene(), "pixel_scene.png")
+}
+
+func checkPixelGolden(t *testing.T, scene Scene, name string) {
+	t.Helper()
+	img := Rasterize(scene, Size{Width: 40, Height: 16}, PixelMetrics{CellWidth: 8, CellHeight: 16})
 	if img == nil {
 		t.Fatal("no image")
 	}
-	path := filepath.Join("testdata", "pixel_scene.png")
+	path := filepath.Join("testdata", name)
 	if *updatePixel {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
 			t.Fatal(err)
@@ -85,6 +90,82 @@ func TestRasterizeGolden(t *testing.T) {
 	}
 	if diff != 0 {
 		t.Fatalf("%d pixels differ from %s, first at %v", diff, path, first)
+	}
+}
+
+// trafficScene is a frame in the middle of traffic: a request rides an edge, a
+// reply takes a straight line, and a deploy has just arrived.
+func trafficScene() Scene {
+	return Scene{
+		Level: "labels",
+		Nodes: []SceneNode{
+			{Name: "left", Label: "left", Position: Point{.14, .52}, HasCharter: true, Selected: true, Card: SceneCard{Maturity: "mature"}},
+			{Name: "right", Label: "right", Position: Point{.84, .48}, HasCharter: true, Card: SceneCard{Maturity: "growing"}},
+			{Name: "busy", Label: "busy", Position: Point{.48, .16}, Role: "busy", PulsePhase: .9},
+		},
+		Edges: []SceneEdge{
+			{From: Point{.14, .52}, To: Point{.84, .48}, Kind: "depends", Selected: true},
+			{From: Point{.48, .16}, To: Point{.84, .48}, Kind: "depends"},
+		},
+		Comets: []SceneComet{
+			{Position: Point{.55, .5}, Kind: "request", From: Point{.14, .52}, To: Point{.84, .48}, Progress: .62, HasEdge: true},
+			{Position: Point{.58, .34}, Kind: "reply", From: Point{.84, .48}, To: Point{.48, .16}, Progress: .55},
+		},
+		Ripples: []SceneRipple{{Position: Point{.84, .48}, Kind: "deploy", Progress: .45}},
+	}
+}
+
+// cardsScene is a zoomed-in frame: the chartered node shows a card, the plain
+// node does not.
+func cardsScene() Scene {
+	return Scene{
+		Level: "cards",
+		Nodes: []SceneNode{
+			{Name: "core", Label: "core", Position: Point{.25, .5}, HasCharter: true, ShowCard: true, Selected: true,
+				Card: SceneCard{Name: "core", Maturity: "mature - broad", Purpose: "Coordinates the network and its agents", Sessions: 2}},
+			{Name: "plain", Label: "plain", Position: Point{.72, .72}},
+		},
+	}
+}
+
+func TestRasterizeMotionGoldens(t *testing.T) {
+	checkPixelGolden(t, trafficScene(), "pixel_traffic.png")
+	checkPixelGolden(t, cardsScene(), "pixel_cards.png")
+}
+
+// benchScene is a typical full frame: 20 nodes, edges, a busy node, a outgoing
+// message and one charter card at label level.
+func benchScene() Scene {
+	scene := Scene{Level: "labels"}
+	for i := 0; i < 20; i++ {
+		p := Point{X: .1 + float64(i%5)*.2, Y: .12 + float64(i/5)*.25}
+		scene.Nodes = append(scene.Nodes, SceneNode{
+			Name:       itoa(i),
+			Label:      "node-" + itoa(i),
+			Position:   p,
+			HasCharter: i%3 == 0,
+			Role:       map[bool]string{true: "busy", false: "idle"}[i == 7],
+			PulsePhase: .6,
+			Card:       SceneCard{Maturity: "mature", Purpose: "A sample project", Sessions: 2},
+		})
+	}
+	for i := 0; i < 12; i++ {
+		scene.Edges = append(scene.Edges, SceneEdge{From: scene.Nodes[i].Position, To: scene.Nodes[(i+3)%20].Position, Kind: []string{"depends", "governs", "deploys"}[i%3]})
+	}
+	scene.Comets = []SceneComet{{From: scene.Nodes[1].Position, To: scene.Nodes[9].Position, Position: scene.Nodes[1].Position, Progress: .5, Kind: "request", HasEdge: true}}
+	scene.Ripples = []SceneRipple{{Position: scene.Nodes[4].Position, Kind: "reply", Progress: .4}}
+	return scene
+}
+
+func BenchmarkRasterizeFrame120x34(b *testing.B) {
+	scene := benchScene()
+	size := Size{Width: 120, Height: 34}
+	metrics := PixelMetrics{CellWidth: 8, CellHeight: 16}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if img := Rasterize(scene, size, metrics); img == nil {
+			b.Fatal("no image")
+		}
 	}
 }
 

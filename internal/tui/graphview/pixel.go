@@ -8,6 +8,7 @@ package graphview
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"image"
 	"image/color"
 	"math"
@@ -94,6 +95,15 @@ func Rasterize(scene Scene, size Size, metrics PixelMetrics) *image.RGBA {
 	if selected >= 0 {
 		c.node(scene.Nodes[selected], scene.Level, metrics, false)
 	}
+	for _, box := range sceneCards(scene, size) {
+		c.cardBox(box.Cell, ringColor(scene.Nodes[box.Node]))
+	}
+	for _, comet := range scene.Comets {
+		c.comet(comet)
+	}
+	for _, ripple := range scene.Ripples {
+		c.ripple(ripple)
+	}
 	return img
 }
 
@@ -106,6 +116,24 @@ func HashImage(img *image.RGBA) [32]byte {
 	binary.LittleEndian.PutUint32(b[4:], uint32(img.Bounds().Dy()))
 	h.Write(b[:])
 	h.Write(img.Pix)
+	var sum [32]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
+}
+
+// HashScene is a cheap digest of everything a pixel frame draws. The host
+// skips rasterization when it does not change, so an idle graph costs no
+// frames. Feed and key hints are left out: they are not part of the picture.
+func HashScene(scene Scene, size Size) [32]byte {
+	scene.Feed = nil
+	scene.Hints = nil
+	data, _ := json.Marshal(scene)
+	h := sha256.New()
+	var b [8]byte
+	binary.LittleEndian.PutUint32(b[:4], uint32(size.Width))
+	binary.LittleEndian.PutUint32(b[4:], uint32(size.Height))
+	h.Write(b[:])
+	h.Write(data)
 	var sum [32]byte
 	copy(sum[:], h.Sum(nil))
 	return sum
@@ -216,6 +244,19 @@ func circlePath(z *vector.Rasterizer, cx, cy, r float64) {
 	z.ClosePath()
 }
 
+// circlePathReverse winds the other way, so a second circle cuts a hole when
+// both paths share a nonzero fill.
+func circlePathReverse(z *vector.Rasterizer, cx, cy, r float64) {
+	const k = .5522847498307936
+	kr := k * r
+	z.MoveTo(float32(cx+r), float32(cy))
+	z.CubeTo(float32(cx+r), float32(cy-kr), float32(cx+kr), float32(cy-r), float32(cx), float32(cy-r))
+	z.CubeTo(float32(cx-kr), float32(cy-r), float32(cx-r), float32(cy-kr), float32(cx-r), float32(cy))
+	z.CubeTo(float32(cx-r), float32(cy+kr), float32(cx-kr), float32(cy+r), float32(cx), float32(cy+r))
+	z.CubeTo(float32(cx+kr), float32(cy+r), float32(cx+r), float32(cy+kr), float32(cx+r), float32(cy))
+	z.ClosePath()
+}
+
 func gradient(bbox image.Rectangle, at func(x, y int) color.NRGBA) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, bbox.Dx(), bbox.Dy()))
 	for y := 0; y < bbox.Dy(); y++ {
@@ -281,7 +322,8 @@ func (c *pixelCanvas) node(n SceneNode, level string, metrics PixelMetrics, dim 
 		alpha = .55
 	}
 	if n.Role == "busy" {
-		c.glow(cx, cy, r, 14, color.NRGBA{pixelBusy.R, pixelBusy.G, pixelBusy.B, uint8(float64(.24) * alpha * 255)})
+		glowAlpha := .12 + .24*n.PulsePhase
+		c.glow(cx, cy, r, 14, color.NRGBA{pixelBusy.R, pixelBusy.G, pixelBusy.B, uint8(glowAlpha * alpha * 255)})
 	}
 	if n.Selected {
 		c.glow(cx, cy, r, 22, color.NRGBA{pixelAccent.R, pixelAccent.G, pixelAccent.B, .40 * 255})

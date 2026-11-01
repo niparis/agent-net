@@ -18,6 +18,8 @@
       "HasSessions": true,
       "Pulse": false,
       "HasCharter": true,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "architect",
         "Maturity": "growing",
@@ -45,6 +47,8 @@
       "HasSessions": true,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0.12212521282287092,
       "Card": {
         "Name": "project-01",
         "Maturity": "",
@@ -72,6 +76,8 @@
       "HasSessions": true,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-02",
         "Maturity": "",
@@ -99,6 +105,8 @@
       "HasSessions": true,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-03",
         "Maturity": "",
@@ -126,6 +134,8 @@
       "HasSessions": true,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-04",
         "Maturity": "",
@@ -153,6 +163,8 @@
       "HasSessions": true,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-05",
         "Maturity": "",
@@ -180,6 +192,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-06",
         "Maturity": "",
@@ -207,6 +221,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-07",
         "Maturity": "",
@@ -234,6 +250,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-08",
         "Maturity": "",
@@ -261,6 +279,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-09",
         "Maturity": "",
@@ -288,6 +308,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-10",
         "Maturity": "",
@@ -315,6 +337,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-11",
         "Maturity": "",
@@ -342,6 +366,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-12",
         "Maturity": "",
@@ -369,6 +395,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-13",
         "Maturity": "",
@@ -396,6 +424,8 @@
       "HasSessions": false,
       "Pulse": false,
       "HasCharter": false,
+      "ShowCard": false,
+      "PulsePhase": 0,
       "Card": {
         "Name": "project-14",
         "Maturity": "",
@@ -519,7 +549,18 @@
           "Y": 0.6981602217746389
         }
       ],
-      "Voice": false
+      "Voice": false,
+      "Kind": "request",
+      "From": {
+        "X": 0.6178377936223872,
+        "Y": 0.7278836976218583
+      },
+      "To": {
+        "X": 0.5661082501579338,
+        "Y": 0.62825193500548
+      },
+      "Progress": 0.3333333333333333,
+      "HasEdge": true
     },
     {
       "Position": {
@@ -540,9 +581,21 @@
           "Y": 0.37324721780437287
         }
       ],
-      "Voice": false
+      "Voice": false,
+      "Kind": "reply",
+      "From": {
+        "X": 0.4621479077981184,
+        "Y": 0.42936402694913506
+      },
+      "To": {
+        "X": 0.4153754599706393,
+        "Y": 0.3405247512582187
+      },
+      "Progress": 0.6666666666666666,
+      "HasEdge": true
     }
   ],
+  "Ripples": null,
   "Level": "labels",
   "Feed": [
     {

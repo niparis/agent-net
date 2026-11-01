@@ -419,8 +419,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case graphTickMsg:
 		if m.tab == graphTab && !m.mapOn && msg.generation == m.graphGeneration {
+			m.smoothCamera()
 			m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
-			return m, graphTick(m.graphGeneration)
+			return m, graphTickAfter(m.graphGeneration, m.graphFrameInterval())
 		}
 		return m, nil
 

@@ -17,6 +17,15 @@ var graphSelectionStyle = lipgloss.NewStyle().Bold(true).Foreground(graphview.Ac
 
 type graphTickMsg struct{ generation int }
 
+const (
+	// graphIdleInterval keeps the graph alive without drawing when nothing
+	// moves. graphFrameInterval is the fastest pixel frame. A frame of 120x34
+	// cells with 20 nodes costs about 85 ms to rasterize, so 8 frames a second
+	// leaves room for the terminal and the rest of the UI.
+	graphIdleInterval  = 250 * time.Millisecond
+	graphFrameInterval = 125 * time.Millisecond
+)
+
 // graphPixelState holds the pixel-mode decision and the last picture sent to
 // the terminal, so an unchanged scene is not transmitted again.
 type graphPixelState struct {
@@ -25,6 +34,8 @@ type graphPixelState struct {
 	imageID      uint32
 	hash         [32]byte
 	have         bool
+	scene        [32]byte
+	lines        []string
 }
 
 func (g *graphPixelState) set(gr graphview.Graphics) {
@@ -36,7 +47,28 @@ func (g *graphPixelState) set(gr graphview.Graphics) {
 }
 
 func graphTick(generation int) tea.Cmd {
-	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return graphTickMsg{generation} })
+	return graphTickAfter(generation, graphIdleInterval)
+}
+
+func graphTickAfter(generation int, interval time.Duration) tea.Cmd {
+	return tea.Tick(interval, func(time.Time) tea.Msg { return graphTickMsg{generation} })
+}
+
+// graphFrameInterval chooses the next frame delay: fast only while pixel mode
+// has something to animate.
+func (m Model) graphFrameInterval() time.Duration {
+	if m.graphPixel == nil || !m.graphPixel.graphics {
+		return graphIdleInterval
+	}
+	if m.graphState.Moving() {
+		return graphFrameInterval
+	}
+	return graphIdleInterval
+}
+
+// smoothCamera turns on the eased camera only for the pixel renderer.
+func (m *Model) smoothCamera() {
+	m.graphState.Smooth = m.graphPixel != nil && m.graphPixel.graphics
 }
 
 func (m Model) graphSize() (int, int) {
@@ -50,6 +82,7 @@ func (m Model) startGraph() (tea.Model, tea.Cmd) {
 	m.tab, m.mapOn, m.focus = graphTab, false, focusSessions
 	m.mp.finding = false
 	m.uiFilter = ""
+	m.smoothCamera()
 	m.graphGeneration++
 	commands := []tea.Cmd{graphTick(m.graphGeneration)}
 	if !m.graphTalkLoading {
@@ -151,6 +184,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		action = graphview.OpenSelected{}
 	}
 	if action != nil {
+		m.smoothCamera()
 		m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 		var effect graphview.Effect
 		m.graphState, effect = graphview.Update(m.graphState, action)
@@ -172,7 +206,10 @@ func (m Model) graphView(w, h int) []string {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
 	gw, gh := max(w-4, 1), max(h-5, 1)
+	smooth := m.graphPixel != nil && m.graphPixel.graphics
+	m.graphState.Smooth = smooth
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
+	state.Smooth = smooth
 	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(gw), Height: float64(gh)})
 	for i := range scene.Nodes {
 		if scene.Nodes[i].Name == protocol.GraphVoiceOwner {
@@ -218,20 +255,27 @@ func (m Model) pixelLines(scene graphview.Scene, gw, gh int) ([]string, bool) {
 		return nil, false
 	}
 	size := graphview.Size{Width: gw, Height: gh}
+	signature := graphview.HashScene(scene, size)
+	if g.have && g.lines != nil && g.scene == signature {
+		return g.lines, true
+	}
 	img := graphview.Rasterize(scene, size, graphview.PixelMetrics{CellWidth: g.cellW, CellHeight: g.cellH})
 	if img == nil {
 		return nil, false
 	}
-	layout := (graphview.Braille{}).Render(scene, size)
-	lines := graphview.PlaceholderLines(layout.Labels, size, g.imageID, graphview.StyleRole)
+	lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, g.imageID, graphview.StyleRole)
 	if len(lines) == 0 {
 		return nil, false
 	}
 	hash := graphview.HashImage(img)
+	g.scene, g.lines = signature, lines
 	if !g.have || hash != g.hash {
-		lines[0] = graphview.DeleteImage(g.imageID) + graphview.TransmitImage(img, g.imageID, gw, gh) + lines[0]
+		frame := append([]string(nil), lines...)
+		frame[0] = graphview.DeleteImage(g.imageID) + graphview.TransmitImage(img, g.imageID, gw, gh) + frame[0]
 		g.hash, g.have = hash, true
+		return frame, true
 	}
+	g.have = true
 	return lines, true
 }
 
