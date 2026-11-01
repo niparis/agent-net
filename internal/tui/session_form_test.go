@@ -135,7 +135,7 @@ func TestNewSessionEnterWithTextStartsInTheBackground(t *testing.T) {
 
 func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
 	for _, tc := range []struct{ id, harness, why string }{
-		{"s_0000000000000002", "codex", "codex on this machine"},
+		{"s_0000000000000004", "codex", "codex on another machine"},
 		{"s_0000000000000002", "pi", "pi on this machine"},
 		{"s_0000000000000002", "other", "unknown harness"},
 		{"s_0000000000000004", "pi", "pi on another machine"},
@@ -148,14 +148,14 @@ func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
 				t.Fatalf("n opened mode %v", m.mode)
 			}
 			m.sform.in[sHarness].SetValue(tc.harness)
-			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude and opencode on this machine for now") {
+			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude, opencode and codex on this machine for now") {
 				t.Errorf("the form does not refuse:\n%s", v)
 			}
 			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("refused start still ran: cmd %v, asks %+v", cmd != nil, src.sessionStarts)
 			}
-			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude and opencode on this machine for now") {
+			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude, opencode and codex on this machine for now") {
 				t.Errorf("the refusal is not on the form:\n%s", m.View())
 			}
 		})
@@ -305,5 +305,49 @@ func TestNewSessionHarnessSupportGoldens(t *testing.T) {
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_opencode", m.View())
 		m.sform.in[sHarness].SetValue("pi")
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_unsupported", m.View())
+	}
+}
+
+func TestNewSessionCodexAlwaysEnters(t *testing.T) {
+	for _, prompt := range []string{"", "Inspect this project"} {
+		t.Run(prompt, func(t *testing.T) {
+			m, src := workerModel(120, 34)
+			m = selectID(m, "s_0000000000000002")
+			src.sessionStart = startedSession("tenebrae", "codex")
+			src.sessionStart.EnterPlan = &protocol.EnterPlan{Argv: []string{"codex"}, Dir: "/project"}
+			got, dir, _, _ := capture(&m)
+			m, _ = press(m, sessionKey())
+			m.sform.in[sHarness].SetValue("codex")
+			m = typeText(m, prompt)
+			view := m.View()
+			if !strings.Contains(view, "codex: opens it now") || strings.Contains(view, "background and send") {
+				t.Fatalf("misleading Codex form:\n%s", view)
+			}
+			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd == nil {
+				t.Fatal("Codex refused")
+			}
+			m, cmd = press2(m, cmd())
+			if cmd == nil {
+				t.Fatal("Codex did not enter")
+			}
+			_, cmd = press2(m, cmd())
+			if cmd == nil || !equalStrings(*got, []string{"codex"}) || *dir != "/project" {
+				t.Fatalf("entered %v in %q", *got, *dir)
+			}
+			if len(src.sessionStarts) != 1 || src.sessionStarts[0].FirstMessage != prompt {
+				t.Fatalf("request: %+v", src.sessionStarts)
+			}
+		})
+	}
+}
+
+func TestNewSessionCodexGoldens(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m, _ := workerModel(size.w, size.h)
+		m = selectID(m, "s_0000000000000002")
+		m, _ = press(m, sessionKey())
+		m.sform.in[sHarness].SetValue("codex")
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_codex", m.View())
 	}
 }

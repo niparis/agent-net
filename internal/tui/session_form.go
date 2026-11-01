@@ -242,13 +242,13 @@ func splitProjectMachine(value string) (project, machine string) {
 }
 
 // sessionFormRefusal says why this version cannot start the form's session.
-// Local Claude and OpenCode starts are built (build plan part 4).
+// Local Claude, OpenCode and Codex starts are built.
 func (m Model) sessionFormRefusal(f sessionForm) string {
-	const only = "only Claude and OpenCode on this machine for now"
+	const only = "only Claude, OpenCode and Codex on this machine for now"
 	if f.nodeID != "" && f.nodeID != m.snap.NodeID {
 		return only
 	}
-	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" {
+	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" && h != "codex" {
 		return only
 	}
 	project, machine := splitProjectMachine(f.value(sProject))
@@ -389,6 +389,15 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 	if harness == "" {
 		harness = "claude"
 	}
+	if harness == "codex" {
+		if r.res.EnterPlan == nil {
+			m.fail("The daemon did not provide a Codex enter plan.")
+			return m, refresh()
+		}
+		name := project + " (" + sanitize(host) + ")"
+		plan := *r.res.EnterPlan
+		return m, func() tea.Msg { return enterMsg{name: name, plan: plan} }
+	}
 	if r.req.FirstMessage != "" {
 		m.say(fmt.Sprintf("started %s (%s) on %s: first message sent. Enter opens it.", project, harness, sanitize(host)))
 		return m, refresh()
@@ -466,7 +475,10 @@ func (m Model) sessionFormView(w, rows int) []string {
 	}
 	why := m.sessionFormRefusal(f)
 	indent := strings.Repeat(" ", sessionValueCol)
-	if strings.TrimSpace(f.in[sFirstMessage].Value()) == "" {
+	if strings.EqualFold(f.value(sHarness), "codex") {
+		out = append(out, sDim.Render(clip(indent+"empty: start it and enter it", w)))
+		out = append(out, sDim.Render(clip(indent+"codex: opens it now", w)))
+	} else if strings.TrimSpace(f.in[sFirstMessage].Value()) == "" {
 		out = append(out, sDim.Render(clip(indent+"empty: start it and enter it", w)))
 		out = append(out, sDim.Render(clip(indent+"text: start it in the background and send this", w)))
 	} else {

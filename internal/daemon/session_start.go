@@ -20,8 +20,8 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	if p.Harness == "" {
 		p.Harness = "claude"
 	}
-	if p.Harness != "claude" && p.Harness != "opencode" {
-		return protocol.StartedSession{}, errors.New("session_start currently supports only local Claude and OpenCode sessions")
+	if p.Harness != "claude" && p.Harness != "opencode" && p.Harness != "codex" {
+		return protocol.StartedSession{}, errors.New("session_start currently supports only local Claude, OpenCode and Codex sessions")
 	}
 	if len(p.FirstMessage) > protocol.MaxBodyBytes {
 		return protocol.StartedSession{}, errors.New("first_message is too long")
@@ -60,6 +60,21 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	}
 	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Harness: p.Harness, Project: found.Name, Path: found.Path, Model: p.Model, StartedAt: time.Now().Unix()}
 	r.Branch, _ = gitOut(ctx, r.Path, "branch", "--show-current")
+	if p.Harness == "codex" {
+		args := []string{bin}
+		if p.Model != "" {
+			args = append(args, "-m", p.Model)
+		}
+		if p.FirstMessage != "" {
+			args = append(args, p.FirstMessage)
+		}
+		r.Status = "started"
+		r.EnterPlan = &protocol.EnterPlan{Argv: args, Dir: r.Path, Host: d.hostName(), Note: "Press ctrl+] to come back here; Codex keeps running."}
+		if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
+			r.EnterPlan.Env = map[string]string{"CODEX_HOME": home}
+		}
+		return r, nil
+	}
 	if p.Harness == "opencode" {
 		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage)
 	}
