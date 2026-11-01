@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -31,8 +32,8 @@ func TestCTOSessionStartRejectsPathOutsideHome(t *testing.T) {
 		{Tool: "session_change", Action: "session_start", Args: json.RawMessage(`{"action":"session_start","path":"/outside/project","harness":"claude"}`)},
 		{Tool: "project_change", Action: "create", Args: json.RawMessage(`{"action":"create","path":"/outside/project"}`)},
 	} {
-		if err := d.validateProposal(context.Background(), call); err == nil {
-			t.Errorf("accepted outside path for %s", call.Tool)
+		if err := d.validateProposal(context.Background(), call); err == nil || !strings.Contains(err.Error(), "outside your home") {
+			t.Errorf("outside path for %s: %v", call.Tool, err)
 		}
 	}
 }
