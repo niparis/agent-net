@@ -12,9 +12,9 @@ contains `[agent-net` or `<cross-session`, so it cannot imitate a note that
 agent-net writes. Agents never receive it: the notes and guidance they match
 always say `CTO`. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
-that token is an owner credential and must not be shared with agents. The
-`cto_send`, `cto_enter`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
-same gate. The daemon keeps CTO action lines in its private state database;
+that token is an owner credential and must not be shared with agents. The owner sends to the CTO with `owner_send` and reads its timeline with
+`session_text`; `session_enter` enters it. `cto_new`, `cto_settings` and
+`cto_graph_history` stay. All use the same gate. The daemon keeps CTO action lines in its private state database;
 these can include message and task text.
 
 Model score overrides, difficulty minimums and the worker provider allowlist are owner settings. The daemon's
@@ -372,7 +372,7 @@ removed. Static charter guidance and the CTO's own timeline remain. Outcome
 notes carry no private result. The parity and canary tests enforce this rule.
 The CTO now uses its registered network session for these checks. The owner
 can hand one item over from the TUI with `c`: the preview shows the exact
-text, Enter sends it through the owner-gated `cto_send` method, and the text is
+text, Enter sends it with `owner_send` to the CTO session, and the text is
 capped at 4,000 characters. An agent session cannot call that method.
 Peer messages reach the CTO through normal delivery to its session (design part 7).
 

@@ -19,6 +19,17 @@ func (m Model) ctoTitle() string {
 	return protocol.DefaultCTOTitle
 }
 
+// openProposals is how many CTO proposals wait in Needs you.
+func (m Model) openProposals() int {
+	n := 0
+	for _, p := range m.proposals {
+		if p.Status == "open" {
+			n++
+		}
+	}
+	return n
+}
+
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
 	title := m.ctoTitle()
@@ -27,6 +38,9 @@ func (m Model) ctoView(w, h int) []string {
 	}
 	if c.model != "" {
 		title += " · " + sDim.Render(sanitize(c.model))
+	}
+	if n := m.openProposals(); n > 0 {
+		title += " · " + sDim.Render(plural(n, "open proposal"))
 	}
 	borderColor := roleFaint
 	if m.focus == focusCTO {

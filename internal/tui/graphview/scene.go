@@ -109,6 +109,8 @@ func BuildScene(s State, viewport Viewport) Scene {
 		role := "none"
 		if n.Kind == "architect" {
 			role = "architect"
+		} else if n.Kind == "cto" {
+			role = "cto"
 		} else if n.SessionCount > 0 || len(n.Sessions) > 0 {
 			role = "idle"
 		}

@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ 12 online  14:05:00
+Needs you (2) ──────────────────────────────────────────────────────────────────
+▍  CTO proposes: edge tenebrae -> cogforge rule auto
+▍  CTO proposes: edge tenebrae -> cogforge rule auto
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free │
+│  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
+│  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  NAME               AGENT    PROJECT     MODEL      STATUS    TRUST   CPU   RAM
+ Mac (here) 4 sessions ─────────────────────────────────────────────────────────
+  tenebrae-53        claude   tenebrae    opus-5-5   busy      -       38%  1.2G
+  Atlas              cto      -           -          idle      -         ?     ?
+  strategies         claude   strategies  sonnet-5-5 idle      -      240%  4.6G
+  web                opencode shop        sonnet-5   idle      -         ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────
+╭─Atlas · opencode · fake/m1 · 2 open proposals────────────────────────────────╮
+│                                                                              │
+│ you: hello                                                                   │
+│ cto:                                                                         │
+│ hi                                                                           │
+│ enter: open the Atlas · tab: back                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter open Atlas  tab back  m model  n new  u undo

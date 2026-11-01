@@ -768,7 +768,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
 			return nil, true, errors.New("session_text needs session_id")
 		}
-		if d.sessionByID(q.SessionID) != nil {
+		if handled, page, ctoErr := d.ctoTextQuery(ctx, q); handled {
+			res, err = page, ctoErr
+		} else if d.sessionByID(q.SessionID) != nil {
 			res, err = d.localText(ctx, q)
 		} else {
 			var data json.RawMessage
@@ -990,6 +992,8 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		var q protocol.EnterRequest
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
 			err = errors.New("bad node.session_enter")
+		} else if handled, plan, ctoErr := d.ctoEnterQuery(ctx, q); handled {
+			data, err = plan, ctoErr
 		} else {
 			q.TmuxSocket, q.HerdrSocket = "", "" // the asker's terminal means nothing here
 			data, err = d.localEnter(ctx, q, true)
@@ -998,6 +1002,8 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		var q protocol.TextQuery
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
 			err = errors.New("bad node.session_text")
+		} else if handled, page, ctoErr := d.ctoTextQuery(ctx, q); handled {
+			data, err = page, ctoErr
 		} else {
 			data, err = d.localText(ctx, q)
 		}

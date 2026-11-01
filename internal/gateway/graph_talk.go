@@ -27,7 +27,7 @@ func (s *Store) GraphTalkSnapshot() (protocol.GraphTalkResult, error) {
 		return result, err
 	}
 	now := s.now()
-	rows, err := tx.Query(`SELECT COALESCE(NULLIF(src.repo_project,''),sp.project,''), COALESCE(NULLIF(dst.repo_project,''),dp.project,''), src.harness, dst.harness, COUNT(*), MAX(CASE WHEN m.sender_cto <> 0 OR src.harness = 'owner' OR EXISTS (SELECT 1 FROM charter_signals cs WHERE cs.message_id=m.id AND cs.prompt <> '') THEN 1 ELSE 0 END)
+	rows, err := tx.Query(`SELECT CASE WHEN src.harness='cto' THEN 'CTO' ELSE COALESCE(NULLIF(src.repo_project,''),sp.project,'') END, CASE WHEN dst.harness='cto' THEN 'CTO' ELSE COALESCE(NULLIF(dst.repo_project,''),dp.project,'') END, src.harness, dst.harness, COUNT(*), MAX(CASE WHEN (src.harness = 'cto' AND m.owner_approved <> 0) OR src.harness = 'owner' OR EXISTS (SELECT 1 FROM charter_signals cs WHERE cs.message_id=m.id AND cs.prompt <> '') THEN 1 ELSE 0 END)
  FROM messages m JOIN sessions src ON src.id=m.sender JOIN sessions dst ON dst.id=m.recipient
  LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
  WHERE m.created_at>=? AND m.created_at<=?

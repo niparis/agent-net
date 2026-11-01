@@ -374,7 +374,11 @@ type (
 	}
 	MsgSend struct {
 		ReplyOutcome
-		FromCTO        bool   `json:"sender_cto,omitempty"`
+		FromCTO bool `json:"sender_cto,omitempty"`
+		// OwnerApproved says the owner approved this exact text as their own
+		// words. Only the CTO proposal runner sets it, and only together with
+		// FromCTO. The gateway refuses it from any other sender.
+		OwnerApproved  bool   `json:"owner_approved,omitempty"`
 		Sender         string `json:"sender_session_id"`
 		Recipient      string `json:"recipient_session_id"`
 		Type           string `json:"message_type"`
@@ -533,8 +537,12 @@ type FeedEvent struct {
 	Type string `json:"message_type,omitempty"`
 	// Parent is the message this one answers. A stored reply marks its parent
 	// as replied, which has no event of its own.
-	Parent         string `json:"parent_message_id,omitempty"`
-	FromCTO        bool   `json:"sender_cto,omitempty"`
+	Parent  string `json:"parent_message_id,omitempty"`
+	FromCTO bool   `json:"sender_cto,omitempty"`
+	// OwnerApproved is true for a message the owner approved as their own
+	// words, including an approved CTO send as the owner. The Graph draws it
+	// as a gold line.
+	OwnerApproved  bool   `json:"owner_approved,omitempty"`
 	Voice          bool   `json:"voice,omitempty"`
 	SenderOwner    bool   `json:"sender_owner,omitempty"`
 	RecipientOwner bool   `json:"recipient_owner,omitempty"`

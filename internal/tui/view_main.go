@@ -961,7 +961,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	nameWant, projectWant, policy := 0, 0, false
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
-			nameWant = max(nameWant, utf8.RuneCountInString(nameText(a, g.marks[a.SessionID], 1<<20)))
+			nameWant = max(nameWant, utf8.RuneCountInString(m.nameText(a, g.marks[a.SessionID], 1<<20)))
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 			policy = policy || policyBadge(a.Delegation) != ""
 		}
@@ -1175,7 +1175,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		var v string
 		switch c.name {
 		case "NAME":
-			v = nameText(a, mk, c.width)
+			v = m.nameText(a, mk, c.width)
 		case "AGENT":
 			v = a.Harness
 		case "PROJECT":
@@ -1257,6 +1257,9 @@ func rowName(a protocol.AgentView) string {
 // other session falls back to its harness title when that says something the
 // NAME does not. It is blank, not a dash, when there is nothing to say.
 func taskText(a protocol.AgentView) string {
+	if a.Harness == "cto" {
+		return "" // the CTO has a fixed brief, not an announced task
+	}
 	if t := strings.TrimSpace(a.Profile.Task); t != "" {
 		return sanitize(t)
 	}
@@ -1276,8 +1279,11 @@ func taskText(a protocol.AgentView) string {
 // glyphs before the name, and "@host" after it when it runs on another machine
 // than its caller. The name gives way first: it is cut with an ellipsis so the
 // glyphs and the host stay.
-func nameText(a protocol.AgentView, mk treeMark, w int) string {
+func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 	name := rowName(a)
+	if a.Harness == "cto" {
+		name = m.ctoTitle()
+	}
 	suffix := ""
 	if mk.host != "" {
 		suffix = " @" + sanitize(mk.host)
@@ -1304,6 +1310,9 @@ const noAgentsMD = "no AGENTS.md"
 // functionText is the FUNCTION of a session: the project description the
 // gateway read from AGENTS.md. Empty is a real answer for an online session.
 func functionText(a protocol.AgentView) string {
+	if a.Harness == "cto" {
+		return "fixed by agent-net"
+	}
 	if f := strings.TrimSpace(a.Profile.Function); f != "" {
 		return f
 	}
@@ -1323,6 +1332,9 @@ func (m Model) wildcardRule(project string) string {
 }
 func (m Model) requestRuleBadge(a protocol.AgentView) string {
 	project := firstNonEmpty(a.Repo.Project, a.Profile.Project)
+	if a.Harness == "cto" {
+		project = protocol.CTONodeName
+	}
 	rule := m.wildcardRule(project)
 	if rule == "normal" {
 		rule = "-"

@@ -22,6 +22,10 @@ type GraphView struct {
 // GraphVoiceOwner identifies the owner origin in graph traffic.
 const GraphVoiceOwner = "\x00owner"
 
+// CTONodeName is the fixed name of the CTO node on the Graph. The CTO has no
+// editable charter and is not a project.
+const CTONodeName = "CTO"
+
 // GraphTalkCount summarizes messages between two projects in the past week.
 type GraphTalkCount struct {
 	From    string `json:"from"`
