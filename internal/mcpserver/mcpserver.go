@@ -271,6 +271,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	addLearnTool(s, run)
 	addRateTool(s, run)
 	addReadSessionTools(s, run)
+	addRedesignedTools(s, run)
 	return s
 }
 

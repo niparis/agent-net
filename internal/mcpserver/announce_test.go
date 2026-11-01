@@ -163,10 +163,8 @@ func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 		if tl.Name != "agent_announce" {
 			continue
 		}
-		for _, want := range []string{"REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"} {
-			if !strings.Contains(tl.Description, want) {
-				t.Errorf("agent_announce description misses %q: %s", want, tl.Description)
-			}
+		if tl.Description != redesignedCatalogTool("agent_announce").Description {
+			t.Errorf("agent_announce description differs from catalog: %s", tl.Description)
 		}
 		b, _ := json.Marshal(tl.InputSchema)
 		var schema struct {

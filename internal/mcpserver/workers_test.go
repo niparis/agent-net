@@ -54,8 +54,8 @@ func TestAgentLearnShowsTheResultAndTheDailyLimit(t *testing.T) {
 	if err != nil || res.IsError || len(res.Content) == 0 {
 		t.Fatalf("agent_learn: %v %+v", err, res)
 	}
-	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "Recorded finding 7") || !strings.Contains(text, "2 left today") {
-		t.Errorf("learn text: %q", text)
+	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"recorded":true`) || !strings.Contains(text, `"id":"7"`) || !strings.Contains(text, `"left_today":2`) {
+		t.Errorf("learn JSON output: %q", text)
 	}
 	accepted = false
 	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_learn",
@@ -63,8 +63,8 @@ func TestAgentLearnShowsTheResultAndTheDailyLimit(t *testing.T) {
 	if err != nil || res.IsError || len(res.Content) == 0 {
 		t.Fatalf("refused agent_learn: %v %+v", err, res)
 	}
-	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "Not recorded: at most 3 findings") {
-		t.Errorf("refusal text: %q", text)
+	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"recorded":false`) || !strings.Contains(text, `"left_today":0`) {
+		t.Errorf("learn refusal JSON output: %q", text)
 	}
 }
 
