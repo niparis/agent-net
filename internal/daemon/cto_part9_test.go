@@ -47,3 +47,10 @@ func TestCTOProjectRows(t *testing.T) {
 		t.Fatalf("rows: %+v", rows)
 	}
 }
+
+func TestCTOWorkerRows(t *testing.T) {
+	rows := ctoWorkerRows([]protocol.AgentView{{SessionID: "s1", Online: true, Worker: &protocol.WorkerInfo{}, Profile: protocol.Profile{Task: strings.Repeat("t", 200)}}})
+	if len(rows) != 1 || rows[0].ID != "s1" || len([]rune(rows[0].Task)) > 80 {
+		t.Fatalf("rows: %+v", rows)
+	}
+}

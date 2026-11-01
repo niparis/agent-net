@@ -44,6 +44,9 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // descriptions are written from docs/reference.md: what each tool does, the
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
+	"workers":               {desc: "List workers or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"tools":                 {desc: "List shared MCP servers.", fields: map[string]ctoField{"view": {typ: "string", enum: []string{"mcp"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"settings":              {desc: "List public worker profiles.", fields: map[string]ctoField{"area": {typ: "string", enum: []string{"worker_profiles"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"graph":                 {desc: "List public project nodes or read the guide.", fields: map[string]ctoField{"view": {typ: "string"}, "node": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"machines":              {desc: "List machines or a harness's models.", fields: map[string]ctoField{"machine": {typ: "string"}, "harness": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"proposals":             {desc: "List own proposals or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},

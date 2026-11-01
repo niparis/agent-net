@@ -27,6 +27,99 @@ func (d *Daemon) ctoReadConn() *localConn {
 
 func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	switch name {
+	case "workers":
+		var q struct {
+			ID     string `json:"id"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad worker arguments")
+		}
+		value, err := d.ctoReadConn().dispatch(ctx, "list", nil)
+		if err != nil {
+			return nil, err
+		}
+		var result protocol.AgentsResult
+		if err = ctoDecode(value, &result); err != nil {
+			return nil, err
+		}
+		rows := ctoWorkerRows(result.Agents)
+		if q.ID != "" {
+			for _, r := range rows {
+				if r.ID == q.ID {
+					b, _ := json.Marshal(protocol.QueryAgent{SessionID: q.ID})
+					return d.ctoReadConn().dispatch(ctx, "get", b)
+				}
+			}
+			return nil, errors.New("unknown worker")
+		}
+		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
+	case "tools":
+		var q struct {
+			View   string `json:"view"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad tools arguments")
+		}
+		if q.View != "" && q.View != "mcp" {
+			return nil, errors.New("unknown tools view")
+		}
+		value, err := d.ctoReadConn().dispatch(ctx, "mcp_list", nil)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Servers []protocol.MCPServer `json:"servers"`
+		}
+		if err = ctoDecode(value, &result); err != nil {
+			return nil, err
+		}
+		type row struct {
+			Name    string `json:"name"`
+			Machine string `json:"machine"`
+			Enabled bool   `json:"enabled"`
+			Health  string `json:"health"`
+		}
+		rows := make([]row, 0, len(result.Servers))
+		for _, v := range result.Servers {
+			rows = append(rows, row{ctoCut(v.Name, 80), ctoCut(v.Hostname, 80), v.Enabled, ctoCut(v.Health, 80)})
+		}
+		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
+	case "settings":
+		var q struct {
+			Area   string `json:"area"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad settings arguments")
+		}
+		if q.Area != "worker_profiles" {
+			return nil, errors.New("settings area unavailable to ordinary sessions")
+		}
+		value, err := d.ctoReadConn().dispatch(ctx, protocol.OpWorkerProfiles, nil)
+		if err != nil {
+			return nil, err
+		}
+		var profiles []protocol.WorkerProfile
+		if err = ctoDecode(value, &profiles); err != nil {
+			return nil, err
+		}
+		type row struct {
+			Name    string `json:"name"`
+			Harness string `json:"harness"`
+			Model   string `json:"model"`
+			Effort  string `json:"effort,omitempty"`
+		}
+		rows := make([]row, 0, len(profiles))
+		for _, v := range profiles {
+			rows = append(rows, row{ctoCut(v.Name, 80), ctoCut(v.Harness, 80), ctoCut(v.Model, 80), ctoCut(v.Effort, 80)})
+		}
+		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
+
 	case "graph", "projects":
 		var q struct {
 			View   string `json:"view"`
@@ -346,6 +439,22 @@ func ctoProjectRows(projects []protocol.ProjectView) []ctoProjectRow {
 	rows := make([]ctoProjectRow, 0, len(projects))
 	for _, p := range projects {
 		rows = append(rows, ctoProjectRow{ctoCut(p.Name, 80), ctoCut(p.DisplayName, 80), ctoCut(p.Hostname, 80), p.Sessions, p.Online})
+	}
+	return rows
+}
+
+type ctoWorkerRow struct {
+	ID      string `json:"id"`
+	Project string `json:"project,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Task    string `json:"task,omitempty"`
+}
+
+func ctoWorkerRows(agents []protocol.AgentView) []ctoWorkerRow {
+	workers := protocol.WorkersOf(agents)
+	rows := make([]ctoWorkerRow, 0, len(workers))
+	for _, w := range workers {
+		rows = append(rows, ctoWorkerRow{w.SessionID, ctoCut(w.Project, 80), ctoCut(w.Status, 30), ctoCut(w.Task, 80)})
 	}
 	return rows
 }
