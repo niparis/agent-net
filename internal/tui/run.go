@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
 // Run shows the screen until the person quits or ctx ends. It uses the
@@ -18,6 +19,7 @@ func Run(ctx context.Context, src Source) error {
 	// terminal. Non-TUI commands never need to ask the terminal for its palette.
 	_ = lipgloss.HasDarkBackground()
 	m := New(src)
+	m.graphPixel.set(graphview.Detect(os.Getenv, graphview.QueryTerminal))
 	m.tmuxSocket = tmuxSocketOf(os.Getenv("TMUX"))
 	m.herdrSocket = herdrSocketOf(os.Getenv("HERDR_ENV"), os.Getenv("HERDR_SOCKET_PATH"))
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
