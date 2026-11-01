@@ -1,0 +1,34 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 6 sessions, 5 online · 1 busy                    updated 14:05:00
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
+╭─Messages · conversations───────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
+│ ▸ tenebrae-53 → worker: Polish the session… 2 messages · ended ││   13:55 tenebrae-53                                │
+│   tenebrae-53 → worker: Review the deploy    1 message · ended ││ [agent-net worker brief] Another agent started yo… │
+│   strategies ↔ web · A conversation whose… 1 message · 30m ago ││ - Do the whole task. Do not gold-plate it, and do… │
+│                                                                ││ - Do it yourself. Do not pass the whole task to a… │
+│                                                                ││ …                                                  │
+│                                                                ││   14:00 ended worker                               │
+│                                                                ││ ✗ started                                          │
+│                                                                ││   14:03 ended worker                               │
+│                                                                ││ ✓ done · 12m                                       │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│ 0 system events · e to show · w hide workers                   ││                                                    │
+╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ enter: open the CTO · tab: back                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit
