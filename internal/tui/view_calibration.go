@@ -16,7 +16,7 @@ import (
 func (m Model) calibrationView(w int) []string {
 	cal := m.snap.Calibration
 	if len(cal.Callers) == 0 && len(cal.Network) == 0 {
-		return nil
+		return qualityView(cal.Quality, w)
 	}
 	callerWidth, levelWidth, medianWidth, tasksWidth, actionWidth := 16, 13, 6, 5, 16
 	if w >= 100 {
@@ -79,7 +79,7 @@ func (m Model) calibrationView(w int) []string {
 		body = append(body, sDim.Render(clip("ratings: none yet", w-4)))
 	}
 	body = append(body, sDim.Render(clip("last 7 finished tasks, at least 5 · rework = fix + 0.5 * continue", w-4)))
-	return panel("Difficulty calibration · read only", body, w, roleAccent)
+	return append(panel("Difficulty calibration · read only", body, w, roleAccent), qualityView(cal.Quality, w)...)
 }
 
 func calibrationMedian(v float64) string {
@@ -94,4 +94,51 @@ func calibrationAction(action string, w int) string {
 	default:
 		return sDim.Render(text)
 	}
+}
+
+// qualityView only formats the gateway snapshot. Fitting belongs to the gateway.
+func qualityView(q protocol.QualityAnalysis, w int) []string {
+	status := q.Status
+	if status == "" {
+		return nil
+	}
+	if q.Ratings == 0 && len(q.Effects) == 0 {
+		return panel("Quality analysis · read only", []string{sDim.Render("not enough ratings")}, w, roleAccent)
+	}
+	body := []string{sDim.Render(clip(status, w-4))}
+	for _, section := range []struct{ kind, title string }{{"model", "Model matters"}, {"harness", "Harness matters"}, {"effort", "Effort matters (within model)"}} {
+		body = append(body, sBold.Render(clip(section.title+" · quality / rework (tasks)", w-4)))
+		found := false
+		for _, e := range q.Effects {
+			if e.Kind != section.kind {
+				continue
+			}
+			found = true
+			weak := ""
+			if e.Ratings < 5 {
+				weak = ", weak"
+			}
+			text := fmt.Sprintf("%s  %+.2f (%d%s) / %+.2f (%d)", e.Name, e.Quality, e.Ratings, weak, e.Rework, e.Runs)
+			for _, line := range wrap(text, w-4) {
+				body = append(body, line)
+			}
+		}
+		if !found {
+			body = append(body, sDim.Render("not enough ratings"))
+		}
+	}
+	body = append(body, sBold.Render("Predicted quality · normal difficulty"))
+	for _, p := range q.Profiles {
+		note := ""
+		if p.Ratings < 5 {
+			note = ", weak"
+		}
+		if p.Unexpected {
+			note += ", differs from fit"
+		}
+		for _, line := range wrap(fmt.Sprintf("%s  %.2f · %d ratings, %d runs%s", p.Name, p.Quality, p.Ratings, p.Runs, note), w-4) {
+			body = append(body, line)
+		}
+	}
+	return panel("Quality analysis · read only", body, w, roleAccent)
 }

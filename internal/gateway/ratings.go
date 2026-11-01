@@ -188,6 +188,9 @@ func (s *Store) AddRating(f protocol.RateFrame) (protocol.RateResult, error) {
 		return protocol.RateResult{Worker: worker, Score: f.Score,
 			Reason: "this worker already has a rating"}, nil
 	}
+	if err := s.refreshQuality(); err != nil {
+		return protocol.RateResult{}, err
+	}
 	return protocol.RateResult{Accepted: true, Worker: worker, Score: f.Score, Model: facts.model,
 		Harness: facts.harness, Effort: facts.effort, Difficulty: facts.difficulty, At: at}, nil
 }

@@ -459,6 +459,11 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 		protocol.FindingStale, protocol.FindingNew, now.Add(-protocol.FindingStaleDays*24*time.Hour).Unix()); err != nil {
 		return res, err
 	}
+	if res.WorkerRuns > 0 {
+		if err := s.refreshQuality(); err != nil {
+			return res, err
+		}
+	}
 	if res.Any() {
 		detail := strings.TrimPrefix(pairs("messages", res.Messages, "deliveries", res.Deliveries,
 			"events", res.Events, "sessions", res.Sessions, "worker_runs", res.WorkerRuns), " ")
