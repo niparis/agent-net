@@ -1,12 +1,13 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 nodes, 4 edges    14:05
 Evidence API  early  autonomy: off
+Tools: 0 skills, 0 MCP servers · t open
 Document and evidence API.
 ○ no live sessions
 governed by: trading-architect (owner)
 
 IN 1                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
-Card 1-9/14  [ ] scroll ────────────────────────────────────────────────────────
+Card 1-8/14  [ ] scroll ────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
@@ -15,7 +16,6 @@ escalate         Breaking API changes.
 needs            MCP: tenebrae-library
 notes            Deploy through homelab.
 Rules ──────────────────────────────────────────────────────────────────────────
-tests_before_merge optional               maturity default
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

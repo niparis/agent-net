@@ -1,0 +1,34 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy                    updated 14:05:00
+╭─Tools / node:homelab machine:research────────────────────────────────────────────────────────────────────────────────╮
+│   NAME                            KIND   STATUS                                                                      │
+│ ! code-review                     skill  on for homelab · v1 on Nicolas-MBP, v3 on research                          │
+│ ! design-taste-frontend           skill  2 different copies on research                                              │
+│ ! imnplementing-clean-architectu… skill  off for homelab · looks like a copy of clean-architecture-python            │
+│   clean-architecture-python       skill  on for homelab                                                              │
+│   diagnosing-bugs                 skill  on for homelab                                                              │
+│   found-skill-00                  skill  off for homelab                                                             │
+│   found-skill-01                  skill  off for homelab                                                             │
+│   found-skill-02                  skill  off for homelab                                                             │
+│   found-skill-03                  skill  off for homelab                                                             │
+│   found-skill-04                  skill  off for homelab                                                             │
+│   found-skill-05                  skill  off for homelab                                                             │
+│   found-skill-06                  skill  off for homelab                                                             │
+│   found-skill-07                  skill  off for homelab                                                             │
+│   found-skill-08                  skill  off for homelab                                                             │
+│   found-skill-09                  skill  off for homelab                                                             │
+│   found-skill-10                  skill  off for homelab                                                             │
+│   found-skill-11                  skill  off for homelab                                                             │
+│   found-skill-12                  skill  off for homelab                                                             │
+│   found-skill-13                  skill  off for homelab                                                             │
+│   found-skill-14                  skill  off for homelab                                                             │
+│   found-skill-15                  skill  off for homelab                                                             │
+│   found-skill-16                  skill  off for homelab                                                             │
+│ 35 tools · ! needs attention · enter opens actions                                                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter actions  / filter  n add  esc clear  ? help  q quit

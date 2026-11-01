@@ -4,7 +4,7 @@
 
 This key audit uses sessions, workers, charters and the CTO. It records the existing and proposed interface, not a change to those primitives. No conflict with decision 0036 is known.
 
-**Status:** Proposal, except the CTO keys and Graph/card merge in [0038](../decisions/0038-map-merged-into-graph.md). The tables below include that merge.
+**Status:** Tools is implemented as documented below. Historical conflict tables retain the earlier audit. Other proposals remain proposals, except the CTO keys and Graph/card merge in [0038](../decisions/0038-map-merged-into-graph.md). The tables below include that merge.
 **Date:** 2026-10-31.
 **Scope:** every key handler and hint line under `internal/tui`: the five tabs,
 the Needs you rows, Messages, the inbox, Quotas, Graph, Tools, help,
@@ -126,60 +126,23 @@ session. The extra actions apply only when such a row is selected.
 
 ### Tools (tab 5)
 
-Global keys on the tab:
+Implemented single list: NAME, KIND and STATUS in words. `!` means needs
+attention. There are no screen switches or machine-column keys.
 
-| Key | Action |
+| Mode | Keys |
 |---|---|
-| `[`/`]` | Previous or next screen. |
-| `left`/`right` | Previous or next screen, except in All tools where they move between columns. |
-| `up`/`down`, `j`/`k` | Move the selection. |
-| `l`/`h` | Move right or left between columns. |
-| `m` | Next machine. |
-| `/` | Search or filter. In Differences this switches to All tools. |
-| `esc` | Clear the search. |
-| `r` | Rescan. |
-| `?` | Tools keys. |
-| `q` | Quit. |
-| `c`, `C` | Focus the CTO box. |
-| `M`, `G` | Open Graph. |
+| List | `j`/`k` or up/down move; Enter actions; `/` filter; `n` add; Esc clear filter; `?` help; `q` quit. Digits and global keys stay. |
+| Filter | Text combines words, `project:NAME`, `node:NAME`, `machine:NAME`; Enter keeps; Esc clears. |
+| Menu | `j`/`k` or up/down move; Enter choose; Esc back. Only applicable actions appear. |
+| Picker | `j`/`k` or up/down move; space ticks; `/` filters; Enter applies; Esc cancels. Empty selection explains what to tick. |
+| Read | `j`/`k` or up/down scroll; Esc back. |
+| Add | Tab/down next field; shift+tab/up previous; left/right choose machine; Enter add; Esc cancel. |
+| Compare | Labelled letters keep a copy; `n`/`p` select file; `v` diff; `d` exact folders; up/down scroll; Esc back. |
+| Plan | Enter or `y` applies; `d` exact folders; up/down scroll; Esc or `n` cancels. |
 
-Differences screen:
-
-| Key | Action |
-|---|---|
-| `enter` | Expand a group, or open the fix for a difference. |
-| `x` | Accept the difference as it is. |
-| `.` | Show accepted differences. |
-
-All tools screen:
-
-| Key | Action |
-|---|---|
-| `enter` | Says that details are below the list. |
-| `a` | Turn on, and open the plan. |
-| `u` | Turn off, and open the plan. |
-| `h`/`l` | Select a machine or the projects cell. |
-
-By project screen:
-
-| Key | Action |
-|---|---|
-| `j`/`k` | Select a project. |
-| `m` | Change the machine. |
-| `/` | Filter projects. |
-| `a`/`u` | No action. `u` explains that turning off is done in All tools. |
-
-Tools plan modal and picker:
-
-| Key | Action |
-|---|---|
-| `enter` | Run the plan verb, or confirm the picker. |
-| `d` | Show the exact folders. |
-| `j`/`k`, `up`/`down` | Scroll or select. |
-| `esc` | Cancel. |
-| `space`/`x` | Tick a project in the picker. |
-| `/` | Filter the picker. |
-| `enter` when done | Close the finished plan. |
+Project and node filters scope Turn on/Turn off directly, without a picker.
+The bottom key bar follows the current mode. The old Differences, All tools
+and By project screens and their list shortcuts have been removed.
 
 ### Graph (tab 2)
 
@@ -191,7 +154,7 @@ Tools plan modal and picker:
 | `h`, `j`, `k`, `l` | Pan left, down, up, right. |
 | `0` | Fit the graph. |
 | `[`/`]` | Previous or next linked neighbour. |
-| `t` | Show or hide traffic. |
+| `t` | Open Tools filtered to `node:NAME` for the selected node. |
 | `o` | Arrange nodes in rings (orbit). |
 | `space` | Pause or resume traffic. |
 | `/` | Find a node; Enter selects the first match, Esc cancels. |
@@ -202,6 +165,8 @@ Tools plan modal and picker:
 | `c`, `C` | Focus the CTO box. |
 
 ### Graph agent card
+
+The detail includes `Tools: N skills, M MCP servers`. `t` opens that node's Tools filter.
 
 | Key | Action |
 |---|---|
@@ -269,7 +234,7 @@ the scrolling card body, so it never needs a second screen.
 Inside the CTO harness (the full session), the harness owns the keys. The TUI
 only supplies ctrl+] to come back.
 
-## 2. Where one key means different things
+## 2. Earlier audit: where one key meant different things
 
 | Key | Screen and meaning | Conflict |
 |---|---|---|
@@ -298,7 +263,7 @@ only supplies ctrl+] to come back.
 | `y`/`n` | Confirmations: yes or no. Help: `n` toggles notifications. CTO: `n` starts a new conversation. | Confirmation letters leak into screens where they mean something else. |
 | `q` | Everywhere: quit, except in text fields. | Fine, but `esc` is the safer back key and must never quit. |
 
-## 3. Where one action has different keys
+## 3. Earlier audit: where one action had different keys
 
 | Action | Keys today | Where |
 |---|---|---|

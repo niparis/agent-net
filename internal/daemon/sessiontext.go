@@ -33,6 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
+	"tools_keep_copy": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
 	protocol.OpCTOGraphWindow: true,
 	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true,
 	"notification_settings": true,
@@ -347,6 +348,22 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		p.Owner = d.ownerSessionID()
 		res, err = d.call(withCallWait(ctx, 4*time.Minute), "tools.summary", p)
+	case "tools_mcp_add", "tools_mcp_remove", "tools_mcp_test", "tools_mcp_list":
+		return lc.dispatchMCP(ctx, "cli", strings.TrimPrefix(method, "tools_"), raw)
+	case "tools_keep_copy":
+		var p protocol.ToolCopyChoice
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("invalid copy choice")
+		}
+		p.Owner = d.ownerSessionID()
+		res, err = d.call(withCallWait(ctx, 3*time.Minute), "tools.keep_copy", p)
+	case "tools_import_folder":
+		var p protocol.ToolFolderImport
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("invalid folder import")
+		}
+		p.Owner = d.ownerSessionID()
+		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.import_folder", p)
 	case "tools_read_file":
 		var p protocol.SkillTextRequest
 		if json.Unmarshal(raw, &p) != nil {

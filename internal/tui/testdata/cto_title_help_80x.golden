@@ -35,7 +35,8 @@
   [ ]                  select a linked neighbour
   /                    find a node; Enter selects the first match; Esc cancels
   + -, 0               zoom; fit the graph
-  o, t, space          orbit; show traffic; pause traffic
+  o, space             orbit; pause traffic
+  t                    open Tools filtered to the selected graph node
   enter                open the selected agent card
  Agent card
   enter                open Sessions filtered to this agent's project
@@ -54,17 +55,13 @@
   r                    refresh
 
  Tools
-  [ ]                  switch screens; left/right also switches, except on All
-                       tools
-  j/k, h/l             select an item; h/l also move between columns on All
-                       tools
-  enter                open the selected fix or plan; on All tools, details are
-                       below
-  x                    accept a difference as it is
-  a/u                  turn on or turn off for the selected machine or projects
-  m                    change the machine on By project
-  /                    search or filter
-  r                    rescan
+  j/k, up/down         move through the single tool list
+  enter                open actions: read, turn on/off, remove, compare, test or
+                       import
+  /                    combine text, project:NAME, node:NAME and machine:NAME
+                       filters
+  n                    add an MCP server or a skill from a folder
+  esc                  back, or clear the list filter
   c, C                 focus the Atlas box: enter opens the full Atlas, ctrl+]
                        returns, esc skips a tip; n new, u undo, w drive 30m, m
                        title, harness and model; pgup/pgdn scroll

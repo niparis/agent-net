@@ -1,5 +1,4 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Add homelab-mcp for homelab──────────────────────────────────────────────────╮
 │ + homelab-mcp for homelab on research                                        │
 │   writes these files, then reads each one back:                              │
@@ -17,8 +16,9 @@
 
 
 
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter fix  x accept  [ ] screen  ? help  q quit
+enter apply  d exact folders  esc cancel

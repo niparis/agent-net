@@ -1,6 +1,5 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy                    updated 14:05:00
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
-╭─Keep demo new────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─Keep demo from research ()───────────────────────────────────────────────────────────────────────────────────────────╮
 │ + 1 skill go into the agent-net store as new versions (the files stay where they are)                                │
 │ + demo on research only                                                                                              │
 │   the gateway makes the exact plan for each one when you press enter                                                 │
@@ -8,10 +7,11 @@
 │   added: added.txt                                                                                                   │
 │   removed: removed.txt                                                                                               │
 │   changed: SKILL.md                                                                                                  │
-│   a different copy in the way shows as a conflict in the result                                                      │
+│   other observed user copies are backed up before installing the chosen copy                                         │
 │                                                                                                                      │
 │ enter apply  d exact folders  esc cancel                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter fix  x accept  [ ] screen  ? help  q quit
+enter apply  d exact folders  esc cancel

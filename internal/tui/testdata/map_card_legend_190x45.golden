@@ -1,5 +1,6 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 nodes, 7 edges                                                                                                          updated 14:05
 tenebrae  mature  autonomy: wake
+Tools: 0 skills, 0 MCP servers · t open
 Research platform that turns papers, figures and strategies into a searchable library for the trading desk, with citations kept for every claim.
 ● 1 session, 1 busy
 governed by: wbg-architect (advisor)
@@ -7,7 +8,7 @@ governed by: wbg-architect (advisor)
 IN 2                                                          OUT 2
 all projects ──▶ depends                                      ──▶ cogforge depends ask
 homelab ──▶ deploys auto                                      ──▶ homelab depends ask
-Card 1-26/36  [ ] scroll ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Card 1-25/36  [ ] scroll ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Legend ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Edges
   ──▶ depends  consumer uses provider
@@ -33,7 +34,6 @@ Charter ────────────────────────
 accepts          New document sources, retrieval fixes, and schema changes that keep old ids working.
 refuses          Anything that writes to the trading accounts; one-off client reports.
 feature_requests Open an issue in the repo; the architect triages them every Monday.
-consumers        cogforge, shop, the nightly report job
 RECENT  3h ago maturity by trading-architect
 ╭─CTO────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                                                                                            │
@@ -42,4 +42,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                                                                                                                                            │
 │ c: open the CTO                                                                                                                                                                            │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit
+enter sessions  t tools  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit

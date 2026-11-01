@@ -75,7 +75,7 @@ func TestReworkBackfill(t *testing.T) {
 				t.Fatalf("calibration: %+v", cal)
 			}
 			level := cal.Callers[0].Levels[0]
-			if level.Tasks != 1 || level.Median != protocol.CalibrationFixWeight*float64(tc.fix)+protocol.CalibrationContinueWeight*float64(tc.cont) {
+			if level.Tasks != 2 || level.Median != (protocol.CalibrationFixWeight*float64(tc.fix)+protocol.CalibrationContinueWeight*float64(tc.cont))/2 {
 				t.Fatalf("level: %+v", level)
 			}
 			// Even a newly inserted unknown session is not visited after the marker.

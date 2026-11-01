@@ -62,9 +62,10 @@ func TestGraphTabKeys(t *testing.T) {
 		t.Fatal("fit failed")
 	}
 	m = keys(m, "t")
-	if !m.graphState.HideTalk {
-		t.Fatal("talk toggle failed")
+	if m.tab != toolsTab || m.tl.search != "node:"+chosen {
+		t.Fatal("t did not open node Tools")
 	}
+	m = keys(m, "2")
 	m = keys(m, "o")
 	if !m.graphState.Orbit {
 		t.Fatal("orbit failed")
@@ -199,7 +200,7 @@ func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
 		m.graphState.Paused = paused
 		lines := m.graphView(80, 16)
 		line := ansi.Strip(lines[len(lines)-1])
-		if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "t talk") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
+		if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "t tools") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
 			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
 		}
 		if strings.Contains(line, "space pause") || !strings.Contains(line, "arrows select") {
@@ -219,9 +220,9 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"arrows select", "+ - zoom", "0 fit", "o orbit", "t talk", "enter card", "? help"}, []string{"space pause"}},
-		{60, []string{"arrows select", "0 fit", "o orbit", "t talk", "? help"}, []string{"enter card"}},
-		{40, []string{"arrows select", "? help"}, []string{"t talk", "0 fit", "o orbit", "enter card"}},
+		{80, []string{"arrows select", "+ - zoom", "0 fit", "o orbit", "t tools", "enter card", "? help"}, []string{"space pause"}},
+		{60, []string{"arrows select", "0 fit", "o orbit", "t tools", "? help"}, []string{"enter card"}},
+		{40, []string{"arrows select", "? help"}, []string{"t tools", "0 fit", "o orbit", "enter card"}},
 	} {
 		line := graphHintLine(tc.width, false)
 		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? help") {

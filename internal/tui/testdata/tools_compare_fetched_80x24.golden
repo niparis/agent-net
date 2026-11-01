@@ -1,6 +1,7 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Compare, then keep one───────────────────────────────────────────────────────╮
+│   selected file: SKILL.md                                                    │
+│   no clear winner: read the comparison                                       │
 │   summary unavailable: compare the files below                               │
 │ a  keep the copy on Nicolas-MBP                                              │
 │      origin unknown; file modified 28 Oct 2026; editor unknown               │
@@ -8,17 +9,16 @@
 │ b  keep the copy on research                                                 │
 │      origin unknown; file modified 26 Oct 2026; editor unknown               │
 │      used by research                                                        │
-│   no clear winner: read the comparison                                       │
 │   2 files differ: SKILL.md changed, notes.md only on research                │
 │   the one you keep goes into agent-net and to every machine                  │
-│   selected file: SKILL.md                                                    │
 │                                                                              │
 │ a keep Nicolas-MBP  b keep research  n/p select file  v view diff            │
 │   d exact folders  esc cancel                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter fix  x accept  [ ] screen  ? help  q quit
+a keep Nicolas-MBP  b keep research  n/p select file  v view diff  esc cancel

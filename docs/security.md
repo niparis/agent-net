@@ -985,3 +985,16 @@ off. When enabled, predicted quality multiplies rotation weights by 0.5 to
 1.5 and cannot bypass capability minimums, protected providers or quota
 exclusions. Ratings from callers below score 45 count half; without a strong
 rating, a model cannot receive a prediction above the fitted average.
+
+### Tools owner actions
+
+The Tools TUI uses `tools_mcp_add`, `tools_mcp_remove`, `tools_mcp_test`,
+`tools_mcp_list`, `tools_import_folder` and `tools_keep_copy` through the
+operator gate. Bound agents and CLI processes inside agent sessions are refused.
+Folder imports and copy choices also carry a gateway-verified owner session.
+A folder import packs only the explicitly chosen folder, using the existing
+bounded skill archive and extraction checks. Reading a stored skill uses the
+same bounded text reader as an observed file. Neither operation runs scripts.
+A copy choice validates all named observations before any removal, imports the
+chosen copy first, and uses the host's hash-checked backup journal for the other
+native user copies. Tracked, package, plugin and system sources are refused.

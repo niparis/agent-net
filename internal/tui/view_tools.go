@@ -12,128 +12,52 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-// toolsView draws the Tools tab into h lines: the tab bar, the line with the
-// three screens, the screen, and the plan on top when one is open.
+// toolsView draws either the single list or one clean modal box. The list is
+// not drawn underneath a modal, so old panel borders cannot bleed through.
 func (m Model) toolsView(w, h int) []string {
-	out := []string{m.titleLine(w), m.toolsScreenLine(w)}
-	guidance := []string{
-		"Things that do not match across your machines. enter fixes the selected one, x accepts it as it is.",
-		"Every skill and MCP server, and where it is on. a turns on, u turns off for the selected machine or projects.",
-		"What a session in this project gets. m changes the machine.",
-	}
-	for _, line := range wrap(guidance[m.tl.screen], w) {
-		out = append(out, tsText.Render(line))
-	}
-	body := max(h-len(out), 3)
-	var lines []string
-	switch {
-	case !m.tl.loaded:
-		msg := "reading the tools..."
-		style := tsDim
-		if m.tl.err != "" {
-			msg, style = sanitize(m.tl.err), tsErr
-		} else if _, ok := m.toolsSource(); !ok {
-			msg, style = "this daemon cannot list tools", tsErr
-		}
-		lines = panel("Tools", []string{style.Render(msg)}, w, roleAccent)
-	case m.tl.screen == toolsDiffs:
-		lines = m.diffsView(w, body)
-	case m.tl.screen == toolsAll:
-		lines = m.allToolsView(w, body)
-	default:
-		lines = m.projectToolsView(w, body)
-	}
-	for len(lines) < body {
-		lines = append(lines, "")
-	}
-	out = append(out, lines[:body]...)
+	out := []string{m.titleLine(w)}
 	if m.tl.modal != nil {
-		out = overlayModal(out, m.modalBox(w, len(out)), w)
-	}
-	return out
-}
-
-func (m Model) toolsScreenLine(w int) string {
-	var parts []string
-	for i, n := range toolsScreenNames {
-		label := " " + n + " "
-		if i == m.tl.screen {
-			parts = append(parts, sSel.Render(label))
-		} else {
-			parts = append(parts, tsText.Render(label))
-		}
-	}
-	left := strings.Join(parts, " ") + tsText.Render("  [ ] switch screen")
-	if m.tl.screen != toolsAll {
-		left += tsText.Render(" · ← → also")
-	}
-	if m.tl.screen == toolsAll && (m.tl.search != "" || m.tl.searching) {
-		left += tsAcc.Render("   /" + sanitize(m.tl.search) + searchCursor(m.tl.searching))
-	} else if m.tl.screen == toolsProject && (m.tl.projFind != "" || m.tl.searching) {
-		left += tsAcc.Render("   /" + sanitize(m.tl.projFind) + searchCursor(m.tl.searching))
+		box := m.modalBox(w, max(h-1, 6))
+		out = append(out, box...)
 	} else {
-		left += tsFaint.Render("   / search")
+		out = append(out, m.toolListView(w, max(h-1, 3))...)
 	}
-	if !m.tl.loaded {
-		return clip(left, w)
+	for len(out) < h {
+		out = append(out, "")
 	}
-	skills, mcp := 0, 0
-	for _, r := range m.tl.cat.Rows {
-		if r.Kind == protocol.InventoryMCP {
-			mcp++
-		} else {
-			skills++
-		}
-	}
-	n := toolsdiff.Counts(m.tl.cat.Diffs, m.tl.accepted)
-	diffs := tsGood.Render("no differences")
-	if n > 0 {
-		diffs = tsWarn.Render(nounCount(n, "difference", "differences"))
-	}
-	right := tsDim.Render(nounCount(skills, "skill", "skills")+" · "+nounCount(mcp, "MCP server", "MCP servers")+" · ") + diffs +
-		tsDim.Render(" · "+nounCount(len(m.tl.cat.Machines), "machine", "machines"))
-	if m.tl.loading {
-		right += tsDim.Render(" · reading")
-	} else if !m.tl.at.IsZero() {
-		right += tsDim.Render(" · scanned " + ago(m.now().Sub(m.tl.at)) + " ago")
-	}
-	gap := w - ansi.StringWidth(left) - ansi.StringWidth(right)
-	if gap < 2 {
-		return clip(left, w)
-	}
-	return left + strings.Repeat(" ", gap) + right
+	return out[:h]
 }
 
-// toolsHints lists the keys used most on the Tools tab. [ and ] switch the
-// screens: the digits are the global tabs and c goes to the CTO box. The
-// full list is in the help overlay.
+func (m Model) toolsScreenLine(w int) string { return clip("Tools / "+sanitize(m.tl.search), w) }
+
 func (m Model) toolsHints() []hint {
-	switch m.tl.screen {
-	case toolsDiffs:
-		return []hint{{"j/k", "move", 1}, {"enter", "fix", 1}, {"x", "accept", 1}, {"[ ]", "screen", 2}, {"?", "help", 2}, {"q", "quit", 0}}
-	case toolsAll:
-		return []hint{{"j/k", "item", 1}, {"h/l", "machine", 1}, {"a/u", "on/off", 1}, {"/", "search", 2}, {"[ ]", "screen", 2}, {"?", "help", 2}, {"q", "quit", 0}}
+	if md := m.tl.modal; md != nil {
+		var out []hint
+		for i := 0; i+1 < len(modalKeys(md)); i += 2 {
+			out = append(out, hint{modalKeys(md)[i], modalKeys(md)[i+1], 0})
+		}
+		return out
 	}
-	return []hint{{"j/k", "project", 1}, {"m", "machine", 1}, {"/", "filter", 2}, {"[ ]", "screen", 2}, {"?", "help", 2}, {"q", "quit", 0}}
+	return []hint{{"j/k", "move", 0}, {"enter", "actions", 0}, {"/", "filter", 0}, {"n", "add", 0}, {"esc", "clear", 1}, {"?", "help", 1}, {"q", "quit", 0}}
 }
 
-// toolsHelpLine takes over the key line for a toast, a text box or a plan.
 func (m Model) toolsHelpLine(w int) (string, bool) {
 	if m.focus == focusCTO {
 		return "", false
 	}
 	if md := m.tl.modal; md != nil {
-		return "", false
+		var parts []string
+		foot := modalKeys(md)
+		for i := 0; i+1 < len(foot); i += 2 {
+			candidate := append(append([]string(nil), parts...), foot[i], foot[i+1])
+			if ansi.StringWidth(keyHints(candidate...)) <= w {
+				parts = candidate
+			}
+		}
+		return keyHints(parts...), true
 	}
 	if m.tl.searching {
-		what := m.tl.search
-		if m.tl.screen == toolsProject {
-			what = m.tl.projFind
-		}
-		return clip(tsAcc.Render("/"+sanitize(what)+"▏")+tsDim.Render("   enter keeps it, esc clears it"), w), true
-	}
-	if t := m.activeToast(); t != "" {
-		return clip(tsWarn.Render(sanitize(t)), w), true
+		return clip("/"+sanitize(m.tl.search)+"▏  enter keep · esc clear", w), true
 	}
 	return "", false
 }
@@ -650,6 +574,10 @@ func (m Model) modalBox(w, h int) []string {
 	bw := w
 	var body []string
 	switch {
+	case md.menu != nil:
+		body = toolMenuLines(md.menu)
+	case md.form != nil:
+		body = toolAddLines(md.form)
 	case md.picker != nil && !md.loading && !md.done:
 		body = pickerLines(md.picker, bw-4, max(h-8, 4))
 	default:
@@ -667,7 +595,20 @@ func (m Model) modalBox(w, h int) []string {
 			}
 		}
 		if len(md.compareFiles) > 0 {
-			body = append(body, tsDim.Render("  selected file: "+sanitize(md.compareFiles[md.compareIndex])))
+			decision := ""
+			var rest []string
+			for _, line := range body {
+				if strings.Contains(ansi.Strip(line), "no clear winner") {
+					decision = line
+				} else {
+					rest = append(rest, line)
+				}
+			}
+			body = []string{tsDim.Render("  selected file: " + sanitize(md.compareFiles[md.compareIndex]))}
+			if decision != "" {
+				body = append(body, decision)
+			}
+			body = append(body, rest...)
 		}
 		if md.loading && len(md.lines) == 0 {
 			body = append(body, tsDim.Render("planning..."))
@@ -691,11 +632,11 @@ func (m Model) modalBox(w, h int) []string {
 		window = append(window, tsFaint.Render(fmt.Sprintf("  lines %d-%d of %d · up/down scroll", start+1, end, len(body))))
 		body = window
 	}
-	body = append(body, "")
-	var foot []string
-	for i := 0; i+1 < len(md.foot); i += 2 {
-		foot = append(foot, md.foot[i], md.foot[i+1])
+	if toast := m.activeToast(); toast != "" {
+		body = append(body, tsWarn.Render(toast))
 	}
+	body = append(body, "")
+	foot := modalKeys(md)
 	body = append(body, wrapHints(foot, bw-4)...)
 	return panelWithBorder(md.title, body, bw, roleAccent, roleAccent)
 }
@@ -784,7 +725,11 @@ func pickerLines(p *projPicker, width, rows int) []string {
 			picked++
 		}
 	}
-	head := tsDim.Render(fmt.Sprintf("%d of %d projects shown · %d ticked", len(shown), len(p.all), picked))
+	noun := "projects"
+	if p.targets {
+		noun = "targets"
+	}
+	head := tsDim.Render(fmt.Sprintf("%d of %d %s shown · %d ticked", len(shown), len(p.all), noun, picked))
 	if p.remove {
 		head = tsDim.Render(fmt.Sprintf("tick the projects to remove it from · %d of %d shown · %d ticked", len(shown), len(p.all), picked))
 	}
@@ -841,4 +786,11 @@ func overlayModal(screen, box []string, w int) []string {
 		out[r] = strings.Repeat(" ", x) + l
 	}
 	return out
+}
+
+func modalKeys(md *toolsModal) []string {
+	if md.loading {
+		return []string{"esc", "cancel"}
+	}
+	return md.foot
 }

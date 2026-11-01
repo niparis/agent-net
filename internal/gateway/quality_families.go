@@ -8,22 +8,22 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// familyTask is one worker session with known counters: a task, not a run.
+// familyTask combines all sessions of a task.
 // Late defects reported after the hand-back add their severity points to the
 // task's headache.
 type familyTask struct {
 	caller, model, harness, difficulty string
-	fix, cont                          int
+	fix, cont, midrun                  int
 	lateDefects                        int
 	lateSeverity                       float64
 	defectMinutes                      float64
 }
 
 type familyCount struct {
-	tasks, fixes, continues int
-	lateDefects             int
-	lateSeverity            float64
-	defectMinutes           float64
+	tasks, fixes, continues, midrun int
+	lateDefects                     int
+	lateSeverity                    float64
+	defectMinutes                   float64
 }
 
 // qualityModelFamily folds a model name into the family the owner reads:
@@ -45,8 +45,11 @@ func qualityModelFamily(model string) string {
 }
 
 // qualityLevelName buckets the requested difficulty. Anything that is not a
-// known level, including an empty value, is the dim "unknown" table.
+// known level is the dim "unknown" table. An empty value defaults to normal.
 func qualityLevelName(difficulty string) string {
+	if difficulty == "" {
+		return "normal"
+	}
 	for _, level := range protocol.DifficultyLevels {
 		if difficulty == level {
 			return level
@@ -68,6 +71,7 @@ func addFamilyTask(counts map[string]*familyCount, family string, task familyTas
 	c.tasks++
 	c.fixes += task.fix
 	c.continues += task.cont
+	c.midrun += task.midrun
 	c.lateDefects += task.lateDefects
 	c.lateSeverity += task.lateSeverity
 	c.defectMinutes += task.defectMinutes
@@ -79,7 +83,7 @@ func familyRows(counts map[string]*familyCount) []protocol.QualityFamily {
 		if c.tasks == 0 {
 			continue
 		}
-		row := protocol.QualityFamily{Family: name, Tasks: c.tasks, Fixes: c.fixes, Continues: c.continues, LateDefects: c.lateDefects}
+		row := protocol.QualityFamily{Family: name, Tasks: c.tasks, Fixes: c.fixes, Continues: c.continues, Midrun: c.midrun, LateDefects: c.lateDefects}
 		row.FollowUps = (float64(c.fixes) + protocol.CalibrationContinueWeight*float64(c.continues)) / float64(c.tasks)
 		if c.lateDefects > 0 {
 			row.LateDefectSeverity = c.lateSeverity / float64(c.lateDefects)
@@ -154,56 +158,13 @@ func (s *Store) qualityDefects(cut int64) (map[string]defectSummary, error) {
 	return out, rows.Err()
 }
 
-// qualityFamilyTasks reads the per-session rework counters once. One task is
-// one worker session: the counters of its runs add up. Stopped runs and
-// sessions with an unknown counter say nothing and stay out. The caller list
+// qualityFamilyTasks sums runs and defects from every session in each task.
+// Tasks with only stopped runs stay out. The caller list
 // still includes a caller whose runs were all stopped, so the selector can
 // show every agent that started work.
 func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 	cut := s.now().Add(-calibrationWindow).Unix()
-	rows, err := s.db.Query(`SELECT session_id, caller, model, harness, difficulty, outcome, continue_count, fix_count, counters_known
-		FROM worker_runs WHERE ended_at >= ? ORDER BY ended_at, id`, cut)
-	if err != nil {
-		return nil, nil, err
-	}
-	type sessionTask struct {
-		task    familyTask
-		unknown bool
-	}
-	sessions := map[string]*sessionTask{}
-	order := []string{}
-	callers := []string{}
-	seenCaller := map[string]bool{}
-	for rows.Next() {
-		var sessionID, caller, model, harness, difficulty, outcome string
-		var cont, fix, known int
-		if err := rows.Scan(&sessionID, &caller, &model, &harness, &difficulty, &outcome, &cont, &fix, &known); err != nil {
-			rows.Close()
-			return nil, nil, err
-		}
-		if caller != "" && !seenCaller[caller] {
-			seenCaller[caller] = true
-			callers = append(callers, caller)
-		}
-		if outcome == protocol.OutcomeStopped || sessionID == "" {
-			continue
-		}
-		sess := sessions[sessionID]
-		if sess == nil {
-			// The first row holds what the task asked for. A follow-up run
-			// may have no caller, model or difficulty of its own.
-			sess = &sessionTask{task: familyTask{caller: caller, model: model, harness: harness, difficulty: difficulty}}
-			sessions[sessionID] = sess
-			order = append(order, sessionID)
-		}
-		sess.task.fix += fix
-		sess.task.cont += cont
-		if known == 0 {
-			sess.unknown = true
-		}
-	}
-	err = rows.Err()
-	rows.Close()
+	runs, callers, err := s.reworkTasks(cut)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -211,18 +172,20 @@ func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	tasks := make([]familyTask, 0, len(order))
-	for _, sessionID := range order {
-		sess := sessions[sessionID]
-		if sess.unknown || sess.task.caller == "" {
+	tasks := make([]familyTask, 0, len(runs))
+	for _, run := range runs {
+		if run.caller == "" {
 			continue
 		}
-		if d, ok := defects[sessionID]; ok {
-			sess.task.lateDefects = d.count
-			sess.task.lateSeverity = d.severity
-			sess.task.defectMinutes = d.minutes
+		task := familyTask{caller: run.caller, model: run.model, harness: run.harness, difficulty: run.difficulty,
+			fix: run.fixCount, cont: run.continueCount, midrun: run.midrun}
+		for session := range run.sessions {
+			d := defects[session]
+			task.lateDefects += d.count
+			task.lateSeverity += d.severity
+			task.defectMinutes += d.minutes
 		}
-		tasks = append(tasks, sess.task)
+		tasks = append(tasks, task)
 	}
 	return tasks, callers, nil
 }

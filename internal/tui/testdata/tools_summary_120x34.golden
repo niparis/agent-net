@@ -1,6 +1,7 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy                    updated 14:05:00
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Compare, then keep one───────────────────────────────────────────────────────────────────────────────────────────────╮
+│   selected file: SKILL.md                                                                                            │
+│   no clear winner: read the comparison                                                                               │
 │   summary by model: a runs tests first; b uses the old install command                                               │
 │ a  keep the copy on alpha                                                                                            │
 │      matches agent-net store v2; origin unknown; last change unknown                                                 │
@@ -8,13 +9,12 @@
 │ b  keep the copy on beta                                                                                             │
 │      origin unknown; last change unknown                                                                             │
 │      used by beta / claude                                                                                           │
-│   no clear winner: read the comparison                                                                               │
 │   1 file differ: SKILL.md changed                                                                                    │
 │   the one you keep goes into agent-net and to every machine                                                          │
-│   selected file: SKILL.md                                                                                            │
 │                                                                                                                      │
 │ a keep alpha  b keep beta  n/p select file  v view diff  d exact folders  esc cancel                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter fix  x accept  [ ] screen  ? help  q quit
+a keep alpha  b keep beta  n/p select file  v view diff  d exact folders  esc cancel

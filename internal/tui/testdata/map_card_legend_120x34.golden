@@ -1,5 +1,6 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 nodes, 7 edges                                    updated 14:05
 tenebrae  mature  autonomy: wake
+Tools: 0 skills, 0 MCP servers · t open
 Research platform that turns papers, figures and strategies into a searchable library for the trading desk, with
 citations kept for every claim.
 ● 1 session, 1 busy
@@ -8,7 +9,7 @@ governed by: wbg-architect (advisor)
 IN 2                                                         OUT 2
 all projects ──▶ depends                                     ──▶ cogforge depends ask
 homelab ──▶ deploys auto                                     ──▶ homelab depends ask
-Card 1-15/37  [ ] scroll ───────────────────────────────────────────────────────────────────────────────────────────────
+Card 1-14/37  [ ] scroll ───────────────────────────────────────────────────────────────────────────────────────────────
 Legend ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Edges
   ──▶ depends  consumer uses provider
@@ -23,7 +24,6 @@ Legend ────────────────────────�
   (deploy_rule and merge_authority do)
   Charter fields
   maturity         sets the default rules; the only charter field with an enforced effect
-  accepts          your agent reads it every turn; every neighbour reads the first 40 characters
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit
+enter sessions  t tools  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit

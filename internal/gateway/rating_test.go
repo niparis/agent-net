@@ -158,6 +158,68 @@ func TestRateRefusesForeignWorker(t *testing.T) {
 	}
 }
 
+// A follow-up run after the caller messaged the worker again has no caller and
+// no difficulty of its own. The session row may be gone after cleanup, so the
+// run that started the task is the one that says who owns the worker.
+func TestRateAndDefectAfterFollowUpRun(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	other := ratingCaller(t, s, node, "other", "gpt-6.1-sol")
+	wid := ratingWorker(t, s, node, caller, "p/m:high", "hard")
+	run := protocol.WorkerRun{NodeID: node, SessionID: wid, Harness: "opencode", Model: "p/m:high",
+		EndedAt: s.now().Unix(), Caller: caller, Difficulty: "hard", Outcome: protocol.OutcomeComplete}
+	if err := s.RecordWorkerRun(run); err != nil {
+		t.Fatal(err)
+	}
+	// The caller messaged the worker again: a second, partial run with no
+	// caller and no difficulty. Its model and harness are still its own.
+	run.Caller, run.Difficulty, run.Outcome = "", "", protocol.OutcomePartial
+	if err := s.RecordWorkerRun(run); err != nil {
+		t.Fatal(err)
+	}
+	var latestRun int64
+	if err := s.db.QueryRow(`SELECT MAX(id) FROM worker_runs WHERE session_id = ?`, wid).Scan(&latestRun); err != nil {
+		t.Fatal(err)
+	}
+	// Cleanup removed the worker session row; only the runs remain.
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, wid); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 4}, Rater: caller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Accepted || out.Model != "p/m" || out.Effort != "high" || out.Harness != "opencode" || out.Difficulty != "hard" {
+		t.Fatalf("rating after a follow-up run: %+v", out)
+	}
+
+	defect, err := s.AddRating(defectFrame(wid, caller, "the follow-up left the old path in place"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !defect.Accepted || defect.Difficulty != "hard" || defect.Model != "p/m" || defect.Effort != "high" {
+		t.Fatalf("defect after a follow-up run: %+v", defect)
+	}
+	var defectRun int64
+	var difficulty string
+	if err := s.db.QueryRow(`SELECT run_id, difficulty FROM worker_defects WHERE session_id = ?`, wid).Scan(&defectRun, &difficulty); err != nil {
+		t.Fatal(err)
+	}
+	if defectRun != latestRun || difficulty != "hard" {
+		t.Fatalf("defect stored with run %d difficulty %q, want run %d difficulty hard", defectRun, difficulty, latestRun)
+	}
+
+	foreign, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 5}, Rater: other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foreign.Accepted || !strings.Contains(foreign.Reason, "not started") {
+		t.Fatalf("foreign rating after a follow-up run was not refused: %+v", foreign)
+	}
+}
+
 func TestRateNoteIsCutAndSanitized(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("mac", "linux")

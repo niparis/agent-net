@@ -37,7 +37,7 @@ func (m Model) hints() []hint {
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"enter", "sessions", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"n", "new", 2}, {"U/u", "undo", 1}, {"!", "legend", 1}, {"?", "help", 0}, {"q", "quit", 0}}
+		return []hint{{"enter", "sessions", 1}, {"t", "tools", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"n", "new", 2}, {"U/u", "undo", 1}, {"!", "legend", 1}, {"?", "help", 0}, {"q", "quit", 0}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -209,7 +209,8 @@ func (m Model) helpContent(w int) []string {
 		{"[ ]", "select a linked neighbour"},
 		{"/", "find a node; Enter selects the first match; Esc cancels"},
 		{"+ -, 0", "zoom; fit the graph"},
-		{"o, t, space", "orbit; show traffic; pause traffic"},
+		{"o, space", "orbit; pause traffic"},
+		{"t", "open Tools filtered to the selected graph node"},
 		{"enter", "open the selected agent card"},
 		{"Agent card", ""},
 		{"enter", "open Sessions filtered to this agent's project"},
@@ -225,14 +226,11 @@ func (m Model) helpContent(w int) []string {
 		{"r", "refresh"},
 		{"", ""},
 		{"Tools", ""},
-		{"[ ]", "switch screens; left/right also switches, except on All tools"},
-		{"j/k, h/l", "select an item; h/l also move between columns on All tools"},
-		{"enter", "open the selected fix or plan; on All tools, details are below"},
-		{"x", "accept a difference as it is"},
-		{"a/u", "turn on or turn off for the selected machine or projects"},
-		{"m", "change the machine on By project"},
-		{"/", "search or filter"},
-		{"r", "rescan"},
+		{"j/k, up/down", "move through the single tool list"},
+		{"enter", "open actions: read, turn on/off, remove, compare, test or import"},
+		{"/", "combine text, project:NAME, node:NAME and machine:NAME filters"},
+		{"n", "add an MCP server or a skill from a folder"},
+		{"esc", "back, or clear the list filter"},
 		{"c, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", ctrl+] returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
@@ -261,16 +259,18 @@ func (m Model) helpContent(w int) []string {
 	}
 	if m.tab == toolsTab && !m.mapOn {
 		rows = [][2]string{
-			{"[ ]", "switch screens"},
-			{"left/right", "switch screens (on All tools, select a machine or projects)"},
-			{"j/k", "select a difference, tool or project"},
-			{"enter", "open the selected fix or plan"},
-			{"x", "accept a difference as it is"},
-			{".", "show accepted differences"},
-			{"a/u", "turn on or turn off for the selected machine or projects"},
-			{"m", "change the machine on By project"},
-			{"/", "search or filter"}, {"r", "rescan"},
+			{"j/k, up/down", "move through tools or menu actions"},
+			{"enter", "open actions, choose an action, or confirm a plan"},
+			{"/", "filter: text project:NAME node:NAME machine:NAME (combine them)"},
+			{"n", "add an MCP server or a skill from a folder"},
+			{"space", "tick a machine or project in the picker"},
+			{"j/k", "scroll a read view or comparison"},
+			{"a/b/...", "in compare only: keep the labelled copy"},
+			{"n/p, v", "in compare only: select a file, view its diff"},
+			{"tab", "in add form: next field; arrows choose machine"},
+			{"esc", "back or cancel; clear the list filter"},
 			{"c, C", "focus the " + m.ctoTitle() + " box"},
+			{"q", "quit from the list"},
 			{"esc or ?", "close help"},
 		}
 	}
