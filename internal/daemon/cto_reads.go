@@ -217,7 +217,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		for _, p := range items {
 			r := row{p.ID, p.Call.Tool, p.Call.Action, p.Status, ctoCut(p.Reason, 80)}
 			if q.ID == p.ID {
-				return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status}, nil
+				return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status, "note": p.Note}, nil
 			}
 			rows = append(rows, r)
 		}

@@ -115,6 +115,8 @@ func TestCTOReadCanary(t *testing.T) {
 		}
 		cases := []map[string]any{{}}
 		switch name {
+		case "proposals":
+			cases = append(cases, map[string]any{"id": "p_1"})
 		case "session":
 			cases = []map[string]any{{"session_id": id}}
 		case "settings":

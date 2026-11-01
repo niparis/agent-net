@@ -135,6 +135,14 @@ func TestCTOListCursorsAndParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	totals := map[string]int{"sessions": len(agents.Agents), "proposals": len(proposals), "feed": messages.Total, "messages": messages.Total, "graph": len(projects.Projects), "machines": len(nodes.Nodes), "projects": len(projects.Projects), "workers": len(protocol.WorkersOf(agents.Agents)), "tools": len(mcp.Servers), "settings": len(profiles)}
+	detail, err := w.d.runCTOToolRaw(ctx, "proposals", json.RawMessage(`{"id":"p_1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, _ := json.Marshal(detail)
+	if !strings.Contains(string(db), `"status":"open"`) || !strings.Contains(string(db), `"note"`) {
+		t.Fatalf("proposal detail missing status or outcome: %s", db)
+	}
 	for _, view := range []string{"sessions", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings"} {
 		t.Run(view, func(t *testing.T) {
 			args := map[string]any{"limit": 1}
