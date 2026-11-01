@@ -63,7 +63,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	reads := map[string]map[string]any{
 		"charter_guide": {}, "agents": {}, "nodes": {}, "projects": {},
 		"get": {"session_id": ids[0]}, "messages": {}, "message_status": {"message_id": msg.ID},
-		"worker_profile_list": {}, "mcp_list": {}, "cto_events": {},
+		"worker_profile_list": {}, "mcp_list": {}, "cto_events": {}, "graph": {},
 	}
 	_ = localID
 

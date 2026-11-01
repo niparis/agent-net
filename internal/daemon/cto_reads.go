@@ -14,6 +14,9 @@ var ctoReadSources = map[string]string{
 	"agents": "list", "nodes": "nodes", "projects": "projects", "get": "get",
 	"messages": "messages", "message_status": "message_status", "mcp_list": "mcp_list",
 	"worker_profile_list": protocol.OpWorkerProfiles,
+	// The owner made the whole graph public to agents. The CTO reads the same
+	// public view with its own caller identity.
+	"graph": "agent_graph",
 }
 
 func (d *Daemon) ctoReadConn() *localConn {

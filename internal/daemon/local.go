@@ -858,6 +858,13 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		return d.call(ctx, "query.projects", p)
 
+	case "agent_graph":
+		var p protocol.PublicGraphQuery
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_graph params")
+		}
+		return d.agentGraph(ctx, p)
+
 	case "events":
 		var p protocol.QueryEvents
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {

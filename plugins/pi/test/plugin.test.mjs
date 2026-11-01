@@ -377,6 +377,28 @@ await test("agent list and get show public charter fields", async () => {
   await p.fire("session_shutdown", {});
 });
 
+await test("agent_graph reads every charter and edge from the public graph", async () => {
+  const p = makePi();
+  extension(p.api);
+  replies.agent_graph = {
+    nodes: [{ name: "shop", kind: "component", maturity: "mature", line: "shop (component) [mature] Sells things" }],
+    edges: [{ from: "shop", to: "billing", kind: "depends", rule: "ask" }],
+    total: 1,
+    edge_total: 1,
+  };
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const text = (await p.tools.get("agent_graph").execute("id", { node: "shop" })).content[0].text;
+  for (const want of ["shop", "Sells things", "shop -> billing depends", "rule=ask", "Nodes 1 of 1"]) {
+    if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
+  }
+  const sent = requests.filter((r) => r.method === "agent_graph").pop();
+  if (!sent || sent.params.node !== "shop") throw new Error("agent_graph request: " + JSON.stringify(sent));
+  delete replies.agent_graph;
+  await p.fire("session_shutdown", {});
+});
+
 await test("agent_nodes lists machines with quotas", async () => {
   const p = makePi();
   extension(p.api);

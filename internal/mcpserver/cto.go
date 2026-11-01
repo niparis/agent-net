@@ -44,7 +44,15 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // descriptions are written from docs/reference.md: what each tool does, the
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
-	"charter_guide":         {desc: "Read charter guide.", fields: map[string]ctoField{}},
+	"charter_guide": {desc: "Read charter guide.", fields: map[string]ctoField{}},
+	"graph": {
+		desc: "Read the public graph: every node's charter and maturity, and every edge's kind, mode and request rule.",
+		fields: map[string]ctoField{
+			"node":   {typ: "string", desc: "One node's full charter and the edges that touch it; empty lists all."},
+			"offset": {typ: "integer", desc: "Page start; 0 is the first node."},
+			"limit":  {typ: "integer", desc: "Page size; default 20, at most 50."},
+		},
+	},
 	"onboarding_restart":    {desc: "Restart the getting-started steps.", fields: map[string]ctoField{}},
 	"notification_settings": {desc: "Propose notifications.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "Off if true."}}},
 	"charter_set": {

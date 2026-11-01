@@ -17,6 +17,7 @@ var wantCTOReads = map[string]string{
 	"agents": "list", "nodes": "nodes", "projects": "projects", "get": "get",
 	"messages": "messages", "message_status": "message_status", "mcp_list": "mcp_list",
 	"worker_profile_list": "worker_profiles", "cto_events": "own timeline", "charter_guide": "static guide",
+	"graph": "agent_graph",
 }
 
 func TestCTOReadParitySources(t *testing.T) {

@@ -209,6 +209,7 @@ are not in the shared MCP registry.
 | `agent_get` via `get` | `get` |
 | `agent_nodes` via `nodes` | `nodes` |
 | `agent_project_list` via `projects` | `projects` |
+| `agent_graph` via `agent_graph` | `graph` |
 | `agent_messages` via `messages` | `messages`, scoped to the CTO caller |
 | `agent_message_status` via `message_status` | `message_status`, scoped to the CTO caller; no owner relay |
 | `agent_mcp_list` via `mcp_list` | `mcp_list` |
@@ -223,7 +224,8 @@ keep them. `messages` ignores a supplied `session_id`; `message_status`
 requires the caller to be a sender or recipient.
 
 Removed CTO reads: `needs_you`, `held_list`, `inbox_list`, `outcome_inbox`,
-`session_text`, `usage`, `usage_top`, `counts`, `graph_get`, `graph_view`,
+`session_text`, `usage`, `usage_top`, `counts`, the old `graph_get` and
+`graph_view` names (the public `graph` view replaces them),
 `charter_history`, `edge_history`, `charter_suggestions`, `tools_list`,
 `tools_differences`, `tools_history`, `mcp_import_candidates`, `integrations_get`,
 `node_settings_get`, `playbook_get`, `project_display_get`, `protected_providers_get`,
@@ -1200,6 +1202,8 @@ On upgrade, the gateway uses stored origin URLs to move old folder-based project
 
 **Agent tools** (Claude Code, Pi, OpenCode): `agent_project_add` (`paths`, or `dir` with `scan`, plus `depth` and `dry_run`) and `agent_project_list` (optional `name`). There is no tool to remove a project: removing is only done with `agent-net projects remove`. An agent that calls the remove method gets an error that tells it to ask you. The guidance text tells agents to register projects only when you ask.
 
+**Agent graph read.** `agent_graph` (Claude Code, Pi and OpenCode) returns the graph that every agent may read: every node's charter fields with its maturity, and every edge with its kind, mode and request rule. `node` returns that one node's full charter and the edges that touch it. Without `node`, `offset` and `limit` page the list (default 20, at most 50), `total` counts the matching nodes, `next` is the next page offset, and `edge_total` counts the edges. Node settings, learned-change history with evidence, hidden items, locations, paths and sessions stay owner-only. The CTO's `graph` view uses this same read with the CTO caller.
+
 **Versions.** A gateway from before this feature answers `unknown frame type` to the new requests, and the daemon turns that into "the gateway is too old for project registration". A daemon from before this feature does not know the new methods, and the CLI says so. An older gateway lists projects without SOURCE, and the CLI shows those rows as `seen`.
 
 ## Findings and the automatic playbook
@@ -1471,6 +1475,8 @@ Today the gateway stores a graph of components and architects: a node keyed by p
 | `notes` | Rules nothing else covers that every agent working here must know | 1-2 lines | Deploys go through homelab; never deploy by hand. | A deploy runbook with credentials and machine paths. |
 
 **Reading it.** The daemon frame `graph.read` takes `{"project": "cogforge"}` and answers `{"graph": {"nodes": [...], "edges": [...]}}`. A project name returns that node, its charter, the nodes its edges name, and the edges that touch it; an empty name returns the whole graph. An eligible project with no stored charter is still an implicit node, with empty charter attributes. Owner-facing graph reads hide inactive empty implicit nodes after seven days; `graph_get {"all":true}` includes them. Nodes with a charter, an edge or stored owner history are retained. No session or peer identity is needed: this is a read, not a change.
+
+The owner made charters and edges public to every agent. `agent_graph` returns them all, with the owner-only parts of a node left out (see the agent graph read above). The CTO reads the same view through `graph`.
 
 **Maturity and its defaults.** A node's `maturity` level sets five controls. A node may override any one of them in a node setting; the owner sets it with `node_settings_set`, and the override is stored beside the charter.
 

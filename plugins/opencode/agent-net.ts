@@ -677,6 +677,28 @@ function formatNodes(r: any): string {
     .join("\n");
 }
 
+function formatGraph(r: any): string {
+  const nodes: any[] = r.nodes ?? [];
+  const edges: any[] = r.edges ?? [];
+  const lines: string[] = [];
+  for (const n of nodes) {
+    if (n.charter) {
+      const c = n.charter;
+      const attrs = ["purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes"]
+        .filter((key) => c[key])
+        .map((key) => `${key}: ${c[key]}`);
+      lines.push(`${n.name} (${n.kind || "node"}) ${attrs.join("; ")}`);
+    } else {
+      lines.push(n.line || `${n.name} (${n.kind || "node"})`);
+    }
+  }
+  for (const e of edges) {
+    lines.push(`${e.from} -> ${e.to} ${e.kind}${e.mode ? ` mode=${e.mode}` : ""} rule=${e.rule}`);
+  }
+  lines.push(`Nodes ${nodes.length} of ${r.total ?? nodes.length}; edges ${r.edge_total ?? edges.length}${r.next ? `; next offset ${r.next}` : ""}.`);
+  return lines.join("\n");
+}
+
 function formatAgentList(r: any): string {
   const agents: any[] = r.agents ?? [];
   return agents.length ? agents.map(formatAgent).join("\n") : "No agents found.";
@@ -899,6 +921,21 @@ const TOOLS: ToolDef[] = [
     required: ["session_id"],
     method: "get",
     format: formatAgentGet,
+  },
+  {
+    name: "agent_graph",
+    description:
+      "Read the component graph that every agent may see: every node's charter with its maturity, and every edge's kind, mode and request rule. " +
+      "With node, show that one node's full charter and the edges that touch it. Without node, offset and limit page the list; total counts the nodes and next is the next page offset. " +
+      "This is the public graph: node settings, learned-change history with evidence, hidden items, paths and sessions stay owner-only.",
+    properties: {
+      node: str("One node: its full charter and the edges that touch it"),
+      offset: { type: "integer", description: "Page start; 0 is the first node" },
+      limit: { type: "integer", description: "Page size; default 20, at most 50" },
+    },
+    required: [],
+    method: "agent_graph",
+    format: formatGraph,
   },
   {
     name: "agent_ask_owner",
