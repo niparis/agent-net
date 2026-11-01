@@ -118,11 +118,11 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		run := protocol.WorkerRun{NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
 			Outcome: protocol.WorkerOutcome(p.Reason, p.Status, p.Complete), StartedAt: p.StartedAt, EndedAt: end,
-			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, Caller: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches}
+			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches}
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err
 		}
-		if err := g.store.SetSessionWorkerRework(nc.id, p.SessionID, p.Continue, p.Fix, p.DifficultyAsked, p.DifficultyUsed); err != nil {
+		if err := g.store.SetSessionWorkerRework(nc.id, p.SessionID, p.Continue, p.Fix, p.DifficultyAsked, p.DifficultyUsed, p.AutoContinue); err != nil {
 			return nil, err
 		}
 		if p.Status == protocol.StatusDone && p.Model != "" {
@@ -668,7 +668,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches})
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, AutoContinue: p.AutoContinue})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {

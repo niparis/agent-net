@@ -49,7 +49,32 @@ const (
 	// QueueIDPrefix starts the ID of a queued start. agent_stop takes it like
 	// a worker session ID.
 	QueueIDPrefix = "q_"
+	// DefaultAutoContinues is how many times the daemon sends a worker its own
+	// continue before the caller is told that it stopped early.
+	DefaultAutoContinues = 2
 )
+
+// WorkerAutoContinueText is the message the daemon sends to a worker that stops
+// early, in place of the caller. It is from the reserved agent-net sender.
+const WorkerAutoContinueText = "[agent-net] continue: your task is not finished. " +
+	"Carry on until it is done, then hand back with complete: yes, or say exactly what blocks you."
+
+// WorkerAutoContinueNote says how many automatic continues were sent before a
+// worker stopped, for the caller's notice. Empty when there were none.
+func WorkerAutoContinueNote(n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return "1 automatic continue was sent."
+	default:
+		return fmt.Sprintf("%d automatic continues were sent.", n)
+	}
+}
+
+// AutoContinueEnabled tells whether a start asked for automatic continues. An
+// absent value (nil, from a caller that does not know the setting) means yes.
+func AutoContinueEnabled(p *bool) bool { return p == nil || *p }
 
 // IsQueueID tells whether id names a queued start and not a session.
 func IsQueueID(id string) bool { return strings.HasPrefix(id, QueueIDPrefix) }
@@ -186,6 +211,9 @@ type WorkerInfo struct {
 	// complete:no; Fix counts those after a hand-back with complete:yes.
 	Continue int `json:"continue,omitempty"`
 	Fix      int `json:"fix,omitempty"`
+	// AutoContinue counts the continues the daemon sent itself after the
+	// worker stopped early. They are not caller rework.
+	AutoContinue int `json:"auto_continue,omitempty"`
 	// DifficultyAsked is the difficulty the caller asked for (empty when it
 	// named none); DifficultyUsed is the level the chooser used.
 	DifficultyAsked string   `json:"difficulty_asked,omitempty"`
@@ -284,6 +312,9 @@ type (
 		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
 		DifficultyUsed  string   `json:"difficulty_used,omitempty"`
 		Touches         []string `json:"touches,omitempty"`
+		// AutoContinue turns the daemon's own continues for a worker that
+		// stopped early on or off (default on).
+		AutoContinue *bool `json:"auto_continue,omitempty"`
 	}
 	// WorkerLaunched answers "worker.launch". When the machine queued the
 	// start, Queued is true and SessionID is empty.
@@ -364,11 +395,15 @@ type (
 		StartedAt int64 `json:"started_at,omitempty"`
 		// Continue and Fix are the worker's counts after hand-backs, over its
 		// whole record. ContinueRun and FixRun are the part counted during
-		// this run. An older daemon sends none of them.
-		Continue    int `json:"continue,omitempty"`
-		Fix         int `json:"fix,omitempty"`
-		ContinueRun int `json:"continue_run,omitempty"`
-		FixRun      int `json:"fix_run,omitempty"`
+		// this run. AutoContinue and AutoContinueRun are the daemon's own
+		// continues, which cost the caller no rework. An older daemon sends
+		// none of them.
+		Continue        int `json:"continue,omitempty"`
+		Fix             int `json:"fix,omitempty"`
+		ContinueRun     int `json:"continue_run,omitempty"`
+		FixRun          int `json:"fix_run,omitempty"`
+		AutoContinue    int `json:"auto_continue,omitempty"`
+		AutoContinueRun int `json:"auto_continue_run,omitempty"`
 		// DifficultyAsked and DifficultyUsed are the difficulty the caller
 		// asked for and the level the chooser used.
 		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
@@ -572,6 +607,9 @@ type WorkerNotice struct {
 	// caller sent after a hand-back with complete:no and complete:yes.
 	Continue int
 	Fix      int
+	// AutoContinue is how many automatic continues the daemon sent before the
+	// worker stopped this time. They cost the caller no rework.
+	AutoContinue int
 	// Difficulty is the level the caller asked for, or the one the chooser
 	// used. It is empty from an older machine.
 	Difficulty string
@@ -611,6 +649,9 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	if n.Continue > 0 || n.Fix > 0 {
 		// A first run has no rework; the line appears once there is one.
 		b.WriteString(fmt.Sprintf("continue: %d, fix: %d\n", n.Continue, n.Fix))
+	}
+	if n.AutoContinue > 0 {
+		b.WriteString(fmt.Sprintf("auto-continues: %d\n", n.AutoContinue))
 	}
 	if n.Worktree != "" {
 		b.WriteString("worktree: " + n.Worktree + " (branch " + n.Branch + ")\n")
