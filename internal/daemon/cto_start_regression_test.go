@@ -156,6 +156,9 @@ func TestCTOClaudeFailedResumeFallback(t *testing.T) {
 			if _, err := n.d.st.db.Exec(`UPDATE cto SET claude_session_id=? WHERE id=1`, old); err != nil {
 				t.Fatal(err)
 			}
+			if _, err := n.d.st.db.Exec(`INSERT INTO cto_actions(session_id,harness,text,at) VALUES(?,'claude','preserved action',1)`, old); err != nil {
+				t.Fatal(err)
+			}
 			plan, err := n.d.ctoEnter(context.Background())
 			if err != nil {
 				t.Fatal(err)
@@ -166,6 +169,10 @@ func TestCTOClaudeFailedResumeFallback(t *testing.T) {
 			id, err := n.d.claudeCTOSession()
 			if err != nil || id == "" || id == old || id == "failed-copy" {
 				t.Fatalf("stored id %q: %v", id, err)
+			}
+			var actionID string
+			if err := n.d.st.db.QueryRow(`SELECT session_id FROM cto_actions WHERE text='preserved action'`).Scan(&actionID); err != nil || actionID != id {
+				t.Fatalf("action session %q, want %q: %v", actionID, id, err)
 			}
 			rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
 			if argValue(rec.Args, "--resume") != "" {
