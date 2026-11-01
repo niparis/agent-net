@@ -78,10 +78,25 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if err != nil {
 			return nil, err
 		}
-		if q, ok := m["queue_id"].(string); ok {
-			return map[string]any{"queued": map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}}, nil
+		out := map[string]any{}
+		// The model note says which model was chosen and why; keep it.
+		if note, ok := m["model_note"].(string); ok && note != "" {
+			out["model_note"] = note
 		}
-		return map[string]any{"worker": workerOutput(m)}, nil
+		if q, ok := m["queue_id"].(string); ok {
+			out["queued"] = map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}
+			return out, nil
+		}
+		// The daemon's answer does not repeat the request: fill the task and
+		// difficulty from it.
+		if m["task"] == nil {
+			m["task"] = in.Task
+		}
+		if m["difficulty"] == nil {
+			m["difficulty"] = firstNonEmptyString(in.Difficulty, "normal")
+		}
+		out["worker"] = workerOutput(m)
+		return out, nil
 	case "agent_worker_stop":
 		m, err := workerStopCall(ctx, run, str("worker"))
 		if err != nil {
@@ -249,3 +264,12 @@ func stringSlice(v any) []string {
 	return out
 }
 func boolValue(v any) bool { b, _ := v.(bool); return b }
+
+func firstNonEmptyString(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
