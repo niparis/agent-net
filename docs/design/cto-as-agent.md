@@ -1,5 +1,9 @@
 # The CTO as a standard agent: design
 
+## Fit with the primitives (decision 0036)
+
+This design builds on the CTO as the advisor for the whole network, its charter, edges and authority. Its proposed peer session and owner-approved proposals fit decision 0036. The current private CTO behavior remains as documented until this design is built.
+
 Status: accepted by the owner as option A on 2026-10-31. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.

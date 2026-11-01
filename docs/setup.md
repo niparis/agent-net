@@ -1,5 +1,7 @@
 # Setup
 
+An agent is a chartered identity; a session is its running process. The CTO is the advisor for the whole network. See [decision 0036](decisions/0036-primitives.md) for the terms used here.
+
 One machine runs the gateway. Every machine, including that one, runs one daemon. You add a machine by pasting one line. For a shorter version, see the [README](../README.md#quickstart). For files, variables and flags, see [reference.md](reference.md).
 
 ## 1. The first machine (the gateway), once

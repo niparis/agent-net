@@ -56,7 +56,7 @@ Authority gates actions such as a merge or push. Autonomy gates decisions about 
 
 Edge, autonomy and authority together answer who may create work for whom and what needs approval. Autonomy must allow waking before an automatic wake-up can happen. A daily cap limits automatic wake-ups per agent. Two wake-ups in a row with no new message, task or commit stop automatic wake-ups and tell the owner.
 
-An open conflict remains: the session-start design lets only the owner or the CTO start sessions, while autonomy means agent-net wakes agents itself. This needs a decision.
+An open conflict remains: the session-start design lets only the owner or the CTO start sessions, while autonomy means agent-net wakes agents itself. The owner must decide the boundary. Recommendation: allow agent-net to wake an existing agent by resuming its session when autonomy is `wake`; creating a new agent or a clone stays owner-only, with the CTO able to propose it for approval. See [the session-start design](../design/start-sessions.md#open-questions-for-the-owner).
 
 ## Idle checks
 

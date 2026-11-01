@@ -240,7 +240,7 @@ await test("the announce rule goes into the system prompt once per turn", async 
   extension(p.api);
   const base = "You are Pi.";
   const out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: base });
-  for (const want of ["start of every session", "before other work", "agent_announce", "whenever your task changes", "AGENTS.md"]) {
+  for (const want of ["start of every session", "before other work", "agent_announce", "whenever your announced task changes", "AGENTS.md"]) {
     if (!out.systemPrompt.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + out.systemPrompt);
   }
   if (!out.systemPrompt.startsWith(base)) throw new Error("the base prompt must stay: " + out.systemPrompt);
@@ -329,7 +329,7 @@ await test("agent_announce asks for a task and says so; no name or function is r
   extension(p.api);
   const tool = p.tools.get("agent_announce");
   if (!tool) throw new Error("agent_announce is not registered");
-  for (const want of ["REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"]) {
+  for (const want of ["REQUIRED", "start of every session", "whenever your announced task changes", "AGENTS.md"]) {
     if (!tool.description.includes(want)) throw new Error("description misses " + JSON.stringify(want) + ": " + tool.description);
   }
   // Only the owner renames a session (decision 0032).
@@ -344,7 +344,7 @@ await test("tool results end with the reminder until the session has announced",
   await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
   await until("hello", () => hellos.length === n + 1);
   const run = async (name, params = {}) => (await p.tools.get(name).execute("id", params)).content[0].text;
-  const reminder = "Reminder: call agent_announce with your current task.";
+  const reminder = "Reminder: call agent_announce with your current announced task.";
   for (const name of ["agent_list", "agent_nodes", "agent_messages"]) {
     const text = await run(name);
     if (text.split("\n").pop() !== reminder) throw new Error(name + " before announce: " + JSON.stringify(text));
