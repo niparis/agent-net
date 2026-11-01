@@ -40,13 +40,13 @@ These terms describe the agent network. They are the fixed terms used in code, d
 
 A task is a contract between a caller and a doer. It names the caller, doer, done condition and result. Requests between agents, worker briefs and Needs you items are tasks.
 
-agent-net knows the content only of work that crosses a boundary between agents or between an agent and the owner. Work inside one session stays in the harness and the repo. agent-net is not a task tracker.
+agent-net is the project manager, but it does not track task content. Each agent keeps its own tasks and objectives. agent-net knows the content only of work that crosses a boundary between agents or between an agent and the owner. Work inside one session stays in the harness and the repo.
 
 Work has three levels: the objective is the charter's purpose; the roadmap lives in the repo and the charter may point to it; tasks are the work to be done. agent-net reads none of this content from the repo. It knows boundary work only as described above.
 
 ## State and pending work
 
-Pending says whether an agent has work left. It comes from open tasks, such as a reply owed, a reply awaited or a worker not yet handed back, plus one declared bit at each turn end. No answer means unknown, never no.
+Pending says whether an agent has work left. It is derived from open work, such as a reply owed, a reply awaited, a worker not yet handed back or a non-empty announced task. An idle check can ask the agent whether it is done. No answer means unknown, never no.
 
 Agent state is activity from the session plus pending work for the agent. An idle agent with nothing pending is free. An idle agent with work pending is waiting or stalled.
 
@@ -57,6 +57,35 @@ Authority gates actions such as a merge or push. Autonomy gates decisions about 
 Edge, autonomy and authority together answer who may create work for whom and what needs approval. Autonomy must allow waking before an automatic wake-up can happen. A daily cap limits automatic wake-ups per agent. Two wake-ups in a row with no new message, task or commit stop automatic wake-ups and tell the owner.
 
 An open conflict remains: the session-start design lets only the owner or the CTO start sessions, while autonomy means agent-net wakes agents itself. This needs a decision.
+
+## Idle checks
+
+agent-net decides when a check is worth it. The agent answers whether its work is done. The CTO gets only cases that need judgment. The CTO is not a poller: polling costs money and context, and the CTO reads only public data.
+
+The idle check replaces a declared "more to do" bit at each turn end. Check an agent when it has been idle for about 20 minutes, has something open and has not been checked since its last activity. Open work means an unanswered request, a worker not handed back or a non-empty announced task.
+
+Send one short message asking the agent to answer with `agent_announce`: done, more or blocked on X. Then act on the answer:
+
+- **Done:** Do nothing until new activity.
+- **More:** Continue if autonomy allows. Otherwise, create a Needs you row: "X stopped with work left".
+- **Blocked on X:** Route it to X or the owner. Send it to the CTO only if it needs a decision.
+
+Send at most one check per idle period. Only new activity resets that limit. Two "more" answers with no progress between them stop the checks and tell the owner once. A daily cap applies per agent. A check wakes the agent's own model, which may use a protected provider. Keep checks rare to control that cost.
+
+## Build in slices
+
+Build each slice so it can be measured and removed:
+
+1. Show read-only "waiting on B" and "owes reply" in STATUS from conversations.
+2. Send B one reminder when B goes idle with an unanswered request.
+3. Add the idle check.
+4. Add autonomy with two values, off and wake, and a small daily cap.
+
+If slice 1 shows that agents rarely stall, stop there.
+
+## Minimal state
+
+There is no task table. Tasks are conversations, workers and Needs you items. Pending is derived, and autonomy is one charter field. The only new stored fact is whether the agent has been checked since its last activity.
 
 ## Exposure
 
