@@ -182,3 +182,14 @@ func TestQualityChooserEnabledAndBounded(t *testing.T) {
 		t.Fatalf("weighted rotation: %+v", counts)
 	}
 }
+
+func TestQualityUnratedProfileHasNoInventedScore(t *testing.T) {
+	s, _ := newTestStore(t)
+	if err := s.AddWorkerProfile(protocol.WorkerProfile{Name: "new", Harness: "codex", Model: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	got := s.QualityAnalysis()
+	if got.Status != "not enough ratings" || len(got.Profiles) != 1 || got.Profiles[0].Quality != 0 {
+		t.Fatalf("empty prediction: %+v", got)
+	}
+}

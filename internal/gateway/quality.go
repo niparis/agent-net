@@ -274,6 +274,9 @@ func (s *Store) refreshQuality() error {
 	return nil
 }
 func qualityPrediction(f qualityFit, strong map[string]int, model, harness, effort, difficulty string) float64 {
+	if len(f.Effects) == 0 {
+		return 0
+	}
 	v := f.predict(model, harness, effort, difficulty)
 	// Generous weak reviewers alone cannot promote a model above average.
 	if strong[qualityModel(model)] == 0 {

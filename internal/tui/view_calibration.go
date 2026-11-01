@@ -102,7 +102,7 @@ func qualityView(q protocol.QualityAnalysis, w int) []string {
 	if status == "" {
 		return nil
 	}
-	if q.Ratings == 0 && len(q.Effects) == 0 {
+	if q.Ratings == 0 && len(q.Effects) == 0 && len(q.Profiles) == 0 {
 		return panel("Quality analysis · read only", []string{sDim.Render("not enough ratings")}, w, roleAccent)
 	}
 	body := []string{sDim.Render(clip(status, w-4))}
@@ -118,7 +118,11 @@ func qualityView(q protocol.QualityAnalysis, w int) []string {
 			if e.Ratings < 5 {
 				weak = ", weak"
 			}
-			text := fmt.Sprintf("%s  %+.2f (%d%s) / %+.2f (%d)", e.Name, e.Quality, e.Ratings, weak, e.Rework, e.Runs)
+			rweak := ""
+			if e.Runs < 5 {
+				rweak = ", weak"
+			}
+			text := fmt.Sprintf("%s  %+.2f (%d%s) / %+.2f (%d%s)", e.Name, e.Quality, e.Ratings, weak, e.Rework, e.Runs, rweak)
 			for _, line := range wrap(text, w-4) {
 				body = append(body, line)
 			}
@@ -129,6 +133,12 @@ func qualityView(q protocol.QualityAnalysis, w int) []string {
 	}
 	body = append(body, sBold.Render("Predicted quality · normal difficulty"))
 	for _, p := range q.Profiles {
+		if q.Ratings == 0 {
+			for _, line := range wrap(p.Name+"  not enough ratings", w-4) {
+				body = append(body, line)
+			}
+			continue
+		}
 		note := ""
 		if p.Ratings < 5 {
 			note = ", weak"

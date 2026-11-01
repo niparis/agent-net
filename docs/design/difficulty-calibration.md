@@ -1,14 +1,16 @@
 # Difficulty calibration from rework
 
 Status: approved by the owner on 2026-11-01, with the recommended answers to the open questions. Built in the parts of section 10.
+
 Parts 1, 2, 4 and 5 are built. Part 3 steering is not built. Part 5 fits
 ratings and weighted rework in the gateway, with a penalty of 10 equivalent
 tasks per effect. Effort effects sum to zero within each model. The gateway
 rebuilds the cached analysis at startup and when ratings, runs, profiles or
 score overrides change, including run retention. No request or TUI redraw
 fits data. Quotas shows effects, counts and predictions at normal difficulty.
-Rotation weighting is owner controlled through `agent-net scores quality
-on|off`, defaults to off, and needs at least 5 ratings. Its multiplier is
+Rotation weighting is owner controlled through
+`agent-net scores quality on|off`, defaults to off, and needs at least 5
+ratings. Its multiplier is
 `1 + (prediction - average) / 4`, bounded to 0.5 through 1.5. Weak ratings
 count half; models without a strong rating cannot get a prediction above
 the fitted average. Residuals over 0.75 points with at least 5 ratings flag a
