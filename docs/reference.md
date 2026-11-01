@@ -292,7 +292,7 @@ Enter selects the first match and Esc cancels.
 Enter on a node opens its card: name, maturity, purpose and live sessions as
 dots. A `governed by` line names its architects when it has some. IN and OUT
 columns list edges with colored arrows and rules other than `normal`; `*`
-reads `all projects`. Every set charter field appears under aligned labels.
+reads `all projects`. The other set charter fields appear under aligned labels.
 Use `[` and `]` or ctrl+u/ctrl+d to scroll the charter. RECENT on the last row
 lists the newest changes. The card shows unviewed automatic changes as
 `● N learned`, with values, times and evidence excerpts. `U` selects the next

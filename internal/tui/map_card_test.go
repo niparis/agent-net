@@ -65,11 +65,11 @@ func TestMapCardGovernedByAppearsOnlyWithAnArchitect(t *testing.T) {
 	}
 }
 
-func TestMapCardCharterShowsAllNineFieldsWrappedAndNeverCut(t *testing.T) {
+func TestMapCardCharterShowsBlockFieldsWrappedAndNeverCut(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, richGraph()))
 	m.mp.selected = "tenebrae"
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes", "for the trading desk", "working.", "embeddings."} {
+	for _, want := range []string{"accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes", "New document sources", "one-off client reports.", "triages them every Monday.", "nightly report job", "public ids.", "tenebrae-library", "read only on laptops."} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}
@@ -97,6 +97,24 @@ func TestMapCardNeverWiderThanTheScreenAndKeepsRecentLast(t *testing.T) {
 	}
 }
 
+func TestMapCardShowsPurposeAndMaturityOnce(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "once", Kind: "component", Charter: protocol.Charter{
+		Purpose:  "Serves exactly one purpose.",
+		Maturity: "mature",
+		Accepts:  "Small fixes.",
+	}})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "once"
+	v := ansi.Strip(m.View())
+	if n := strings.Count(v, "Serves exactly one purpose."); n != 1 {
+		t.Fatalf("purpose shown %d times, want 1:\n%s", n, v)
+	}
+	if n := strings.Count(v, "mature"); n != 1 {
+		t.Fatalf("maturity shown %d times, want 1:\n%s", n, v)
+	}
+}
+
 func TestMapCardCharterScrolls(t *testing.T) {
 	m := openMap(t, mapModel(80, 24, richGraph()))
 	m.mp.selected = "tenebrae"
@@ -112,7 +130,7 @@ func TestMapCardCharterScrolls(t *testing.T) {
 	}
 	// Another node starts at the top again.
 	m.mp.selected = "cogforge"
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "purpose") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "accepts") {
 		t.Fatal(v)
 	}
 }
