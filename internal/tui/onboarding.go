@@ -107,7 +107,7 @@ func (m Model) onboardingStep() onboardingStep {
 		}
 	}
 	if !done("work-worker") {
-		return onboardingStep{"work-worker", "5/7 Work", `Ask an agent to use a worker, or press s to start one.`}
+		return onboardingStep{"work-worker", "5/7 Work", `Ask an agent to use a worker, or press n to start a new session.`}
 	}
 	if !done("work-protect") && !m.snap.ProtectedProviders.Configured {
 		relevant := m.quotaRelevantProviders()

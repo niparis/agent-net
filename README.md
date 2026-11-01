@@ -147,7 +147,7 @@ Neither agent asked you to copy anything. Pi answered from its own files, and Cl
 
 ## Workers
 
-From the TUI (`s`), the command line or an agent, you can start a new agent session in a project on any machine and give it a task. OpenCode first:
+From the command line or an agent, you can start a new agent session in a project on any machine and give it a task. The CTO can also propose a worker start for your approval. OpenCode first:
 
 ```sh
 agent-net start --project shop --harness opencode --model anthropic/claude-sonnet-5 --isolation worktree "add a /health route and a test"

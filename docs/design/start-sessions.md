@@ -46,8 +46,8 @@ starting one. This design adds that step and the last one, ending.
    it. This covers "I killed the last session of this project" when the owner
    wants the context back.
 3. **One new key, `n`, opens one form: "New session".** It works wherever a
-   project or a session is selected: Sessions and Graph. `s` stays
-   "start a worker".
+   project or a session is selected: Sessions and Graph. Agents start workers
+   through `agent_start`; the CTO proposes worker starts for owner approval.
 4. **The form has five lines**: Project, Harness, Model, Folder, First
    message. Everything is filled from the selection, so the usual start is
    `n` then Enter.
@@ -138,7 +138,8 @@ Challenges to the owner's framing:
 
 Situations left out:
 
-- **Start a worker.** `s` does this today. Its rules stay as they are.
+- **Start a worker.** Agents use `agent_start`; the CTO proposes a start for
+  owner approval. The owner TUI has no worker-start form.
 - **Start an architect session (`role: architect:<name>`, decision 0022).**
   Later, through the CTO, once architects are built.
 - **Fork a conversation** (Claude `--fork-session`, Pi `--fork`). Useful but
@@ -172,22 +173,18 @@ where a project's live sessions are listed. If the owner wants fewer places,
 keep the card handler and avoid duplicating it on the network view. The Graph key line is already full,
 so `n` appears there only in `?`.
 
-### Why `n` and not `s`
+### Why `n` starts an owner session
 
-`s` starts a worker today, and the key audit keeps `s` for that one meaning.
-A worker and an owner session have different lifetimes, owners and
-permissions. One key with a Kind switch inside the form would make the owner
-read the switch on every start, and a wrong switch either sandboxes the owner
-or leaves an unsandboxed agent running for days. Two keys, two forms that
-share their fields and code.
+`n` opens this form on Sessions and Graph. Workers have a different owner and
+lifetime, and are started by agents or through CTO proposals for owner
+approval. The owner TUI has no worker-start form.
 
-`n` is free on Sessions and Graph today (`internal/tui/model.go` uses it
-only inside help, and the key audit moves that to `N`). Inside the CTO box,
-`n` stays "new CTO conversation": the box has focus then, so they do not meet.
+Inside the CTO box, `n` stays "new CTO conversation": the box has focus then,
+so the two actions do not meet.
 
 ## The form
 
-The form takes the place of the session list, like the worker form today.
+The form takes the place of the session list.
 The CTO box and the machines box stay visible.
 
 ### Fields
@@ -202,15 +199,14 @@ The CTO box and the machines box stay visible.
 | First message | free text, optional | empty |
 
 The machine is not its own field. It comes from the project: a project on two
-machines is offered as `name@machine` (the worker form already does this). A
+machines is offered as `name@machine`. A
 path is a path on the selected row's machine, and `path@machine` names
 another one.
 
 The model is not the worker chooser. The difficulty chooser exists to keep
 workers off the owner's own plan. An owner session is that plan. So the
 default is whatever the harness would use if the owner typed `claude` in a
-terminal, and the list completes loose names the same way the worker form
-does (`opus`, `deepseek 4.1`).
+terminal, and the list completes loose names (`opus`, `deepseek 4.1`).
 
 No Name field. The automatic name (decisions 0024 and 0033) is the project
 name with a number, and the TASK column shows their announced tasks to tell two sessions apart once the
@@ -218,7 +214,7 @@ agent announces its task label. See open question 2.
 
 Keys inside the form: up and down or tab move between fields, tab also
 completes, left and right change Folder, Enter on the last field starts, Esc
-cancels. Enter on any earlier field moves on, as in the worker form.
+cancels. Enter on any earlier field moves on.
 
 ### Mockup: `n` on an idle session, 80 columns
 

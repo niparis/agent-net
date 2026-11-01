@@ -45,6 +45,20 @@ func TestQuotaProtectionSavesAndRefreshes(t *testing.T) {
 	}
 }
 
+func TestQuotaSShowsAndHidesUnsetSubscriptions(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = quotasTab
+
+	m = keys(m, "s")
+	if !m.quotaShowUnset {
+		t.Fatal("s did not show subscriptions that are not set up")
+	}
+	m = keys(m, "s")
+	if m.quotaShowUnset {
+		t.Fatal("second s did not hide subscriptions that are not set up")
+	}
+}
+
 func TestQuotaSelectionMapsProfileProvider(t *testing.T) {
 	m := newModel(80, 24)
 	m.tab = 2

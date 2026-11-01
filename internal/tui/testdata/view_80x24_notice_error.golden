@@ -21,4 +21,4 @@
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-! Worker not started: machine build-vm does not accept workers (it was set up w…
+! Not stopped: machine build-vm is offline
