@@ -45,6 +45,30 @@ func TestTrustPreservesConfigAndRemovesOnlyTrust(t *testing.T) {
 		t.Fatalf("removed: %s", raw)
 	}
 }
+func TestTrustedReadsTheOwnerChoice(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	project := filepath.Join(t.TempDir(), "project")
+	if trusted, err := Trusted(project); err != nil || trusted {
+		t.Fatalf("new config: trusted=%v err=%v", trusted, err)
+	}
+	if err := Set(project); err != nil {
+		t.Fatal(err)
+	}
+	if trusted, err := Trusted(project); err != nil || !trusted {
+		t.Fatalf("after Set: trusted=%v err=%v", trusted, err)
+	}
+	if trusted, err := Trusted(project + "-other"); err != nil || trusted {
+		t.Fatalf("another folder: trusted=%v err=%v", trusted, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(`{"projects":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Trusted(project); err == nil {
+		t.Fatal("a malformed config was read as trusted")
+	}
+}
+
 func TestConcurrentTrustWrites(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	base := t.TempDir()

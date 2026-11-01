@@ -79,6 +79,9 @@ func (m *Model) fail(text string) {
 // activeNotice returns the notice to show, or nil when there is none or its
 // hold and fade are over.
 func (m Model) activeNotice() *notice {
+	if a := m.sessionPending; a != nil {
+		return &notice{text: a.question() + confirmSuffix, at: m.now()}
+	}
 	if a := m.resumeConfirm; a != nil {
 		return &notice{text: fmt.Sprintf("Resume %s (claude, last active %s ago) and enter it?", sanitize(a.Profile.Name), ago(m.now().Sub(time.Unix(a.LastSeen, 0)))) + confirmSuffix, at: m.now()}
 	}

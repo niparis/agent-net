@@ -1,0 +1,24 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+New session ────────────────────────────────────────────────────────────────────
+  Project        ~/code/notes         on Mac
+                 not a git repository: no worktrees, no branch shown
+  Harness        pi
+  Model          default
+  Folder         ◂ project folder ▸   not a git repository: no worktrees
+> First message
+                 empty: start it and enter it
+                 text: start it in the background and send this
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter start  up/down field  left/right folder  esc cancel

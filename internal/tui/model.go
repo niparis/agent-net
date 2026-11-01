@@ -69,8 +69,9 @@ type Model struct {
 	onboardingToolsKnown                bool
 	src                                 Source
 	// loc and now are replaced in tests.
-	loc *time.Location
-	now func() time.Time
+	loc  *time.Location
+	now  func() time.Time
+	home string // the local home folder, used by ~ paths
 
 	width, height     int
 	tab               int
@@ -129,22 +130,23 @@ type Model struct {
 	quitting  bool
 
 	// Actions (forms.go).
-	mode         inputMode
-	notice       notice
-	compose      textinput.Model // the message prompt
-	composeTo    string          // session ID the message goes to
-	composeName  string
-	form         workerForm
-	sform        sessionForm
-	confirmID    string // session the stop question is about
-	confirmOwner bool   // owner session rather than a worker
-	confirmName  string
-	pol          policyForm
-	intg         integrationsForm // the setup integrations of the whole network
-	rename       textinput.Model  // the machine name prompt
-	renameNode   string           // node ID the name is for
-	renameShown  string           // the name shown when the prompt opened
-	renameSet    bool             // that name is the owner's, not the reported one
+	mode           inputMode
+	notice         notice
+	compose        textinput.Model // the message prompt
+	composeTo      string          // session ID the message goes to
+	composeName    string
+	form           workerForm
+	sform          sessionForm
+	sessionPending *sessionAsk // the create or trust question of a start
+	confirmID      string      // session the stop question is about
+	confirmOwner   bool        // owner session rather than a worker
+	confirmName    string
+	pol            policyForm
+	intg           integrationsForm // the setup integrations of the whole network
+	rename         textinput.Model  // the machine name prompt
+	renameNode     string           // node ID the name is for
+	renameShown    string           // the name shown when the prompt opened
+	renameSet      bool             // that name is the owner's, not the reported one
 
 	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
 	// execProcess replaces tea.Exec in tests.
@@ -179,7 +181,7 @@ func New(src Source) Model {
 	ti.Prompt = "/"
 	ti.CharLimit = 80
 	ti.Cursor.SetMode(cursor.CursorHide)
-	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
+	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
 	m.ctoGeneration = 1
@@ -942,6 +944,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.resumeOwnerSession(a)
 		}
 		return m, nil
+	}
+	if m.sessionPending != nil {
+		return m.sessionPendingKey(k)
 	}
 	if m.proposalConfirm {
 		return m.proposalConfirmKey(k)

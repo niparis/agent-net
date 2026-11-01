@@ -1404,7 +1404,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | esc | Leave the help or a message body, or clear the filter. |
 | `r` | Refresh now. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
-| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder, Branch and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. The project may be on another machine, shown as `name@machine`: the start is relayed through the gateway to the machine that holds it, and the form says `through ssh to <machine>` because Enter will use the existing remote enter plan. Folder is a switch: left and right change it between `project folder` and `new worktree`. A new worktree is made next to the project, in `<project>.worktrees/<branch>`, on a new branch. The Branch line appears only for a worktree; its default is `agent-net/<project>-<n>` with the lowest free number, and the note says the branch it starts from, such as `from main (HEAD)`. When a live session is busy in the project folder, the form opens on `new worktree` and says so in one line (`<project> is busy in the project folder`); left or right sets it back. The folder choice and the branch travel with a start on another machine. This version starts Claude Code, OpenCode, Codex and Pi sessions; another harness is refused. An empty First message starts the session and enters it (ctrl+] returns). For Claude, OpenCode and Pi, text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent.` then `Enter opens it.` here or `Enter opens it through ssh to <machine>.` there. Pi runs in agent-net's private tmux server. Codex always starts and enters, with the first message as its prompt; on another machine it opens through ssh and starts there, in your terminal. A failure shows the reason the harness gave. Esc cancels. An owner worktree belongs to you: agent-net keeps it until you remove it, and worker cleanup never removes it. |
+| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder, Branch and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. The project may be on another machine, shown as `name@machine`: the start is relayed through the gateway to the machine that holds it, and the form says `through ssh to <machine>` because Enter will use the existing remote enter plan. Folder is a switch: left and right change it between `project folder` and `new worktree`. A new worktree is made next to the project, in `<project>.worktrees/<branch>`, on a new branch. The Branch line appears only for a worktree; its default is `agent-net/<project>-<n>` with the lowest free number, and the note says the branch it starts from, such as `from main (HEAD)`. When a live session is busy in the project folder, the form opens on `new worktree` and says so in one line (`<project> is busy in the project folder`); left or right sets it back. The folder choice and the branch travel with a start on another machine. Project also takes a path, absolute or starting with `~`, and `path@machine` names another machine. An existing folder that agent-net does not know is registered when the start runs. A missing folder asks `Create <path> on <machine> and run git init?` with `enter: yes · esc: no`; only yes creates it and runs git init. A folder that is not a git repository still starts, with no worktree choice and no branch. A relative path, a path with a control character, a path outside your home folder and a link that leaves home are refused. A bare name that is no project goes under the folder that holds most registered projects on that machine, such as `~/code`. For Claude, an existing folder that Claude does not trust shows a note, and the start asks `Trust <path> for Claude Code?` with `enter: yes · esc: no`; only yes trusts it, while a folder agent-net created is trusted at once. This version starts Claude Code, OpenCode, Codex and Pi sessions; another harness is refused. An empty First message starts the session and enters it (ctrl+] returns). For Claude, OpenCode and Pi, text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent.` then `Enter opens it.` here or `Enter opens it through ssh to <machine>.` there. Pi runs in agent-net's private tmux server. Codex always starts and enters, with the first message as its prompt; on another machine it opens through ssh and starts there, in your terminal. A failure shows the reason the harness gave. Esc cancels. An owner worktree belongs to you: agent-net keeps it until you remove it, and worker cleanup never removes it. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
 | `x` | In Sessions, stop a worker as before, or stop a Claude background session, abort an OpenCode service turn, or kill a Pi window in the private agent-net tmux server. Owner sessions ask `Stop <name>? Conversation kept: Enter resumes it.` with `enter: yes · esc: no`. OpenCode stays in the service; an idle service session costs nothing. Interactive terminal sessions say `<name> runs in your terminal on <machine>: end it there`. A session on another machine is stopped by its own machine through the gateway. |
 | `t` | Cycle the selected node's wildcard request rule through `normal`, `ask` and `auto`. |
@@ -1660,9 +1660,32 @@ and first_message are optional. An empty model keeps the harness's own default.
 For Claude, OpenCode and Pi, an empty first message starts an idle background
 session. For Claude, a nonempty message is the owner's first prompt, passed
 after `--` to `claude --bg`. `folder` is the folder choice of the TUI form; it
-is carried unchanged to the machine that runs the start. Folder creation and
-its confirm and home-folder rule come in a later part, so this version does not
-create one.
+is carried unchanged to the machine that runs the start.
+
+`path` starts in a typed folder instead of a project name. The request is
+`{"path":"~/code/garden-planner","harness":"claude","create":true}`. The path
+must be absolute or start with `~`, must hold no control characters, and must
+stay inside the home folder of the user of the machine that runs the start,
+including through symbolic links. The machine cleans it with `filepath.Clean`
+and refuses it otherwise. When `path` is set, `project` is empty.
+
+A missing folder makes the start answer `status: "needs_create"` with the
+checked `path`; nothing is created. The same request with `"create": true`
+makes the folder with `os.MkdirAll` and runs `git init` in it, then registers
+it and starts there. It never runs a shell: `git` gets plain arguments. An
+existing folder that is a git working tree is registered before the start, and
+the session runs in its main tree. A folder that is not a git repository starts
+where it is and is not registered; the form says `not a git repository: no
+worktrees, no branch shown`. A start on another machine carries `path` and
+`create` through the gateway, and the receiving machine applies the same path,
+home, create and trust checks.
+
+For Claude, a typed path that already exists and is not trusted answers
+`status: "needs_trust"` with the checked `path` and starts nothing. The same
+request with `"trust_claude": true` records the folder in `~/.claude.json` (or
+`$CLAUDE_CONFIG_DIR/.claude.json`) and starts. A folder the start created on
+the owner's command is trusted at once. A start in a known project keeps its
+existing trust behavior.
 
 For OpenCode, the daemon reads the owner's running service address and password
 from `$XDG_STATE_HOME/opencode/service.json` (default:
@@ -1715,7 +1738,8 @@ For Claude, OpenCode and Pi, the answer is a started-session record with `id`, `
 (Unix seconds). Poll `session_start_get {"id":"<returned id>"}`. Once normal
 discovery and gateway registration finish, the record has `status: "started"`,
 `native_id` and `session_id` (and `job_id` for Claude). A failed launch or
-registration has `status: "failed"` and `error`. An unknown id is refused. Records live in
+registration has `status: "failed"` and `error`. A typed path can first answer
+`needs_create` or `needs_trust`; those are not polled. An unknown id is refused. Records live in
 memory for this daemon run. A daemon restart loses the records; the harness's
 session remains discoverable as a normal session. Cancelling the requesting
 socket does not cancel the background launch. For a start on another machine,

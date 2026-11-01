@@ -20,6 +20,16 @@ func (m Model) noticeLine(w int) (string, bool) {
 		return "", false
 	}
 	prefix := "  "
+	if a := m.sessionPending; a != nil {
+		var line string
+		switch a.kind {
+		case askCreateFolder:
+			line = confirmName("Create ", sanitize(a.display), " on "+sanitize(a.host)+" and run git init?", w)
+		case askTrustClaude:
+			line = confirmName("Trust ", sanitize(a.display), " for Claude Code?", w)
+		}
+		return m.noticeStyle(n).Render(line), true
+	}
 	if a := m.resumeConfirm; a != nil {
 		suffix := fmt.Sprintf(" (claude, last active %s ago) and enter it?", ago(m.now().Sub(time.Unix(a.LastSeen, 0)))) + confirmSuffix
 		name := sanitize(a.Profile.Name)

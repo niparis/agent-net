@@ -13,19 +13,62 @@ import (
 func Set(dir string) error    { return change(dir, true) }
 func Remove(dir string) error { return change(dir, false) }
 
+// configPath is the Claude Code configuration file that holds folder trust.
+func configPath() (dir, path string, err error) {
+	dir = os.Getenv("CLAUDE_CONFIG_DIR")
+	if dir == "" {
+		if dir, err = os.UserHomeDir(); err != nil {
+			return "", "", err
+		}
+	}
+	return dir, filepath.Join(dir, ".claude.json"), nil
+}
+
+// Trusted reports whether Claude Code already trusts dir. A folder that was
+// never trusted, or a machine with no Claude configuration, is false with no
+// error. A configuration that cannot be read or parsed is an error.
+func Trusted(dir string) (bool, error) {
+	if !filepath.IsAbs(dir) {
+		return false, errors.New("Claude trust path must be absolute")
+	}
+	_, path, err := configPath()
+	if err != nil {
+		return false, err
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var root struct {
+		Projects map[string]map[string]json.RawMessage `json:"projects"`
+	}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return false, fmt.Errorf("invalid Claude config")
+	}
+	entry, ok := root.Projects[dir]
+	if !ok {
+		return false, nil
+	}
+	var accepted bool
+	if v, ok := entry["hasTrustDialogAccepted"]; ok {
+		if err := json.Unmarshal(v, &accepted); err != nil {
+			return false, fmt.Errorf("invalid Claude project")
+		}
+	}
+	return accepted, nil
+}
+
 func change(dir string, set bool) error {
 	if !filepath.IsAbs(dir) {
 		return errors.New("Claude trust path must be absolute")
 	}
-	configDir := os.Getenv("CLAUDE_CONFIG_DIR")
-	if configDir == "" {
-		var err error
-		configDir, err = os.UserHomeDir()
-		if err != nil {
-			return err
-		}
+	configDir, path, err := configPath()
+	if err != nil {
+		return err
 	}
-	path := filepath.Join(configDir, ".claude.json")
 	if !set {
 		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 			return nil
