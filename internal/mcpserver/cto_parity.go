@@ -2,6 +2,11 @@ package mcpserver
 
 // These tools use the same parameter names as the owner operator methods.
 func init() {
+	defer func() {
+		for _, name := range []string{"agents", "nodes", "get", "message_status", "mcp_list", "worker_profile_list", "cto_events", "charter_guide"} {
+			delete(ctoTools, name)
+		}
+	}()
 	s := func(desc string) ctoField { return ctoField{typ: "string", desc: desc} }
 	b := func(desc string) ctoField { return ctoField{typ: "boolean", desc: desc} }
 	n := func(desc string) ctoField { return ctoField{typ: "integer", desc: desc} }

@@ -9,12 +9,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// These are daemon methods used by the matching ordinary MCP tools. A read
-// without a source fails closed. Do not use an owner/CLI connection here.
+// Each view is derived from ordinary dispatch with the CTO session, or from
+// the CTO's own proposal store and static guidance.
 var ctoReadSources = map[string]string{
-	"agents": "list", "nodes": "nodes", "get": "get",
-	"message_status": "message_status", "mcp_list": "mcp_list",
-	"worker_profile_list": protocol.OpWorkerProfiles,
+	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "projects,static guide", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
 }
 
 func (d *Daemon) ctoReadConn() *localConn {
@@ -320,22 +318,8 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		return map[string]any{"sessions_online": online, "machines_online": machineOnline, "workers_running": running, "proposals_open": open}, nil
 	case "session":
 		return d.ctoReadConn().dispatch(ctx, "get", raw)
-	case "charter_guide":
-		return protocol.CharterGuideText(), nil
-	case "cto_events":
-		var q struct {
-			Index int `json:"index"`
-		}
-		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
-			return nil, errors.New("bad CTO timeline arguments")
-		}
-		return d.ctoEvents(ctx, q.Index)
 	}
-	source, ok := ctoReadSources[name]
-	if !ok {
-		return nil, errors.New("CTO read has no ordinary-agent source")
-	}
-	return d.ctoReadConn().dispatch(ctx, source, raw)
+	return nil, errors.New("CTO read has no ordinary-agent source")
 }
 
 type ctoList[T any] struct {
@@ -372,11 +356,10 @@ func ctoCut(s string, n int) string {
 }
 
 type ctoSessionRow struct {
-	ID      string `json:"id"`
-	Name    string `json:"name,omitempty"`
-	Project string `json:"project,omitempty"`
-	Status  string `json:"status,omitempty"`
-	Task    string `json:"task,omitempty"`
+	ID     string `json:"id"`
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
+	Task   string `json:"task,omitempty"`
 }
 
 func ctoSessionPage(agents []protocol.AgentView, limit, offset int) ctoList[ctoSessionRow] {
@@ -386,11 +369,7 @@ func ctoSessionPage(agents []protocol.AgentView, limit, offset int) ctoList[ctoS
 		if name == "" {
 			name = a.Title
 		}
-		project := a.Repo.Project
-		if project == "" {
-			project = a.Profile.Project
-		}
-		rows = append(rows, ctoSessionRow{a.SessionID, ctoCut(name, 40), ctoCut(project, 40), ctoCut(a.Status, 20), ctoCut(a.Profile.Task, 60)})
+		rows = append(rows, ctoSessionRow{a.SessionID, ctoCut(name, 18), ctoCut(a.Status, 12), ctoCut(a.Profile.Task, 40)})
 	}
 	return ctoOffsetPage(rows, limit, offset)
 }

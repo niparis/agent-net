@@ -264,9 +264,6 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		tool := &mcp.Tool{Name: name, Description: strings.TrimSuffix(spec.desc, "."), InputSchema: ctoSchema(name, spec)}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if method == "charter_guide" {
-				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: protocol.CharterGuideText()}}}, nil
-			}
 			raw, err := call(ctx, method, req.Params.Arguments)
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
