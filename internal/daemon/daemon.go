@@ -185,6 +185,7 @@ func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
 	operatorReads    operatorReadCache
+	startedSessions  map[string]protocol.StartedSession // guarded by mu
 	notify           notificationTracker
 	notifySend       func()
 	toolsMu          sync.Mutex

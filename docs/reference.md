@@ -1479,3 +1479,34 @@ The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell
 cannot supply it, setup adds common Homebrew and local binary directories to the
 current PATH. A daemon upgrade adds PATH to older service files.
+
+### Starting an owner session through the local API
+
+`session_start` starts Claude in an existing project folder on this machine.
+This is the daemon part of the [accepted session-start design](design/start-sessions.md);
+the TUI form and starts on other machines are not built yet.
+
+The request is `{"project":"shop","harness":"claude","model":"haiku","first_message":"Inspect this project"}`.
+Project is a known local project name or its exact path. Ambiguous names are
+refused; use the path. Harness may be omitted and defaults to `claude`. Model
+and first_message are optional. An empty model keeps Claude's own default.
+An empty first message starts an idle background session. A nonempty message
+is the owner's first prompt, passed after `--` to `claude --bg`.
+
+The answer is a started-session record with `id`, `status: "starting"`,
+`node_id`, `harness`, `project`, `path`, `branch`, `model` and `started_at`
+(Unix seconds). Poll `session_start_get {"id":"<returned id>"}`. Once normal
+discovery and gateway registration finish, the record has `status: "started"`,
+`job_id`, `native_id` and `session_id`. A failed launch or registration has
+`status: "failed"` and `error`. An unknown id is refused. Records live in
+memory for this daemon run. A daemon restart loses the records; Claude's
+session remains discoverable as a normal session. Cancelling the requesting
+socket does not cancel the background launch.
+
+Both methods require the owner's CLI connection and refuse agent callers,
+including CLI commands inside agent, Codex app-server and OpenCode serve
+process trees. They are not agent tools. The session uses Claude's normal
+project settings and MCP servers, with no worker brief, hand-back, worktree,
+worker list entry or completion notice. Idle and age limits do not stop it.
+Worker cleanup and daemon shutdown leave it running. Enter it through the
+existing `session_enter` method once its session_id is known.
