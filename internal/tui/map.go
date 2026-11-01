@@ -97,7 +97,7 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "D":
 		return m.startProjectRename()
 	case "n":
-		if node, ok := m.mapNode(m.mp.selected); ok && node.Kind != "architect" {
+		if node, ok := m.mapNode(m.mp.selected); ok && node.Kind == "component" {
 			return m.startSessionFormFromNode()
 		}
 		return m, nil

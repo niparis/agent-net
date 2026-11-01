@@ -241,9 +241,21 @@ func Update(s State, action Action) (State, Effect) {
 				if event.ID <= a.LastID || event.Kind != "msg.stored" {
 					continue
 				}
-				senderOwner := event.SenderOwner || event.FromCTO
+				senderOwner := event.SenderOwner
+				fromCTO := event.FromCTO
+				voice := event.Voice || (fromCTO && event.OwnerApproved)
+				if senderOwner {
+					voice = true
+				}
 				if s.TalkReady && event.ID > a.CountAfter && !event.Time.IsZero() && !event.Time.Before(a.Now.Add(-7*24*time.Hour)) && !event.Time.After(a.Now) {
 					from, to := projects[event.From], projects[event.To]
+					if from == protocol.CTONodeName || to == protocol.CTONodeName {
+						ensureCTONode(s.Graph)
+					}
+					if fromCTO && from == "" {
+						from = protocol.CTONodeName
+						ensureCTONode(s.Graph)
+					}
 					if s.Activity != nil {
 						if from != "" && !senderOwner {
 							s.Activity[from]++
@@ -256,11 +268,11 @@ func Update(s State, action Action) (State, Effect) {
 						from = protocol.GraphVoiceOwner
 						ensureVoiceOwner(s.Graph)
 					}
-					if event.RecipientOwner && (event.Voice || event.FromCTO) {
+					if event.RecipientOwner && (voice || fromCTO) {
 						to = protocol.GraphVoiceOwner
 						ensureVoiceOwner(s.Graph)
 					}
-					if from != "" && to != "" && from != to && (event.Voice || senderOwner || (!senderOwner && !event.RecipientOwner)) {
+					if from != "" && to != "" && from != to && (voice || fromCTO || (!senderOwner && !event.RecipientOwner)) {
 						if from > to {
 							from, to = to, from
 						}
@@ -285,7 +297,7 @@ func Update(s State, action Action) (State, Effect) {
 						if !senderOwner && !event.RecipientOwner {
 							s.Talk[i].Count++
 						}
-						s.Talk[i].Voice = s.Talk[i].Voice || event.Voice || senderOwner
+						s.Talk[i].Voice = s.Talk[i].Voice || voice
 					}
 				}
 				if a.CountsOnly || s.Graph == nil {
@@ -296,12 +308,18 @@ func Update(s State, action Action) (State, Effect) {
 					at = a.Now
 				}
 				from, to := projects[event.From], projects[event.To]
-				voice := event.Voice || senderOwner
+				if from == protocol.CTONodeName || to == protocol.CTONodeName {
+					ensureCTONode(s.Graph)
+				}
+				if fromCTO && from == "" {
+					from = protocol.CTONodeName
+					ensureCTONode(s.Graph)
+				}
 				if senderOwner {
 					from = protocol.GraphVoiceOwner
 					ensureVoiceOwner(s.Graph)
 				}
-				if event.RecipientOwner && voice {
+				if event.RecipientOwner && (voice || fromCTO) {
 					to = protocol.GraphVoiceOwner
 					ensureVoiceOwner(s.Graph)
 				}
@@ -441,4 +459,27 @@ func ensureVoiceOwner(g *Graph) {
 		minY = math.Min(minY, p.Y)
 	}
 	g.Positions[protocol.GraphVoiceOwner] = Point{X: minX, Y: minY}
+}
+
+// ensureCTONode adds the fixed CTO node when the graph view came from an older
+// gateway, or from a test fixture, and a CTO message names it.
+func ensureCTONode(g *Graph) {
+	if g == nil {
+		return
+	}
+	for _, n := range g.Nodes {
+		if n.Name == protocol.CTONodeName {
+			return
+		}
+	}
+	if len(g.Positions) == 0 {
+		return
+	}
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for _, p := range g.Positions {
+		maxX = math.Max(maxX, p.X)
+		maxY = math.Max(maxY, p.Y)
+	}
+	g.Nodes = append(g.Nodes, protocol.Node{Name: protocol.CTONodeName, Kind: "cto"})
+	g.Positions[protocol.CTONodeName] = Point{X: maxX, Y: maxY}
 }

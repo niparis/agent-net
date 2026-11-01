@@ -720,7 +720,7 @@ func firstNames(rows []protocol.ProjectView, n int) []string {
 
 func (m Model) startProjectRename() (Model, tea.Cmd) {
 	node, ok := m.mapNode(m.mp.selected)
-	if !ok || node.Kind == "architect" {
+	if !ok || node.Kind != "component" {
 		m.fail("Pick a project to name.")
 		return m, nil
 	}

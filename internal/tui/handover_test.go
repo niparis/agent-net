@@ -160,11 +160,11 @@ func TestHandOverSendsExactlyThePreviewedText(t *testing.T) {
 	if m.handover != nil {
 		t.Fatal("enter did not close the preview")
 	}
-	if len(src.sent) != 1 {
-		t.Fatalf("sent %d messages, want 1", len(src.sent))
+	if src.sentTo != protocol.CTONodeName {
+		t.Fatalf("sent to %q, want the CTO session", src.sentTo)
 	}
-	if src.sent[0] != want {
-		t.Fatalf("sent text differs from the preview.\n--- sent ---\n%s\n--- preview ---\n%s", src.sent[0], want)
+	if src.sentBody != want {
+		t.Fatalf("sent text differs from the preview.\n--- sent ---\n%s\n--- preview ---\n%s", src.sentBody, want)
 	}
 }
 
@@ -181,8 +181,8 @@ func TestHandOverEscCancels(t *testing.T) {
 	if m.handover != nil {
 		t.Fatal("esc did not close the preview")
 	}
-	if len(src.sent) != 0 {
-		t.Fatalf("esc sent %d messages", len(src.sent))
+	if src.sentBody != "" {
+		t.Fatalf("esc sent a message")
 	}
 }
 

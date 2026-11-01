@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -32,11 +34,74 @@ func (f *fakeCTOSource) CTOSend(_ context.Context, text string) error {
 	f.sent = append(f.sent, text)
 	return nil
 }
-func (f *fakeCTOSource) CTOEvents(_ context.Context, index int) (protocol.CTOEvents, error) {
-	if page, ok := f.pages[index]; ok {
-		return page, nil
+func (f *fakeCTOSource) SessionText(_ context.Context, q protocol.TextQuery) (protocol.TextPage, error) {
+	if f.textFn != nil {
+		return f.textFn(q)
 	}
-	return f.events, nil
+	events := f.events
+	if q.Before != "" {
+		if index, err := strconv.Atoi(q.Before); err == nil {
+			if page, ok := f.pages[-index]; ok {
+				events = page
+			}
+		}
+	}
+	return ctoPageForTest(events), nil
+}
+
+// ctoPageForTest is the page the daemon would answer for these events.
+func ctoPageForTest(events protocol.CTOEvents) protocol.TextPage {
+	page := protocol.TextPage{Harness: "cto"}
+	type item struct {
+		at         int64
+		role, text string
+		tool       string
+	}
+	var items []item
+	for _, raw := range events.Messages {
+		var v struct {
+			Type    string          `json:"type"`
+			Text    string          `json:"text"`
+			Error   json.RawMessage `json:"error"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+			Time struct {
+				Created int64 `json:"created"`
+			} `json:"time"`
+		}
+		if json.Unmarshal(raw, &v) != nil {
+			continue
+		}
+		at := v.Time.Created * int64(time.Millisecond)
+		if len(v.Error) > 0 && string(v.Error) != "null" {
+			var e struct {
+				Message string `json:"message"`
+			}
+			json.Unmarshal(v.Error, &e)
+			items = append(items, item{at: at, role: protocol.RoleAssistant, text: e.Message, tool: "cto_error"})
+			continue
+		}
+		text := v.Text
+		for _, part := range v.Content {
+			if part.Type == "text" {
+				text += part.Text
+			}
+		}
+		items = append(items, item{at: at, role: v.Type, text: text})
+	}
+	for _, a := range events.Actions {
+		items = append(items, item{at: a.At, role: protocol.RoleAssistant, text: a.Text, tool: "cto_action"})
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].at < items[j].at })
+	for _, it := range items {
+		page.Entries = append(page.Entries, protocol.TextEntry{Time: it.at / int64(time.Millisecond), Role: it.role, Text: it.text, Tool: it.tool})
+	}
+	if events.Older > 0 {
+		page.Older = strconv.Itoa(events.Older)
+	}
+	return page
 }
 func (f *fakeCTOSource) CTOSettings(context.Context) (protocol.CTOSettings, error) {
 	if f.settings.Harness == "" && f.settings.Model == "" && f.settings.OpenCodeModel == "" && f.settings.ClaudeModel == "" && f.settings.Title == "" {
@@ -288,7 +353,7 @@ func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 	}
 }
 
-func TestCTOTitlePrefersModelInUse(t *testing.T) {
+func TestCTOTitleUsesConfiguredModel(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Model: "fake/m2"}}
 	m := New(src)
 	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
@@ -298,8 +363,8 @@ func TestCTOTitlePrefersModelInUse(t *testing.T) {
 	if m.cto.configuredModel != "fake/m1" {
 		t.Fatalf("saved model changed unexpectedly: %q", m.cto.configuredModel)
 	}
-	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO · opencode · fake/m2") {
-		t.Fatalf("title does not show model in use: %s", got)
+	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO · opencode · fake/m1") {
+		t.Fatalf("title does not show the configured model: %s", got)
 	}
 }
 
@@ -603,8 +668,8 @@ func TestCTOMarkdownGoldens(t *testing.T) {
 
 func TestCTOEnterEmptyPlanShowsError(t *testing.T) {
 	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
-	m, _ = m.onEnter(enterMsg{name: "CTO"})
-	if !m.notice.err || !strings.Contains(m.notice.text, "Cannot enter CTO") {
+	m, _ = m.onEnter(enterMsg{name: "CTO", cto: true})
+	if !m.notice.err || !strings.Contains(m.notice.text, "Cannot enter the CTO") {
 		t.Fatalf("empty CTO plan must show an error: %+v", m.notice)
 	}
 }

@@ -269,6 +269,7 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 			return nil, err
 		}
 		p.FromCTO = true
+		p.OwnerApproved = true
 		return d.send(ctx, p)
 	}
 	return d.executeCTOTool(ctx, name, raw)

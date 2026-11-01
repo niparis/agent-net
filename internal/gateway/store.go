@@ -1304,6 +1304,8 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		if err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key = 'cto_session'`).Scan(&registered); err != nil || registered != p.Sender {
 			return msg, false, reject("CTO sender requires the registered CTO session")
 		}
+	} else if p.OwnerApproved {
+		return msg, false, reject("owner approval requires the CTO session")
 	}
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown recipient session %q", p.Recipient)
@@ -1316,7 +1318,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	m := protocol.Message{
 		ID: protocol.NewID("m"), From: p.Sender, To: p.Recipient, Type: p.Type, Body: p.Body,
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
-		State: protocol.StateStored, FromCTO: p.FromCTO,
+		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO,
 	}
 	if p.ParentID != "" {
 		parent, ok, err := s.message(tx, "m.id = ?", p.ParentID)
@@ -1367,9 +1369,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		err := tx.QueryRow(`SELECT e.rule FROM graph_edges e
 			JOIN sessions src ON src.id=? JOIN sessions dst ON dst.id=?
 			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
-			WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
-			AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
-			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To).Scan(&rule)
+			WHERE e.target=CASE WHEN dst.harness='cto' THEN ? ELSE COALESCE(NULLIF(dst.repo_project,''),dp.project,'') END
+			AND e.target<>'' AND (e.source=CASE WHEN src.harness='cto' THEN ? ELSE COALESCE(NULLIF(src.repo_project,''),sp.project,'') END OR e.source='*')
+			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To, protocol.CTONodeName, protocol.CTONodeName).Scan(&rule)
 		if err != nil && err != sql.ErrNoRows {
 			return msg, false, err
 		}
@@ -1389,9 +1391,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		return msg, false, reject("conversation budget exceeded (%d messages)", protocol.MaxConvMessages)
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state, sender_cto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto, owner_approved) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved)
 	if err != nil {
 		return msg, false, err
 	}
