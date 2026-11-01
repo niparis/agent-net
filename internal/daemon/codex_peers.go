@@ -204,6 +204,16 @@ func codexSource(raw json.RawMessage) string {
 }
 
 func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
+	// Codex threads have no process of their own: they all run on the shared
+	// app server. Its environment is the one the daemon can read, so the flag
+	// there keeps its threads off the network.
+	if a.d.sessionIgnored(rpc.pid) {
+		a.mu.Lock()
+		a.threads = map[string]codexThread{}
+		a.mu.Unlock()
+		a.d.SetSessions("codex", nil)
+		return nil
+	}
 	var ids []string
 	cursor := ""
 	for page := 0; page < 20; page++ {

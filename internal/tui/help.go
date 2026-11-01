@@ -193,7 +193,7 @@ func (m Model) helpContent(w int) []string {
 		{"I", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},
 		{"", ""},
 		{"Quotas", ""},
-		{"up/down, j/k", "select a subscription"},
+		{"up/down, j/k", "select a subscription and scroll the panels"},
 		{"p", "protect or unprotect the selected subscription"},
 		{"s", "show or hide subscriptions that are not set up"},
 		{"left/right", "cycle the Quality panel agent: all agents, then each caller"},

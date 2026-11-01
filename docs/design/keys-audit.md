@@ -116,7 +116,7 @@ session. The extra actions apply only when such a row is selected.
 
 | Key | Action |
 |---|---|
-| `up`/`down`, `j`/`k` | Select a subscription. |
+| `up`/`down`, `j`/`k` | Select a subscription and scroll the panels. |
 | `p` | Protect or unprotect, then `y`/`n`. |
 | `s` | Show or hide subscriptions that are not set up. |
 | `left`/`right` | Cycle the Quality panel agent: all agents, then each caller. |

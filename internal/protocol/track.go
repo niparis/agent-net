@@ -12,7 +12,9 @@ import (
 // owner can write a note about a model. Both are shown where a model is
 // chosen: in agent_nodes and in the agent_start result.
 
-// TrackRecordDays is how long the gateway keeps worker runs and counts them.
+// TrackRecordDays is the read window of the track record and the calibration.
+// The gateway keeps worker runs for ever by default; this only limits which
+// runs are counted.
 const TrackRecordDays = 30
 
 // Outcomes of a worker run in the track record. Complete, partial, failed and

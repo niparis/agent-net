@@ -11,8 +11,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// calibrationWindow is how far back the calibration reads runs. The gateway
-// prunes worker_runs after TrackRecordDays, so the window is the same.
+// calibrationWindow is how far back the calibration reads runs. Worker runs
+// are kept for ever by default, so this is a read window and not a retention
+// period.
 const calibrationWindow = protocol.TrackRecordDays * 24 * time.Hour
 
 // Calibration reads the read-only difficulty table: per caller and
