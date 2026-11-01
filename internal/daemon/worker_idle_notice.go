@@ -100,7 +100,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	w.idleNoticePending = true
 	generation, report, base, pass, noticeKey := w.idleNoticeGeneration, w.idleNoticeReport, w.apiBase, w.apiPass, w.idleNoticeKey
 	d.wmu.Unlock()
-	go func() {
+	d.goBackground(func() {
 		if harness == "opencode" {
 			readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			report = openCodeLastAssistant(readCtx, base, pass, native)
@@ -137,7 +137,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		if err != nil {
 			d.Logf("worker %s: idle notice: %v", w.id, err)
 		}
-	}()
+	})
 }
 
 func openCodeLastAssistant(ctx context.Context, base, pass, native string) string {

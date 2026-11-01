@@ -206,6 +206,36 @@ func TestClaudeWorkerResumeWithNewSessionID(t *testing.T) {
 	}
 }
 
+// A hand-back ends the worker in its own goroutine. Stopping the daemon must
+// wait for that end: it kills the session and writes the state database, and a
+// test that returns first removes its temporary folders under it (the flake in
+// TestClaudeWorkerResumeWithNewSessionID).
+func TestDaemonStopWaitsForAWorkerThatHandedBack(t *testing.T) {
+	t.Setenv(envFakeIgnoreTerm, "1")
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.KillGrace = scaled(500 * time.Millisecond)
+	c := startClaudeNode(t, g, set)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "FAKE:handback now"})
+	c.waitNotice(t, 1)
+	eventually(t, "the hand-back end has started", func() bool {
+		w := c.d.workerBySession(res.SessionID)
+		if w == nil {
+			return false
+		}
+		c.d.wmu.Lock()
+		stopping := w.stopping
+		c.d.wmu.Unlock()
+		return stopping
+	})
+	c.d.Stop()
+	if n := c.d.workerCount(); n != 0 {
+		t.Fatalf("%d worker(s) were still ending when Stop returned", n)
+	}
+}
+
 // If `claude stop` does nothing, and the process ignores SIGTERM, the group is
 // still killed.
 func TestClaudeWorkerStopFallsBackToKillingTheGroup(t *testing.T) {

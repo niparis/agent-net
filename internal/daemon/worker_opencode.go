@@ -640,7 +640,7 @@ func (d *Daemon) reconcileOpenCode(ctx context.Context) {
 		d.mu.Unlock()
 		d.wmu.Unlock()
 		if next != nil {
-			go d.deliverQueuedWorkerTurn(*next)
+			d.goBackground(func() { d.deliverQueuedWorkerTurn(*next) })
 		}
 		if changed {
 			d.persistActivity(ls)
