@@ -1,13 +1,188 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// Propose validates and stores a call for the owner's decision.
+func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.RawMessage, reason string) (string, error) {
+	return d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
+}
+
+// ProposalToolResult is the brief response intended for the CTO tool call.
+func ProposalToolResult(id string) string {
+	return "proposal " + id + " is in Needs you; the owner decides. You will get a note with the outcome."
+}
+
+func (d *Daemon) networkProposals(ctx context.Context) ([]protocol.CTOProposal, error) {
+	value, _, err := d.proposalOperator(ctx, protocol.OpProposalList, protocol.CTOProposalAnswer{})
+	if err != nil {
+		return nil, err
+	}
+	out := value.([]protocol.CTOProposal)
+	data, err := d.call(ctx, "query.nodes", nil)
+	if err != nil {
+		return nil, err
+	}
+	var nodes protocol.NodesInfo
+	if err := json.Unmarshal(data, &nodes); err != nil {
+		return nil, err
+	}
+	for _, node := range nodes.Nodes {
+		if !node.Online || node.NodeID == d.cfg.NodeID {
+			continue
+		}
+		data, err := d.call(ctx, "query.proposal_list", protocol.CTOProposalAnswer{NodeID: node.NodeID})
+		if err != nil {
+			return nil, fmt.Errorf("list proposals on %s: %w", node.Hostname, err)
+		}
+		var items []protocol.CTOProposal
+		if err := json.Unmarshal(data, &items); err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].NodeID < out[j].NodeID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+func (d *Daemon) approveNetworkProposals(ctx context.Context) error {
+	items, err := d.networkProposals(ctx)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.Status != "open" {
+			continue
+		}
+		q := protocol.CTOProposalAnswer{NodeID: item.NodeID, ID: item.ID, Action: "a"}
+		if item.NodeID == d.cfg.NodeID {
+			_, _, err = d.proposalOperator(ctx, protocol.OpProposalAnswer, q)
+		} else {
+			_, err = d.call(ctx, "query.proposal_answer", q)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Daemon) proposalRunner() proposalRunner {
+	return proposalRunner{state: d.st, now: time.Now, validate: d.validateProposal, run: d.runProposal}
+}
+
+func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(call.Args, &fields); err != nil {
+		return err
+	}
+	for name, value := range fields {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return fmt.Errorf("%s must be a string", name)
+		}
+	}
+	switch {
+	case (call.Tool == "edge_set" && call.Action == "") || (call.Tool == "graph_change" && call.Action == "edge_set"):
+		var q protocol.Edge
+		decoder := json.NewDecoder(bytes.NewReader(call.Args))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&q); err != nil {
+			return fmt.Errorf("bad edge_set: %w", err)
+		}
+		_, err := d.call(ctx, "edge.validate", q)
+		return err
+	case call.Tool == "node_rename" && call.Action == "":
+		var q protocol.NodeRenameRequest
+		decoder := json.NewDecoder(bytes.NewReader(call.Args))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&q); err != nil {
+			return fmt.Errorf("bad node_rename: %w", err)
+		}
+		_, err := d.call(ctx, "node.rename.validate", q)
+		return err
+	case (call.Tool == "charter_set" && call.Action == "") || (call.Tool == "graph_change" && call.Action == "charter_set"):
+		var q protocol.CharterSetRequest
+		decoder := json.NewDecoder(bytes.NewReader(call.Args))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&q); err != nil {
+			return fmt.Errorf("bad charter_set: %w", err)
+		}
+		_, err := d.call(ctx, "charter.validate", q)
+		return err
+	default:
+		return errors.New("unsupported proposal tool or action")
+	}
+}
+
+func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor string) (json.RawMessage, error) {
+	switch {
+	case (call.Tool == "edge_set" && call.Action == "") || (call.Tool == "graph_change" && call.Action == "edge_set"):
+		var args map[string]any
+		if err := json.Unmarshal(call.Args, &args); err != nil {
+			return nil, err
+		}
+		args["by"] = actor
+		return d.call(ctx, "edge.set", args)
+	case call.Tool == "node_rename" && call.Action == "":
+		var args map[string]any
+		if err := json.Unmarshal(call.Args, &args); err != nil {
+			return nil, err
+		}
+		args["by"] = actor
+		return d.call(ctx, "node.rename", args)
+	case (call.Tool == "charter_set" && call.Action == "") || (call.Tool == "graph_change" && call.Action == "charter_set"):
+		var args map[string]any
+		if err := json.Unmarshal(call.Args, &args); err != nil {
+			return nil, err
+		}
+		args["by"] = actor
+		return d.call(ctx, "charter.set", args)
+	default:
+		return nil, errors.New("unsupported proposal tool or action")
+	}
+}
+
+func (d *Daemon) proposalOperator(ctx context.Context, method string, q protocol.CTOProposalAnswer) (any, bool, error) {
+	p := d.proposalRunner()
+	if method == protocol.OpProposalAnswer {
+		switch q.Action {
+		case "a":
+			return nil, true, p.decide(ctx, q.ID, true)
+		case "x":
+			return nil, true, p.decide(ctx, q.ID, false)
+		case "A":
+			return nil, true, p.approveAll(ctx)
+		default:
+			return nil, true, errors.New("invalid proposal action")
+		}
+	}
+	items, err := p.list()
+	if err != nil {
+		return nil, true, err
+	}
+	out := make([]protocol.CTOProposal, 0, len(items))
+	for _, v := range items {
+		out = append(out, protocol.CTOProposal{ID: v.ID, NodeID: d.cfg.NodeID, Tool: v.Call.Tool, Action: v.Call.Action, Args: v.Call.Args, Reason: v.Reason, CreatedAt: v.CreatedAt, Status: v.Status, Note: v.Note, Result: v.Result})
+	}
+	return out, true, nil
+}
 
 // proposalCall is the complete call the owner is asked to approve. The
 // validator and runner must interpret its arguments in the same way.
@@ -46,7 +221,9 @@ func (p proposalRunner) propose(ctx context.Context, call proposalCall, reason s
 		return "", errors.New("proposal requires a supported tool and runner")
 	}
 	var args map[string]any
-	if json.Unmarshal(call.Args, &args) != nil || args == nil {
+	decoder := json.NewDecoder(bytes.NewReader(call.Args))
+	decoder.UseNumber()
+	if !json.Valid(call.Args) || decoder.Decode(&args) != nil || args == nil {
 		return "", errors.New("proposal arguments must be a JSON object")
 	}
 	canonical, err := json.Marshal(args)
@@ -95,6 +272,66 @@ func (p proposalRunner) propose(ctx context.Context, call proposalCall, reason s
 	return fmt.Sprintf("p_%d", id), nil
 }
 
+// deliverNote passes only the stored one-line note to the harness. Results are
+// kept separately and are never selected by this delivery path.
+func (p proposalRunner) deliverNote(ctx context.Context, send func(context.Context, string) error) error {
+	p.state.proposalDeliveryMu.Lock()
+	defer p.state.proposalDeliveryMu.Unlock()
+	if err := p.expire(); err != nil {
+		return err
+	}
+	var id int64
+	var note string
+	err := p.state.db.QueryRowContext(ctx, `SELECT id,note FROM cto_proposals WHERE note!='' AND note_delivered=0 ORDER BY id LIMIT 1`).Scan(&id, &note)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err = send(ctx, note); err != nil {
+		return err
+	}
+	_, err = p.state.db.ExecContext(ctx, `UPDATE cto_proposals SET note_delivered=1 WHERE id=?`, id)
+	return err
+}
+
+func (d *Daemon) proposalNotesLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := d.deliverProposalNote(ctx); err != nil {
+				d.Logf("proposal outcome delivery: %v", err)
+			}
+		}
+	}
+}
+
+func (d *Daemon) deliverProposalNote(ctx context.Context) error {
+	d.cto.mu.Lock()
+	base, password, session := d.cto.base, d.cto.password, d.cto.session
+	ref := d.claudeCTO.ref
+	d.cto.mu.Unlock()
+	idle := false
+	if ref != "" {
+		dir := filepath.Join(d.cfg.StateDir, "cto", "claude")
+		if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref); ok {
+			idle = sf.Status == "idle"
+		}
+	} else if base != "" && session != "" {
+		busy, known := openCodeSessionBusy(ctx, base, password, session)
+		idle = known && !busy
+	}
+	if !idle {
+		return d.proposalRunner().expire()
+	}
+	return d.proposalRunner().deliverNote(ctx, func(ctx context.Context, note string) error { _, err := d.ctoSend(ctx, note); return err })
+}
+
 func (p proposalRunner) list() ([]proposal, error) {
 	if err := p.expire(); err != nil {
 		return nil, err
@@ -141,10 +378,12 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 		return errors.New("proposal is not open")
 	}
 	status := "declined"
+	initialNote := id + " declined"
 	if approve {
 		status = "running"
+		initialNote = ""
 	}
-	res, err := p.state.db.ExecContext(ctx, `UPDATE cto_proposals SET status=? WHERE id=? AND status='open'`, status, strings.TrimPrefix(id, "p_"))
+	res, err := p.state.db.ExecContext(ctx, `UPDATE cto_proposals SET status=?,note=? WHERE id=? AND status='open'`, status, initialNote, strings.TrimPrefix(id, "p_"))
 	if err != nil {
 		return err
 	}
@@ -155,6 +394,9 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 	if n != 1 {
 		return errors.New("proposal is not open")
 	}
+	if !approve {
+		return nil
+	}
 	note := id + " declined"
 	var result json.RawMessage
 	if approve {
@@ -164,7 +406,7 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 		}
 		if err != nil {
 			status = "failed"
-			message := []rune(strings.ReplaceAll(err.Error(), "\n", " "))
+			message := []rune(cleanLine(err.Error()))
 			if len(message) > 200 {
 				message = message[:200]
 			}

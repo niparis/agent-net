@@ -1,11 +1,13 @@
 package protocol
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The operator interface: the one set of methods a person uses to look at the
@@ -19,6 +21,8 @@ import (
 
 // Operator method names.
 const (
+	OpProposalList   = "proposal_list"
+	OpProposalAnswer = "proposal_answer"
 	// Data. These only read.
 	OpInfo             = "info"              // answers OperatorInfo
 	OpNodes            = "nodes"             // answers NodesInfo
@@ -113,7 +117,7 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers, OpToolsDifferences,
+var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
@@ -488,6 +492,26 @@ func CleanNodeName(s string) (string, error) {
 		}
 	}
 	return s, nil
+}
+
+// CTOProposal is an owner-visible stored proposal and its outcome.
+type CTOProposal struct {
+	ID        string          `json:"id"`
+	NodeID    string          `json:"node_id"`
+	Tool      string          `json:"tool"`
+	Action    string          `json:"action"`
+	Args      json.RawMessage `json:"args"`
+	Reason    string          `json:"reason"`
+	CreatedAt time.Time       `json:"created_at"`
+	Status    string          `json:"status"`
+	Note      string          `json:"note,omitempty"`
+	Result    json.RawMessage `json:"result,omitempty"`
+}
+
+type CTOProposalAnswer struct {
+	NodeID string `json:"node_id"`
+	ID     string `json:"proposal_id"`
+	Action string `json:"action"`
 }
 
 // HeldAnswer is an owner decision for a request awaiting approval.

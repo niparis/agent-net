@@ -111,7 +111,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {
 				d.shownHost.Store(p.Hostname)
 			}
-		case "node.usage_top", "node.session_text", "node.session_enter", "node.message_body":
+		case "node.usage_top", "node.session_text", "node.session_enter", "node.message_body", "node.proposal_list", "node.proposal_answer":
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

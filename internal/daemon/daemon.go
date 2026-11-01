@@ -398,6 +398,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.queueLoop(ctx) }()
 	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.proposalNotesLoop(ctx) }()
+	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
 	if d.cfg.InventoryHome != "" {
 		d.wg.Add(1)

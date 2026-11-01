@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -79,6 +81,9 @@ func TestProposalLifecycle(t *testing.T) {
 	if items[len(items)-1].Status != "expired" || len(calls) != 1 {
 		t.Fatalf("expiry: %+v calls %v", items, calls)
 	}
+	if items[len(items)-1].Note != items[len(items)-1].ID+" expired" || items[len(items)-2].Note != items[len(items)-2].ID+" declined" {
+		t.Fatalf("outcomes: %+v", items)
+	}
 }
 
 func TestProposalLimitAndApproveAllStops(t *testing.T) {
@@ -113,5 +118,96 @@ func TestProposalLimitAndApproveAllStops(t *testing.T) {
 	}
 	if strings.Join(calls, ",") != "tool-0,fail" {
 		t.Fatalf("calls: %v", calls)
+	}
+}
+
+func TestProposalOutcomeDelivery(t *testing.T) {
+	s, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	p := proposalRunner{state: s, now: time.Now, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) {
+		return json.RawMessage(`{"secret":"result-marker"}`), nil
+	}}
+	id, err := p.propose(context.Background(), proposalCall{Tool: "one", Args: json.RawMessage(`{}`)}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.decide(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	var notes []string
+	deliver := func(_ context.Context, note string) error { notes = append(notes, note); return nil }
+	if err = p.deliverNote(context.Background(), deliver); err != nil {
+		t.Fatal(err)
+	}
+	if err = p.deliverNote(context.Background(), deliver); err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || notes[0] != id+" approved and applied" || strings.Contains(notes[0], "result-marker") {
+		t.Fatalf("notes: %q", notes)
+	}
+}
+
+func TestProposalConcurrentOutcomeDelivery(t *testing.T) {
+	s, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	p := proposalRunner{state: s, now: time.Now, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) { return nil, nil }}
+	id, err := p.propose(context.Background(), proposalCall{Tool: "one", Args: json.RawMessage(`{}`)}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.decide(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	calls := 0
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := p.deliverNote(context.Background(), func(context.Context, string) error { mu.Lock(); calls++; mu.Unlock(); return nil }); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if calls != 1 {
+		t.Fatalf("sent %d times", calls)
+	}
+}
+
+func TestProposalWaitsForCTOIdle(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	f.setActive(t, true)
+	p := proposalRunner{state: f.n.d.st, now: time.Now, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) {
+		return json.RawMessage(`{"data":"result-marker"}`), nil
+	}}
+	id, err := p.propose(context.Background(), proposalCall{Tool: "one", Args: json.RawMessage(`{}`)}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.decide(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.n.d.deliverProposalNote(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	before := readFake(t, filepath.Join(f.n.cfg.StateDir, "cto"))
+	if strings.Contains(strings.Join(before.Turns, " "), id) {
+		t.Fatalf("sent while busy: %v", before.Turns)
+	}
+	f.setActive(t, false)
+	if err = f.n.d.deliverProposalNote(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	after := readFake(t, filepath.Join(f.n.cfg.StateDir, "cto"))
+	if got := after.Turns[len(after.Turns)-1]; got != id+" approved and applied" || strings.Contains(got, "result-marker") {
+		t.Fatalf("note: %q", got)
 	}
 }
