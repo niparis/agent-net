@@ -62,7 +62,7 @@ func TestToolListJSONSizes(t *testing.T) {
 		client *mcp.ClientSession
 	}{
 		{"agent", toolcatalog.RoleAgent, connect(t, okCaller)},
-		{"worker", toolcatalog.RoleWorker, connect(t, okCaller)},
+		{"worker", toolcatalog.RoleWorker, connectWorker(t)},
 		{"CTO", toolcatalog.RoleCTO, ctoTestSession(t)},
 	}
 	for _, tc := range cases {
@@ -91,4 +91,10 @@ func TestToolListJSONSizes(t *testing.T) {
 		t.Logf("%s tools/list JSON: current=%d bytes catalog-only=%d bytes", tc.name, len(allJSON), len(catalogJSON))
 		_ = tc.client.Close()
 	}
+}
+
+func connectWorker(t *testing.T) *mcp.ClientSession {
+	t.Helper()
+	t.Setenv("AGENT_NET_WORKER", "1")
+	return connect(t, okCaller)
 }

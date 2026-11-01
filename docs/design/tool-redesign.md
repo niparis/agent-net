@@ -1335,7 +1335,7 @@ Compact UTF-8 JSON encoding of the proposed tool arrays above, including `name`,
 
 ## Results
 
-The current tools/list JSON sizes are 53,814 bytes for agent, 53,814 bytes for
+The current tools/list JSON sizes are 53,814 bytes for agent, 36,094 bytes for
 worker, and 26,602 bytes for CTO. The baseline was 26,097 bytes for agent and
 15,902 bytes for CTO. Catalog-only lists are 34,934 bytes for agent, 25,088
 bytes for worker, and 20,983 bytes for CTO. The test marshals the tools array
