@@ -7,8 +7,8 @@
 #   - gateway data found here   -> update the gateway (as --gateway)
 #   - node.json found here      -> update this joined machine (as --client)
 #   - neither                   -> set this machine up as the gateway (as --gateway)
-# It prints which mode it chose. Other machines join with the line that
-# `agent-net invite` prints on the gateway, not with this script.
+# It prints which mode it chose. Add other machines from the CTO inside the
+# TUI (`agent-net`); it prints the line to paste on the new machine.
 #
 # Overrides:
 #   --gateway          install everything for a gateway and run `agent-net setup --gateway`
@@ -173,7 +173,7 @@ main() {
     rm -rf "$WORK" # exec skips the exit trap
     if [ "$MODE" = gateway ]; then
       if [ -n "$FRESH" ]; then
-        echo "Other machines join with the line that \`agent-net invite\` prints on this machine."
+        echo "Other machines: open agent-net and ask the CTO to add one."
         echo
       fi
       exec "$BIN_DIR/agent-net" setup --gateway ${INTEG_FLAG:+"$INTEG_FLAG"} ${PEER_FLAG:+"$PEER_FLAG"}
@@ -182,9 +182,9 @@ main() {
   fi
 
   echo
-  echo "Next: on the gateway machine run"
-  echo "  agent-net invite"
-  echo "and paste the line it prints here."
+  echo "Next"
+  echo "  agent-net setup"
+  echo "  agent-net"
 }
 
 main "$@"

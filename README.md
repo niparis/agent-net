@@ -64,13 +64,15 @@ It is not for:
 # On the first machine. It becomes the gateway.
 curl -fsSL https://niparis.github.io/agent-net/install | sh
 
-# For each other machine: run this on the gateway, then paste the line it prints there.
-agent-net invite
+# Then open agent-net.
+agent-net
 ```
+
+To add another machine, open `agent-net` and ask the CTO to add one. Paste the line it prints in a shell on the new machine. Make sure `~/.local/bin` is on your `PATH`; the install script prints the line to add if it is not.
 
 Then open a new agent session and ask: *"Who's on the agent net?"*
 
-Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, use the Tailscale invite line: [docs/troubleshooting.md](docs/troubleshooting.md).
+Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, ask the CTO for the Tailscale install line: [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## How it works
 

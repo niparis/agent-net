@@ -81,9 +81,9 @@ var ctoTools = map[string]ctoToolDef{
 		fields: map[string]ctoField{
 			"from": {typ: "string", desc: "Source."},
 			"to":   {typ: "string", desc: "Target."},
-			"kind": {typ: "string", desc: "Consumer to provider, architect to component, or deployer to app.", enum: ctoEdgeKinds},
-			"mode": {typ: "string", desc: "Governs: advise, arbitrate, or decide.", enum: []string{"advisor", "arbiter", "owner"}},
-			"rule": {typ: "string", desc: "Deliver, act as owner, hold, or refuse.", enum: []string{"normal", "auto", "ask", "never"}},
+			"kind": {typ: "string", desc: "Consumer to provider, architect to component, deployer to app.", enum: ctoEdgeKinds},
+			"mode": {typ: "string", desc: "Advise, arbitrate, decide.", enum: []string{"advisor", "arbiter", "owner"}},
+			"rule": {typ: "string", desc: "Deliver, own, hold, refuse.", enum: []string{"normal", "auto", "ask", "never"}},
 		},
 	},
 	"edge_remove": {
@@ -120,7 +120,7 @@ var ctoTools = map[string]ctoToolDef{
 	},
 	"workers": {
 		desc:   "List workers, newest first.",
-		fields: map[string]ctoField{"limit": {typ: "integer", desc: "Default 20; max 50."}, "before": {typ: "string", desc: "Cursor."}},
+		fields: map[string]ctoField{"limit": {typ: "integer", desc: "20; max 50."}, "before": {typ: "string", desc: "Cursor."}},
 	},
 	"needs_you": {
 		desc: "List waiting sessions.",
@@ -128,7 +128,7 @@ var ctoTools = map[string]ctoToolDef{
 	"feed": {
 		desc: "Read network feed.",
 		fields: map[string]ctoField{
-			"limit":  {typ: "integer", desc: "Default 20; max 50."},
+			"limit":  {typ: "integer", desc: "20; max 50."},
 			"before": {typ: "integer", desc: "Cursor."},
 		},
 	},
@@ -148,7 +148,7 @@ var ctoTools = map[string]ctoToolDef{
 	},
 	"worker_profile_list": {desc: "List worker profiles."},
 	"worker_profile_add": {desc: "Set a worker profile.", fields: map[string]ctoField{
-		"name": {typ: "string", desc: "An existing name replaces it."}, "harness": {typ: "string", desc: "Harness."}, "model": {typ: "string", desc: "Model ID or name."}, "effort": {typ: "string", desc: "Effort."},
+		"name": {typ: "string", desc: "Replaces an existing name."}, "harness": {typ: "string", desc: "Harness."}, "model": {typ: "string", desc: "Model ID or name."}, "effort": {typ: "string", desc: "Effort."},
 	}},
 	"worker_profile_remove":   {desc: "Remove a worker profile.", fields: map[string]ctoField{"name": {typ: "string", desc: "Name."}}},
 	"protected_providers_get": {desc: "Read protected providers."},
@@ -167,15 +167,15 @@ var ctoTools = map[string]ctoToolDef{
 	"worker_start": {
 		desc: "Start a worker.",
 		fields: map[string]ctoField{
-			"project":    {typ: "string", desc: "Project; empty uses CTO project."},
+			"project":    {typ: "string", desc: "Default CTO project."},
 			"harness":    {typ: "string", desc: "Harness; empty is auto.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":      {typ: "string", desc: "Model; empty is auto."},
 			"difficulty": {typ: "string", desc: "Default normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
 			"base":       {typ: "string", desc: "Branch."},
 			"continue":   {typ: "string", desc: "Worker ID."},
-			"task":       {typ: "string", desc: "Task brief and limits."},
+			"task":       {typ: "string", desc: "Brief and limits."},
 			"machine":    {typ: "string", desc: "Machine."},
-			"isolation":  {typ: "string", desc: "None is read-only; default worktree.", enum: []string{"worktree", "none"}},
+			"isolation":  {typ: "string", desc: "None reads only; default worktree.", enum: []string{"worktree", "none"}},
 		},
 	},
 }

@@ -59,9 +59,12 @@ type Config struct {
 	NodeID        string
 	Token         string
 	CAPEM         []byte // pinned CA; nil means the system roots (plain http in tests)
-	Hostname      string
-	StateDir      string
-	SocketPath    string
+	// GatewayData is the gateway data dir on the gateway machine. Empty on
+	// other machines. The CTO invite tool reads it and fails without a gateway.
+	GatewayData string
+	Hostname    string
+	StateDir    string
+	SocketPath  string
 	// ClaudeSessionsDir is used by the peer check for `agent-net mcp`.
 	ClaudeSessionsDir string
 	// PiSessionsDir is where Pi writes its session files. The daemon reads a
