@@ -213,54 +213,15 @@ func TestDynamicMarksToolsOfAnOfflineHost(t *testing.T) {
 	}
 }
 
-func TestAgentMCPAddTool(t *testing.T) {
-	reg := &fakeRegistry{}
-	cs := connect(t, reg.call)
-	ctx := context.Background()
-
-	// There is no way to choose a host.
-	tools, _ := cs.ListTools(ctx, nil)
+func TestAgentMCPAdministrationToolsAreHidden(t *testing.T) {
+	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) { return nil, nil })
+	tools, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tl := range tools.Tools {
-		if tl.Name == "agent_mcp_add" {
-			b, _ := json.Marshal(tl.InputSchema)
-			if strings.Contains(string(b), `"on"`) || strings.Contains(string(b), `"host"`) {
-				t.Fatalf("agent_mcp_add exposes a host: %s", b)
-			}
-			if !strings.Contains(tl.Description, "Ask your user") || !strings.Contains(tl.Description, "Never put a secret") {
-				t.Fatalf("description lacks the rules: %q", tl.Description)
-			}
+		if tl.Name == "agent_mcp_add" || tl.Name == "agent_mcp_remove" {
+			t.Errorf("agent MCP server exposes owner-only tool %q", tl.Name)
 		}
-	}
-
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_mcp_add", Arguments: map[string]any{
-		"name": "homelab", "url": "https://nas.lan/mcp",
-		"headers": []map[string]any{{"name": "Authorization", "env": "HOMELAB_TOKEN"}}}})
-	if err != nil || res.IsError {
-		t.Fatalf("add: %v %+v", err, res)
-	}
-	if len(reg.added) != 1 || reg.added[0].On != "" || reg.added[0].Server.Transport != "http" ||
-		reg.added[0].Server.Headers[0].Env != "HOMELAB_TOKEN" {
-		t.Fatalf("daemon got %+v", reg.added)
-	}
-	b, _ := json.Marshal(res.StructuredContent)
-	if !strings.Contains(string(b), "every agent on every machine") || !strings.Contains(string(b), "homelab__echo") {
-		t.Fatalf("result lacks the global note or tool names: %s", b)
-	}
-
-	// A secret value in place of a name is refused before anything is sent.
-	reg.added = nil
-	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_mcp_add", Arguments: map[string]any{
-		"name": "bad", "command": "x", "env": []string{"TOKEN=hunter2hunter2"}}})
-	if err != nil || !res.IsError || len(reg.added) != 0 {
-		t.Fatalf("secret env accepted: %v %+v", err, res)
-	}
-	if txt := res.Content[0].(*mcp.TextContent).Text; strings.Contains(txt, "hunter2") {
-		t.Fatalf("error echoes the secret: %s", txt)
-	}
-
-	res, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_mcp_remove", Arguments: map[string]any{"name": "homelab"}})
-	b, _ = json.Marshal(res.StructuredContent)
-	if res.IsError || !strings.Contains(string(b), "every agent on every machine") {
-		t.Fatalf("remove: %s", b)
 	}
 }

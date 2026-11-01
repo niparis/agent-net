@@ -215,25 +215,24 @@ func waitPush(t *testing.T, lc *localClient, method string) {
 	}
 }
 
-// A stdio server added by an agent on node A is called from node B. The
-// registry changes reach B as pushes. Results are capped, calls time out,
-// secrets are redacted, and a crashed server comes back.
+// An owner-added stdio server on node A is called from node B. The registry
+// changes reach B as pushes. Results are capped, calls time out, secrets are
+// redacted, and a crashed server comes back.
 func TestMCPStdioAcrossNodes(t *testing.T) {
 	useHelper(t)
 	g := startGateway(t, t.TempDir(), "")
 	a := startNode(t, g, nodeOpts{cmdline: "pi"})
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
 	a.d.mcp.backMin, a.d.mcp.backMax = 20*time.Millisecond, 100*time.Millisecond
-	agentA, sidA := helloPi(t, a, "na", "/work/a", false)
 	agentB, _ := helloPi(t, b, "nb", "/work/b", false)
+	cliA := cliClient(t, a)
 
 	t.Setenv("TEST_SECRET_TOKEN", "s3cr3t-value-123")
 	srv := stdioSpec("probe", "TEST_SECRET_TOKEN")
 	// A long limit, so a slow machine does not time out the ordinary calls. The
 	// timeout check below lowers it for one call.
 	srv.TimeoutSec = 30
-	// "on" from an agent is ignored: the server lands on the agent's own node.
-	res := agentA.mustCall("mcp_add", protocol.MCPAdd{Server: srv, On: b.d.NodeID()})
+	res := cliA.mustCall("mcp_add", protocol.MCPAdd{Server: srv})
 	var added struct {
 		Server protocol.MCPServer `json:"server"`
 	}
@@ -241,7 +240,7 @@ func TestMCPStdioAcrossNodes(t *testing.T) {
 	if added.Server.NodeID != a.d.NodeID() {
 		t.Fatalf("hosted on %s, want A %s", added.Server.NodeID, a.d.NodeID())
 	}
-	if added.Server.AddedBySession != sidA || added.Server.AddedByHarness != "pi" {
+	if added.Server.AddedBySession != "" || added.Server.AddedByHarness != "cli" {
 		t.Fatalf("added_by not recorded: %+v", added.Server)
 	}
 	if got := toolNames(added.Server); got != "big,crash,echo,env,pid,sleep" {
@@ -266,14 +265,14 @@ func TestMCPStdioAcrossNodes(t *testing.T) {
 	// stays long. It goes away again when the check is done.
 	slow := stdioSpec("slow")
 	slow.TimeoutSec = 1
-	agentA.mustCall("mcp_add", protocol.MCPAdd{Server: slow})
+	cliA.mustCall("mcp_add", protocol.MCPAdd{Server: slow})
 	waitPush(t, agentB, "mcp_changed")
 	start := time.Now()
 	_, err = callTool(t, agentB, "slow", "sleep", map[string]float64{"seconds": 20})
 	if err == nil || !strings.Contains(err.Error(), "timed out") || time.Since(start) > 15*time.Second {
 		t.Fatalf("sleep: err=%v after %s", err, time.Since(start))
 	}
-	agentA.mustCall("mcp_remove", protocol.MCPName{Name: "slow"})
+	cliA.mustCall("mcp_remove", protocol.MCPName{Name: "slow"})
 	waitPush(t, agentB, "mcp_changed")
 
 	// Size cap.
@@ -354,6 +353,50 @@ func TestMCPCliOn(t *testing.T) {
 	}
 }
 
+func TestMCPAdministrationIsOwnerOnlyForAgents(t *testing.T) {
+	useHelper(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	cli := cliClient(t, n)
+	agent, _ := helloPi(t, n, "mcp-owner-gate", "/work/mcp-owner-gate", false)
+	cli.mustCall("mcp_add", protocol.MCPAdd{Server: stdioSpec("owner-fixture")})
+	if _, err := agent.call("mcp_list", nil); err != nil {
+		t.Fatalf("agent mcp_list: %v", err)
+	}
+	if _, err := agent.call("mcp_test", protocol.MCPName{Name: "owner-fixture"}); err != nil {
+		t.Fatalf("agent mcp_test: %v", err)
+	}
+
+	const ownerOnly = "adding or removing a shared MCP server is owner-only: ask the owner to do it in the TUI, or the CTO can propose it with mcp_change"
+	for method, params := range map[string]any{
+		"mcp_add":    protocol.MCPAdd{Server: stdioSpec("agent-fixture")},
+		"mcp_remove": protocol.MCPName{Name: "owner-fixture"},
+	} {
+		if _, err := agent.call(method, params); err == nil || err.Error() != ownerOnly {
+			t.Errorf("%s error = %v, want %q", method, err, ownerOnly)
+		}
+	}
+
+}
+
+func TestApprovedCTOMCPChangeCanAddServer(t *testing.T) {
+	useHelper(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	server := map[string]any{"name": "cto-fixture", "transport": "stdio", "command": os.Args[0],
+		"args": []string{"-test.run=XXX"}, "env": []string{helperEnv, "GORACE"}}
+	args, _ := json.Marshal(map[string]any{"action": "add", "server": server})
+	value, err := n.d.runCTOToolRaw(context.Background(), "mcp_change", args)
+	if err != nil {
+		t.Fatalf("propose MCP add: %v", err)
+	}
+	approveCTOToolResult(t, n.d, value)
+	servers := listServers(t, cliClient(t, n))
+	if len(servers) != 1 || servers[0].Name != "cto-fixture" || servers[0].AddedBySession != "" {
+		t.Fatalf("approved MCP add: %+v", servers)
+	}
+}
+
 // A server that cannot start is not saved, and the error is plain.
 func TestMCPAddValidates(t *testing.T) {
 	useHelper(t)
@@ -400,12 +443,13 @@ func TestMCPHTTPBearerFromFile(t *testing.T) {
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
 	agentA, _ := helloPi(t, a, "na", "/work/a", false)
 	agentB, _ := helloPi(t, b, "nb", "/work/b", false)
+	cliA := cliClient(t, a)
 
 	file := filepath.Join(t.TempDir(), "token")
 	os.WriteFile(file, []byte(wrong+"\n"), 0o600)
 	spec := protocol.MCPServer{Name: "homelab", Transport: protocol.MCPHTTP, URL: ts.URL,
 		Headers: []protocol.MCPHeader{{Name: "Authorization", File: file}}}
-	_, err := agentA.call("mcp_add", protocol.MCPAdd{Server: spec})
+	_, err := cliA.call("mcp_add", protocol.MCPAdd{Server: spec})
 	if err == nil || !strings.Contains(err.Error(), "rejected the credentials") || strings.Contains(err.Error(), wrong) {
 		t.Fatalf("wrong token: err = %v", err)
 	}
@@ -414,7 +458,7 @@ func TestMCPHTTPBearerFromFile(t *testing.T) {
 	}
 
 	os.WriteFile(file, []byte(token+"\n"), 0o600)
-	agentA.mustCall("mcp_add", protocol.MCPAdd{Server: spec})
+	cliA.mustCall("mcp_add", protocol.MCPAdd{Server: spec})
 	out, err := callTool(t, agentB, "homelab", "echo", map[string]string{"text": "net"})
 	if err != nil || out.Text != "echo: net" {
 		t.Fatalf("echo = %+v, %v", out, err)

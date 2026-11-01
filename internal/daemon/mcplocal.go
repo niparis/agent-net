@@ -10,6 +10,8 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+const mcpAdminOwnerOnly = "adding or removing a shared MCP server is owner-only: ask the owner to do it in the TUI, or the CTO can propose it with mcp_change"
+
 // The daemon's part of the MCP registry: frames from the gateway (what to
 // host, probe and invoke), and the local socket methods mcp_* that agents and
 // the CLI use. Registry state lives in the gateway; the daemon forwards.
@@ -120,24 +122,14 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 		res, err = d.call(ctx, "mcp.catalog", protocol.MCPCatalog{SessionID: sid})
 
 	case "mcp_add":
+		if client != "cli" {
+			return nil, true, errors.New(mcpAdminOwnerOnly)
+		}
 		var p protocol.MCPAdd
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad mcp_add params")
 		}
-		if client == "cli" {
-			p.AddedByHarness, p.AddedBySession = "cli", ""
-		} else {
-			// An agent's server is hosted on its own machine, whatever it says.
-			p.On = ""
-			lc.mu.Lock()
-			ls := lc.ls
-			lc.mu.Unlock()
-			if ls == nil {
-				return nil, true, errors.New("this method needs a bound session")
-			}
-			p.AddedBySession = d.currentSessionID(ls)
-			p.AddedByHarness = ls.info.Harness
-		}
+		p.AddedByHarness, p.AddedBySession = "cli", ""
 		p.Server.NodeID, p.Server.Enabled = "", true
 		if err = p.Server.Validate(); err != nil {
 			return nil, true, err
@@ -145,6 +137,9 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 		res, err = d.call(withCallWait(ctx, 2*time.Minute), "mcp.add", p)
 
 	case "mcp_remove", "mcp_test":
+		if method == "mcp_remove" && client != "cli" {
+			return nil, true, errors.New(mcpAdminOwnerOnly)
+		}
 		var p protocol.MCPName
 		if json.Unmarshal(raw, &p) != nil || p.Name == "" {
 			return nil, true, errors.New(method + " needs name")

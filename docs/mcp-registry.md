@@ -37,7 +37,7 @@ agent-net mcp remove NAME
 
 `agent-net mcp` with no subcommand is still the stdio MCP server that Claude Code starts. Nothing about that changed.
 
-An agent can do the same with the tools `agent_mcp_add`, `agent_mcp_list`, `agent_mcp_test` and `agent_mcp_remove`. A server an agent adds is always hosted on that agent's own machine, and its auth can only name an env var or a file path on that machine. Every result says the change applies to every agent on every machine. The guidance text tells agents to ask you before adding or removing a server.
+Only the owner can add or remove a shared server, through the TUI or CLI. A CTO can propose an add or remove with `mcp_change`; the owner must approve it. Agent sessions can list and test servers. The daemon also rejects add or remove requests from native plugins.
 
 `add` connects to the server and lists its tools before it saves anything. If that fails, nothing is saved and the error says why.
 
@@ -49,7 +49,7 @@ When the registry changes, or a server reports a new tool list, the gateway tell
 
 | Harness | What happens | Tested behavior |
 |---|---|---|
-| Claude Code | `agent-net mcp` adds and removes tools on its MCP server. The SDK sends `notifications/tools/list_changed` (after a short debounce) and Claude Code re-reads the list. | Works in the running session, no restart. A tool added with `agent_mcp_add` was found and called in the same conversation, and was gone after `agent_mcp_remove`. |
+| Claude Code | `agent-net mcp` updates the registered server tools on its MCP server. The SDK sends `notifications/tools/list_changed` (after a short debounce) and Claude Code re-reads the list. | Owner changes through the TUI or CLI appear in the running session, no restart. |
 | Pi | The extension registers tools with `pi.registerTool` on connect, on the daemon's `mcp_changed` push, and every 15 s. Pi cannot unregister, so a removed tool is registered again as `hidden`. | Works in the running session, no restart. Pi reads its tool list when a run starts, so a tool added during a run is usable from the next prompt, not later in the same run. |
 | Codex | One `agent-net mcp --codex` process serves all threads and has no project, so it lists global servers only. It updates its list when the daemon pushes `mcp_changed`. | Tested with a fake app server: a global server is listed and callable from every thread; after a scope change to projects it is dropped from the list. Whether the real Codex re-reads the list in a running session is not tested. |
 | OpenCode | The plugin does not read the registry yet, so OpenCode sessions get no federated tools. | The daemon pushes `mcp_changed` and answers `mcp_tools` filtered for the project (tested with a fake plugin). |
@@ -82,7 +82,7 @@ The daemon reads variables from its own environment. If you run the daemon as a 
 - **The registry holds no secrets.** An entry has the command, the args, the env var names, the URL, and for each header its name and the env var name or file path. Args and the URL are stored and shown to everyone, so keep secrets out of them. A URL with credentials (`user:pass@`) is refused. `NAME=value` for an env var is refused without echoing the value.
 - **Secrets stay on the host.** Header values and env values are read on the hosting machine at connect time. They are never sent to the gateway or to another daemon.
 - **Redaction.** The hosting daemon removes every secret value it read from error text, stderr lines in the log, and tool results (including the `Bearer ` form and the bare token) before anything leaves the host. Gateway and daemon logs and the audit log never get a value, because none reaches them. A wrong token gives a plain error such as "the server rejected the credentials (HTTP 401)".
-- **A daemon runs only its own servers.** The gateway tells each node which servers it hosts, and the daemon ignores any entry that names another node. A stdio server added by an agent is hosted on that agent's machine, whatever the agent asks for.
+- **A daemon runs only its own servers.** The gateway tells each node which servers it hosts, and the daemon ignores any entry that names another node. A stdio server added by the owner is hosted on the machine selected in the CLI or TUI.
 - **Who added what.** Each entry records the node, the session and the harness that added it, and `list` shows it. The gateway's audit log records adds, removes, enables, disables and refused adds.
-- **A registered server is code that runs as your user** on the hosting machine, and its tools run for any agent on any enrolled machine. Treat `mcp add` like `ssh`: add only what you would run yourself. An agent can add a server, so approve those calls in your agent's permission settings, or rely on the guidance text only if you trust the agent. A compromised enrolled machine can add servers that run on itself, and can call tools of servers hosted elsewhere.
+- **A registered server is code that runs as your user** on the hosting machine, and its tools run for any agent on any enrolled machine. Treat `mcp add` like `ssh`: add only what you would run yourself. The daemon blocks agent clients from adding or removing servers. The gateway trusts enrolled daemons, so a compromised machine can still impersonate its owner to register servers on itself and can call tools of servers hosted elsewhere.
 - **Tool results are text from a server.** A hostile server can try prompt injection through results. The same advice as for messages applies: your permission rules are the barrier.
