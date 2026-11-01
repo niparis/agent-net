@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -113,7 +114,7 @@ func (m Model) ctoEnterCmd(id string) tea.Cmd {
 	src, sock, hsock := m.src, m.tmuxSocket, m.herdrSocket
 	name := m.ctoTitle()
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
 		defer cancel()
 		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock, HerdrSocket: hsock})
 		return enterMsg{name: name, plan: plan, err: err, cto: true}
