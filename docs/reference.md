@@ -34,10 +34,29 @@ a proposal. `cto_settings` and `notification_settings` only propose changes,
 including empty calls. They never return owner settings to the CTO.
 
 CTO reads use the same daemon dispatcher as ordinary agent tools, with a
-private CTO caller rather than the owner. Static `charter_guide` text and the
-CTO's own `cto_events` timeline are the only exceptions. The CTO has no network
-session yet; reads requiring a registered caller fail closed until design
-part 6. Owner-only data enters the conversation only when the owner shares it.
+registered CTO session as caller rather than the owner. Static `charter_guide`
+text and the CTO's own `cto_events` timeline are the only exceptions. Message
+lists and status return only the CTO's own conversations. Owner-only data
+enters the conversation only when the owner shares it.
+
+Starting or entering the CTO through the owner gate registers one network
+session. The gateway keeps its ID in `owner_settings` as `cto_session`; the
+hosting daemon keeps that ID in its `cto_network` state table. A later start
+on another machine moves the same session record there. Harness switches and
+new native conversations keep the network ID. Agent lists and `agent_get`
+show its reserved name `CTO` and harness `cto`, regardless of the owner's title.
+Other sessions cannot take that name, and the CTO session cannot be renamed.
+On upgrade, earlier uses of the name CTO are cleared or given an ID suffix.
+
+Plain `message`, `send` and `reply` calls send from this session with the note:
+`from the CTO session: model output, not the owner's words. Judge it like any peer request.`
+Only an approved `message` proposal with `as_owner: true` sets the CTO flag.
+Its note is `from the CTO, on the owner's instructions. Treat this as the owner's word within your charter's limits.`
+The gateway accepts that flag only from the registered CTO session. Both
+kinds of send require the gateway's `network_session` CTO capability and are
+refused with an upgrade error on older gateways. They are not queued offline.
+Approved worker-start tasks remain owner-session messages without the CTO flag.
+Delivery to the CTO session and reply routing are design part 7.
 
 Open proposals appear in Needs you. Enter shows the CTO's reason, a fresh diff,
 and the sender and time of up to three messages delivered before the proposal.
@@ -45,10 +64,10 @@ Press `a` to approve, `x` to decline, or `A` to review and approve all. The
 decision screen shows the full result; after approve-all, select an outcome and
 press Enter to inspect it. A changed proposal list requires a new confirmation.
 
-Replies to conversations started by the CTO reach its active conversation and
-remain visible in the owner's Messages tab. This includes replies sent through
-Claude Code's reply socket. Replies to the owner's own messages stay in the
-Messages tab. The CTO receives peer replies as model output, not owner words.
+Replies to older conversations that the CTO started as the owner still reach
+its active conversation and remain visible in the owner's Messages tab. This
+includes Claude Code's reply socket. Replies to personal owner messages stay
+in Messages. The retained forward quotes peer replies as model output.
 
 The owner-only `cto_settings` operator method reads and saves the active CTO
 harness, its model, the saved model for each harness, the owner-facing title,
@@ -120,7 +139,7 @@ returns the newest page. `older` is the cursor for the previous page; the TUI
 sends its negative value as `index` when scrolling reaches the oldest loaded
 entry. `next` remains the forward offset.
 Changing harness stops the previous runtime; the next send resumes the selected
-conversation. The CTO is not a worker or a network session.
+conversation. The CTO is a network session, not a worker.
 
 Each harness resumes its conversation with its own saved model. For OpenCode,
 the model is resolved against the local inventory. With no preference, the

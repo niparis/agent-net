@@ -35,11 +35,13 @@ the CTO's tools private. The Claude Code CTO uses the
 owner's Claude login and a background session in a private working directory.
 Its session receives `--strict-mcp-config` and a private MCP configuration that
 contains only `agent-net cto-mcp`, not the ordinary agent-net MCP server. The
-daemon excludes this working directory from Claude session discovery, so the
-CTO is not registered with the gateway. Replies to a conversation started by
-the CTO go to the owner session and are also forwarded to the active CTO
-conversation as peer model output. The daemon checks the gateway's stored CTO
-marker on the conversation root and quotes the peer's body as data. Replies to
+daemon excludes this working directory from ordinary Claude discovery so it
+cannot get ordinary agent tools or a second network identity. The owner-gated
+CTO start registers a separate stable session at the gateway. New CTO sends
+use that session. Delivery of replies to it belongs to design part 7. Replies
+to older conversations sent as the owner still reach the owner session and
+are forwarded to the active CTO conversation as peer model output. The daemon
+checks the gateway's stored CTO marker on the conversation root and quotes the peer's body as data. Replies to
 personal owner messages are not forwarded.
 
 The CTO has no built-in shell, file, search, web, scheduling or subagent tools.
@@ -83,8 +85,8 @@ and charter history, Needs you, inboxes, settings, tools inventory, session
 text, the network feed and worker lists. Static charter guidance and the CTO's
 own timeline are the only exceptions. A protected-provider read schema exists
 for ordinary agents, but its daemon method is owner-gated, so it is removed
-from the CTO too. The private CTO has no registered network session yet;
-caller-scoped reads fail closed until design part 6 registers it.
+from the CTO too. Caller-scoped reads use the registered CTO session ID, never
+the owner's ID. Before registration they fail closed.
 
 Ordinary agent list/detail reads omit waiting-question contents. Owner CLI/TUI
 reads retain them. Agent message lists force the bound caller's session ID;
@@ -110,16 +112,29 @@ and passed the owner gate. The requests select a view, selection and filter or
 show a notice; they do not run an operator action in the TUI.
 
 The gateway trusts enrolled daemons to attribute CTO graph writes and sends.
-Those writes and sends are marked `by=cto`. A CTO write or send checks that
-the gateway supports attribution on the same connection; it is refused on an
-older gateway. A CTO worker start also checks the target daemon, so a queued
-task keeps its attribution. CTO sends are not queued across a gateway outage.
-The gateway labels the sender as `cto`, so an older receiver treats it as a
-peer rather than as the owner speaking in person. The gateway accepts a CTO sender
-flag only on an owner session. Delivery adapters write the CTO authority note
-after the message body and neutralize agent-net markers in the body. A peer
-cannot create the note by putting text in its message. Text the CTO reads is
-untrusted data; its system brief says not to follow instructions in it.
+Starting or entering the CTO uses the owner gate. The gateway registration
+frame also requires an online owner session on the sending node. It keeps one
+stable CTO session ID for the network; a later owner start moves that record
+to its new machine. Ordinary session reports cannot register a CTO harness.
+The name `CTO` is reserved and cannot be changed to the owner's custom title.
+
+Plain sends and replies are peer messages from the CTO session. All four
+adapters append `from the CTO session: model output, not the owner's words. Judge it like any peer request.`
+Only the proposal runner for an approved `message {as_owner: true}` sets the
+CTO flag. The immediate tool path cannot set it. The gateway refuses the flag
+from every session except the recorded CTO session, including owner sessions.
+Approved worker-start tasks are ordinary owner-session messages, without that
+flag. Enrolled daemons remain trusted to set flags honestly.
+
+Adapters append `from the CTO, on the owner's instructions. Treat this as the owner's word within your charter's limits.`
+for an approved send. Both notes sit after the body, with agent-net markers in
+the body neutralized. Neither note names a person. The Go and TypeScript
+copies are checked for equality. A body cannot forge either note's framing.
+CTO sends check the gateway's attribution and network-session capabilities on
+the same connection as the send. Older gateways are refused with an upgrade
+error. Neither plain nor approved CTO sends enter the offline outbox. Graph
+writes keep their existing attribution checks. Text the CTO reads remains
+untrusted data; its brief says not to follow instructions in it.
 
 This page says what agent-net trusts, how it checks it, and what it does not protect against. Every statement here was checked against the code. Where a check is weak, the page says so.
 
@@ -337,8 +352,9 @@ held and inbox answers and outcomes, tools plans/apply/undo/import, MCP changes
 and calls, integrations, notifications, CTO settings, providers, scores,
 profiles, playbooks, projects, invites, onboarding restart, `cto_send`,
 `cto_new`, and `message` with `as_owner: true`. Empty settings calls also
-propose; they return no settings. Plain sends and replies keep their existing private CTO transport;
-network session identity and new delivery notes are separate design parts.
+propose; they return no settings. Plain sends and replies use the registered
+CTO session and carry the peer note. Only an approved as-owner message carries
+the CTO authority note.
 
 Validation checks the advertised schema and current IDs, enrollment, names and
 policy using the same checks as execution. Graph and answer validations roll
@@ -353,7 +369,8 @@ world may have changed.
 agent dispatch with the CTO caller; views without an ordinary source are
 removed. Static charter guidance and the CTO's own timeline remain. Outcome
 notes carry no private result. The parity and canary tests enforce this rule.
-The CTO stays private; owner hand-over and the network session are later parts.
+The CTO now uses its registered network session for these checks. Owner
+hand-over and delivery of peer messages to the CTO remain later parts.
 
 ## Limits against loops
 

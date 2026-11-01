@@ -4,7 +4,7 @@
 
 This design builds on the CTO as the advisor for the whole network, its charter, edges and authority. Its proposed peer session and owner-approved proposals fit decision 0036. The current private CTO behavior remains as documented until this design is built.
 
-Status: accepted by the owner as option A on 2026-10-31. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
+Status: accepted by the owner as option A on 2026-10-31. Part 6 is implemented; reply delivery remains part 7. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.
 
@@ -365,7 +365,7 @@ Status: implemented. Every current owner-only CTO change uses the proposal runne
 
 **Part 4. Reads limited to public data.**
 
-Status: implemented. Reads use ordinary agent dispatch with a private CTO caller, plus static charter guidance and the CTO timeline. Owner-only views are removed. Caller-scoped reads fail closed until part 6 registers the CTO on the network. Parity and canary tests cover every remaining view.
+Status: implemented. Reads use ordinary agent dispatch with the CTO caller, plus static charter guidance and the CTO timeline. Owner-only views are removed. Caller-scoped reads now use the network identity registered by part 6. Parity and canary tests cover every remaining view.
 - Remove the owner-only reads of section 11. Build each remaining read from the function that serves the matching agent tool, with the CTO session as caller.
 - Tests: the parity test pins each read view to its agent tool; the canary test of section 6 over every read view; a view without a source fails the parity test.
 
@@ -374,6 +374,12 @@ Status: implemented. Reads use ordinary agent dispatch with a private CTO caller
 - Tests: golden TUI scenes for the preview; the sent message holds exactly the previewed text; it goes through the owner gate.
 
 **Part 6. The CTO session on the network.**
+
+Status: implemented. One gateway-owned stable session is registered through the
+owner gate and listed as CTO. Sends and caller-scoped reads use that session.
+Plain talk carries the peer note; only approved as-owner message proposals
+carry the CTO note. Reply delivery remains part 7.
+
 - The stable session ID, the gateway CTO session record (set behind the owner gate), the reserved name `CTO`, discovery of the CTO directory, sends from the CTO session, the peer note, the CTO note set only by the proposal runner.
 - Tests: the gateway refuses the CTO flag from any other session; a plain `message` call never carries the flag; an approved as-owner send carries the CTO note "from the CTO, on the owner's instructions" in all four adapters (Go and TypeScript copies compared, like `TrustNote`); no note text names a person; an older gateway is refused with a clear error.
 
