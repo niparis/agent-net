@@ -30,6 +30,7 @@ const calls = []; // [method, params] of every call except hello
 const conns = new Map(); // session ID -> its latest daemon connection
 const textResults = []; // params of every session_text_result
 let charterReply = null;
+let graphReply = null;
 let hintReply = {}; // what the fake daemon answers to "hint"
 let policyReply = {}; // what the fake daemon answers to "policy"
 const server = createServer((conn) => {
@@ -54,6 +55,7 @@ const server = createServer((conn) => {
       const result =
         charterReply && line.method === "list" ? { agents: [charterReply] }
         : charterReply && line.method === "get" ? { agent: charterReply }
+        : graphReply && line.method === "agent_graph" ? graphReply
         : line.method === "project_add"
           ? { machine: "mac", dry_run: !!line.params.dry_run,
               added: [{ name: "alpha", path: "/c/alpha", remote: "https://example.com/alpha.git" }],
@@ -347,6 +349,35 @@ await test("agent list and get show public charter fields", async () => {
       for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!out.includes(want)) throw new Error(name + " missing " + want);
     }
   } finally { charterReply = null; stop(); }
+});
+
+await test("agent_graph reads every charter and edge from the public graph", async () => {
+  freshHub();
+  const sessions = new Map([["ses_g", session("ses_g", "/work/g")]]);
+  let tools;
+  const c = makeContext("/work/g", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello", () => registered("ses_g"));
+  graphReply = {
+    nodes: [{ name: "shop", kind: "component", maturity: "mature", line: "shop (component) [mature] Sells things" }],
+    edges: [{ from: "shop", to: "billing", kind: "depends", rule: "ask" }],
+    total: 1,
+    edge_total: 1,
+  };
+  try {
+    const graph = tools.find((t) => t.name === "agent_graph");
+    if (!graph) throw new Error("agent_graph is not registered");
+    const before = calls.length;
+    const out = (await graph.execute({ node: "shop" }, { sessionID: "ses_g" })).content;
+    for (const want of ["shop", "Sells things", "shop -> billing depends", "rule=ask", "Nodes 1 of 1"]) {
+      if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
+    }
+    const sent = calls.slice(before).find(([method]) => method === "agent_graph");
+    if (!sent || sent[1].node !== "shop") throw new Error("agent_graph request: " + JSON.stringify(sent));
+  } finally {
+    graphReply = null;
+    stop();
+  }
 });
 
 await test("agent_project_add and agent_project_list reach the daemon and print a short result", async () => {

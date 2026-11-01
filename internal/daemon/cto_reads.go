@@ -12,7 +12,7 @@ import (
 // Each view is derived from ordinary dispatch with the CTO session, or from
 // the CTO's own proposal store and static guidance.
 var ctoReadSources = map[string]string{
-	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "projects,static guide", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
+	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
 }
 
 func (d *Daemon) ctoReadConn() *localConn {
@@ -118,10 +118,35 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		}
 		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
 
-	case "graph", "projects":
+	case "graph":
 		var q struct {
 			View   string `json:"view"`
 			Node   string `json:"node"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad graph arguments")
+		}
+		if q.View == "guide" {
+			return protocol.CharterGuideText() + "\n\nEdges: depends goes from consumer to provider; governs from architect to component; deploys from deployer to app. Governance modes are advisor (advises), arbiter (arbitrates), and owner (decides). Request rules: normal delivers with ordinary peer guidance; auto delivers with peer trust; ask holds for the owner; never refuses.", nil
+		}
+		if q.View != "" {
+			return nil, errors.New("unknown graph view")
+		}
+		page, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Node: q.Node, Offset: q.Offset, Limit: q.Limit})
+		if err != nil {
+			return nil, err
+		}
+		if q.Node != "" {
+			if page.Total == 0 {
+				return nil, errors.New("unknown public graph node")
+			}
+			return map[string]any{"node": page.Nodes[0].Name, "items": page.Nodes, "edges": page.Edges, "total": page.Total, "edge_total": page.EdgeTotal}, nil
+		}
+		return ctoGraphPage{Items: page.Nodes, Edges: page.Edges, Total: page.Total, Next: page.Next, EdgeTotal: page.EdgeTotal}, nil
+	case "projects":
+		var q struct {
 			Name   string `json:"name"`
 			Limit  int    `json:"limit"`
 			Offset int    `json:"offset"`
@@ -129,17 +154,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
 			return nil, errors.New("bad project arguments")
 		}
-		if name == "graph" && q.View == "guide" {
-			return protocol.CharterGuideText() + "\n\nEdges: depends goes from consumer to provider; governs from architect to component; deploys from deployer to app. Governance modes are advisor (advises), arbiter (arbitrates), and owner (decides). Request rules: normal delivers with ordinary peer guidance; auto delivers with peer trust; ask holds for the owner; never refuses.", nil
-		}
-		if name == "graph" && q.View != "" {
-			return nil, errors.New("unknown graph view")
-		}
-		filter := q.Name
-		if name == "graph" {
-			filter = q.Node
-		}
-		b, _ := json.Marshal(protocol.QueryProjects{Name: filter})
+		b, _ := json.Marshal(protocol.QueryProjects{Name: q.Name})
 		value, err := d.ctoReadConn().dispatch(ctx, "projects", b)
 		if err != nil {
 			return nil, err
@@ -148,14 +163,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		if err = ctoDecode(value, &result); err != nil {
 			return nil, err
 		}
-		page := ctoOffsetPage(ctoProjectRows(result.Projects), q.Limit, q.Offset)
-		if name == "graph" && q.Node != "" {
-			if page.Total == 0 {
-				return nil, errors.New("unknown public project node")
-			}
-			return map[string]any{"node": result.Projects[0].Name, "items": page.Items, "total": page.Total, "next": page.Next}, nil
-		}
-		return page, nil
+		return ctoOffsetPage(ctoProjectRows(result.Projects), q.Limit, q.Offset), nil
 	case "machines":
 		var q struct {
 			Machine string `json:"machine"`
@@ -322,6 +330,16 @@ type ctoList[T any] struct {
 	Items []T `json:"items"`
 	Total int `json:"total"`
 	Next  int `json:"next,omitempty"`
+}
+
+// ctoGraphPage is the paged public graph: one line per node with its charter
+// and maturity, and the compact edges with kind, mode and request rule.
+type ctoGraphPage struct {
+	Items     []protocol.PublicGraphNode `json:"items"`
+	Edges     []protocol.PublicGraphEdge `json:"edges"`
+	Total     int                        `json:"total"`
+	Next      int                        `json:"next,omitempty"`
+	EdgeTotal int                        `json:"edge_total"`
 }
 
 func ctoOffsetPage[T any](items []T, limit, offset int) ctoList[T] {
