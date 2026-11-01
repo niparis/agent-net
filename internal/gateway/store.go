@@ -386,6 +386,11 @@ CREATE TABLE IF NOT EXISTS worker_rate_offers (
   asked INTEGER NOT NULL DEFAULT 0,
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_rate_offers_caller ON worker_rate_offers (caller, at);
+`, `
+-- Whether the rework counters were live for a run (difficulty calibration,
+-- parts 1 and 2). Runs recorded before the counters shipped read 0, which is
+-- not the same as no rework, so they stay out of the medians.
+SELECT 1 /* worker run counters known */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -519,6 +524,21 @@ func (s *Store) migrate() error {
 					difficulty = "normal"
 				}
 				if _, err := tx.Exec(`UPDATE worker_runs SET caller = ?, difficulty = ? WHERE session_id = ? AND caller = ''`, f.caller, difficulty, id); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker run counters known") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = 'counters_known'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				// Rows that already exist were recorded before the counters
+				// shipped, so they keep the default 0: unknown.
+				if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN counters_known INTEGER NOT NULL DEFAULT 0`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}

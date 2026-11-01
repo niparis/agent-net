@@ -141,8 +141,13 @@ type worker struct {
 	idleNoticeSent, idleNoticePending        bool
 	idleNoticeGeneration                     uint64
 	idleNoticeReport, idleNoticeKey          string
-	dir                                      string
-	logPath                                  string
+	// idleFollowUp is true when the owner's message starts a turn on a worker
+	// that went idle without a hand-back. The OpenCode router clears the idle
+	// notice before noteAsk runs, so noteAsk reads this to count the follow-up
+	// as a continue.
+	idleFollowUp bool
+	dir          string
+	logPath      string
 	// Worktree isolation (W13).
 	mainPath, worktree, branch, base string
 	// taskMsg is the last request from the owner; doneStatus the status of the

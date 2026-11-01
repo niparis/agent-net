@@ -57,6 +57,10 @@ already routes. The caller marks nothing.
 | `continue` | the caller sends the worker a new message after a hand-back with `complete: no` | the worker stopped early |
 | `fix` | the caller sends the worker a new message after a hand-back with `complete: yes` | the worker finished, but not right |
 
+A worker that goes idle without a hand-back is the same signal as
+`complete: no`: it stopped early without saying so, and the caller's next
+message counts as a continue.
+
 The weighted rework of a task is `fix + 0.5 × continue`. A fix counts more
 because it costs review attention: the worker delivered the wrong thing, and
 someone had to notice. A continue is cheaper: the work so far was right, and
@@ -67,6 +71,17 @@ continues, few fixes), and DeepSeek on OpenCode finishes but is sometimes
 wrong (few continues, some fixes). Counting both the same would treat a
 model that needs a nudge like one that builds the wrong thing.
 
+**A task is the worker session, not one turn.** Continuing a worker after a
+hand-back starts another run. That run gets another gateway row with the same
+session ID, and the follow-up's counter lands on the new row. The calibration
+therefore reads one sample per session: it adds the continues and fixes of
+all the session's rows, takes the caller and the difficulty from the first
+row and the end time from the last. A follow-up turn is never a task of its
+own. A run stopped by the owner or the caller is left out of the samples: a
+stop says nothing about the model, and it must not count as a clean task. So
+are runs recorded before the counters shipped, because their 0 means unknown,
+not "no rework".
+
 Not counted in the first version: restarts on a new worker, reverts after
 landing, fix-up lines found in git. They are better signals but need more
 machinery. Add them only if the two counters prove too weak.
@@ -76,6 +91,8 @@ machinery. Add them only if the two counters prove too weak.
 For each caller and difficulty, take the weighted rework of the caller's last
 7 tasks at that difficulty (with at least 5). Use the median, not the mean:
 counts are small whole numbers, and one bad task should not swing the result.
+A task is one worker session, so the runs of a continued worker are added
+together before they enter the window.
 
 | Median | Reading | Action |
 |---|---|---|

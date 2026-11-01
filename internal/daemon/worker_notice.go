@@ -590,7 +590,9 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 // noteAsk records a message from a worker's owner and counts a follow-up after
 // a hand-back. A hand-back answers the last request; messages from the owner
 // after it are continues when it said complete:no, and fixes when it said
-// complete:yes. Only the owner counts: a notice, or another session, does not.
+// complete:yes. A worker that went idle without a hand-back counts a continue
+// too: its follow-up is the owner telling it to carry on. Only the owner
+// counts: a notice, or another session, does not.
 func (d *Daemon) noteAsk(m protocol.Message) {
 	w := d.workerBySession(m.To)
 	if w == nil || m.From != w.owner {
@@ -602,16 +604,20 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 	}
 	d.wmu.Lock()
 	counted := false
-	if w.pendingHandback {
+	if w.pendingHandback || w.idleNoticeSent || w.idleFollowUp {
 		// Every message from the owner after a hand-back counts until the
-		// worker hands back again. A notice or another session does not.
-		if w.pendingPartial {
-			w.continueCount++
-			w.continueRun++
-		} else {
+		// worker hands back again. An idle notice with no hand-back is the
+		// same signal: the worker stopped early without saying so, so the
+		// owner's follow-up is a continue. A notice or another session does
+		// not count.
+		if w.pendingHandback && !w.pendingPartial {
 			w.fixCount++
 			w.fixRun++
+		} else {
+			w.continueCount++
+			w.continueRun++
 		}
+		w.idleFollowUp = false
 		counted = true
 	}
 	var updated *protocol.WorkerInfo
@@ -750,6 +756,7 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 		return false, false
 	}
 	if !w.turnActive {
+		w.idleFollowUp = w.idleNoticeSent && m.From == w.owner
 		w.idleNoticeSince = time.Time{}
 		w.idleNoticeSent = false
 		w.idleNoticePending = false
