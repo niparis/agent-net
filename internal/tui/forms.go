@@ -264,7 +264,7 @@ func (m Model) defectKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeDefectSeverity
 		m.defectSeverity = textinput.New()
-		m.defectSeverity.Prompt = "severity 1 to 4 for " + m.defectName + "> "
+		m.defectSeverity.Prompt = "severity for " + m.defectName + " (1 cosmetic · 2 annoyance · 3 broken in a release · 4 outage)> "
 		m.defectSeverity.CharLimit = 1
 		m.defectSeverity.Cursor.SetMode(cursor.CursorHide)
 		m.notice = notice{}

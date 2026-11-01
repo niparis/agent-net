@@ -323,7 +323,7 @@ few days before part 3 starts steering.
 ## Open questions for the owner
 
 1. **The weights.** Decided by the owner on 2026-11-01: a fix counts 1, a
-   continue 0.33, and a late defect adds its severity from 1 to 4.
+   continue 0.33, and a late defect adds its severity from 1 to 4. The scale: 1 cosmetic or test-only, caught before release; 2 a visible annoyance or a latent performance problem that had not hit the owner yet; 3 a broken feature or a real performance regression in a release; 4 an outage, data loss or a security problem.
 2. **The window.** The last 7 tasks, with at least 5. Recommendation: keep
    it; at today's pace that is about a day of work per caller.
 3. **The strong-caller threshold.** Recommendation: a score of 45 or more,
