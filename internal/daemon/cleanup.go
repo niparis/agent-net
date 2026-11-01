@@ -58,15 +58,29 @@ func (d *Daemon) cleanupProjectFolders(project string, now time.Time) {
 	}
 }
 
+// The first cleanup runs soon after start. The daemon restarts on every
+// upgrade, so a cleanup that waited for the first 30-minute tick could be
+// postponed for days.
+var (
+	cleanupFirstDelay = time.Minute
+	cleanupEvery      = 30 * time.Minute
+)
+
 func (d *Daemon) cleanupLoop(ctx context.Context) {
-	t := time.NewTicker(30 * time.Minute)
+	runEvery(ctx, cleanupFirstDelay, cleanupEvery, func() { d.cleanupProjects(ctx) })
+}
+
+// runEvery calls fn after first, then every interval, until ctx ends.
+func runEvery(ctx context.Context, first, every time.Duration, fn func()) {
+	t := time.NewTimer(first)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			d.cleanupProjects(ctx)
+			fn()
+			t.Reset(every)
 		}
 	}
 }
