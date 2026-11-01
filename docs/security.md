@@ -965,3 +965,11 @@ check or a wake. A check or wake reaches the session's own model, which may use
 a paid or protected provider, so the caps and the stopping rules keep both
 rare.
 
+
+
+The quality rotation setting (`quality_get`, `quality_set`) is owner only
+on the local socket. Agent sessions cannot enable weighting. It defaults to
+off. When enabled, predicted quality multiplies rotation weights by 0.5 to
+1.5 and cannot bypass capability minimums, protected providers or quota
+exclusions. Ratings from callers below score 45 count half; without a strong
+rating, a model cannot receive a prediction above the fitted average.

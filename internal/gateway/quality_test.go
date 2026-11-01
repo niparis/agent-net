@@ -70,6 +70,9 @@ func TestQualityCacheAndChanges(t *testing.T) {
 
 func TestQualityChooserOffExactlyUnchanged(t *testing.T) {
 	s, _ := newTestStore(t)
+	s.quality = protocol.QualityAnalysis{Ratings: 20}
+	s.qualityFit = qualityFit{Average: 3, Effects: map[string]float64{"model\x00gpt-6.1-sol": 2, "model\x00gpt-6.1-terra": -2}}
+	s.qualityStrong = map[string]int{"gpt-6.1-sol": 10, "gpt-6.1-terra": 10}
 	c := []protocol.WorkerModelCandidate{{Model: "gpt-6.1-sol", Harness: "codex"}, {Model: "gpt-6.1-terra", Harness: "codex"}}
 	before := append([]protocol.WorkerModelCandidate(nil), c...)
 	if err := s.applyQualityWeights(c, "normal"); err != nil {

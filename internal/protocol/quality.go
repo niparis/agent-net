@@ -3,12 +3,13 @@ package protocol
 // QualityAnalysis is a gateway-cached additive fit. Counts are raw tasks;
 // weak ratings carry half weight. Effects below five tasks are tentative.
 type QualityAnalysis struct {
-	Status        string           `json:"status"`
-	Ratings       int              `json:"ratings"`
-	Average       float64          `json:"average"`
-	ReworkAverage float64          `json:"rework_average"`
-	Effects       []QualityEffect  `json:"effects,omitempty"`
-	Profiles      []ProfileQuality `json:"profiles,omitempty"`
+	WeightingEnabled bool             `json:"weighting_enabled"`
+	Status           string           `json:"status"`
+	Ratings          int              `json:"ratings"`
+	Average          float64          `json:"average"`
+	ReworkAverage    float64          `json:"rework_average"`
+	Effects          []QualityEffect  `json:"effects,omitempty"`
+	Profiles         []ProfileQuality `json:"profiles,omitempty"`
 }
 type QualityEffect struct {
 	Kind    string  `json:"kind"`
@@ -19,11 +20,12 @@ type QualityEffect struct {
 	Runs    int     `json:"runs"`
 }
 type ProfileQuality struct {
-	Name       string  `json:"name"`
-	Quality    float64 `json:"quality"`
-	Ratings    int     `json:"ratings"`
-	Runs       int     `json:"runs"`
-	Unexpected bool    `json:"unexpected,omitempty"`
+	Weights    map[string]float64 `json:"weights,omitempty"`
+	Name       string             `json:"name"`
+	Quality    float64            `json:"quality"`
+	Ratings    int                `json:"ratings"`
+	Runs       int                `json:"runs"`
+	Unexpected bool               `json:"unexpected,omitempty"`
 }
 
 const OpQualityGet = "quality_get"

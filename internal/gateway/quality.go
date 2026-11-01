@@ -241,7 +241,12 @@ func (s *Store) refreshQuality() error {
 	}
 	for _, p := range profiles {
 		v := qualityPrediction(q, strong, p.Model, p.Harness, p.Effort, "normal")
-		row := protocol.ProfileQuality{Name: p.Name, Quality: v}
+		row := protocol.ProfileQuality{Name: p.Name, Quality: v, Weights: map[string]float64{}}
+		if len(ratings) >= 5 {
+			for _, level := range protocol.DifficultyLevels {
+				row.Weights[level] = qualityRotationWeight(qualityPrediction(q, strong, p.Model, p.Harness, p.Effort, level), q.Average)
+			}
+		}
 		actual, predicted := 0.0, 0.0
 		for _, x := range ratings {
 			if x.Model == qualityModel(p.Model) && x.Harness == p.Harness && x.Effort == p.Effort {
@@ -258,6 +263,11 @@ func (s *Store) refreshQuality() error {
 		row.Unexpected = row.Ratings >= 5 && math.Abs(actual-predicted)/float64(row.Ratings) > .75
 		out.Profiles = append(out.Profiles, row)
 	}
+	settings, err := s.qualitySettings()
+	if err != nil {
+		return err
+	}
+	out.WeightingEnabled = settings.Enabled
 	s.quality = out
 	s.qualityFit = q
 	s.qualityStrong = strong
@@ -277,6 +287,12 @@ func (s *Store) QualityAnalysis() protocol.QualityAnalysis {
 	out := s.quality
 	out.Effects = append([]protocol.QualityEffect(nil), out.Effects...)
 	out.Profiles = append([]protocol.ProfileQuality(nil), out.Profiles...)
+	for i, p := range out.Profiles {
+		out.Profiles[i].Weights = make(map[string]float64, len(p.Weights))
+		for level, weight := range p.Weights {
+			out.Profiles[i].Weights[level] = weight
+		}
+	}
 	return out
 }
 func (s *Store) applyQualityWeights(candidates []protocol.WorkerModelCandidate, difficulty string) error {
@@ -295,7 +311,11 @@ func (s *Store) applyQualityWeights(candidates []protocol.WorkerModelCandidate, 
 			effort = c.DefaultEffort
 		}
 		v := qualityPrediction(s.qualityFit, s.qualityStrong, model, c.Harness, effort, difficulty)
-		candidates[i].QualityWeight = math.Max(.5, math.Min(1.5, 1+(v-s.qualityFit.Average)/4))
+		candidates[i].QualityWeight = qualityRotationWeight(v, s.qualityFit.Average)
 	}
 	return nil
+}
+
+func qualityRotationWeight(prediction, average float64) float64 {
+	return math.Max(.5, math.Min(1.5, 1+(prediction-average)/4))
 }

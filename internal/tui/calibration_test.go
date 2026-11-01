@@ -78,3 +78,18 @@ func TestQuotaQualityEmpty(t *testing.T) {
 		t.Fatalf("empty: %s", view)
 	}
 }
+
+func TestQuotaQualityWeightsMatchChooserSetting(t *testing.T) {
+	m := newModel(80, 40)
+	m.snap.Calibration.Quality = protocol.QualityAnalysis{WeightingEnabled: true, Profiles: []protocol.ProfileQuality{{Name: "a", Weights: map[string]float64{"normal": 1.5}}}}
+	candidates := []protocol.WorkerModelCandidate{{Name: "a", Harness: "codex", Model: "gpt-6.1-sol"}}
+	normal, _ := m.workerCandidateTiers("normal", candidates)
+	if normal[0].QualityWeight != 1.5 {
+		t.Fatalf("preview weight: %+v", normal)
+	}
+	m.snap.Calibration.Quality.WeightingEnabled = false
+	normal, _ = m.workerCandidateTiers("normal", candidates)
+	if normal[0].QualityWeight != 0 {
+		t.Fatalf("disabled preview: %+v", normal)
+	}
+}

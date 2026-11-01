@@ -45,6 +45,9 @@ func (g *Gateway) handleQualitySettings(w http.ResponseWriter, r *http.Request) 
 		_, err = g.store.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, qualitySettingsKey, string(raw), g.store.now().UnixNano())
 	}
 	if err == nil {
+		g.store.qualityMu.Lock()
+		g.store.quality.WeightingEnabled = in.Enabled
+		g.store.qualityMu.Unlock()
 		g.store.Event("quality.set", node, "", "", "")
 	}
 	writeJSON(w, in, err)
