@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -171,4 +172,70 @@ func TestCodexTurnStartedClearsWaiting(t *testing.T) {
 	a := &codexAdapter{d: n.d, kick: make(chan struct{}, 1)}
 	a.onNote("turn/started", json.RawMessage(`{"threadId":"thread-one"}`))
 	eventually(t, "turn start clears wait", func() bool { return waitingOf(t, n, id) == nil })
+}
+
+func TestWorkerAskOwnerIsRefused(t *testing.T) {
+	d := &Daemon{workers: map[string]*worker{"w_test": {id: "w_test", sessionID: "s_test"}}}
+	lc := &localConn{d: d}
+	ls := &localSession{sessionID: "s_test"}
+	_, err := lc.waitingCall("opencode", ls, json.RawMessage(`{"kind":"question","text":"Merge?","explicit":true}`))
+	if err == nil || err.Error() != "you are a worker: put the question in your hand-back or ask your caller with agent_reply" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWorkerWaitingNotice(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "wait"})
+	rec := readFake(t, repo)
+	eventually(t, "worker task delivered", func() bool { return w.d.st.isDelivered(res.Task.ID) })
+	owner := w.ownerID()
+	blocked := func() []protocol.Message {
+		var found []protocol.Message
+		for _, m := range w.messagesOf(t, owner) {
+			if strings.Contains(m.Body, "worker "+res.SessionID+" is blocked:") {
+				found = append(found, m)
+			}
+		}
+		return found
+	}
+	send := func(kind, text string) {
+		w.cli.mustCall("waiting", map[string]any{"harness": "opencode", "native_id": rec.SessionID, "kind": kind, "text": text})
+	}
+	send("permission", "shell(git status)")
+	eventually(t, "worker blocked notice", func() bool { return len(blocked()) == 1 })
+	if got := blocked()[0].Body; !strings.Contains(got, "worker "+res.SessionID+" is blocked: shell(git status)") {
+		t.Fatalf("notice: %s", got)
+	}
+	if got := waitingOf(t, w.node, res.SessionID); got != nil {
+		t.Fatalf("worker wait reached Needs you: %+v", got)
+	}
+	send("permission", "shell(git status)")
+	if got := len(blocked()); got != 1 {
+		t.Fatalf("repeat sent %d notices: %+v", got, blocked())
+	}
+	w.cli.mustCall("waiting", map[string]any{"harness": "opencode", "native_id": rec.SessionID, "clear": true})
+	send("question", "Which branch?")
+	eventually(t, "second blocked notice", func() bool { return len(blocked()) == 2 })
+	if !strings.Contains(blocked()[0].Body+blocked()[1].Body, "Which branch?") {
+		t.Fatal("question missing")
+	}
+	w.cli.mustCall("waiting", map[string]any{"harness": "opencode", "native_id": rec.SessionID, "clear": true})
+	send("input", "")
+	if got := len(blocked()); got != 2 {
+		t.Fatalf("empty wait sent notice: %d", got)
+	}
+	params := map[string]any{"harness": "opencode", "native_id": rec.SessionID, "kind": "question", "text": "May I merge?", "explicit": true}
+	for i := 0; i < 2; i++ {
+		if _, err := w.cli.call("waiting", params); err == nil || !strings.Contains(err.Error(), "you are a worker") {
+			t.Fatalf("explicit worker question not refused: %v", err)
+		}
+	}
+	eventually(t, "explicit question notice", func() bool { return len(blocked()) == 3 })
+	if got := waitingOf(t, w.node, res.SessionID); got != nil {
+		t.Fatalf("explicit question reached Needs you: %+v", got)
+	}
 }

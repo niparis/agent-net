@@ -385,6 +385,15 @@ func (d *Daemon) sendNoticeTo(ctx context.Context, w *worker, n protocol.WorkerN
 }
 
 func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo, noticeKey string) (json.RawMessage, error) {
+	if len(report) > 48*1024 {
+		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
+	}
+	return d.sendWorkerNoticeBody(ctx, w, protocol.FormatWorkerNotice(n, report), to, replyTo, noticeKey)
+}
+
+// sendWorkerNoticeBody sends a worker notice through the same reply and outbox
+// path used for completion notices.
+func (d *Daemon) sendWorkerNoticeBody(ctx context.Context, w *worker, body, to, replyTo, noticeKey string) (json.RawMessage, error) {
 	d.wmu.Lock()
 	sid, owner, parent := w.sessionID, w.owner, w.taskMsg
 	d.wmu.Unlock()
@@ -394,14 +403,11 @@ func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.Work
 	if sid == "" {
 		return nil, errors.New("the worker has no session")
 	}
-	if len(report) > 48*1024 {
-		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
-	}
 	if noticeKey == "" {
 		noticeKey = protocol.NewID("k")
 	}
 	p := protocol.MsgSend{Sender: sid, Recipient: owner, Type: protocol.TypeNotification,
-		Body: protocol.FormatWorkerNotice(n, report), IdempotencyKey: noticeKey}
+		Body: body, IdempotencyKey: noticeKey}
 	if parent != "" {
 		p.Type, p.ParentID = protocol.TypeReply, parent
 	}

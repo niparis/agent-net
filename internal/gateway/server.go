@@ -329,6 +329,8 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/cto-settings", g.handleCTOSettingsSet)
 	mux.HandleFunc("GET /v1/integrations", g.handleIntegrationsGet)
 	mux.HandleFunc("PUT /v1/integrations", g.handleIntegrationsSet)
+	mux.HandleFunc("GET /v1/cto-title", g.handleCTOTitleGet)
+	mux.HandleFunc("PUT /v1/cto-title", g.handleCTOTitleSet)
 	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
 	mux.HandleFunc("GET /install/{code}", g.handleInstallScript)
 	g.upgradeRoutes(mux)
@@ -446,7 +448,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" {
+		if h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -559,6 +561,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.ProjectDisplayName(p.Project)
 
+	case "node.rename.validate":
+		p, err := decode[protocol.NodeRename](raw)
+		if err != nil || p.NodeID == "" {
+			return nil, reject("bad node.rename")
+		}
+		_, _, err = st.checkNodeDisplayName(p.NodeID, p.Name)
+		if err != nil {
+			return nil, reject("%s", err.Error())
+		}
+		return map[string]bool{"ok": true}, nil
 	case "node.rename":
 		p, err := decode[protocol.NodeRename](raw)
 		if err != nil || p.NodeID == "" {
@@ -572,7 +584,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		g.logLine("node.renamed", "by", nc.id, "node", p.NodeID, "name", res.DisplayName)
+		g.logLine("node.renamed", "by", nc.id, "actor", graphActor(raw), "node", p.NodeID, "name", res.DisplayName)
 		if c := g.conn(p.NodeID); c != nil {
 			if frame, err := protocol.EncodeRequest("node.name", protocol.NewID("d"), protocol.NodeName{Hostname: res.Hostname}); err == nil {
 				c.write(ctx, frame)
@@ -609,6 +621,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
+	case "tools.skill_details":
+		p, err := decode[protocol.ToolSkillScan](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.toolSkillDetails(ctx, p)
 	case "tools.report":
 		p, err := decode[protocol.ToolResult](raw)
 		if err != nil {
@@ -688,6 +706,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return map[string]any{"events": events}, nil
+	case "tools.summary":
+		p, err := decode[protocol.SkillSummaryRequest](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		summary, err := st.phraseCleaner.Summarize(ctx, p.AHash, p.BHash, p.A, p.B)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"summary": summary}, nil
 	case "tools.read_file":
 		p, err := decode[protocol.SkillTextRequest](raw)
 		if err != nil || !g.validToolOwner(nc, p.Owner) {
@@ -988,6 +1016,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return protocol.PlaybookGetResult{Note: note}, nil
+	case "charter.validate":
+		p, err := decode[protocol.CharterSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad charter.set")
+		}
+		tx, err := st.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		if err := setCharterTx(tx, p.Node, p.Attr, p.Value, "owner", st.now().UnixNano()); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
 	case "charter.set":
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {
@@ -1023,6 +1065,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			err = st.RemoveArchitect(p.Name, graphActor(raw))
 		}
 		return map[string]bool{"ok": true}, err
+	case "edge.validate":
+		p, err := decode[protocol.Edge](raw)
+		if err != nil {
+			return nil, reject("bad edge request")
+		}
+		tx, err := st.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		if err := setEdgeTx(tx, p, "owner", st.now().UnixNano()); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
 	case "edge.set", "edge.remove":
 		p, err := decode[protocol.Edge](raw)
 		if err != nil {
@@ -1061,6 +1117,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return st.NodeSettings(p.Node)
+	case "onboarding.get":
+		return st.Onboarding()
+	case "onboarding.set":
+		p, err := decode[protocol.OnboardingUpdate](raw)
+		if err != nil {
+			return nil, reject("bad onboarding.set")
+		}
+		return st.UpdateOnboarding(p, false)
+	case "onboarding.restart":
+		return st.UpdateOnboarding(protocol.OnboardingUpdate{}, true)
 	case "hidden.get":
 		return st.HiddenItems()
 	case "hidden.set":
@@ -1443,6 +1509,12 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	// The relation from the sender's node to the recipient's node is graph
 	// data, computed here and never set by a sender (decision 0022).
 	m.RecipientRelation = g.relationForDelivery(m)
+	authority, err := g.store.MergeAuthorityForSession(m.To)
+	if err != nil {
+		g.logLine("error", "where", "recipient merge authority", "err", err)
+		return
+	}
+	m.RecipientMergeAuthority = authority
 	frame, err := protocol.EncodeRequest("msg.deliver", protocol.NewID("d"), protocol.MsgDeliver{Message: m})
 	if err != nil {
 		return
@@ -1476,6 +1548,12 @@ func graphActor(raw json.RawMessage) string {
 	}
 	if json.Unmarshal(raw, &p) == nil && p.By == "cto" {
 		return "cto"
+	}
+	if strings.HasPrefix(p.By, "owner (CTO proposal p_") && strings.HasSuffix(p.By, ")") {
+		n := strings.TrimSuffix(strings.TrimPrefix(p.By, "owner (CTO proposal p_"), ")")
+		if n != "" && strings.Trim(n, "0123456789") == "" {
+			return p.By
+		}
 	}
 	return "owner"
 }

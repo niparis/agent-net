@@ -43,22 +43,14 @@ func (d *Daemon) scanTools(ctx context.Context) protocol.InventoryReport {
 		report.State = protocol.InventoryError
 		report.Reason = "project registry unavailable"
 	}
-	if report.State == protocol.InventoryError && len(d.toolsReport.Items) > 0 {
-		previous := d.toolsReport
-		previous.Items = append([]protocol.InventoryItem(nil), previous.Items...)
-		for i := range previous.Items {
-			previous.Items[i].State = protocol.InventoryStale
-			previous.Items[i].Reason = "latest scan failed"
-		}
-		previous.State = protocol.InventoryStale
-		previous.Reason = "latest scan failed"
-		previous.ScannedAt = report.ScannedAt
-		d.toolsReport = previous
-	} else {
-		d.toolsReport = report
-	}
-	// Send the failure itself so the gateway preserves its previous records.
-	_, _ = d.call(ctx, "node.inventory", report)
+	// Keep fresh items when only some sources failed. One unreadable or
+	// linked-out skill must not throw away every other fresh observation.
+	fresh := report
+	report = inventory.MergeReports(d.toolsReport, fresh)
+	d.toolsReport = report
+	// Send the scan as it came so the gateway applies the same merge to its
+	// own stored report.
+	_, _ = d.call(ctx, "node.inventory", fresh)
 	result := d.toolsReport
 	result.Items = append([]protocol.InventoryItem(nil), result.Items...)
 	return result
@@ -69,7 +61,18 @@ func (d *Daemon) toolsLoop(ctx context.Context) {
 	defer ticker.Stop()
 	d.recoverSkillJournal()
 	d.pruneSkillBackups()
+	version := d.helloVersion()
+	if d.st != nil {
+		if previous := d.st.inventoryScanVersion(); previous != "" && previous != version {
+			d.Logf("inventory: rescanning after upgrade from %s to %s", previous, version)
+		}
+	}
 	d.scanTools(ctx)
+	if d.st != nil {
+		if err := d.st.setInventoryScanVersion(version); err != nil {
+			d.Logf("inventory: cannot remember the scan version: %v", err)
+		}
+	}
 	d.reconcileTools(ctx)
 	for {
 		select {

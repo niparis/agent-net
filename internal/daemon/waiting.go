@@ -1,9 +1,10 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"slices"
+	"fmt"
 	"strings"
 	"time"
 
@@ -31,42 +32,45 @@ func isIdlePromptWait(w *protocol.Waiting) bool {
 // setWaiting replaces a session's waiting state (nil clears it) and tells the
 // gateway. A new wait gets the time it began when the caller did not say.
 func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
-	w = protocol.CleanWaiting(w)
+	if w = protocol.CleanWaiting(w); w != nil && w.Since == 0 {
+		w.Since = time.Now().Unix()
+	}
 	d.mu.Lock()
-	if w != nil && w.Since == 0 {
-		// A harness need not remember when an unchanged wait began.
-		if old := ls.info.Waiting; old != nil {
-			w.Since = old.Since
-			if !sameWaiting(old, w) {
-				w.Since = 0
+	sessionID := ls.sessionID
+	d.mu.Unlock()
+	worker := d.workerBySession(sessionID)
+	d.mu.Lock()
+	if worker != nil {
+		old := ls.workerWaiting
+		if w != nil && w.Text == "" {
+			w = nil
+		}
+		changed := w != nil && (old == nil || old.Kind != w.Kind || old.Text != w.Text)
+		ls.workerWaiting = w
+		ls.info.Waiting = nil
+		d.mu.Unlock()
+		if changed {
+			d.wmu.Lock()
+			owner := worker.owner
+			d.wmu.Unlock()
+			if owner != "" {
+				body := fmt.Sprintf("worker %s is blocked: %s", sessionID, w.Text)
+				if _, err := d.sendWorkerNoticeBody(context.Background(), worker, body, "", "", ""); err != nil {
+					d.Logf("worker %s: blocked notice: %v", worker.id, err)
+					d.mu.Lock()
+					if ls.workerWaiting == w {
+						ls.workerWaiting = nil
+					}
+					d.mu.Unlock()
+				}
 			}
 		}
-		if w.Since == 0 {
-			w.Since = time.Now().Unix()
-		}
+		d.pushSession(ls)
+		return
 	}
-	started := w != nil && !sameWaiting(ls.info.Waiting, w)
 	ls.info.Waiting = w
-	harness, native := ls.info.Harness, ls.info.NativeID
-	at := time.Now()
-	if started {
-		d.recordActivityLocked(ls, at)
-	}
 	d.mu.Unlock()
-	if started {
-		d.saveActivity(harness, native, at)
-	}
 	d.pushSession(ls)
-}
-
-// sameWaiting says whether a report describes the wait already stored, so a
-// re-report does not count as new activity.
-func sameWaiting(a, b *protocol.Waiting) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return a.Explicit == b.Explicit && a.Kind == b.Kind && a.Text == b.Text &&
-		a.Since == b.Since && a.Urgency == b.Urgency && slices.Equal(a.Options, b.Options)
 }
 
 // waitingCall serves MethodWaiting. A plugin reports for the session it is
@@ -91,6 +95,10 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 		}
 	} else if ls == nil {
 		return nil, errors.New("this method needs a bound session")
+	}
+	if p.Explicit && d.workerBySession(ls.sessionID) != nil {
+		d.setWaiting(ls, &protocol.Waiting{Kind: p.Kind, Text: p.Text, Explicit: true})
+		return nil, errors.New("you are a worker: put the question in your hand-back or ask your caller with agent_reply")
 	}
 	if p.Clear {
 		d.setWaiting(ls, nil)

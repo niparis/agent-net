@@ -28,6 +28,15 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	if remote.Harness == "" {
 		remote.Harness = "opencode"
 	}
+	remote.Title = protocol.CTOTitleOrDefault(remote.Title)
+	title := remote.Title
+	if in.Title != nil {
+		normalized, err := protocol.NormalizeCTOTitle(*in.Title)
+		if err != nil {
+			return protocol.CTOSettings{}, err
+		}
+		title = protocol.CTOTitleOrDefault(normalized)
+	}
 	if err := d.migrateCTOModelSettings(remote); err != nil {
 		return protocol.CTOSettings{}, err
 	}
@@ -82,12 +91,13 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 			return protocol.CTOSettings{}, err
 		}
 	}
-	if in.Model != nil || in.Harness != nil || in.Compaction != nil {
+	if in.Model != nil || in.Harness != nil || in.Compaction != nil || in.Title != nil {
 		remote.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
 		remote.Harness = harness
 		remote.OpenCodeModel = openCodeModel
 		remote.ClaudeModel = claudeModel
 		remote.Compaction = compaction
+		remote.Title = title
 		if err := writeRemoteCTOSettings(ctx, c, remote); err != nil {
 			return protocol.CTOSettings{}, err
 		}
@@ -99,6 +109,7 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	out.ClaudeModel = claudeModel
 	out.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
 	out.Compaction = compaction
+	out.Title = title
 	d.cacheCTOSettings(out)
 	return out, nil
 }

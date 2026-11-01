@@ -44,14 +44,30 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
-	inboxItems                         []protocol.InboxItem
-	inboxOn, inboxDetail, inboxEditing bool
-	inboxIndex                         int
-	inboxError                         string
-	inboxInput                         textinput.Model
-	cto                                *ctoState
-	ctoGeneration                      int
-	src                                Source
+	proposals                           []protocol.CTOProposal
+	proposalDetail                      *proposalDetail
+	proposalConfirm                     bool
+	proposalConfirmItems                []protocol.CTOProposal
+	proposalConfirmScroll               int
+	proposalHistory                     bool
+	proposalHistoryIndex                int
+	inboxItems                          []protocol.InboxItem
+	inboxOn, inboxDetail, inboxEditing  bool
+	inboxIndex                          int
+	inboxError                          string
+	inboxInput                          textinput.Model
+	cto                                 *ctoState
+	ctoGeneration                       int
+	onboarding                          protocol.Onboarding
+	onboardingLoaded, onboardingPending bool
+	onboardingRevision                  int
+	onboardingQueue                     []onboardingWriteRequest
+	onboardingCTOLast                   string
+	onboardingCTOLoaded                 bool
+	onboardingSawNoAgents               bool
+	onboardingToolsCount                int
+	onboardingToolsKnown                bool
+	src                                 Source
 	// loc and now are replaced in tests.
 	loc *time.Location
 	now func() time.Time
@@ -174,21 +190,29 @@ func New(src Source) Model {
 type tickMsg struct{}
 
 type fetchedMsg struct {
-	inboxItems []protocol.InboxItem
-	inboxOK    bool
-	snap       Snapshot
-	err        error
-	events     []protocol.FeedEvent
-	eventsErr  error
-	at         time.Time
+	proposals   []protocol.CTOProposal
+	proposalsOK bool
+	inboxItems  []protocol.InboxItem
+	inboxOK     bool
+	snap        Snapshot
+	err         error
+	events      []protocol.FeedEvent
+	eventsErr   error
+	at          time.Time
 	// usage and counts are set when this refresh asked for them.
-	askedUsage bool
-	usage      Usage
-	usageErr   error
-	counts     protocol.SessionCounts
-	countsErr  error
-	hidden     protocol.HiddenItems
-	hiddenErr  error
+	askedUsage           bool
+	usage                Usage
+	usageErr             error
+	counts               protocol.SessionCounts
+	countsErr            error
+	hidden               protocol.HiddenItems
+	hiddenErr            error
+	onboarding           protocol.Onboarding
+	onboardingErr        error
+	onboardingAsked      bool
+	onboardingRevision   int
+	onboardingToolsCount int
+	onboardingToolsKnown bool
 }
 
 type notificationSettingMsg struct {
@@ -243,6 +267,7 @@ func (m Model) nextTick() tea.Cmd {
 // fetchCmd reads a snapshot and the new events. One runs at a time.
 func (m Model) fetchCmd() tea.Cmd {
 	src, after := m.src, m.feed.lastID
+	onboardingRevision, onboardingPending := m.onboardingRevision, m.onboardingPending
 	skipFeed := m.feed.unavailable != ""
 	askUsage := m.usageDue()
 	askCounts := askUsage && !m.usage.noCounts
@@ -258,6 +283,23 @@ func (m Model) fetchCmd() tea.Cmd {
 			return res
 		}
 		res.hidden, res.hiddenErr = src.HiddenItems(ctx)
+
+		if caller, ok := src.(inboxCaller); ok && !onboardingPending {
+			res.onboardingAsked, res.onboardingRevision = true, onboardingRevision
+			var raw json.RawMessage
+			raw, res.onboardingErr = caller.Call(ctx, "onboarding_get", nil)
+			if res.onboardingErr == nil {
+				res.onboardingErr = json.Unmarshal(raw, &res.onboarding)
+			}
+		}
+		if d, ok := src.(interface {
+			ToolsDifferences(context.Context) (int, error)
+		}); ok && askUsage && len(res.snap.Nodes) > 1 {
+			count, err := d.ToolsDifferences(ctx)
+			if err == nil {
+				res.onboardingToolsCount, res.onboardingToolsKnown = count, true
+			}
+		}
 		if askUsage {
 			res.askedUsage = true
 			if askU {
@@ -272,6 +314,9 @@ func (m Model) fetchCmd() tea.Cmd {
 			}
 		}
 		if c, ok := src.(inboxCaller); ok {
+			if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
+				res.proposalsOK = true
+			}
 			var data struct {
 				Items []protocol.InboxItem `json:"items"`
 			}
@@ -416,6 +461,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		oldID, loaded := m.cto.lastGraphID, m.cto.historyLoaded
+		last := m.onboardingLastUserMessage(msg.events)
+		ctoDone := msg.err == nil && m.onboardingCTOLoaded && last != "" && last != m.onboardingCTOLast
+		if msg.err == nil {
+			m.onboardingCTOLast, m.onboardingCTOLoaded = last, true
+		}
 		m.applyCTOPoll(msg)
 		if msg.err == nil {
 			m.cto.historyLoaded = true
@@ -426,6 +476,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mp.loading = true
 				return m, m.mapCmd()
 			}
+		}
+		if ctoDone {
+			return m.onboardingComplete("cto")
 		}
 		return m, nil
 	case ctoOlderMsg:
@@ -486,6 +539,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.cto.model = msg.settings.Model
+				m.cto.title = protocol.CTOTitleOrDefault(msg.settings.Title)
 				if m.cto.harness == "" {
 					m.cto.harness = "opencode"
 				}
@@ -538,12 +592,46 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case onboardingMsg:
+		if msg.revision != m.onboardingRevision {
+			return m, nil
+		}
+		if msg.write {
+			m.onboardingPending = false
+		}
+		if msg.err != nil {
+			if msg.write {
+				m.fail("Could not save tips: " + explain(msg.err))
+			}
+		} else {
+			m.onboarding, m.onboardingLoaded = msg.value, true
+		}
+		if msg.write && len(m.onboardingQueue) > 0 {
+			request := m.onboardingQueue[0]
+			m.onboardingQueue = m.onboardingQueue[1:]
+			return m.onboardingWrite(request.method, request.params)
+		}
+		return m, nil
+
 	case fetchedMsg:
+		if msg.proposalsOK {
+			m.proposals = msg.proposals
+		}
+		if msg.onboardingAsked && msg.onboardingErr == nil && msg.onboardingRevision == m.onboardingRevision && !m.onboardingPending {
+			m.onboarding, m.onboardingLoaded = msg.onboarding, true
+		}
+		before := m.onboardingStep().id
 		if msg.inboxOK {
 			m.inboxItems = msg.inboxItems
 		}
 		m.fetching = false
 		m.applyFetch(msg)
+		if msg.onboardingToolsKnown {
+			m.onboardingToolsCount, m.onboardingToolsKnown = msg.onboardingToolsCount, true
+		}
+		if msg.err == nil && msg.snap.Connected {
+			return m.onboardingAfterFetch(before, msg.events)
+		}
 		return m, nil
 	case notificationSettingMsg:
 		if msg.err != nil {
@@ -576,19 +664,90 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case toolsAcceptMsg:
 		m.onToolsAccept(msg)
+		if msg.err == nil && msg.accepted {
+			return m.onboardingComplete("tools")
+		}
 		return m, nil
 
 	case toolsModalMsg:
-		return m.onToolsModal(msg)
+		next, cmd := m.onToolsModal(msg)
+		if msg.onboarding {
+			var save tea.Cmd
+			next, save = next.onboardingComplete("tools")
+			return next, tea.Batch(cmd, save)
+		}
+		return next, cmd
 
 	case enterMsg:
 		return m.onEnter(msg)
 
 	case enterDoneMsg:
-		return m.onEnterDone(msg)
+		next, cmd := m.onEnterDone(msg)
+		if msg.err == nil && msg.name != "CTO" {
+			var save tea.Cmd
+			next, save = next.onboardingComplete("see")
+			return next, tea.Batch(cmd, save)
+		}
+		return next, cmd
 
 	case actionMsg:
-		return m.onAction(msg)
+		next, cmd := m.onAction(msg)
+		if msg.err == nil && msg.onboarding != "" {
+			var save tea.Cmd
+			next, save = next.onboardingComplete(msg.onboarding)
+			return next, tea.Batch(cmd, save)
+		}
+		return next, cmd
+	case proposalDetailMsg:
+		if d := m.proposalDetail; d != nil && d.proposal.ID == msg.id && d.proposal.NodeID == msg.node {
+			d.loading = false
+			d.diff = msg.diff
+			if msg.err != nil {
+				d.err = explain(msg.err)
+			}
+		}
+		return m, nil
+	case proposalAnswerMsg:
+		var detailCmd tea.Cmd
+		if msg.items != nil {
+			m.proposals = msg.items
+			if m.proposalDetail == nil && msg.action != "A" {
+				for _, p := range msg.items {
+					if p.ID == msg.id && p.NodeID == msg.node {
+						m.proposalDetail = &proposalDetail{proposal: p, loading: true}
+						detailCmd = m.proposalDetailCmd(p)
+						break
+					}
+				}
+			}
+			if d := m.proposalDetail; d != nil {
+				for _, p := range msg.items {
+					if p.ID == d.proposal.ID && p.NodeID == d.proposal.NodeID {
+						d.proposal = p
+						break
+					}
+				}
+			}
+		}
+		if msg.action == "A" && msg.items != nil {
+			m.proposalHistory = true
+			m.proposalHistoryIndex = 0
+		}
+		if msg.err != nil {
+			m.fail("Proposal failed: " + explain(msg.err))
+		} else if msg.action == "A" {
+			m.say("Proposals approved and applied.")
+		} else {
+			for _, p := range msg.items {
+				if p.ID == msg.id && p.NodeID == msg.node {
+					m.say(p.Note)
+					break
+				}
+			}
+		}
+		m.ensureSelection()
+		m.fixScroll()
+		return m, detailCmd
 
 	case policyPreviewMsg:
 		return m.onPolicyPreview(msg)
@@ -626,6 +785,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.orderFrozenUntil = m.now().Add(3 * time.Second)
 		next, cmd := m.key(msg)
+		if changed, ok := next.(Model); ok && changed.tab == 1 && m.tab != 1 && changed.onboardingHasPeerThread() {
+			var save tea.Cmd
+			changed, save = changed.onboardingComplete("talk")
+			next, cmd = changed, tea.Batch(cmd, save)
+		}
 		if m.mapOn {
 			if changed, ok := next.(Model); ok && (!changed.mapOn || changed.quitting) {
 				mark := m.markMapViewed(m.mp.selected)
@@ -734,6 +898,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
+	if m.proposalConfirm {
+		return m.proposalConfirmKey(k)
+	}
+	if m.proposalHistory && !m.help {
+		return m.proposalHistoryKey(k)
+	}
+	if m.proposalDetail != nil && !m.help {
+		return m.proposalDetailKey(k)
+	}
 	switch m.mode {
 	case modeCompose:
 		return m.composeKey(k)
@@ -759,6 +932,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.help {
 		switch k.String() {
+		case "T":
+			disabled := !m.onboarding.Disabled
+			return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Disabled: &disabled})
+		case "R":
+			return m.onboardingWrite("onboarding_restart", nil)
 		case "n":
 			src, ok := m.src.(interface {
 				NotificationSettings(context.Context, *bool) (bool, error)
@@ -954,6 +1132,18 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.focus == focusSessions {
+		if p, ok := m.selectedProposal(); ok {
+			switch k.String() {
+			case "enter":
+				m.proposalDetail = &proposalDetail{proposal: p, loading: true}
+				return m, m.proposalDetailCmd(p)
+			case "a", "x":
+				return m, m.proposalAnswerCmd(p, k.String())
+			case "A":
+				m.openProposalConfirm()
+				return m, nil
+			}
+		}
 		for _, suggestion := range m.snap.Learned {
 			if m.selected == fmt.Sprintf("learned:%d", suggestion.ID) && suggestion.Status == "pending" && (k.String() == "a" || k.String() == "r") {
 				c, ok := m.src.(inboxCaller)
@@ -1229,6 +1419,18 @@ func (m Model) idleLong(a protocol.AgentView) bool {
 	return m.now().Sub(time.Unix(a.LastSeen, 0)) > idleAfter
 }
 
+// sessionStart is the order key of a session: when the gateway first saw it.
+// Older gateways do not say, so those sessions keep the order of their IDs.
+func sessionStart(a protocol.AgentView) int64 {
+	if a.FirstSeen > 0 {
+		return a.FirstSeen
+	}
+	if a.Worker != nil && a.Worker.StartedAt > 0 {
+		return a.Worker.StartedAt
+	}
+	return 0
+}
+
 // treeMark is how a worker row hangs under the session that started it.
 type treeMark struct {
 	prefix string // the tree glyphs before the name: "├─ ", "│  └─ ", or "↳ " for a lone worker
@@ -1329,6 +1531,9 @@ func (m Model) groups() []group {
 				if oa.rank != ob.rank {
 					return oa.rank < ob.rank
 				}
+			}
+			if sa, sb := sessionStart(a), sessionStart(b); sa != sb {
+				return sa < sb
 			}
 			return a.SessionID < b.SessionID
 		})

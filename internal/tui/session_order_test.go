@@ -105,40 +105,6 @@ func TestNewBusySessionDoesNotMoveRowsDuringFreeze(t *testing.T) {
 	}
 }
 
-func TestRestartSortsByLastActiveNotLastSeen(t *testing.T) {
-	// After a daemon restart every session is reported in the same second, but
-	// only one of them has done something recently. The old order used the
-	// report time, then the oldest start.
-	snap := fakeSnapshot()
-	snap.Agents = nil
-	snap.Agents = append(snap.Agents,
-		agent("old-start", "n_mac", "Mac", "claude", "old-start", func(a *protocol.AgentView) {
-			a.FirstSeen, a.LastSeen = t0.Add(-60*time.Minute).Unix(), t0.Unix()
-			a.LastActive = t0.Add(-9 * time.Minute).Unix()
-		}),
-		agent("new-start", "n_mac", "Mac", "claude", "new-start", func(a *protocol.AgentView) {
-			a.FirstSeen, a.LastSeen = t0.Add(-10*time.Minute).Unix(), t0.Unix()
-			a.LastActive = t0.Add(-1 * time.Minute).Unix()
-		}),
-	)
-	m := treeModel(80, 24, snap)
-	if got := strings.Join(names(m), ","); got != "new-start,old-start" {
-		t.Fatalf("order after restart: %s, want newest activity first", got)
-	}
-
-	// A re-report after the restart moves LastSeen for every session again;
-	// the real activity did not change, so neither does the order.
-	now := t0.Add(30 * time.Second)
-	m.now = func() time.Time { return now }
-	for i := range snap.Agents {
-		snap.Agents[i].LastSeen = now.Unix()
-	}
-	m = refresh(m, &fakeSource{snap: snap})
-	if got := strings.Join(names(m), ","); got != "new-start,old-start" {
-		t.Fatalf("order after re-report: %s, want unchanged", got)
-	}
-}
-
 func orderedTableNames(m Model) []string {
 	var out []string
 	for _, g := range m.groups() {

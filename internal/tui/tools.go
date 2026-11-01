@@ -29,6 +29,7 @@ type ToolsSource interface {
 	ToolsPlan(context.Context, protocol.ToolPlanRequest) (protocol.ToolPlan, error)
 	ToolsApply(ctx context.Context, planID string) (protocol.ToolApplyResult, error)
 	ToolsImport(context.Context, protocol.ToolImport) error
+	ToolsSkillDetails(context.Context, protocol.ToolSkillScan) (protocol.ToolSkillDetails, error)
 	ToolsRescan(context.Context) error
 	MCPCandidates(context.Context) ([]protocol.MCPImportCandidate, error)
 	MCPImportPlan(ctx context.Context, candidate string) (protocol.MCPImportPlan, error)
@@ -69,6 +70,7 @@ type toolsState struct {
 	scroll        int
 	showAccepted  bool
 	expandedDiffs map[string]bool
+	summaries     map[string]string
 
 	search    string // filter of the All tools screen
 	projSel   string // the project of the By project screen

@@ -1,18 +1,18 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
-╭─Keep the newer one in both places────────────────────────────────────────────╮
-│ a  keep the copy on research (claude)                                        │
-│      3 files, 430 B, changed 1 day ago (28 Oct) (newer)                      │
-│ b  keep the copy on research (pi)                                            │
-│      2 files, 240 B, changed 4 days ago (25 Oct)                             │
+╭─Compare, then keep one───────────────────────────────────────────────────────╮
+│   summary unavailable: compare the files below                               │
+│ a  keep the copy on research (pi)                                            │
+│      origin unknown; file modified 25 Oct 2026; editor unknown               │
+│      used by research / pi                                                   │
+│ b  keep the copy on research (claude)                                        │
+│      origin unknown; file modified 28 Oct 2026; editor unknown               │
+│      used by research / claude                                               │
+│   no clear winner: read the comparison                                       │
 │   3 files differ: SKILL.md changed, notes.md changed                         │
-│     scripts/run.sh only on claude                                            │
-│   suggest: keep claude's copy (newer, has every file)                        │
-│   the one you keep goes into agent-net and to research                       │
-│   selected file: SKILL.md                                                    │
+│   lines 1-9 of 12 · up/down scroll                                           │
 │                                                                              │
-│ enter keep newer  a keep claude's copy  b keep pi's copy  n/p select file    │
-│   v view diff  d exact folders  esc cancel                                   │
+│ a keep pi's copy  b keep claude's copy  n/p select file  v view diff         │
+│   d exact folders  esc cancel                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

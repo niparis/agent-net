@@ -111,7 +111,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {
 				d.shownHost.Store(p.Hostname)
 			}
-		case "node.usage_top", "node.session_text", "node.session_enter", "node.message_body":
+		case "node.usage_top", "node.session_text", "node.session_enter", "node.message_body", "node.proposal_list", "node.proposal_answer":
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()
@@ -128,6 +128,9 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 		case "node.tool_plan_scan":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onToolPlanScan(ctx, l, h) }()
+		case "node.tool_skill_scan":
+			d.wg.Add(1)
+			go func() { defer d.wg.Done(); d.onToolSkillScan(ctx, l, h, raw) }()
 		case "node.tool_plan_probe":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onToolPlanProbe(ctx, l, h, raw) }()
@@ -260,7 +263,8 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	var missing []*localSession
 	for k, ls := range d.sessions {
-		info := d.infoLocked(ls)
+		info := ls.info
+		info.SessionID = ls.sessionID
 		if in, ok := sent[k]; ls.sessionID == "" || !ok || in != info {
 			missing = append(missing, ls)
 		}

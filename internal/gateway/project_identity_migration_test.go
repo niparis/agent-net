@@ -25,9 +25,6 @@ func resetIdentityMigration(t *testing.T, s *Store) {
 	if _, err := s.db.Exec(`DROP TABLE IF EXISTS project_display_names`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`ALTER TABLE sessions DROP COLUMN last_active`); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
 		t.Fatal(err)
 	}

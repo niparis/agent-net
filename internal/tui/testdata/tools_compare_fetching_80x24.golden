@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+╭─Compare, then keep one───────────────────────────────────────────────────────╮
+│   summary unavailable: compare the files below                               │
+│ a  keep the copy on Nicolas-MBP                                              │
+│      origin unknown; file modified 28 Oct 2026; editor unknown               │
+│      used by Nicolas-MBP                                                     │
+│ b  keep the copy on research                                                 │
+│      origin unknown; fetching details from research...                       │
+│      used by research                                                        │
+│   the one you keep goes into agent-net and to every machine                  │
+│                                                                              │
+│ a keep Nicolas-MBP  b keep research  d exact folders  esc cancel             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+│ 5 tools are the same everywhere you set them  ·  [ ] shows all of them       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter fix  x accept  [ ] screen  ? help  q quit

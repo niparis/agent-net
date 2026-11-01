@@ -13,6 +13,29 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// SkillManifest reads the bounded file manifest of one skill folder. It is
+// used for a narrow refresh of one observed skill, so the whole inventory does
+// not have to be scanned again.
+func SkillManifest(root string) (*protocol.SkillManifest, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("skill root is not a directory")
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	return skillManifestRoot(dir)
+}
+
 // skillManifestRoot reads only bounded file digests. In-tree links are recorded
 // as links, not followed. A nil manifest from an older daemon means unknown.
 func skillManifestRoot(dir *os.Root) (*protocol.SkillManifest, error) {

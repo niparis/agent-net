@@ -1,11 +1,13 @@
 package protocol
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The operator interface: the one set of methods a person uses to look at the
@@ -19,6 +21,8 @@ import (
 
 // Operator method names.
 const (
+	OpProposalList   = "proposal_list"
+	OpProposalAnswer = "proposal_answer"
 	// Data. These only read.
 	OpInfo             = "info"              // answers OperatorInfo
 	OpNodes            = "nodes"             // answers NodesInfo
@@ -113,11 +117,11 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers, OpToolsDifferences,
+var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
+	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
 // remain hidden across machines; node names identify graph items on Map.
@@ -490,6 +494,38 @@ func CleanNodeName(s string) (string, error) {
 	return s, nil
 }
 
+// CTOProposal is an owner-visible stored proposal and its outcome.
+type CTOProposal struct {
+	Messages  []CTOProposalMessage `json:"messages,omitempty"`
+	ID        string               `json:"id"`
+	NodeID    string               `json:"node_id"`
+	Tool      string               `json:"tool"`
+	Action    string               `json:"action"`
+	Args      json.RawMessage      `json:"args"`
+	Reason    string               `json:"reason"`
+	CreatedAt time.Time            `json:"created_at"`
+	Status    string               `json:"status"`
+	Note      string               `json:"note,omitempty"`
+	Result    json.RawMessage      `json:"result,omitempty"`
+}
+
+type CTOProposalMessage struct {
+	Sender string    `json:"sender"`
+	At     time.Time `json:"at"`
+}
+
+type CTOProposalAnswer struct {
+	NodeID  string           `json:"node_id"`
+	ID      string           `json:"proposal_id"`
+	Action  string           `json:"action"`
+	Confirm []CTOProposalRef `json:"confirm,omitempty"`
+}
+
+type CTOProposalRef struct {
+	NodeID string `json:"node_id"`
+	ID     string `json:"proposal_id"`
+}
+
 // HeldAnswer is an owner decision for a request awaiting approval.
 type HeldAnswer struct {
 	MessageID string `json:"message_id"`
@@ -505,4 +541,15 @@ type ProjectDisplayRequest struct {
 type ProjectDisplayResult struct {
 	Project string `json:"project"`
 	Name    string `json:"name"`
+}
+
+// Onboarding records the owner's shared getting-started progress.
+type Onboarding struct {
+	Steps    map[string]string `json:"steps"`
+	Disabled bool              `json:"disabled"`
+}
+type OnboardingUpdate struct {
+	Step     string `json:"step,omitempty"`
+	State    string `json:"state,omitempty"`
+	Disabled *bool  `json:"disabled,omitempty"`
 }

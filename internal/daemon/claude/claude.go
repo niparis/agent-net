@@ -165,18 +165,6 @@ func (a *Adapter) poll() {
 		info := protocol.SessionInfo{Harness: "claude", NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd,
 			Name: title, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
 			Model: a.models.Model(sf.SessionID, sf.Cwd)}
-		// Real activity, from the harness: the transcript or the session file.
-		// Polling the same idle session does not move it.
-		active := time.Time{}
-		if fi, err := e.Info(); err == nil {
-			active = fi.ModTime()
-		}
-		if t := a.models.LastWrite(sf.SessionID, sf.Cwd); t.After(active) {
-			active = t
-		}
-		if !active.IsZero() {
-			info.LastActive = active.Unix()
-		}
 		seenModels[sf.SessionID] = true
 		byNative[sf.SessionID] = found{pid: sf.PID, sock: sf.MessagingSocketPath, info: info, kind: sf.Kind, job: sf.JobID}
 		if sf.MessagingSocketPath != "" {
@@ -271,7 +259,7 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		// The authority note comes from agent-net, after the body, never from
 		// the body (decision 0012): a trusted recipient may act on the request.
 		if !m.OwnerApproved {
-			details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+			details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker, m.RecipientMergeAuthority)
 		}
 	}
 	if m.Overruled {
@@ -289,7 +277,7 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		details += " " + m.RecipientRelation
 	}
 	if m.OwnerInstruction != "" {
-		details += "\n" + protocol.OwnerInstructionNote(m.OwnerInstruction)
+		details += "\n" + protocol.OwnerInstructionNote(m.OwnerInstruction, m.RecipientMergeAuthority)
 	}
 	if m.ApprovalNote != "" {
 		details += "\n[agent-net] " + m.ApprovalNote

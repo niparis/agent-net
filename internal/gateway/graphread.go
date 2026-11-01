@@ -116,3 +116,21 @@ func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
 	}
 	return rule, err
 }
+
+// MergeAuthorityForSession resolves the receiving node's effective setting.
+func (s *Store) MergeAuthorityForSession(session string) (string, error) {
+	a, ok, err := s.Agent(session)
+	if err != nil || !ok {
+		return protocol.MergeAsk, err
+	}
+	graph, err := s.Graph()
+	if err != nil {
+		return "", err
+	}
+	for _, n := range graph.Nodes {
+		if n.Name == projectOfSession(a) {
+			return protocol.NodeDefaults(n.Charter.Maturity, n.Settings).MergeAuthority, nil
+		}
+	}
+	return protocol.DefaultsForMaturity("").MergeAuthority, nil
+}

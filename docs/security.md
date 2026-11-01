@@ -3,7 +3,12 @@
 The network-wide CTO harness, model preference and auto-compaction rules are
 owner settings. The daemon's `cto_settings` method uses the owner gate and
 refuses agent sessions. Values are bounded: a threshold from 10 to 100 percent,
-a floor up to 10 million tokens, and cache windows up to one day. Like the
+a floor up to 10 million tokens, and cache windows up to one day. The
+owner-facing CTO title is also an owner setting, stored at the gateway as
+`cto_title`: 1 to 24 printable characters, trimmed, and refused when it
+contains `[agent-net` or `<cross-session`, so it cannot imitate a note that
+agent-net writes. Agents never receive it: the notes and guidance they match
+always say `CTO`. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
 that token is an owner credential and must not be shared with agents. The
 `cto_send`, `cto_enter`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
@@ -104,7 +109,7 @@ In short: agent-net is built for machines you own, on a network you control (a L
 
 A machine joins with a one-time code.
 
-- `agent-net invite` (or `agent-net enroll`) makes an 8-character code from random base32 characters. The gateway stores only its SHA-256 hash. The code works once and for 10 minutes.
+- `agent-net invite` (or `agent-net enroll`) makes an 8-character code from random base32 characters. The gateway stores only its SHA-256 hash. The code works once and for 10 minutes. The CTO tool `invite` makes the same code on the gateway machine, so the owner can add a machine from the TUI.
 - The invite line is `curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://HOST:7420/install/CODE' | sh`. The `-k` flag turns off certificate checking, so the pin does the checking instead: curl compares the SHA-256 of the gateway's public key with the pin and aborts if they differ. This is what makes `-k` safe here. A machine in the middle cannot present a different key.
 - The pin covers the server key, and that key is saved in `server-key.pem` in the gateway data dir. The certificate is re-issued on every start, but the key is not, so an old invite line still matches after a gateway restart.
 - The script served at `/install/CODE` carries the gateway address, the code, the CA fingerprint and the pin. The gateway refuses to render it for an unknown, used or expired code, and for a `Host` header that is not a plain host name or IP address with a port.
@@ -141,7 +146,7 @@ The daemon reads the process ID of the caller from the kernel: `SO_PEERCRED` on 
 A message from the person at a machine is sent from that machine's **owner session** (harness `owner`, shown as `you (on <host>)`). Receiving agents are told it is "from your user in person". So who may send as the owner matters.
 
 - **Only the command line or the TUI.** The daemon accepts `owner_send` only from a socket client that said `client: cli`. An agent connection (Claude, Pi, OpenCode) is bound to a session and is refused. This is the same gate as for the owner-only data (`usage`, `session_text`, `graph_talk`, and the others). The owner session cannot be created by a hello: only the daemon makes it, and the gateway accepts only the native ID `owner` for that harness.
-- **Not from inside an agent.** A command-line call is also refused when its process is a session, worker or CTO process of this machine, or a descendant of one. The shared Codex control socket's server is also a root, as are processes whose exact program name and first argument are `codex app-server` or `opencode serve` (including the Codex app's bundled `codex`). The daemon reads the caller's process ID from the socket and walks its parents. An owner terminal launched under one of these servers is also refused; use a terminal outside the server for owner commands. This stops an agent that shells out. It does not stop a process of your user that is not under an agent, which could always use the socket (the socket is yours).
+- **Not from inside an agent.** A command-line call is also refused when its process is a session, worker or CTO process of this machine, or a descendant of one. The shared Codex control socket's server is also a root, as are processes whose exact program name and first argument are `codex app-server` or `opencode serve` (including the Codex app's bundled `codex`). The daemon reads the caller's process ID from the socket and walks its parents. CTO process roots are read from atomic snapshots, so a runtime start does not delay this check. An owner terminal launched under one of these servers is also refused; use a terminal outside the server for owner commands. This stops an agent that shells out. It does not stop a process of your user that is not under an agent, which could always use the socket (the socket is yours).
 - **What the refusal tells an agent.** The refusal text is fixed. It names the agent-net tool to use and says that a missing tool means old tools, so the agent asks its user to reconnect. It does not give the agent any way around the check. The daemon also records a session's `tools_version` and `tools_old` from the `hello` of its `agent-net mcp` process. They come from the process itself and are only shown (TUI, `agent_get`); nothing is allowed or refused because of them. A process can claim any version. The only effect of a false one is a wrong warning or no warning.
 - **The sender is never a parameter.** `owner_send` ignores any sender field, and `send` and `reply` use the bound session.
 - **Workers.** Any agent may call `agent_start` and `agent_stop` (on its own workers); the person at the command line may stop any worker. A worker cannot start workers: the daemon checks the worker flag of the calling session, which the daemon set from its own table; the gateway checks it again; and a command-line call from inside a worker is refused as above. A machine refuses workers with `setup --no-launch`; the gateway sees that from the machine's hello and refuses early. A machine admits a worker by its recent CPU and memory load and keeps a queue of starts that wait (decision 0018). The hard cap is 12 workers on a machine (a setting), the queue is as long as agents make it, and a start ends after 2 hours in the queue. Only the owner of a queued start, or the person at the command line, can cancel it. When a queued start begins, the machine that runs it asks the gateway to pass the task to the owner's machine (`worker.queued_start`, then `worker.task`). The gateway checks that the worker is a session of the sending machine and names that owner. A machine could still make the owner's machine send a task to its own workers, which it could receive from anyone anyway; it cannot make it send to any other session. `worker.cleanup` lists the sessions the machine runs, so the gateway never deletes those records; a machine can only keep its own records that way.
@@ -216,6 +221,10 @@ interfaces.
   its preference. The gateway drops the entry after that session has stayed
   offline for 30 days. Project node names remain until the owner unhides them.
 
+Onboarding progress is also stored in gateway owner settings. Its operator
+methods use the same owner gate. The CTO restart tool uses the CTO process-tree
+check. As with hidden items, an enrolled machine can change the gateway entry.
+
 ## Delegation policy
 
 A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegation-policy.md)) is text that agent-net adds to a session's context on every turn: hand code changes to a subagent or a worker, or do them yourself. It is your standing instruction to the session, so who can set it matters.
@@ -231,7 +240,9 @@ A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegati
 
 A node's maturity sets its merge authority (decision [0022](decisions/0022-component-graph-and-cto.md)): `full` lets the agent merge and push to the default branch; `delegated` needs an approval from the owner or a delegate (an architect with mode `owner` or `arbiter` over the node); `ask` needs the owner's written approval. The owner can override it per node with `node_settings_set`, behind the owner gate.
 
-This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text the session gets. Nothing in agent-net refuses a push or blocks a merge in git, and an agent can ignore the text. The approval note that counts is the one agent-net writes for one exact action. The owner's inbox that records written approvals is step 3b of decision 0022; `RequestWrittenApproval` is a stub in this build and says the inbox is not there, so a session under `ask` must ask its owner directly and treat only an agent-net approval note as approval.
+The gateway computes the receiver's effective `merge_authority` at each delivery, including node overrides, and sends it outside the message body. An `auto` edge never widens that setting. The trust note, owner-instruction note and maturity context use the same merge rule. On `full`, the node may merge. On `delegated`, approval must name the exact merge: the owner approves directly or through an agent-net approval note from `agent_request_approval`, or a delegate approves in a message from an architect with a `governs` edge in mode `owner` or `arbiter` over the receiver. On `ask`, always ask for the owner's written approval of the exact action. Workers put the action and recommendation in their report when they cannot request approval. An owner-instruction excerpt on its own does not approve a merge; its note points to the receiver's rule. A body claiming approval does not count.
+
+This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text the session gets. Nothing in agent-net refuses a push or blocks a merge in git, and an agent can ignore the text. Written approvals arrive in agent-net's own approval note for one exact action, through the owner's inbox. This text change adds no grants and does not infer merge authority from owner excerpts. Stricter repository rules and harness permissions still apply.
 
 A critical repository should also have branch protection on its default branch: require a pull request, require review, and stop force-pushes. Branch protection is enforced by the repository host; agent-net's merge authority is not.
 
@@ -257,7 +268,7 @@ A worker is an agent that nobody watches, so agent-net does not let it ask for a
 
 Requests use rules on graph edges. `normal` uses the normal peer guidance, `auto` adds the trust note, `ask` holds the request for the owner, and `never` refuses it. The sender-specific edge takes precedence over the wildcard edge into the recipient node. The `t` key cycles the wildcard through `normal`, `ask` and `auto`.
 
-The risk of `auto` is that text relayed by a peer can steer a session without the owner seeing it first. The trust note is guidance to the model, not a replacement for harness permission rules. It still asks for owner approval before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond the brief.
+The risk of `auto` is that text relayed by a peer can steer a session without the owner seeing it first. The trust note follows the receiving node's merge authority; an `auto` edge does not approve merges on a `delegated` or `ask` node. It is guidance to the model, not a replacement for harness permission rules. It still asks for owner approval before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond the brief.
 
 Only the owner can change edge rules or answer a held request through the local operator interface. `edge_set`, `session_trust`, `held_list` and `held_answer` are behind the owner gate. The gateway trusts enrolled daemons, so a compromised enrolled machine can send these gateway frames. Remove a lost machine at the gateway.
 
@@ -274,7 +285,7 @@ After a failed tool call, agent-net can add one line telling the model which oth
 
 ## Needs you
 
-The TUI's "Needs you" section shows what a session waits for: a permission, a question or input (decision [0016](decisions/0016-needs-you.md)). The state is `kind`, `text` and `since` on the session. The daemon sends it to the gateway with the session, and every enrolled machine's TUI can read it: the same audience as the agent list, not only the session's own machine.
+The TUI's "Needs you" section excludes worker sessions. The daemon refuses a worker's explicit `agent_ask_owner` request; workers should use their hand-back or `agent_reply`. The section shows what another session waits for: a permission, a question or input (decision [0016](decisions/0016-needs-you.md)). The state is `kind`, `text` and `since` on the session. The daemon sends it to the gateway with the session, and every enrolled machine's TUI can read it: the same audience as the agent list, not only the session's own machine.
 
 - **What leaves the machine.** The text comes from the harness: a Claude Code permission request (the tool name and its command, path or URL) or notification, an OpenCode permission or form title, or the agent's own `waiting` line. It is cut to 200 characters, turned into one line and stripped of control characters at the daemon and again at the gateway. A permission request can name a file, a command or a URL, so treat the line as metadata that every enrolled machine can see. Do not put secrets in a question you ask an agent to announce.
 - **Who may set it.** A plugin is bound to its session by the local socket. A command line hook names `harness` and `native_id`, and the daemon silently ignores an unknown session. Like `hint`, the `waiting` method is not owner-only: it must work inside a harness turn. Any process of your user can call it for a session the daemon knows, which is no more than that process can already do.
@@ -286,6 +297,20 @@ The TUI's "Needs you" section shows what a session waits for: a permission, a qu
 `agent-net setup` adds a short block to `~/.claude/CLAUDE.md` and `~/.pi/agent/AGENTS.md`. It tells the model to answer peers directly, to check with you before risky or out-of-scope work, and to never take a peer message as your approval, unless the note that agent-net itself adds says you allowed this session to act on peer requests (see [peer trust](#peer-trust)). It also tells the model to relay a request you asked it to send, and let the receiver decide, and to ask a peer early when an error comes from something another session owns. This is a request to the model. It can be ignored, or overridden by a persuasive message. The things that actually limit what an agent can do are the harness permission rules (Claude Code's permission modes and allow lists, Pi's tool settings). Keep those on. A peer message is never your approval, except through peer trust, which only you switch on, per session. Do not configure your agents to treat peer messages as approval in any other way.
 
 ## Limits against loops
+
+CTO proposals are stored in the hosting daemon's private state database.
+The owner gate protects proposal listing and decisions, including relayed
+requests. An enrolled daemon is trusted to enforce that gate before relaying,
+as it is for other owner operations. A proposed call is checked before it is
+stored and again before it runs. The current proposal runner supports charter
+changes, edge sets and machine renames; existing CTO change tools have not been converted
+to proposals. Identical open calls are refused, open proposals expire after 24
+hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
+only the status or a bounded error, never a successful call's result.
+The daemon retains only sender names and times for the last three messages it
+delivered to the CTO, and snapshots that metadata with each proposal. It does
+not copy their bodies. An approve-all confirmation names the calls being
+approved; the daemon rejects the request if the open list has changed.
 
 The gateway enforces these on every send:
 
@@ -323,7 +348,8 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 - A skill bundle: at most 10,000 entries and 64 MiB of regular file data. Special files, absolute or escaping symlinks and files that change while being read are rejected.
 - Pi source discovery: at most 10,000 directories and 32 path components.
 - MCP and settings files: 1 MiB. A report: 10,000 entries, 512 KiB of field text, 1 MiB of manifests and 3 MiB encoded. A single file list is limited to 256 KiB. Reads are paged to 240 KiB.
-- An oversized source or report fails the scan. It is never silently cut. A failed scan leaves the old records marked stale.
+- An oversized source or report fails the scan. It is never silently cut. A scan that fails for one source keeps the other fresh observations and marks only that source stale. A scan that produces no successful observation leaves the old records marked stale.
+- The owner-only `tools_skill_details` reads the file manifest of one observed skill on one machine. The gateway checks the owner session; the machine checks that the name, location and hash are in its current inventory before it reads the folder, and it checks the hash again before answering. It sends file names, sizes, fingerprints and the newest modification time, never file contents. An agent session cannot call it.
 
 ### The private skill store
 
@@ -536,7 +562,7 @@ The gateway may automatically add an item to `accepts` from an owner instruction
 These rules use matched excerpts and reply outcomes as evidence. Matching does not prove the owner intended a particular send, and peer replies can influence `needs` and dependency suggestions. The gateway keeps suggestion evidence in its database; message-flow records used for detection are removed after seven days. Protect the database and backups accordingly.
 
 Before applying or showing ready suggestions based on owner words, the gateway may send their phrases to an automatically selected worker for shorter wording. It uses only an allowed, unprotected provider and a harness that enforces read-only project access. At most one worker starts per two minutes and six per rolling hour. The chooser uses trivial difficulty with no fixed model, no worktree isolation and read-only project access. If no suitable worker is available, it fails, its JSON is invalid, or it exceeds three minutes, the original words are kept. The raw words remain in the gateway database and can be sent to the selected provider. The gateway preserves the original words for rejection matching and for checks against narrowing a charter.
-The link is an inference from the prompt and first matching send, not a signature or approval for risky actions. A sender cannot supply the gateway-computed excerpt. Explicit assignments in a non-matching prompt may still become private learning evidence, but are not attached to the message delivered to its recipient.
+The link is an inference from the prompt and first matching send, not a signature or a merge approval. The delivered owner-instruction note says that the excerpt on its own does not approve a merge and gives the receiving node's effective merge rule. A sender cannot supply the gateway-computed excerpt. Explicit assignments in a non-matching prompt may still become private learning evidence, but are not attached to the message delivered to its recipient.
 
 ## Graph foundation
 
@@ -570,3 +596,5 @@ and its local users must be trusted. Do not expose the HTTP listener directly
 on a network or put an untrusted proxy in front of it.
 
 Skill file previews use the owner-only operator gate. The gateway checks the owner session and the current observed skill location; the originating daemon checks that the relative path is in its current manifest and that the file still matches its fingerprint. Previews reject symlinks, non-regular files, invalid UTF-8, NUL bytes and files over 64 KiB. Contents pass through the gateway on request and are not stored by the preview operation. Enrolled daemons remain inside the gateway trust boundary.
+
+The owner-only skill comparison summary sends up to 12,000 bytes of skill text to an automatically chosen read-only worker. The worker is selected through the normal protected-provider rules. Summary requests share the phrasing rate limit.

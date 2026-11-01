@@ -181,6 +181,8 @@ func (r *runner) removeGuidance() {
 			r.step(f.Name, "skipped (no file)", nil)
 			continue
 		}
+		// Remove by block markers so older guidance is removed too when its
+		// wording changes, including the merge authority clause.
 		out, changed := guidance.Remove(string(old))
 		if !changed {
 			r.step(f.Name, "skipped (no agent-net block)", nil)

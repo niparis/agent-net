@@ -309,8 +309,6 @@ CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id IN
 -- Names set by announce are cleared: only the owner renames a session now
 -- (decision 0033). A session shows its automatic name at its next report.
 UPDATE profiles SET name = '';
-`, `
-ALTER TABLE sessions ADD COLUMN last_active INTEGER NOT NULL DEFAULT 0;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -570,7 +568,7 @@ func (s *Store) upsertSession(q interface {
 	name := ""
 	if protocol.IsOwner(in.Harness) {
 		name = protocol.CleanModel(in.Name)
-	} else if name, err = chooseSessionName(q, knownID, knownName, in); err != nil {
+	} else if name, err = chooseSessionName(q, nodeID, knownID, knownName, in); err != nil {
 		return "", false, err
 	}
 	title := protocol.CleanModel(in.Name)
@@ -603,21 +601,19 @@ func (s *Store) upsertSession(q interface {
 			waiting = string(b)
 		}
 	}
-	lastActive := in.LastActive * int64(time.Second)
-	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
+	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
 		tools_version, tools_old, created_at, waiting, graph_excluded)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
-		last_active=MAX(sessions.last_active, excluded.last_active),
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded`,
-		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
+		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting, graphExclusion(in.GraphExcluded, in.GraphChecked))
 	if err != nil {
@@ -698,21 +694,36 @@ func isAutomaticName(name, base string, worker bool) bool {
 // sessions hold a name (decision 0024).
 func chooseSessionName(q interface {
 	Query(string, ...any) (*sql.Rows, error)
-}, sessionID, current string, in protocol.SessionInfo) (string, error) {
+}, nodeID, sessionID, current string, in protocol.SessionInfo) (string, error) {
 	base, worker := sessionBaseName(in), in.Worker != nil
 	used := map[string]bool{}
-	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name) FROM sessions s
-		LEFT JOIN profiles p ON p.session_id = s.id WHERE s.online = 1 AND s.id <> ?`, sessionID)
+	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name), s.online,
+		s.node_id, s.harness, s.mode, s.pid, s.worker FROM sessions s
+		LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id <> ? AND
+		((s.online = 1 AND NOT (`+piChildSQL+`)) OR
+		(? = 'pi' AND ? = 'foreground' AND ? > 0 AND s.node_id = ?
+		 AND s.harness = 'pi' AND s.mode = 'background' AND s.pid = ? AND s.worker = ''))`,
+		sessionID, in.Harness, in.Mode, in.PID, nodeID, in.PID)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var name, node, harness, mode, workerJSON string
+		var online, pid int
+		if err := rows.Scan(&name, &online, &node, &harness, &mode, &pid, &workerJSON); err != nil {
 			return "", err
 		}
-		if name != "" {
+		// Before the first TUI report there may be no foreground row to join.
+		// Ignore its SDK helpers, and repair a suffix they previously caused.
+		if in.Harness == "pi" && in.Mode == protocol.ModeForeground && in.PID > 0 &&
+			node == nodeID && harness == "pi" && mode == protocol.ModeBackground && pid == in.PID && workerJSON == "" {
+			if name == base {
+				current = ""
+			}
+			continue
+		}
+		if online == 1 && name != "" {
 			used[name] = true
 		}
 	}
@@ -1017,7 +1028,7 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	return a.Profile, nil
 }
 
-const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.status, s.online, s.last_seen, s.last_active,
+const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.status, s.online, s.last_seen,
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
@@ -1027,12 +1038,12 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.sta
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var a protocol.AgentView
 	var online int
-	var lastSeen, lastActive, created int64
+	var lastSeen, created int64
 	var caps, worker string
 	var trust int
 	var deleg, waiting string
 	var toolsOld int
-	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen, &lastActive,
+	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName)
@@ -1061,7 +1072,6 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	}
 	a.Online = online == 1
 	a.LastSeen = lastSeen / int64(time.Second)
-	a.LastActive = lastActive / int64(time.Second)
 	a.FirstSeen = created / int64(time.Second)
 	if json.Unmarshal([]byte(caps), &a.Profile.Capabilities) != nil || a.Profile.Capabilities == nil {
 		a.Profile.Capabilities = []string{}
@@ -1087,8 +1097,17 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 	return one[0], true, nil
 }
 
+// Older Pi extensions registered SDK helpers as independent sessions. Match
+// only background non-workers with a foreground session in the same process.
+// Overlapping lifetimes keep a later reuse of the PID from hiding old sessions.
+const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND s.worker = ''
+	AND EXISTS (SELECT 1 FROM sessions parent WHERE parent.node_id = s.node_id
+		AND parent.harness = 'pi' AND parent.mode = 'foreground' AND parent.pid = s.pid
+		AND (parent.online = 1 OR parent.last_seen >= s.created_at)
+		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
+
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
-	rows, err := s.db.Query(agentSelect + ` ORDER BY s.last_seen DESC, s.id`)
+	rows, err := s.db.Query(agentSelect + ` WHERE NOT (` + piChildSQL + `) ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
 	}

@@ -508,20 +508,13 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		}
 		d.mu.Lock()
 		old := d.sessions[k]
-		// Keep the real activity time across a reconnect: the daemon restart
-		// that re-registers the plugin must not make an idle session look
-		// active. The state database has it even when this daemon never saw
-		// the session before.
-		ls.lastActive = d.activity[k]
 		if old != nil {
 			ls.sessionID = old.sessionID
 			// A plugin reconnect (a reload, or a service restart) does not
 			// clear a wait: the state lives in the daemon, and a session that
 			// is really working again sends status busy.
 			ls.info.Waiting = old.info.Waiting
-			if old.lastActive.After(ls.lastActive) {
-				ls.lastActive = old.lastActive
-			}
+			ls.workerWaiting = old.workerWaiting
 		}
 		d.sessions[k] = ls
 		d.mu.Unlock()
@@ -740,9 +733,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			}
 		}
 		d.mu.Lock()
-		statusChanged := false
 		if p.Status != "" {
-			statusChanged = ls.info.Status != p.Status
 			ls.statusRevision++
 			ls.info.Status = p.Status
 			if p.Status == "busy" {
@@ -760,15 +751,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			ls.info.Name = d.pluginTitle(*p.Name, ls.info.Cwd)
 		}
 		cwd := ls.info.Cwd
-		harness, native := ls.info.Harness, ls.info.NativeID
-		activeAt := time.Now()
-		if statusChanged {
-			d.recordActivityLocked(ls, activeAt)
-		}
 		d.mu.Unlock()
-		if statusChanged {
-			d.saveActivity(harness, native, activeAt)
-		}
 		repo := d.repo.Refresh(cwd)
 		d.mu.Lock()
 		ls.info.Repo = repo
@@ -815,7 +798,6 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		// on to something else.
 		if ls != nil {
 			d.setWaiting(ls, protocol.CleanWaiting(p.Waiting))
-			d.touchSession(ls, time.Now())
 		}
 		return res, nil
 

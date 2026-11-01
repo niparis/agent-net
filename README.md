@@ -64,13 +64,15 @@ It is not for:
 # On the first machine. It becomes the gateway.
 curl -fsSL https://niparis.github.io/agent-net/install | sh
 
-# For each other machine: run this on the gateway, then paste the line it prints there.
-agent-net invite
+# Then open agent-net.
+agent-net
 ```
+
+To add another machine, open `agent-net` and ask the CTO to add one. Paste the line it prints in a shell on the new machine. Make sure `~/.local/bin` is on your `PATH`; the install script prints the line to add if it is not.
 
 Then open a new agent session and ask: *"Who's on the agent net?"*
 
-Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, use the Tailscale invite line: [docs/troubleshooting.md](docs/troubleshooting.md).
+Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, ask the CTO for the Tailscale install line: [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## How it works
 
@@ -83,6 +85,19 @@ Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, us
 - **One daemon** runs on each machine. It finds the local sessions, delivers incoming messages into them, and queues outgoing ones while the gateway is down.
 - **Each session gets the same tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages` and `agent_message_status`, and tools to register and list projects (`agent_project_add`, `agent_project_list`). Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
 - **Messages arrive as a new turn** in the running session, like something you typed. The reply is routed back to the sender: Claude Code answers with its own `SendMessage`, and the daemon turns that into a network reply. Pi answers with `agent_reply`.
+
+## How agent-net thinks
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/primitives-dark.svg">
+  <img alt="The owner sets the rules for agents, which have sessions, projects and work, and share tools, knowledge and messages" src="docs/img/primitives-light.svg">
+</picture>
+
+- **Owner and agents:** The owner sets charters, authority and autonomy. Agents have a kind, state and sessions.
+- **Rules and work:** Edges govern requests. Tasks are contracts; workers return reports to their callers. Projects and workspaces give agents a place to work.
+- **Shared:** Tools, knowledge, messages, budget and Needs you support the network.
+
+See [Primitives](docs/decisions/0036-primitives.md) for the terms and their display names.
 
 ## What it looks like
 

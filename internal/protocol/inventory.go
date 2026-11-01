@@ -286,6 +286,25 @@ type ToolPlanID struct {
 	ID string `json:"plan_id"`
 }
 
+// ToolSkillScan asks one machine to read the file manifest of one observed
+// skill. It is narrow on purpose: a comparison needs one copy, not a whole
+// inventory scan.
+type ToolSkillScan struct {
+	NodeID   string `json:"node_id"`
+	Name     string `json:"name"`
+	Location string `json:"location"`
+	Hash     string `json:"hash"`
+	Owner    string `json:"owner,omitempty"`
+}
+
+// ToolSkillDetails is the answer to a narrow skill scan. A nil manifest means
+// the machine could not read the file list.
+type ToolSkillDetails struct {
+	Manifest  *SkillManifest `json:"manifest,omitempty"`
+	ScannedAt time.Time      `json:"scanned_at,omitempty"`
+	Reason    string         `json:"reason,omitempty"`
+}
+
 type ToolPlanProbe struct {
 	Name          string `json:"name"`
 	Harness       string `json:"harness"`
@@ -377,4 +396,13 @@ type SkillTextRequest struct {
 	Owner    string             `json:"owner,omitempty"`
 	Name     string             `json:"name,omitempty"`
 	Hash     string             `json:"hash,omitempty"`
+}
+
+// SkillSummaryRequest asks an owner-only worker to compare observed skill text.
+type SkillSummaryRequest struct {
+	AHash string `json:"a_hash"`
+	BHash string `json:"b_hash"`
+	A     string `json:"a"`
+	B     string `json:"b"`
+	Owner string `json:"owner,omitempty"`
 }

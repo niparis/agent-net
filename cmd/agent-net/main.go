@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -72,16 +73,42 @@ const usage = `usage: agent-net <command>
   version    print the version of this binary
 `
 
+// These are replaced in tests: they decide whether bare `agent-net` opens the
+// TUI, and run it through the same command as `agent-net tui`.
+var (
+	stdinIsTerminal  = func() bool { return isTerminal(os.Stdin) }
+	stdoutIsTerminal = func() bool { return isTerminal(os.Stdout) }
+	runTUI           = cmdTUI
+)
+
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
+	os.Exit(run(ctx, os.Args[1:], os.Stderr))
+}
+
+// run dispatches a command line and returns the process exit code. With no
+// arguments on a terminal it opens the TUI, so the owner only has to learn
+// `agent-net setup` and `agent-net`. Without a terminal it prints the usage
+// and exits 2, so scripts see no change.
+func run(ctx context.Context, argv []string, stderr io.Writer) int {
+	args := argv
+	if len(args) == 0 {
+		if !stdinIsTerminal() || !stdoutIsTerminal() {
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		args = []string{"tui"}
+	}
 	var err error
-	args := os.Args[2:]
-	switch os.Args[1] {
+	cmd := args[0]
+	args = args[1:]
+	switch cmd {
 	case "gateway":
 		err = cmdGateway(ctx, args)
 	case "phone":
@@ -129,7 +156,7 @@ func main() {
 	case "events":
 		err = cmdEvents(ctx, args)
 	case "tui":
-		err = cmdTUI(ctx, args)
+		err = runTUI(ctx, args)
 	case "upgrade":
 		err = cmdUpgrade(ctx, args)
 	case "messages":
@@ -143,7 +170,7 @@ func main() {
 	case "cto":
 		err = cmdCTO(ctx, args)
 	case "charter", "graph", "node", "edge":
-		err = cmdGraph(ctx, os.Args[1], args)
+		err = cmdGraph(ctx, cmd, args)
 	case "send":
 		err = cmdSend(ctx, args)
 	case "scores":
@@ -161,13 +188,14 @@ func main() {
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", os.Args[1], usage)
-		os.Exit(2)
+		fmt.Fprintf(stderr, "unknown command %q\n\n%s", cmd, usage)
+		return 2
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "agent-net:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "agent-net:", err)
+		return 1
 	}
+	return 0
 }
 
 func defaultGatewayData() string {
@@ -324,7 +352,8 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	d, err := daemon.New(daemon.Config{
 		InventoryHome: inventoryHome,
 		GatewayURL:    nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
-		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
+		GatewayData: defaultGatewayData(),
+		Adapters:    []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 		CodexHome:         agentfiles.CodexHome(),
 		RefreshAgentFiles: agentfiles.SyncAndLog,
 		ApplyIntegrations: setup.ApplyIntegrations,

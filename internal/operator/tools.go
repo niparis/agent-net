@@ -124,10 +124,23 @@ func (s *Client) MCPNativeRemoveApply(ctx context.Context, planID string) (proto
 	return decodeCall[protocol.MCPNativeRemoveResult](s.action(ctx, "mcp_native_remove", protocol.MCPNativeRemoveRequest{PlanID: planID}))
 }
 
+// ToolsSkillDetails reads the file manifest of one observed copy on one
+// machine. The machine rescans that one skill; the gateway stores the result.
+func (s *Client) ToolsSkillDetails(ctx context.Context, req protocol.ToolSkillScan) (protocol.ToolSkillDetails, error) {
+	return decodeCall[protocol.ToolSkillDetails](s.action(ctx, "tools_skill_details", req))
+}
+
 // ToolsReadFile reads one observed skill file for an owner preview.
 func (s *Client) ToolsReadFile(ctx context.Context, req protocol.SkillTextRequest) (string, error) {
 	result, err := decodeCall[struct {
 		Text string `json:"text"`
 	}](s.action(ctx, "tools_read_file", req))
 	return result.Text, err
+}
+
+func (s *Client) ToolsSummary(ctx context.Context, req protocol.SkillSummaryRequest) (string, error) {
+	result, err := decodeCall[struct {
+		Summary string `json:"summary"`
+	}](s.action(ctx, "tools_summary", req))
+	return result.Summary, err
 }

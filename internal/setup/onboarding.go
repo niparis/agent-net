@@ -556,12 +556,12 @@ func (r *runner) writePoint(point setupPoint) {
 
 func (r *runner) openQuestion() {
 	if !r.interactive {
-		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net tui"))
+		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net"))
 		return
 	}
 	tty, err := openTTY()
 	if err != nil {
-		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net tui"))
+		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net"))
 		return
 	}
 	defer tty.Close()
@@ -583,7 +583,7 @@ func (r *runner) openQuestion() {
 		return
 	}
 	if err := execSetupTUI(r.Exe); err != nil {
-		r.hint("could not open the TUI: %v; run agent-net tui", err)
+		r.hint("could not open the TUI: %v; run agent-net", err)
 	}
 }
 

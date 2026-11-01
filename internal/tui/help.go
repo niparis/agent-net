@@ -25,6 +25,15 @@ type hint struct {
 // seven of them, always with help and quit. Every other key is in helpContent.
 func (m Model) hints() []hint {
 	switch {
+	case m.proposalConfirm:
+		return []hint{{"up/down", "scroll", 1}, {"y", "approve all", 1}, {"n/esc", "cancel", 1}}
+	case m.proposalHistory && m.proposalDetail == nil && !m.help:
+		return []hint{{"up/down", "select", 1}, {"enter", "detail", 1}, {"esc", "back", 1}, {"?", "help", 1}}
+	case m.proposalDetail != nil && !m.help:
+		if m.proposalDetail.proposal.Status != "open" {
+			return []hint{{"up/down", "scroll", 1}, {"esc", "back", 1}, {"?", "help", 1}}
+		}
+		return []hint{{"a", "approve", 1}, {"x", "decline", 1}, {"A", "approve all", 1}, {"esc", "back", 1}, {"?", "help", 1}}
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
@@ -34,13 +43,13 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
-		return []hint{{"enter", "open CTO", 1}, {"tab", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
+		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"tab", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
 	case m.tab == 1:
-		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"tab", "CTO", 2}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == 2:
-		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"tab", "CTO", 2}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == 5:
-		return []hint{{"1-6", "tabs", 1}, {"tab", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{{"1-6", "tabs", 1}, {"tab", m.ctoTitle(), 1}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == toolsTab:
 		return m.toolsHints()
 	}
@@ -48,6 +57,9 @@ func (m Model) hints() []hint {
 		if m.selected == "outcome:"+e.ReplyID {
 			return []hint{{"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 0}}
 		}
+	}
+	if _, ok := m.selectedProposal(); ok {
+		return []hint{{"enter", "detail", 1}, {"a", "approve", 1}, {"x", "decline", 1}, {"A", "approve all", 1}, {"?", "help", 1}}
 	}
 	if strings.HasPrefix(m.selected, "learned:") {
 		return []hint{{"up/down", "select", 1}, {"a", "accept", 1}, {"r", "reject", 1}, {"?", "help", 2}, {"q", "quit", 0}}
@@ -57,7 +69,7 @@ func (m Model) hints() []hint {
 			return []hint{{"up/down", "select", 1}, {"a", "approve", 1}, {"r", "refuse", 1}, {"?", "help", 2}, {"q", "quit", 0}}
 		}
 	}
-	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"/", "filter", 2}, {"tab", "CTO", 2}, {"?", "help", 2}, {"q", "quit", 0}}
+	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"/", "filter", 2}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
@@ -151,6 +163,7 @@ func (m Model) helpContent(w int) []string {
 
 	rows := [][2]string{
 		{"Sessions", ""},
+		{"proposal", "enter details; a approve; x decline; A approve all after confirmation"},
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
@@ -179,7 +192,7 @@ func (m Model) helpContent(w int) []string {
 		{"h, H", "hide or unhide the selected project; show hidden projects"},
 		{"U, u", "select the next learned change; undo the selected one"},
 		{"[ ], ctrl+u/d", "scroll the charter; pgup/pgdn also work"},
-		{"c", "focus the CTO box"},
+		{"c", "focus the " + m.ctoTitle() + " box"},
 		{"r", "refresh"},
 		{"M, esc", "leave Map for Sessions"},
 		{"", ""},
@@ -192,8 +205,7 @@ func (m Model) helpContent(w int) []string {
 		{"m", "change the machine on By project"},
 		{"/", "search or filter"},
 		{"r", "rescan"},
-		{"tab, C", "focus the CTO box"},
-		{"C, tab", "focus the CTO box (tab or esc returns); enter opens the full CTO, esc returns, n starts new, u undoes, m changes model; pgup/pgdn scroll"},
+		{"tab, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", tab returns, esc skips a tip; n new, u undo, m title, harness and model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
@@ -205,6 +217,8 @@ func (m Model) helpContent(w int) []string {
 		{"", ""},
 		{"Everywhere", ""},
 		{"n", "desktop notifications: " + state + " (toggle)"},
+		{"T", "turn onboarding tips off or on"},
+		{"R", "restart onboarding from the first step"},
 		{"?", "this help"},
 		{"q, ctrl+c", "quit"},
 		{"", ""},
@@ -228,7 +242,7 @@ func (m Model) helpContent(w int) []string {
 			{"a/u", "turn on or turn off for the selected machine or projects"},
 			{"m", "change the machine on By project"},
 			{"/", "search or filter"}, {"r", "rescan"},
-			{"tab, C", "focus the CTO box"},
+			{"tab, C", "focus the " + m.ctoTitle() + " box"},
 			{"esc or ?", "close help"},
 		}
 	}

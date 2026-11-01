@@ -434,7 +434,6 @@ func (d *Daemon) registerCodexSession(ctx context.Context, w *worker, wait bool)
 		Mode: protocol.ModeBackground, Model: protocol.CleanModel(model), Worker: d.workerInfo(w)}
 	ls := &localSession{info: info, sessionID: sessionID, owned: true}
 	d.mu.Lock()
-	ls.lastActive = d.activity[key("codex", native)]
 	d.sessions[key("codex", native)] = ls
 	d.mu.Unlock()
 	if !wait {
@@ -458,7 +457,6 @@ func (d *Daemon) registerCodexSession(ctx context.Context, w *worker, wait bool)
 // setCodexStatus changes the status of the worker's session (idle or busy).
 func (d *Daemon) setCodexStatus(w *worker, status string) {
 	if ls := d.changeCodexStatus(w, status); ls != nil {
-		d.persistActivity(ls)
 		d.pushSession(ls)
 	}
 }
@@ -471,7 +469,6 @@ func (d *Daemon) changeCodexStatus(w *worker, status string) *localSession {
 		return nil
 	}
 	ls.info.Status = status
-	d.recordActivityLocked(ls, time.Now())
 	return ls
 }
 
@@ -970,7 +967,6 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		cc.mu.Unlock()
 		if next == nil && err != nil {
 			if idleSession != nil {
-				cc.d.persistActivity(idleSession)
 				go cc.d.pushSession(idleSession)
 			}
 			return

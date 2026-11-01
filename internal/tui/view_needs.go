@@ -27,6 +27,12 @@ var sNeeds = lipgloss.NewStyle().Foreground(roleWarning)
 // follows the same filter and offline switch as the table.
 func (m Model) needsRows() []protocol.AgentView {
 	var out []protocol.AgentView
+	for _, p := range m.proposals {
+		if p.Status != "open" {
+			continue
+		}
+		out = append(out, protocol.AgentView{SessionID: proposalKey(p), NodeID: p.NodeID, Online: true, Harness: "proposal", Profile: protocol.Profile{Name: proposalSummary(p)}, Waiting: &protocol.Waiting{Kind: "proposal", Text: proposalSummary(p), Since: p.CreatedAt.Unix()}})
+	}
 	for _, v := range m.snap.Learned {
 		if v.Status != "pending" || v.Severity != "major" {
 			continue
@@ -42,7 +48,7 @@ func (m Model) needsRows() []protocol.AgentView {
 		out = append(out, protocol.AgentView{SessionID: "outcome:" + e.ReplyID, Harness: "outcome", Online: true, Profile: protocol.Profile{Name: e.From + " -> " + e.To}, Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text, Since: e.At / 1e9}})
 	}
 	for _, a := range m.snap.Agents {
-		if protocol.IsOwner(a.Harness) || a.Waiting == nil {
+		if protocol.IsOwner(a.Harness) || a.Worker != nil || a.Waiting == nil {
 			continue
 		}
 		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
@@ -238,6 +244,10 @@ func (m Model) needsLines(w int) []string {
 			out = append(out, clip(prefix+text+actions, w))
 			continue
 		}
+		if a.Waiting.Kind == "proposal" {
+			out = append(out, clip(sNeeds.Render("▍")+marker+"CTO proposes: "+sanitize(a.Waiting.Text), w))
+			continue
+		}
 		prefix := sNeeds.Render("▍") + marker + cell(m.needsName(a), nameW) + " " + cell(sanitize(a.Harness), harnessW)
 		if hostW > 0 {
 			prefix += " " + cell(m.needsHost(a), hostW)
@@ -295,7 +305,7 @@ func (m Model) needsHost(a protocol.AgentView) string {
 // waitingStatus is the STATUS of a session in the table: a wait outranks idle,
 // busy and offline (the section above shows it too).
 func waitingStatus(a protocol.AgentView) string {
-	if a.Waiting == nil {
+	if a.Waiting == nil || a.Worker != nil {
 		return ""
 	}
 	return "needs you"

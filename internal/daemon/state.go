@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/dbfile"
@@ -14,7 +15,10 @@ import (
 
 // state is the daemon's small local database: delivered message IDs (to
 // remove duplicates) and the outbox of sends made while the gateway was away.
-type state struct{ db *sql.DB }
+type state struct {
+	db                 *sql.DB
+	proposalDeliveryMu sync.Mutex
+}
 
 func openState(dir string) (*state, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -37,11 +41,15 @@ CREATE TABLE IF NOT EXISTS owner_preferences (key TEXT PRIMARY KEY, value INTEGE
 CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_history (id INTEGER PRIMARY KEY AUTOINCREMENT, harness TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, at INTEGER NOT NULL, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cto_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, tool TEXT NOT NULL, action TEXT NOT NULL, args TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS cto_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS cto_proposal_messages (proposal_id INTEGER NOT NULL, sender TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS cto_proposals_open_call ON cto_proposals(tool,action,args) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS cto_history_harness ON cto_history(harness,kind,id);
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS worker_idle_notice (worker_id TEXT PRIMARY KEY, since INTEGER NOT NULL, notice_key TEXT NOT NULL, report TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (harness, native_id));
+CREATE TABLE IF NOT EXISTS inventory_scan (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS workers (
 	id TEXT PRIMARY KEY, harness TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL,
 	model TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL, native_id TEXT NOT NULL DEFAULT '',
@@ -53,6 +61,13 @@ CREATE TABLE IF NOT EXISTS workers (
 	task_text TEXT NOT NULL DEFAULT '')`)
 	if err == nil {
 		_, err = db.Exec(queueSchema)
+	}
+	if err == nil {
+		var has int
+		err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto_proposals') WHERE name = 'note_delivered'`).Scan(&has)
+		if err == nil && has == 0 {
+			_, err = db.Exec(`ALTER TABLE cto_proposals ADD COLUMN note_delivered INTEGER NOT NULL DEFAULT 0`)
+		}
 	}
 	if err != nil {
 		db.Close()
@@ -162,37 +177,24 @@ CREATE TABLE IF NOT EXISTS workers (
 		db.Close()
 		return nil, err
 	}
-	return &state{db}, nil
+	return &state{db: db}, nil
 }
 
 func (s *state) close() error { return s.db.Close() }
 
-// sessionActivity loads when each known session last did something, keyed by
-// harness and native ID. It survives a daemon restart: a restart must not make
-// an idle session look active.
-func (s *state) sessionActivity() (map[string]time.Time, error) {
-	rows, err := s.db.Query(`SELECT harness, native_id, at FROM session_activity`)
-	if err != nil {
-		return nil, err
+// inventoryScanVersion is the agent-net version that produced the last
+// inventory scan on this machine. An upgrade changes it, which forces a fresh
+// scan so new observation fields (such as file manifests) appear.
+func (s *state) inventoryScanVersion() string {
+	var version string
+	if err := s.db.QueryRow(`SELECT version FROM inventory_scan WHERE id=1`).Scan(&version); err != nil {
+		return ""
 	}
-	defer rows.Close()
-	out := map[string]time.Time{}
-	for rows.Next() {
-		var harness, native string
-		var at int64
-		if err := rows.Scan(&harness, &native, &at); err != nil {
-			return nil, err
-		}
-		out[key(harness, native)] = time.Unix(0, at)
-	}
-	return out, rows.Err()
+	return version
 }
 
-// saveSessionActivity keeps the newer of the stored and given time.
-func (s *state) saveSessionActivity(harness, native string, at time.Time) error {
-	_, err := s.db.Exec(`INSERT INTO session_activity (harness, native_id, at) VALUES (?,?,?)
-		ON CONFLICT (harness, native_id) DO UPDATE SET at=MAX(session_activity.at, excluded.at)`,
-		harness, native, at.UnixNano())
+func (s *state) setInventoryScanVersion(version string) error {
+	_, err := s.db.Exec(`INSERT INTO inventory_scan(id,version,at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version, at=excluded.at`, version, time.Now().Unix())
 	return err
 }
 

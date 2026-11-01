@@ -78,6 +78,9 @@ type Message struct {
 	// recipient session (decision 0012). A sender cannot set it: it is not a
 	// field of MsgSend, and the gateway overwrites it on every delivery.
 	RecipientTrust bool `json:"recipient_peer_trust,omitempty"`
+	// RecipientMergeAuthority is the receiver's effective node setting, computed
+	// by the gateway on delivery. A sender cannot supply it in MsgSend.
+	RecipientMergeAuthority string `json:"recipient_merge_authority,omitempty"`
 	// RecipientRelation is filled by the gateway when it hands a request to
 	// the recipient's daemon: the graph relation from the sender's node to the
 	// recipient's node (decision 0022). It is agent-net's own text, after the
@@ -118,11 +121,6 @@ type SessionInfo struct {
 	ToolsOld     bool   `json:"tools_old,omitempty"`
 	// Waiting is set while the session waits for its user (decision 0016).
 	Waiting *Waiting `json:"waiting,omitempty"`
-	// LastActive is when the session last did something: a turn started or
-	// ended, a message was sent or received, a task was announced, or a wait
-	// started. It is not the time the daemon last saw the session alive.
-	// Empty from an older daemon.
-	LastActive int64 `json:"last_active,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -243,10 +241,7 @@ type AgentView struct {
 	Status             string       `json:"status"`
 	Online             bool         `json:"online"`
 	LastSeen           int64        `json:"last_seen"`
-	// LastActive is when the session last did something, in Unix seconds.
-	// It is not when its daemon last reported it. 0 from an older gateway.
-	LastActive int64   `json:"last_active,omitempty"`
-	Profile    Profile `json:"profile"`
+	Profile            Profile      `json:"profile"`
 	// Repo comes from the daemon's checks of Cwd, not from the agent.
 	Repo RepoInfo `json:"repo"`
 	// Mode and Model are what the session's daemon reported. Empty from an

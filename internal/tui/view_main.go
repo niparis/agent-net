@@ -118,6 +118,12 @@ func (m Model) View() string {
 	add := func(s string) { out = append(out, s) }
 
 	switch {
+	case m.proposalConfirm:
+		out = append(out, m.proposalConfirmView(w)...)
+	case m.proposalHistory && m.proposalDetail == nil && !m.help:
+		out = append(out, m.proposalHistoryView(w)...)
+	case m.proposalDetail != nil && !m.help:
+		out = append(out, m.proposalDetailView(w)...)
 	case m.inboxOn:
 		for _, s := range m.inboxView(w) {
 			add(s)
@@ -1285,7 +1291,7 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
-	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO", w)))
+	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: "+m.ctoTitle(), w)))
 	filter := "conversations"
 	switch m.events {
 	case eventsAll:

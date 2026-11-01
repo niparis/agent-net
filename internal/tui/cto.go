@@ -24,31 +24,33 @@ type ctoSource interface {
 	CTOUndo(context.Context, int64) error
 }
 type ctoState struct {
-	settingsForm        *ctoSettingsForm
-	configuredModel     string
-	polling             bool
-	confirming          bool
-	model, harness, err string
-	opencodeModel       string
-	claudeModel         string
-	messages            []string
-	renderCache         map[ctoRenderKey][]string
-	scroll, pageRows    int
-	scrollMax           int
-	olderCursor         int
-	olderLoading        bool
-	olderPages          []protocol.CTOEvents
-	lastPoll            ctoPollMsg
-	history             []protocol.CTOGraphChange
-	local               []protocol.CTOAction
-	historyLoaded       bool
-	lastGraphID         int64
-	generation          int
+	settingsForm               *ctoSettingsForm
+	configuredModel            string
+	polling                    bool
+	confirming                 bool
+	title, model, harness, err string
+	opencodeModel              string
+	claudeModel                string
+	messages                   []string
+	renderCache                map[ctoRenderKey][]string
+	scroll, pageRows           int
+	scrollMax                  int
+	olderCursor                int
+	olderLoading               bool
+	olderPages                 []protocol.CTOEvents
+	lastPoll                   ctoPollMsg
+	history                    []protocol.CTOGraphChange
+	local                      []protocol.CTOAction
+	historyLoaded              bool
+	lastGraphID                int64
+	generation                 int
 }
 type ctoSettingsForm struct {
 	harness       string
+	titleInput    textinput.Model
 	input         textinput.Model
-	modelFocus    bool
+	field         int // 0 harness, 1 title, 2 model
+	err           string
 	opencodeDraft string
 	claudeDraft   string
 }
@@ -61,6 +63,7 @@ type ctoPollMsg struct {
 	configuredModel string
 	opencodeModel   string
 	claudeModel     string
+	title           string
 	events          protocol.CTOEvents
 	history         []protocol.CTOGraphChange
 	model           string
@@ -127,7 +130,7 @@ func (m Model) ctoPollCmd() tea.Cmd {
 				openCodeModel = settings.Model
 			}
 		}
-		return ctoPollMsg{events: events, history: history, model: model, harness: harness, configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, err: err, generation: generation}
+		return ctoPollMsg{events: events, history: history, model: model, harness: harness, title: protocol.CTOTitleOrDefault(settings.Title), configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, err: err, generation: generation}
 	}
 }
 func (m Model) ctoOlderCmd() tea.Cmd {
@@ -203,6 +206,9 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if c.settingsForm != nil {
 		return m.ctoSettingsKey(k)
 	}
+	if k.Type == tea.KeyEsc && !c.confirming && m.onboardingStep().id != "" {
+		return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Step: m.onboardingStep().id, State: "skipped"})
+	}
 	if k.Type == tea.KeyEsc || k.String() == "tab" {
 		m.focus = focusSessions
 		if m.tab == 1 && !m.mapOn {
@@ -246,7 +252,11 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		ti.Placeholder = "default"
 		ti.SetValue(c.modelForHarness(harness))
-		c.settingsForm = &ctoSettingsForm{harness: harness, input: ti, opencodeDraft: c.opencodeModel, claudeDraft: c.claudeModel}
+		title := textinput.New()
+		title.Prompt = ""
+		title.CharLimit = 24
+		title.SetValue(protocol.CTOTitleOrDefault(c.title))
+		c.settingsForm = &ctoSettingsForm{harness: harness, titleInput: title, input: ti, opencodeDraft: c.opencodeModel, claudeDraft: c.claudeModel}
 		return m, nil
 	case "u":
 		src := m.src.(ctoSource)
@@ -304,6 +314,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	c.claudeModel = r.claudeModel
 	c.model = r.model
 	c.harness = r.harness
+	c.title = protocol.CTOTitleOrDefault(r.title)
 	c.history = r.history
 	type line struct {
 		at   int64
@@ -358,6 +369,19 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	}
 }
 
+func (f *ctoSettingsForm) setField(n int) tea.Cmd {
+	f.field = (n + 3) % 3
+	f.titleInput.Blur()
+	f.input.Blur()
+	switch f.field {
+	case 1:
+		return f.titleInput.Focus()
+	case 2:
+		return f.input.Focus()
+	}
+	return nil
+}
+
 func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
 	f := c.settingsForm
@@ -366,25 +390,21 @@ func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		c.settingsForm = nil
 		return m, nil
 	case tea.KeyUp, tea.KeyShiftTab:
-		f.modelFocus = false
-		f.input.Blur()
-		return m, nil
+		return m, f.setField(f.field - 1)
 	case tea.KeyDown:
-		f.modelFocus = true
-		return m, f.input.Focus()
+		return m, f.setField(f.field + 1)
 	case tea.KeyTab:
-		if !f.modelFocus {
-			f.modelFocus = true
-			return m, f.input.Focus()
+		if f.field == 2 {
+			candidates := m.ctoModelCandidates(f.harness, f.input.Value())
+			if len(candidates) == 1 {
+				f.input.SetValue(candidates[0])
+				f.input.CursorEnd()
+				return m, nil
+			}
 		}
-		candidates := m.ctoModelCandidates(f.harness, f.input.Value())
-		if len(candidates) == 1 {
-			f.input.SetValue(candidates[0])
-			f.input.CursorEnd()
-		}
-		return m, nil
+		return m, f.setField(f.field + 1)
 	case tea.KeyLeft, tea.KeyRight:
-		if !f.modelFocus {
+		if f.field == 0 {
 			if f.harness == "opencode" {
 				f.opencodeDraft = f.input.Value()
 				f.harness = "claude"
@@ -399,17 +419,27 @@ func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyEnter:
 		harness, model := f.harness, strings.TrimSpace(f.input.Value())
+		title := strings.TrimSpace(f.titleInput.Value())
+		if _, err := protocol.NormalizeCTOTitle(title); err != nil {
+			f.err = err.Error()
+			return m, nil
+		}
 		g := c.generation
 		c.settingsForm = nil
 		src := m.src.(ctoSource)
 		return m, func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 			defer cancel()
-			settings, err := src.SetCTOSettings(ctx, protocol.CTOSettingsRequest{Harness: &harness, Model: &model})
+			settings, err := src.SetCTOSettings(ctx, protocol.CTOSettingsRequest{Title: &title, Harness: &harness, Model: &model})
 			return ctoSettingsMsg{settings, err, g}
 		}
 	}
-	if f.modelFocus {
+	switch f.field {
+	case 1:
+		var cmd tea.Cmd
+		f.titleInput, cmd = f.titleInput.Update(k)
+		return m, cmd
+	case 2:
 		var cmd tea.Cmd
 		f.input, cmd = f.input.Update(k)
 		return m, cmd

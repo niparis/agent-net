@@ -8,7 +8,7 @@ One machine runs the gateway. Every machine, including that one, runs one daemon
 curl -fsSL https://niparis.github.io/agent-net/install | sh
 ```
 
-The script downloads `agent-net-<os>-<arch>` and `checksums.txt` from the latest GitHub release and checks the SHA-256. It installs the binary to `~/.local/bin/agent-net` (through a temp file and a rename). Then it picks a mode from what it finds on the machine and prints it. If gateway data exists (`~/.local/state/agent-net/gateway/ca.pem`), it updates the gateway. Else, if the machine already joined (`~/.config/agent-net/node.json`), it updates the binary and runs `agent-net setup`, which skips the join and refreshes the daemon service and the integrations. Else it is a fresh machine and becomes the gateway. In gateway mode the script also downloads the binaries for Linux and macOS (amd64 and arm64) into `~/.local/share/agent-net/dist`, which the gateway serves, and then runs `agent-net setup --gateway`. Other machines do not use this line. They join with the line that `agent-net invite` prints. Make sure `~/.local/bin` is on your `PATH`. The script prints the line to add if it is not.
+The script downloads `agent-net-<os>-<arch>` and `checksums.txt` from the latest GitHub release and checks the SHA-256. It installs the binary to `~/.local/bin/agent-net` (through a temp file and a rename). Then it picks a mode from what it finds on the machine and prints it. If gateway data exists (`~/.local/state/agent-net/gateway/ca.pem`), it updates the gateway. Else, if the machine already joined (`~/.config/agent-net/node.json`), it updates the binary and runs `agent-net setup`, which skips the join and refreshes the daemon service and the integrations. Else it is a fresh machine and becomes the gateway. In gateway mode the script also downloads the binaries for Linux and macOS (amd64 and arm64) into `~/.local/share/agent-net/dist`, which the gateway serves, and then runs `agent-net setup --gateway`. Other machines do not use this line. Open `agent-net` and ask the CTO to add one; it prints a line to paste there. Make sure `~/.local/bin` is on your `PATH`. The script prints the line to add if it is not.
 
 Overrides: `--gateway` forces gateway mode. `--client` installs the binary and runs `agent-net setup` (no join, no gateway). `--binary-only` only installs the binary and prints the next steps. `--version vX.Y.Z` installs that release instead of the latest. To pass an option through the pipe, use `sh -s -- --client`. `AGENT_NET_BASE_URL` replaces the download URL (for tests). `AGENT_NET_NO_SERVICE=1` is passed on to setup.
 
@@ -20,19 +20,13 @@ On Linux, if setup prints a hint about `loginctl enable-linger`, run that comman
 
 ## 2. Add a machine
 
-On the gateway host:
-
-```
-agent-net invite
-```
-
-It prints one line:
+Open `agent-net` on any machine of the network and ask the CTO to add a machine. It prints one line:
 
 ```
 curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://192.168.1.10:7420/install/ABCD2345' | sh
 ```
 
-If the host has a Tailscale address, it prints a second, labelled line for it. Paste the line in a shell on the Mac or Linux machine. That is all.
+If the gateway has a Tailscale address, it prints a second, labelled line for it. Paste the line in a shell on the Mac or Linux machine. That is all.
 
 The line works for 10 minutes and for one machine. `-k` is safe here: `--pinnedpubkey` checks the gateway's key, and the install script then checks the gateway CA by its SHA-256.
 
@@ -57,10 +51,21 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
 - asks one question for the seven integrations, or applies the answers your network already has (see [Integrations](#integrations)),
+- asks for the CTO title on the first machine only (see [CTO title](#cto-title)),
 - registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found (see [codex.md](codex.md)),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone; see [opencode.md](opencode.md)),
 - adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
+
+### CTO title
+
+On the first machine only, setup asks what the CTO should be called:
+
+```
+What should your CTO be called? [CTO]
+```
+
+Enter keeps `CTO`. The title is 1 to 24 printable characters, with spaces at the ends removed. It cannot contain `[agent-net` or `<cross-session`, so it cannot look like a note that agent-net writes. The gateway stores it in `owner_settings` as `cto_title`, so every machine shows the same name. Setup does not ask on a joining machine, a rerun, an upgrade, or a run without a terminal. Change it later in the CTO box with `m`, or ask the CTO. The title is for the owner's screens only: agent-net's notes and guidance always say `CTO`, so every agent sees the same fixed words.
 
 ### Integrations
 
@@ -142,7 +147,6 @@ The binary and the gateway data are kept. So are skills the owner assigned to a 
 ## Options and tests
 
 - `agent-net setup --no-service` (or `AGENT_NET_NO_SERVICE=1`, which the install script passes through) writes no service files and starts nothing.
-- `agent-net invite --host H --port P --data DIR` overrides the address, port and gateway data dir. By default the host is the IPv4 address of the interface with the default route.
 - `agent-net enroll` still prints the raw join string. Use it with `agent-net setup --join '<string>'` when you already have the binary.
 - Service logs: see [troubleshooting.md](troubleshooting.md#first-checks).
 
