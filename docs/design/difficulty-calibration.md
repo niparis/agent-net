@@ -1,0 +1,189 @@
+# Difficulty calibration from rework
+
+Status: proposed design, for the owner's review. Not approved, not scheduled.
+Builds on decision [0026](../decisions/0026-worker-difficulty-and-scores.md)
+(difficulty, scores, rotation) and [0036](../decisions/0036-primitives.md)
+(task as a contract between a caller and a doer).
+
+## The problem
+
+Every agent that asks for a worker, the orchestrator included, labels tasks
+as harder than they are. The asker pays nothing for a label that is too high
+and pays a redo for a label that is too low, so rounding up is safe for the
+asker and expensive for the owner: hard tasks go to the strongest models and
+use the quota the owner wants to protect. Rules in each project cannot fix a
+bias that comes from the incentive. The network can, because it sees every
+task and what happened to it.
+
+## The idea
+
+1. Agents ask for a difficulty, not a model.
+2. agent-net measures rework per task, per caller and per difficulty.
+3. It aims for about one round of rework. Zero rework, every time, means the
+   model is stronger than the task needs. Two or more means it is too weak.
+   One round means the cheapest model that can do the job.
+4. It corrects each caller's labels from that measure, and says so when it
+   starts the worker.
+
+## 1. Difficulty, not model
+
+`agent_start` already takes a difficulty. A model named by an agent becomes a
+hint: the chooser may use it, and the start result says when it did not. Only
+the owner (the CLI, the TUI, or an approved CTO proposal) forces a model.
+Otherwise every caller could step around the loop by naming one.
+
+## 2. Measuring rework: two counters
+
+Each worker record gets two counters. Both come from messages that agent-net
+already routes. The caller marks nothing.
+
+| Counter | Counts when | Means |
+|---|---|---|
+| `continue` | the caller sends the worker a new message after a hand-back with `complete: no` | the worker stopped early |
+| `fix` | the caller sends the worker a new message after a hand-back with `complete: yes` | the worker finished, but not right |
+
+The weighted rework of a task is `fix + 0.5 × continue`. A fix counts more
+because it costs review attention: the worker delivered the wrong thing, and
+someone had to notice. A continue is cheaper: the work so far was right, and
+a resumable harness picks it up.
+
+This split matters for real models. Today terra on Codex stops early (many
+continues, few fixes), and DeepSeek on OpenCode finishes but is sometimes
+wrong (few continues, some fixes). Counting both the same would treat a
+model that needs a nudge like one that builds the wrong thing.
+
+Not counted in the first version: restarts on a new worker, reverts after
+landing, fix-up lines found in git. They are better signals but need more
+machinery. Add them only if the two counters prove too weak.
+
+## 3. The target: a median of about one
+
+For each caller and difficulty, take the weighted rework of the caller's last
+7 tasks at that difficulty (with at least 5). Use the median, not the mean:
+counts are small whole numbers, and one bad task should not swing the result.
+
+| Median | Reading | Action |
+|---|---|---|
+| below 0.5 | the model was stronger than needed | step this caller's label down one tier |
+| 0.5 to 1.5 | right | no change |
+| above 1.5 | too weak | step this caller's label up one tier |
+
+The tiers are the existing difficulties: trivial, simple, normal, hard,
+very_complex. The step is an offset per caller and difficulty, kept by the
+gateway. It moves one tier at a time, and only after a new window of tasks,
+so it cannot swing back and forth.
+
+A new caller starts with the network's offset for that difficulty (see
+section 6), and its own data takes over as it comes in.
+
+## 4. Explain it; do not hide it
+
+The worker still starts at once. A dialog would cost the caller a turn on
+every start. The start result explains the choice:
+
+> You asked *hard*. Your last 7 *hard* tasks needed a median rework of 0, so
+> this one starts at *normal* (deepseek-v4.1-flash) and steps up if it is sent
+> back. To force *hard*, start again with `reason`.
+
+A caller may override with `reason`. The reason is logged, and the outcome
+of the overridden task counts in the caller's record like any other. An
+override is possible, but not free.
+
+## 5. A lower target for risky work
+
+Risk comes from the charter's maturity, which every node already has (early,
+growing, mature, critical). No new labels and no per-project rules.
+
+For a task in a `critical` node:
+
+- the target is a median of 0.5 instead of 1;
+- a floor tier: the loop never moves the task below `hard`.
+
+A bug in critical code that passes review never shows up as rework, and it
+costs far more than one round. The floor keeps the cheapest models away from
+it no matter what the counters say.
+
+## 6. The weak spot, and its guards
+
+The loop sees only the rework that a caller notices. A caller that does not
+review well sends nothing back. Then the loop reads zero rework, steps the
+caller down, the cheaper model delivers worse work, the weak caller still
+notices nothing, and the loop drifts down. The measure is only as good as the
+reviewer.
+
+Guards:
+
+- **Only a strong caller can lower a tier.** Any caller's rework can step its
+  offset up. Only a caller running on a model at or above a score threshold
+  (the same score table as decision 0026, for example Opus, Astra or sol) can
+  step it down.
+- **Weak callers use the network's offsets.** The per-difficulty offset
+  learned from strong callers' tasks applies to callers below the threshold.
+  The loop learns from the agents that can tell good work from bad.
+- **Spot checks, off by default.** On request, a strong model reviews a
+  sample of tasks that a weak caller accepted. It costs strong-model quota, so
+  only the owner turns it on.
+
+## 7. Choosing the model
+
+The calibration changes only the difficulty that goes into the chooser. The
+chooser itself stays as it is: score minimum, unprotected providers first,
+quota pace, and the weighted rotation, with its share heatmap in the Quotas
+tab. Picks stay probabilistic, so every adequate model keeps getting a share
+of the work, which is also what keeps the rework numbers fresh for each
+model. One change: a
+model's own track record is read by the same two counters, so a model whose
+tasks need too many fixes at a difficulty loses rotation weight there. A
+model that only needs continues keeps most of its weight on resumable
+harnesses, and loses it on harnesses that cannot resume (Pi today).
+
+## 8. What the owner sees
+
+The Quotas tab gets one small table, one row per caller:
+
+```
+CALLER          LABEL BIAS   HARD        NORMAL      OVERRIDES
+agent-net       -1 tier      0 · 7 tasks 1 · 9 tasks 1
+homelab-agent    0           1 · 5 tasks -           0
+```
+
+Each cell shows the median weighted rework and the number of tasks behind
+it. A caller with a lasting negative bias is an over-labeler. A caller marked
+weak shows `network` in place of its own numbers.
+
+## 9. State
+
+- Two counters on each worker record (daemon and gateway).
+- One offset per caller and difficulty, plus the network offsets (gateway
+  owner settings, next to the rotation state).
+- The override reasons (gateway events).
+
+Nothing reads task content. This fits decision 0036: agent-net knows the
+content only of work that crosses a boundary, and here it only counts it.
+
+## 10. Build plan
+
+1. The two counters on the worker record, counted from routed messages, and
+   shown in the worker track record. Read only; nothing changes behavior.
+2. The per-caller medians and offsets, the network offsets, and the
+   strong-caller guard, with the Quotas table. Still read only: the table
+   shows what the loop would do.
+3. Apply the offsets in the chooser, with the explanation in the start
+   result, `reason` overrides, the critical floor and target, and a model
+   named by an agent as a hint.
+4. Optional, later: restarts, reverts and git fix-up lines as extra signals;
+   spot checks.
+
+Parts 1 and 2 change no behavior, so the owner can watch the numbers for a
+few days before part 3 starts steering.
+
+## Open questions for the owner
+
+1. **The weights.** A fix counts 1 and a continue 0.5. Recommendation: start
+   there, and adjust from part 2's table.
+2. **The window.** The last 7 tasks, with at least 5. Recommendation: keep
+   it; at today's pace that is about a day of work per caller.
+3. **The strong-caller threshold.** Recommendation: a score of 45 or more,
+   which today means sol, Opus and Astra, and not terra, DeepSeek or Sonnet.
+4. **A named model from an agent becomes a hint.** This changes today's
+   behavior for agents that name models. Recommendation: yes.
