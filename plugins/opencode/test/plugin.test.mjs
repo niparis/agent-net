@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const [pluginPath, tsDir] = process.argv.slice(2);
@@ -20,6 +20,11 @@ const js = ts.transpileModule(readFileSync(pluginPath, "utf8"), {
 }).outputText;
 const jsPath = join(dir, "agent-net.mjs");
 writeFileSync(jsPath, js);
+const generatedPath = join(dirname(pluginPath), "tools.gen.ts");
+const generated = ts.transpileModule(readFileSync(generatedPath, "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+writeFileSync(join(dir, "tools.gen.js"), generated);
 const plugin = (await import(pathToFileURL(jsPath).href)).default;
 
 // Fake daemon: records the session IDs that said hello.
@@ -1013,6 +1018,10 @@ await test("a worker does not register the user's other sessions", async () => {
 });
 
 await test("agent_handback reaches the daemon; agent_start can ask for a worktree", async () => {
+  process.env.AGENT_NET_WORKER = "1";
+  const workerSessionFile = join(dir, "worker-session.txt");
+  writeFileSync(workerSessionFile, "ses_h");
+  process.env.AGENT_NET_WORKER_SESSION_FILE = workerSessionFile;
   freshHub();
   const sessions = new Map([["ses_h", session("ses_h", "/work/h")]]);
   let tools;
@@ -1042,6 +1051,8 @@ await test("agent_handback reaches the daemon; agent_start can ask for a worktre
   await start.execute({ project: "alpha", task: "t", isolation: "worktree", touches: ["other"] }, { sessionID: "ses_h" });
   if (calls[calls.length - 1][1].isolation !== "worktree") throw new Error("isolation was not passed");
   stop();
+  delete process.env.AGENT_NET_WORKER;
+  delete process.env.AGENT_NET_WORKER_SESSION_FILE;
 });
 
 await test("agent_learn records a finding and shows the daily limit", async () => {

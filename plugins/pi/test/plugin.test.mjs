@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const [pluginPath, tsDir] = process.argv.slice(2);
@@ -19,7 +19,7 @@ mkdirSync(join(dir, "node_modules", "typebox"), { recursive: true });
 writeFileSync(join(dir, "node_modules", "typebox", "package.json"), JSON.stringify({ name: "typebox", type: "module", main: "index.js" }));
 writeFileSync(
   join(dir, "node_modules", "typebox", "index.js"),
-  "const f = () => ({});\nexport const Type = new Proxy({}, { get: (_, key) => key === 'Object' ? (properties) => ({ properties }) : f });\n",
+  "const f = () => ({});\nexport const Type = new Proxy({}, { get: (_, key) => key === 'Object' ? (properties) => ({ properties }) : key === 'Unsafe' ? (schema) => schema : f });\n",
 );
 
 const js = ts.transpileModule(readFileSync(pluginPath, "utf8"), {
@@ -27,6 +27,11 @@ const js = ts.transpileModule(readFileSync(pluginPath, "utf8"), {
 }).outputText;
 const jsPath = join(dir, "agent-net.mjs");
 writeFileSync(jsPath, js);
+const generatedPath = join(dirname(pluginPath), "tools.gen.ts");
+const generated = ts.transpileModule(readFileSync(generatedPath, "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+writeFileSync(join(dir, "tools.gen.js"), generated);
 const extension = (await import(pathToFileURL(jsPath).href)).default;
 
 // Fake daemon.
@@ -261,6 +266,7 @@ await test("worker profile tools reach the daemon", async () => {
 });
 
 await test("agent_nodes and agent_start show the track record and playbook", async () => {
+  process.env.AGENT_NET_WORKER = "1";
   const p = makePi();
   extension(p.api);
   const n = hellos.length;
@@ -298,6 +304,7 @@ await test("agent_nodes and agent_start show the track record and playbook", asy
   delete replies.worker_start;
   delete replies.worker_handback;
   await p.fire("session_shutdown", {});
+  delete process.env.AGENT_NET_WORKER;
 });
 
 await test("agent_learn records a finding", async () => {

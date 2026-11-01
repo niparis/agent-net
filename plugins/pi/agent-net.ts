@@ -2,7 +2,9 @@
 // Protocol: docs/step2-design.md section 6 (JSON lines, request/response by id, pushes without id).
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { TOOL_CATALOG } from "./tools.gen.js";
 import { connect, type Socket } from "node:net";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -314,6 +316,27 @@ function piTextEntries(branch: any[]): TextEntry[] {
     }
   }
   return out;
+}
+
+function formatCatalogResult(name: string, result: any): string {
+  if (name === "agent_learn") return result.accepted === false ? `Not recorded: ${result.reason}` : `Recorded finding ${result.id} (${result.status}). ${result.remaining} left today.`;
+  if (name === "agent_handback") return `Handed back (${result.status}${result.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`;
+  return JSON.stringify(result ?? {}, null, 2);
+}
+
+function mapCatalogParams(name: string, params: any): any {
+  switch (name) {
+    case "agent_message_send": return { ...params, type: params.type || "request", receipt: true, idempotency_key: randomUUID() };
+    case "agent_message_reply": return { ...params, message_id: params.message, receipt: true, idempotency_key: randomUUID() };
+    case "agent_mcp_test": return { name: params.server };
+    case "agent_worker_stop": return { session: params.worker };
+    case "agent_owner_ask":
+      if (params.kind === "approval") return { __method: "request_approval", __params: { action: params.text, recommendation: params.recommendation } };
+      if (params.kind === "idea") return { __method: "propose_idea", __params: { text: params.text, recommendation: params.recommendation } };
+      return { ...params, explicit: true };
+    case "agent_worker_profiles_find": return {};
+    default: return params;
+  }
 }
 
 export default function (pi: ExtensionAPI) {
@@ -866,7 +889,9 @@ export default function (pi: ExtensionAPI) {
     method: string,
     format: (result: any) => string = (r) => JSON.stringify(r ?? {}, null, 2),
     mapParams: (params: any) => any = (p) => p ?? {},
+    force = false,
   ) {
+    if (!force && TOOL_CATALOG.some((tool) => tool.name === name)) return;
     pi.registerTool({
       name,
       label,
@@ -878,9 +903,11 @@ export default function (pi: ExtensionAPI) {
             throw new Error('touches is required: choose db, hot-path, ui, docs, tests, config or other; for example {"touches":["ui"]}');
           }
           // The daemon does not default online_only; the tool says it does.
-          const args = method === "list" ? { online_only: true, ...(params ?? {}) } : mapParams(params);
-          const result = await request(method, args);
-          if (method === "announce") announced = true;
+          const mapped = mapParams(params);
+          const callMethod = mapped?.__method ?? method;
+          const callArgs = mapped?.__params ?? (method === "list" ? { online_only: true, ...(mapped ?? {}) } : mapped);
+          const result = await request(callMethod, callArgs);
+          if (callMethod === "announce") announced = true;
           const text = format(result ?? {}) + (announced ? "" : `\n${ANNOUNCE_REMINDER}`);
           return {
             content: [{ type: "text" as const, text }],
@@ -1347,4 +1374,21 @@ export default function (pi: ExtensionAPI) {
     "projects",
     formatProjects,
   );
+
+  const workerRole = Boolean(process.env.AGENT_NET_WORKER);
+  for (const tool of TOOL_CATALOG) {
+    if (workerRole ? !(tool.roles as readonly string[]).includes("worker") : !(tool.roles as readonly string[]).includes("agent")) continue;
+    const schema = tool.inputSchema as any;
+    defineTool(
+      tool.name,
+      tool.name,
+      tool.description,
+      Type.Unsafe(schema),
+      tool.method,
+      (result) => tool.name === "agent_project_add" ? formatProjectAdd(result) : formatCatalogResult(tool.name, result ?? {}),
+      (params) => mapCatalogParams(tool.name, params ?? {}),
+      true,
+    );
+  }
+
 }

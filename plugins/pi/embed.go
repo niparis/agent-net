@@ -7,3 +7,8 @@ import _ "embed"
 //
 //go:embed agent-net.ts
 var Extension []byte
+
+// Tools is the generated native tool catalog.
+//
+//go:embed tools.gen.ts
+var Tools []byte
