@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -128,7 +129,15 @@ func (m Model) onboardingLine(w int) string {
 	if step.id == "" {
 		line := "enter: open the " + m.ctoTitle() + " · tab: back"
 		if m.focus == focusCTO {
-			line += " · w: drive 30m"
+			now := time.Now()
+			if m.now != nil {
+				now = m.now()
+			}
+			if m.cto != nil && m.cto.windowUntil.After(now) {
+				line += " · w: stop driving"
+			} else {
+				line += " · w: drive 30m"
+			}
 		}
 		return sDim.Render(clip(line, w))
 	}

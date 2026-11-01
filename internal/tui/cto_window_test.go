@@ -48,13 +48,20 @@ func TestCTOWindowKeyAndGoldens(t *testing.T) {
 			if !strings.Contains(box, "I'm driving") || !strings.Contains(box, "30:00") {
 				t.Fatalf("window absent:\n%s", box)
 			}
+			if !strings.Contains(box, "w: stop driving") || strings.Contains(box, "w: drive 30m") {
+				t.Fatalf("active window hint disagrees with title:\n%s", box)
+			}
 			golden(t, fmt.Sprintf("cto_window_%d", width), box)
 			m.now = func() time.Time { return t0.Add(5 * time.Minute) }
 			if box = strings.Join(m.ctoView(width, 10), "\n"); !strings.Contains(box, "25:00") {
 				t.Fatalf("countdown absent:\n%s", box)
 			}
 			m.now = func() time.Time { return t0.Add(30 * time.Minute) }
-			if strings.Contains(strings.Join(m.ctoView(width, 10), "\n"), "I'm driving") {
+			box = strings.Join(m.ctoView(width, 10), "\n")
+			if !strings.Contains(box, "w: drive 30m") || strings.Contains(box, "w: stop driving") {
+				t.Fatalf("expired window hint: \n%s", box)
+			}
+			if strings.Contains(box, "I'm driving") {
 				t.Fatal("expired window displayed")
 			}
 			m.now = func() time.Time { return t0 }
