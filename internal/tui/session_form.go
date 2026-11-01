@@ -35,6 +35,10 @@ const (
 
 var sessionFieldLabels = [sFields]string{"Project", "Harness", "Model", "Folder", "Branch", "First message"}
 
+// sessionHarnessOrder is the fixed order of the Harness switch. A machine may
+// report only some of them; the form skips the rest.
+var sessionHarnessOrder = []string{"claude", "codex", "opencode", "pi"}
+
 // sessionValueCol is the column where a value starts: two markers and the
 // label column. The lines under First message line up with it.
 const sessionValueCol = 17
@@ -83,6 +87,101 @@ func newSessionForm() sessionForm {
 
 func (f sessionForm) value(i sessionFormField) string { return strings.TrimSpace(f.in[i].Value()) }
 
+// sessionHarnessChoices are the harnesses the form's machine reports, in the
+// fixed order of sessionHarnessOrder. A node that never reported a list (an
+// older daemon) offers every harness this version can start.
+func (m Model) sessionHarnessChoices(f sessionForm) []string {
+	node := m.sessionFormNode(f)
+	out := make([]string, 0, len(sessionHarnessOrder))
+	if node == nil || node.Harnesses == nil {
+		return append(out, sessionHarnessOrder...)
+	}
+	installed := map[string]bool{}
+	for _, hi := range node.Harnesses {
+		installed[hi.Name] = true
+	}
+	for _, h := range sessionHarnessOrder {
+		if installed[h] {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// sessionModelChoices are the models the form's machine reports for the
+// focused harness. The first choice is always the harness default, empty.
+func (m Model) sessionModelChoices(f sessionForm) []string {
+	out := []string{""}
+	harness := f.value(sHarness)
+	node := m.sessionFormNode(f)
+	if harness == "" || node == nil {
+		return out
+	}
+	seen := map[string]bool{"": true}
+	for _, hi := range node.Harnesses {
+		if hi.Name != harness {
+			continue
+		}
+		for _, mod := range hi.Models {
+			if !seen[mod] {
+				seen[mod] = true
+				out = append(out, mod)
+			}
+		}
+	}
+	return out
+}
+
+// cycleChoice returns the choice after cur by delta, wrapping around. A value
+// that is not in the list moves to the first choice going right and the last
+// going left.
+func cycleChoice(choices []string, cur string, delta int) string {
+	if len(choices) == 0 {
+		return cur
+	}
+	i := -1
+	for j, c := range choices {
+		if c == cur {
+			i = j
+			break
+		}
+	}
+	if i < 0 {
+		if delta > 0 {
+			return choices[0]
+		}
+		return choices[len(choices)-1]
+	}
+	return choices[(i+delta+len(choices))%len(choices)]
+}
+
+// cycleSessionHarness moves the Harness switch and resets Model to the new
+// harness's default, because a model of the old harness usually does not run
+// there.
+func (m *Model) cycleSessionHarness(delta int) {
+	f := &m.sform
+	cur := f.value(sHarness)
+	next := cycleChoice(m.sessionHarnessChoices(*f), cur, delta)
+	if next == cur {
+		return
+	}
+	f.in[sHarness].SetValue(next)
+	f.in[sHarness].CursorEnd()
+	f.in[sModel].SetValue("")
+	f.in[sModel].CursorEnd()
+	f.err = ""
+}
+
+// cycleSessionModel moves the Model switch between the harness default and the
+// models the machine reports for that harness.
+func (m *Model) cycleSessionModel(delta int) {
+	f := &m.sform
+	next := cycleChoice(m.sessionModelChoices(*f), f.value(sModel), delta)
+	f.in[sModel].SetValue(next)
+	f.in[sModel].CursorEnd()
+	f.err = ""
+}
+
 // worktree tells whether the form starts in a new git worktree.
 func (f sessionForm) worktree() bool { return f.folder == protocol.FolderWorktree }
 
@@ -92,6 +191,15 @@ func (f sessionForm) folderLabel() string {
 		return "new worktree"
 	}
 	return "project folder"
+}
+
+// sessionSwitchLabel is the value of a choice field: the value itself, or the
+// name of the choice an empty value stands for.
+func sessionSwitchLabel(value, empty string) string {
+	if value == "" {
+		return empty
+	}
+	return value
 }
 
 func (f *sessionForm) focus(to sessionFormField) tea.Cmd {
@@ -536,6 +644,45 @@ func (m Model) sessionFormProject(f sessionForm) string {
 	return project
 }
 
+// completeSessionProject puts the common start of the matching project names
+// in the Project field, like Tab does in the worker form. A path has no
+// project candidates, so Tab just moves on from a path.
+func (m *Model) completeSessionProject() bool {
+	f := &m.sform
+	cands := m.projectCandidates(f.value(sProject), false)
+	if len(cands) == 0 {
+		return false
+	}
+	prefix := cands[0].value
+	for _, c := range cands[1:] {
+		for !strings.HasPrefix(strings.ToLower(c.value), strings.ToLower(prefix)) {
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+	if len(cands) == 1 {
+		prefix = cands[0].value
+	}
+	if prefix == f.in[sProject].Value() {
+		return false
+	}
+	f.in[sProject].SetValue(prefix)
+	f.in[sProject].CursorEnd()
+	m.refreshSessionPathFolder()
+	if f.worktree() && f.branchAuto {
+		project, _ := splitProjectMachine(f.value(sProject))
+		nodeID := f.nodeID
+		if node := m.sessionFormNode(*f); node != nil {
+			nodeID = node.NodeID
+		}
+		f.in[sBranch].SetValue(m.ownerWorktreeBranch(project, nodeID))
+	}
+	return true
+}
+
+// sessionFormKey handles the keys of the form. It follows the same rules as the
+// worker form: tab and enter move down, up moves back. Left and right act on
+// the field that has the focus: the Harness, Model and Folder switches change
+// their choice, and a text field moves its cursor.
 func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	f := &m.sform
 	switch k.Type {
@@ -544,6 +691,9 @@ func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.say("Start cancelled.")
 		return m, nil
 	case tea.KeyTab:
+		if f.cur == sProject && m.completeSessionProject() {
+			return m, nil
+		}
 		if f.cur < sFirstMessage {
 			return m, f.focus(f.nextSessionField(f.cur))
 		}
@@ -559,22 +709,35 @@ func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyLeft, tea.KeyRight:
-		// The folder switch owns the arrows everywhere in this form, as the
-		// key line says. Text fields still take home, end and editing keys.
-		if f.worktree() {
-			m.setSessionFolder(protocol.FolderProject)
-			if m.sform.cur == sBranch {
-				return m, m.sform.focus(sFolder)
-			}
-		} else {
-			m.setSessionFolder(protocol.FolderWorktree)
+		delta := -1
+		if k.Type == tea.KeyRight {
+			delta = 1
 		}
-		return m, nil
+		switch f.cur {
+		case sHarness:
+			m.cycleSessionHarness(delta)
+			return m, nil
+		case sModel:
+			m.cycleSessionModel(delta)
+			return m, nil
+		case sFolder:
+			if f.worktree() {
+				m.setSessionFolder(protocol.FolderProject)
+			} else {
+				m.setSessionFolder(protocol.FolderWorktree)
+			}
+			return m, nil
+		}
+		// A text field takes left and right as cursor movement below.
 	case tea.KeyEnter:
 		if f.cur < sFirstMessage {
 			return m, f.focus(f.nextSessionField(f.cur))
 		}
 		return m.submitSessionForm()
+	}
+	if f.cur == sHarness || f.cur == sModel || f.cur == sFolder {
+		// The switches take no text; only the keys above act on them.
+		return m, nil
 	}
 	f.err = ""
 	if f.cur == sBranch {
@@ -864,8 +1027,10 @@ func (m Model) sessionFormView(w, rows int) []string {
 		switch {
 		case i == sFolder:
 			val = "◂ " + f.folderLabel() + " ▸"
-		case i == sModel && f.value(sModel) == "":
-			val = "default"
+		case i == sHarness:
+			val = "◂ " + sessionSwitchLabel(f.value(sHarness), "none") + " ▸"
+		case i == sModel:
+			val = "◂ " + sessionSwitchLabel(f.value(sModel), "default") + " ▸"
 		default:
 			val = f.in[i].Value()
 		}
@@ -886,8 +1051,10 @@ func (m Model) sessionFormView(w, rows int) []string {
 		switch {
 		case i == sFolder:
 			val = sBold.Render("◂ " + f.folderLabel() + " ▸")
-		case i == sModel && f.value(sModel) == "":
-			val = sDim.Render("default")
+		case i == sHarness:
+			val = sBold.Render("◂ " + sanitize(sessionSwitchLabel(f.value(sHarness), "none")) + " ▸")
+		case i == sModel:
+			val = sBold.Render("◂ " + sanitize(sessionSwitchLabel(f.value(sModel), "default")) + " ▸")
 		case i == f.cur:
 			val = f.in[i].View()
 		default:
@@ -911,6 +1078,12 @@ func (m Model) sessionFormView(w, rows int) []string {
 					out = append(out, sDim.Render(clip(indent+extra, w)))
 				}
 			}
+			if i == f.cur {
+				out = append(out, sDim.Render(clip(indent+"type a project name or a path; tab completes", w)))
+			}
+		}
+		if i == sBranch && i == f.cur {
+			out = append(out, sDim.Render(clip(indent+"type a branch name", w)))
 		}
 	}
 	why := m.sessionFormRefusal(f)

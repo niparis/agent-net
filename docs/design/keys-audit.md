@@ -240,7 +240,7 @@ the scrolling card body, so it never needs a second screen.
 | Form | Keys |
 |---|---|
 | Compose message | Text input, `enter` sends, `esc` cancels. |
-| New session | `tab` or `down` next field, `shift+tab`/`up` previous, `left`/`right` change Folder between `project folder` and `new worktree`, `enter` next field or starts on First message, `esc` cancels, text input. The Branch field is shown only for a new worktree. The Project field also takes a path. |
+| New session | `tab` completes a known project name, else next field; `down` next field; `shift+tab`/`up` previous; `left`/`right` change the focused switch (Harness, Model or Folder), and move the cursor in Project, Branch and First message; `enter` next field or starts on First message; `esc` cancels. Harness is a switch over the harnesses the target machine reports, in the order claude, codex, opencode, pi. Model follows the harness: `default` is first, then that harness's models on the target machine, and a harness change resets Model. The Branch field is shown only for a new worktree. The Project field also takes a path. Key line: `up/down field · left/right change · enter start · esc cancel`. |
 | Create folder, Claude trust | The New session form's extra questions on the result line: `enter` or `y` says yes, `esc` or `n` says no, hint `enter: yes · esc: no`. |
 | Stop worker | `y`/`Y` stops, `n`/`N`/`esc` cancels. |
 | Protect quota | `y` confirms, `n`/`esc` cancels. |

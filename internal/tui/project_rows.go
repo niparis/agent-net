@@ -59,3 +59,41 @@ func (m Model) resolveProject(text string) (name, machine string, node *protocol
 	}
 	return name, hit.Hostname, nil
 }
+
+// candidate is one completion choice with a dim note.
+type candidate struct {
+	value string
+	note  string
+}
+
+// projectCandidates lists projects that match text, for completion in the
+// new-session form. A name on two machines is offered as name@machine.
+func (m Model) projectCandidates(text string, exact bool) []candidate {
+	rows := m.projectRows()
+	machines := map[string]int{}
+	for _, p := range rows {
+		machines[strings.ToLower(p.Name)]++
+	}
+	text = strings.ToLower(strings.TrimSpace(text))
+	var out []candidate
+	for _, p := range rows {
+		name := p.Name
+		value := name
+		if machines[strings.ToLower(name)] > 1 {
+			value = name + "@" + p.Hostname
+		}
+		hay := strings.ToLower(value)
+		if exact && strings.ToLower(name) != text && hay != text {
+			continue
+		}
+		if !exact && !strings.Contains(hay, text) {
+			continue
+		}
+		src := p.Source
+		if src == "" {
+			src = protocol.SourceSeen
+		}
+		out = append(out, candidate{value: value, note: src + " on " + p.Hostname})
+	}
+	return out
+}
