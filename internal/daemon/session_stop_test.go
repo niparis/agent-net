@@ -112,12 +112,12 @@ func TestSessionStopPiPrivateWindow(t *testing.T) {
 	}
 }
 
-func TestSessionStopLocalOnly(t *testing.T) {
+func TestSessionStopUnknownSession(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n, _, _ := enterNode(t, g, "codex", protocol.SessionInfo{NativeID: "thread", Name: "shop", Status: "idle"}, nil, nil)
 	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": "s_elsewhere"})
-	if err == nil || !strings.Contains(err.Error(), "local sessions only") {
-		t.Fatalf("remote stop: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not known") {
+		t.Fatalf("unknown stop: %v", err)
 	}
 }
 

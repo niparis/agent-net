@@ -187,6 +187,7 @@ type Daemon struct {
 	ctoGraph         ctoGraphWindow
 	operatorReads    operatorReadCache
 	startedSessions  map[string]protocol.StartedSession // guarded by mu
+	startedRelays    map[string]string                  // start ID -> machine, guarded by mu
 	notify           notificationTracker
 	notifySend       func()
 	toolsMu          sync.Mutex

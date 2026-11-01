@@ -1377,9 +1377,9 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | esc | Leave the help or a message body, or clear the filter. |
 | `r` | Refresh now. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
-| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. Folder is `project folder` for now: this version starts local Claude Code, OpenCode, Codex and Pi sessions, so another harness or another machine is refused. An empty First message starts the session and enters it (ctrl+] returns). For Claude, OpenCode and Pi, text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent. Enter opens it.` Pi runs in agent-net's private tmux server. Codex always starts and enters, with the first message as its prompt. A failure shows the reason the harness gave. Esc cancels. |
+| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. The project may be on another machine, shown as `name@machine`: the start is relayed through the gateway to the machine that holds it, and the form says `through ssh to <machine>` because Enter will use the existing remote enter plan. Folder is `project folder` for now. This version starts Claude Code, OpenCode, Codex and Pi sessions; another harness is refused. An empty First message starts the session and enters it (ctrl+] returns). For Claude, OpenCode and Pi, text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent.` then `Enter opens it.` here or `Enter opens it through ssh to <machine>.` there. Pi runs in agent-net's private tmux server. Codex always starts and enters, with the first message as its prompt; on another machine it opens through ssh and starts there, in your terminal. A failure shows the reason the harness gave. Esc cancels. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
-| `x` | In Sessions, stop a worker as before, or stop a local Claude background session, abort an OpenCode service turn, or kill a Pi window in the private agent-net tmux server. Owner sessions ask: `Stop <name>? The conversation is kept: Enter on its offline row resumes it. y/n`. OpenCode stays in the service; an idle service session costs nothing. Interactive terminal sessions say `<name> runs in your terminal on <machine>: end it there`. Owner stops on other machines are not supported yet. |
+| `x` | In Sessions, stop a worker as before, or stop a Claude background session, abort an OpenCode service turn, or kill a Pi window in the private agent-net tmux server. Owner sessions ask: `Stop <name>? The conversation is kept: Enter on its offline row resumes it. y/n`. OpenCode stays in the service; an idle service session costs nothing. Interactive terminal sessions say `<name> runs in your terminal on <machine>: end it there`. A session on another machine is stopped by its own machine through the gateway. |
 | `t` | Cycle the selected node's wildcard request rule through `normal`, `ask` and `auto`. |
 | `N` | Name the machine of the selected session ([machine names](#machine-names)). A one-line prompt starts with the name shown now. Enter saves, an empty name clears it, Esc cancels. Every machine shows the new name. |
 | `p` | Set the [delegation policy](#delegation-policy) of the selected session or its project. A form takes Delegate (left and right: none, off, native, workers), Coder, Main, Workers (the [permission level](#workers) of workers started in the project: default sandboxed, sandboxed, no-network, read-only; choosing one sets the scope to project) and Scope (session, project). Each move to another field shows what the loose model names resolve to; Enter on Scope saves; Esc cancels. |
@@ -1613,17 +1613,29 @@ current PATH. A daemon upgrade adds PATH to older service files.
 
 ### Starting an owner session through the local API
 
-`session_start` starts Claude, OpenCode or Pi in the background, or prepares a Codex enter plan, in an existing project folder on this machine.
-This is the daemon part of the [accepted session-start design](design/start-sessions.md);
-starts on other machines are not built yet.
+`session_start` starts Claude, OpenCode or Pi in the background, or prepares a Codex enter plan, in an existing project folder. The folder may be on another machine.
+This is the daemon part of the [accepted session-start design](design/start-sessions.md).
 
-The request is `{"project":"shop","harness":"claude","model":"haiku","first_message":"Inspect this project"}`.
-Project is a known local project name or its exact path. Ambiguous names are
-refused; use the path. Harness may be omitted and defaults to `claude`. Model
+The request is `{"project":"shop","harness":"claude","model":"haiku","first_message":"Inspect this project","node_id":"n_..."}`.
+Project is a known project name or its exact path. Ambiguous names are
+refused; use the path. `node_id` is optional: when it names another machine,
+the local daemon asks the gateway to relay the start to that machine. Without
+it, a project that exists only on another machine is relayed there; a project
+on more than one machine needs the machine name. The gateway finds the machine
+that holds the project and asks its daemon; the gateway never runs anything.
+The receiving daemon checks that the owner flag names the owner session of the
+sending machine, so an agent session cannot relay a start. A machine that is
+offline, or that runs an agent-net older than v0.4.46, is refused with a line
+that names it.
+
+Harness may be omitted and defaults to `claude`. Model
 and first_message are optional. An empty model keeps the harness's own default.
 For Claude, OpenCode and Pi, an empty first message starts an idle background
 session. For Claude, a nonempty message is the owner's first prompt, passed
-after `--` to `claude --bg`.
+after `--` to `claude --bg`. `folder` is the folder choice of the TUI form; it
+is carried unchanged to the machine that runs the start. Folder creation and
+its confirm and home-folder rule come in a later part, so this version does not
+create one.
 
 For OpenCode, the daemon reads the owner's running service address and password
 from `$XDG_STATE_HOME/opencode/service.json` (default:
@@ -1666,26 +1678,33 @@ starting a background process. The TUI runs `codex [-m MODEL] [prompt]` in the
 project folder through its terminal. It always enters, even with a first
 message, so the owner can answer approval prompts. Ctrl+] returns to the TUI;
 a running turn continues in the shared app server. An idle thread can become
-dormant and Enter resumes it with `codex resume <thread>`.
+dormant and Enter resumes it with `codex resume <thread>`. On another machine
+the other daemon builds the local Codex plan and this daemon wraps it in the
+normal remote enter plan (`ssh -t`, or `herdr --remote`), so Codex starts in
+the owner's terminal on the machine that holds the project.
 
 For Claude, OpenCode and Pi, the answer is a started-session record with `id`, `status: "starting"`,
-`node_id`, `harness`, `project`, `path`, `branch`, `model` and `started_at`
+`node_id`, `hostname`, `harness`, `project`, `path`, `branch`, `model` and `started_at`
 (Unix seconds). Poll `session_start_get {"id":"<returned id>"}`. Once normal
 discovery and gateway registration finish, the record has `status: "started"`,
 `native_id` and `session_id` (and `job_id` for Claude). A failed launch or
 registration has `status: "failed"` and `error`. An unknown id is refused. Records live in
 memory for this daemon run. A daemon restart loses the records; the harness's
 session remains discoverable as a normal session. Cancelling the requesting
-socket does not cancel the background launch.
+socket does not cancel the background launch. For a start on another machine,
+`session_start_get` is relayed to that machine too, and the record has
+`enter_note` for the result line, for example `Enter opens it through ssh to
+build-vm.` The TUI shows the note after a start with a first message.
 
 `session_resume {"session_id":"<agent-net session id>"}` resumes an offline
-local Claude or Pi conversation in its original folder. It returns the same
-starting record and uses `session_start_get` for completion. If Claude creates
-a copy, the record reports the new native and agent-net session IDs. A missing
-folder is reported. The TUI resumes and enters an offline local Claude or Pi
-row on Enter or `e`; after more than an hour offline it asks for confirmation
-first. Offline OpenCode and Codex rows keep their existing enter plans. Other
-offline harnesses and rows on another machine cannot yet be resumed here.
+Claude or Pi conversation in its original folder, on this machine or on the
+machine that holds it. It returns the same starting record and uses
+`session_start_get` for completion. If Claude creates a copy, the record
+reports the new native and agent-net session IDs. A missing folder is reported.
+The TUI resumes and enters an offline Claude or Pi row on Enter or `e`; after
+more than an hour offline it asks for confirmation first. Offline OpenCode and
+Codex rows keep their existing enter plans, wrapped in the remote plan when the
+row is on another machine. Other offline harnesses are refused.
 
 All three methods require the owner's CLI connection and refuse agent callers,
 including CLI commands inside agent, Codex app-server and OpenCode serve
@@ -1693,4 +1712,7 @@ process trees. They are not agent tools. The session uses the harness's normal
 project settings and MCP servers, with no worker brief, hand-back, worktree,
 worker list entry or completion notice. Idle and age limits do not stop it.
 Worker cleanup and daemon shutdown leave it running. Enter it through the
-existing `session_enter` method once its session_id is known.
+existing `session_enter` method once its session_id is known. Enter on a
+session on another machine is planned by that machine and wrapped here in
+`ssh -t` (or herdr's remote client), using `enter_ssh` and `enter_ssh_hosts`
+from node.json as before.

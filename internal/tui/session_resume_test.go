@@ -91,8 +91,8 @@ func TestResumeUnsupportedRowsAndExistingEnterPlans(t *testing.T) {
 		unsupported   bool
 		resume        bool
 	}{
-		{"pi", "n_mac", false, true}, {"pi", "n_vm", true, false}, {"claude", "n_vm", true, false},
-		{"opencode", "n_mac", false, false}, {"codex", "n_mac", false, false},
+		{"pi", "n_mac", false, true}, {"pi", "n_vm", false, true}, {"claude", "n_vm", false, true},
+		{"opencode", "n_mac", false, false}, {"codex", "n_mac", false, false}, {"other", "n_mac", true, false},
 	} {
 		t.Run(tc.harness+tc.node, func(t *testing.T) {
 			m, src := workerModel(120, 34)
@@ -106,7 +106,7 @@ func TestResumeUnsupportedRowsAndExistingEnterPlans(t *testing.T) {
 			src.sessionStart = startedSession("tenebrae", tc.harness)
 			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 			if tc.unsupported {
-				if cmd != nil || !strings.Contains(m.notice.text, "resume works for Claude and Pi on this machine for now") {
+				if cmd != nil || !strings.Contains(m.notice.text, "resume works for Claude and Pi for now") {
 					t.Fatalf("notice %+v", m.notice)
 				}
 				return
@@ -116,7 +116,7 @@ func TestResumeUnsupportedRowsAndExistingEnterPlans(t *testing.T) {
 			}
 			m, _ = press2(m, cmd())
 			if tc.resume {
-				if len(src.sessionResumes) != 1 || src.sessionResumes[0].SessionID != a.SessionID || len(src.enters) != 0 {
+				if len(src.sessionResumes) != 1 || src.sessionResumes[0].SessionID != a.SessionID || src.sessionResumes[0].NodeID != a.NodeID || len(src.enters) != 0 {
 					t.Fatalf("resume %+v enter %+v", src.sessionResumes, src.enters)
 				}
 				return

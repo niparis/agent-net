@@ -476,6 +476,12 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveWorker(ctx, nc, h, raw)
 			continue
 		}
+		if isSessionRelay(h.Type) {
+			// The target machine may ask this gateway a question while it acts,
+			// so the relay must not run in this node's read loop.
+			go g.answer(ctx, nc, h, raw)
+			continue
+		}
 		if h.Type == "msg.send" && g.msgSendMayResume(raw) {
 			// Starting an ended worker again asks this same node and waits for
 			// its answer, so it must not run in the read loop that reads it.
@@ -827,6 +833,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return nil, st.SetNodeLaunch(nc.id, p.Launch)
+
+	case protocol.FrameSessionStart, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
+		return g.handleSessionRelay(ctx, nc, typ, raw)
 
 	case "query.projects":
 		p, err := decode[protocol.QueryProjects](raw)

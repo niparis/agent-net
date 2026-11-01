@@ -765,7 +765,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			return nil, true, errors.New("session_start_get needs id")
 		}
-		res, err = d.sessionStartGet(p.ID)
+		res, err = d.sessionStartGet(ctx, p.ID)
 
 	case "session_enter":
 		var q protocol.EnterRequest

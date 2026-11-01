@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+New session ────────────────────────────────────────────────────────────────────
+  Project        agent-net@build-vm   on build-vm, /srv/agent-net
+  Harness        pi   build-vm has: pi
+  Model          default
+  Folder         project folder   no worktree yet
+> First message
+                 empty: start it and enter it (through ssh to build-vm)
+                 text: start it in the background and send this
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter start  up/down field  esc cancel

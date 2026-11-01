@@ -775,7 +775,20 @@ or an OpenCode serve process tree is refused too. No agent tool exposes these
 methods. An owner session has the owner's normal harness permissions, so an
 agent must never be able to start one to escape worker limits.
 
-`session_stop` accepts only a session ID on this machine. It runs `claude stop`
+A project or session on another machine is reached through the gateway frames
+`session.start`, `session.resume`, `session.stop` and `session.get`, which carry
+the owner session ID. The gateway checks that the ID names the owner
+pseudo-session of the sending machine, not an agent and not a worker, and that
+the target machine is online. The receiving daemon asks the gateway again and
+checks the same fields before it starts, resumes or stops anything, so a
+`session.owner_*` frame with a missing or borrowed owner flag is refused. Only
+the gateway sends those frames; a node that sends one to the gateway gets
+"unknown frame type". The gateway never runs a command. A machine that runs an
+agent-net older than v0.4.46, or is offline, is refused with a line that names
+it. This gives the owner nothing beyond an ssh to that machine.
+
+`session_stop` accepts a session ID on this machine or, through the gateway,
+on another machine. It runs `claude stop`
 only when the Claude adapter identifies a background job. For OpenCode it
 aborts the turn through the owner's authenticated loopback service and keeps
 the conversation in that service. For Pi it queries only `tmux -L agent-net`,
@@ -785,13 +798,17 @@ process's tmux socket to decide what it may stop. Interactive Claude, Codex
 and Pi sessions in the owner's terminal are refused. Worker stops keep their
 existing authority checks and stop rules. No agent tool exposes owner stops.
 
-For now, starts are limited to Claude, OpenCode and Pi in the background, and
-Codex as an enter plan, in an existing project folder known on the local
-machine. The daemon resolves the project from the gateway registry; it accepts
-no executable, command, settings, environment or arbitrary folder parameter.
-It creates no folder, worktree or trust entry. Folder creation and its
-home-folder and symlink checks belong to a later part of the design. For
-Claude, the model and optional first message are separate command arguments,
+Starts are limited to Claude, OpenCode and Pi in the background, and Codex as
+an enter plan, in an existing project folder known on the local machine or on
+another machine of the network. The daemon resolves the project from the
+gateway registry; it accepts no executable, command, settings, environment or
+arbitrary folder parameter. The optional `folder` field of the request is
+carried unchanged to the machine that runs the start; this version does not
+create a folder. It creates no worktree or trust entry. Folder creation and its
+confirm, home-folder and symlink checks belong to a later part of the design;
+on another machine it will follow the owner's decision 8, with the same confirm
+and the same home-folder rule.
+For Claude, the model and optional first message are separate command arguments,
 with `--` before the message. There is no shell interpolation.
 
 OpenCode starts use the owner's existing service, never a private worker server.
