@@ -40,7 +40,7 @@ typed in the CTO chat never counts. Use the dialog or `A` in the Inbox tab for p
 in the CTO box for the graph window.
 
 Each proposal tool accepts an optional `reason`. The daemon validates the exact
-call before storing it. If the CTO harness supports form elicitation, it can show a dialog with the stored tool, action, arguments and reason. Accept approves and decline refuses the proposal. Cancel, an error, or no dialog leaves it open in the Inbox. The CTO sees a short result. Typing instructions in the CTO conversation does not approve a proposal.
+call before storing it. If the CTO harness supports form elicitation, it can show a dialog with the stored tool, action, arguments and reason. Accept approves and decline refuses the proposal. Cancel, an error, or no dialog leaves it open in the Inbox. For MCP protocol 2026-07-28 and newer, the harness returns the answer in a follow-up tool call; older versions use a direct elicitation request. The CTO sees a short result. Typing instructions in the CTO conversation does not approve a proposal.
 
 `proposal_list` lists proposals across online machines, or on one machine when
 passed `node_id`. `proposal_answer` takes `node_id`, `proposal_id` and an action:

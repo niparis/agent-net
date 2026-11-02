@@ -78,7 +78,7 @@ func TestCTODialogApprovalAppliesProposal(t *testing.T) {
 	}
 	id, ok := payload["proposal_id"].(string)
 	message, msgOK := payload["message"].(string)
-	if !ok || !msgOK || !strings.Contains(message, "dialog purpose") || !strings.Contains(message, "Reason: ") || strings.Contains(message, `"reason"`) {
+	if !ok || !msgOK || !strings.Contains(message, "  value: dialog purpose") || !strings.Contains(message, "  node: dialog-node") || !strings.Contains(message, "Reason: ") || strings.Contains(message, `"reason"`) {
 		t.Fatalf("stored proposal payload: %v", response)
 	}
 	raw, _ := json.Marshal(map[string]any{"id": id, "approve": true})

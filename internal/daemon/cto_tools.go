@@ -46,10 +46,36 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	}
 	for _, item := range items {
 		if item.ID == id {
-			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments: %s\nReason: %s", item.Call.Tool, item.Call.Action, item.Call.Args, item.Reason)}, nil
+			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
 		}
 	}
 	return nil, errors.New("proposal not found")
+}
+
+func dialogArguments(raw json.RawMessage) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return "  " + string(raw)
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var lines []string
+	for _, key := range keys {
+		value := string(fields[key])
+		var str string
+		if json.Unmarshal(fields[key], &str) == nil {
+			if strings.ContainsAny(str, "\r\n") {
+				value = strconv.Quote(str)
+			} else {
+				value = str
+			}
+		}
+		lines = append(lines, "  "+key+": "+value)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (any, error) {
