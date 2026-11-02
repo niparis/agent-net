@@ -75,6 +75,8 @@ func (m Model) hints() []hint {
 			return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, "defect"), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 		}
 		return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, actLast), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
+	case m.tab == quotasTab && m.qualityDetail:
+		return []hint{bindingPairHint(contextQualityDetails, actUp, actDown), bindingPairHint(contextQualityDetails, actPageUp, actPageDown), bindingHint(contextQualityDetails, actClose)}
 	case m.tab == quotasTab:
 		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "refresh"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == settingsTab:
@@ -283,7 +285,7 @@ func (m Model) helpTabSections() []helpSection {
 
 func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
-		contextBody, contextApps, contextProposalDetail, contextProposalHistory,
+		contextBody, contextApps, contextQualityDetails, contextProposalDetail, contextProposalHistory,
 		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd,
 		contextCTO, contextHelp, contextConfirm, contextForm,
 	}

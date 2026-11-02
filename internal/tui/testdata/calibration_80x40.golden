@@ -6,30 +6,30 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                         │
-│ FAMILY   TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                              │
-│ simple · 8 tasks                                                             │
-│ luna         5       0.20            -    2 min                              │
-│ deepseek     1       0.33            -    2 min                              │
-│ sol          1       0.00            -    0 min                              │
-│ terra        1       1.00            -   10 min                              │
-│ normal · 154 tasks                                                           │
-│ deepseek    66       0.09            -    1 min                              │
-│ terra       53       0.72            -    6 min                              │
-│ luna        19       0.26            -    3 min                              │
-│ sol          9       0.26            -    2 min                              │
-│ opus         7       0.00            -    0 min                              │
-│ hard · 33 tasks                                                              │
-│ terra       25       0.61  1 · avg 4.0   13 min                              │
-│ sol          8       0.42            -    4 min                              │
-│ unknown · 23 tasks                                                           │
-│ deepseek    12       0.17            -    2 min                              │
-│ sol          8       0.13            -    1 min                              │
-│ terra        3       1.00            -   10 min                              │
-│ ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14                    │
-│ defects reported later: 2                                                    │
-│ ratings: 40 so far; what matters most: model / effort / harness              │
-│ more below · up/down to scroll                                               │
+│ ╭─simple · 8 tasks──────────────────╮ ╭─normal · 154 tasks─────────────────╮ │
+│ │   luna 2 min █░░░░ · 5 tasks      │ │   opus 0 min ░░░░░ · 7 tasks       │ │
+│ │ 3 more with too few tasks to rank │ │   deepseek 1 min █░░░░ · 66 tasks  │ │
+│ │                                   │ │   sol 2 min █░░░░ · 9 tasks        │ │
+│ │                                   │ │ 2 more: luna 3 min · terra 6 min   │ │
+│ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
+│ ╭─hard · 33 tasks───────────────────╮ ╭─very complex · 0 tasks─────────────╮ │
+│ │   sol 4 min ██░░░ · 8 tasks       │ │                                    │ │
+│ │   terra 13 min █████ · 25 tasks … │ │                                    │ │
+│ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
+│ ▸ = the model the picker would choose on Mac.  My time = minutes the         │
+│ orchestrator spends after a worker: nudges, fixes and bugs found later.      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────╮
+│ NAME            HARNESS  MODEL               T     S     N     H     V       │
+│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │

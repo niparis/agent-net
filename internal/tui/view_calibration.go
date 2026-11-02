@@ -11,7 +11,16 @@ import (
 
 // calibrationView shows the cached quality analysis in the Quotas tab.
 func (m Model) calibrationView(w int) []string {
-	return qualityView(m.snap.Calibration, w, m.qualityAgent, m.qualityDetail)
+	var picks map[string]string
+	machine := ""
+	for _, node := range m.snap.Nodes {
+		if node.NodeID == m.snap.NodeID && node.NodeID != "" {
+			picks = node.QualityPicks
+			machine = node.Hostname
+			break
+		}
+	}
+	return qualityCards(m.snap.Calibration.Quality, w, m.qualityAgent, picks, machine)
 }
 
 // qualityView only formats the gateway snapshot. Fitting, family folding,

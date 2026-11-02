@@ -14,6 +14,8 @@ import (
 type familyTask struct {
 	caller, model, harness, difficulty string
 	fix, cont, midrun                  int
+	worstSeverity                      int
+	ratings                            []float64
 	touches                            map[string]bool
 	lateDefects                        int
 	lateSeverity                       float64
@@ -21,10 +23,12 @@ type familyTask struct {
 }
 
 type familyCount struct {
-	tasks, fixes, continues, midrun int
-	lateDefects                     int
-	lateSeverity                    float64
-	defectMinutes                   float64
+	tasks, fixes, continues, midrun    int
+	helped, worstSeverity, ratingCount int
+	ratingSum                          float64
+	lateDefects                        int
+	lateSeverity                       float64
+	defectMinutes                      float64
 }
 
 // qualityModelFamily folds a model name into the family the owner reads:
@@ -70,6 +74,14 @@ func addFamilyTask(counts map[string]*familyCount, family string, task familyTas
 		counts[family] = c
 	}
 	c.tasks++
+	if task.fix > 0 || task.cont > 0 {
+		c.helped++
+	}
+	c.worstSeverity = max(c.worstSeverity, task.worstSeverity)
+	for _, rating := range task.ratings {
+		c.ratingSum += rating
+		c.ratingCount++
+	}
 	c.fixes += task.fix
 	c.continues += task.cont
 	c.midrun += task.midrun
@@ -85,6 +97,12 @@ func familyRows(counts map[string]*familyCount) []protocol.QualityFamily {
 			continue
 		}
 		row := protocol.QualityFamily{Family: name, Tasks: c.tasks, Fixes: c.fixes, Continues: c.continues, Midrun: c.midrun, LateDefects: c.lateDefects}
+		row.NeededHelp = float64(c.helped) / float64(c.tasks)
+		row.WorstSeverity = c.worstSeverity
+		if c.ratingCount > 0 {
+			avg := c.ratingSum / float64(c.ratingCount)
+			row.AvgRating = &avg
+		}
 		row.FollowUps = (float64(c.fixes) + protocol.CalibrationContinueWeight*float64(c.continues)) / float64(c.tasks)
 		if c.lateDefects > 0 {
 			row.LateDefectSeverity = c.lateSeverity / float64(c.lateDefects)
@@ -128,6 +146,7 @@ func levelRows(levels map[string]map[string]*familyCount) []protocol.QualityLeve
 
 type defectSummary struct {
 	count    int
+	worst    int
 	severity float64
 	minutes  float64
 }
@@ -152,6 +171,7 @@ func (s *Store) qualityDefects(cut int64) (map[string]defectSummary, error) {
 		}
 		d := out[session]
 		d.count += n
+		d.worst = max(d.worst, severity)
 		d.severity += float64(severity * n)
 		d.minutes += protocol.DefectMinutes(severity) * float64(n)
 		out[session] = d
@@ -173,6 +193,25 @@ func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	ratings := map[string]float64{}
+	rows, err := s.db.Query(`SELECT session_id, score FROM worker_ratings WHERE at >= ?`, cut)
+	if err != nil {
+		return nil, nil, err
+	}
+	for rows.Next() {
+		var session string
+		var score float64
+		if err := rows.Scan(&session, &score); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		ratings[session] = score
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, nil, err
+	}
 	tasks := make([]familyTask, 0, len(runs))
 	for _, run := range runs {
 		if run.caller == "" {
@@ -182,6 +221,10 @@ func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 			fix: run.fixCount, cont: run.continueCount, midrun: run.midrun, touches: run.touches}
 		for session := range run.sessions {
 			d := defects[session]
+			task.worstSeverity = max(task.worstSeverity, d.worst)
+			if rating, ok := ratings[session]; ok {
+				task.ratings = append(task.ratings, rating)
+			}
 			task.lateDefects += d.count
 			task.lateSeverity += d.severity
 			task.defectMinutes += d.minutes

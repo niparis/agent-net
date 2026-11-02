@@ -137,6 +137,8 @@ func (m Model) View() string {
 		out = append(out, m.proposalHistoryView(w)...)
 	case m.proposalDetail != nil && !m.help:
 		out = append(out, m.proposalDetailView(w)...)
+	case m.tab == quotasTab && m.qualityDetail && !m.help:
+		out = append(out, m.qualityDetailsView(w, h-1)...)
 	case m.help:
 		for _, s := range m.helpView(w, h-1) {
 			add(s)
