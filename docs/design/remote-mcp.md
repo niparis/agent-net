@@ -74,6 +74,13 @@ Grok (xAI cloud)          agent-net gateway (via tunnel)        Owner
 The authorize page never asks for a password. Knowing the URL is not enough
 to connect: every connection needs the owner's key press in the TUI.
 
+**Matching code.** A client picks its own name, so a stranger who finds the
+URL could start a request called "Grok" at the moment the owner expects one.
+The authorize page shows a short code (for example `K7F-29Q`), and the TUI
+row shows the same code next to the client's redirect host. The owner
+approves only when the code matches the page in their own browser and the
+redirect host is the expected one (an xAI domain for Grok).
+
 ## 5. Why OAuth, and why this is not "Log in with Google"
 
 Remote MCP clients expect OAuth (the MCP authorization spec, OAuth 2.1 with
