@@ -635,6 +635,8 @@ The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUS
 | Command | Flag | Default |
 |---|---|---|
 | `gateway` | `--listen ADDR` | `0.0.0.0:7420` |
+| | `--apps-listen ADDR` | off. Serve the connected apps MCP endpoint on `127.0.0.1:PORT` only. |
+| | `--apps-public-url URL` | empty. Public base URL of the apps listener, used for authorization discovery. |
 | | `--data DIR` | `~/.local/state/agent-net/gateway` |
 | | `--dist DIR` | `~/.local/share/agent-net/dist` |
 | | `--san LIST` | none. Extra host names or IPs for the TLS certificate, comma separated. |
