@@ -8,6 +8,7 @@ export type AgentNetWorker = {
   online: boolean
   startedAt: number
   task: string
+  title: string
   contextTokens: number
   contextLimit: number
   tokens: number

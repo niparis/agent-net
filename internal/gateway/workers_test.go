@@ -8,6 +8,33 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// A worker's title travels with its record, in the JSON the agent list reads
+// and in the column that keeps it beside the record.
+func TestWorkerTitleIsStoredAndReturned(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "w1", Name: "shop worker 1",
+		Worker: &protocol.WorkerInfo{ID: "w_1", Owner: "s_owner", Project: "shop", Task: "Repo: shop\n\nFix the parser crash.", Title: "Parser fix"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents, err := s.Agents(protocol.QueryAgents{IncludeOwners: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := protocol.WorkersOf(agents)
+	if len(ws) != 1 || ws[0].Title != "Parser fix" || ws[0].SessionID != id {
+		t.Fatalf("workers = %+v", ws)
+	}
+	var title string
+	if err := s.db.QueryRow(`SELECT worker_title FROM sessions WHERE id = ?`, id).Scan(&title); err != nil {
+		t.Fatal(err)
+	}
+	if title != "Parser fix" {
+		t.Fatalf("stored title = %q", title)
+	}
+}
+
 func owner(host string) protocol.SessionInfo {
 	return protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Name: protocol.OwnerName(host), Status: "idle"}
 }

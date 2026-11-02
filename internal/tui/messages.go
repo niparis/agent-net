@@ -348,7 +348,10 @@ func (m Model) workerTaskLine(session string) string {
 	if !ok || a.Worker == nil {
 		return ""
 	}
-	line := sanitize(a.Worker.Task)
+	line := sanitize(a.Worker.Title)
+	if line == "" {
+		line = sanitize(a.Worker.Task)
+	}
 	if i := strings.Index(line, "\n"); i >= 0 {
 		line = line[:i]
 	}

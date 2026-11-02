@@ -161,7 +161,18 @@ func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args [
 		queued = append(queued, m.load.Queue...)
 	}
 	if *asJSON {
-		b, _ := json.MarshalIndent(protocol.WorkersResult{Workers: ws, Queued: queued}, "", "  ")
+		// Every row carries a title, so a view such as the Claude Code band
+		// needs no rule of its own. An older record gets one from its task.
+		titled := make([]protocol.WorkerView, len(ws))
+		copy(titled, ws)
+		for i := range titled {
+			name := titled[i].Name
+			if name == "" {
+				name = titled[i].SessionID
+			}
+			titled[i].Title = protocol.WorkerTitle(titled[i].Title, titled[i].Task, name)
+		}
+		b, _ := json.MarshalIndent(protocol.WorkersResult{Workers: titled, Queued: queued}, "", "  ")
 		fmt.Fprintln(out, string(b))
 		return nil
 	}

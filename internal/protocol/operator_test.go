@@ -141,11 +141,11 @@ func TestWorkerTaskSummary(t *testing.T) {
 }
 
 func TestFormatWorkerNotice(t *testing.T) {
-	n := WorkerNotice{Status: StatusDone, Session: "s_1", Harness: "opencode", Model: "a/b", Project: "shop", Host: "mac",
+	n := WorkerNotice{Status: StatusDone, Session: "s_1", Harness: "opencode", Model: "a/b", Project: "shop", Host: "mac", Title: "Fix the parser",
 		RunTime: 3*time.Minute + 12*time.Second + 400*time.Millisecond, Tokens: "10 in, 5 out", Cost: "0.0100",
 		Worktree: "/w", Branch: "agent-net/w_1", DiffStat: " x.go | 2 ++\n 1 file changed, 2 insertions(+)"}
 	out := FormatWorkerNotice(n, "  the report  ")
-	want := "[agent-net worker notice]\nstatus: done\nworker: s_1 (opencode, a/b), project shop on mac\npermissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)\nrun time: 3m12s\n" +
+	want := "[agent-net worker notice]\nstatus: done\nworker: s_1 (opencode, a/b), project shop on mac · Fix the parser\npermissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)\nrun time: 3m12s\n" +
 		"tokens: 10 in, 5 out\ncost: 0.0100\nworktree: /w (branch agent-net/w_1)\nchanges (git diff --stat):\n x.go | 2 ++\n 1 file changed, 2 insertions(+)\n\n" +
 		ReportMarker + "\nthe report\n\n" + ChecklistMarker + " Before you tell your user it is done: read the diff in /w, run the project's tests there, then report what you checked. Merge only if your user asked.\n" +
 		"If you learned something that would change how to pick or brief this model next time, record it with agent_learn."

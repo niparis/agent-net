@@ -27,7 +27,7 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		name, method string
 		args         map[string]any
 	}{
-		{"agent_worker_start", "worker_start", map[string]any{"task": "do it", "touches": []string{"ui"}}},
+		{"agent_worker_start", "worker_start", map[string]any{"task": "do it", "title": "Parser fix", "touches": []string{"ui"}}},
 		{"agent_worker_stop", "worker_stop", map[string]any{"worker": "s_w"}},
 		{"agent_worker_rate", "agent_rate", map[string]any{"worker": "s_w", "kind": "rating", "score": 4}},
 		{"agent_announce", "announce", map[string]any{"task": "working", "expertise": "Go"}},
@@ -67,7 +67,7 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		}
 		switch tc.name {
 		case "agent_worker_start":
-			if calls[first].params["task"] != "do it" || calls[first].params["touches"].([]any)[0] != "ui" {
+			if calls[first].params["task"] != "do it" || calls[first].params["title"] != "Parser fix" || calls[first].params["touches"].([]any)[0] != "ui" {
 				t.Errorf("worker_start args: %#v", calls[first].params)
 			}
 		case "agent_worker_stop":
@@ -161,7 +161,7 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	worker := protocol.AgentView{
 		SessionID: "s_w1", Hostname: "research", Harness: "opencode", Model: "deepseek-v4.1-flash",
 		Online: true, Profile: protocol.Profile{Name: "worker-one"},
-		Worker: &protocol.WorkerInfo{ID: "w_1", Owner: "s_me", Project: "shop", Task: "do it",
+		Worker: &protocol.WorkerInfo{ID: "w_1", Owner: "s_me", Project: "shop", Task: "do it", Title: "Parser fix",
 			StartedAt: 1700000000, DifficultyUsed: "normal"},
 	}
 	list, _ := json.Marshal(protocol.AgentsResult{Agents: []protocol.AgentView{worker}})
@@ -175,7 +175,7 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 		return json.RawMessage(`{}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
-		Arguments: map[string]any{"task": "do it", "touches": []string{"ui"}}})
+		Arguments: map[string]any{"task": "do it", "title": "Parser fix", "touches": []string{"ui"}}})
 	if err != nil || res.IsError {
 		t.Fatalf("agent_worker_start: %v %+v", err, res)
 	}
@@ -185,7 +185,7 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	if caller["id"] != "s_me" || caller["name"] != "s_me" {
 		t.Fatalf("caller: %+v", caller)
 	}
-	if got["id"] != "s_w1" || got["project"] != "shop" || got["state"] != "running" {
+	if got["id"] != "s_w1" || got["project"] != "shop" || got["state"] != "running" || got["title"] != "Parser fix" {
 		t.Fatalf("worker: %+v", got)
 	}
 }

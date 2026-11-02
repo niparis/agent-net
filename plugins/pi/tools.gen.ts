@@ -988,6 +988,11 @@ export const TOOL_CATALOG = [
           "type": "boolean",
           "description": "Whether the daemon may continue unfinished work.",
           "default": true
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "One short line naming the worker, at most 60 characters, with no newlines. Leave it empty to derive a title from the task."
         }
       },
       "required": [],

@@ -22,6 +22,7 @@ type RawWorker = {
   online?: boolean
   started_at?: number
   task?: string
+  title?: string
   context_tokens?: number
   context_limit?: number
   tokens?: number
@@ -41,6 +42,7 @@ function workerOf(raw: RawWorker): AgentNetWorker | null {
     online: raw.online === true,
     startedAt: raw.started_at ?? 0,
     task: raw.task ?? '',
+    title: raw.title ?? '',
     contextTokens: raw.context_tokens ?? 0,
     contextLimit: raw.context_limit ?? 0,
     tokens: raw.tokens ?? 0,
@@ -89,52 +91,92 @@ function clip(text: string, columns: number): string {
   return chars.slice(0, columns - 1).join('') + '…'
 }
 
-// Match the TUI's shortWorkerModel: drop provider and claude- prefixes,
-// then the effort suffix or a whole trailing segment before clipping a word.
-function shortWorkerModel(model: string, columns: number): string {
-  const name = modelName(model).replace(/^claude-/, '')
-  if (Array.from(name).length <= columns) return name
-  const colon = name.lastIndexOf(':')
-  if (colon > 0 && colon <= columns) return name.slice(0, colon)
-  for (let i = name.length - 1; i > 0; i--) {
-    if ('-._:/'.includes(name[i]!) && i + 1 <= columns) return name.slice(0, i) + '…'
-  }
-  return clip(name, columns)
+// The model keeps the name the harness reported, without the provider prefix
+// and, as before, without a leading claude-. It is never shortened for width.
+function displayModel(model: string): string {
+  return modelName(model).replace(/^claude-/, '')
 }
 
-// Compute columns once for the visible pane. Empty cells keep their space,
-// while columns with no values take none. Status replaces the old circle:
-// busy is implicit, other states have a colored label.
-export function formatWorkerRows(workers: AgentNetWorker[], now: number, columns: number) {
-  const rows = workers.map(w => {
-    const ended = w.endStatus !== ''
-    const state = ended ? w.endStatus : w.status === 'busy' ? '' : w.status
-    const ctx = contextOf(w)
-    return {
-      fields: [w.harness, shortWorkerModel(w.model, 24), state,
-        shortDuration(((ended ? w.endedAt : now) - w.startedAt) * 1000), ctx?.text ?? ''],
-      task: (ended ? w.endNote || w.task : w.task).split('\n')[0] ?? '',
-      statusColor: state ? (ended ? (state === 'done' ? 'success' : 'error') : 'warning') : undefined,
-      contextColor: ctx?.color,
-    } as const
-  })
-  const widths = [0, 1, 2, 3, 4].map(i => Math.max(0, ...rows.map(r => Array.from(r.fields[i]!).length)))
-  const prefixWidth = () => widths.reduce((n, w) => n + (w > 0 ? w + 2 : 0), 0)
-  // Leave task room in a narrow pane; the model is the first field to shrink.
-  const taskRoom = Math.min(16, Math.floor(columns / 3))
-  for (const i of [1, 0, 2, 4, 3]) {
-    widths[i] = Math.max(0, widths[i]! - Math.max(0, prefixWidth() + taskRoom - columns))
+export type WorkerRow = {
+  sessionId: string
+  symbol: string
+  symbolColor: 'accent' | 'success' | 'error' | 'dim'
+  title: string
+  harness: string
+  model: string
+  runTime: string
+  last: string
+  lastColor?: 'warning' | 'error' | 'success' | 'dim'
+  line: string
+}
+
+// Symbol and end state of a worker: running, done, a failed end or a start
+// that still waits in the queue.
+function stateOf(w: AgentNetWorker): { symbol: string; color: WorkerRow['symbolColor']; ended: boolean } {
+  if (w.endStatus !== '') {
+    if (w.endStatus === 'done') return { symbol: '✓', color: 'success', ended: true }
+    return { symbol: '✗', color: 'error', ended: true }
   }
-  return rows.map(r => ({
-    ...r,
-    fields: r.fields.map((value, i) => {
-      const width = widths[i]!
-      if (width === 0) return ''
-      const text = i === 1 ? shortWorkerModel(value, width) : clip(value, width)
-      return text + ' '.repeat(width - Array.from(text).length + 2)
-    }),
-    task: clip(r.task, Math.max(0, columns - prefixWidth())),
-  }))
+  if (w.status === 'failed') return { symbol: '✗', color: 'error', ended: false }
+  if (w.status === 'queued' || w.status === 'starting') return { symbol: '◌', color: 'dim', ended: false }
+  return { symbol: '●', color: 'accent', ended: false }
+}
+
+// One row per worker:
+// " <symbol> <title padded>  <harness> <model, full>  <run time>  <ctx or end>"
+// The title takes the remaining width. On a narrow pane the context column is
+// dropped before the run time, and the model is never cut.
+export function formatWorkerRows(workers: AgentNetWorker[], now: number, columns: number): WorkerRow[] {
+  const gap = 2
+  const prepared = workers.map(w => {
+    const state = stateOf(w)
+    const ended = w.endStatus !== ''
+    const ctx = ended ? undefined : contextOf(w)
+    const runTime = shortDuration(((ended ? w.endedAt : now) - w.startedAt) * 1000)
+    const harness = w.harness
+    const model = displayModel(w.model)
+    const tail = `${harness} ${model}${' '.repeat(gap)}${runTime}`
+    if (ended) {
+      return { w, state, harness, model, runTime, tail, last: w.endStatus, lastColor: (w.endStatus === 'done' ? 'success' : 'error') as WorkerRow['lastColor'], lastIsContext: false }
+    }
+    return { w, state, harness, model, runTime, tail, last: ctx?.text ?? '', lastColor: ctx?.color, lastIsContext: ctx !== undefined }
+  })
+
+  // One title column for every row, so the harness, model and run time line
+  // up. At a narrow width the context column goes before the run time; an end
+  // state stays, because it is the reason the row is there.
+  const maxTail = Math.max(0, ...prepared.map(r => r.tail.length))
+  const maxContext = Math.max(0, ...prepared.filter(r => r.lastIsContext).map(r => r.last.length))
+  const minTitle = 12
+  const showContext = maxContext > 0 && columns >= 2 + gap + maxTail + gap + maxContext + minTitle
+  let maxLast = 0
+  for (const row of prepared) {
+    if (row.lastIsContext && !showContext) {
+      row.last = ''
+      row.lastColor = undefined
+    }
+    maxLast = Math.max(maxLast, row.last.length)
+  }
+  const titleWidth = Math.max(0, columns - (2 + gap + maxTail + (maxLast > 0 ? gap + maxLast : 0)))
+
+  return prepared.map(row => {
+    const title = clip(row.w.title, titleWidth)
+    const paddedTitle = title + ' '.repeat(Math.max(0, titleWidth - Array.from(title).length))
+    const line = `${row.state.symbol} ` + (titleWidth > 0 ? paddedTitle + ' '.repeat(gap) : '') + row.tail +
+      (row.last ? ' '.repeat(gap) + row.last : '')
+    return {
+      sessionId: row.w.sessionId,
+      symbol: row.state.symbol,
+      symbolColor: row.state.color,
+      title: paddedTitle,
+      harness: row.harness,
+      model: row.model,
+      runTime: row.runTime,
+      last: row.last,
+      lastColor: row.lastColor,
+      line,
+    }
+  })
 }
 
 // noticeDuration writes a run time with both parts, as a finished notice does:
@@ -151,9 +193,10 @@ function noticeDuration(ms: number): string {
 // endNotice is the one line appended to the transcript when a worker ends.
 function endNotice(w: AgentNetWorker): string {
   const who = [w.harness, modelName(w.model)].filter(Boolean).join(' · ')
+  const title = w.title ? ` (${w.title})` : ''
   const run = noticeDuration((w.endedAt - w.startedAt) * 1000)
   const what = w.endNote || w.task
-  return `agent-net worker ${who} ${w.endStatus} · ${run}` + (what ? `: ${what}` : '')
+  return `agent-net worker ${who}${title} ${w.endStatus} · ${run}` + (what ? `: ${what}` : '')
 }
 
 // notifyEnds appends one notice per ended worker, and remembers the worker in
@@ -276,14 +319,13 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor wrap="truncate-end">{rule}</Text>
-        {formatWorkerRows(workers, now, columns).map((row, i) => (
-          <Box key={workers[i]!.sessionId}>
+        {formatWorkerRows(workers, now, columns).map(row => (
+          <Box key={row.sessionId}>
             <Text wrap="truncate-end">
-              <Text dimColor>{row.fields[0]}{row.fields[1]}</Text>
-              <Text color={row.statusColor}>{row.fields[2]}</Text>
-              <Text dimColor>{row.fields[3]}</Text>
-              <Text color={row.contextColor}>{row.fields[4]}</Text>
-              <Text>{row.task}</Text>
+              <Text color={row.symbolColor === 'dim' ? undefined : row.symbolColor} dimColor={row.symbolColor === 'dim'}>{row.symbol}</Text>
+              <Text> {row.title}{row.title.length > 0 ? '  ' : ''}</Text>
+              <Text dimColor>{row.harness} {row.model}  {row.runTime}</Text>
+              <Text color={row.lastColor}>{row.last ? '  ' + row.last : ''}</Text>
             </Text>
           </Box>
         ))}

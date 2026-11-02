@@ -1338,6 +1338,9 @@ func taskText(a protocol.AgentView) string {
 		return sanitize(t)
 	}
 	if a.Worker != nil {
+		if t := strings.TrimSpace(a.Worker.Title); t != "" && t != strings.TrimSpace(rowName(a)) {
+			return sanitize(t)
+		}
 		if t := strings.TrimSpace(a.Worker.Task); t != "" && t != strings.TrimSpace(rowName(a)) {
 			return sanitize(t)
 		}

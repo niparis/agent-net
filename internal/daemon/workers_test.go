@@ -18,6 +18,22 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func TestWorkerStartChecksTheTitle(t *testing.T) {
+	good := protocol.WorkerStartRequest{Project: "shop", Task: "do it", Title: "Parser fix"}
+	if _, err := checkedWorkerStart(good); err != nil {
+		t.Fatalf("a short title: %v", err)
+	}
+	bad := good
+	bad.Title = strings.Repeat("a", protocol.WorkerTitleMax+1)
+	if _, err := checkedWorkerStart(bad); err == nil {
+		t.Fatal("a title that is too long was accepted")
+	}
+	bad.Title = "first\nsecond"
+	if _, err := checkedWorkerStart(bad); err == nil {
+		t.Fatal("a title with a newline was accepted")
+	}
+}
+
 // ---- helpers ----
 
 type workerNode struct {
