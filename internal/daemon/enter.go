@@ -53,9 +53,11 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	// Another machine: it knows its own processes. Our terminal means nothing
 	// to it, so the socket is not sent. It is told whether a herdr client is
 	// here, because that decides between herdr's remote client and an attach
-	// over ssh.
+	// over ssh. The remote client runs in the TUI's own terminal, so it is used
+	// whether or not the TUI runs in herdr: it is what carries the clipboard
+	// for image paste.
 	localHerdr := d.herdrBinary("")
-	data, err := d.call(ctx, "query.session_enter", protocol.EnterRequest{SessionID: q.SessionID, HerdrClient: localHerdr != "" && callerInHerdr(q.HerdrSocket, q.HerdrPaneID)})
+	data, err := d.call(ctx, "query.session_enter", protocol.EnterRequest{SessionID: q.SessionID, HerdrClient: localHerdr != ""})
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}

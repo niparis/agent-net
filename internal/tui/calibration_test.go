@@ -22,21 +22,21 @@ func qualityLevelSnapshot() protocol.QualityAnalysis {
 		},
 		Levels: []protocol.QualityLevel{
 			{Difficulty: "simple", Tasks: 8, Families: []protocol.QualityFamily{
-				{Family: "luna", Tasks: 5, Fixes: 1, Continues: 0, FollowUps: .20, Headache: 2},
-				{Family: "deepseek", Tasks: 1, Fixes: 0, Continues: 1, FollowUps: .33, Headache: 2},
+				{Family: "luna", Tasks: 5, TasksWeek: 3, Fixes: 1, Continues: 0, FollowUps: .20, Headache: 2},
+				{Family: "deepseek", Tasks: 1, TasksWeek: 1, Fixes: 0, Continues: 1, FollowUps: .33, Headache: 2},
 				{Family: "sol", Tasks: 1, Fixes: 0, Continues: 0, FollowUps: 0, Headache: 0},
 				{Family: "terra", Tasks: 1, Fixes: 1, Continues: 0, FollowUps: 1.00, Headache: 10},
 			}},
 			{Difficulty: "normal", Tasks: 154, Families: []protocol.QualityFamily{
-				{Family: "deepseek", Tasks: 66, Fixes: 6, Continues: 0, FollowUps: .09, Headache: 60.0 / 66.0},
-				{Family: "terra", Tasks: 53, Fixes: 28, Continues: 30, FollowUps: .72, Headache: 340.0 / 53.0},
-				{Family: "luna", Tasks: 19, Fixes: 5, Continues: 0, FollowUps: .26, Headache: 50.0 / 19.0},
-				{Family: "sol", Tasks: 9, Fixes: 2, Continues: 1, FollowUps: .26, Headache: 22.0 / 9.0},
-				{Family: "opus", Tasks: 7, Fixes: 0, Continues: 0, FollowUps: 0, Headache: 0},
+				{Family: "deepseek", Tasks: 66, TasksWeek: 22, Fixes: 6, Continues: 0, FollowUps: .09, Headache: 60.0 / 66.0},
+				{Family: "terra", Tasks: 53, TasksWeek: 18, Fixes: 28, Continues: 30, FollowUps: .72, Headache: 340.0 / 53.0},
+				{Family: "luna", Tasks: 19, TasksWeek: 6, Fixes: 5, Continues: 0, FollowUps: .26, Headache: 50.0 / 19.0},
+				{Family: "sol", Tasks: 9, TasksWeek: 4, Fixes: 2, Continues: 1, FollowUps: .26, Headache: 22.0 / 9.0},
+				{Family: "opus", Tasks: 7, TasksWeek: 1, Fixes: 0, Continues: 0, FollowUps: 0, Headache: 0},
 			}},
 			{Difficulty: "hard", Tasks: 33, Families: []protocol.QualityFamily{
-				{Family: "terra", Tasks: 25, Fixes: 12, Continues: 10, FollowUps: .61, LateDefects: 1, LateDefectSeverity: 4, Headache: 320.0 / 25.0},
-				{Family: "sol", Tasks: 8, Fixes: 3, Continues: 1, FollowUps: .42, Headache: 4},
+				{Family: "terra", Tasks: 25, TasksWeek: 9, Fixes: 12, Continues: 10, FollowUps: .61, LateDefects: 1, LateDefectSeverity: 4, Headache: 320.0 / 25.0},
+				{Family: "sol", Tasks: 8, TasksWeek: 3, Fixes: 3, Continues: 1, FollowUps: .42, Headache: 4},
 			}},
 			{Difficulty: "unknown", Tasks: 23, Families: []protocol.QualityFamily{
 				{Family: "deepseek", Tasks: 12, Fixes: 2, Continues: 0, FollowUps: .17, Headache: 20.0 / 12.0},

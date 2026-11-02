@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -65,5 +67,27 @@ func TestQualityFamilySnapshotMetrics(t *testing.T) {
 		if f.NeededHelp != .5 || f.WorstSeverity != 4 || f.AvgRating == nil || *f.AvgRating != 5 {
 			t.Fatalf("metrics: %+v", f)
 		}
+	}
+}
+
+// The cards list the most used models first, so each row counts the tasks
+// that ended in the last 7 days next to the 30-day total.
+func TestQualityFamilyCountsTasksThisWeek(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	now := s.now()
+	for i, ended := range []time.Time{now, now.Add(-2 * 24 * time.Hour), now.Add(-10 * 24 * time.Hour)} {
+		run := protocol.WorkerRun{NodeID: node, SessionID: fmt.Sprintf("s%d", i), Caller: "caller", Harness: "codex", Model: "gpt-6.1-sol", Difficulty: "normal", Outcome: protocol.OutcomeComplete, EndedAt: ended.Unix()}
+		if err := s.RecordWorkerRun(run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	levels, _, _, err := s.qualityFamilyTables()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := qualityFamily(t, qualityLevel(t, levels, "normal").Families, "sol")
+	if f.Tasks != 3 || f.TasksWeek != 2 {
+		t.Fatalf("tasks %d, this week %d; want 3 and 2", f.Tasks, f.TasksWeek)
 	}
 }

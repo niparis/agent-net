@@ -16,7 +16,7 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 	levels := qualityLevels(q, agent)
 	byLevel := map[string]protocol.QualityLevel{}
 	largest := 0.0
-	familyWidth, minutesWidth, tasksWidth := 0, 7, 0
+	familyWidth, minutesWidth, weekDigits := 0, 7, 1
 	for _, level := range levels {
 		byLevel[level.Difficulty] = level
 		for _, f := range level.Families {
@@ -28,7 +28,7 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 			for _, f := range ranked[:min(len(ranked), 3)] {
 				familyWidth = max(familyWidth, ansi.StringWidth(sanitize(f.Family)))
 				minutesWidth = max(minutesWidth, ansi.StringWidth(fmt.Sprintf("%.0f min", f.Headache)))
-				tasksWidth = max(tasksWidth, ansi.StringWidth(fmt.Sprintf("· %d tasks", f.Tasks)))
+				weekDigits = max(weekDigits, len(fmt.Sprint(f.TasksWeek)))
 			}
 		}
 	}
@@ -58,9 +58,15 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 						bug += "s"
 					}
 				}
-				row := marker + " " + cell(f.Family, familyWidth) + " " + cellR(fmt.Sprintf("%.0f min", f.Headache), minutesWidth) + " " + progressBar(frac, 5, roleAccent) + " " + cellR(fmt.Sprintf("· %d tasks", f.Tasks), tasksWidth)
+				head := marker + " " + cell(f.Family, familyWidth) + " " + cellR(fmt.Sprintf("%.0f min", f.Headache), minutesWidth) + " "
+				count := qualityTaskCount(f, weekDigits)
+				row := head + progressBar(frac, 5, roleAccent) + " " + count
+				// On a narrow card the bar goes first: it repeats the minutes.
+				if ansi.StringWidth(row) > widths[j]-4 {
+					row = head + count
+				}
 				if bug != "" && ansi.StringWidth(row+bug) > widths[j]-4 {
-					rows = append(rows, row, sDim.Render(strings.TrimSpace(bug)))
+					rows = append(rows, row, sDim.Render("  "+strings.TrimPrefix(strings.TrimSpace(bug), "· ")))
 				} else {
 					rows = append(rows, row+bug)
 				}
@@ -68,7 +74,13 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 			if len(eligible) > 3 {
 				var rest []string
 				for _, f := range eligible[3:] {
-					rest = append(rest, fmt.Sprintf("%s %.0f min", f.Family, f.Headache))
+					item := fmt.Sprintf("%s %.0f min", f.Family, f.Headache)
+					if picks[name] == f.Family {
+						// The pick keeps its marker and comes first.
+						rest = append([]string{"▸ " + item}, rest...)
+						continue
+					}
+					rest = append(rest, item)
 				}
 				rows = append(rows, sDim.Render(fmt.Sprintf("%d more: %s", len(rest), strings.Join(rest, " · "))))
 			}
@@ -95,7 +107,7 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 			body = append(body, left+" "+right)
 		}
 	}
-	legend := "My time = minutes the orchestrator spends after a worker: nudges, fixes and bugs found later."
+	legend := "Most used first: tasks this week. My time = minutes the orchestrator spends after a worker: nudges, fixes and bugs found later."
 	if machine != "" {
 		legend = "▸ = the model the picker would choose on " + machine + ".  " + legend
 	}
@@ -115,13 +127,23 @@ func qualityRankedFamilies(families []protocol.QualityFamily) ([]protocol.Qualit
 			eligible = append(eligible, f)
 		}
 	}
-	sort.Slice(eligible, func(i, j int) bool {
-		if eligible[i].Headache == eligible[j].Headache {
-			return eligible[i].Family < eligible[j].Family
-		}
-		return eligible[i].Headache < eligible[j].Headache
-	})
+	sortQualityFamilies(eligible)
 	return eligible, few
+}
+
+// sortQualityFamilies puts the most used models first: tasks in the last 7
+// days, then less orchestrator time, then the name.
+func sortQualityFamilies(families []protocol.QualityFamily) {
+	sort.Slice(families, func(i, j int) bool {
+		a, b := families[i], families[j]
+		if a.TasksWeek != b.TasksWeek {
+			return a.TasksWeek > b.TasksWeek
+		}
+		if a.Headache != b.Headache {
+			return a.Headache < b.Headache
+		}
+		return a.Family < b.Family
+	})
 }
 
 func (m Model) qualityDetailsView(w, h int) []string {
@@ -164,7 +186,7 @@ func (m Model) qualityDetailsView(w, h int) []string {
 			body = append(body, sBold.Render(strings.Join(header, "  ")))
 		}
 		families := append([]protocol.QualityFamily(nil), l.Families...)
-		sort.Slice(families, func(i, j int) bool { return families[i].Headache < families[j].Headache })
+		sortQualityFamilies(families)
 		for _, f := range families {
 			bar := 0.0
 			if largest > 0 {
@@ -233,4 +255,10 @@ func (m Model) qualityDetailsView(w, h int) []string {
 		out = append(out, sDim.Render(line))
 	}
 	return out
+}
+
+// qualityTaskCount is a card's count column, "·  9 this week", right-aligned
+// so the rows of a card line up. The 30-day total is in the card title.
+func qualityTaskCount(f protocol.QualityFamily, weekDigits int) string {
+	return fmt.Sprintf("· %*d this week", weekDigits, f.TasksWeek)
 }

@@ -2,6 +2,17 @@
 
 Notes for coding agents working on this repository. For what the project is, read [README.md](README.md).
 
+## herdr is how the owner reaches sessions
+
+[herdr](https://herdr.dev/tui/docs/install/) is the primary way the owner opens and works in agent sessions. Every change to entering, starting, resuming or opening a session must keep these rules ([decision 0046](docs/decisions/0046-open-sessions-in-herdr.md)):
+
+- **A session in herdr on another machine opens with `herdr --remote <host>`** whenever this machine has herdr, even when the TUI runs in a plain terminal such as Ghostty. herdr's remote client is the only path that carries the owner's clipboard, so image paste depends on it. Never fall back to `ssh` while a local herdr exists. (v0.4.72 to v0.4.90 broke this, and image paste failed.)
+- **A TUI that runs in herdr** opens sessions as panes or tabs in that same herdr.
+- **A TUI outside herdr, for a session on this machine,** hands over its own terminal; ctrl+] returns. It never opens a herdr pane the owner cannot see.
+- **Workers never open a view by themselves.** The owner opens one with Enter.
+
+The tests that hold these rules are in `internal/daemon/enter_herdr_test.go`. Run them for any change to `internal/daemon/enter.go`, `herdr*.go` or the TUI's enter path.
+
 ## Build and test
 
 Go 1.27 or newer. If `go` is not on your `PATH`, add it first.

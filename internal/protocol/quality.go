@@ -46,6 +46,9 @@ type QualityFamily struct {
 	LateDefects        int      `json:"late_defects"`
 	LateDefectSeverity float64  `json:"late_defect_severity"`
 	Headache           float64  `json:"headache"`
+	// TasksWeek counts the tasks that ended in the last 7 days. The Quality
+	// cards list the most used models first.
+	TasksWeek int `json:"tasks_week,omitempty"`
 }
 
 // QualityLevel is one requested difficulty's table. Difficulty is a level

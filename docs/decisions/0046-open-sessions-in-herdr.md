@@ -40,3 +40,12 @@ the same session more than once.
 
 This changes the terminal handover in decisions 0032 and 0039 when herdr is
 available. Their selection and resume rules remain in force.
+
+## Correction 2026-11-02
+
+v0.4.72 limited herdr to a TUI that runs in herdr, so that Enter would not open
+a pane the owner cannot see. It also stopped using herdr's remote client for a
+session on another machine when the TUI ran in a plain terminal, and plain ssh
+cannot carry the clipboard: image paste failed. The remote client runs in the
+TUI's own terminal, so it is used again whenever this machine has herdr.
+AGENTS.md states the rules.

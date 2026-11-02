@@ -41,10 +41,10 @@ func TestQualityDetailsOpenClose(t *testing.T) {
 func TestQualityNewScreenGoldens(t *testing.T) {
 	score := 4.5
 	q := protocol.QualityAnalysis{Status: "ready", Areas: []protocol.QualityFamily{{Family: "ui", Tasks: 18, Headache: 2}}, Levels: []protocol.QualityLevel{
-		{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, Headache: 1}}},
-		{Difficulty: "normal", Tasks: 196, Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, Headache: 0}, {Family: "luna", Tasks: 24, Headache: 2}, {Family: "sol", Tasks: 19, Headache: 4, NeededHelp: .26, Continues: 3, AvgRating: &score}, {Family: "deepseek", Tasks: 87, Headache: 8}, {Family: "terra", Tasks: 60, Headache: 9, NeededHelp: .35, Continues: 12, LateDefects: 1, WorstSeverity: 3, AvgRating: &score}}},
-		{Difficulty: "hard", Tasks: 42, Families: []protocol.QualityFamily{{Family: "sol", Tasks: 10, Headache: 5}, {Family: "terra", Tasks: 32, Headache: 8}}},
-		{Difficulty: "very_complex", Tasks: 5, Families: []protocol.QualityFamily{{Family: "terra", Tasks: 5, Headache: 7}}},
+		{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, TasksWeek: 3, Headache: 1}}},
+		{Difficulty: "normal", Tasks: 196, Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, TasksWeek: 1, Headache: 0}, {Family: "luna", Tasks: 24, TasksWeek: 6, Headache: 2}, {Family: "sol", Tasks: 19, TasksWeek: 4, Headache: 4, NeededHelp: .26, Continues: 3, AvgRating: &score}, {Family: "deepseek", Tasks: 87, TasksWeek: 25, Headache: 8}, {Family: "terra", Tasks: 60, TasksWeek: 18, Headache: 9, NeededHelp: .35, Continues: 12, LateDefects: 1, WorstSeverity: 3, AvgRating: &score}}},
+		{Difficulty: "hard", Tasks: 42, Families: []protocol.QualityFamily{{Family: "sol", Tasks: 10, TasksWeek: 3, Headache: 5}, {Family: "terra", Tasks: 32, TasksWeek: 9, Headache: 8}}},
+		{Difficulty: "very_complex", Tasks: 5, Families: []protocol.QualityFamily{{Family: "terra", Tasks: 5, TasksWeek: 2, Headache: 7}}},
 	}}
 	for _, size := range [][2]int{{120, 34}, {80, 24}} {
 		m := newModel(size[0], size[1])
@@ -69,7 +69,7 @@ func TestQualityDetailsShowsPickerPaceReason(t *testing.T) {
 }
 
 func TestQualityCardsColumnsAlign(t *testing.T) {
-	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, Headache: 1}, {Family: "deepseek", Tasks: 87, Headache: 12}}}}}
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, TasksWeek: 3, Headache: 1}, {Family: "deepseek", Tasks: 87, TasksWeek: 25, Headache: 12}}}}}
 	view := ansi.Strip(strings.Join(qualityCards(q, 120, 0, nil, ""), "\n"))
 	var rows []string
 	for _, line := range strings.Split(view, "\n") {
@@ -80,7 +80,7 @@ func TestQualityCardsColumnsAlign(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatal(view)
 	}
-	for _, token := range []string{"min", "tasks"} {
+	for _, token := range []string{"min", "this week"} {
 		if strings.Index(rows[0], token) != strings.Index(rows[1], token) {
 			t.Errorf("%s columns differ: %q / %q", token, rows[0], rows[1])
 		}
@@ -118,9 +118,19 @@ func TestQualityDetailsAlignedSections(t *testing.T) {
 }
 
 func TestQualityCardsNarrowKeepsTaskCounts(t *testing.T) {
-	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, Headache: 0}, {Family: "luna", Tasks: 24, Headache: 2}, {Family: "sol", Tasks: 19, Headache: 4}, {Family: "deepseek", Tasks: 87, Headache: 8}}}}}
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, TasksWeek: 1, Headache: 0}, {Family: "luna", Tasks: 24, TasksWeek: 6, Headache: 2}, {Family: "sol", Tasks: 19, TasksWeek: 4, Headache: 4}, {Family: "deepseek", Tasks: 87, TasksWeek: 25, Headache: 8}}}}}
 	view := ansi.Strip(strings.Join(qualityCards(q, 80, 0, nil, ""), "\n"))
-	if !strings.Contains(view, "· 24 tasks") || !strings.Contains(view, "· 19 tasks") {
+	if !strings.Contains(view, "· 25 this week") || !strings.Contains(view, "·  6 this week") || strings.Contains(view, "…") {
+		t.Fatal(view)
+	}
+}
+
+// The model the picker would choose keeps its marker when it is not among the
+// three most used: it is named first on the "more" line.
+func TestQualityCardsMarkThePickInTheMoreLine(t *testing.T) {
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, TasksWeek: 1, Headache: 0}, {Family: "luna", Tasks: 24, TasksWeek: 6, Headache: 2}, {Family: "sol", Tasks: 19, TasksWeek: 4, Headache: 4}, {Family: "deepseek", Tasks: 87, TasksWeek: 25, Headache: 8}, {Family: "terra", Tasks: 60, TasksWeek: 18, Headache: 9}}}}}
+	view := ansi.Strip(strings.Join(qualityCards(q, 120, 0, map[string]string{"normal": "opus"}, "workstation"), "\n"))
+	if !strings.Contains(view, "2 more: ▸ opus 0 min · sol 4 min") {
 		t.Fatal(view)
 	}
 }

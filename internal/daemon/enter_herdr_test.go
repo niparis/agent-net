@@ -558,6 +558,31 @@ func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 	requireHerdrOpened(t, localLog, "inter", "--remote", "me@box")
 }
 
+// A TUI outside herdr (a plain terminal such as Ghostty) still enters a remote
+// herdr session with herdr's remote client, run in the TUI's own terminal: it
+// is the only path that carries the clipboard, so image paste works. Plain ssh
+// was used from v0.4.72 to v0.4.90, and pasting an image failed.
+func TestEnterRemoteHerdrFromPlainTerminalUsesLocalClient(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	remote, remoteHerdr, id := enterRemoteHerdr(t, g, "w1:pB")
+	localHerdr, _ := fakeOpenHerdr(t)
+	local := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.HarnessPaths = map[string]string{"herdr": localHerdr}
+	}})
+	waitSessionOnGateway(t, local, id)
+
+	p := enterOf(t, local, id, "")
+	if want := []string{localHerdr, "--remote", remote.cfg.Hostname}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("argv %v, want %v (plan %+v)", p.Argv, want, p)
+	}
+	if p.OpenedHerdr {
+		t.Fatalf("a TUI outside herdr got a pane it cannot see: %+v", p)
+	}
+	if calls := remoteHerdr.calls(t); !strings.Contains(calls, "agent focus w1:pB") {
+		t.Errorf("the remote pane was not focused first: %q", calls)
+	}
+}
+
 // Without a local herdr there is no client to carry the clipboard, so the plan
 // stays the ssh attach it is today, and the remote pane is not focused.
 func TestEnterRemoteHerdrWithoutLocalClientKeepsSSH(t *testing.T) {

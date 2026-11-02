@@ -3,6 +3,7 @@ package gateway
 import (
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -20,10 +21,13 @@ type familyTask struct {
 	lateDefects                        int
 	lateSeverity                       float64
 	defectMinutes                      float64
+	// thisWeek is true when the task ended in the last 7 days.
+	thisWeek bool
 }
 
 type familyCount struct {
 	tasks, fixes, continues, midrun    int
+	week                               int
 	helped, worstSeverity, ratingCount int
 	ratingSum                          float64
 	lateDefects                        int
@@ -74,6 +78,9 @@ func addFamilyTask(counts map[string]*familyCount, family string, task familyTas
 		counts[family] = c
 	}
 	c.tasks++
+	if task.thisWeek {
+		c.week++
+	}
 	if task.fix > 0 || task.cont > 0 {
 		c.helped++
 	}
@@ -96,7 +103,7 @@ func familyRows(counts map[string]*familyCount) []protocol.QualityFamily {
 		if c.tasks == 0 {
 			continue
 		}
-		row := protocol.QualityFamily{Family: name, Tasks: c.tasks, Fixes: c.fixes, Continues: c.continues, Midrun: c.midrun, LateDefects: c.lateDefects}
+		row := protocol.QualityFamily{Family: name, Tasks: c.tasks, TasksWeek: c.week, Fixes: c.fixes, Continues: c.continues, Midrun: c.midrun, LateDefects: c.lateDefects}
 		row.NeededHelp = float64(c.helped) / float64(c.tasks)
 		row.WorstSeverity = c.worstSeverity
 		if c.ratingCount > 0 {
@@ -212,13 +219,14 @@ func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	week := s.now().Add(-7 * 24 * time.Hour).Unix()
 	tasks := make([]familyTask, 0, len(runs))
 	for _, run := range runs {
 		if run.caller == "" {
 			continue
 		}
 		task := familyTask{caller: run.caller, model: run.model, harness: run.harness, difficulty: run.difficulty,
-			fix: run.fixCount, cont: run.continueCount, midrun: run.midrun, touches: run.touches}
+			fix: run.fixCount, cont: run.continueCount, midrun: run.midrun, touches: run.touches, thisWeek: run.endedAt >= week}
 		for session := range run.sessions {
 			d := defects[session]
 			task.worstSeverity = max(task.worstSeverity, d.worst)

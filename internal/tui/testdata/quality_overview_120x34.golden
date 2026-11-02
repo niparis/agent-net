@@ -1,15 +1,15 @@
 ╭─Quality analysis · read only─────────────────────────────────────────────────────────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                                                                 │
 │ ╭─simple · 9 tasks──────────────────────────────────────╮ ╭─normal · 196 tasks─────────────────────────────────────╮ │
-│ │   luna    1 min █░░░░  · 9 tasks                      │ │   opus    0 min ░░░░░  · 6 tasks                       │ │
-│ │                                                       │ │   luna    2 min █░░░░ · 24 tasks                       │ │
-│ │                                                       │ │ ▸ sol     4 min ██░░░ · 19 tasks                       │ │
-│ │                                                       │ │ 2 more: deepseek 8 min · terra 9 min                   │ │
+│ │   luna       1 min █░░░░ ·  3 this week               │ │   deepseek   8 min ████░ · 25 this week                │ │
+│ │                                                       │ │   terra      9 min █████ · 18 this week · 1 late bug   │ │
+│ │                                                       │ │   luna       2 min █░░░░ ·  6 this week                │ │
+│ │                                                       │ │ 2 more: ▸ sol 4 min · opus 0 min                       │ │
 │ ╰───────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────╯ │
 │ ╭─hard · 42 tasks───────────────────────────────────────╮ ╭─very complex · 5 tasks─────────────────────────────────╮ │
-│ │   sol     5 min ███░░ · 10 tasks                      │ │   terra   7 min ████░  · 5 tasks                       │ │
-│ │ ▸ terra   8 min ████░ · 32 tasks                      │ │                                                        │ │
+│ │ ▸ terra      8 min ████░ ·  9 this week               │ │   terra      7 min ████░ ·  2 this week                │ │
+│ │   sol        5 min ███░░ ·  3 this week               │ │                                                        │ │
 │ ╰───────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────╯ │
-│ ▸ = the model the picker would choose on workstation.  My time = minutes the orchestrator spends after a worker:     │
-│ nudges, fixes and bugs found later.                                                                                  │
+│ ▸ = the model the picker would choose on workstation.  Most used first: tasks this week. My time = minutes the       │
+│ orchestrator spends after a worker: nudges, fixes and bugs found later.                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
