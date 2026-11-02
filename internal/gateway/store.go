@@ -531,6 +531,11 @@ DELETE FROM app_tokens WHERE rowid IN (
  SELECT rowid FROM (SELECT rowid, row_number() OVER
   (PARTITION BY app_id ORDER BY used_at DESC, rowid DESC) AS rank
   FROM app_tokens WHERE type='refresh' AND used_at IS NOT NULL) WHERE rank>2000);
+`, `
+-- The worker's short title, beside the worker record. Records made before
+-- this column existed read an empty title, and a view derives one from the
+-- task. The column is added by the migration code so a replay is safe.
+SELECT 1 /* worker title column */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -769,6 +774,19 @@ func (s *Store) migrate() error {
 						tx.Rollback()
 						return fmt.Errorf("migration %d: %w", i+1, err)
 					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker title column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_title'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN worker_title TEXT NOT NULL DEFAULT ''`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
 			}
 		}
@@ -1057,6 +1075,10 @@ func (s *Store) upsertSession(q interface {
 		worker = string(raw)
 		workerStarted = in.Worker.StartedAt * int64(time.Second)
 	}
+	workerTitle := ""
+	if in.Worker != nil {
+		workerTitle = in.Worker.Title
+	}
 	in.Repo.Description = protocol.CleanDescription(in.Repo.Description)
 	// The name is the project's (decision 0024); the harness name is only a
 	// title for the TASK column. The owner pseudo-session keeps its own name.
@@ -1100,9 +1122,9 @@ func (s *Store) upsertSession(q interface {
 	}
 	lastActive := in.LastActive * int64(time.Second)
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
-		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
+		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
 		tools_version, tools_old, created_at, waiting, graph_excluded, no_project)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
@@ -1110,11 +1132,12 @@ func (s *Store) upsertSession(q interface {
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
+		worker_title=excluded.worker_title,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded,
 		no_project=excluded.no_project`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
-		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
+		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, workerTitle,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
 		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject))
 	if err != nil {

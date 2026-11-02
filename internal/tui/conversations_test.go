@@ -185,6 +185,39 @@ func TestWorkerConversationRowShowsTheTaskLine(t *testing.T) {
 	}
 }
 
+func TestWorkerConversationRowShowsTheTitle(t *testing.T) {
+	const owner, worker = "s_owner_fixture", "s_worker_fixture"
+	snap := fakeSnapshot()
+	snap.OwnerSession = owner
+	snap.Agents = append(snap.Agents,
+		agent(owner, "n_mac", "Mac", "owner", "you", nil),
+		agent(worker, "n_mac", "Mac", "opencode", "shop worker 8", func(a *protocol.AgentView) {
+			a.Worker = &protocol.WorkerInfo{ID: "w_8", Owner: owner, Task: "Polish the sessions panel\nRun the checks.", Title: "Fix the band"}
+		}))
+	src := &fakeSource{snap: snap}
+	src.convFirst = protocol.ConversationPage{Conversations: []protocol.ConversationView{
+		conversationView("c_worker", owner, worker, "you", "shop worker 8", 2, "worker says done",
+			protocol.StateReplied, t0.Add(-time.Minute)),
+	}, Total: 1}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m.tab, m.focus = messagesTab, focusFeed
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = refreshAndRun(t, m, src)
+
+	rows := m.messageConversations()
+	if len(rows) != 1 || !rows[0].worker {
+		t.Fatalf("worker row not found: %+v", rows)
+	}
+	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	if !strings.Contains(line, "worker: Fix the band") {
+		t.Fatalf("worker row does not show the title: %q", line)
+	}
+	if strings.Contains(line, "Polish the sessions panel") {
+		t.Fatalf("worker row did not prefer the title: %q", line)
+	}
+}
+
 func TestEndedWorkerRowUsesTheTaskAndCallerFromTheGateway(t *testing.T) {
 	const caller, ended = "s_0000000000000001", "s_ended_worker_fixture"
 	src := &fakeSource{snap: fakeSnapshot()}

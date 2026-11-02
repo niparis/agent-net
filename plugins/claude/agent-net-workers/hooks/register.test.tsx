@@ -38,6 +38,7 @@ test('the band lists a running worker and the status line counts it', async ($, 
           online: true,
           started_at: Math.floor(NOW / 1000) - 120,
           task: 'write the tests',
+          title: 'Fix the parser',
         }],
       })),
     }
@@ -56,7 +57,7 @@ test('the band lists a running worker and the status line counts it', async ($, 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface, ...BAND })
     expect(await ui.find({ type: 'Text', text: /claude +sonnet-5 +2m/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /write the tests/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Fix the parser/ })).toBeDefined()
     await ui.unmount()
   }
   expect(statuses.at(-1)).toBe('agent-net: 1 busy')
@@ -76,6 +77,7 @@ test('an ended worker shows its end note, and none clears the line', async ($, o
       online: false,
       started_at: Math.floor(NOW / 1000) - 300,
       task: 'fix the parser',
+      title: 'Fix the parser',
       ended_at: Math.floor(NOW / 1000),
       end_status: 'done',
       end_note: 'finished the parser',
@@ -97,8 +99,9 @@ test('an ended worker shows its end note, and none clears the line', async ($, o
   await clock.settle()
 
   let ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /finished the parser/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /fix the parser/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Fix the parser/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /✓/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /done/ })).toBeDefined()
   await ui.unmount()
   expect(statuses.at(-1)).toBe('agent-net: 1 done')
 
@@ -108,7 +111,7 @@ test('an ended worker shows its end note, and none clears the line', async ($, o
   expect(appended[0]?.message.type).toBe('system')
   expect(appended[0]?.message.content).toEqual([{
     type: 'text',
-    text: 'agent-net worker opencode · deepseek-v4.1-flash done · 5m 0s: finished the parser',
+    text: 'agent-net worker opencode · deepseek-v4.1-flash (Fix the parser) done · 5m 0s: finished the parser',
   }])
 
   // The next poll does not append it again.
@@ -120,7 +123,7 @@ test('an ended worker shows its end note, and none clears the line', async ($, o
   payload = { workers: [] }
   await clock.advance(3000)
   ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /finished the parser/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Fix the parser/ })).toBeUndefined()
   await ui.unmount()
   expect(statuses.at(-1)).toBeUndefined()
   expect(session.appended().length).toBe(1)
@@ -163,7 +166,7 @@ test('a failed poll keeps the last worker rows until a successful poll replaces 
     }
     return { value: runResult(JSON.stringify({ workers: [{
       session_id: 's_keep123456', harness: 'claude', model: 'claude-sonnet-5', status: 'busy', online: true,
-      started_at: Math.floor(NOW / 1000) - 120, task: 'keep this worker visible',
+      started_at: Math.floor(NOW / 1000) - 120, task: 'keep this worker visible', title: 'Keep this worker visible',
     }] })) }
   })
   on('ui.status', (_, e) => { statuses.push(e.text); return { value: undefined } })
@@ -177,12 +180,12 @@ test('a failed poll keeps the last worker rows until a successful poll replaces 
   await clock.settle()
   await clock.advance(3000)
   const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /keep this worker visible/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Keep this worker visible/ })).toBeDefined()
   expect(statuses.at(-1)).toBe('agent-net: 1 busy')
   await ui.unmount()
   await clock.advance(3000)
   const recovered = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
-  expect(await recovered.find({ type: 'Text', text: /keep this worker visible/ })).toBeDefined()
+  expect(await recovered.find({ type: 'Text', text: /Keep this worker visible/ })).toBeDefined()
   expect(statuses.at(-1)).toBe('agent-net: 1 busy')
   await recovered.unmount()
 })
@@ -198,7 +201,7 @@ test('failed polls mark the last good band stale after more than 15 seconds and 
     }
     return { value: runResult(JSON.stringify({ workers: [{
       session_id: 's_stale12345', harness: 'claude', model: 'claude-sonnet-5', status: 'busy', online: true,
-      started_at: Math.floor(NOW / 1000) - 120, task: 'stale worker remains visible',
+      started_at: Math.floor(NOW / 1000) - 120, task: 'stale worker remains visible', title: 'Stale worker remains visible',
     }] })) }
   })
   on('ui.status', (_, e) => { statuses.push(e.text); return { value: undefined } })
@@ -213,7 +216,7 @@ test('failed polls mark the last good band stale after more than 15 seconds and 
   await clock.advance(21000)
   const stale = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
   expect(await stale.find({ type: 'Text', text: /agent-net workers · not updated for 18s/ })).toBeDefined()
-  expect(await stale.find({ type: 'Text', text: /stale worker remains visible/ })).toBeDefined()
+  expect(await stale.find({ type: 'Text', text: /Stale worker remains visible/ })).toBeDefined()
   expect(statuses.at(-1)).toBe('agent-net: 1 busy · not updated for 18s')
   await stale.unmount()
   await clock.advance(3000)
@@ -232,7 +235,7 @@ test('a successful empty poll clears the worker band', async ($, on) => {
     calls += 1
     return { value: runResult(JSON.stringify(calls === 1 ? { workers: [{
       session_id: 's_empty12345', harness: 'claude', model: 'claude-sonnet-5', status: 'busy', online: true,
-      started_at: Math.floor(NOW / 1000) - 120, task: 'remove this worker',
+      started_at: Math.floor(NOW / 1000) - 120, task: 'remove this worker', title: 'Remove this worker',
     }] } : { workers: [] })) }
   })
   on('ui.status', (_, e) => { statuses.push(e.text); return { value: undefined } })
@@ -294,6 +297,32 @@ test('the band adds the context window after the run time', async ($, on) => {
   await ui.unmount()
 })
 
+test('failed and queued workers show their symbol and title', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  on('process.run', () => ({
+    value: runResult(JSON.stringify({ workers: [{
+      session_id: 's_failed1234', harness: 'opencode', model: 'deepseek-v4.1-flash', status: 'failed', online: false,
+      started_at: Math.floor(NOW / 1000) - 42, task: 'run the tests', title: 'Run the tests',
+      ended_at: Math.floor(NOW / 1000), end_status: 'failed',
+    }, {
+      session_id: 's_queued1234', harness: 'claude', model: 'claude-sonnet-5', status: 'queued', online: true,
+      started_at: Math.floor(NOW / 1000) - 3, task: 'wait for room', title: 'Wait for room',
+    }] })),
+  }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /✗/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Run the tests/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /◌/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Wait for room/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('a refused notice is ignored and not tried again', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   let attempts = 0
@@ -333,66 +362,92 @@ function running(overrides: Partial<AgentNetWorker> = {}): AgentNetWorker {
   return {
     sessionId: 's_hidden1234', harness: 'codex', model: 'openai/gpt-6.1-sol:medium',
     project: 'shop', status: 'busy', online: true, startedAt: NOW / 1000 - 720,
-    task: 'Build part 5 of the documentation', contextTokens: 105000, contextLimit: 475000,
+    task: 'Build part 5 of the documentation', title: 'Build the documentation',
+    contextTokens: 105000, contextLimit: 475000,
     tokens: 0, endedAt: 0, endStatus: '', endNote: '', ...overrides,
   }
 }
 
-test('worker columns omit ids, busy and token counts and align every task', () => {
+test('worker rows show the symbol, title, full harness and model, run time and context', () => {
   const rows = formatWorkerRows([
     running(),
-    running({ harness: 'claude', model: 'anthropic/claude-sonnet-5', status: 'idle',
-      contextTokens: 0, contextLimit: 0, task: 'Read the specification', startedAt: NOW / 1000 - 42 }),
-    running({ harness: 'opencode', model: 'provider/deepseek-v4.1-flash', status: 'needs you', task: 'Check the parser' }),
+    running({ harness: 'claude', model: 'anthropic/claude-sonnet-5', status: 'idle', title: 'Read the spec',
+      contextTokens: 0, contextLimit: 0, startedAt: NOW / 1000 - 42 }),
+    running({ harness: 'opencode', model: 'provider/deepseek-v4.1-flash-preview-extra', status: 'needs you', title: 'Check the parser' }),
   ], NOW / 1000, 100)
-  const lines = rows.map(r => r.fields.join('') + r.task)
+  const lines = rows.map(r => r.line)
+  expect(lines[0]?.startsWith('● ')).toBe(true)
+  expect(lines[0]?.includes('Build the documentation')).toBe(true)
+  expect(lines[0]?.includes('codex gpt-6.1-sol:medium')).toBe(true)
+  expect(lines[0]?.includes('medium  12m')).toBe(true)
+  expect(lines[0]?.includes('ctx 22%')).toBe(true)
   expect(lines[0]?.includes('1234')).toBe(false)
   expect(lines[0]?.includes('busy')).toBe(false)
-  expect(lines[0]?.includes('○')).toBe(false)
   expect(lines[0]?.includes('105k')).toBe(false)
-  expect(lines[0]?.includes('ctx 22%')).toBe(true)
-  expect(lines[0]?.includes('gpt-6.1-sol:medium')).toBe(true)
-  expect(lines[1]?.includes('sonnet-5')).toBe(true)
+  expect(lines[1]?.includes('claude sonnet-5')).toBe(true)
   expect(lines[1]?.includes('anthropic/')).toBe(false)
-  expect(lines[1]?.includes('idle')).toBe(true)
-  expect(rows[1]?.statusColor).toBe('warning')
-  expect(rows[2]?.statusColor).toBe('warning')
-  const taskColumn = lines[0]!.indexOf('Build')
-  expect(lines[1]!.indexOf('Read')).toBe(taskColumn)
-  expect(lines[2]!.indexOf('Check')).toBe(taskColumn)
+  expect(lines[2]?.includes('opencode deepseek-v4.1-flash-preview-extra')).toBe(true)
+  // The title is padded, so the harness starts in the same column on every row.
+  const harnessColumn = lines[0]!.indexOf('codex')
+  expect(lines[1]!.indexOf('claude')).toBe(harnessColumn)
+  expect(lines[2]!.indexOf('opencode')).toBe(harnessColumn)
 })
 
-test('worker tasks use the remaining width, end with an ellipsis and stay on one line', () => {
-  for (const width of [48, 80, 100]) {
-    const row = formatWorkerRows([running({ task: 'Build '.repeat(40) + '\nsecond line' })], NOW / 1000, width)[0]!
-    const line = row.fields.join('') + row.task
-    expect(Array.from(line).length).toBe(width)
-    expect(line.endsWith('…')).toBe(true)
-    expect(line.includes('\n')).toBe(false)
+test('a long title is cut at the remaining width and stays on one line', () => {
+  for (const width of [60, 80, 100]) {
+    const row = formatWorkerRows([running({ title: 'Build '.repeat(40) + '\nsecond line' })], NOW / 1000, width)[0]!
+    expect(Array.from(row.line).length).toBe(width)
+    expect(row.title.trim().endsWith('…')).toBe(true)
+    expect(row.line.includes('\n')).toBe(false)
   }
 })
 
-test('worker model shortening drops effort then whole segments as the TUI does', () => {
-  const row = formatWorkerRows([running({ model: 'provider/claude-sonnet-5:very-long-effort' })], NOW / 1000, 100)[0]!
-  expect(row.fields[1]?.trim()).toBe('sonnet-5')
-  const long = formatWorkerRows([running({ model: 'provider/deepseek-v4.1-flash-preview-extra' })], NOW / 1000, 100)[0]!
-  expect(long.fields[1]?.trim()).toBe('deepseek-v4.1-flash…')
+test('the model is never shortened for width', () => {
+  const row = formatWorkerRows([running({ model: 'provider/deepseek-v4.1-flash-preview-extra' })], NOW / 1000, 40)[0]!
+  expect(row.line.includes('deepseek-v4.1-flash-preview-extra')).toBe(true)
+  expect(row.model).toBe('deepseek-v4.1-flash-preview-extra')
 })
 
-test('exception states and high context have visible colors', () => {
-  for (const status of ['idle', 'waiting', 'needs you', 'starting', 'queued', 'stopping']) {
-    const row = formatWorkerRows([running({ status })], NOW / 1000, 100)[0]!
-    expect(row.fields[2]?.trim()).toBe(status)
-    expect(row.statusColor).toBe('warning')
+test('a narrow pane drops the context column before the run time', () => {
+  const wide = formatWorkerRows([running()], NOW / 1000, 100)[0]!
+  expect(wide.line.includes('ctx 22%')).toBe(true)
+  const narrow = formatWorkerRows([running()], NOW / 1000, 50)[0]!
+  expect(narrow.line.includes('ctx ')).toBe(false)
+  expect(narrow.line.includes('12m')).toBe(true)
+})
+
+test('every state has its symbol, colour and last column', () => {
+  const rows = formatWorkerRows([
+    running(),
+    running({ status: 'queued', startedAt: NOW / 1000 - 3 }),
+    running({ endStatus: 'done', endedAt: NOW / 1000 }),
+    running({ endStatus: 'failed', endedAt: NOW / 1000 }),
+    running({ endStatus: 'stopped', endedAt: NOW / 1000 }),
+    running({ endStatus: 'timed out', endedAt: NOW / 1000 }),
+  ], NOW / 1000, 100)
+  expect(rows[0]?.symbol).toBe('●')
+  expect(rows[0]?.symbolColor).toBe('accent')
+  expect(rows[1]?.symbol).toBe('◌')
+  expect(rows[1]?.symbolColor).toBe('dim')
+  expect(rows[2]?.symbol).toBe('✓')
+  expect(rows[2]?.symbolColor).toBe('success')
+  expect(rows[2]?.last).toBe('done')
+  expect(rows[2]?.lastColor).toBe('success')
+  for (const row of rows.slice(3)) {
+    expect(row.symbol).toBe('✗')
+    expect(row.symbolColor).toBe('error')
+    expect(row.lastColor).toBe('error')
   }
+  expect(rows[3]?.last).toBe('failed')
+  expect(rows[4]?.last).toBe('stopped')
+  expect(rows[5]?.last).toBe('timed out')
+})
+
+test('high context has the warning and error colours it had before', () => {
   const rows = formatWorkerRows([
     running({ contextTokens: 70000, contextLimit: 100000 }),
     running({ contextTokens: 90000, contextLimit: 100000 }),
-    running({ endStatus: 'done', endedAt: NOW / 1000 }),
-    running({ endStatus: 'failed', endedAt: NOW / 1000 }),
   ], NOW / 1000, 100)
-  expect(rows[0]?.contextColor).toBe('warning')
-  expect(rows[1]?.contextColor).toBe('error')
-  expect(rows[2]?.statusColor).toBe('success')
-  expect(rows[3]?.statusColor).toBe('error')
+  expect(rows[0]?.lastColor).toBe('warning')
+  expect(rows[1]?.lastColor).toBe('error')
 })

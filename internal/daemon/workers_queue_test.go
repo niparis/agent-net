@@ -320,10 +320,10 @@ func TestStartIsQueuedWhenTheMachineIsBusyAndStartsInOrder(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, piID := helloPi(t, w.node, "caller", "/work/caller", true)
-	req := protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "first task"}
+	req := protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "first task", Title: "First start"}
 
 	r1 := startFrom(t, pi, req)
-	req.Task = "second task"
+	req.Task, req.Title = "second task", "Second start"
 	r2 := startFrom(t, pi, req)
 	for i, r := range []protocol.WorkerStartResult{r1, r2} {
 		if r.Status != "queued" || r.SessionID != "" || !protocol.IsQueueID(r.QueueID) || r.Position != i+1 || r.Hostname == "" {
@@ -357,10 +357,29 @@ func TestStartIsQueuedWhenTheMachineIsBusyAndStartsInOrder(t *testing.T) {
 			notices = append(notices, m)
 		}
 	}
+	titles := map[string]bool{}
 	for _, m := range notices {
 		if m.Type != protocol.TypeNotification || m.To != piID || !strings.Contains(m.Body, "queue wait: ") || !strings.Contains(m.Body, "worker: s_") {
 			t.Errorf("started notice: %+v", m)
 		}
+		for _, title := range []string{"First start", "Second start"} {
+			if strings.Contains(m.Body, "· "+title) {
+				titles[title] = true
+			}
+		}
+	}
+	if !titles["First start"] || !titles["Second start"] {
+		t.Errorf("started notices without the titles: %+v", notices)
+	}
+	// The title stays with the worker record, for the worker list.
+	seen := map[string]bool{}
+	for _, v := range w.workers(t) {
+		if v.Title != "" {
+			seen[v.Title] = true
+		}
+	}
+	if !seen["First start"] || !seen["Second start"] {
+		t.Errorf("worker titles: %+v", seen)
 	}
 	// The task reached each worker as a message from the caller.
 	for _, n := range notices {

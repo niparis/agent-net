@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -208,6 +209,34 @@ func TestWorkersCommandOwnerAndRecentFlags(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "TASK") || strings.Contains(out.String(), "END") {
 		t.Errorf("the table has a new column:\n%s", out.String())
+	}
+}
+
+func TestWorkersJSONAlwaysHasATitle(t *testing.T) {
+	f := &fakeOp{workers: []protocol.WorkerView{
+		{SessionID: "s_w_ab12", Name: "shop worker 1", Harness: "claude", Project: "shop", Online: true, Status: "busy",
+			StartedAt: 1700000000, Task: "Repo: shop (Go). Base: main. Read AGENTS.md first.\n\nFix the parser crash."},
+		{SessionID: "s_w_cd34", Name: "shop worker 2", Harness: "opencode", Project: "shop", Online: true, Status: "busy",
+			StartedAt: 1700000000, Title: "Parser fix", Task: "Fix the parser crash."},
+		{SessionID: "s_w_ef56", Name: "shop worker 3", Harness: "opencode", Project: "shop", Online: true, Status: "busy",
+			StartedAt: 1700000000, Task: "Repo: shop\nBase: main\nRead AGENTS.md first."},
+	}}
+	var out bytes.Buffer
+	if err := runWorkers(context.Background(), f, &out, []string{"-json"}); err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.WorkersResult
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Workers) != 3 {
+		t.Fatalf("%d workers", len(got.Workers))
+	}
+	want := []string{"Fix the parser crash.", "Parser fix", "shop worker 3"}
+	for i, title := range want {
+		if got.Workers[i].Title != title {
+			t.Errorf("worker %d title = %q, want %q", i, got.Workers[i].Title, title)
+		}
 	}
 }
 

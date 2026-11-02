@@ -304,6 +304,9 @@ type WorkerStartRequest struct {
 	// Difficulty selects the minimum score for automatic model choice.
 	Difficulty string   `json:"difficulty,omitempty"`
 	Touches    []string `json:"touches,omitempty"`
+	// Title is one short line naming the worker, at most 60 characters and
+	// with no newlines. Empty means the gateway derives it from Task.
+	Title string `json:"title,omitempty"`
 	// Task is what the worker should do. It is sent as a message from the caller.
 	Task string `json:"task"`
 	// Isolation is "" (the default: a new worktree on the branch
@@ -346,6 +349,9 @@ type WorkerStartResult struct {
 	Permissions string `json:"permissions,omitempty"`
 	// Task is the message that carried the task, with its message ID.
 	Task *Message `json:"task,omitempty"`
+	// Title is the worker's short title: the one that was asked for, or the
+	// one derived from the task.
+	Title string `json:"title,omitempty"`
 	// Queued is true when the task message waits in the outbox.
 	Queued bool `json:"queued,omitempty"`
 	// Status is "starting", "started" or "queued". A starting worker has a
@@ -425,8 +431,10 @@ type WorkerView struct {
 	Model     string `json:"model,omitempty"`
 	Project   string `json:"project"`
 	Path      string `json:"path"`
-	Online    bool   `json:"online"`
-	Status    string `json:"status"`
+	// Name is the session name the gateway gave the worker, when it knows it.
+	Name   string `json:"name,omitempty"`
+	Online bool   `json:"online"`
+	Status string `json:"status"`
 	// Owner is the session that started the worker; OwnerName names it.
 	Owner     string `json:"owner"`
 	OwnerName string `json:"owner_name,omitempty"`
@@ -434,6 +442,9 @@ type WorkerView struct {
 	// Task is the first line of the task the owner gave, cut to about 120
 	// characters. Empty when this machine did not start the worker.
 	Task string `json:"task,omitempty"`
+	// Title is the worker's short title: the one the caller gave, or a line
+	// derived from Task. Empty only for an older worker record.
+	Title string `json:"title,omitempty"`
 	// ContextTokens, ContextLimit and Tokens are the worker's usage, as in
 	// WorkerInfo. 0 when the harness cannot say.
 	ContextTokens int64 `json:"context_tokens,omitempty"`
@@ -506,9 +517,11 @@ func WorkersOf(agents []AgentView) []WorkerView {
 			continue
 		}
 		out = append(out, WorkerView{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname,
-			Harness: a.Harness, Model: a.Model, Project: a.Worker.Project, Path: a.Cwd, Online: a.Online, Status: a.Status,
+			Harness: a.Harness, Model: a.Model, Project: a.Worker.Project, Path: a.Cwd, Name: names[a.SessionID],
+			Online: a.Online, Status: a.Status,
 			Owner: a.Worker.Owner, OwnerName: names[a.Worker.Owner], StartedAt: a.Worker.StartedAt,
-			Task: a.Worker.Task, ContextTokens: a.Worker.ContextTokens, ContextLimit: a.Worker.ContextLimit, Tokens: a.Worker.Tokens,
+			Task: a.Worker.Task, Title: a.Worker.Title,
+			ContextTokens: a.Worker.ContextTokens, ContextLimit: a.Worker.ContextLimit, Tokens: a.Worker.Tokens,
 			Continue: a.Worker.Continue, Fix: a.Worker.Fix, DifficultyAsked: a.Worker.DifficultyAsked, DifficultyUsed: a.Worker.DifficultyUsed})
 	}
 	sort.SliceStable(out, func(i, j int) bool {

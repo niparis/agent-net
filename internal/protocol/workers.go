@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Workers (decision 0002): agent sessions that a daemon starts for a caller.
@@ -117,6 +118,8 @@ type WorkerContinue struct {
 	Model   string `json:"model,omitempty"`
 	// Task is the extra text of the caller, added after the old first task.
 	Task string `json:"task,omitempty"`
+	// Title replaces the old worker's title when it is set.
+	Title string `json:"title,omitempty"`
 }
 
 // WorkerContinued answers "worker.continue".
@@ -126,6 +129,8 @@ type WorkerContinued struct {
 	Path    string `json:"path"`
 	Harness string `json:"harness"`
 	Model   string `json:"model,omitempty"`
+	// Title is the new worker's short title.
+	Title string `json:"title,omitempty"`
 	// Track and Playbooks are the gateway's record and the fresh notes for the
 	// chosen harness and model (decision 0022).
 	Track     *TrackRecord   `json:"track,omitempty"`
@@ -159,13 +164,17 @@ func WorkerNotStartedText(project, harness, why string) string {
 }
 
 // WorkerStartedText is the notice for a queued start that has become a worker.
-func WorkerStartedText(session, harness, model, project, host string, waited time.Duration) string {
+func WorkerStartedText(session, harness, model, project, host string, waited time.Duration, title ...string) string {
 	b := "[agent-net worker notice]\nstatus: started\nnote: the queued start has begun; the task is being sent to the worker\nworker: " +
 		session + " (" + harness
 	if model != "" {
 		b += ", " + model
 	}
-	b += "), project " + project + " on " + host + "\nqueue wait: " + waited.Round(time.Second).String() + "\n"
+	b += "), project " + project + " on " + host
+	if len(title) > 0 && strings.TrimSpace(title[0]) != "" {
+		b += " · " + strings.TrimSpace(title[0])
+	}
+	b += "\nqueue wait: " + waited.Round(time.Second).String() + "\n"
 	return b
 }
 
@@ -196,6 +205,10 @@ type WorkerInfo struct {
 	// Task is the first line of the task its owner gave it, cut to about 120
 	// characters. Empty when the machine that started it did not say.
 	Task string `json:"task,omitempty"`
+	// Title is one short line naming the worker: the one the caller gave, or
+	// a line derived from the task. Empty for a worker started by an older
+	// daemon or gateway.
+	Title string `json:"title,omitempty"`
 	// ContextTokens is how many tokens the model saw on the worker's last
 	// step: input plus cache reads and cache writes of the latest assistant
 	// message or turn. 0 when the harness cannot say.
@@ -270,6 +283,8 @@ type (
 		// Task is the task text to send, set for a continued worker (it holds
 		// the old worker's first task). Empty means the caller's own task.
 		Task string `json:"task,omitempty"`
+		// Title is the worker's short title.
+		Title string `json:"title,omitempty"`
 		// Queued is true when the machine has no room now: the start waits
 		// in its queue, SessionID is empty, and QueueID names the start. A
 		// notice follows when it starts.
@@ -305,6 +320,8 @@ type (
 		// Task is what the worker should do. The machine that starts it uses
 		// the first line as the worker's name in a status view.
 		Task string `json:"task,omitempty"`
+		// Title is the worker's short title. Empty means derive it from Task.
+		Title string `json:"title,omitempty"`
 		// Isolation is "" (a worktree if the folder is a repository),
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`
@@ -362,6 +379,7 @@ type (
 		Harness     string `json:"harness"`
 		Project     string `json:"project,omitempty"`
 		Task        string `json:"task"`
+		Title       string `json:"title,omitempty"`
 		Worktree    string `json:"worktree,omitempty"`
 		Branch      string `json:"branch,omitempty"`
 		// ProjectRules is the project's .agent-net/worker.md text, for the brief.
@@ -562,6 +580,100 @@ func WorkerTaskSummary(body string) string {
 	return line
 }
 
+// WorkerTitleMax is the longest worker title a caller may give.
+const WorkerTitleMax = 60
+
+// ValidWorkerTitle checks a title the caller gives: one line, at most
+// WorkerTitleMax characters. An empty title is allowed and means the title is
+// derived from the task.
+func ValidWorkerTitle(title string) error {
+	if strings.ContainsAny(title, "\r\n") {
+		return fmt.Errorf("the title must be one line, with no newlines")
+	}
+	if n := len([]rune(strings.TrimSpace(title))); n > WorkerTitleMax {
+		return fmt.Errorf("the title is %d characters: the limit is %d", n, WorkerTitleMax)
+	}
+	return nil
+}
+
+// workerBriefSetup is the start of a setup sentence in a worker brief. Such a
+// sentence says where the work is, not what it is, so a title skips it.
+var workerBriefSetup = []string{
+	"repo:", "base:", "branch:", "worktree:", "project:", "setup:", "environment:",
+	"read agents.md", "read claude.md", "read docs/", "read the docs", "read readme",
+}
+
+func workerBriefBoilerplate(sentence string) bool {
+	s := strings.ToLower(strings.TrimSpace(sentence))
+	for _, prefix := range workerBriefSetup {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// workerTitleSentence is the first sentence of the brief that says what the
+// task is. Setup sentences such as "Repo: ..." and "Read AGENTS.md first." are
+// skipped.
+func workerTitleSentence(task string) string {
+	for _, line := range strings.Split(task, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		start := 0
+		for i := 0; i < len(line); i++ {
+			if line[i] != '.' && line[i] != '!' && line[i] != '?' {
+				continue
+			}
+			if i+1 < len(line) && line[i+1] != ' ' && line[i+1] != '\t' {
+				continue
+			}
+			if sentence := strings.TrimSpace(line[start : i+1]); sentence != "" && !workerBriefBoilerplate(sentence) {
+				return sentence
+			}
+			start = i + 1
+		}
+		if sentence := strings.TrimSpace(line[start:]); sentence != "" && !workerBriefBoilerplate(sentence) {
+			return sentence
+		}
+	}
+	return ""
+}
+
+// clipWorkerTitle cuts a title to WorkerTitleMax characters at a word
+// boundary, with an ellipsis when it had to cut.
+func clipWorkerTitle(text string) string {
+	text = strings.TrimSpace(text)
+	runes := []rune(text)
+	if len(runes) <= WorkerTitleMax {
+		return text
+	}
+	cut := WorkerTitleMax - 1
+	for cut > 0 && !unicode.IsSpace(runes[cut]) {
+		cut--
+	}
+	if cut == 0 {
+		return string(runes[:WorkerTitleMax-1]) + "…"
+	}
+	return strings.TrimSpace(string(runes[:cut])) + "…"
+}
+
+// WorkerTitle is the title shown for a worker. An explicit title wins; without
+// one it is the first sentence of the brief that is not setup, cut to
+// WorkerTitleMax characters. When the brief has nothing else, it is fallback,
+// the worker's name.
+func WorkerTitle(title, task, fallback string) string {
+	if t := strings.TrimSpace(title); t != "" {
+		return clipWorkerTitle(t)
+	}
+	if sentence := workerTitleSentence(task); sentence != "" {
+		return clipWorkerTitle(sentence)
+	}
+	return strings.TrimSpace(fallback)
+}
+
 // Isolation modes of a worker. Empty means the default: a worktree when the
 // project is a repository, the project folder when it is not (W17).
 // IsolationNone opts out, for a read-only or non-code task.
@@ -601,8 +713,10 @@ type WorkerNotice struct {
 	Model       string
 	Project     string
 	Host        string
-	RunTime     time.Duration
-	Tokens      string // "1200 in, 340 out", empty when the harness does not say
+	// Title is the worker's short title. Empty for an older record.
+	Title   string
+	RunTime time.Duration
+	Tokens  string // "1200 in, 340 out", empty when the harness does not say
 	// Context is the context at the end of the run, as ContextText writes it
 	// ("210k / 1M"), empty when the harness does not say.
 	Context  string
@@ -645,7 +759,11 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	if n.Model != "" {
 		b.WriteString(", " + n.Model)
 	}
-	b.WriteString("), project " + n.Project + " on " + n.Host + "\n")
+	b.WriteString("), project " + n.Project + " on " + n.Host)
+	if t := strings.TrimSpace(n.Title); t != "" {
+		b.WriteString(" · " + t)
+	}
+	b.WriteString("\n")
 	b.WriteString(WorkerPermissionsText(n.Permissions, n.Harness) + "\n")
 	b.WriteString("run time: " + n.RunTime.Round(time.Second).String() + "\n")
 	if n.Tokens != "" {

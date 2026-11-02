@@ -29,6 +29,7 @@ type roWorkerRow struct {
 	ID         string           `json:"id"`
 	Name       string           `json:"name"`
 	Task       string           `json:"task"`
+	Title      string           `json:"title"`
 	Machine    string           `json:"machine"`
 	Project    string           `json:"project"`
 	Harness    string           `json:"harness"`
@@ -154,7 +155,8 @@ func roWorkerRowOf(agent protocol.AgentView, names map[string]string, full bool)
 		name = agent.SessionID
 	}
 	row := roWorkerRow{
-		ID: agent.SessionID, Name: name, Task: agent.Worker.Task, Machine: machine,
+		ID: agent.SessionID, Name: name, Task: agent.Worker.Task,
+		Title: protocol.WorkerTitle(agent.Worker.Title, agent.Worker.Task, name), Machine: machine,
 		Project: agent.Worker.Project, Harness: agent.Harness, Model: agent.Model,
 		Difficulty: difficulty,
 		Caller:     roSessionRef(agent.Worker.Owner, roName(names, agent.Worker.Owner, agent.Worker.Owner)),

@@ -287,7 +287,10 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 // a message from the caller.
 func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequest, error) {
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
-	p.Continue = strings.TrimSpace(p.Continue)
+	p.Continue, p.Title = strings.TrimSpace(p.Continue), strings.TrimSpace(p.Title)
+	if err := protocol.ValidWorkerTitle(p.Title); err != nil {
+		return p, err
+	}
 	if p.Continue != "" {
 		if p.Machine != "" || p.Base != "" || p.Isolation != "" {
 			return p, errors.New("a continued worker keeps the machine, the branch and the isolation of the old one: leave machine, base and isolation empty")
@@ -332,11 +335,11 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		// machine sends the task when it begins (decision 0018).
 		return &protocol.WorkerStartResult{Status: "queued", QueueID: ans.QueueID, Position: ans.Position, QueueReason: ans.Reason,
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
-			Model: ans.Model, ModelNote: ans.ModelNote, MachineNote: ans.MachineNote,
+			Model: ans.Model, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
 			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
-		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch,
+		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
 		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks}
 	if ans.Starting {
 		out.Status = "starting"

@@ -154,8 +154,9 @@ type worker struct {
 	// Worktree isolation (W13).
 	mainPath, worktree, branch, base string
 	// taskMsg is the last request from the owner; doneStatus the status of the
-	// last hand-back ("" if none); taskText is the short line of that request.
-	taskMsg, doneStatus, taskText string
+	// last hand-back ("" if none); taskText is the short line of that request;
+	// title is the worker's one-line title, empty when it is derived.
+	taskMsg, doneStatus, taskText, title string
 	// donePartial is true when the last hand-back said complete:false.
 	donePartial bool
 	// continueCount and fixCount count the messages from the owner after a
@@ -263,7 +264,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	if w.info == nil {
-		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText,
+		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title,
 			Permissions: protocol.WorkerPermissionsOrDefault(w.permissions)}
 	}
 	// The figures follow the info value, so every reader sees one version.
@@ -300,7 +301,7 @@ func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) (grew bool) {
 	grew = st.TotalTokens > w.totalTokens
 	w.contextTokens, w.contextLimit, w.totalTokens = st.ContextTokens, st.ContextLimit, st.TotalTokens
 	if w.info == nil {
-		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText}
+		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title}
 	}
 	cp := *w.info
 	cp.ContextTokens, cp.ContextLimit, cp.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
@@ -474,7 +475,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, DonePartial: w.donePartial,
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, Title: w.title, DoneStatus: w.doneStatus, DonePartial: w.donePartial,
 		Ref: w.ref, TaskFull: w.taskFull, Permissions: w.permissions,
 		Continue: w.continueCount, Fix: w.fixCount, ContinueRun: w.continueRun, FixRun: w.fixRun,
 		AutoContinue: w.autoContinue, AutoContinueCount: w.autoContinueCount, AutoContinueRun: w.autoContinueRun,
@@ -593,6 +594,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	rules := projectWorkerRules(l.Path)
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
+		title:       l.Title,
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
 		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue)}
@@ -1078,7 +1080,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	w := &worker{id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner, ownerName: row.OwnerName,
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
-		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
+		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, title: row.Title, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
 		taskID: row.TaskID, midrunCount: row.MidrunCount, noticeSinceRequest: row.NoticeSinceRequest, midrunSeen: row.MidrunSeen,
 		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
@@ -1348,7 +1350,7 @@ type recentWorker struct {
 // never became a session is not kept.
 func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 	d.wmu.Lock()
-	sid, owner, harness, model, project, task := w.sessionID, w.owner, w.harness, w.model, w.project, w.taskText
+	sid, owner, harness, model, project, task, title := w.sessionID, w.owner, w.harness, w.model, w.project, w.taskText, w.title
 	started, contextTokens, contextLimit, totalTokens := w.startedAt, w.contextTokens, w.contextLimit, w.totalTokens
 	cont, fix, asked, used := w.continueCount, w.fixCount, w.difficultyAsked, w.difficultyUsed
 	d.wmu.Unlock()
@@ -1356,7 +1358,7 @@ func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 		return
 	}
 	view := protocol.WorkerView{SessionID: sid, NodeID: d.cfg.NodeID, Hostname: d.cfg.Hostname, Harness: harness,
-		Model: model, Project: project, Owner: owner, StartedAt: started.Unix(), Task: task, EndedAt: at.Unix(),
+		Model: model, Project: project, Owner: owner, StartedAt: started.Unix(), Task: task, Title: title, EndedAt: at.Unix(),
 		ContextTokens: contextTokens, ContextLimit: contextLimit, Tokens: totalTokens,
 		Continue: cont, Fix: fix, DifficultyAsked: asked, DifficultyUsed: used,
 		EndStatus: status, EndNote: note, Status: status}
@@ -1455,7 +1457,7 @@ func (d *Daemon) adoptWorkers() {
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
-			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, donePartial: r.DonePartial, ref: r.Ref,
+			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, title: r.Title, doneStatus: r.DoneStatus, donePartial: r.DonePartial, ref: r.Ref,
 			taskFull:    r.TaskFull,
 			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions), continueCount: r.Continue, fixCount: r.Fix,
 			continueRun: r.ContinueRun, fixRun: r.FixRun, pendingHandback: r.PendingHandback, pendingPartial: r.PendingPartial,

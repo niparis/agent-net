@@ -266,7 +266,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	var none protocol.WorkerStartAnswer
 	p.Project, p.Harness = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness)
 	p.Model, p.Machine = protocol.CleanModel(p.Model), strings.TrimSpace(p.Machine)
-	p.Continue = strings.TrimSpace(p.Continue)
+	p.Continue, p.Title = strings.TrimSpace(p.Continue), strings.TrimSpace(p.Title)
+	if err := protocol.ValidWorkerTitle(p.Title); err != nil {
+		return none, reject("%v", err)
+	}
 	if p.Difficulty != "" {
 		if _, err := protocol.DifficultyFit(0, p.Difficulty, nil); err != nil {
 			return none, reject("%v", err)
@@ -680,7 +683,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, AutoContinue: p.AutoContinue})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
@@ -698,7 +701,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			"project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner, "position", launched.Position,
 			"reason", launched.Reason)
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
-			Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Queued: true, QueueID: launched.QueueID,
+			Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms,
 			Track: track, Playbooks: books}, nil
 	}
@@ -716,7 +719,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"worker", launched.WorkerID, "project", pick.Name, "path", pick.Path, "harness", p.Harness, "model", p.Model,
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch)
 	return protocol.WorkerStartAnswer{Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
-		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
+		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
 		Track: track, Playbooks: books}, nil
 }
@@ -959,7 +962,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, err
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
-		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Touches: p.Touches})
+		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Title: p.Title, Touches: p.Touches})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			return none, reject("machine %s did not start the worker: %v", old.Hostname, err)
@@ -984,7 +987,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 			"project", c.Project, "harness", c.Harness, "model", c.Model, "owner", p.Owner, "position", c.Position,
 			"reason", c.Reason, "continues", old.SessionID)
 		return protocol.WorkerStartAnswer{NodeID: old.NodeID, Hostname: old.Hostname, Project: c.Project, Path: c.Path,
-			Harness: c.Harness, Model: c.Model, ModelNote: modelNote, Queued: true, QueueID: c.QueueID, Position: c.Position, Reason: c.Reason,
+			Harness: c.Harness, Model: c.Model, ModelNote: modelNote, Title: c.Title, Queued: true, QueueID: c.QueueID, Position: c.Position, Reason: c.Reason,
 			Permissions: old.Worker.Permissions, Track: c.Track, Playbooks: c.Playbooks}, nil
 	}
 	if err != nil || c.SessionID == "" {
@@ -1001,7 +1004,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		"worker", c.WorkerID, "project", c.Project, "path", c.Path, "harness", c.Harness, "model", c.Model,
 		"owner", p.Owner, "from_node", nc.id, "continues", old.SessionID, "worktree", c.Worktree, "branch", c.Branch)
 	return protocol.WorkerStartAnswer{Starting: c.Starting, SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
-		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model, ModelNote: modelNote,
+		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model, ModelNote: modelNote, Title: c.Title,
 		Worktree: c.Worktree, Branch: c.Branch, ProjectRules: c.ProjectRules, Task: c.Task,
 		Permissions: old.Worker.Permissions, Track: c.Track, Playbooks: c.Playbooks}, nil
 }

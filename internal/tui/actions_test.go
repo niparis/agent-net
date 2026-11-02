@@ -277,6 +277,29 @@ func TestActionScreensGolden(t *testing.T) {
 	}
 }
 
+func TestWorkerRowUsesTheTitle(t *testing.T) {
+	a := protocol.AgentView{SessionID: workerID, Harness: "opencode", Worker: &protocol.WorkerInfo{
+		ID: "w_1", Task: "Repo: shop\nBase: main\n\nFix the parser crash.", Title: "Parser fix"}}
+	if got := taskText(a); got != "Parser fix" {
+		t.Fatalf("taskText = %q, want the title", got)
+	}
+	a.Worker.Title = ""
+	if got := taskText(a); got != "Repo: shop Base: main  Fix the parser crash." {
+		t.Fatalf("taskText without a title = %q", got)
+	}
+}
+
+func TestTitledWorkerScreenGolden(t *testing.T) {
+	m, src := workerModel(120, 34)
+	for i := range src.snap.Agents {
+		if src.snap.Agents[i].SessionID == workerID && src.snap.Agents[i].Worker != nil {
+			src.snap.Agents[i].Worker.Title = "Fix band"
+		}
+	}
+	m = refresh(m, src)
+	golden(t, "view_120x34_worker_title", selectID(m, workerID).View())
+}
+
 func itoa(i int) string {
 	if i < 0 {
 		return "-" + itoa(-i)

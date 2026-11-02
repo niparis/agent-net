@@ -65,14 +65,14 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 				areas = append(areas, x)
 			}
 		}
-		in := startIn{Touches: areas, Project: str("project"), Task: task, Harness: str("harness"), Difficulty: str("difficulty"), Model: str("model"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), Continue: continuation}
+		in := startIn{Touches: areas, Project: str("project"), Task: task, Title: str("title"), Harness: str("harness"), Difficulty: str("difficulty"), Model: str("model"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), Continue: continuation}
 		if v, ok := a["auto_continue"].(bool); ok {
 			in.AutoContinue = &v
 		}
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Isolation: in.Isolation, Base: in.Base, Continue: in.Continue, AutoContinue: in.AutoContinue})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, Continue: in.Continue, AutoContinue: in.AutoContinue})
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +276,7 @@ func workerOutput(m map[string]any) map[string]any {
 	if caller == nil {
 		caller = map[string]any{"id": "", "name": ""}
 	}
-	out := map[string]any{"id": id, "name": name, "task": m["task"], "machine": firstValue(m, "machine", "hostname"), "project": m["project"], "harness": m["harness"], "model": m["model"], "difficulty": m["difficulty"], "caller": caller, "state": firstValue(m, "state", "status"), "run_time": firstValue(m, "run_time", "runtime")}
+	out := map[string]any{"id": id, "name": name, "task": m["task"], "title": m["title"], "machine": firstValue(m, "machine", "hostname"), "project": m["project"], "harness": m["harness"], "model": m["model"], "difficulty": m["difficulty"], "caller": caller, "state": firstValue(m, "state", "status"), "run_time": firstValue(m, "run_time", "runtime")}
 	for _, k := range []string{"started", "branch"} {
 		if v := m[k]; v != nil {
 			out[k] = v

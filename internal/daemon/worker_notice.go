@@ -393,7 +393,7 @@ func tokenText(in, out, reasoning, cacheRead, cacheWrite float64) string {
 // notice builds the facts of a completion notice.
 func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol.WorkerNotice {
 	d.wmu.Lock()
-	sid, harness, model, project, wt, br, started, permissions := w.sessionID, w.harness, w.model, w.project, w.worktree, w.branch, w.startedAt, w.permissions
+	sid, harness, model, project, wt, br, started, permissions, title := w.sessionID, w.harness, w.model, w.project, w.worktree, w.branch, w.startedAt, w.permissions, w.title
 	cont, fix := w.continueCount, w.fixCount
 	auto := w.autoContinueCount
 	asked, used := w.difficultyAsked, w.difficultyUsed
@@ -405,7 +405,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	if difficulty == "" {
 		difficulty = "normal"
 	}
-	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Permissions: permissions,
+	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Title: title, Permissions: permissions,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
 		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty}
 	n.DiffStat, _ = d.worktreeFacts(w)
