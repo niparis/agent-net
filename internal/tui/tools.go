@@ -12,7 +12,7 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-// The Tools tab uses one list with plain status text and scoped action menus.
+// The Tools tab opens skills per agent and can switch to the all-tools list.
 // Changes use owner-only daemon methods and the existing plan/apply services.
 // Legacy catalog helpers remain shared with comparison and backend tests.
 
@@ -56,10 +56,16 @@ type toolsState struct {
 	needs           []protocol.ToolNeed
 	cat             toolsdiff.Catalog
 
-	row, scroll  int
-	projectsOpen bool
-	projectRow   int
-	summaries    map[string]string
+	allTools                     bool
+	agentRow, skillRow           int
+	skillsFocus                  bool
+	agentFilter                  string
+	agentSearching, agentDiscard bool
+	agentPending                 map[string]map[string]bool
+	row, scroll                  int
+	projectsOpen                 bool
+	projectRow                   int
+	summaries                    map[string]string
 
 	search    string // the filter of the one list
 	searching bool   // the filter text box has the keys
@@ -77,7 +83,9 @@ func (m Model) toolsSource() (ToolsSource, bool) {
 }
 
 // capturing says the Tools tab needs every key: a text box or a plan is open.
-func (t toolsState) capturing() bool { return t.searching || t.modal != nil }
+func (t toolsState) capturing() bool {
+	return t.searching || t.modal != nil || t.agentSearching || t.agentDiscard
+}
 
 func (m *Model) toolsToast(s string) {
 	m.tl.toast, m.tl.toastAt = s, m.now()
@@ -241,6 +249,9 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tl.modal != nil {
 		return m.toolsModalKey(k)
 	}
+	if !m.tl.allTools {
+		return m.agentToolsKey(k)
+	}
 	if m.tl.projectsOpen {
 		projects := m.projectCosts()
 		switch k.String() {
@@ -264,6 +275,8 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.tl.toast = ""
 	switch keyAction(contextTools, k.String()) {
+	case "skills per agent":
+		m.tl.allTools = false
 	case actQuit:
 		m.quitting = true
 		return m, tea.Quit

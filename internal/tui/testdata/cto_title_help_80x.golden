@@ -100,6 +100,27 @@ Legend ────────────────────────�
   states               pending ... delivered ✓ replied ↩ failed ✗
 
  Tools
+  j/k, down/up           move
+  tab                    all tools
+  /                      filter
+  ?                      help
+  q                      quit
+  esc                    back
+  right, enter           skills
+
+ agent skills
+  j/k, down/up           move
+  tab                    all tools
+  /                      filter
+  ?                      help
+  q                      quit
+  esc                    back
+  left                   agents
+  space                  on/off
+  enter                  review and apply
+
+ Tools
+  tab                    skills per agent
   t                      show skill cost per project
   n                      add an MCP server or a skill from a folder
   enter                  open the actions for the selected tool
@@ -213,6 +234,10 @@ Legend ────────────────────────�
   left/right             choose the machine
   enter                  add
   backspace, ctrl+h      delete
+
+ discard skill changes
+  y, Y                   discard
+  n, N, esc              keep changes
 
  Atlas box
   ctrl+], tab            back to Sessions

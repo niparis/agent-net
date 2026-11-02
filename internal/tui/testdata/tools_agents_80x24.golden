@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
+╭─Agents───────────╮╭─homelab · on research · 2 on · ~280/session──────────────╮
+│   a2a-ocs      1 ││ [x] archify                           ~120               │
+│   cogforge     1 ││ [x] estate-runbook                    ~160               │
+│   dotfiles     1 ││ [ ] found-skill                       ~200               │
+│   flood-war…   1 ││ [ ] react-best-practices              ~240               │
+│ ▸ homelab      2 ││                                                          │
+│   homelab-p…   1 ││                                                          │
+│   infra-game   1 ││                                                          │
+│   sovl-clone   1 ││                                                          │
+│   strategies   1 ││                                                          │
+│   tenebrae     2 ││                                                          │
+│   wbg-arch     1 ││                                                          │
+│   wbg-housi…   1 ││                                                          │
+│   wbg-world…   1 ││                                                          │
+│                  ││                                                          │
+│                  ││                                                          │
+│                  ││ skills per agent · tab: all tools                        │
+╰──────────────────╯╰──────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/k move  right skills  / filter  tab all tools  esc back  ? help  q quit

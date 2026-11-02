@@ -39,7 +39,7 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"19_card_learned", []check{{contextCard, ",", "previous learned"}, {contextCard, ".", "next learned"}, {contextCard, "u", "undo learned"}, {contextCard, "U", ""}}},
 		{"20_tools_one_list", []check{{contextTools, "]", ""}, {contextTools, "[", ""}, {contextTools, "left", ""}, {contextTools, "right", ""}, {contextTools, "R", "rescan"}, {contextTools, "r", ""}}},
 		{"21_no_tools_hl", []check{{contextTools, "h", ""}, {contextTools, "l", ""}, {contextTools, "v", ""}, {contextTools, "m", ""}}},
-		{"22_no_tools_screens", []check{{contextTools, "1", ""}, {contextTools, "2", ""}, {contextTools, "tab", ""}}},
+		{"22_tools_view_switch", []check{{contextTools, "1", ""}, {contextTools, "2", ""}, {contextTools, "tab", "skills per agent"}}},
 		{"23_no_accept_key", []check{{contextTools, "a", ""}, {contextTools, "x", ""}, {contextTools, ".", ""}}},
 		{"24_list_details", []check{{contextTools, "enter", "open actions"}}},
 		{"25_picker_space", []check{{contextToolsPicker, " ", "tick"}, {contextToolsPicker, "x", ""}}},

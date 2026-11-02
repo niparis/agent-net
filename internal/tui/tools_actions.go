@@ -860,6 +860,7 @@ func (m Model) submitToolAdd() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startNodeTools(name string) (tea.Model, tea.Cmd) {
+	m.tl.allTools = true
 	m.tl.search = "node:" + name
 	m.tl.row, m.tl.scroll = 0, 0
 	return m.startTools()

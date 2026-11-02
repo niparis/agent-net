@@ -289,6 +289,14 @@ func (m Model) openAssign(title, verb string, jobs []assignJob, notes []string) 
 }
 
 func jobLines(jobs []assignJob) []string {
+	if len(jobs) > 1 {
+		var out []string
+		for _, job := range jobs {
+			lines := jobLines([]assignJob{job})
+			out = append(out, lines[:len(lines)-1]...)
+		}
+		return append(out, tsDim.Render("  the gateway makes the exact plan for each one when you press enter"))
+	}
 	var out []string
 	imports := 0
 	for _, j := range jobs {
