@@ -156,6 +156,17 @@ Legend ────────────────────────�
   delegation policy      subagent or worker for code changes (a form)
   integrations           integrations for all machines: 7 checkboxes (a form)
   name this machine      every machine sees it; empty resets
+  Connected apps         manage connected apps
+
+ Connected apps
+  esc                    back
+  up/down, j/k           move
+  a                      add
+  x                      revoke
+  enter                  approve
+  r                      refuse
+  left, right            change kind
+  tab                    edit name
 
  Proposal detail
   esc                    back
