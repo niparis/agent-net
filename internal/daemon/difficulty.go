@@ -5,16 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/difficulty"
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/redact"
 )
 
 // Task difficulty from evidence (docs/design/task-difficulty.md sections 2, 4,
@@ -57,130 +52,20 @@ const difficultySchema = `{
   "confidence":   "low | medium | high"
 }`
 
-// assessDifficulty analyzes task and has a judge score the evidence. project is
-// the repository folder. It never returns a label other than normal on a
-// failure; err is set only when the caller's own context ended.
+// assessDifficulty analyzes task and has a judge score the evidence. It is the
+// daemon's call: the same work runs outside a daemon through
+// NewDifficultyAssessor (see difficulty_assessor.go).
 func (d *Daemon) assessDifficulty(ctx context.Context, project, task string) (difficulty.Assessment, error) {
-	started := time.Now()
-	a := difficulty.Assessment{Label: "normal"}
-	fallback := func(note string) (difficulty.Assessment, error) {
-		a.Notes = note
-		a.Elapsed = time.Since(started)
-		if ctx.Err() != nil {
-			return a, ctx.Err()
-		}
-		return a, nil
-	}
-	dir := strings.TrimSpace(project)
-	if dir == "" {
-		return fallback("difficulty: the project folder is not known; started at normal")
-	}
-	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		return fallback(fmt.Sprintf("difficulty: project folder %s is not available; started at normal", dir))
-	}
-	if strings.TrimSpace(task) == "" {
-		return fallback("difficulty: the task is empty; started at normal")
-	}
-	harness, model, err := d.difficultyModel(ctx)
-	if err != nil {
-		return fallback("difficulty: " + err.Error() + "; started at normal")
-	}
-	a.AnalyzerModel = harness + ":" + model
-	a.JudgeModel = a.AnalyzerModel
-	timeout := d.cfg.DifficultyTimeout
-	if timeout <= 0 {
-		timeout = defaultDifficultyTimeout
-	}
-
-	brief := analyzerBrief(task)
-	raw, err := d.runDifficultyOneShot(ctx, harness, model, dir, brief, timeout)
-	if err != nil {
-		return fallback("difficulty: the analyzer " + err.Error() + "; started at normal")
-	}
-	profile, err := difficulty.ParseProfile([]byte(raw))
-	if err != nil {
-		retry := brief + "\nThe previous reply did not parse: " + err.Error() + "\nReply with the JSON only.\n"
-		raw, runErr := d.runDifficultyOneShot(ctx, harness, model, dir, retry, timeout)
-		if runErr != nil {
-			return fallback("difficulty: the analyzer retry " + runErr.Error() + "; started at normal")
-		}
-		profile, err = difficulty.ParseProfile([]byte(raw))
-		if err != nil {
-			return fallback("difficulty: the analyzer reply did not parse: " + err.Error() + "; started at normal")
-		}
-	}
-	a.Profile = profile
-	a.Confidence = profile.Confidence
-	if profile.Confidence == "low" {
-		return fallback("difficulty: the analyzer confidence is low; started at normal")
-	}
-
-	judgeDir, err := os.MkdirTemp("", "agent-net-difficulty-judge-")
-	if err != nil {
-		return fallback("difficulty: cannot make a judge folder: " + err.Error() + "; started at normal")
-	}
-	defer os.RemoveAll(judgeDir)
-
-	scores, insufficient, err := d.judgeDifficulty(ctx, harness, model, judgeDir, profile, timeout)
-	if err != nil {
-		return fallback("difficulty: the judge " + err.Error() + "; started at normal")
-	}
-	if len(insufficient) > 0 {
-		patch, err := d.runDifficultyOneShot(ctx, harness, model, dir, analysisBrief(task, insufficient), timeout)
-		if err != nil {
-			return fallback("difficulty: the analyzer re-run " + err.Error() + "; started at normal")
-		}
-		merged, err := mergeDifficultyProfile(profile, []byte(patch), insufficient)
-		if err != nil {
-			return fallback("difficulty: the analyzed evidence could not be merged: " + err.Error() + "; started at normal")
-		}
-		profile = merged
-		a.Profile = profile
-		a.Confidence = profile.Confidence
-		if profile.Confidence == "low" {
-			return fallback("difficulty: the analyzer confidence is low; started at normal")
-		}
-		scores, insufficient, err = d.judgeDifficulty(ctx, harness, model, judgeDir, profile, timeout)
-		if err != nil {
-			return fallback("difficulty: the judge " + err.Error() + "; started at normal")
-		}
-		if len(insufficient) > 0 {
-			return fallback("difficulty: the judge still lacked evidence for " + strings.Join(insufficient, ", ") + "; started at normal")
-		}
-	}
-	a.Scores = scores
-	a.Label, a.D, a.Bottleneck = difficulty.Label(scores)
-	a.Elapsed = time.Since(started)
-	return a, nil
-}
-
-// difficultyModel returns the harness and model of both runs. An explicit
-// config pair wins. Otherwise it takes the lowest-max Codex profile of the
-// worker roster: the weakest model the owner has registered is the cheapest
-// one, and it is enough to find facts and score them.
-func (d *Daemon) difficultyModel(ctx context.Context) (string, string, error) {
-	harness := strings.ToLower(strings.TrimSpace(d.cfg.DifficultyHarness))
-	model := strings.TrimSpace(d.cfg.DifficultyModel)
-	if harness != "" || model != "" {
-		if harness == "" || model == "" {
-			return "", "", errors.New("the difficulty override needs both a harness and a model")
-		}
-		if !difficultyOneShotHarnesses[harness] {
-			return "", "", fmt.Errorf("harness %q has no supported one-shot run", harness)
-		}
-		return harness, model, nil
-	}
-	lookupCtx, cancel := context.WithTimeout(ctx, difficultyLookupTimeout)
-	defer cancel()
-	profiles, err := d.difficultyProfiles(lookupCtx)
-	if err != nil {
-		return "", "", err
-	}
-	harness, model, ok := cheapestDifficultyProfile(profiles, d.difficultyScores(lookupCtx), d.difficultyMinimums(lookupCtx))
-	if !ok {
-		return "", "", errors.New("no Codex profile in the worker roster can run a one-shot")
-	}
-	return harness, model, nil
+	return NewDifficultyAssessor(d.cfg, DifficultySources{
+		Profiles: d.difficultyProfiles,
+		Scores: func(ctx context.Context) ([]protocol.ModelScore, error) {
+			return d.difficultyScores(ctx), nil
+		},
+		Minimums: func(ctx context.Context) (map[string]float64, error) {
+			return d.difficultyMinimums(ctx), nil
+		},
+		Binary: d.harnessBinary,
+	}).Assess(ctx, project, task)
 }
 
 // difficultyProfiles reads the worker roster through the gateway link. The
@@ -309,14 +194,6 @@ func judgeBrief(profile difficulty.Profile) string {
 		`Reply like {"reasoning":3,"scope":3,"coupling":3,"uncertainty":3,"verification":3,"risk":3,"reasons":{"reasoning":"...","scope":"...","coupling":"...","uncertainty":"...","verification":"...","risk":"..."}}.` + "\n"
 }
 
-func (d *Daemon) judgeDifficulty(ctx context.Context, harness, model, dir string, profile difficulty.Profile, timeout time.Duration) (difficulty.Scores, []string, error) {
-	raw, err := d.runDifficultyOneShot(ctx, harness, model, dir, judgeBrief(profile), timeout)
-	if err != nil {
-		return difficulty.Scores{}, nil, err
-	}
-	return difficulty.ParseScores([]byte(raw))
-}
-
 // mergeDifficultyProfile replaces the named sections of base with the sections
 // the targeted analyzer returned, then validates the whole profile again.
 func mergeDifficultyProfile(base difficulty.Profile, patch []byte, dimensions []string) (difficulty.Profile, error) {
@@ -344,72 +221,6 @@ func mergeDifficultyProfile(base difficulty.Profile, patch []byte, dimensions []
 		return difficulty.Profile{}, err
 	}
 	return difficulty.ParseProfile(merged)
-}
-
-// runDifficultyOneShot runs one prompt and returns its final text. It never
-// runs longer than timeout.
-func (d *Daemon) runDifficultyOneShot(ctx context.Context, harness, model, dir, prompt string, timeout time.Duration) (string, error) {
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	switch harness {
-	case "codex":
-		return d.runCodexExec(runCtx, model, dir, prompt, timeout)
-	default:
-		return "", fmt.Errorf("harness %q has no supported one-shot run", harness)
-	}
-}
-
-// runCodexExec is `codex exec` in a read-only sandbox. The final message goes
-// to -o, so progress on stdout and stderr cannot be mistaken for the answer.
-func (d *Daemon) runCodexExec(ctx context.Context, model, dir, prompt string, timeout time.Duration) (string, error) {
-	bin, err := d.harnessBinary("codex")
-	if err != nil {
-		return "", fmt.Errorf("cannot run: %w", err)
-	}
-	outDir, err := os.MkdirTemp("", "agent-net-difficulty-out-")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(outDir)
-	last := filepath.Join(outDir, "last-message")
-	args := []string{"exec", "-C", dir, "-s", "read-only", "--skip-git-repo-check", "--ephemeral", "-o", last}
-	if model != "" {
-		args = append(args, "-m", model)
-	}
-	if codexConfigDefinesAgentNet() {
-		args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
-	}
-	args = append(args, "-")
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = dir
-	cmd.Stdin = strings.NewReader(prompt)
-	stderr := &capWriter{limit: 4096}
-	cmd.Stderr = stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
-	cmd.WaitDelay = 2 * time.Second
-	err = cmd.Run()
-	out, _ := os.ReadFile(last)
-	if ctx.Err() != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("timed out after %s", timeout)
-		}
-		return "", errors.New("was canceled")
-	}
-	if err != nil {
-		detail := redact.Cut(strings.Join(strings.Fields(stderr.String()), " "), 300)
-		if detail == "" {
-			return "", fmt.Errorf("failed: %v", err)
-		}
-		return "", fmt.Errorf("failed: %v: %s", err, detail)
-	}
-	text := strings.TrimSpace(string(out))
-	if text == "" {
-		return "", errors.New("returned no message")
-	}
-	return text, nil
 }
 
 // capWriter keeps the first limit bytes and counts the rest.
