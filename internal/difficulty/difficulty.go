@@ -19,16 +19,18 @@ type DimensionRubric struct {
 	Name     string
 	Evidence string
 	Anchors  [3]string
+	// Examples are real tasks at scores 1, 3 and 5, to calibrate the judge.
+	Examples [3]string
 }
 
 // Rubric is the six-dimensional rubric used by the judge.
 var Rubric = []DimensionRubric{
-	{"Reasoning", "The closest existing code it can copy, how the task differs, new logic needed", [3]string{"Mechanical, a copied pattern", "Some new logic", "New or subtle reasoning"}},
-	{"Scope", "Components touched, the distinct kinds of change, which edits repeat", [3]string{"Local", "Several distinct changes", "Many independent changes"}},
-	{"Coupling", "Contracts, shared state and invariants affected", [3]string{"Isolated", "Crosses established boundaries", "Strongly interconnected"}},
-	{"Uncertainty", "Open questions, unverified assumptions, what was inspected", [3]string{"Fully understood", "Some unknowns", "Basic unknowns"}},
-	{"Verification", "Existing tests, how to reproduce and check the behavior", [3]string{"Fast deterministic tests", "Integration tests needed", "Hard to reproduce or check"}},
-	{"Risk", "Data changes, security, compatibility, reversibility", [3]string{"Easily reversed", "Real side effects", "Severe or irreversible"}},
+	{"Reasoning", "The closest existing code it can copy, how the task differs, new logic needed", [3]string{"Mechanical, a copied pattern", "Some new logic", "New or subtle reasoning"}, [3]string{"keep the last good list when a poll fails", "an approval flow with a code typed in the TUI", "an OAuth 2.1 server with PKCE, refresh families and replay detection"}},
+	{"Scope", "Components touched, the distinct kinds of change, which edits repeat", [3]string{"Local", "Several distinct changes", "Many independent changes"}, [3]string{"one file and its test, or one pattern repeated in many files", "a gateway table, an owner op and a TUI screen", "a public listener, OAuth, phone pairing, TUI and docs together"}},
+	{"Coupling", "Contracts, shared state and invariants affected", [3]string{"Isolated", "Crosses established boundaries", "Strongly interconnected"}, [3]string{"a display plugin that only reads one command's output", "a new owner op through operator, daemon and gateway", "message delivery that every agent and every harness depends on"}},
+	{"Uncertainty", "Open questions, unverified assumptions, what was inspected", [3]string{"Fully understood", "Some unknowns", "Basic unknowns"}, [3]string{"the brief names the cause and the fix", "the brief names the goal but the right place in the code must be found", "the brief asks to first find how several harnesses work before choosing an approach"}},
+	{"Verification", "Existing tests, how to reproduce and check the behavior", [3]string{"Fast deterministic tests", "Integration tests needed", "Hard to reproduce or check"}, [3]string{"a fix covered by fast unit tests with a fake clock or fake process", "needs a multi-package test with a fake daemon and gateway", "needs a real external client (for example a hosted bot) to confirm"}},
+	{"Risk", "Data changes, security, compatibility, reversibility", [3]string{"Easily reversed", "Real side effects", "Severe or irreversible"}, [3]string{"display or text only, undone by the next release", "a database migration or a change every worker start goes through", "a public endpoint that hands out credentials"}},
 }
 
 var analyzerRules = []string{
@@ -41,9 +43,10 @@ var analyzerRules = []string{
 // RubricText returns the rubric as plain text for a judge prompt.
 func RubricText() string {
 	var b strings.Builder
-	b.WriteString("Scores 2 and 4 are in-between cases.\n")
+	b.WriteString("Start every dimension at 1. Raise a score only when the evidence names a concrete reason, and say which evidence in the reason. Scores 2 and 4 are in-between cases.\n")
 	for _, d := range Rubric {
-		fmt.Fprintf(&b, "\n%s\nEvidence: %s\n1: %s\n3: %s\n5: %s\n", d.Name, d.Evidence, d.Anchors[0], d.Anchors[1], d.Anchors[2])
+		fmt.Fprintf(&b, "\n%s\nEvidence: %s\n1: %s (for example: %s)\n3: %s (for example: %s)\n5: %s (for example: %s)\n",
+			d.Name, d.Evidence, d.Anchors[0], d.Examples[0], d.Anchors[1], d.Examples[1], d.Anchors[2], d.Examples[2])
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -92,7 +95,8 @@ type Profile struct {
 	Confidence   string              `json:"confidence"`
 }
 
-var evidenceLocation = regexp.MustCompile(`^.+:[0-9]+(?:-[0-9]+)?$`)
+// A file path with or without a line or line range, for example a.go, a.go:3 or a.go:3-9.
+var evidenceLocation = regexp.MustCompile(`^[^\s:]+\.[A-Za-z0-9]+(?::[0-9]+(?:-[0-9]+)?(?:, ?[0-9]+(?:-[0-9]+)?)*)?$|^[^\s:]+/[^\s]*$`)
 
 // ParseProfile decodes a complete profile, refusing extra and missing fields.
 func ParseProfile(raw []byte) (Profile, error) {

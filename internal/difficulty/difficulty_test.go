@@ -98,3 +98,23 @@ func TestParseProfileAcceptsFreeFormInspected(t *testing.T) {
 		t.Fatalf("free-form inspected entries refused: %v", err)
 	}
 }
+
+func TestEvidenceLocationForms(t *testing.T) {
+	for _, ok := range []string{"internal/a.go", "internal/a.go:3", "internal/a.go:3-9", "internal/a.go:3, 12-14", "plugins/pi/", "docs/design/x.md"} {
+		if !evidenceLocation.MatchString(ok) {
+			t.Errorf("refused %q", ok)
+		}
+	}
+	for _, bad := range []string{"", "the gateway", "see above", "a.go:x"} {
+		if evidenceLocation.MatchString(bad) {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+func TestRubricTextStartsAtOneWithExamples(t *testing.T) {
+	text := RubricText()
+	if !strings.Contains(text, "Start every dimension at 1") || !strings.Contains(text, "for example: keep the last good list") {
+		t.Fatalf("rubric text lacks the start-at-1 rule or the examples:\n%s", text)
+	}
+}
