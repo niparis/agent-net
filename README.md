@@ -8,9 +8,9 @@
 <h1 align="center">agent-net</h1>
 
 <p align="center">
-  <b>Let the coding agents on your machines talk to each other.</b><br>
-  Claude Code, Codex, Pi and OpenCode sessions on your laptop and your VMs find each other,<br>
-  message each other's live sessions, and get the answers back. No copy and paste.
+  <b>Run all your coding agents, on all your machines, from one place.</b><br>
+  Claude Code, Codex, Pi and OpenCode sessions on your laptop and your VMs talk to each other,<br>
+  hand work to cheaper workers, and wait for your decisions in one terminal view.
 </p>
 
 <p align="center">
@@ -22,41 +22,37 @@
 </p>
 
 <p align="center">
-  <a href="#who-is-this-for">Who is this for</a> ·
   <a href="#quickstart">Quickstart</a> ·
+  <a href="#a-tour">Tour</a> ·
   <a href="#how-it-works">How it works</a> ·
-  <a href="#what-it-looks-like">Demo</a> ·
   <a href="docs/security.md">Security</a> ·
   <a href="docs/README.md">Docs</a>
 </p>
 
+<p align="center">
+  <img alt="The agent-net TUI: machines with CPU and memory, every session on every machine with its agent, project, model and status, and the CTO box" src="docs/img/tui/sessions.png" width="900">
+</p>
+
 ---
 
-- **Ask the agents that are already working.** Your agent can send a question to a Claude Code, Codex, Pi or OpenCode session that is open on any of your machines. It arrives there like a message you typed, that agent answers from its own project, and the answer comes back into your conversation.
-- **Across machines and agents.** Claude Code, Codex, Pi and OpenCode, on Linux and macOS. Each agent uses the same `agent_*` tools.
-- **Share any MCP server.** Add an MCP server once, from the CLI or by asking your agent, and sessions on every machine can use its tools. Tokens stay on the machine that hosts the server.
-- **One binary, one line.** Pure Go with SQLite built in. One `curl` line installs the first machine, and one invite line adds each other machine.
-- **Your network only.** One-time join codes, TLS pinned to your gateway's own CA, and a check of which local session is calling.
-- **One command upgrades everything.** `agent-net upgrade` on the gateway updates every machine on the network.
+- **Talk.** Your agent asks a question to a session that is already open on another machine, in another harness. It arrives there like a message you typed, that agent answers from its own project, and the answer comes back. No copy and paste.
+- **Delegate.** An agent hands a task to a worker: a new session in its own git worktree. A judge scores how hard the task is, and agent-net picks a model that fits, from the subscriptions with quota left. The worker hands back a report with the facts.
+- **Govern.** A map of your agents and the rules between them, a CTO agent that changes them on request, and one Inbox for every decision that needs you.
+
+One Go binary with SQLite built in. One line installs the first machine, one line adds each other machine, and `agent-net upgrade` updates them all.
 
 ## Who is this for
 
-**For one person who runs many coding agents at once**, on a laptop and one or more VMs or servers, and works across several repositories that depend on each other.
+**One person who runs many coding agents at once**, on a laptop and one or more VMs or servers, across repositories that depend on each other.
 
 It fits when you:
 
-- keep several agent sessions open at the same time, each on its own project or machine;
-- copy text between those sessions by hand today (an error from one service, the answer to "what does this API return", the result of a deploy);
-- use more than one harness (Claude Code, Codex, Pi, OpenCode) and want them to work together;
-- want an agent to hand a coding task to a cheaper model or a second agent, and get a checked report back, without watching it;
-- want one terminal view of every agent on every machine: what each one is doing, which one waits for you, and what they say to each other.
+- keep several agent sessions open, each on its own project or machine, and copy text between them by hand today;
+- use more than one harness (Claude Code, Codex, Pi, OpenCode);
+- want agents to hand coding work to cheaper models, and get a checked report back without watching;
+- pay for several AI subscriptions and want them used evenly, not one exhausted while another sits idle.
 
-It is not for:
-
-- **Teams.** Every machine belongs to one owner. There are no user accounts, roles or shared access between people.
-- **Untrusted machines.** Every enrolled machine is trusted. Do not join a machine you do not control.
-- **A hosted service.** You run the gateway yourself, on one of your machines. Nothing goes through a third party.
-- **One agent on one machine.** With a single session there is no one to talk to.
+It is not for teams (every machine belongs to one owner), untrusted machines (every enrolled machine is trusted), or a hosted service (you run the gateway yourself).
 
 ## Quickstart
 
@@ -68,11 +64,79 @@ curl -fsSL https://niparis.github.io/agent-net/install | sh
 agent-net
 ```
 
-To add another machine, open `agent-net` and ask the CTO to add one. Paste the line it prints in a shell on the new machine. Make sure `~/.local/bin` is on your `PATH`; the install script prints the line to add if it is not.
+To add a machine, press `c` to open the CTO and ask it to add one. Paste the line it prints in a shell on the new machine. Make sure `~/.local/bin` is on your `PATH`; the install script prints the line to add if it is not.
 
 Then open a new agent session and ask: *"Who's on the agent net?"*
 
-Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, ask the CTO for the Tailscale install line: [docs/troubleshooting.md](docs/troubleshooting.md).
+Install details and options: [docs/setup.md](docs/setup.md). On a Mac, ask the CTO for the Tailscale install line: [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## A tour
+
+`agent-net` opens the TUI. It has seven tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Tools, **6** Settings, **7** Inbox. `?` lists the keys of the screen you are on.
+
+### Sessions and messages
+
+Every session on every machine, with its agent, project, model, status, CPU and memory. Enter opens a session live: its prompts, replies and tool calls. Messages (tab 4) shows what the agents say to each other.
+
+Ask an agent things like:
+
+- "Ask the Pi session on the build VM which port its dev server uses."
+- "Tell the backend session that the API field `user_id` is now `account_id`."
+
+The message enters the other session as a new turn, labelled with its sender, and the reply comes back into your conversation. Agents answer each other without waiting for you; they still ask you before risky or out-of-scope work. Per session, the RULE cell sets how requests from other agents are handled (`normal`, `ask` or `auto`), and the DELEGATE cell sets who does the coding: the session itself, a native subagent on a cheaper model, or workers. See [delegation policy](docs/reference.md#delegation-policy).
+
+### Workers
+
+Ask an agent to "do this with a worker". It calls `agent_worker_start` with a brief, and agent-net:
+
+1. **Scores the brief.** A cheap judge rates six things (reasoning, scope, coupling, uncertainty, verification, risk) from 1 to 5. A fixed formula turns them into a level, from `trivial` to `very_complex`. The agent tells you the result in one line, and the Claude workers panel shows it next to the worker.
+2. **Picks a model.** Among the worker profiles you registered, it keeps the ones good enough for that level, prefers providers that are behind their quota pace, keeps the protected ones (your orchestrator's subscription) for last, and rotates so no model takes every task.
+3. **Starts the worker** in its own git worktree, in a sandbox: it writes only in its worktree and needs no approvals.
+4. **Sends a notice** when the worker ends: status, run time, tokens, the branch and the diff stat, with the worker's report. The calling agent reviews the diff and runs the tests before it tells you the work is done.
+
+Each task's outcome is recorded: nudges, fixes, and bugs found later. The Quality panel (tab 3, `d` for details) shows how much of the orchestrator's time each model costs per task, by level.
+
+<p align="center">
+  <img alt="Quality analysis: four cards, simple, normal, hard and very complex, each listing the models with the minutes of orchestrator time per task and the number of tasks" src="docs/img/tui/quality.png" width="900">
+</p>
+
+Quotas (tab 3) also shows each subscription's usage and pace. Details: [workers](docs/reference.md#workers), [subscription quotas](docs/reference.md#subscription-quotas).
+
+### The graph and the CTO
+
+The Graph (tab 2) is the map of your agents: each project node has a charter (what it does, what it accepts and refuses), and edges set the rules between them. A `depends` edge says who may ask whom, and whether requests run without asking (`auto`), wait for you (`ask`) or are refused (`never`). A `deploys` edge lets one agent ship another's project.
+
+The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Small changes apply at once and show an undo key. Changes that widen what agents may do become proposals that wait for you.
+
+### Inbox
+
+<p align="center">
+  <img alt="Sessions with the Inbox tab showing 2 waiting, and the CTO box with two open proposals" src="docs/img/tui/cto-inbox.png" width="900">
+</p>
+
+Everything that waits for you is in one place (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. See [owner inbox](docs/reference.md#owner-inbox-and-written-approvals).
+
+### Connected apps
+
+Cloud agents (for example Grok Bot) and your phone can use agent-net through MCP over OAuth. The app shows a code; you approve it in the TUI (Settings, tab 6), as a **bot** that acts under its own name with a small set of tools, or as an **owner app** that acts as you. Internet access is off until you turn it on; with Tailscale, agent-net sets up the Funnel route for you.
+
+<p align="center">
+  <img alt="Connected apps: approve this app? Client Cursor, return host www.cursor.com, kind bot or owner app, name" src="docs/img/tui/connected-apps.png" width="900">
+</p>
+
+See [connected apps](docs/reference.md#connected-apps).
+
+### Shared MCP servers
+
+Add an MCP server once, and sessions on every machine can use its tools. Tokens stay on the machine that hosts it.
+
+```
+agent-net mcp add homelab --url http://10.0.0.5:8000/mcp \
+  --header-file 'Authorization=~/.secrets/homelab'
+agent-net mcp list
+```
+
+Its tools appear in every session as `homelab__<tool>`. Details: [docs/mcp-registry.md](docs/mcp-registry.md).
 
 ## How it works
 
@@ -81,90 +145,19 @@ Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, as
   <img alt="Claude Code, Pi and OpenCode sessions on your laptop and your VM, each machine with an agent-net daemon, all linked over TLS to one agent network with a directory, messages and a registry" src="docs/img/overview-light.svg">
 </picture>
 
-- **One gateway** runs on one machine. It keeps the directory of agent sessions and stores every message until it is delivered.
-- **One daemon** runs on each machine. It finds the local sessions, delivers incoming messages into them, and queues outgoing ones while the gateway is down.
-- **Each session gets the same tools:** `agent_sessions_find`, `agent_session_get`, `agent_announce`, `agent_message_send`, `agent_message_reply`, `agent_messages_find` and `agent_message_get`, and tools to register and list projects (`agent_project_add`, `agent_projects_find`). Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
-- **Messages arrive as a new turn** in the running session, like something you typed. The reply is routed back to the sender: Claude Code answers with its own `SendMessage`, and the daemon turns that into a network reply. Pi answers with `agent_message_reply`.
-
-## How agent-net thinks
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/primitives-dark.svg">
-  <img alt="The owner sets the rules for agents, which have sessions, projects and work, and share tools, knowledge and messages" src="docs/img/primitives-light.svg">
-</picture>
-
-- **Owner and agents:** The owner sets charters, authority and autonomy. Agents have a kind, state and sessions.
-- **Rules and work:** Edges govern requests. Tasks are contracts; workers return reports to their callers. Projects and workspaces give agents a place to work.
-- **Shared:** Tools, knowledge, messages, budget and Needs you support the network.
-
-See [Primitives](docs/decisions/0036-primitives.md) for the terms and their display names.
-
-## What it looks like
-
-A real run with two throwaway sessions on one machine: Claude Code in a frontend project, Pi in an API project. The transcript is trimmed where marked with `...`.
-
-```
-claude (web-frontend)
-> Our vite proxy sends /api to localhost:3000. Use agent_sessions_find to find the api-server
-  session, ask it which port its dev server uses, and tell me if the proxy needs to change.
-
-  Called agent-net 5 times
-● I found the api-server session (s_21ace6ec45feacd7, cwd /tmp/an/api-server) and sent it
-  the question ... The message is delivered, but no reply has arrived yet.
-
-pi (api-server)
-  From web-frontend (/tmp/an/web-frontend). Our Vite proxy forwards /api to localhost:3000.
-  Which port does your dev server use? If it is not 3000, tell me the port so I can update
-  the proxy.
-
-  [agent-net] message m_5512ffea59eae95e from web-frontend-7a (session s_7493c75f4ef83ae9),
-  conversation c_c2d8a6513098624d.
-  This is from another agent working on your user's machines. Answer it directly with the
-  agent_message_reply tool (message_id="m_5512ffea59eae95e") if you can help. Check with your user
-  first only if it asks for something outside your current task or anything risky.
-
-  $ ls -a; rg -n 'PORT|listen\(|3000|8000|8080' . ...
-  ./server.py:4:PORT = int(os.environ.get("API_PORT", "8081"))
-  ...
-  agent_announce task="Check which port the API server listens on" ...
-  agent_message_reply message_id="m_5512ffea59eae95e" body="The API defaults to port 8081, bound to 127.0.0.1 ...
-  Sent m_94f1048361fe4b0b to s_7493c75f4ef83ae9 (dispatched).
-
-claude (web-frontend)
-› Message from @api-server: The API defaults to port 8081, bound to 127.0.0.1 (/tmp/an/api-server/server.py). Set the Vite /api proxy target to htt…
-● Yes, the proxy needs to change. The API server defaults to port 8081, not 3000.
-  - Current: /tmp/an/web-frontend/vite.config.js:1 proxies /api to http://localhost:3000.
-  - Needed: point it at http://127.0.0.1:8081.
-  ...
-
-$ agent-net messages
-TIME      MESSAGE             STATE      TYPE     FROM                TO                  BODY
-10:30:10  m_94f1048361fe4b0b  delivered  reply    s_21ace6ec45feacd7  s_7493c75f4ef83ae9  The API defaults to port 8081, bound to 127.0.0.1 ...
-10:29:50  m_5512ffea59eae95e  replied    request  s_7493c75f4ef83ae9  s_21ace6ec45feacd7  From web-frontend (/tmp/an/web-frontend). Our Vite...
-```
-
-Neither agent asked you to copy anything. Pi answered from its own files, and Claude Code used the answer in its own project. The session IDs, paths and message IDs are the real values from that run.
-
-## Workers
-
-From the command line or an agent, you can start a new agent session in a project on any machine and give it a task. The CTO can also propose a worker start for your approval. OpenCode first:
-
-```sh
-agent-net start --project shop --harness opencode --model anthropic/claude-sonnet-5 --isolation worktree "add a /health route and a test"
-agent-net workers     # who runs what, and who started it
-agent-net stop s_...  # end one
-```
-
-The worker works with nobody watching, under the project's own permission settings, and hands back a report with the facts: status, run time, tokens, and the diff. It ends by itself after 60 minutes of silence or 4 hours. From Claude Code, ask it to "use agent-net to do this with an opencode worker" and it calls `agent_worker_start`. See [docs/reference.md](docs/reference.md#workers).
+- **One gateway** runs on one machine. It keeps the directory of sessions, the graph, the worker records and every message until it is delivered.
+- **One daemon** runs on each machine. It finds the local sessions, delivers messages into them, starts workers, runs the difficulty judge, and queues outgoing messages while the gateway is down.
+- **Every session gets the same `agent_*` tools**: to find sessions, machines and projects, send and reply, announce its task, ask you a question, start, find, stop and rate workers, and read the graph. Claude Code and Codex get them from `agent-net mcp`, Pi from an extension, OpenCode from a plugin.
+- **Connected apps** reach the gateway through a separate listener on `127.0.0.1:7422`, which is published on the internet only when you turn it on.
 
 ## Supported agents
 
-| Agent | Status | How it connects | Tested with |
-|---|---|---|---|
-| Claude Code | live | A stdio MCP server per session (`agent-net mcp`) for the tools, and the session's own inbox socket for delivery. Setup also offers a plugin that shows the workers the session started above the prompt. | 2.1.312 |
-| Pi | live | An extension that talks to the local daemon socket | 1.4.x |
-| OpenCode | live | A plugin inside its v2 background service, one daemon connection per session | 2.2.0 |
-| Codex | live | A stdio MCP server per thread (`agent-net mcp --codex`) for the tools; the daemon finds open threads and queues messages through the shared Codex app server ([decision 0012](docs/decisions/0012-codex-peers.md)) | 0.163 |
+| Agent | How it connects | Tested with |
+|---|---|---|
+| Claude Code | A stdio MCP server per session (`agent-net mcp`), and the session's own inbox socket for delivery. Setup also offers a plugin that shows the session's workers above the prompt. | 2.1.316 |
+| Codex | A stdio MCP server per thread (`agent-net mcp --codex`); messages go through the shared Codex app server ([decision 0012](docs/decisions/0012-codex-peers.md)) | 0.166.0 |
+| Pi | An extension that talks to the local daemon socket | 1.4.0 |
+| OpenCode | A plugin inside its v2 background service | 2.2.0 |
 
 Platforms: Linux (systemd user services) and macOS (launchd), on amd64 and arm64.
 
@@ -172,92 +165,25 @@ Platforms: Linux (systemd user services) and macOS (launchd), on amd64 and arm64
 
 The short version. The full model, including what is not protected, is in [docs/security.md](docs/security.md).
 
-- Built for machines you own, on a LAN or a Tailscale network. Do not expose port 7420 to the internet.
-- A machine joins with a one-time code (10 minutes, one use) and the SHA-256 of the gateway's CA. A wrong fingerprint stops the join.
-- Traffic between daemons and the gateway is TLS with the gateway's own CA, which is the only CA a joined machine trusts. Each machine has its own token, stored hashed on the gateway.
-- The daemon checks which local process is calling: on Linux and macOS it reads the caller's PID from the kernel. For Claude Code it matches the parent PID to `~/.claude/sessions/<pid>.json`. The check for Pi is weaker: it looks at the process command line.
-- A message enters a session as a user turn, labelled with its sender. Your harness permission rules still apply to what the agent does next, and a message from another agent is never your approval.
-- The guidance text agent-net adds to your instruction files is advice to the model, not enforcement.
+- Built for machines you own, on a LAN or a Tailscale network. Do not expose the gateway port (7420) to the internet.
+- A machine joins with a one-time code (10 minutes, one use) and the SHA-256 of the gateway's CA. Traffic is TLS with the gateway's own CA, and each machine has its own token.
+- The daemon checks which local process is calling, from the kernel's view of the caller's process.
+- A message from another agent is never your approval. Owner-only changes need your action in the TUI.
+- Connected apps: off by default. Each app is approved by you in the TUI with a one-time code, gets only its own tools, and is rate limited. Revoke it with `x`.
+- The guidance agent-net adds to your instruction files is advice to the model, not enforcement.
 - Not protected: a compromised enrolled machine, prompt injection carried in a message, and any process running as your user.
-
-## Use
-
-Start a new Claude Code, Codex, Pi or OpenCode session after the install. Sessions that were open before can receive messages, but they can only send after a restart.
-
-The TUI has five tabs: 1 Sessions, 2 Graph, 3 Quotas, 4 Messages and 5 Tools.
-On Graph, `/` finds an agent and Enter opens its charter card. Esc returns to
-the same node; Enter on the card opens Sessions for its project.
-
-Ask an agent things like:
-
-- "Who's on the agent net?"
-- "Ask the Pi session on the build VM which model it runs."
-- "Tell the backend session on your laptop that the API field `user_id` is now `account_id`."
-
-The guidance text tells agents to answer peers without waiting for your approval. They still ask you first before risky or out-of-scope work, unless you turned on peer trust for that session (key `t` in the TUI): then it acts on requests from your other agents without asking, and still asks before deleting data, force-pushing, spending money or sharing secrets. See [security.md](docs/security.md#peer-trust).
-
-You can also set, per session or per project, who does the coding: key `p` in the TUI. A session can do it itself, hand it to a native subagent on a cheaper model, or hand it to a worker. agent-net applies the policy on every turn, so you do not write instructions into each session. See [delegation policy](docs/reference.md#delegation-policy).
-
-Share an MCP server with every machine. Ask your agent ("add the MCP server at http://10.0.0.5:8000/mcp as homelab, token in ~/.secrets/homelab") or use the CLI:
-
-```
-agent-net mcp add clickhouse -- uvx mcp-clickhouse          # a server started from a command, runs on this machine
-agent-net mcp add homelab --url http://10.0.0.5:8000/mcp \
-  --header-file 'Authorization=~/.secrets/homelab'          # a server reached over HTTP or SSE
-agent-net mcp list                                          # servers, host machine, tools, health
-```
-
-Its tools then appear in Claude Code and Pi sessions on every machine as `homelab__<tool>`. Details: [docs/mcp-registry.md](docs/mcp-registry.md).
-
-Register your repositories as projects, so they are known even before a session ran in them. Ask your agent ("register all the repos in ~/code to the agent net") or use the CLI on the machine that holds the folders:
-
-```
-agent-net projects scan ~/code --dry-run    # list the repositories a scan would register
-agent-net projects scan ~/code              # register them (3 levels deep by default)
-agent-net projects add ~/work/api           # register one repository
-agent-net projects                          # all projects, SOURCE is registered, seen or both
-agent-net projects remove api               # remove a registration (by name or path)
-```
-
-A folder can only be registered on its own machine. Details: [docs/reference.md](docs/reference.md#the-project-registry).
-
-From a shell:
-
-```
-agent-net status      # this machine: gateway connection, local sessions
-agent-net list        # all agent sessions on all machines
-agent-net messages    # recent messages and their state
-agent-net tui         # live, read-only view of every session on every machine
-```
-
-`agent-net tui` shows each machine with its harnesses, CPU, memory and load, every session with its project, branch, model, mode (fg or bg), status and the CPU, memory and process count of its process tree, and the messages as they move. Enter opens a session live: its prompts, replies and tool calls. The CTO box below the list is read-only; Enter opens the full CTO. `/` filters, `o` shows offline sessions, `?` lists the keys, `q` quits. Details: [docs/reference.md](docs/reference.md#the-tui-screen).
-
-A message goes through these states: `stored`, `dispatched`, `delivered`, `replied`. It ends as `failed` or `expired` if it cannot be delivered.
-
-Limits, to stop agents that loop: 64 KiB per message, 20 messages per minute per sender, 50 messages per conversation, 8 hops per chain of replies.
-
-To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to delete its credentials too). What it changes and undoes is listed in [docs/reference.md](docs/reference.md).
 
 ## Upgrade
 
-On the gateway machine:
-
 ```
-agent-net upgrade            # upgrade the gateway, then every connected machine
-agent-net upgrade --check    # show the latest release and each machine's version; change nothing
+agent-net upgrade            # on the gateway: upgrade it, then every connected machine
+agent-net upgrade --check    # show the latest release and each machine's version
 agent-net upgrade --rollback # go back to the previous version on this machine
 ```
 
-`agent-net upgrade` downloads the latest release, checks its SHA-256, keeps the old binary as `agent-net.prev`, and restarts the services. Then it tells each connected machine to upgrade from the gateway, and prints one line per machine:
+A machine that was offline upgrades itself when it reconnects. Running Claude Code sessions switch to the new version by themselves, Pi needs `/reload`, and OpenCode reloads its plugin by itself. Details: [docs/upgrade.md](docs/upgrade.md).
 
-```
-laptop   n_89abcdef01234567  v0.2.0 -> v0.2.1  ok
-vm       n_0123456789abcdef  v0.2.0 -> v0.2.1  ok
-```
-
-A machine that is offline is listed as `offline`. It upgrades itself when it reconnects and sees that the gateway serves a newer release. Turn this off on a machine with `AGENT_NET_NO_AUTO_UPGRADE=1` or `agent-net daemon --no-auto-upgrade`. After `agent-net upgrade --rollback` the machine does not upgrade to the version it left, until a newer release comes out or you run `agent-net upgrade` there. Running Claude Code sessions (started on v0.3.5 or later) switch to the new version by themselves, Pi needs `/reload`, and OpenCode reloads its plugin by itself (see [docs/upgrade.md](docs/upgrade.md)). `agent-net nodes` shows the version of every machine.
-
-Coming from v0.1.x, which has no `upgrade` command: run the Quickstart install line once on each machine. It finds the existing install and updates it. Details: [docs/upgrade.md](docs/upgrade.md).
+To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to delete its credentials too).
 
 ## How it differs
 
@@ -265,46 +191,23 @@ Coming from v0.1.x, which has no `upgrade` command: run the Quickstart install l
 |---|---|---|
 | A2A | A protocol for agent services to call each other | Between agent services |
 | MCP | A protocol for an agent to use tools | Agent to tools |
-| Claude Code `SendMessage` and `ListAgents` | Built-in messaging between Claude Code sessions | One machine |
-| agent-net | Delivers messages into running interactive coding sessions, with presence and routed replies | Your machines, and different agents (Claude Code, Codex, Pi, OpenCode) |
+| Claude Code `SendMessage` | Built-in messaging between Claude Code sessions | One machine, one harness |
+| agent-net | Messages into running interactive sessions, workers with model choice, and owner control | Your machines, four harnesses |
 
-agent-net uses MCP to give Claude Code its tools. It is not an implementation of A2A.
+agent-net uses MCP to give agents their tools. It is not an implementation of A2A.
 
 ## Roadmap
 
-- Approve CTO proposals in the CTO chat: agent-net asks the owner in a dialog of the CTO's own harness (an MCP elicitation, answered by the person, not the model), so a typed "approved" is not needed and the TUI is optional. The CTO's text still names "Needs you" (now the Inbox, tab 7) and is too long.
-- Leaving the network: let a session opt out of being listed
-- MCP registry tools in OpenCode (Claude Code and Pi have them today)
-- MCP resources, prompts and OAuth logins in the registry
-- Shared skills registry
+- **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
+- **Approve CTO proposals in the CTO chat**, through a dialog of the CTO's own harness (an MCP elicitation, answered by the person, not the model), so the TUI is optional.
+- **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
+- **The phone app.**
+- MCP resources, prompts and OAuth logins in the registry.
+- A shared skills registry.
 
 ## Development
 
-Needs Go 1.27 or newer.
-
-```
-go vet ./... && go test -race ./...
-```
-
-| Path | What |
-|------|------|
-| `cmd/agent-net` | the binary and its subcommands |
-| `internal/gateway` | gateway: TLS, enrollment, directory, message store, install endpoints |
-| `internal/daemon` | daemon: local socket, caller checks, outbox, Claude adapter |
-| `internal/mcpserver` | the MCP server for Claude Code sessions |
-| `internal/setup` | `setup`, `invite`, `uninstall`, service files |
-| `internal/guidance` | the guidance text added to agent instruction files |
-| `plugins/pi` | the Pi extension |
-| `plugins/opencode` | the OpenCode v2 plugin |
-| `plugins/claude/agent-net-workers` | the Claude Code plugin that shows a session's workers |
-| `install.sh` | the one-line installer, published with each release |
-| `scripts/dist.sh` | builds Linux and macOS binaries from source |
-
-See [AGENTS.md](AGENTS.md) for conventions (also for coding agents) and [RELEASING.md](RELEASING.md) for how to cut a release.
-
-## Documentation
-
-All docs are indexed in [docs/README.md](docs/README.md): setup, reference, security, troubleshooting, and the design history.
+Go 1.27 or newer. Build, test and conventions are in [AGENTS.md](AGENTS.md), for people and coding agents alike. Releasing: [RELEASING.md](RELEASING.md). All docs are indexed in [docs/README.md](docs/README.md).
 
 ## License
 
