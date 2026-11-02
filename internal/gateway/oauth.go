@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/niparis/agent-net/internal/ratelimit"
 )
 
 const oauthBrowserCookieName = "__Secure-agent_net_oauth_browser"
@@ -92,6 +94,7 @@ func validOAuthList(v []string, allowed map[string]bool) bool {
 func (g *Gateway) oauthRegister(w http.ResponseWriter, r *http.Request) {
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
+		g.limiter.Fail(ratelimit.ClientAddr(r))
 		oauthError(w, 400, "invalid_client_metadata")
 		return
 	}
@@ -105,20 +108,24 @@ func (g *Gateway) oauthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	dec := json.NewDecoder(r.Body)
 	if err = dec.Decode(&in); err != nil {
+		g.limiter.Fail(ratelimit.ClientAddr(r))
 		oauthError(w, 400, "invalid_client_metadata")
 		return
 	}
 	var extra any
 	if err = dec.Decode(&extra); err != io.EOF {
+		g.limiter.Fail(ratelimit.ClientAddr(r))
 		oauthError(w, 400, "invalid_client_metadata")
 		return
 	}
 	if len(in.RedirectURIs) < 1 || len(in.RedirectURIs) > 5 || !validOAuthClientName(in.ClientName) {
+		g.limiter.Fail(ratelimit.ClientAddr(r))
 		oauthError(w, 400, "invalid_client_metadata")
 		return
 	}
 	for _, uri := range in.RedirectURIs {
 		if !validOAuthRedirect(uri) {
+			g.limiter.Fail(ratelimit.ClientAddr(r))
 			oauthError(w, 400, "invalid_redirect_uri")
 			return
 		}
@@ -133,6 +140,7 @@ func (g *Gateway) oauthRegister(w http.ResponseWriter, r *http.Request) {
 		in.AuthMethod = "none"
 	}
 	if !validOAuthList(in.GrantTypes, map[string]bool{"authorization_code": true, "refresh_token": true}) || !oauthContains(in.GrantTypes, "authorization_code") || !validOAuthList(in.ResponseTypes, map[string]bool{"code": true}) || len(in.ResponseTypes) != 1 || in.AuthMethod != "none" {
+		g.limiter.Fail(ratelimit.ClientAddr(r))
 		oauthError(w, 400, "invalid_client_metadata")
 		return
 	}
@@ -238,6 +246,9 @@ func (g *Gateway) oauthAuthorizeStatus(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, 500, "server_error")
 		return
 	}
+	if status == "expired" {
+		g.limiter.Fail(ratelimit.ClientAddr(r))
+	}
 	result := map[string]string{"status": status}
 	if redirect != "" {
 		result["redirect"] = redirect
@@ -282,6 +293,9 @@ func (g *Gateway) oauthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	g.logLine("oauth_token", "client_id", clientID, "grant_type", grant, "source", r.RemoteAddr, "success", err == nil)
 	if errors.Is(err, errOAuthInvalidGrant) {
+		if grant == "authorization_code" {
+			g.limiter.Fail(ratelimit.ClientAddr(r))
+		}
 		oauthError(w, 400, "invalid_grant")
 		return
 	}

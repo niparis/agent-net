@@ -21,6 +21,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/ratelimit"
 )
 
 type Options struct {
@@ -53,6 +54,7 @@ type Options struct {
 }
 
 type Gateway struct {
+	limiter  *ratelimit.Limiter
 	opts     Options
 	store    *Store
 	skillsMu sync.Mutex
@@ -201,7 +203,7 @@ func New(opts Options) (*Gateway, error) {
 		store.Close()
 		return nil, err
 	}
-	g := &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
+	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)

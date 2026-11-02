@@ -18,7 +18,7 @@ func startAppsListener(ctx context.Context, addr string, h http.Handler) (*http.
 	if err != nil {
 		return nil, err
 	}
-	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() { <-ctx.Done(); srv.Close() }()
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {

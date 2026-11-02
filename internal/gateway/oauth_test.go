@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/niparis/agent-net/internal/ratelimit"
 	"io"
 	"log"
 	"net/http"
@@ -24,10 +25,10 @@ const oauthVerifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234
 func oauthFixture(t *testing.T) (*Store, *clock, http.Handler) {
 	t.Helper()
 	s, c := newTestStore(t)
-	g := &Gateway{store: s, opts: Options{PublicURL: "https://gateway.example/"}, logger: log.New(io.Discard, "", 0)}
+	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{OAuth: ratelimit.Rate{Requests: 10000, Per: time.Minute}, FailureLimit: 10000}, c.now), store: s, opts: Options{PublicURL: "https://gateway.example/"}, logger: log.New(io.Discard, "", 0)}
 	mux := http.NewServeMux()
 	g.registerOAuth(mux)
-	return s, c, mux
+	return s, c, g.appsMiddleware(mux)
 }
 func oauthRequest(h http.Handler, method, path, body, contentType string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -482,5 +483,44 @@ func TestOAuthReplayWithWrongVerifierRevokes(t *testing.T) {
 	}
 	if _, err := s.AppForToken(tokens["access_token"].(string), "access", c.t); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("replay with wrong verifier left tokens valid: %v", err)
+	}
+}
+
+func TestOAuthAddressRateLimit(t *testing.T) {
+	s, c := newTestStore(t)
+	g := &Gateway{store: s, limiter: ratelimit.New(ratelimit.Config{}, c.now), opts: Options{PublicURL: "https://gateway.example"}}
+	mux := http.NewServeMux()
+	g.registerOAuth(mux)
+	h := g.appsMiddleware(mux)
+	for i := 0; i < 31; i++ {
+		w := oauthRequest(h, "GET", "/.well-known/oauth-authorization-server", "", "")
+		if i == 30 && (w.Code != 429 || w.Header().Get("Retry-After") == "") {
+			t.Fatalf("request 31: %d, Retry-After %q", w.Code, w.Header().Get("Retry-After"))
+		}
+	}
+}
+
+func TestOAuthFailuresBanAddress(t *testing.T) {
+	for _, tc := range []struct{ name, method, path, body, contentType string }{
+		{"registration", "POST", "/oauth/register", `{}`, "application/json"},
+		{"code", "POST", "/oauth/token", "grant_type=authorization_code&client_id=missing&code=missing&redirect_uri=https%3A%2F%2Fexample.test&code_verifier=missing", "application/x-www-form-urlencoded"},
+		{"status", "GET", "/oauth/authorize/status?id=missing", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, c := newTestStore(t)
+			g := &Gateway{store: s, limiter: ratelimit.New(ratelimit.Config{}, c.now), logger: log.New(io.Discard, "", 0)}
+			mux := http.NewServeMux()
+			g.registerOAuth(mux)
+			h := g.appsMiddleware(mux)
+			for i := 0; i < 10; i++ {
+				w := oauthRequest(h, tc.method, tc.path, tc.body, tc.contentType)
+				if w.Code == 429 {
+					t.Fatalf("early ban at %d", i)
+				}
+			}
+			if w := oauthRequest(h, tc.method, tc.path, tc.body, tc.contentType); w.Code != 429 {
+				t.Fatalf("expected ban: %d %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
