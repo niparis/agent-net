@@ -5,12 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func oversizedToolsFixture(w, h int) (Model, *fakeTools) {
 	m, s := agentToolsFixture(w, h)
 	large := toolSkill("oversize-archify", "large", toolLoc(toolNodeR, "research", "/tmp/skills/oversize-archify", "user", "", "codex"))
+	large.StartTokens = 310
 	large.Locations[0].Manifest = &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 1 << 20}, {Path: "data.bin", Size: 10 << 20}}}
 	s.items = append(s.items, large)
 	m = pressKey(m, "5")
@@ -24,7 +26,7 @@ func TestToolsOversizedSkillLocked(t *testing.T) {
 	m = typeText(m, "oversize")
 	m = pressKey(m, "enter")
 	reason := "too large to manage (11 MB, the limit is 2 MB)"
-	if !strings.Contains(plain(m), "🔒") || !strings.Contains(plain(m), reason) {
+	if !strings.Contains(plain(m), "×   ") || !strings.Contains(plain(m), reason) {
 		t.Fatal("missing size lock:\n" + plain(m))
 	}
 	m = pressKey(m, " ")
@@ -130,5 +132,45 @@ func TestToolsImportAllOnlyOversizedShowsExplanation(t *testing.T) {
 	m = pressKey(m, "esc")
 	if m.tl.modal != nil {
 		t.Fatal("cannot close oversized-only review")
+	}
+}
+
+func TestToolsOversizedRowOnlyMarkerAndCost(t *testing.T) {
+	for _, width := range []int{120, 80} {
+		m, s := oversizedToolsFixture(width, 34)
+		s.items[len(s.items)-1].StartTokens = 310
+		m = pressKey(m, "5")
+		m = pressKey(m, "right")
+		m = pressKey(m, "/")
+		m = typeText(m, "oversize")
+		m = pressKey(m, "enter")
+		text := plain(m)
+		if strings.Contains(text, "🔒") || !strings.Contains(text, "×   oversize-archify") {
+			t.Errorf("%d: need a one-column marker: %s", width, text)
+		}
+		if !strings.Contains(text, "~310") {
+			t.Errorf("%d: oversized skill must retain StartTokens: %s", width, text)
+		}
+		count := strings.Count(text, "too large to manage (11 MB, the limit is 2 MB)")
+		want := 1
+		if width == 80 {
+			want = 0
+		} // Narrow rows omit state text; Space still explains it.
+		if count != want {
+			t.Errorf("%d: size reason must only appear in the state column, got %d copies", width, count)
+		}
+		m.tl.agentFilter = ""
+		regular, oversized := -1, -1
+		for _, line := range strings.Split(plain(m), "\n") {
+			if at := strings.Index(line, "~120"); at >= 0 {
+				regular = ansi.StringWidth(line[:at])
+			}
+			if at := strings.Index(line, "~310"); at >= 0 {
+				oversized = ansi.StringWidth(line[:at])
+			}
+		}
+		if regular < 0 || regular != oversized {
+			t.Errorf("%d: cost columns differ: regular %d, oversized %d", width, regular, oversized)
+		}
 	}
 }

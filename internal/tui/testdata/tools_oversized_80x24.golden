@@ -1,9 +1,8 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
 2 skills are installed outside agent-net. i imports them all (backups kept,
   nothing is turned off)
-🔒 oversize-archify: too large to manage (11 MB, the limit is 2 MB)
-╭─Agents / oversi…─╮╭─homelab · on research · 3 on · ~280/session──────────────╮
-│   a2a-ocs      2 ││ 🔒  oversize-archify                  ~0                 │
+╭─Agents / oversi…─╮╭─homelab · on research · 3 on · ~590/session──────────────╮
+│   a2a-ocs      2 ││ ×   oversize-archify                  ~310               │
 │   cogforge     2 ││                                                          │
 │   dotfiles     2 ││                                                          │
 │   flood-war…   2 ││                                                          │
@@ -14,6 +13,7 @@
 │   strategies   2 ││                                                          │
 │   tenebrae     3 ││                                                          │
 │   wbg-arch     2 ││                                                          │
+│   wbg-housi…   2 ││                                                          │
 │                  ││ skills per agent · tab: all tools                        │
 ╰──────────────────╯╰──────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

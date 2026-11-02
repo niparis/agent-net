@@ -293,17 +293,6 @@ func (m Model) agentToolsView(w, h int) []string {
 		banner = append(banner, lines...)
 		h -= len(lines)
 	}
-	if m.activeToast() == "" && !m.tl.agentDiscard {
-		rows := m.agentSkills()
-		if len(rows) > 0 {
-			r := rows[min(m.tl.skillRow, len(rows)-1)]
-			if why := m.skillLockReason(r); why != "" {
-				lines := wrapStyled("🔒 "+r.Name+": "+why, w)
-				banner = append(banner, lines...)
-				h -= len(lines)
-			}
-		}
-	}
 	left := min(25, max(20, w/5))
 	right := w - left
 	project := m.agentProject()
@@ -351,7 +340,7 @@ func (m Model) agentToolsView(w, h int) []string {
 			state = "in the " + repo + " repo (always on)"
 		}
 		if why := m.skillLockReason(r); why != "" {
-			check = "🔒  "
+			check = "×   "
 			state = why
 		}
 		name := r.Name
