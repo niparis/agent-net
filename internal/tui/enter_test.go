@@ -18,7 +18,7 @@ import (
 // exactly that, and shows the note when there is nothing to run.
 
 func pressE(m Model) (Model, tea.Cmd) {
-	return press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	return press(m, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
 // capture replaces the terminal hand-over and records the command it got.
@@ -47,8 +47,8 @@ func captureName(m *Model, name string) (got *[]string, dir *string, env *[]stri
 	return
 }
 
-func TestEnterKeyEntersTheSessionLikeE(t *testing.T) {
-	for _, key := range []string{"enter", "e"} {
+func TestEnterKeyEntersTheSession(t *testing.T) {
+	for _, key := range []string{"enter"} {
 		t.Run(key, func(t *testing.T) {
 			m, src := workerModel(120, 30)
 			m = selectID(m, workerID)
@@ -237,8 +237,8 @@ func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	if !strings.Contains(v, "open session in herdr (ctrl+] returns on fallback)") {
 		t.Errorf("help does not list enter:\n%s", v)
 	}
-	if !strings.Contains(v, "alias for Enter") {
-		t.Errorf("help does not list e as an alias:\n%s", v)
+	if strings.Contains(v, "alias for Enter") {
+		t.Errorf("help still lists e as an alias:\n%s", v)
 	}
 	if strings.Contains(v, "open the conversation") {
 		t.Errorf("help still lists the conversation view:\n%s", v)

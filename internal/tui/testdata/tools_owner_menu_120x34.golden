@@ -1,5 +1,8 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy                    updated 14:05:00
+ Differences   All tools   By project   [ ] switch screen   /design-taste-frontend
 ╭─design-taste-frontend actions────────────────────────────────────────────────────────────────────────────────────────╮
+│ a plain folder agent-net does not manage yet. Found on: research. a imports it and turns it on where you choose.     │
+│                                                                                                                      │
 │ > Read it                                                                                                            │
 │   Turn on for...                                                                                                     │
 │   Turn off for...                                                                                                    │
@@ -9,9 +12,6 @@
 │                                                                                                                      │
 │ j/k move  enter choose  esc back                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
-
 
 
 

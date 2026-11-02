@@ -293,7 +293,8 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if c.settingsForm != nil {
 		return m.ctoSettingsKey(k)
 	}
-	if k.Type == tea.KeyCtrlCloseBracket || k.Type == tea.KeyTab {
+	key := keyAction(contextCTO, k.String())
+	if key == "back" {
 		c.confirming = false
 		m.focus = focusSessions
 		if m.tab == messagesTab && !m.mapOn {
@@ -301,7 +302,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if k.Type == tea.KeyEsc && !c.confirming && m.onboardingStep().id != "" {
+	if key == "skip tip" && !c.confirming && m.onboardingStep().id != "" {
 		return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Step: m.onboardingStep().id, State: "skipped"})
 	}
 	if c.confirming {
@@ -318,20 +319,20 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return ctoNewMsg{err: src.CTONew(ctx), generation: g}
 		}
 	}
-	switch k.Type {
-	case tea.KeyPgUp, tea.KeyCtrlU:
+	switch key {
+	case actPageUp:
 		c.scroll += max(c.pageRows, 1)
 		if c.scroll >= c.scrollMax && c.olderCursor > 0 && !c.olderLoading {
 			c.olderLoading = true
 			return m, m.ctoOlderCmd()
 		}
 		return m, nil
-	case tea.KeyPgDown, tea.KeyCtrlD:
+	case actPageDown:
 		c.scroll = max(c.scroll-max(c.pageRows, 1), 0)
 		return m, nil
 	}
-	switch k.String() {
-	case "w":
+	switch key {
+	case "drive window":
 		src, ok := m.src.(ctoWindowSource)
 		if !ok {
 			c.err = "CTO graph window is unavailable"
@@ -344,7 +345,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			window, err := src.CTOGraphWindow(ctx, true)
 			return ctoWindowMsg{window: window, err: err, generation: g}
 		}
-	case "m":
+	case "model":
 		ti := textinput.New()
 		ti.Prompt = ""
 		ti.CharLimit = 4000
@@ -360,7 +361,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		title.SetValue(protocol.CTOTitleOrDefault(c.title))
 		c.settingsForm = &ctoSettingsForm{harness: harness, titleInput: title, input: ti, opencodeDraft: c.opencodeModel, claudeDraft: c.claudeModel}
 		return m, nil
-	case "u":
+	case "undo":
 		src := m.src.(ctoSource)
 		g := c.generation
 		return m, func() tea.Msg {
@@ -376,11 +377,11 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			id := history[len(history)-1].ID
 			return ctoUndoMsg{id: id, err: src.CTOUndo(ctx, id), generation: g}
 		}
-	case "n":
+	case "new conversation":
 		c.confirming = true
 		return m, nil
 	}
-	if k.Type == tea.KeyEnter {
+	if key == "open CTO" {
 		return m.openCTO(m.ctoSessionID())
 	}
 	return m, nil
@@ -478,15 +479,15 @@ func (f *ctoSettingsForm) setField(n int) tea.Cmd {
 func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
 	f := c.settingsForm
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
 		c.settingsForm = nil
 		return m, nil
-	case tea.KeyUp, tea.KeyShiftTab:
+	case "previous field":
 		return m, f.setField(f.field - 1)
-	case tea.KeyDown:
+	case "next field":
 		return m, f.setField(f.field + 1)
-	case tea.KeyTab:
+	case "tab field":
 		if f.field == 2 {
 			candidates := m.ctoModelCandidates(f.harness, f.input.Value())
 			if len(candidates) == 1 {
@@ -496,7 +497,7 @@ func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, f.setField(f.field + 1)
-	case tea.KeyLeft, tea.KeyRight:
+	case "previous choice", "next choice":
 		if f.field == 0 {
 			if f.harness == "opencode" {
 				f.opencodeDraft = f.input.Value()
@@ -510,7 +511,7 @@ func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			f.input.CursorEnd()
 			return m, nil
 		}
-	case tea.KeyEnter:
+	case "submit":
 		harness, model := f.harness, strings.TrimSpace(f.input.Value())
 		title := strings.TrimSpace(f.titleInput.Value())
 		if _, err := protocol.NormalizeCTOTitle(title); err != nil {

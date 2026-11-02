@@ -1,4 +1,5 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+ Differences   All tools   By project   [ ] switch screen
 ╭─Add homelab-mcp for homelab──────────────────────────────────────────────────╮
 │ + homelab-mcp for homelab on research                                        │
 │   writes these files, then reads each one back:                              │
@@ -8,9 +9,8 @@
 │     create homelab-mcp: command homelab-mcp                                  │
 │   environment values stay references: ${NAME} is never copied                │
 │                                                                              │
-│ enter apply  d exact folders  esc cancel                                     │
+│ enter/y apply  d exact folders  esc/n cancel                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter apply  d exact folders  esc cancel
+enter/y apply  d exact folders  esc/n cancel

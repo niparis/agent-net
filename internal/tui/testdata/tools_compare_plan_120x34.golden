@@ -1,4 +1,5 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy                    updated 14:05:00
+ Differences   All tools   By project   [ ] switch screen
 ╭─Keep demo from research ()───────────────────────────────────────────────────────────────────────────────────────────╮
 │ + 1 skill go into the agent-net store as new versions (the files stay where they are)                                │
 │ + demo on research only                                                                                              │
@@ -9,9 +10,8 @@
 │   changed: SKILL.md                                                                                                  │
 │   other observed user copies are backed up before installing the chosen copy                                         │
 │                                                                                                                      │
-│ enter apply  d exact folders  esc cancel                                                                             │
+│ enter/y apply  d exact folders  esc/n cancel                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter apply  d exact folders  esc cancel
+enter/y apply  d exact folders  esc/n cancel

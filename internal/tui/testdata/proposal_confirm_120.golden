@@ -3,7 +3,7 @@ Approve all CTO proposals? ─────────────────�
 
   p_1  charter shop purpose
 
-  enter: yes · esc: no
+  enter/y: yes · esc/n: no
 
 
 
@@ -31,4 +31,4 @@ Approve all CTO proposals? ─────────────────�
 
 
 
-up/down scroll  enter/y yes  esc/n no
+up/down select  enter/y yes  esc/n no

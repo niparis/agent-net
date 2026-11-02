@@ -123,11 +123,11 @@ func TestMapCardCharterScrolls(t *testing.T) {
 	m := openMap(t, mapModel(80, 24, richGraph()))
 	m.mp.selected = "tenebrae"
 	before := ansi.Strip(m.View())
-	if !strings.Contains(before, "[ ] scroll") || strings.Contains(before, "embeddings.") {
+	if !strings.Contains(before, "ctrl+u/ctrl+d scroll") || strings.Contains(before, "embeddings.") {
 		t.Fatal(before)
 	}
 	for i := 0; i < 3; i++ {
-		m = keys(m, "]")
+		m = keys(m, "ctrl+d")
 	}
 	if after := ansi.Strip(m.View()); !strings.Contains(after, "embeddings.") {
 		t.Fatal(after)

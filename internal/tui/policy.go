@@ -188,29 +188,30 @@ func (m Model) onPolicySaved(r policySavedMsg) (Model, tea.Cmd) {
 func (m Model) policyKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	f := &m.pol
 	changed := false
-	switch k.Type {
-	case tea.KeyEsc:
+	key := keyAction(contextForm, k.String())
+	switch key {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Policy unchanged.")
 		return m, nil
-	case tea.KeyTab, tea.KeyDown:
+	case "tab field", "next field":
 		if f.cur < pfScope {
 			return m, tea.Batch(f.focus(f.cur+1), m.policyPreviewCmd())
 		}
 		return m, nil
-	case tea.KeyShiftTab, tea.KeyUp:
+	case "previous field":
 		if f.cur > 0 {
 			return m, tea.Batch(f.focus(f.cur-1), m.policyPreviewCmd())
 		}
 		return m, nil
-	case tea.KeyEnter:
+	case "submit":
 		if f.cur < pfScope {
 			return m, tea.Batch(f.focus(f.cur+1), m.policyPreviewCmd())
 		}
 		return m.savePolicy()
-	case tea.KeyLeft, tea.KeyRight:
+	case "previous choice", "next choice":
 		step := 1
-		if k.Type == tea.KeyLeft {
+		if key == "previous choice" {
 			step = -1
 		}
 		switch f.cur {
@@ -233,7 +234,7 @@ func (m Model) policyKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if f.cur == pfDelegate || f.cur == pfWorkers || f.cur == pfScope {
-		if k.String() == " " {
+		if keyAction(contextForm, k.String()) == "toggle" {
 			return m.policyKey(tea.KeyMsg{Type: tea.KeyRight})
 		}
 		return m, nil

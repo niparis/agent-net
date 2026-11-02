@@ -113,6 +113,12 @@ func (m *Model) smoothCamera() {
 // cheap and never touches pixels.
 func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.Scene {
 	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(size.Width), Height: float64(size.Height)})
+	scene.Hints = nil
+	for _, binding := range keyBindings {
+		if binding.context == contextGraph {
+			scene.Hints = append(scene.Hints, graphview.KeyHint{Keys: binding.keys, Action: string(binding.action)})
+		}
+	}
 	for i := range scene.Nodes {
 		if scene.Nodes[i].Name == protocol.GraphVoiceOwner {
 			continue
@@ -131,7 +137,7 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
 		return nil
 	}
-	if m.tab != graphTab || m.mapOn || m.graphHelp || m.graphState.Graph == nil {
+	if m.tab != graphTab || m.mapOn || m.help || m.graphState.Graph == nil {
 		return nil
 	}
 	if g.rendering {
@@ -223,95 +229,97 @@ func (m Model) startGraph() (tea.Model, tea.Cmd) {
 
 func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mp.finding {
-		switch k.Type {
-		case tea.KeyEsc:
-			m.mp.finding, m.mp.findQuery = false, ""
-		case tea.KeyEnter:
+		switch keyAction(contextGraphFind, k.String()) {
+		case "clear or back":
+			if m.mp.findQuery != "" {
+				m.mp.findQuery = ""
+			} else {
+				m.mp.finding = false
+			}
+		case "select match":
 			if nodes := m.mapProjectNodes(); len(nodes) > 0 {
 				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: nodes[0].Name})
 			}
 			m.mp.finding, m.mp.findQuery = false, ""
-		case tea.KeyBackspace, tea.KeyCtrlH:
+		case "delete text":
 			r := []rune(m.mp.findQuery)
 			if len(r) > 0 {
 				m.mp.findQuery = string(r[:len(r)-1])
 			}
-		case tea.KeyRunes:
-			m.mp.findQuery += string(k.Runes)
+		default:
+			if k.Type == tea.KeyRunes {
+				m.mp.findQuery += string(k.Runes)
+			}
 		}
 		return m, nil
 	}
-	if m.graphHelp {
-		if k.String() == "?" || k.String() == "esc" {
-			m.graphHelp = false
-		}
+	key := keyAction(contextGraph, k.String())
+	if key == "help" {
+		m.help = true
 		return m, nil
 	}
-	if k.String() == "q" {
+	if key == actQuit {
 		m.quitting = true
 		return m, tea.Quit
 	}
 	if m.graphState.Graph == nil {
-		if k.String() == "?" {
-			m.graphHelp = true
-		}
 		return m, nil
 	}
 	var action graphview.Action
-	switch k.String() {
-	case "/":
+	switch key {
+	case "find":
 		m.mp.finding, m.mp.findQuery = true, ""
-	case "+", "=":
+	case "zoom in":
 		action = graphview.ZoomIn{}
-	case "-":
+	case "zoom out":
 		action = graphview.ZoomOut{}
-	case "left", "right", "up", "down":
+	case "select left", "select right", "select up", "select down":
 		w, h := m.graphSize()
 		d := graphview.SelectDirection{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
-		switch k.String() {
-		case "left":
+		switch key {
+		case "select left":
 			d.DX = -1
-		case "right":
+		case "select right":
 			d.DX = 1
-		case "up":
+		case "select up":
 			d.DY = -1
-		case "down":
+		case "select down":
 			d.DY = 1
 		}
 		action = d
-	case "shift+left", "h":
+	case "pan left":
 		action = graphview.Pan{DX: -4}
-	case "shift+right", "l":
+	case "pan right":
 		action = graphview.Pan{DX: 4}
-	case "shift+up", "k":
+	case "pan up":
 		action = graphview.Pan{DY: -2}
-	case "shift+down", "j":
+	case "pan down":
 		action = graphview.Pan{DY: 2}
-	case "0":
+	case "fit":
 		w, h := m.graphSize()
 		action = graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
-	case "[":
+	case "previous link":
 		w, h := m.graphSize()
 		action = graphview.SelectPrev{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
-	case "]":
+	case "next link":
 		w, h := m.graphSize()
 		action = graphview.SelectNext{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
-	case "t":
+	case "node tools":
 		return m.startNodeTools(m.graphState.Graph.Selected())
-	case "o":
+	case "orbit":
 		action = graphview.ToggleOrbit{}
-	case " ":
+	case "pause":
 		action = graphview.TogglePause{}
-	case "?":
-		m.graphHelp = true
-	case "n":
+	case "new session":
 		name := m.graphState.Graph.Selected()
 		if node, ok := m.mapNode(name); ok && node.Kind == "component" {
 			m.mp.selected = name
 			return m.startSessionFormFromNode()
 		}
-	case "enter":
+	case "open card":
 		action = graphview.OpenSelected{}
+	case "refresh":
+		return m.startGraph()
 	}
 	if action != nil {
 		m.smoothCamera()
@@ -329,9 +337,6 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
-	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t tools  enter card  space pause  ? close  c CTO  q quit"), sDim.Render("  n new session from selected project"))
-	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
@@ -443,14 +448,18 @@ func (m Model) graphTalkCmd() tea.Cmd {
 	}
 }
 
-// graphHintLine drops whole hints, starting with the least important. It holds
-// the keys used most on the graph; the full list is in the graph help panel.
+// graphHintLine drops whole table hints, starting with the least important.
 func graphHintLine(w int, paused bool) string {
-	hs := []hint{{"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"o", "orbit", 2}, {"t", "tools", 1}, {"enter", "card", 2}, {"?", "help", 0}}
+	direction := bindingPairHint(contextGraph, "select left", "select right")
+	direction.label, direction.prio = "select", 1
+	zoom := bindingPairHint(contextGraph, "zoom in", "zoom out")
+	zoom.label, zoom.prio = "zoom", 1
+	fit, orbit := bindingHint(contextGraph, "fit"), bindingHint(contextGraph, "orbit")
+	tools, card := bindingHint(contextGraph, "node tools"), bindingHint(contextGraph, "open card")
+	fit.prio, orbit.prio, tools.prio, card.prio = 2, 2, 1, 2
+	hs := []hint{direction, zoom, fit, orbit, tools, card, bindingHint(contextGraph, "help")}
 	if paused {
-		// The paused marker takes the place of the least used hint, so the
-		// line never grows past seven.
-		hs = []hint{{"paused", "·", 0}, {"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"t", "tools", 1}, {"enter", "card", 2}, {"?", "help", 0}}
+		hs = []hint{{"paused", "·", 0}, direction, zoom, fit, tools, card, bindingHint(contextGraph, "help")}
 	}
 	text := func() string {
 		parts := make([]string, 0, len(hs))

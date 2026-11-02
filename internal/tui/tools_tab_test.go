@@ -94,7 +94,7 @@ func TestToolsEnterOpensPlanFirstAndEscCancels(t *testing.T) {
 		t.Fatal("enter must open a plan")
 	}
 	v := plain(m)
-	for _, want := range []string{"Make every machine use v3", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter apply", "d exact folders", "esc cancel"} {
+	for _, want := range []string{"Make every machine use v3", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter/y apply", "d exact folders", "esc/n cancel"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("plan lacks %q:\n%s", want, v)
 		}
@@ -264,6 +264,17 @@ func TestToolsTabWithoutToolsSourceExplainsItself(t *testing.T) {
 	m = openTools(m)
 	if v := plain(m); !strings.Contains(v, "this daemon cannot list tools") {
 		t.Errorf("view:\n%s", v)
+	}
+}
+
+func TestToolsTabGoldens(t *testing.T) {
+	initScreenColors()
+	for _, screen := range []struct {
+		name  string
+		index int
+	}{{"tools_differences_120x34", 0}, {"tools_all_120x34", 1}, {"tools_by_project_120x34", 2}} {
+		m, _ := toolsAtScreen(120, 34, screen.index)
+		writeScreen(t, screen.name, m.View())
 	}
 }
 

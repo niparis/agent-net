@@ -36,7 +36,7 @@ func proposalFixture() protocol.CTOProposal {
 	return protocol.CTOProposal{ID: "p_1", NodeID: "n_1", Tool: "graph_change", Action: "charter_set", Args: json.RawMessage(`{"node":"shop","attr":"purpose","value":"new purpose"}`), Reason: "This reflects the current work.", Status: "open", CreatedAt: time.Unix(1700000000, 0)}
 }
 func TestProposalKeysAndConfirm(t *testing.T) {
-	for _, key := range []string{"a", "x"} {
+	for _, key := range []string{"a", "r"} {
 		t.Run(key, func(t *testing.T) {
 			p := proposalFixture()
 			s := &proposalSource{proposals: []protocol.CTOProposal{p}}
@@ -48,7 +48,11 @@ func TestProposalKeysAndConfirm(t *testing.T) {
 				t.Fatal("no command")
 			}
 			cmd()
-			if len(s.answers) != 1 || s.answers[0].ID != p.ID || s.answers[0].NodeID != p.NodeID || s.answers[0].Action != key {
+			want := key
+			if key == "r" {
+				want = "x"
+			}
+			if len(s.answers) != 1 || s.answers[0].ID != p.ID || s.answers[0].NodeID != p.NodeID || s.answers[0].Action != want {
 				t.Fatalf("answers: %+v", s.answers)
 			}
 		})

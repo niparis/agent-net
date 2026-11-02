@@ -74,24 +74,24 @@ func (m Model) onIntegrationsSaved(r integrationsSavedMsg) (Model, tea.Cmd) {
 
 func (m Model) integrationsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	f := &m.intg
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Integrations unchanged.")
 		return m, nil
-	case tea.KeyUp, tea.KeyShiftTab:
+	case "previous field":
 		f.cur = (f.cur - 1 + len(protocol.IntegrationSpecs())) % len(protocol.IntegrationSpecs())
 		return m, nil
-	case tea.KeyDown, tea.KeyTab:
+	case "next field", "tab field":
 		f.cur = (f.cur + 1) % len(protocol.IntegrationSpecs())
 		return m, nil
-	case tea.KeyEnter:
+	case "submit":
 		if f.loading {
 			return m, nil
 		}
 		return m.saveIntegrations()
 	}
-	if k.String() == " " && !f.loading {
+	if keyAction(contextForm, k.String()) == "toggle" && !f.loading {
 		s := protocol.IntegrationSpecs()[f.cur]
 		f.values.Set(s.ID, !f.values.Get(s.ID))
 		f.err = ""

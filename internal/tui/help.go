@@ -24,61 +24,70 @@ type hint struct {
 // hints lists the keys used most on the current screen. The line holds at most
 // seven of them, always with help and quit. Every other key is in helpContent.
 func (m Model) hints() []hint {
+	cto := bindingHint(contextGlobal, "open CTO")
+	cto.label, cto.prio = m.ctoTitle(), 2
+	sessionHelp, sessionQuit := bindingHint(contextSessions, "help"), bindingHint(contextSessions, actQuit)
 	switch {
 	case m.proposalConfirm:
-		return []hint{{"up/down", "scroll", 1}, {"enter/y", "yes", 1}, {"esc/n", "no", 1}}
+		yes, no := bindingHint(contextConfirm, "yes"), bindingHint(contextConfirm, "no")
+		yes.key, no.key = "enter/y", "esc/n"
+		return []hint{bindingPairHint(contextProposalHistory, actUp, actDown), yes, no}
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:
-		return []hint{{"up/down", "select", 1}, {"enter", "detail", 1}, {"esc", "back", 1}, {"?", "help", 1}}
+		return []hint{bindingPairHint(contextProposalHistory, actUp, actDown), bindingHint(contextProposalHistory, "detail"), bindingHint(contextProposalHistory, "back"), bindingHint(contextProposalHistory, "help")}
 	case m.proposalDetail != nil && !m.help:
 		if m.proposalDetail.proposal.Status != "open" {
-			return []hint{{"up/down", "scroll", 1}, {"esc", "back", 1}, {"?", "help", 1}}
+			return []hint{bindingPairHint(contextProposalDetail, actUp, actDown), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
 		}
-		return []hint{{"a", "approve", 1}, {"x", "decline", 1}, {"A", "approve all", 1}, {"esc", "back", 1}, {"?", "help", 1}}
+		return []hint{bindingHint(contextProposalDetail, "approve"), bindingHint(contextProposalDetail, "decline"), bindingHint(contextProposalDetail, "approve all"), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
 	case m.help:
-		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
+		return []hint{bindingPairHint(contextHelp, actUp, actDown), bindingHint(contextHelp, actClose), bindingHint(contextHelp, actQuit)}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"enter", "sessions", 1}, {"t", "tools", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"n", "new", 2}, {"U/u", "undo", 1}, {"!", "legend", 1}, {"?", "help", 0}, {"q", "quit", 0}}
+		return []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools"), bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "legend"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit)}
 	case m.open != nil:
-		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
+		return []hint{bindingPairHint(contextBody, actUp, actDown), bindingHint(contextBody, actClose), bindingHint(contextBody, actQuit)}
 	case m.focus == focusCTO:
-		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"ctrl+]", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
+		open := bindingHint(contextCTO, "open CTO")
+		open.label = "open " + m.ctoTitle()
+		return []hint{open, bindingHint(contextCTO, "back"), bindingHint(contextCTO, "model"), bindingHint(contextCTO, "new conversation"), bindingHint(contextCTO, "undo")}
 	case m.tab == messagesTab:
+		move := bindingPairHint(contextMessages, actUp, actDown)
+		msg := bindingPairHint(contextMessages, "previous message", "next message")
 		if m.selectedWorkerConversation() {
-			// The defect key only applies here. It takes the slot of the
-			// "enter latest" hint, so the line keeps seven hints.
-			return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"v", "body", 1}, {"f", "defect", 1}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+			return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, "defect"), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 		}
-		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, actLast), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 	case m.tab == quotasTab:
-		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "refresh"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == graphTab:
-		return []hint{{"1-5", "tabs", 1}, {"c", m.ctoTitle(), 1}, {"?", "help", 2}, {"q", "quit", 0}}
+		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "tools tab").key, label: "tabs", prio: 1}
+		return []hint{tabs, cto, bindingHint(contextGraph, "help"), bindingHint(contextGraph, actQuit)}
 	case m.tab == toolsTab:
 		return m.toolsHints()
 	}
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
-			return []hint{{"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 0}}
+			return []hint{bindingHint(contextOutcome, "let stand"), bindingHint(contextOutcome, "overrule"), sessionHelp, sessionQuit}
 		}
 	}
 	if _, ok := m.selectedProposal(); ok {
-		return []hint{{"enter", "detail", 1}, {"a", "approve", 1}, {"x", "decline", 1}, {"A", "approve all", 1}, {"?", "help", 1}}
+		return []hint{bindingHint(contextProposal, "detail"), bindingHint(contextProposal, "approve"), bindingHint(contextProposal, "decline"), bindingHint(contextProposal, "approve all"), sessionHelp}
 	}
 	if strings.HasPrefix(m.selected, "learned:") {
-		return []hint{{"up/down", "select", 1}, {"a", "accept", 1}, {"r", "reject", 1}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSuggestion, "accept"), bindingHint(contextSuggestion, "reject"), sessionHelp, sessionQuit}
 	}
 	for _, held := range m.snap.Held {
 		if held.ID == m.selected {
-			return []hint{{"up/down", "select", 1}, {"a", "approve", 1}, {"r", "refuse", 1}, {"?", "help", 2}, {"q", "quit", 0}}
+			return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextHeld, "approve"), bindingHint(contextHeld, "refuse"), sessionHelp, sessionQuit}
 		}
 	}
-	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"n", "new", 1}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), cto, sessionHelp, sessionQuit}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
 		}
 		if a.Worker != nil {
-			hs[3] = hint{"x", "stop", 1}
+			hs[3] = bindingHint(contextSessions, "stop worker")
+			hs[3].prio = 1
 		}
 	}
 	return hs
@@ -182,18 +191,36 @@ func (m Model) helpContent(w int) []string {
 
 	rows := [][2]string{
 		{"Sessions", ""},
-		{"proposal", "enter details; a approve; x decline; A approve all after confirmation"},
 		{"1-5", "switch between Sessions, Graph, Quotas, Messages and Tools"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, home/end", "page, first, last"},
 		{"enter", "open session in herdr (ctrl+] returns on fallback)"},
-		{"e", "enter the selected session (alias for Enter)"},
 		{"m", "send a message to the session as yourself"},
 		{"n", "start a session in herdr: project, harness, model, folder and first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
-		{"x, h, H", "stop session; h hides/unhides; H shows hidden sessions (dim)"},
+		{"x", "stop the selected worker or session"},
+		{"h, H", "hide or unhide the session; show hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},
+		{"c, C", "c opens the " + m.ctoTitle() + "; C focuses its box: enter opens the full " + m.ctoTitle() + ", ctrl+] returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
+		{"N", "name the machine of the session (every machine sees it; empty resets)"},
+		{"L", "what the network learned: playbook notes and their support"},
+		{"/", "filter (words match name, project, branch, model, ...)"},
+		{"o, d", "show offline sessions; toggle the selected session details"},
+		{"A", "active only: hide sessions idle for over an hour"},
+		{"R", "refresh now"},
+		{"proposal", "enter details; a approve; r decline; A approve all after confirmation"},
+		{"", ""},
+		{"Messages", ""},
+		{"up/down", "select a conversation"},
+		{"left/right", "select a message in the conversation"},
+		{"enter", "open the selected message body"},
+		{"end", "select the latest message"},
+		{"f", "on a worker conversation: report a defect found later"},
+		{"w", "show or hide worker threads"},
+		{"e, l", "show system events; cycle the event filter"},
+		{"R", "refresh now"},
+		{"states", "pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},
 		{"Quotas", ""},
 		{"up/down, j/k", "select a subscription and scroll the panels"},
@@ -201,12 +228,12 @@ func (m Model) helpContent(w int) []string {
 		{"s", "show or hide subscriptions that are not set up"},
 		{"left/right", "cycle the Quality panel agent: all agents, then each caller"},
 		{"d", "show or hide the Quality panel detail (fixes and continues)"},
-		{"r", "refresh the readings"},
+		{"R", "refresh the readings"},
 		{"", ""},
 		{"Graph", ""},
-		{"M, G, 2", "open the network"},
-		{"arrows", "select a node; shift+arrows or hjkl pan"},
-		{"[ ]", "select a linked neighbour"},
+		{"2", "open the Graph tab"},
+		{"arrows", "select a node; shift+arrows pan"},
+		{", .", "select a linked neighbour"},
 		{"/", "find a node; Enter selects the first match; Esc cancels"},
 		{"+ -, 0", "zoom; fit the graph"},
 		{"o, space", "orbit; pause traffic"},
@@ -219,30 +246,25 @@ func (m Model) helpContent(w int) []string {
 		{"D", "name project (empty clears)"},
 		{"a", "toggle autonomy off or wake"},
 		{"h, H", "hide or unhide the selected project; show hidden projects"},
-		{"U, u", "select the next learned change; undo the selected one"},
+		{", ., u", "select a learned change; undo the selected one"},
 		{"!", "legend: what the edge kinds, request rules and charter fields mean"},
-		{"[ ], ctrl+u/d", "scroll the card: legend, charter, rules and learned changes; pgup/pgdn also work"},
+		{"ctrl+u/d", "scroll the card: legend, charter, rules and learned changes; pgup/pgdn also work"},
 		{"c", "focus the " + m.ctoTitle() + " box"},
-		{"r", "refresh"},
+		{"R", "refresh"},
 		{"", ""},
 		{"Tools", ""},
-		{"j/k, up/down", "move through the single tool list"},
-		{"enter", "open actions: read, turn on/off, remove, compare, test or import"},
+		{"[ ]", "switch between Differences, All tools and By project"},
+		{"j/k, up/down", "move through the selected Tools screen"},
+		{"left/right", "move between columns"},
+		{"enter", "open the selected difference plan or the selected tool's details and actions"},
+		{"a, u", "accept a difference or turn a tool on; turn a tool off"},
+		{"v", "next machine on By project"},
 		{"/", "combine text, project:NAME, node:NAME and machine:NAME filters"},
 		{"n", "add an MCP server or a skill from a folder"},
 		{"esc", "back, or clear the list filter"},
-		{"c, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", ctrl+] returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
-		{"N", "name the machine of the session (every machine sees it; empty resets)"},
-		{"L", "what the network learned: playbook notes and their support"},
-		{"/", "filter (words match name, project, branch, model, ...)"},
-		{"o, d", "show offline sessions; toggle selected session details"},
-		{"a", "active only: hide sessions idle for over an hour"},
-		{"Messages", "up/down: conversation; left/right: message; enter: latest; v: body; f: defect found later; w: workers; e/l: events"},
-		{"r", "refresh now"},
-		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},
 		{"Everywhere", ""},
-		{"n", "desktop notifications: " + state + " (toggle)"},
+		{"N", "desktop notifications: " + state + " (toggle)"},
 		{"T", "turn onboarding tips off or on"},
 		{"R", "restart onboarding from the first step"},
 		{"?", "this help"},
@@ -259,19 +281,42 @@ func (m Model) helpContent(w int) []string {
 	}
 	if m.tab == toolsTab && !m.mapOn {
 		rows = [][2]string{
-			{"j/k, up/down", "move through tools or menu actions"},
-			{"enter", "open actions, choose an action, or confirm a plan"},
+			{"[ ]", "switch between Differences, All tools and By project"},
+			{"j/k, up/down", "move through tools, differences or projects; scroll a read view or comparison"},
+			{"left/right", "move between columns"},
+			{"enter", "open the selected difference plan or the selected tool's details and actions"},
+			{"a", "accept a difference on Differences; turn on a tool on All tools"},
+			{"u", "turn off the selected tool on All tools"},
+			{"v", "select the next machine on By project"},
 			{"/", "filter: text project:NAME node:NAME machine:NAME (combine them)"},
 			{"n", "add an MCP server or a skill from a folder"},
+			{"R", "rescan tool copies"},
 			{"space", "tick a machine or project in the picker"},
-			{"j/k", "scroll a read view or comparison"},
 			{"a/b/...", "in compare only: keep the labelled copy"},
-			{"n/p, v", "in compare only: select a file, view its diff"},
+			{"n and p, v", "in compare only: select a file, view its diff"},
 			{"tab", "in add form: next field; arrows choose machine"},
-			{"esc", "back or cancel; clear the list filter"},
-			{"c, C", "focus the " + m.ctoTitle() + " box"},
+			{"esc", "back or cancel; clear a nonempty filter first"},
+			{"c, C", "c opens the " + m.ctoTitle() + "; C focuses its box"},
 			{"q", "quit from the list"},
 			{"esc or ?", "close help"},
+		}
+	}
+	rows = append(rows, [2]string{"", ""}, [2]string{"Bindings", ""})
+	for _, context := range allKeyContexts {
+		rows = append(rows, [2]string{strings.ReplaceAll(string(context), "CTO", m.ctoTitle()), ""})
+		for _, binding := range keyBindings {
+			if binding.context != context {
+				continue
+			}
+			label := strings.ReplaceAll(binding.label, "CTO", m.ctoTitle())
+			keys := strings.Join(binding.keys, ", ")
+			if ansi.StringWidth(keys) <= 20 {
+				rows = append(rows, [2]string{keys, label})
+				continue
+			}
+			for _, key := range binding.keys {
+				rows = append(rows, [2]string{key, label})
+			}
 		}
 	}
 	var out []string

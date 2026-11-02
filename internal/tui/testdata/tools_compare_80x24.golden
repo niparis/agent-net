@@ -1,24 +1,24 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
-╭─Tools────────────────────────────────────────────────────────────────────────╮
-│   NAME                            KIND   STATUS                              │
-│ ! code-review                     skill  v1 on Nicolas-MBP, v3 on research · │
-│                                          Nicolas-MBP on another version      │
-│ ! design-taste-frontend           skill  found on 1 machine, not managed ·   │
-│                                          two different copies                │
-│   clean-architecture-python       skill  on everywhere                       │
-│   deploy-test-server              skill  in the sovl-clone repo              │
-│   diagnosing-bugs                 skill  on everywhere; limited on one       │
-│                                          harness                             │
-│   estate-runbook                  skill  in the homelab repo                 │
-│   found-skill-00                  skill  found on 2 machines, not managed    │
-│   found-skill-01                  skill  found on 2 machines, not managed    │
-│   found-skill-02                  skill  found on 2 machines, not managed    │
-│   found-skill-03                  skill  found on 2 machines, not managed    │
-│   found-skill-04                  skill  found on 1 machine, not managed     │
-│ 40 tools · ! needs attention · enter opens actions                           │
+ Differences   All tools   By project   [ ] switch screen
+╭─What differs · 1 to look at──────────────────────────────────────────────────╮
+│ ▸ ! demo has 2 different copies on research, 3 files differ                  │
+│     fix: compare, then keep one                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ 9 tools are the same everywhere you set them  ·  [ ] shows all of them       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  n add  esc clear  ? help  q quit
+j/k move  enter detail  a accept  [/] screen  ? help  q quit

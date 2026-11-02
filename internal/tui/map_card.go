@@ -487,7 +487,7 @@ func (m Model) mapFocusView(w, h int) []string {
 		scroll = min(max(scroll, 0), max(len(all)-body, 0))
 		title := "Card"
 		if len(all) > body && body > 0 {
-			title += sDim.Render(fmt.Sprintf(" %d-%d/%d  [ ] scroll", scroll+1, min(scroll+body, len(all)), len(all)))
+			title += sDim.Render(fmt.Sprintf(" %d-%d/%d  ctrl+u/d scroll", scroll+1, min(scroll+body, len(all)), len(all)))
 		}
 		out = append(out, section(title, w))
 		for i := scroll; i < min(scroll+body, len(all)); i++ {

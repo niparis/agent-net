@@ -18,7 +18,7 @@ func TestHeldRequestShownInNeeds(t *testing.T) {
 }
 
 func TestHeldRequestKeys(t *testing.T) {
-	for _, key := range []string{"a", "A", "r", "R"} {
+	for _, key := range []string{"a", "r"} {
 		t.Run(key, func(t *testing.T) {
 			src := &heldTestSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
 			src.snap.Held = []protocol.Message{{ID: "m_held", FromName: "alice", To: "s_0000000000000002", Body: "hello"}}

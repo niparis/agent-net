@@ -95,7 +95,6 @@ type Model struct {
 	graphPixel *graphPixelState
 	// workerForecastMemo is shared by copies of the model, like graphPixel.
 	workerForecastMemo *workerForecastMemo
-	graphHelp          bool
 	graphGeneration    int
 	graphTalkLoading   bool
 	graphTalkLastID    int64
@@ -442,7 +441,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
-		if m.graphMouseActive() && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.graphHelp && m.graphState.Graph != nil {
+		if m.graphMouseActive() && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.graphState.Graph != nil {
 			w, h := m.graphSize()
 			scene := graphview.BuildScene(m.graphState, graphview.Viewport{Width: float64(w), Height: float64(h)})
 			for i := range scene.Nodes {
@@ -1049,13 +1048,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.inboxKey(k)
 	}
 	if m.help {
-		switch k.String() {
-		case "T":
+		switch keyAction(contextHelp, k.String()) {
+		case actTips:
 			disabled := !m.onboarding.Disabled
 			return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Disabled: &disabled})
-		case "R":
+		case actRestartTips:
 			return m.onboardingWrite("onboarding_restart", nil)
-		case "n":
+		case actNotifications:
 			src, ok := m.src.(interface {
 				NotificationSettings(context.Context, *bool) (bool, error)
 			})
@@ -1071,23 +1070,23 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return notificationSettingMsg{disabled: value, err: err}
 			}
 
-		case "q":
+		case actQuit:
 			m.quitting = true
 			return m, tea.Quit
-		case "esc", "?", "enter", "backspace":
+		case actClose:
 			m.help = false
 			m.helpScroll = 0
-		case "down", "j":
+		case actDown:
 			m.helpScroll++
-		case "up", "k":
+		case actUp:
 			m.helpScroll--
-		case "pgdown":
+		case actPageDown:
 			m.helpScroll += max(m.height-4, 1)
-		case "pgup":
+		case actPageUp:
 			m.helpScroll -= max(m.height-4, 1)
-		case "home", "g":
+		case actFirst:
 			m.helpScroll = 0
-		case "end", "G":
+		case actLast:
 			m.helpScroll = len(m.helpContent(max(m.width, 40)))
 		}
 		room := max(max(m.height, 10)-4, 1)
@@ -1095,11 +1094,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.learned {
-		switch k.String() {
-		case "q":
+		switch keyAction(contextLearned, k.String()) {
+		case actQuit:
 			m.quitting = true
 			return m, tea.Quit
-		case "esc", "L", "enter", "backspace":
+		case actClose:
 			m.learned = false
 		}
 		return m, nil
@@ -1115,7 +1114,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	// c opens the CTO session in one key; C focuses the box for its own keys
 	// (new conversation, undo, settings, scrolling).
-	if k.String() == "c" && !m.filtering {
+	if keyAction(contextGlobal, k.String()) == "open CTO" && !m.filtering {
 		var poll tea.Cmd
 		if m.cto == nil {
 			next, cmd := m.startCTO()
@@ -1127,7 +1126,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		next, enter := m.openCTO(m.ctoSessionID())
 		return next, tea.Batch(poll, enter)
 	}
-	if k.String() == "C" && !m.filtering {
+	if keyAction(contextGlobal, k.String()) == "focus CTO" && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
 		m.open = nil
 		if m.cto == nil {
@@ -1136,12 +1135,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !m.filtering && m.open == nil {
-		switch k.String() {
-		case "2", "M", "G":
+		switch keyAction(contextGlobal, k.String()) {
+		case "graph tab":
 			return m.startGraph()
-		case "5":
+		case "tools tab":
 			return m.startTools()
-		case "1", "3", "4":
+		case "sessions tab", "quotas tab", "messages tab":
 			m.mapOn = false
 		}
 	}
@@ -1151,9 +1150,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.filtering {
 		switch k.Type {
 		case tea.KeyEsc:
-			m.filtering, m.filter = false, ""
-			m.input.SetValue("")
-			m.input.Blur()
+			if m.filter != "" {
+				m.filter = ""
+				m.input.SetValue("")
+			} else {
+				m.filtering = false
+				m.input.Blur()
+			}
 			m.rebuildConversations()
 		case tea.KeyEnter:
 			m.filtering = false
@@ -1172,25 +1175,25 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.open != nil {
-		switch k.String() {
-		case "q":
+		switch keyAction(contextBody, k.String()) {
+		case actQuit:
 			m.quitting = true
 			return m, tea.Quit
-		case "esc", "enter", "backspace", "m":
+		case actClose:
 			m.open = nil
-		case "up", "k":
+		case actUp:
 			m.open.scroll = max(m.open.scroll-1, 0)
-		case "down", "j":
+		case actDown:
 			m.open.scroll++
-		case "pgup":
+		case actPageUp:
 			m.open.scroll = max(m.open.scroll-10, 0)
-		case "pgdown":
+		case actPageDown:
 			m.open.scroll += 10
 		}
 		return m, nil
 	}
 	for i := range tabNames {
-		if k.String() == fmt.Sprint(i+1) {
+		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab"}[i] {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
@@ -1213,8 +1216,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.toolsKey(k)
 	}
 	if m.tab == quotasTab {
-		switch k.String() {
-		case "p":
+		key := keyAction(contextQuotas, k.String())
+		switch key {
+		case "protect":
 			rows := m.selectableQuotaRows()
 			if len(rows) == 0 {
 				m.fail("No subscription selected.")
@@ -1225,37 +1229,37 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.notice = notice{}
 			m.quotaConfirm, m.quotaUnprotect = provider, m.quotaProviderProtected(row.provider.Provider)
 			m.mode = modeQuotaConfirm
-		case "s":
+		case "show unset":
 			m.quotaSelected = 0
 			m.quotaShowUnset = !m.quotaShowUnset
 			m.quotaScroll = 0
 			m.refreshWorkerForecast()
-		case "left", "right":
+		case "previous agent", "next agent":
 			if m.focus != focusSessions {
 				return m, nil
 			}
 			n := len(m.snap.Calibration.Quality.Agents) + 1
-			if k.String() == "right" {
+			if key == "next agent" {
 				m.qualityAgent = (m.qualityAgent + 1) % n
 			} else {
 				m.qualityAgent = (m.qualityAgent + n - 1) % n
 			}
 			m.quotaScroll = 0
-		case "d":
+		case "quality details":
 			m.qualityDetail = !m.qualityDetail
 			m.quotaScroll = 0
-		case "q":
+		case actQuit:
 			m.quitting = true
 			return m, tea.Quit
-		case "down", "j":
+		case actDown:
 			m.quotaSelected = min(m.quotaSelected+1, max(0, len(m.selectableQuotaRows())-1))
 			m.quotaScroll++
-		case "up", "k":
+		case actUp:
 			m.quotaSelected = max(0, m.quotaSelected-1)
 			m.quotaScroll = max(0, m.quotaScroll-1)
-		case "?":
+		case "help":
 			m.help = true
-		case "r":
+		case "refresh":
 			if !m.fetching {
 				m.fetching = true
 				return m, m.fetchCmd()
@@ -1265,26 +1269,32 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.focus == focusSessions {
 		if p, ok := m.selectedProposal(); ok {
-			switch k.String() {
-			case "enter":
+			key := keyAction(contextProposal, k.String())
+			switch key {
+			case "detail":
 				m.proposalDetail = &proposalDetail{proposal: p, loading: true}
 				return m, m.proposalDetailCmd(p)
-			case "a", "x":
-				return m, m.proposalAnswerCmd(p, k.String())
-			case "A":
+			case "approve", "decline":
+				action := "a"
+				if key == "decline" {
+					action = "x"
+				}
+				return m, m.proposalAnswerCmd(p, action)
+			case "approve all":
 				m.openProposalConfirm()
 				return m, nil
 			}
 		}
 		for _, suggestion := range m.snap.Learned {
-			if m.selected == fmt.Sprintf("learned:%d", suggestion.ID) && suggestion.Status == "pending" && (k.String() == "a" || k.String() == "r") {
+			key := keyAction(contextSuggestion, k.String())
+			if m.selected == fmt.Sprintf("learned:%d", suggestion.ID) && suggestion.Status == "pending" && key != "" {
 				c, ok := m.src.(inboxCaller)
 				if !ok {
 					m.fail("Learned suggestion actions unavailable.")
 					return m, nil
 				}
 				action := "accept"
-				if k.String() == "r" {
+				if key == "reject" {
 					action = "reject"
 				}
 				return m, func() tea.Msg {
@@ -1299,7 +1309,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		for _, held := range m.snap.Held {
-			if held.ID == m.selected && (k.String() == "a" || k.String() == "A" || k.String() == "r" || k.String() == "R") {
+			key := keyAction(contextHeld, k.String())
+			if held.ID == m.selected && key != "" {
 				answerer, ok := m.src.(interface {
 					AnswerHeld(context.Context, protocol.HeldAnswer) error
 				})
@@ -1307,7 +1318,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.fail("Held request actions unavailable.")
 					return m, nil
 				}
-				answer := protocol.HeldAnswer{MessageID: held.ID, Action: k.String()}
+				action := "a"
+				if key == "refuse" {
+					action = "r"
+				}
+				answer := protocol.HeldAnswer{MessageID: held.ID, Action: action}
 				return m, func() tea.Msg {
 					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 					defer cancel()
@@ -1320,35 +1335,44 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	switch k.String() {
-	case "q":
+	context := contextSessions
+	if m.tab == messagesTab {
+		context = contextMessages
+	}
+	key := keyAction(context, k.String())
+	if strings.HasPrefix(m.selected, "outcome:") && m.tab == sessionsTab {
+		if rowKey := keyAction(contextOutcome, k.String()); rowKey != "" {
+			key = rowKey
+		}
+	}
+	switch key {
+	case actQuit:
 		m.quitting = true
 		return m, tea.Quit
-	case "i":
+	case "inbox":
 		m.inboxOn = true
 		m.inboxIndex = 0
 		return m, nil
-	case "m":
+	case "compose":
 		return m.startCompose()
-	case "s":
+	case "let stand":
 		if cmd := m.resolveOutcome("let_stand"); cmd != nil {
 			return m, cmd
 		}
-	case "n":
+	case "new session":
 		if m.tab == sessionsTab {
 			return m.startSessionForm()
 		}
-	case "e":
+	case "system events":
 		if m.tab == messagesTab {
 			m.messageShowEvents = !m.messageShowEvents
 			return m, nil
 		}
-		return m.startEnter()
-	case "f":
+	case "defect":
 		if m.tab == messagesTab {
 			return m.startDefect()
 		}
-	case "w":
+	case "worker threads":
 		if m.tab == messagesTab {
 			m.hideWorkerThreads = !m.hideWorkerThreads
 			if m.convLoaded {
@@ -1370,41 +1394,39 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-	case "x":
+	case "stop worker":
 		return m.startConfirm()
-	case "h":
+	case "hide":
 		if m.tab == sessionsTab && m.focus == focusSessions {
 			return m.toggleHiddenSession()
 		}
-	case "H":
+	case "show hidden":
 		if m.tab == sessionsTab && m.focus == focusSessions {
 			m.showHiddenSessions = !m.showHiddenSessions
 			m.ensureSelection()
 			m.fixScroll()
 		}
-	case "t":
+	case "request rule":
 		return m.startTrust()
-	case "p":
+	case "policy":
 		return m.startPolicy()
-	case "I":
+	case "integrations":
 		return m.startIntegrations()
-	case "N":
+	case "rename machine":
 		return m.startRename()
-	case "L":
+	case "learned notes":
 		m.learned = true
-	case "M":
-		return m.startGraph()
-	case "?":
+	case "help":
 		m.help = true
-	case "d":
+	case "details":
 		m.expand = !m.expand
 		m.fixScroll()
-	case "/":
+	case "filter":
 		m.filtering = true
 		m.input.SetValue(m.filter)
 		m.input.CursorEnd()
 		return m, m.input.Focus()
-	case "esc":
+	case "back":
 		if m.filter != "" {
 			m.filter = ""
 			m.input.SetValue("")
@@ -1412,21 +1434,22 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ensureSelection()
 			m.fixScroll()
 		}
-	case "o":
+	case "overrule":
 		if cmd := m.resolveOutcome("overrule"); cmd != nil {
 			return m, cmd
 		}
+	case "offline":
 		m.showOffline = !m.showOffline
 		m.ensureSelection()
 		m.fixScroll()
-	case "a":
+	case "active only":
 		m.activeOnly = !m.activeOnly
 		m.ensureSelection()
 		m.fixScroll()
-	case "l":
+	case "event filter":
 		m.events = (m.events + 1) % 3
 		m.feedClamp()
-	case "v":
+	case "message body", "open session":
 		if m.focus == focusFeed {
 			if it := m.selectedConversationItem(); it != nil && it.isMessage() {
 				m.open = &openMsg{id: it.MsgID, loading: true}
@@ -1441,12 +1464,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-	case "r":
+		if m.tab == sessionsTab {
+			return m.startEnter()
+		}
+	case "refresh":
 		if !m.fetching {
 			m.fetching = true
 			return m, m.fetchCmd()
 		}
-	case "left", "right":
+	case "previous message", "next message":
 		if m.tab == messagesTab && m.focus == focusFeed {
 			rows := m.messageConversations()
 			if len(rows) > 0 {
@@ -1461,7 +1487,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 						break
 					}
 				}
-				if k.String() == "right" {
+				if key == "next message" {
 					pos++
 				} else {
 					pos--
@@ -1470,19 +1496,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-	case "up", "k":
+	case actUp:
 		m.move(-1)
-	case "down", "j":
+	case actDown:
 		m.move(1)
-	case "pgup":
+	case actPageUp:
 		m.move(-m.layout().sessions)
-	case "pgdown":
+	case actPageDown:
 		m.move(m.layout().sessions)
-	case "home", "g":
+	case actFirst:
 		m.move(-1 << 20)
-	case "end":
-		m.move(1 << 20)
-	case "enter":
+	case actLast:
 		if m.focus == focusFeed {
 			rows := m.messageConversations()
 			if len(rows) == 0 {
@@ -1495,11 +1519,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.feedCur = row.items[len(row.items)-1]
 			return m, nil
 		}
-		if m.tab == sessionsTab {
-			// Enter enters the session, the same action as e. The owner
-			// answers a waiting session inside the session itself.
-			return m.startEnter()
-		}
+		m.move(1 << 20)
 	}
 	return m, nil
 }

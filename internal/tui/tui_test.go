@@ -523,7 +523,7 @@ func TestViewGoldenFeedFocusAndBody(t *testing.T) {
 	// Move up to the first message (the last items are newer).
 	m = selectFeedMessage(m, "m_1")
 	golden(t, "view_80x24_feed_focus", m.View())
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = m2.(Model)
 	if cmd == nil || m.open == nil || !m.open.loading {
 		t.Fatal("v did not start fetching the body")
@@ -618,8 +618,12 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("typed keys acted as commands: filter %q quit %v offline %v", m.filter, m.quitting, m.showOffline)
 	}
 	m = keys(m, "esc")
-	if m.filtering || m.filter != "" || len(names(m)) != 5 {
+	if !m.filtering || m.filter != "" || len(names(m)) != 5 {
 		t.Fatalf("esc must clear the filter: %q %v", m.filter, names(m))
+	}
+	m = keys(m, "esc")
+	if m.filtering {
+		t.Fatal("second esc did not leave the filter field")
 	}
 
 	m = keys(m, "/", "g", "p", "t")
@@ -1021,7 +1025,7 @@ func TestOpenMessageBody(t *testing.T) {
 	}
 	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_3")
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = m2.(Model)
 	if !strings.Contains(m.View(), "fetching...") {
 		t.Fatalf("no loading state:\n%s", m.View())
@@ -1047,7 +1051,7 @@ func TestOpenMessageBody(t *testing.T) {
 
 	// A message the machine cannot read.
 	m = selectFeedMessage(m, "m_1")
-	m2, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	m2, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = send(m2.(Model), cmd())
 	if v := m.View(); !strings.Contains(v, "The body is not available here") {
 		t.Fatalf("no explanation:\n%s", v)

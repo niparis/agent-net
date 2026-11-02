@@ -47,13 +47,13 @@ func graphModel(w, h int) Model {
 func TestGraphTabKeys(t *testing.T) {
 	m := graphModel(120, 34)
 	start := m.graphState.Graph.Selected()
-	m = keys(m, "]")
+	m = keys(m, ".")
 	if m.graphState.Graph.Selected() == start {
 		t.Fatal("selection did not move")
 	}
 	chosen := m.graphState.Graph.Selected()
 	old := m.graphState.Camera
-	m = keys(m, "+", "h")
+	m = keys(m, "+", "shift+left")
 	if m.graphState.Camera.Zoom <= old.Zoom || m.graphState.Camera.Center.X >= old.Center.X {
 		t.Fatal("zoom or pan failed")
 	}
@@ -203,7 +203,7 @@ func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
 		if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "t tools") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
 			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
 		}
-		if strings.Contains(line, "space pause") || !strings.Contains(line, "arrows select") {
+		if strings.Contains(line, "space pause") || !strings.Contains(line, "left/right select") {
 			t.Fatalf("paused=%v: incorrect hint line %q", paused, line)
 		}
 		if paused && (!strings.Contains(line, "paused ·") || strings.Contains(line, "o orbit")) {
@@ -220,9 +220,9 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"arrows select", "+ - zoom", "0 fit", "o orbit", "t tools", "enter card", "? help"}, []string{"space pause"}},
-		{60, []string{"arrows select", "0 fit", "o orbit", "t tools", "? help"}, []string{"enter card"}},
-		{40, []string{"arrows select", "? help"}, []string{"t tools", "0 fit", "o orbit", "enter card"}},
+		{80, []string{"left/right select", "+/- zoom", "0 fit", "o orbit", "t tools", "enter card", "? help"}, []string{"space pause"}},
+		{60, []string{"left/right select", "+/- zoom", "0 fit", "t tools", "? help"}, []string{"enter card", "o orbit"}},
+		{40, []string{"left/right select", "+/- zoom", "? help"}, []string{"t tools", "0 fit", "o orbit", "enter card"}},
 	} {
 		line := graphHintLine(tc.width, false)
 		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? help") {
@@ -274,9 +274,9 @@ func TestGraphStatusLineFollowsTheCamera(t *testing.T) {
 
 func TestGraphHelpDescribesNavigation(t *testing.T) {
 	m := graphModel(120, 34)
-	m.graphHelp = true
-	text := strings.Join(m.graphView(120, 20), " ")
-	for _, want := range []string{"arrows select", "shift+arrows", "[ ] neighbours"} {
+	m = keys(m, "?")
+	text := strings.Join(m.helpContent(120), " ")
+	for _, want := range []string{"arrows", "shift+arrows", ", ."} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help missing %q: %s", want, text)
 		}

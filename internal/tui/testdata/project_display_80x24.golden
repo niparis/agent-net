@@ -7,7 +7,7 @@ governed by: trading-architect (owner)
 
 IN 1                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
-Card 1-8/14  [ ] scroll ────────────────────────────────────────────────────────
+Card 1-8/14  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
@@ -21,4 +21,4 @@ RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  [ ] scroll  U/u undo  ? help  q quit
+enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit

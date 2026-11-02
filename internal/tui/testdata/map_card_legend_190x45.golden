@@ -8,7 +8,7 @@ governed by: wbg-architect (advisor)
 IN 2                                                          OUT 2
 all projects ──▶ depends                                      ──▶ cogforge depends ask
 homelab ──▶ deploys auto                                      ──▶ homelab depends ask
-Card 1-25/36  [ ] scroll ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Card 1-25/36  ctrl+u/d scroll ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Legend ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Edges
   ──▶ depends  consumer uses provider
@@ -42,4 +42,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                                                                                                                                            │
 │ c: open the CTO                                                                                                                                                                            │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit
+enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ! legend  ? help  q quit

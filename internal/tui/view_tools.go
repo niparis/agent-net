@@ -12,15 +12,25 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-// toolsView draws either the single list or one clean modal box. The list is
-// not drawn underneath a modal, so old panel borders cannot bleed through.
+// toolsView draws the selected Tools screen or its modal.
 func (m Model) toolsView(w, h int) []string {
-	out := []string{m.titleLine(w)}
+	out := []string{m.titleLine(w), m.toolsScreenLine(w)}
 	if m.tl.modal != nil {
-		box := m.modalBox(w, max(h-1, 6))
+		box := m.modalBox(w, max(h-2, 6))
 		out = append(out, box...)
 	} else {
-		out = append(out, m.toolListView(w, max(h-1, 3))...)
+		body := max(h-2, 3)
+		switch {
+		case !m.tl.loaded:
+			message := orStr(m.tl.err, "reading the tools...")
+			out = append(out, panel("Tools", []string{message}, w, roleAccent)...)
+		case m.tl.screen == toolsDiffs:
+			out = append(out, m.diffsView(w, body)...)
+		case m.tl.screen == toolsAll:
+			out = append(out, m.allToolsView(w, body)...)
+		default:
+			out = append(out, m.projectToolsView(w, body)...)
+		}
 	}
 	for len(out) < h {
 		out = append(out, "")
@@ -28,7 +38,26 @@ func (m Model) toolsView(w, h int) []string {
 	return out[:h]
 }
 
-func (m Model) toolsScreenLine(w int) string { return clip("Tools / "+sanitize(m.tl.search), w) }
+func (m Model) toolsScreenLine(w int) string {
+	var parts []string
+	for i, name := range toolsScreenNames {
+		label := " " + name + " "
+		if i == m.tl.screen {
+			parts = append(parts, sSel.Render(label))
+		} else {
+			parts = append(parts, tsText.Render(label))
+		}
+	}
+	line := strings.Join(parts, " ") + tsDim.Render("  [ ] switch screen")
+	search := m.tl.search
+	if m.tl.screen == toolsProject {
+		search = m.tl.projFind
+	}
+	if search != "" || m.tl.searching {
+		line += tsAcc.Render("   /" + sanitize(search) + searchCursor(m.tl.searching))
+	}
+	return clip(line, w)
+}
 
 func (m Model) toolsHints() []hint {
 	if md := m.tl.modal; md != nil {
@@ -38,7 +67,19 @@ func (m Model) toolsHints() []hint {
 		}
 		return out
 	}
-	return []hint{{"j/k", "move", 0}, {"enter", "actions", 0}, {"/", "filter", 0}, {"n", "add", 0}, {"esc", "clear", 1}, {"?", "help", 1}, {"q", "quit", 0}}
+	move := bindingPairHint(contextTools, actDown, actUp)
+	help, quit := bindingHint(contextTools, "help"), bindingHint(contextTools, actQuit)
+	switch m.tl.screen {
+	case toolsDiffs:
+		return []hint{move, bindingHint(contextToolsDiff, "difference detail"), bindingHint(contextToolsDiff, "accept difference"), bindingPairHint(contextToolsDiff, "previous screen", "next screen"), help, quit}
+	case toolsAll:
+		columns := bindingPairHint(contextToolsAll, "previous column", "next column")
+		columns.label = "column"
+		onOff := bindingPairHint(contextToolsAll, "turn on", "turn off")
+		onOff.label = "on/off"
+		return []hint{move, columns, bindingHint(contextToolsAll, "item detail"), onOff, bindingPairHint(contextToolsAll, "previous screen", "next screen"), help, quit}
+	}
+	return []hint{move, bindingHint(contextToolsProject, "next machine"), bindingHint(contextTools, "filter"), bindingPairHint(contextToolsProject, "previous screen", "next screen"), help, quit}
 }
 
 func (m Model) toolsHelpLine(w int) (string, bool) {
@@ -58,6 +99,9 @@ func (m Model) toolsHelpLine(w int) (string, bool) {
 	}
 	if m.tl.searching {
 		return clip("/"+sanitize(m.tl.search)+"▏  enter keep · esc clear", w), true
+	}
+	if message := m.activeToast(); message != "" {
+		return clip(sanitize(message), w), true
 	}
 	return "", false
 }
@@ -388,7 +432,7 @@ func (m Model) projectToolsView(w, h int) []string {
 		}
 		body = append(body, l+tsFaint.Render("│ ")+r)
 	}
-	title := fmt.Sprintf("By project · what %s gets on %s · m machine", sanitize(proj), sanitize(mach))
+	title := fmt.Sprintf("By project · what %s gets on %s · v machine", sanitize(proj), sanitize(mach))
 	return panel(title, body, w, roleAccent)
 }
 
