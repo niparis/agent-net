@@ -177,7 +177,11 @@ func (m Model) qualityDetailsView(w, h int) []string {
 		}
 	}
 	body := []string{qualitySelector(q, m.qualityAgent, w)}
-	for _, name := range []string{"simple", "normal", "hard", "very_complex"} {
+	for _, name := range protocol.DifficultyLevels {
+		// Trivial is rare: its box shows only when it has tasks.
+		if name == "trivial" && len(byLevel[name].Families) == 0 {
+			continue
+		}
 		body = append(body, qualityDetailsLevel(byLevel[name], name, picks[name], reasons[name], familyWidth, w)...)
 	}
 	legend := wrap("NEEDED HELP: share of tasks with at least one nudge or fix. LATE BUGS: bugs found after the hand-back, with the worst severity (1 to 4).", w)

@@ -170,3 +170,16 @@ func TestQualityCardBarsScaleToTheShownRows(t *testing.T) {
 		t.Errorf("terra at 0 min fills %d cells, want none", got)
 	}
 }
+
+// A trivial task is rare, but when there is one the details show its level.
+func TestQualityDetailsShowTrivialWhenItHasTasks(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Calibration.Quality = protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "trivial", Tasks: 1, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 1}}}}}
+	if view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n")); !strings.Contains(view, "╭─trivial · 1 task") {
+		t.Fatal(view)
+	}
+	m.snap.Calibration.Quality.Levels = nil
+	if view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n")); strings.Contains(view, "trivial") {
+		t.Fatalf("an empty trivial level is shown:\n%s", view)
+	}
+}
