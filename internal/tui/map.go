@@ -81,57 +81,62 @@ func (m *Model) applyMap(r mapMsg) {
 
 // mapKey handles the selected agent card. Esc returns to the network.
 func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "esc":
+	key := keyAction(contextCard, k.String())
+	switch key {
+	case "back":
 		m.mapOn = false
 		m.uiFilter = ""
 		m.graphGeneration++
 		return m, graphTick(m.graphGeneration)
-	case "enter":
+	case "sessions":
 		m.mapOn, m.tab, m.focus = false, 0, focusSessions
 		m.filter = m.mp.selected
 		m.input.SetValue(m.filter)
 		m.ensureSelection()
 		m.fixScroll()
-	case "q":
+	case actQuit:
 		m.quitting = true
 		return m, tea.Quit
-	case "t":
+	case "node tools":
 		return m.startNodeTools(m.mp.selected)
-	case "a":
+	case "autonomy":
 		return m.toggleAutonomy()
-	case "D":
+	case "rename project":
 		return m.startProjectRename()
-	case "n":
+	case "new session":
 		if node, ok := m.mapNode(m.mp.selected); ok && node.Kind == "component" {
 			return m.startSessionFormFromNode()
 		}
 		return m, nil
-	case "u":
+	case "undo learned":
 		return m, m.mapUndoLearned()
-	case "U":
+	case "previous learned", "next learned":
 		changes := m.mapLearned(m.mp.selected)
 		if len(changes) > 0 {
 			if m.mp.learnedFor != m.mp.selected {
 				m.mp.learnedFor, m.mp.learnedIndex = m.mp.selected, 0
 			}
-			m.mp.learnedIndex = (m.mp.learnedIndex + 1) % len(changes)
+			step := 1
+			if key == "previous learned" {
+				step = len(changes) - 1
+			}
+			m.mp.learnedIndex = (m.mp.learnedIndex + step) % len(changes)
 		}
-	case "?":
+	case "help":
 		m.help = true
-	case "!":
+	case "legend":
 		m.mp.legend = !m.mp.legend
 		// Show the top of the body again, where the legend starts when it is on.
 		m.mp.charterFor, m.mp.charterScroll = m.mp.selected, 0
-	case "h":
+	case "hide project":
 		return m.toggleHiddenNode()
-	case "H":
+	case "show hidden":
 		m.showHiddenNodes = !m.showHiddenNodes
-	case "]", "ctrl+d", "pgdown":
+	case actPageDown:
 		m.mapScrollCharter(3)
-	case "[", "ctrl+u", "pgup":
+	case actPageUp:
 		m.mapScrollCharter(-3)
-	case "r":
+	case "refresh":
 		if !m.mp.loading {
 			m.mp.loading = true
 			return m, m.mapCmd()

@@ -1,12 +1,11 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  Sessions
-  proposal             enter details; a approve; x decline; A approve all after confirmation
+  proposal             enter details; a approve; r decline; A approve all after confirmation
   1-5                  switch between Sessions, Graph, Quotas, Messages and Tools
   up/down, j/k         select a session
   pgup/pgdn, home/end  page, first, last
   enter                open session in herdr (ctrl+] returns on fallback)
-  e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
   n                    start a session in herdr: project, harness, model, folder and first message (a form). Empty first
                        message starts it and enters it; text starts it in the background and sends it.
@@ -21,12 +20,12 @@ Keys ─────────────────────────
   s                    show or hide subscriptions that are not set up
   left/right           cycle the Quality panel agent: all agents, then each caller
   d                    show or hide the Quality panel detail (fixes and continues)
-  r                    refresh the readings
+  R                    refresh the readings
 
  Graph
-  M, G, 2              open the network
-  arrows               select a node; shift+arrows or hjkl pan
-  [ ]                  select a linked neighbour
+  2                    open the network
+  arrows               select a node; shift+arrows pan
+  , .                  select a linked neighbour
   /                    find a node; Enter selects the first match; Esc cancels
   + -, 0               zoom; fit the graph
   o, space             orbit; pause traffic
@@ -36,5 +35,6 @@ Keys ─────────────────────────
   enter                open Sessions filtered to this agent's project
   n                    start a new session in this project (the same form, filled from here)
   esc                  return to Graph with the same node selected
+  D                    name project (empty clears)
   more below
-up/down scroll  esc close help  q quit
+up/down scroll up  esc close help  q quit

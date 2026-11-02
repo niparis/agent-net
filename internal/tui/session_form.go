@@ -685,12 +685,13 @@ func (m *Model) completeSessionProject() bool {
 // their choice, and a text field moves its cursor.
 func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	f := &m.sform
-	switch k.Type {
-	case tea.KeyEsc:
+	key := keyAction(contextForm, k.String())
+	switch key {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Start cancelled.")
 		return m, nil
-	case tea.KeyTab:
+	case "tab field":
 		if f.cur == sProject && m.completeSessionProject() {
 			return m, nil
 		}
@@ -698,19 +699,19 @@ func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, f.focus(f.nextSessionField(f.cur))
 		}
 		return m, nil
-	case tea.KeyShiftTab, tea.KeyUp:
+	case "previous field":
 		if f.cur > sProject {
 			return m, f.focus(f.prevSessionField(f.cur))
 		}
 		return m, nil
-	case tea.KeyDown:
+	case "next field":
 		if f.cur < sFirstMessage {
 			return m, f.focus(f.nextSessionField(f.cur))
 		}
 		return m, nil
-	case tea.KeyLeft, tea.KeyRight:
+	case "previous choice", "next choice":
 		delta := -1
-		if k.Type == tea.KeyRight {
+		if key == "next choice" {
 			delta = 1
 		}
 		switch f.cur {
@@ -729,7 +730,7 @@ func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// A text field takes left and right as cursor movement below.
-	case tea.KeyEnter:
+	case "submit":
 		if f.cur < sFirstMessage {
 			return m, f.focus(f.nextSessionField(f.cur))
 		}

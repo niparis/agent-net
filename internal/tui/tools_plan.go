@@ -111,39 +111,41 @@ func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if md.picker != nil && !md.loading {
 		return m.pickerKey(k)
 	}
+	action := keyAction(contextToolsPlan, key)
+	compareAction := keyAction(contextToolsCompare, key)
 	// A plan asks yes or no: Enter and y run it, Esc and n close it. In a
 	// compare view n and p still step between files.
-	if key == "y" || key == "Y" {
+	if action == "apply" {
 		if _, ok := md.actions["enter"]; ok && !md.loading {
 			key = "enter"
 		}
 	}
-	if (key == "n" || key == "N") && len(md.compareFiles) == 0 && !md.loading {
+	if action == "cancel" && len(md.compareFiles) == 0 && !md.loading {
 		key = "esc"
 	}
 	switch {
-	case key == "esc" && md.back != nil:
+	case action == "cancel" && key == "esc" && md.back != nil:
 		m.tl.modal = md.back
 		return m, nil
-	case (key == "n" || key == "p") && len(md.compareFiles) > 0:
+	case (compareAction == "next file" || compareAction == "previous file") && len(md.compareFiles) > 0:
 		step := 1
-		if key == "p" {
+		if compareAction == "previous file" {
 			step = -1
 		}
 		md.compareIndex = (md.compareIndex + step + len(md.compareFiles)) % len(md.compareFiles)
 		return m, nil
-	case key == "esc" || (md.done && key == "enter"):
+	case (action == "cancel" && key == "esc") || (md.done && action == "apply"):
 		m.tl.modal = nil
 		return m, nil
 	case md.loading:
 		return m, nil
-	case key == "down" || key == "j":
+	case action == actDown:
 		md.scroll++
 		return m, nil
-	case key == "up" || key == "k":
+	case action == actUp:
 		md.scroll = max(0, md.scroll-1)
 		return m, nil
-	case key == "d" && len(md.paths) > 0:
+	case action == "exact folders" && len(md.paths) > 0:
 		md.showPaths = !md.showPaths
 		return m, nil
 	}
@@ -686,7 +688,11 @@ func (m Model) pickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if p.filtering {
 		switch k.Type {
 		case tea.KeyEsc:
-			p.filter, p.filtering = "", false
+			if p.filter != "" {
+				p.filter = ""
+			} else {
+				p.filtering = false
+			}
 		case tea.KeyEnter:
 			p.filtering = false
 		case tea.KeyBackspace, tea.KeyCtrlH:
@@ -702,22 +708,22 @@ func (m Model) pickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	shown := p.shown()
-	switch k.String() {
-	case "esc":
+	switch keyAction(contextToolsPicker, k.String()) {
+	case "cancel":
 		m.tl.modal = nil
-	case "j", "down":
+	case actDown:
 		p.cur = min(p.cur+1, max(len(shown)-1, 0))
-	case "k", "up":
+	case actUp:
 		p.cur = max(p.cur-1, 0)
-	case " ", "space", "x":
+	case "tick":
 		if p.cur < len(shown) {
 			n := shown[p.cur]
 			p.sel[n] = !p.sel[n]
 		}
-	case "/":
+	case "filter":
 		p.filtering = true
 		pickerFoot(md, p)
-	case "enter":
+	case "apply":
 		return m.pickerConfirm()
 	}
 	return m, nil
@@ -1264,7 +1270,7 @@ func (m Model) openFix() (tea.Model, tea.Cmd) {
 			c := c
 			jobs = append(jobs, assignJob{name: c.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}})
 		}
-		return m.openAssign(title, "import and turn on", jobs, []string{"or press x on this line to leave them as they are"})
+		return m.openAssign(title, "import and turn on", jobs, []string{"press a on the difference row to leave the copies as they are"})
 	case toolsdiff.ActMCPImport:
 		return m.openMCPImport(act.Name)
 	case toolsdiff.ActMCPNativeRemove:

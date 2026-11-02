@@ -272,28 +272,28 @@ func TestFeedCursorSkipsHiddenLines(t *testing.T) {
 	}
 }
 
-func TestFeedEnterSelectsTheLatestMessageInTheThread(t *testing.T) {
+func TestFeedEndSelectsTheLatestMessageInTheThread(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_1")
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	m = next.(Model)
 	if m.open != nil {
-		t.Fatalf("enter opened another view: body=%+v", m.open)
+		t.Fatalf("end opened another view: body=%+v", m.open)
 	}
 	if it := m.selectedConversationItem(); it == nil || it.MsgID != "m_2" {
-		t.Fatalf("enter did not select the latest thread message: %+v", it)
+		t.Fatalf("end did not select the latest thread message: %+v", it)
 	}
 }
 
-func TestFeedVOpensTheMessageBody(t *testing.T) {
+func TestFeedEnterOpensTheMessageBody(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_1")
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
 	if m.open == nil || m.open.id != "m_1" || cmd == nil {
-		t.Fatalf("v did not open the body: %+v", m.open)
+		t.Fatalf("enter did not open the body: %+v", m.open)
 	}
 }
 

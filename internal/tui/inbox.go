@@ -89,30 +89,31 @@ func (m Model) inboxKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inboxInput, cmd = m.inboxInput.Update(k)
 		return m, cmd
 	}
-	switch k.String() {
-	case "esc", "backspace":
+	key := keyAction(contextInbox, k.String())
+	switch key {
+	case "back":
 		if m.inboxDetail {
 			m.inboxDetail = false
 		} else {
 			m.inboxOn = false
 		}
-	case "up", "k":
+	case actUp:
 		m.inboxIndex = max(0, m.inboxIndex-1)
-	case "down", "j":
+	case actDown:
 		m.inboxIndex = min(max(0, len(items)-1), m.inboxIndex+1)
-	case "enter":
+	case "details":
 		if len(items) > 0 {
 			m.inboxDetail = true
 		}
-	case "a", "r":
+	case "approve", "refuse":
 		if len(items) > 0 && items[m.inboxIndex].Status == "open" {
 			answer := "approve"
-			if k.String() == "r" {
+			if key == "refuse" {
 				answer = "refuse"
 			}
 			return m, m.inboxAnswer(items[m.inboxIndex].ID, answer)
 		}
-	case "t":
+	case "answer":
 		if len(items) > 0 && items[m.inboxIndex].Status == "open" {
 			m.inboxInput = textinput.New()
 			m.inboxInput.CharLimit = protocol.MaxBodyBytes

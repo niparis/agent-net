@@ -4,8 +4,11 @@
 
 This key audit uses sessions, workers, charters and the CTO. It records the existing and proposed interface, not a change to those primitives. No conflict with decision 0036 is known.
 
-**Status:** Tools is implemented as documented below. Historical conflict tables retain the earlier audit. Other proposals remain proposals, except the CTO keys and Graph/card merge in [0038](../decisions/0038-map-merged-into-graph.md). The tables below include that merge.
-**Date:** 2026-10-31.
+**Status:** The owner-approved map is implemented. The binding table is
+[`internal/tui/keys.go`](../../internal/tui/keys.go). Sections 1 through 3
+record the old keys and the reasons for changing them. The current keys are in
+[the TUI keys reference](../reference.md#tui-keys).
+**Date:** 2026-11-02.
 **Scope:** every key handler and hint line under `internal/tui`: the five tabs,
 the Needs you rows, Messages, the inbox, Quotas, Graph, Tools, help,
 the forms and the CTO box.
@@ -280,7 +283,7 @@ only supplies ctrl+] to come back.
 | Refresh | `r` | Sessions, Quotas, Graph card, Tools. |
 | Scroll text | `pgup`/`pgdown`, `ctrl+u`/`ctrl+d`, `j`/`k`, arrows | CTO, help, body, card charter, plans. |
 
-## 4. Proposed key map
+## 4. Implemented key map
 
 Rules:
 
@@ -338,11 +341,11 @@ Rules:
 | 19 | Make `?` open the same help overlay on Graph, with a Graph section, instead of the separate `graphHelp` panel. | Medium | One key, one help. |
 | 20 | Unify the confirmation keys on `y`/`n` and show them in every modal footer. They already agree except for `Y`/`N` aliases, which can stay. | Small | One confirmation convention. |
 
-Items 8, 9, 10, 11 and 12 change everyday keys. They should be done together,
-one commit, after the owner approves the map. The implemented changes are the Graph/card merge in decision 0038 and
-the CTO box in decision
+The owner approved the key changes together. The binding table records their
+action IDs, contexts, help labels and key-line priorities. The Graph/card merge
+is in decision 0038 and the CTO box is in decision
 [0034](../decisions/0034-cto-box-is-read-only.md): Enter opens the CTO and `o`
-no longer does anything there.
+does nothing there.
 
 The focused CTO box reserves `w` for the graph window (decision 0040). This key
 was free there; the Messages worker-thread filter keeps its existing `w`.

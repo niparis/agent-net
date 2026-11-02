@@ -36,9 +36,9 @@ func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
 func TestKeyLineContentPerTab(t *testing.T) {
 	for _, tc := range []struct{ name, key, want string }{
 		{"Sessions", "1", "up/down select  enter open  m msg  n new  c CTO  ? help  q quit"},
-		{"Messages", "4", "up/down thread  left/right msg  enter latest  v body  c CTO  ? help  q quit"},
-		{"Quotas", "3", "up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit"},
-		{"Tools", "5", "j/k move  enter actions  / filter  n add  esc clear  ? help  q quit"},
+		{"Messages", "4", "up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit"},
+		{"Quotas", "3", "up/down select  p protect  s show unset  R refresh  c CTO  ? help  q quit"},
+		{"Tools", "5", "j/k move  left/right column  enter detail  a/u on/off  [/] screen  ? help  q quit"},
 		{"Graph", "2", "1-5 tabs  c CTO  ? help  q quit"},
 	} {
 		m := keys(newModel(120, 34), tc.key)
@@ -55,11 +55,11 @@ func TestKeysRemovedFromKeyLineStayInHelp(t *testing.T) {
 		name, key string
 		removed   []string
 	}{
-		{"Sessions", "1", []string{"1-5", "s", "x", "h", "H", "t", "p", "N", "L", "o", "a", "d", "r", "/"}},
+		{"Sessions", "1", []string{"1-5", "s", "x", "h", "H", "t", "p", "N", "L", "o", "A", "d", "R", "/"}},
 		{"Messages", "4", []string{"w", "e", "l"}},
 		{"Quotas", "3", []string{"1-5", "left/right", "d"}},
-		{"Graph", "2", []string{"D", "[ ]", "U", "u", "h", "H", "c"}},
-		{"Tools", "5", []string{".", "r", "c"}},
+		{"Graph", "2", []string{"D", ", .", "u", "h", "H", "c"}},
+		{"Tools", "5", []string{".", "R", "c"}},
 	} {
 		m := keys(newModel(120, 34), tc.key)
 		help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
@@ -124,9 +124,9 @@ func TestGraphKeyLineIsShortAndHelpKeepsTheRest(t *testing.T) {
 	}
 
 	m := graphModel(120, 34)
-	m.graphHelp = true
-	help := ansi.Strip(strings.Join(m.graphView(120, 20), " "))
-	for _, want := range []string{"hjkl", "shift+arrows", "[ ]", "space", "o orbit", "q quit"} {
+	m = keys(m, "?")
+	help := ansi.Strip(strings.Join(m.helpContent(120), " "))
+	for _, want := range []string{"shift+arrows", ", .", "space", "orbit", "quit"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("graph help does not list %q: %s", want, help)
 		}

@@ -290,7 +290,15 @@ func (m Model) shownRows() []toolsdiff.Row {
 	return filtered
 }
 
-func (m Model) toolsRowCount() int { return len(m.shownRows()) }
+func (m Model) toolsRowCount() int {
+	switch m.tl.screen {
+	case toolsDiffs:
+		return len(m.shownDiffs())
+	case toolsAll:
+		return len(m.shownRows())
+	}
+	return len(m.shownProjects())
+}
 
 func (m *Model) toolsClamp() {
 	n := m.toolsRowCount()
@@ -329,25 +337,87 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.toolsSearchKey(k)
 	}
 	m.tl.toast = ""
-	switch k.String() {
-	case "q":
+	context := contextToolsDiff
+	switch m.tl.screen {
+	case toolsAll:
+		context = contextToolsAll
+	case toolsProject:
+		context = contextToolsProject
+	}
+	key := keyAction(context, k.String())
+	if key == "" {
+		key = keyAction(contextTools, k.String())
+	}
+	switch key {
+	case actQuit:
 		m.quitting = true
 		return m, tea.Quit
-	case "?":
+	case "help":
 		m.help = true
-	case "M", "G":
-		return m.startGraph()
-	case "down", "j":
-		m.tl.row++
-	case "up", "k":
-		m.tl.row--
-	case "/":
+	case "previous screen":
+		m.toolsSetScreen(m.tl.screen - 1)
+	case "next screen":
+		m.toolsSetScreen(m.tl.screen + 1)
+	case "rescan":
+		return m.toolsRescan()
+	case actDown:
+		if m.tl.screen == toolsProject {
+			m.toolsMoveProject(1)
+		} else {
+			m.tl.row++
+		}
+	case actUp:
+		if m.tl.screen == toolsProject {
+			m.toolsMoveProject(-1)
+		} else {
+			m.tl.row--
+		}
+	case "previous column":
+		m.tl.col--
+	case "next column":
+		m.tl.col++
+	case "next machine":
+		if n := len(m.tl.cat.Machines); n > 0 {
+			m.tl.machine = (m.tl.machine + 1) % n
+		}
+	case "filter":
 		m.tl.searching = true
-	case "esc":
-		m.tl.search = ""
-	case "enter":
+		if m.tl.screen == toolsDiffs {
+			m.toolsSetScreen(toolsAll)
+			m.tl.searching = true
+		}
+	case "clear filter":
+		m.tl.search, m.tl.projFind = "", ""
+	case "show accepted":
+		m.tl.showAccepted = !m.tl.showAccepted
+	case "accept difference":
+		return m.toolsAccept()
+	case "difference detail":
+		ds := m.shownDiffs()
+		if m.tl.row < len(ds) && ds[m.tl.row].Action.Kind == "" {
+			md := m.openModal(ds[m.tl.row].Title)
+			md.lines = []string{ds[m.tl.row].Fix}
+			md.foot = []string{"esc", "back"}
+			return m, nil
+		}
+		if m.tl.row < len(ds) && strings.HasPrefix(ds[m.tl.row].Key, "group:") {
+			key := ds[m.tl.row].Key
+			next := map[string]bool{}
+			for k, v := range m.tl.expandedDiffs {
+				next[k] = v
+			}
+			next[key] = !next[key]
+			m.tl.expandedDiffs = next
+			return m, nil
+		}
+		return m.openFix()
+	case "item detail":
 		return m.openToolMenu()
-	case "n":
+	case "turn on":
+		return m.openRowPlan(true)
+	case "turn off":
+		return m.openRowPlan(false)
+	case "add":
 		return m.openToolAdd()
 	}
 	m.toolsClamp()
@@ -375,8 +445,11 @@ func (m Model) toolsSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch k.Type {
 	case tea.KeyEsc:
-		*target = ""
-		m.tl.searching = false
+		if *target != "" {
+			*target = ""
+		} else {
+			m.tl.searching = false
+		}
 	case tea.KeyEnter:
 		m.tl.searching = false
 	case tea.KeyBackspace, tea.KeyCtrlH:

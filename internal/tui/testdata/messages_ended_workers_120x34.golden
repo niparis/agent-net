@@ -31,4 +31,4 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  v body  f defect  c CTO  ? help  q quit
+up/down thread  left/right msg  enter body  f defect  c CTO  ? help  q quit

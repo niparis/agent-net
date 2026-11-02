@@ -31,4 +31,4 @@ RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit
+enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ! legend  ? help  q quit

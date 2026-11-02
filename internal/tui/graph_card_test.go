@@ -25,15 +25,20 @@ func TestGraphCardReturnKeepsSelection(t *testing.T) {
 		t.Fatal("Esc did not return to selected graph node")
 	}
 }
-func TestNetworkTabsAndAliases(t *testing.T) {
+func TestNetworkTabUsesDigitOnly(t *testing.T) {
 	m := mapModel(120, 34, fakeGraph())
 	if len(tabNames) != 5 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph  3 Quotas") {
 		t.Fatalf("wrong tabs: %v", tabNames)
 	}
-	for _, key := range []string{"2", "M", "G"} {
+	for _, key := range []string{"2"} {
 		n := keys(m, key)
 		if n.tab != graphTab || n.mapOn {
 			t.Fatalf("%s did not open Graph", key)
+		}
+	}
+	for _, key := range []string{"M", "G"} {
+		if n := keys(m, key); n.tab == graphTab {
+			t.Fatalf("%s still opens Graph", key)
 		}
 	}
 }
@@ -50,7 +55,7 @@ func TestGraphCardLearnedUndo(t *testing.T) {
 	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 1, Node: "project-02", Field: "needs", Phrase: "ops", Status: "applied", By: "learned", HistoryID: 42}, {ID: 2, Node: "project-02", Field: "needs", Phrase: "backup", Status: "applied", By: "learned", HistoryID: 43}}
-	m = keys(m, "enter", "U")
+	m = keys(m, "enter", ".")
 	src := &learnedSource{}
 	m.src = src
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
@@ -94,7 +99,7 @@ func TestGraphCardHasNoSeparateNavigationAndOpensSessions(t *testing.T) {
 func TestGraphSearchCancelAndDisplayName(t *testing.T) {
 	m := graphModel(80, 24)
 	selected := m.graphState.Graph.Selected()
-	m = keys(m, "/", "nothing", "esc")
+	m = keys(m, "/", "nothing", "esc", "esc")
 	if m.graphState.Graph.Selected() != selected {
 		t.Fatal("cancel changed selection")
 	}

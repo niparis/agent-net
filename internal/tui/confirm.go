@@ -7,17 +7,17 @@ import (
 
 // confirmHint is how every yes/no question says how to answer it. Enter and y
 // say yes, Esc and n say no, on every confirm in the TUI.
-const confirmHint = "enter: yes · esc: no"
+const confirmHint = "enter/y: yes · esc/n: no"
 
 // confirmSuffix separates a question from the hint.
 const confirmSuffix = "  " + confirmHint
 
 // confirmAnswer reports what a key says to a yes/no question.
 func confirmAnswer(k tea.KeyMsg) (yes, no bool) {
-	switch k.String() {
-	case "enter", "y", "Y":
+	switch keyAction(contextConfirm, k.String()) {
+	case "yes":
 		return true, false
-	case "esc", "n", "N":
+	case "no":
 		return false, true
 	}
 	return false, false

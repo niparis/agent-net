@@ -433,10 +433,10 @@ func TestGraphNewSessionHelp(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.mapOn = false
 	m = keys(m, "?")
-	if !strings.Contains(ansi.Strip(m.View()), "n new session") {
+	if !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "start a new session") {
 		t.Fatalf("Graph help: %s", m.View())
 	}
-	m.mapOn, m.graphHelp = true, false
+	m.mapOn, m.help = true, false
 	if !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "n") || !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "filled from here") {
 		t.Fatal("card help missing new session")
 	}

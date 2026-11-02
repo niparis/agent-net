@@ -18,7 +18,7 @@
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
-│ Start a new conversation?  enter: yes · esc: no                              │
+│ Start a new conversation?  enter/y: yes · esc/n: no                          │
 │ enter: open the CTO · ctrl+]: back · w: drive 30m                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter open CTO  ctrl+] back  m model  n new  u undo

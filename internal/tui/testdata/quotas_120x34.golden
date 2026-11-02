@@ -31,4 +31,4 @@ opus claude: complete 10 · continue 0 · fix 0 · picked for hard and very comp
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit
+up/down select  p protect  s show unset  R refresh  c CTO  ? help  q quit

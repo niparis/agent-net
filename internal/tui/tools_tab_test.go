@@ -267,6 +267,17 @@ func TestToolsTabWithoutToolsSourceExplainsItself(t *testing.T) {
 	}
 }
 
+func TestToolsTabGoldens(t *testing.T) {
+	initScreenColors()
+	for _, screen := range []struct {
+		name  string
+		index int
+	}{{"tools_differences_120x34", 0}, {"tools_all_120x34", 1}, {"tools_by_project_120x34", 2}} {
+		m, _ := toolsAtScreen(120, 34, screen.index)
+		writeScreen(t, screen.name, m.View())
+	}
+}
+
 func TestToolsRescanReadsAgain(t *testing.T) {
 	m, src := toolsAtScreen(120, 34, 0)
 	m = resolveTools(m.toolsRescan())

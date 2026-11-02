@@ -24,7 +24,7 @@ func TestBDoesNotReadTheSession(t *testing.T) {
 	}
 }
 
-// Neither b nor R acts on an outcome row.
+// b is unused; R refreshes even on an outcome row.
 func TestOutcomeRemovedKeys(t *testing.T) {
 	m := New(&fakeSource{})
 	m.snap = Snapshot{Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r", From: "a", To: "b"}, Sender: "sender", Recipient: "receiver", Request: "deploy?"}}}
@@ -36,11 +36,9 @@ func TestOutcomeRemovedKeys(t *testing.T) {
 	if next.View() != m.View() {
 		t.Fatal("b changed the screen")
 	}
+	m.fetching = false
 	next, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
-	if cmd != nil {
-		t.Fatal("R still starts a command")
-	}
-	if next.View() != m.View() {
-		t.Fatal("R changed the screen")
+	if cmd == nil || !next.fetching {
+		t.Fatal("R did not refresh")
 	}
 }

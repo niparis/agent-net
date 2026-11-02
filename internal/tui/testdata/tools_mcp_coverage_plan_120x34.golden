@@ -1,4 +1,5 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 6 sessions, 5 online · 1 busy                    updated 14:05:00
+ Differences   All tools   By project   [ ] switch screen
 ╭─Add homelab-mcp for homelab──────────────────────────────────────────────────────────────────────────────────────────╮
 │ + homelab-mcp for homelab on research                                                                                │
 │   writes these files, then reads each one back:                                                                      │
@@ -10,7 +11,6 @@
 │                                                                                                                      │
 │ enter apply  d exact folders  esc cancel                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 

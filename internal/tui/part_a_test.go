@@ -227,7 +227,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	if !strings.Contains(strings.Join(names(m), ","), "web") {
 		t.Fatal("the active filter is on by default")
 	}
-	m = keys(m, "a")
+	m = keys(m, "A")
 	if strings.Contains(strings.Join(names(m), ","), "web") {
 		t.Fatalf("web was not hidden: %v", names(m))
 	}
@@ -251,7 +251,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 }
 
 func TestActiveFilterCombinesWithTheTextFilterInTheHeader(t *testing.T) {
-	m := keys(newModel(120, 34), "a", "/", "t", "e", "enter")
+	m := keys(newModel(120, 34), "A", "/", "t", "e", "enter")
 	v := m.View()
 	if !strings.Contains(v, "filter: active, /te") {
 		t.Fatalf("filters not listed together:\n%s", v)

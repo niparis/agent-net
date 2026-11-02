@@ -200,28 +200,33 @@ func (m Model) proposalConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.proposalAnswerCmd(protocol.CTOProposal{}, "A")
 	case no:
 		m.proposalConfirm = false
-	case k.String() == "up" || k.String() == "k":
+	case keyAction(contextProposalHistory, k.String()) == actUp:
 		m.proposalConfirmScroll = max(0, m.proposalConfirmScroll-1)
-	case k.String() == "down" || k.String() == "j":
+	case keyAction(contextProposalHistory, k.String()) == actDown:
 		m.proposalConfirmScroll = min(max(0, len(m.proposalConfirmItems)-1), m.proposalConfirmScroll+1)
 	}
 	return m, nil
 }
 func (m Model) proposalDetailKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "esc":
+	key := keyAction(contextProposalDetail, k.String())
+	switch key {
+	case actClose:
 		m.proposalDetail = nil
-	case "up", "k":
+	case actUp:
 		m.proposalDetail.scroll = max(0, m.proposalDetail.scroll-1)
-	case "down", "j":
+	case actDown:
 		m.proposalDetail.scroll++
-	case "?":
+	case "help":
 		m.help = true
-	case "A":
+	case "approve all":
 		m.openProposalConfirm()
-	case "a", "x":
+	case "approve", "decline":
 		if m.proposalDetail.proposal.Status == "open" {
-			return m, m.proposalAnswerCmd(m.proposalDetail.proposal, k.String())
+			action := "a"
+			if key == "decline" {
+				action = "x"
+			}
+			return m, m.proposalAnswerCmd(m.proposalDetail.proposal, action)
 		}
 	}
 	return m, nil
@@ -244,16 +249,16 @@ func (m Model) proposalHistoryKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.proposalDetailKey(k)
 	}
 	items := m.proposalHistoryItems()
-	switch k.String() {
-	case "esc":
+	switch keyAction(contextProposalHistory, k.String()) {
+	case "back":
 		m.proposalHistory = false
-	case "?":
+	case "help":
 		m.help = true
-	case "up", "k":
+	case actUp:
 		m.proposalHistoryIndex = max(0, m.proposalHistoryIndex-1)
-	case "down", "j":
+	case actDown:
 		m.proposalHistoryIndex = min(max(0, len(items)-1), m.proposalHistoryIndex+1)
-	case "enter":
+	case "detail":
 		if len(items) > 0 {
 			p := items[min(m.proposalHistoryIndex, len(items)-1)]
 			m.proposalDetail = &proposalDetail{proposal: p, loading: true}

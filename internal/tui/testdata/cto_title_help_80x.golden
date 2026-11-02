@@ -1,12 +1,11 @@
  Sessions
-  proposal             enter details; a approve; x decline; A approve all after
+  proposal             enter details; a approve; r decline; A approve all after
                        confirmation
   1-5                  switch between Sessions, Graph, Quotas, Messages and
                        Tools
   up/down, j/k         select a session
   pgup/pgdn, home/end  page, first, last
   enter                open session in herdr (ctrl+] returns on fallback)
-  e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
   n                    start a session in herdr: project, harness, model, folder
                        and first message (a form). Empty first message starts it
@@ -27,12 +26,12 @@
                        caller
   d                    show or hide the Quality panel detail (fixes and
                        continues)
-  r                    refresh the readings
+  R                    refresh the readings
 
  Graph
-  M, G, 2              open the network
-  arrows               select a node; shift+arrows or hjkl pan
-  [ ]                  select a linked neighbour
+  2                    open the network
+  arrows               select a node; shift+arrows pan
+  , .                  select a linked neighbour
   /                    find a node; Enter selects the first match; Esc cancels
   + -, 0               zoom; fit the graph
   o, space             orbit; pause traffic
@@ -46,40 +45,45 @@
   D                    name project (empty clears)
   a                    toggle autonomy off or wake
   h, H                 hide or unhide the selected project; show hidden projects
-  U, u                 select the next learned change; undo the selected one
+  , ., u               select a learned change; undo the selected one
   !                    legend: what the edge kinds, request rules and charter
                        fields mean
-  [ ], ctrl+u/d        scroll the card: legend, charter, rules and learned
+  ctrl+u/d             scroll the card: legend, charter, rules and learned
                        changes; pgup/pgdn also work
   c                    focus the Atlas box
-  r                    refresh
+  R                    refresh
 
  Tools
-  j/k, up/down         move through the single tool list
-  enter                open actions: read, turn on/off, remove, compare, test or
-                       import
+  [ ]                  switch between Differences, All tools and By project
+  j/k, up/down         move through the selected Tools screen
+  left/right           move between columns on All tools
+  enter                open the selected difference fix or selected tool details
+                       and actions
+  a, u                 accept a difference or turn a tool on; turn a tool off
+  v                    next machine on By project
   /                    combine text, project:NAME, node:NAME and machine:NAME
                        filters
   n                    add an MCP server or a skill from a folder
   esc                  back, or clear the list filter
-  c, C                 focus the Atlas box: enter opens the full Atlas, ctrl+]
-                       returns, esc skips a tip; n new, u undo, w drive 30m, m
-                       title, harness and model; pgup/pgdn scroll
+  c, C                 c opens the Atlas; C focuses its box: enter opens the
+                       full Atlas, ctrl+] returns, esc skips a tip; n new, u
+                       undo, w drive 30m, m title, harness and model; pgup/pgdn
+                       scroll
   N                    name the machine of the session (every machine sees it;
                        empty resets)
   L                    what the network learned: playbook notes and their
                        support
   /                    filter (words match name, project, branch, model, ...)
   o, d                 show offline sessions; toggle selected session details
-  a                    active only: hide sessions idle for over an hour
-  Messages             up/down: conversation; left/right: message; enter:
-                       latest; v: body; f: defect found later; w: workers; e/l:
+  A                    active only: hide sessions idle for over an hour
+  Messages             up/down: conversation; left/right: message; enter: body;
+                       end: latest; f: defect found later; w: workers; e/l:
                        events
-  r                    refresh now
+  R                    refresh now
   states               messages: pending ... delivered ✓ replied ↩ failed ✗
 
  Everywhere
-  n                    desktop notifications: on (toggle)
+  N                    desktop notifications: on (toggle)
   T                    turn onboarding tips off or on
   R                    restart onboarding from the first step
   ?                    this help
@@ -95,3 +99,269 @@
   └                    a reply, under the message it answers
   "..."                the first line of the body, when this machine is in the
                        conversation
+
+ Bindings
+ global
+  1                    Sessions
+  2                    Graph
+  3                    Quotas
+  4                    Messages
+  5                    Tools
+  c                    open Atlas
+  C                    focus Atlas box
+  ctrl+c               quit
+ Sessions
+  q                    quit
+  up, k                select
+  down, j              select
+  pgup                 page
+  pgdown               page
+  home, g              first row
+  end                  last row
+  enter                open
+  m                    msg
+  n                    new
+  x                    stop
+  h                    hide
+  H                    show hidden
+  A                    active only
+  R                    refresh
+  o                    offline
+  t                    request rule
+  p                    policy
+  I                    integrations
+  N                    rename machine
+  L                    learned notes
+  d                    details
+  l                    events
+  /                    filter
+  esc                  back
+  i                    inbox
+  ?                    help
+ held request
+  a                    approve
+  r                    refuse
+ learned suggestion
+  a                    accept
+  r                    reject
+ outcome
+  s                    let stand
+  O                    overrule
+ Atlas proposal
+  enter                detail
+  a                    approve
+  r                    decline
+  A                    approve all
+ proposal detail
+  esc                  back
+  up, k                scroll
+  down, j              scroll
+  ?                    help
+  a                    approve
+  r                    decline
+  A                    approve all
+ proposal history
+  esc                  back
+  ?                    help
+  up, k                select
+  down, j              select
+  enter                detail
+ Messages
+  q                    quit
+  up, k                thread
+  down, j              thread
+  left                 msg
+  right                msg
+  pgup                 page
+  pgdown               page
+  home, g              first thread
+  end                  latest
+  enter                body
+  f                    defect
+  w                    workers
+  e                    events
+  l                    events
+  m                    msg
+  x                    stop
+  t                    request rule
+  p                    policy
+  I                    integrations
+  N                    rename machine
+  L                    learned notes
+  d                    details
+  /                    filter
+  esc                  back
+  o                    offline
+  A                    active only
+  R                    refresh
+  i                    inbox
+  ?                    help
+ message body
+  esc, enter           close
+  q                    quit
+  up, k                scroll
+  down, j              scroll
+  pgup                 page
+  pgdown               page
+ inbox
+  esc                  back
+  up, k                select
+  down, j              select
+  enter                details
+  a                    approve
+  r                    refuse
+  t                    answer
+ learned notes
+  q                    quit
+  esc                  back
+  L                    back
+  enter                back
+  backspace            back
+ Quotas
+  q                    quit
+  up, k                select
+  down, j              select
+  left                 agent
+  right                agent
+  p                    protect
+  s                    show unset
+  d                    details
+  R                    refresh
+  ?                    help
+ Graph
+  q                    quit
+  ?                    help
+  /                    find
+  +, =                 zoom in
+  -                    zoom out
+  left                 select
+  right                select
+  up                   select
+  down                 select
+  shift+left           pan
+  shift+right          pan
+  shift+up             pan
+  shift+down           pan
+  0                    fit
+  ,                    previous neighbour
+  .                    next neighbour
+  t                    tools
+  o                    orbit
+  space                pause
+  n                    new
+  enter                card
+  R                    refresh
+ Graph find
+  esc                  clear or back
+  enter                select
+  backspace, ctrl+h    delete
+ agent card
+  q                    quit
+  esc                  Graph
+  enter                sessions
+  n                    new
+  t                    tools
+  a                    autonomy
+  D                    name project
+  u                    undo
+  ,                    previous change
+  .                    next change
+  ?                    help
+  !                    legend
+  h                    hide
+  H                    show hidden
+  ctrl+d, pgdown       scroll
+  ctrl+u, pgup         scroll
+  R                    refresh
+ Tools
+  q                    quit
+  ?                    help
+  j, down              move
+  k, up                move
+  /                    filter
+  esc                  clear
+  n                    add
+  R                    rescan
+ Tools Differences
+  a                    accept
+  enter                detail
+  .                    accepted
+  [                    screen
+  ]                    screen
+ Tools All tools
+  enter                detail
+  a                    on
+  u                    off
+  left                 column
+  right                column
+  [                    screen
+  ]                    screen
+ Tools By project
+  left                 column
+  right                column
+  [                    screen
+  ]                    screen
+  v                    machine
+ tools plan
+  enter, y, Y          apply
+  esc, n, N            cancel
+  up, k                scroll
+  down, j              scroll
+  d                    folders
+ tools compare
+  n                    next
+  p                    previous
+ tools picker
+  esc                  cancel
+  up, k                select
+  down, j              select
+  space                tick
+  /                    filter
+  enter                apply
+ tools menu
+  esc                  back
+  up, k                move
+  down, j              move
+  enter                choose
+ tools add
+  esc                  cancel
+  tab, down            field
+  shift+tab, up        field
+  left                 machine
+  right                machine
+  enter                add
+  backspace, ctrl+h    delete
+ Atlas box
+  ctrl+], tab          back
+  esc                  skip tip
+  enter                open
+  pgup, ctrl+u         scroll
+  pgdown, ctrl+d       scroll
+  m                    model
+  n                    new
+  u                    undo
+  w                    drive
+ help
+  T                    toggle tips
+  R                    restart tips
+  N                    toggle notifications
+  q                    quit
+  esc, ?               close help
+  down, j              scroll down
+  up, k                scroll up
+  pgdown               page down
+  pgup                 page up
+  home, g              first line
+  end, G               last line
+ confirmations
+  enter, y, Y          yes
+  esc, n, N            no
+ forms
+  enter                submit or next field
+  esc                  cancel
+  tab                  next field
+  down                 next field
+  shift+tab, up        previous field
+  left                 change choice
+  right                change choice
+  space                toggle

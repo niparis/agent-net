@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-Stop worker tenebrae (Mac)?  enter: yes · esc: no
+Stop worker tenebrae (Mac)?  enter/y: yes · esc/n: no

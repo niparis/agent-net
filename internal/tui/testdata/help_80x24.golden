@@ -1,14 +1,13 @@
 Keys ───────────────────────────────────────────────────────────────────────────
 
  Sessions
-  proposal             enter details; a approve; x decline; A approve all after
+  proposal             enter details; a approve; r decline; A approve all after
                        confirmation
   1-5                  switch between Sessions, Graph, Quotas, Messages and
                        Tools
   up/down, j/k         select a session
   pgup/pgdn, home/end  page, first, last
   enter                open session in herdr (ctrl+] returns on fallback)
-  e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
   n                    start a session in herdr: project, harness, model, folder
                        and first message (a form). Empty first message starts it
@@ -20,5 +19,6 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a
                        form)
   I                    integrations for all machines: 7 checkboxes (a form)
+
   more below
-up/down scroll  esc close help  q quit
+up/down scroll up  esc close help  q quit

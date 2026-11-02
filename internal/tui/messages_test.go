@@ -180,9 +180,9 @@ func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) 
 			t.Errorf("thread summary is missing %q: %q", want, line)
 		}
 	}
-	m = keys(m, "enter")
+	m = keys(m, "end")
 	if m.open != nil || m.feedCur != rows[0].items[1] {
-		t.Fatalf("enter should open the latest message in the thread pane, got open=%+v cursor=%d", m.open, m.feedCur)
+		t.Fatalf("end should select the latest message in the thread pane, got open=%+v cursor=%d", m.open, m.feedCur)
 	}
 }
 
@@ -347,7 +347,7 @@ func TestMessageSelectBodyWithinConversation(t *testing.T) {
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0}, ConversationID: "a"}, {Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0}, ConversationID: "a"}})
 	m.feedCur = 0
 	m = keys(m, "right")
-	next, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	next, _ := m.update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
 	if m.open == nil || m.open.id != "two" {
 		t.Fatalf("opened %+v", m.open)
@@ -391,7 +391,7 @@ func TestConversationScreens(t *testing.T) {
 				break
 			}
 		}
-		m = keys(m, "enter")
+		m = keys(m, "end")
 		v := m.View()
 		if !strings.Contains(ansi.Strip(v), "Polish") {
 			t.Fatal(v)

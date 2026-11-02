@@ -31,4 +31,4 @@ New session ──────────────────────�
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-Create ~/code/garden-planner on Mac and run git init?  enter: yes · esc: no
+Create ~/code/garden-planner on Mac and run git init?  enter/y: yes · esc/n: no

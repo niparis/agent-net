@@ -126,12 +126,12 @@ func (m Model) startCompose() (Model, tea.Cmd) {
 }
 
 func (m Model) composeKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Message cancelled.")
 		return m, nil
-	case tea.KeyEnter:
+	case "submit":
 		body := strings.TrimSpace(m.compose.Value())
 		if body == "" {
 			m.fail("The message is empty. Type something, or press esc to cancel.")
@@ -251,12 +251,12 @@ func (m Model) startDefect() (Model, tea.Cmd) {
 }
 
 func (m Model) defectKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Defect not reported.")
 		return m, nil
-	case tea.KeyEnter:
+	case "submit":
 		note := strings.TrimSpace(m.defect.Value())
 		if note == "" {
 			m.fail("Write one line about the defect.")
@@ -276,12 +276,12 @@ func (m Model) defectKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) defectSeverityKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Defect not reported.")
 		return m, nil
-	case tea.KeyEnter:
+	case "submit":
 		severity, err := strconv.Atoi(strings.TrimSpace(m.defectSeverity.Value()))
 		if err != nil || !protocol.ValidRateSeverity(severity) {
 			m.fail("Severity must be 1 to 4.")
@@ -365,12 +365,12 @@ func (m Model) startRename() (Model, tea.Cmd) {
 }
 
 func (m Model) renameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Machine name unchanged.")
 		return m, nil
-	case tea.KeyEnter:
+	case "submit":
 		name, err := protocol.CleanNodeName(m.rename.Value())
 		if err != nil {
 			m.fail(err.Error() + ".")
@@ -513,12 +513,12 @@ func (m Model) startProjectRename() (Model, tea.Cmd) {
 }
 
 func (m Model) projectRenameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
 		m.mode = modeNormal
 		m.say("Project name unchanged.")
 		return m, nil
-	case tea.KeyEnter:
+	case "submit":
 		project, name := m.renameNode, strings.TrimSpace(m.rename.Value())
 		m.mode = modeNormal
 		m.say("Saving the project name...")

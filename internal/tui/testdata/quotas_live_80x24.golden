@@ -21,4 +21,4 @@
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit
+up/down select  p protect  s show unset  R refresh  c CTO  ? help  q quit

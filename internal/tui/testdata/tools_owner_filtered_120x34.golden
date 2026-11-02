@@ -1,29 +1,29 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy                    updated 14:05:00
-╭─Tools / node:homelab machine:research────────────────────────────────────────────────────────────────────────────────╮
-│   NAME                            KIND   STATUS                                                                      │
-│ ! code-review                     skill  on for homelab · v1 on Nicolas-MBP, v3 on research                          │
-│ ! design-taste-frontend           skill  2 different copies on research                                              │
-│ ! imnplementing-clean-architectu… skill  off for homelab · looks like a copy of clean-architecture-python            │
-│   clean-architecture-python       skill  on for homelab                                                              │
-│   diagnosing-bugs                 skill  on for homelab                                                              │
-│   found-skill-00                  skill  off for homelab                                                             │
-│   found-skill-01                  skill  off for homelab                                                             │
-│   found-skill-02                  skill  off for homelab                                                             │
-│   found-skill-03                  skill  off for homelab                                                             │
-│   found-skill-04                  skill  off for homelab                                                             │
-│   found-skill-05                  skill  off for homelab                                                             │
-│   found-skill-06                  skill  off for homelab                                                             │
-│   found-skill-07                  skill  off for homelab                                                             │
-│   found-skill-08                  skill  off for homelab                                                             │
-│   found-skill-09                  skill  off for homelab                                                             │
-│   found-skill-10                  skill  off for homelab                                                             │
-│   found-skill-11                  skill  off for homelab                                                             │
-│   found-skill-12                  skill  off for homelab                                                             │
-│   found-skill-13                  skill  off for homelab                                                             │
-│   found-skill-14                  skill  off for homelab                                                             │
-│   found-skill-15                  skill  off for homelab                                                             │
-│   found-skill-16                  skill  off for homelab                                                             │
-│ 35 tools · ! needs attention · enter opens actions                                                                   │
+ Differences   All tools   By project   [ ] switch screen   /node:homelab machine:research
+╭─All tools · on or off per machine, or for chosen projects────────────────────────────────────────────────────────────╮
+│   NAME                      FROM                  Nicolas-MBP  research PROJECTS              NOTE                   │
+│ ▸ code-review               agent-net v3         [v1]          ●        -                     Nicolas-MBP on anothe… │
+│   design-taste-frontend     your machines         ·            ○        -                     two different copies   │
+│   imnplementing-clean-arch… your machines         ·            ○        -                                            │
+│   clean-architecture-python agent-net v1          ●            ●        -                                            │
+│   diagnosing-bugs           agent-net v1          ◐            ●        -                     limited on one harness │
+│   found-skill-00            your machines         ○            ○        -                                            │
+│   found-skill-01            your machines         ○            ○        -                                            │
+│   found-skill-02            your machines         ○            ○        -                                            │
+│   found-skill-03            your machines         ○            ○        -                                            │
+│   found-skill-04            your machines         ·            ○        -                                            │
+│   found-skill-05            your machines         ·            ○        -                                            │
+│   found-skill-06            your machines         ·            ○        -                                            │
+│   found-skill-07            your machines         ·            ○        -                                            │
+│   found-skill-08            your machines         ·            ○        -                                            │
+│   found-skill-09            your machines         ·            ○        -                                            │
+│   found-skill-10            your machines         ·            ○        -                                            │
+│   found-skill-11            your machines         ·            ○        -                                            │
+│ 1-17 of 35                                                                                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Details · code-review────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ agent-net v3 on every project on: research. agent-net handles where each harness reads skills.                       │
+│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  n add  esc clear  ? help  q quit
+j/k move  left/right column  enter detail  a/u on/off  [/] screen  ? help  q quit

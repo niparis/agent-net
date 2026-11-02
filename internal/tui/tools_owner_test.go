@@ -50,8 +50,8 @@ func TestToolsOwnerTasks(t *testing.T) {
 	t.Run("turn on for one project", func(t *testing.T) {
 		m, src := newToolsModel(120, 34)
 		m = openTools(m)
-		if !strings.Contains(plain(m), "STATUS") {
-			t.Fatal("Tools must open the single NAME KIND STATUS list")
+		if !strings.Contains(plain(m), "PROJECTS") {
+			t.Fatal("Tools did not open the All tools grid")
 		}
 		m = toolFilter(m, "using-git-worktrees")
 		m = pressKey(m, "enter")
@@ -201,7 +201,7 @@ func TestToolsListOnlyDocumentedKeys(t *testing.T) {
 	m, _ := newToolsModel(120, 34)
 	m = openTools(m)
 	before := plain(m)
-	for _, key := range []string{"[", "]", "h", "l", "a", "u", "x", ".", "m", "r", "left", "right"} {
+	for _, key := range []string{"h", "l", "x", ".", "m", "r"} {
 		m = pressKey(m, key)
 		if plain(m) != before {
 			t.Fatalf("obsolete list key %q changed the screen", key)
@@ -305,8 +305,8 @@ func TestToolsUnassignedStoredSkillIsOff(t *testing.T) {
 	m, src := newToolsModel(120, 34)
 	src.items = []protocol.ToolItem{{ID: "skill:stored", Kind: "skill", Name: "stored-skill", Hash: "test-hash"}}
 	m = openTools(m)
-	if !strings.Contains(plain(m), "in the store, off everywhere") {
-		t.Fatalf("imported folders must not claim to be installed:\n%s", plain(m))
+	if rows := m.shownRows(); len(rows) != 1 || !strings.Contains(m.toolStatus(rows[0]), "off everywhere") {
+		t.Fatalf("imported folders must remain off: %+v", rows)
 	}
 }
 

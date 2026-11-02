@@ -40,7 +40,7 @@ func TestHelpNotificationsUnderEverywhere(t *testing.T) {
 func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 	m := keys(newModel(80, 24), "?")
 	var seen strings.Builder
-	for i := 0; i < 100; i++ {
+	for i := 0; i < len(m.helpContent(80))+20; i++ {
 		v := ansi.Strip(m.View())
 		if strings.Contains(v, "…") {
 			t.Fatalf("help has an ellipsis:\n%s", v)
@@ -85,7 +85,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 func TestHelpShowsWaitingAndNotificationSettings(t *testing.T) {
 	m := keys(newModel(80, 24), "?")
 	content := ansi.Strip(strings.Join(m.helpContent(80), "\n"))
-	for _, want := range []string{"desktop notifications: on (toggle)", "open session in herdr (ctrl+] returns on fallback)", "alias for Enter"} {
+	for _, want := range []string{"desktop notifications: on (toggle)", "open session in herdr (ctrl+] returns on fallback)"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("help lacks %q", want)
 		}
@@ -99,7 +99,7 @@ func TestHelpShowsWaitingAndNotificationSettings(t *testing.T) {
 func TestToolsHelpWrapsAndEveryLineCanBeReached(t *testing.T) {
 	m := keys(newModel(40, 10), "5", "?")
 	var seen strings.Builder
-	for i := 0; i < 100; i++ {
+	for i := 0; i < len(m.helpContent(40))+20; i++ {
 		v := ansi.Strip(m.View())
 		if strings.Contains(v, "…") {
 			t.Fatalf("tools help has an ellipsis:\n%s", v)

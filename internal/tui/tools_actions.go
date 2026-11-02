@@ -272,10 +272,14 @@ type toolAction struct {
 type toolMenu struct {
 	actions []toolAction
 	cur     int
+	detail  string
 }
 
 func toolMenuLines(p *toolMenu) []string {
 	var out []string
+	if p.detail != "" {
+		out = append(out, sanitize(p.detail), "")
+	}
 	for i, a := range p.actions {
 		lead := "  "
 		if i == p.cur {
@@ -290,7 +294,7 @@ func (m Model) openToolMenu() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	menu := &toolMenu{}
+	menu := &toolMenu{detail: r.Detail}
 	add := func(label string, f func(Model) (tea.Model, tea.Cmd)) {
 		menu.actions = append(menu.actions, toolAction{label, f})
 	}
@@ -354,14 +358,14 @@ func (m Model) openToolMenu() (tea.Model, tea.Cmd) {
 }
 func (m Model) toolMenuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p := m.tl.modal.menu
-	switch k.String() {
-	case "esc":
+	switch keyAction(contextToolsMenu, k.String()) {
+	case "back":
 		m.tl.modal = nil
-	case "j", "down":
+	case actDown:
 		p.cur = min(p.cur+1, len(p.actions)-1)
-	case "k", "up":
+	case actUp:
 		p.cur = max(p.cur-1, 0)
-	case "enter":
+	case "choose":
 		return p.actions[p.cur].run(m)
 	}
 	return m, nil
@@ -744,24 +748,25 @@ func toolAddLines(f *toolAddForm) []string {
 func (m Model) toolAddKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	f := m.tl.modal.form
 	n := len(f.values)
-	switch k.String() {
-	case "esc":
+	key := keyAction(contextToolsAdd, k.String())
+	switch key {
+	case "cancel":
 		m.tl.modal = nil
-	case "tab", "down":
+	case "next field":
 		f.field = (f.field + 1) % (n + 1)
-	case "shift+tab", "up":
+	case "previous field":
 		f.field = (f.field + n) % (n + 1)
-	case "left", "right":
+	case "previous machine", "next machine":
 		if f.field == n && len(f.machines) > 0 {
 			step := 1
-			if k.String() == "left" {
+			if key == "previous machine" {
 				step = len(f.machines) - 1
 			}
 			f.machine = (f.machine + step) % len(f.machines)
 		}
-	case "enter":
+	case "add":
 		return m.submitToolAdd()
-	case "backspace", "ctrl+h":
+	case "delete text":
 		if f.field < n {
 			r := []rune(f.values[f.field])
 			if len(r) > 0 {

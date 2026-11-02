@@ -173,12 +173,8 @@ func TestWaitingRowsUseTheSameSessionActions(t *testing.T) {
 			m, src = waitingTableModel()
 			m = selectWaitingRow(m, inNeeds)
 			_, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-			if cmd == nil {
-				t.Fatal("e returned no enter command")
-			}
-			cmd()
-			if len(src.enters) != 1 || src.enters[0].SessionID != cogforgeMaintenanceID {
-				t.Fatalf("e entered sessions %+v", src.enters)
+			if cmd != nil || len(src.enters) != 0 {
+				t.Fatal("e still enters a session")
 			}
 			m, _ = waitingTableModel()
 			m = selectWaitingRow(m, inNeeds)
@@ -348,7 +344,7 @@ func TestNotifyHelpToggle(t *testing.T) {
 	m := newModel(100, 30)
 	m.src = src
 	m.help = true
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
 	if cmd == nil {
 		t.Fatal("no settings command")
 	}
