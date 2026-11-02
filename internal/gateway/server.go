@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/ratelimit"
@@ -28,6 +29,13 @@ type Options struct {
 	DataDir string
 	// PublicURL is the externally reachable base URL for connected apps.
 	PublicURL string
+	// AppsListen overrides the managed loopback address. Empty uses 127.0.0.1:7422.
+	AppsListen string
+	// PhoneApp is the phone web app, served at "/" on the apps listener.
+	// Nil serves no phone app.
+	PhoneApp http.Handler
+	// FunnelRunner is injectable so tests never execute tailscale.
+	FunnelRunner funnel.Runner
 	// DistDir holds the agent-net-{os}-{arch} binaries that /install serves.
 	DistDir string
 	// SANs are extra host names or IPs for the server certificate.
@@ -54,10 +62,16 @@ type Options struct {
 }
 
 type Gateway struct {
-	limiter  *ratelimit.Limiter
-	opts     Options
-	store    *Store
-	skillsMu sync.Mutex
+	publicMu     sync.Mutex
+	publicURLMu  sync.RWMutex
+	publicURL    string
+	public       protocol.AppsPublicStatus
+	publicServer *http.Server
+	publicAddr   string
+	limiter      *ratelimit.Limiter
+	opts         Options
+	store        *Store
+	skillsMu     sync.Mutex
 	// importMu serializes MCP imports, so two applies cannot race on a name.
 	importMu sync.Mutex
 	skills   *skillStore
@@ -222,6 +236,10 @@ func New(opts Options) (*Gateway, error) {
 	if store.graphJunkMigrated {
 		g.logLine("graph.junk_removed", "count", store.graphJunkRemoved)
 	}
+	if err := g.restorePublic(); err != nil {
+		store.Close()
+		return nil, err
+	}
 	return g, nil
 }
 
@@ -235,6 +253,9 @@ func (g *Gateway) TLSConfig() *tls.Config {
 
 // Close drops every node connection and closes the database.
 func (g *Gateway) Close() error {
+	g.publicMu.Lock()
+	g.stopPublicListener()
+	g.publicMu.Unlock()
 	g.mu.Lock()
 	g.closed = true
 	for _, t := range g.timers {
@@ -1397,6 +1418,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"item": item}, err
 
+	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
+		return g.publicOperation(ctx, typ, raw)
 	case "apps.list":
 		apps, err := st.ListApps()
 		return map[string]any{"apps": apps}, err
@@ -1441,7 +1464,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if typ == "apps.refuse" {
 			return nil, st.RefusePending(p.ID)
 		}
-		return nil, st.RevokeApp(p.ID)
+		return nil, g.revokeApp(ctx, p.ID)
 
 	case "inbox.list":
 		items, err := st.ListInbox()

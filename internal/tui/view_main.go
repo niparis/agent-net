@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -1198,6 +1199,17 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 	marker := "  "
 	if selected {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
+	}
+	if a.Harness == "bot" {
+		state := "offline"
+		if a.Online {
+			state = "online"
+		}
+		line := marker + fmt.Sprintf("%-24s  %-6s  %-7s  last call %s", sanitize(a.Profile.Name), "bot", state, m.appsDate(time.Unix(a.LastSeen, 0)))
+		if selected {
+			line = selectedRow(clip(line, w))
+		}
+		return clip(line, w)
 	}
 	uc := m.usageCells(a, cols)
 	var parts []string

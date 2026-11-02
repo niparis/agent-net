@@ -107,7 +107,7 @@ func (m Model) feedConversations() []messageConversation {
 			var b strings.Builder
 			for _, i := range g.items {
 				it := m.feed.items[i]
-				fmt.Fprintf(&b, "%s %s %s %s %s ", m.conversationName(it.From), m.conversationName(it.To), it.Snippet, it.Type, it.Body)
+				fmt.Fprintf(&b, "%s %s %s %s %s %s %s ", it.From, it.To, m.conversationName(it.From), m.conversationName(it.To), it.Snippet, it.Type, it.Body)
 			}
 			if !strings.Contains(strings.ToLower(b.String()), strings.ToLower(firstNonEmpty(m.uiFilter, m.filter))) {
 				continue

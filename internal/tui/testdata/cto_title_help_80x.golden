@@ -160,15 +160,16 @@ Legend ────────────────────────�
   esc                    close
   up/down, j/k           move
   enter                  choose
-  request rule           cycle the request rule: normal, ask, auto
-  delegation policy      subagent or worker for code changes (a form)
-  integrations           integrations for all machines: 7 checkboxes (a form)
-  name this machine      every machine sees it; empty resets
-  Connected apps         manage connected apps
+  S > request rule       cycle the request rule: normal, ask, auto
+  S > delegation policy  subagent or worker for code changes (a form)
+  S > integrations       integrations for all machines: 7 checkboxes (a form)
+  S > name this machine  every machine sees it; empty resets
+  S > Connected apps     manage connected apps
 
  Connected apps
-  esc                    back
   up/down, j/k           move
+  p                      internet access
+  u                      tunnel URL
   a                      add
   x                      revoke
   enter                  approve

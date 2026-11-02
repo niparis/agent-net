@@ -13,7 +13,7 @@ import (
 
 func TestConnectedAppsOwnerGate(t *testing.T) {
 	d := &Daemon{inSession: func(int) bool { return false }}
-	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke"} {
+	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
 		for _, client := range []string{"pi", "opencode", "mcp"} {
 			lc := &localConn{d: d, client: client}
 			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{}`))
@@ -22,7 +22,7 @@ func TestConnectedAppsOwnerGate(t *testing.T) {
 			}
 		}
 	}
-	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke"} {
+	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
 		lc := &localConn{d: &Daemon{inSession: func(int) bool { return true }}, client: "cli"}
 		_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{}`))
 		if !handled || err == nil || !strings.Contains(err.Error(), "inside an agent session") {

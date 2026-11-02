@@ -623,8 +623,8 @@ The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUS
 | Command | Flag | Default |
 |---|---|---|
 | `gateway` | `--listen ADDR` | `0.0.0.0:7420` |
-| | `--apps-listen ADDR` | off. Serve the phone app and connected apps MCP endpoint on `127.0.0.1:PORT` only. |
-| | `--apps-public-url URL` | empty. Public HTTPS base URL of the apps listener, used for authorization discovery and phone action origin checks. |
+| | `--apps-listen ADDR` | Override the managed connected apps listener address, normally `127.0.0.1:7422`. Binds to loopback only. It serves the phone app at `/` and the bot MCP endpoint at `/mcp`. |
+| | `--apps-public-url URL` | empty. Public HTTPS base URL of the apps listener, used for authorization discovery and phone action origin checks. Normally set by the "Reachable from the internet" switch. |
 | | `--data DIR` | `~/.local/state/agent-net/gateway` |
 | | `--dist DIR` | `~/.local/share/agent-net/dist` |
 | | `--san LIST` | none. Extra host names or IPs for the TLS certificate, comma separated. |
@@ -1850,4 +1850,10 @@ Worker cleanup and daemon shutdown leave it running. When herdr is available, st
 
 ### Connected apps
 
-In Sessions, press `S` and choose Connected apps. Press `a` and enter the code shown in the browser. Use left and right to choose bot or owner app, Tab to edit the name, Enter to approve, or `r` to refuse. Select an app and press `x`, then `y` to revoke it. Esc returns. Five wrong codes block further lookups for ten minutes.
+In Sessions, press `S` and choose Connected apps. The status line shows whether internet access is on and the public MCP URL. Press `p` to switch it. With Tailscale, the gateway chooses a free Funnel port (443, 8443, then 10000). If Tailscale needs an operator or admin setting, the screen shows the exact command or link. Without Tailscale, press `u` and paste an HTTPS origin from your own tunnel to `127.0.0.1:7422`.
+
+The gateway stores the public switch, chosen port and URL in its database. It restores the listener and checks Funnel on restart. Switching access off stops Funnel and the listener. Revoking the last active app also switches access off. Adding an app while off first asks whether to turn access on. The public address is used in OAuth discovery and authentication headers. The owner-only operations are `apps.public.status`, `apps.public.on`, `apps.public.off` and `apps.public.url` (with a `url` field).
+
+Bots appear after the machine groups in Sessions, under Bots. Their rows show their last call time and are online for ten minutes after a call. Enter opens Messages filtered to that bot. Press `x` to revoke its app.
+
+Press `a` and enter the code shown in the browser. Use left and right to choose bot or owner app, Tab to edit the name, Enter to approve, or `r` to refuse. Select an app and press `x`, then `y` to revoke it. Esc returns. Five wrong codes block further lookups for ten minutes.

@@ -46,6 +46,13 @@ func (m Model) startEnter() (Model, tea.Cmd) {
 	case protocol.IsOwner(a.Harness):
 		m.fail("That is you, not a session.")
 		return m, nil
+	case a.Harness == "bot":
+		m.tab = messagesTab
+		m.focus = focusFeed
+		m.filter = a.SessionID
+		m.input.SetValue(m.filter)
+		m.rebuildConversations()
+		return m, m.conversationCmd("", true)
 	case a.Harness == "cto":
 		return m.openCTO(a.SessionID)
 	}

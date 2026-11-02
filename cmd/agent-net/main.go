@@ -212,7 +212,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	fs := flag.NewFlagSet("gateway", flag.ExitOnError)
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on")
-	appsListen := fs.String("apps-listen", "", "apps HTTP listener on 127.0.0.1:port (disabled by default)")
+	appsListen := fs.String("apps-listen", "", "override the managed apps listener address (default 127.0.0.1:7422)")
 	appsPublicURL := fs.String("apps-public-url", "", "public base URL of the apps listener")
 	data := fs.String("data", defaultGatewayData(), "data directory")
 	sans := fs.String("san", "", "extra host names or IPs for the TLS certificate, comma separated")
@@ -234,21 +234,15 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	// Every log line carries its own ts=, so the logger adds nothing.
 	logger := log.New(os.Stderr, "", 0)
-	gw, err := gateway.New(gateway.Options{DataDir: *data, DistDir: *dist, SANs: extra, Logger: logger, PublicURL: *appsPublicURL,
+	// The phone app is served by the gateway-managed apps listener.
+	op := operator.New(daemon.SocketPath())
+	defer op.Close()
+	gw, err := gateway.New(gateway.Options{PhoneApp: phone.New(op), DataDir: *data, DistDir: *dist, SANs: extra, Logger: logger, PublicURL: *appsPublicURL, AppsListen: *appsListen,
 		Version: version, Restart: restartGateway, Retention: keep})
 	if err != nil {
 		return err
 	}
 	defer gw.Close()
-	if *appsListen != "" {
-		op := operator.New(daemon.SocketPath())
-		defer op.Close()
-		apps, err := startAppsListener(ctx, *appsListen, gw.AppsHandler(phone.New(op)))
-		if err != nil {
-			return err
-		}
-		defer apps.Close()
-	}
 	if err := gw.WriteAdminInfo(*listen); err != nil {
 		return err
 	}

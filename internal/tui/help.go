@@ -41,6 +41,8 @@ func (m Model) hints() []hint {
 		return []hint{bindingPairHint(contextHelp, actUp, actDown), bindingHint(contextHelp, actClose), bindingHint(contextHelp, actQuit)}
 	case m.mode == modeApps:
 		switch m.apps.stage {
+		case "url":
+			return []hint{{key: "enter", label: "save URL"}, bindingHint(contextApps, "back")}
 		case "code":
 			return []hint{{key: "enter", label: "look up"}, bindingHint(contextApps, "back")}
 		case "approve":
@@ -51,10 +53,10 @@ func (m Model) hints() []hint {
 			back := bindingHint(contextApps, "back")
 			back.label = "cancel"
 			return []hint{kind, name, bindingHint(contextApps, "approve"), bindingHint(contextApps, "refuse"), back}
-		case "confirm":
+		case "confirm", "public-confirm":
 			return []hint{bindingHint(contextConfirm, "yes"), bindingHint(contextConfirm, "no")}
 		default:
-			return []hint{bindingHint(contextApps, "add"), bindingHint(contextApps, "revoke"), bindingHint(contextApps, "back")}
+			return []hint{bindingHint(contextApps, "public"), bindingHint(contextApps, "url"), bindingHint(contextApps, "add"), bindingHint(contextApps, "revoke"), bindingHint(contextApps, "back")}
 		}
 	case m.settingsMenuOn:
 		return []hint{bindingPairHint(contextSettingsMenu, actUp, actDown), bindingHint(contextSettingsMenu, "choose"), bindingHint(contextSettingsMenu, actClose)}
@@ -101,6 +103,10 @@ func (m Model) hints() []hint {
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
+		}
+		if a.Harness == "bot" {
+			hs[1].label = "messages"
+			hs[3] = hint{key: "x", label: "revoke", prio: 1}
 		}
 		if a.Worker != nil {
 			hs[3] = bindingHint(contextSessions, "stop worker")
@@ -231,7 +237,7 @@ func (m Model) helpContent(w int) []string {
 		out = append(out, m.contextHelpLines(context, w, false)...)
 		if context == contextSettingsMenu {
 			for _, entry := range settingsEntries() {
-				out = append(out, m.helpRow(entry.label, entry.help, w)...)
+				out = append(out, m.helpRow("S > "+entry.label, entry.help, w)...)
 			}
 		}
 	}
@@ -367,6 +373,9 @@ type helpEntry struct {
 func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []string {
 	var entries []helpEntry
 	for _, binding := range keyBindings {
+		if context == contextApps && binding.action == "back" {
+			continue
+		}
 		if binding.context != context {
 			continue
 		}

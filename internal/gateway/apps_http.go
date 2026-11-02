@@ -70,9 +70,14 @@ func (g *Gateway) AppsHandler(phoneApps ...http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	server := g.botMCPServer()
 	stream := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
-	h := appsAuthenticate(g.opts.PublicURL, func(raw string, now time.Time) (App, error) {
-		return g.store.AppForToken(raw, "access", now)
-	}, g.store.now, func(r *http.Request) { g.limiter.Fail(ratelimit.ClientAddr(r)) }, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authenticate := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			appsAuthenticate(g.publicBase(), func(raw string, now time.Time) (App, error) {
+				return g.store.AppForToken(raw, "access", now)
+			}, g.store.now, func(r *http.Request) { g.limiter.Fail(ratelimit.ClientAddr(r)) }, next).ServeHTTP(w, r)
+		})
+	}
+	h := authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		app := auth.TokenInfoFromContext(r.Context()).Extra["app"].(App)
 		if app.Kind != "bot" {
 			http.Error(w, "forbidden", http.StatusForbidden)

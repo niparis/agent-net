@@ -49,6 +49,7 @@ func TestConnectedAppsFlow(t *testing.T) {
 	var cmd tea.Cmd
 	m, cmd = m.startApps()
 	m = runAppsCmd(t, m, cmd)
+	m.apps.public.On = true
 	m = keys(m, "a")
 	m.apps.input.SetValue("ABC-234")
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -182,5 +183,55 @@ func TestConnectedAppsPhoneDefault(t *testing.T) {
 	m, _ = m.onAppsResult(appsResult{op: "apps.pending", raw: json.RawMessage(`{"pending":{"ID":"p","ClientName":"iPhone Safari","DefaultKind":"owner_app"}}`)})
 	if m.apps.kind != "owner_app" || m.apps.input.Value() != "iPhone Safari" {
 		t.Fatalf("phone default: kind=%q name=%q", m.apps.kind, m.apps.input.Value())
+	}
+}
+
+func TestAppsPublicKeys(t *testing.T) {
+	m := newModel(120, 34)
+	m.mode = modeApps
+	m = keys(m, "a")
+	if m.apps.stage != "public-confirm" {
+		t.Fatalf("add while off: %s", m.apps.stage)
+	}
+	m = keys(m, "n")
+	if m.apps.stage != "" {
+		t.Fatal(m.apps.stage)
+	}
+	_, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	if cmd == nil {
+		t.Fatal("p does nothing")
+	}
+	m = keys(m, "u")
+	if m.apps.stage != "url" {
+		t.Fatal("u does not ask for URL")
+	}
+}
+
+func TestAppsPublicSwitchAndURLFlow(t *testing.T) {
+	f := &connectedAppsFake{result: `{"on":true,"url":"https://test.example","port":8443}`}
+	m := newModel(120, 34)
+	m.mode = modeApps
+	m.src = f
+	var cmd tea.Cmd
+	m = keys(m, "a")
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.public.on" || m.apps.stage != "code" || !m.apps.public.On {
+		t.Fatalf("add on: %+v", m.apps)
+	}
+	m = keys(m, "esc")
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	f.result = `{"on":false}`
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.public.off" || m.apps.public.On {
+		t.Fatal("off failed")
+	}
+	m = keys(m, "u")
+	m.apps.input.SetValue("https://tunnel.example")
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	f.result = `{"on":true,"url":"https://tunnel.example"}`
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.public.url" || f.params["url"] != "https://tunnel.example" || !m.apps.public.On {
+		t.Fatal("URL failed")
 	}
 }

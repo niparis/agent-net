@@ -1369,6 +1369,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.cycleMessageFilter()
 		}
 	case "stop worker":
+		if a, ok := m.selectedAgent(); ok && a.Harness == "bot" {
+			m.mode = modeApps
+			m.apps = appsForm{stage: "confirm", apps: []connectedApp{{ID: a.NodeID, Name: a.Profile.Name, Kind: "bot"}}}
+			return m, m.appsCall("apps.public.status", struct{}{})
+		}
 		return m.startConfirm()
 	case "hide":
 		if m.tab == sessionsTab && m.focus == focusSessions {
@@ -1594,6 +1599,7 @@ func matches(a protocol.AgentView, filter string) bool {
 // by machine, with activity bands kept stable between refreshes.
 func (m Model) groups() []group {
 	by := map[string]*group{}
+	bots := group{nodeID: "bots", host: "Bots"}
 	var order []*group
 	workers := false // any worker on screen
 	for _, a := range m.snap.Agents {
@@ -1613,6 +1619,10 @@ func (m Model) groups() []group {
 			continue
 		}
 		if !matches(a, m.filter) {
+			continue
+		}
+		if a.Harness == "bot" {
+			bots.agents = append(bots.agents, a)
 			continue
 		}
 		g := by[a.NodeID]
@@ -1671,7 +1681,12 @@ func (m Model) groups() []group {
 		})
 		out = append(out, *g)
 	}
-	return m.nestWorkers(out, workers)
+	out = m.nestWorkers(out, workers)
+	if len(bots.agents) > 0 {
+		sort.Slice(bots.agents, func(i, j int) bool { return bots.agents[i].Profile.Name < bots.agents[j].Profile.Name })
+		out = append(out, bots)
+	}
+	return out
 }
 
 // nestWorkers moves each worker under the session that started it, in that

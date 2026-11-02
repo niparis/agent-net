@@ -33,6 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
+	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true,
 	"tools_keep_copy": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
 	protocol.OpCTOGraphWindow: true,
@@ -464,6 +465,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if err == nil {
 			res = d.withLocalBackups(res, p.Item)
 		}
+	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
+		res, err = d.call(ctx, method, json.RawMessage(raw))
 	case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke":
 		var p struct {
 			ID   string `json:"id"`

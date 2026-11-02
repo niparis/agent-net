@@ -647,3 +647,11 @@ type OnboardingUpdate struct {
 	State    string `json:"state,omitempty"`
 	Disabled *bool  `json:"disabled,omitempty"`
 }
+
+// AppsPublicStatus describes the gateway's public connected-apps listener.
+type AppsPublicStatus struct {
+	On    bool   `json:"on"`
+	URL   string `json:"url"`
+	Port  int    `json:"port"`
+	Error string `json:"error"`
+}
