@@ -271,7 +271,7 @@ if limit > 0:
     rows = rows[:limit]
 only = {x for x in sys.argv[9].split(",") if x}
 if only:
-    rows = [r for r in rows if r["worker_id"] in only]
+    rows = [r for r in rows if r["worker"] in only]
 shard_i, shard_n = (int(x) for x in sys.argv[8].split("/"))
 rows = [r for i, r in enumerate(rows) if i % shard_n == shard_i]
 
