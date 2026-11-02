@@ -198,8 +198,12 @@ func (m Model) toolListView(w, h int) []string {
 	title += fmt.Sprintf(" · %d tools", len(rows))
 	if len(m.toolScope().projects) > 0 {
 		p := m.toolScope().projects[0]
-		n, cost, _ := m.projectCost(p)
-		title = fmt.Sprintf("%s · %s tokens in every session", nounCount(n, "skill", "skills"), formatTokens(cost))
+		n, cost, _, machine := m.projectCost(p)
+		if machine == "" {
+			title = "-"
+		} else {
+			title = fmt.Sprintf("%s · %s tokens in every session on %s", nounCount(n, "skill", "skills"), formatTokens(cost), sanitize(machine))
+		}
 	}
 	nameW := max(12, (w-14)*45/100)
 	statusW := max(8, w-nameW-15)

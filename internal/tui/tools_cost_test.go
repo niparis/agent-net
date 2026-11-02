@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func fmtCostName(w, h int) string { return fmt.Sprintf("tools_cost_list_%dx%d", w, h) }
@@ -67,12 +69,39 @@ func TestToolsCostGoldens(t *testing.T) {
 func TestProjectCostIncludesOnlyAvailableProjectSkills(t *testing.T) {
 	m := costModel(120, 34)
 	m.tl.search = ""
-	n, total, biggest := m.projectCost("homelab")
-	if n != 7 || total != 5400 || biggest != "scratch-notes" {
+	n, total, biggest, _ := m.projectCost("homelab")
+	if n != 34 || total != 82900 || biggest != "found-skill-25" {
 		t.Fatalf("homelab: %d %d %s", n, total, biggest)
 	}
 	m = toolFilter(m, "project:homelab")
-	if !strings.Contains(plain(m), "7 skills · ~5.4k tokens in every session") {
+	if !strings.Contains(plain(m), "34 skills · ~82.9k tokens in every session on research") {
 		t.Fatal(plain(m))
+	}
+}
+
+func TestProjectCostChoosesHighestMachineAndUnknown(t *testing.T) {
+	m := costModel(120, 34)
+	m.snap.Projects = append(m.snap.Projects, protocol.ProjectView{Name: "homelab", NodeID: toolNodeM, Hostname: "Nicolas-MBP"}, protocol.ProjectView{Name: "unknown"})
+	// Add a large user-level skill only on the second machine.
+	skill := toolSkill("mac-only", "mac", toolLoc(toolNodeM, "Nicolas-MBP", "/skills/mac-only", "user", "", "claude"))
+	skill.StartTokens = 100000
+	m.tl.items = append(m.tl.items, skill)
+	m.rebuildTools()
+	_, _, _, machine := m.projectCost("homelab")
+	if machine != "Nicolas-MBP" {
+		t.Fatalf("highest machine: %s", machine)
+	}
+	m = toolFilter(m, "project:homelab")
+	if s := plain(m); !strings.Contains(s, "tokens in every session on Nicolas-MBP") {
+		t.Fatalf("highest machine missing: %s", s)
+	}
+	m = pressKey(m, "t")
+	if s := plain(m); !strings.Contains(s, "MACHINE") || !strings.Contains(s, "Nicolas-MBP") {
+		t.Fatalf("machine column missing: %s", s)
+	}
+	for _, r := range m.projectCosts() {
+		if r.name == "unknown" && (r.cost != 0 || r.skills != 0) {
+			t.Fatalf("unknown machine has a total: %+v", r)
+		}
 	}
 }

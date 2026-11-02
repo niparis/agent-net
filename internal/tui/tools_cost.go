@@ -123,6 +123,7 @@ func (m Model) toolDetailView(w, h int) []string {
 
 type projectCostRow struct {
 	name    string
+	machine string
 	skills  int
 	cost    int64
 	biggest string
@@ -143,31 +144,67 @@ func toolOnProject(r toolsdiff.Row, project string) bool {
 	}
 	return false
 }
-func (m Model) projectCost(project string) (int, int64, string) {
-	copy := m
-	copy.tl.search = ""
-	rows := copy.shownRows()
-	var n int
-	var total, largest int64
-	var name string
-	for _, r := range rows {
-		if r.Kind != protocol.InventorySkill || !toolOnProject(r, project) {
+
+// projectCostOn counts each skill once, even when it has multiple copies or
+// is both assigned and observed. For conflicting copies use the highest cost.
+func (m Model) projectCostOn(project, node string) (int, int64, string) {
+	costs := map[string]int64{}
+	for _, item := range m.tl.items {
+		if item.Kind != protocol.InventorySkill {
 			continue
 		}
-		n++
-		total += r.Item.StartTokens
-		if name == "" || r.Item.StartTokens > largest {
-			largest = r.Item.StartTokens
-			name = r.Name
+		on := false
+		if item.Desired != nil {
+			a := item.Desired.Assignment
+			on = a.OnMachine(node) && (a.Scope == "global" || (a.Scope == "projects" && hasStr(a.Projects, project)))
+		}
+		for _, loc := range item.Locations {
+			if loc.NodeID != node {
+				continue
+			}
+			if loc.Scope == "user" || (loc.Scope == "project" && loc.Tracked && (loc.GraphNode == project || loc.Project == project)) {
+				on = true
+			}
+		}
+		if on {
+			if old, ok := costs[item.Name]; !ok || item.StartTokens > old {
+				costs[item.Name] = item.StartTokens
+			}
 		}
 	}
-	return n, total, name
+	var total, largest int64
+	var biggest string
+	for name, cost := range costs {
+		total += cost
+		if biggest == "" || cost > largest || (cost == largest && name < biggest) {
+			largest, biggest = cost, name
+		}
+	}
+	return len(costs), total, biggest
+}
+
+func (m Model) projectCost(project string) (int, int64, string, string) {
+	var best projectCostRow
+	for _, p := range m.projectRows() {
+		if p.Name != project || p.NodeID == "" {
+			continue
+		}
+		machine := p.Hostname
+		if machine == "" {
+			machine = p.NodeID
+		}
+		n, cost, biggest := m.projectCostOn(project, p.NodeID)
+		if best.machine == "" || cost > best.cost || (cost == best.cost && machine < best.machine) {
+			best = projectCostRow{skills: n, cost: cost, biggest: biggest, machine: machine}
+		}
+	}
+	return best.skills, best.cost, best.biggest, best.machine
 }
 func (m Model) projectCosts() []projectCostRow {
 	var rows []projectCostRow
 	for _, p := range m.toolsProjects() {
-		n, c, b := m.projectCost(p)
-		rows = append(rows, projectCostRow{name: p, skills: n, cost: c, biggest: b})
+		n, c, b, machine := m.projectCost(p)
+		rows = append(rows, projectCostRow{name: p, skills: n, cost: c, biggest: b, machine: machine})
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].cost == rows[j].cost {
@@ -179,14 +216,19 @@ func (m Model) projectCosts() []projectCostRow {
 }
 func (m Model) projectCostView(w, h int) []string {
 	rows := m.projectCosts()
-	nameW := max(12, (w-35)/2)
-	biggestW := max(10, w-nameW-28)
-	body := []string{cell("PROJECT", nameW) + cell("SKILLS", 8) + cell("EVERY SESSION", 16) + "BIGGEST"}
+	nameW := max(12, (w-43)/3)
+	machineW := max(10, (w-43)/3)
+	biggestW := max(8, w-4-nameW-machineW-24)
+	body := []string{cell("PROJECT", nameW) + cell("MACHINE", machineW) + cell("SKILLS", 8) + cell("EVERY SESSION", 16) + "BIGGEST"}
 	start := max(0, m.tl.projectRow-max(h-5, 0))
 	end := min(len(rows), start+max(h-3, 0))
 	for i := start; i < end; i++ {
 		r := rows[i]
-		line := cell(shortenWords(r.name, nameW), nameW) + cell(fmt.Sprint(r.skills), 8) + cell(formatTokens(r.cost), 16) + cell(shortenWords(r.biggest, biggestW), biggestW)
+		skills, cost, biggest := fmt.Sprint(r.skills), formatTokens(r.cost), r.biggest
+		if r.machine == "" {
+			skills, cost, biggest = "-", "-", "-"
+		}
+		line := cell(shortenWords(r.name, nameW), nameW) + cell(shortenWords(orStr(r.machine, "-"), machineW), machineW) + cell(skills, 8) + cell(cost, 16) + cell(shortenWords(biggest, biggestW), biggestW)
 		if i == m.tl.projectRow {
 			line = selectedRow(padStyled(line, w-4))
 		}

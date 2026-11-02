@@ -323,8 +323,10 @@ to quit. Digits keep their global tab meanings.
 The filter combines words with `project:NAME`, `node:NAME` and `machine:NAME`.
 A graph node is its network project, across registered checkouts. With a
 project or node filter, statuses describe that scope, including tools available
-to turn on. The title counts the skills on for the project and their estimated
-tokens in every session. Token counts are estimates. Turn on/Turn off uses the scope directly. Otherwise a picker lists
+to turn on. The title shows the highest estimated cost across the project's checkout
+machines. It includes project skills and user-level skills observed on that
+machine. The project cost table names that machine; a project with no known
+machine shows `-`. Token counts are estimates. Turn on/Turn off uses the scope directly. Otherwise a picker lists
 machines and projects: space ticks, `/` filters, Enter applies the selection, and Esc
 cancels. Enter with nothing ticked explains that a target is required.
 
