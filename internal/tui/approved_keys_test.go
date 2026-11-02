@@ -43,7 +43,7 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"23_no_accept_key", []check{{contextTools, "a", ""}, {contextTools, "x", ""}, {contextTools, ".", ""}}},
 		{"24_list_details", []check{{contextTools, "enter", "open actions"}}},
 		{"25_picker_space", []check{{contextToolsPicker, " ", "tick"}, {contextToolsPicker, "x", ""}}},
-		{"26_help_close", []check{{contextHelp, "esc", actClose}, {contextHelp, "?", actClose}, {contextHelp, "enter", ""}, {contextHelp, "backspace", ""}}},
+		{"26_help_close", []check{{contextHelp, "esc", actClose}, {contextHelp, "?", actAllScreens}, {contextHelp, "enter", ""}, {contextHelp, "backspace", ""}}},
 		{"27_notifications", []check{{contextHelp, "N", ""}, {contextHelp, "n", ""}}},
 		{"28_confirm", []check{{contextConfirm, "enter", "yes"}, {contextConfirm, "y", "yes"}, {contextConfirm, "esc", "no"}, {contextConfirm, "n", "no"}}},
 	}
@@ -96,8 +96,12 @@ func TestApprovedOverlayCloseKeys(t *testing.T) {
 		t.Fatal("enter or backspace closed help")
 	}
 	m = keys(m, "?")
+	if !m.help || !m.helpAll {
+		t.Fatal("? did not switch help to all screens")
+	}
+	m = keys(m, "esc")
 	if m.help {
-		t.Fatal("question mark did not close help")
+		t.Fatal("esc did not close the full help")
 	}
 	m.open = &openMsg{}
 	m = keys(m, "m", "backspace")

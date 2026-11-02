@@ -183,6 +183,7 @@ func TestSettingsSectionNavigationAndHelp(t *testing.T) {
 		t.Fatalf("previous section: %s", got)
 	}
 	m.help = true
+	m.helpAll = true
 	for _, key := range []string{"N", "T", "R"} {
 		if _, cmd := press(m, keyRunes(key)); cmd != nil {
 			t.Errorf("help key %s acted", key)

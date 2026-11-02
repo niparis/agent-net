@@ -191,6 +191,7 @@ type Model struct {
 	// help shows the key overlay; expand gives the detail pane the room of
 	// the message feed.
 	help       bool
+	helpAll    bool // the full list of every screen, not just this one
 	helpScroll int
 	expand     bool
 }
@@ -1073,6 +1074,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case actClose:
 			m.help = false
+			m.helpAll = false
+			m.helpScroll = 0
+		case actAllScreens:
+			m.helpAll = !m.helpAll
 			m.helpScroll = 0
 		case actDown:
 			m.helpScroll++
@@ -1093,6 +1098,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.qualityDetail && m.tab == quotasTab {
 		switch keyAction(contextQualityDetails, k.String()) {
+		case "help":
+			m.openHelp()
 		case actClose:
 			m.qualityDetail = false
 			m.quotaScroll = 0
@@ -1191,6 +1198,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.open != nil {
 		switch keyAction(contextBody, k.String()) {
+		case "help":
+			m.openHelp()
 		case actQuit:
 			m.quitting = true
 			return m, tea.Quit

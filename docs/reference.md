@@ -1464,8 +1464,9 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 ### TUI keys
 
 The bindings live in `internal/tui/keys.go`. The key line and the help overlay
-read that table. `?` opens the same help overlay on every tab, including Graph;
-`?` or Esc closes it. `q` or Ctrl+C quits. Esc never quits. When a filter or
+read that table. `?` opens help for the screen you are on: its section comes
+first, then Global keys. Press `?` again for every screen, and Esc closes help
+from either view. `q` or Ctrl+C quits. Esc never quits. When a filter or
 search contains text, the first Esc clears it and the second leaves the field.
 
 | Place | Keys |
@@ -1479,7 +1480,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Agent card | Ctrl+U and Ctrl+D scroll. `,` and `.` select learned changes; `u` undoes the selected change. `!` does nothing; the legend is in the help overlay under Graph. `[` and `]` do not scroll. |
 | Tools | The tab is one list. Enter opens the selected tool's actions; `/` filters, `t` shows skill cost per project, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
 | Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. |
-| Help | Esc and `?` close. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: Global keys first, the current tab next, the other tabs in tab order, then In overlays. |
+| Help | Esc closes. `?` switches between this screen and all screens. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: the screen you are on first, then Global keys; `?` again shows Global keys, the current tab, the other tabs in tab order, then In overlays. |
 | Confirmations | Enter or `y` says yes; Esc or `n` says no. Every question footer shows all four keys. |
 
 `agent-net tui` has seven tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages, `5` Tools, `6` Settings and `7` Inbox. On each tab, `c` opens the CTO session in herdr, `C` focuses the CTO box and ctrl+] returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · ctrl+]: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI in herdr (ctrl+] returns from the fallback), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and Esc skips a tip. Messages lists the stored conversations, newest activity first, and pages through them as you scroll. Use up/down to select a thread, left/right to select a message, End to select the thread's latest message in the right pane, Enter for its full body, `f` on a worker conversation to report a defect found later, and `l` to cycle the filter: all, without worker threads, with system events. Use `/` to filter the list.
@@ -1511,7 +1512,7 @@ The Graph tab keeps its graph, camera, selection and traffic in a headless state
   Worker conversations are grouped into one row per worker, `worker:<session>`, because a worker's task, start notes and hand-back can live in separate stored conversations. The gateway does that grouping, so the page size and `total` count workers as one row each. The row is named from data that survives the worker's session record: the first message sent to the worker, its title (else its task line), and the caller's name, as `you → worker: <title or first line of the task>`, cut to fit the row. It shows the message count and the worker's latest status when known. Press `l` to reach the view without worker rows; press it twice more to show system events, then return to all. Worker start notices (`status: started` or `queued`, and a queued start that never became a worker) do not create a row and do not count in its message total. They stay stored and appear dim when the worker's conversation is opened, or with system events on. A row moves only on real content: the task, follow-ups, the hand-back (done, failed, timed out, or an idle end without a hand-back) and replies. A session whose record is gone is shown as `ended worker` or `ended session`, never `unknown session`. Threads that include an owner's instruction, marked `you→`, show the mark too; the list is otherwise ordered by latest activity. The dim legend says what the marks and colors mean: orange means a request is waiting for a reply, red means failed, and purple identifies a CTO message. New session lines stay hidden in the live feed. The panel title shows the current message filter.
 - **A result line** under the title says what the last action did: plain when it worked, `!` and red when it did not. The next key clears it.
 - **Questions** use the same keys everywhere: Enter or `y` says yes, Esc or `n` says no, and every question ends with `enter/y: yes · esc/n: no`.
-- **Help** (`?`). Lists every key and what the columns mean. The key line at the bottom shows at most seven hints: the few keys used most on that screen, then `? help` and `q quit`. It drops whole hints when the terminal is narrow. A key that is not on the line still works and is listed here. A selected row may replace a less useful hint with the action that matters then, such as `x stop` on a worker or `a approve` on a held request.
+- **Help** (`?`). Shows the keys of the screen you are on, then Global keys. Press `?` again for every screen; Esc closes either view. The key line at the bottom shows at most seven hints: the few keys used most on that screen, then `? help` and `q quit`. It drops whole hints when the terminal is narrow. A key that is not on the line still works and is listed here. A selected row may replace a less useful hint with the action that matters then, such as `x stop` on a worker or `a approve` on a held request.
 
 The screen refreshes once a second. CPU, memory and counts are asked every 5 seconds, because daemons report every 10 seconds. If the daemon is not running, or cannot reach the gateway, a banner says so, the last data stays on screen, and it retries every second. A daemon or gateway from before CPU and memory shows `?` and is not asked again.
 
@@ -1526,7 +1527,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `1` to `7` | Open Sessions, Graph, Quotas, Messages, Tools, Settings or Inbox. `M` and `G` do not open Graph. |
 | `c`, `C` | `c` opens the CTO session; `C` focuses the CTO box. Ctrl+] returns to Sessions and Esc skips a tip. |
 | `d` | Toggle selected session details in place of the session list. |
-| `?` | Show or hide the help. |
+| `?` | Show the keys of this screen; press again for all screens. |
 | esc | Leave the help or a message body, or clear the filter. When a filter holds text, the first Esc clears it and the second leaves the field. Esc never quits. |
 | `R` | Refresh now. In Sessions and Messages, `r` refuses or rejects instead. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |

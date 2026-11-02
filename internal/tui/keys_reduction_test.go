@@ -100,8 +100,8 @@ func TestGraphRemovedKeysDoNothing(t *testing.T) {
 	}
 }
 
-// helpContent is built from the table: Global first, the current tab next,
-// then the other tabs in tab order, and the overlays last.
+// helpContent is built from the table: the current screen first, then the
+// fixed Global keys.
 func TestHelpSectionsFollowTheCurrentTab(t *testing.T) {
 	for _, tc := range []struct {
 		tab  int
@@ -113,38 +113,34 @@ func TestHelpSectionsFollowTheCurrentTab(t *testing.T) {
 		{quotasTab, "3", "Quotas"},
 		{messagesTab, "4", "Messages"},
 		{toolsTab, "5", "Tools"},
+		{settingsTab, "6", "Settings"},
+		{inboxTab, "7", "Inbox"},
 	} {
 		m := keys(newModel(120, 40), tc.key, "?")
 		text := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
-		if !strings.Contains(text, " Global keys") {
+		if !strings.HasPrefix(text, " "+tc.name+"\n") {
+			t.Fatalf("%s: current section is not first:\n%s", tc.name, text)
+		}
+		if !strings.Contains(text, "\n Global keys\n") {
 			t.Fatalf("%s: no Global keys section:\n%s", tc.name, text)
 		}
-		if !strings.Contains(text, " In overlays") {
-			t.Fatalf("%s: no In overlays section", tc.name)
+		if strings.Contains(text, " In overlays") {
+			t.Fatalf("%s: this screen help also shows the full list", tc.name)
 		}
-		global := strings.Index(text, " Global keys")
-		current := strings.Index(text, "\n "+tc.name+"\n")
-		if current < 0 || current < global {
-			t.Fatalf("%s: current section is not after Global:\n%s", tc.name, text)
-		}
-		// The other tabs follow in tab order, skipping the current one.
-		previous := current
 		for i, name := range tabNames {
 			if i == tc.tab {
 				continue
 			}
-			at := strings.Index(text, "\n "+name+"\n")
-			if at < previous {
-				t.Fatalf("%s: %s section is out of tab order", tc.name, name)
+			if strings.Contains(text, "\n "+name+"\n") {
+				t.Fatalf("%s: help also shows the %s section", tc.name, name)
 			}
-			previous = at
 		}
 	}
 }
 
-// Opening help always starts at Global keys, which are followed by the
-// current tab's section.
-func TestHelpOpensAtGlobalKeys(t *testing.T) {
+// Opening help always starts at the current screen's section, then Global
+// keys.
+func TestHelpOpensAtTheCurrentScreen(t *testing.T) {
 	m := keys(newModel(80, 24), "?")
 	m = keys(m, "pgdown", "esc")
 	m = keys(m, "?")
@@ -152,17 +148,19 @@ func TestHelpOpensAtGlobalKeys(t *testing.T) {
 		t.Fatalf("help reopened at scroll %d", m.helpScroll)
 	}
 	view := ansi.Strip(strings.Join(m.helpContent(80), "\n"))
-	if !strings.HasPrefix(view, " Global keys") {
-		t.Fatalf("help does not start with Global keys:\n%s", view)
+	if !strings.HasPrefix(view, " Sessions\n") {
+		t.Fatalf("help does not start with the current screen:\n%s", view)
 	}
-	if !strings.Contains(view, "\n Sessions\n") {
-		t.Fatalf("Sessions does not follow Global keys:\n%s", view)
+	if !strings.Contains(view, "\n Global keys\n") {
+		t.Fatalf("Global keys do not follow the current screen:\n%s", view)
 	}
 }
 
 // Global rows are the fixed list, never labels joined from other contexts.
 func TestHelpHasNoJoinedContextLists(t *testing.T) {
-	text := strings.Join(strings.Fields(ansi.Strip(strings.Join(newModel(120, 40).helpContent(120), "\n"))), " ")
+	m := newModel(120, 40)
+	m.helpAll = true
+	text := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(120), "\n"))), " ")
 	for _, bad := range []string{
 		"back; clear or back",
 		"filter; find a node; enter selects the first match and esc cancels",
@@ -177,7 +175,9 @@ func TestHelpHasNoJoinedContextLists(t *testing.T) {
 
 // Sub-sections inside a tab start on their own line after a blank one.
 func TestHelpSubsectionsHaveBlankLines(t *testing.T) {
-	view := ansi.Strip(strings.Join(newModel(120, 60).helpContent(120), "\n"))
+	m := newModel(120, 60)
+	m.helpAll = true
+	view := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
 	for _, heading := range []string{
 		"On a held request row", "On a learned suggestion row", "On an outcome row",
 		"On a CTO proposal row", "Agent card",
@@ -190,7 +190,9 @@ func TestHelpSubsectionsHaveBlankLines(t *testing.T) {
 
 // A direction pair shares one row, and a page row is not repeated.
 func TestHelpPairsAreMerged(t *testing.T) {
-	text := ansi.Strip(strings.Join(newModel(120, 60).helpContent(120), "\n"))
+	m := newModel(120, 60)
+	m.helpAll = true
+	text := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
 	for _, want := range []string{
 		"pgup/pgdn", "home/g, end", "up/down, j/k", "shift+arrows", ", .",
 	} {
@@ -241,7 +243,9 @@ func TestRemovedDirectKeysDoNothing(t *testing.T) {
 // c opens the CTO everywhere; C focuses its box. The old card row said the
 // opposite.
 func TestHelpSaysCOpensAndCFocuses(t *testing.T) {
-	text := strings.Join(strings.Fields(ansi.Strip(strings.Join(keys(newModel(120, 40), "2", "?").helpContent(120), "\n"))), " ")
+	m := keys(newModel(120, 40), "2", "?")
+	m.helpAll = true
+	text := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(120), "\n"))), " ")
 	for _, want := range []string{"c open the CTO session", "C focus the CTO box"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help lacks %q", want)

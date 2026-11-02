@@ -1,17 +1,4 @@
-Keys ───────────────────────────────────────────────────────────────────────────
-
- Global keys
-  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
-                         Settings, Inbox
-  enter                  go into the selected thing
-  arrows, j/k            move
-  esc                    back; first clears a filter you typed
-  /                      filter or search
-  R                      refresh
-  c                      open the CTO session
-  C                      focus the CTO box
-  ?                      help
-  q, ctrl+c              quit
+Keys · Sessions ────────────────────────────────────────────────────────────────
 
  Sessions
   pgup/pgdn              page
@@ -20,5 +7,18 @@ Keys ─────────────────────────
                          delegation policy on DELEGATE
   m                      send a message to the session as yourself
   n                      start a session in herdr: project, harness, model,
+                         folder and first message (a form)
+  x                      stop the selected worker or session
+  h                      hide or unhide the selected session
+  left, right            move between NAME, RULE and DELEGATE cells
+  space                  cycle the request rule: normal, ask, auto
+  v                      cycle the view: active only, all, all with offline, all
+                         with offline and hidden
+  d                      show or hide the selected session details
+
+ Global keys
+  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
+                         Settings, Inbox
+  enter                  go into the selected thing
   more below
-up/down scroll  esc close help  q quit
+up/down scroll  ? all screens  esc close

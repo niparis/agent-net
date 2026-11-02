@@ -146,6 +146,7 @@ func TestConnectedAppRenameSettingsGoldens(t *testing.T) {
 
 func TestConnectedAppsHelp(t *testing.T) {
 	m := newModel(120, 34)
+	m.mode = modeApps
 	help := strings.Join(m.helpContent(120), "\n")
 	for _, want := range []string{"Connected apps", "add", "revoke", "approve", "refuse", "change kind"} {
 		if !strings.Contains(help, want) {

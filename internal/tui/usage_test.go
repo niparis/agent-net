@@ -148,7 +148,7 @@ func TestHeaderQuotaWarning(t *testing.T) {
 }
 
 func TestGoldenHelp(t *testing.T) {
-	m := keys(newModel(100, 40), "?")
+	m := keys(newModel(100, 40), "?", "?")
 	help := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(100), "\n"))), " ")
 	for _, want := range []string{"open the selected agent card", "scroll the card", "undo the selected one", "Legend"} {
 		if !strings.Contains(help, want) {
@@ -157,8 +157,10 @@ func TestGoldenHelp(t *testing.T) {
 	}
 	golden(t, "help_80x24", keys(newModel(80, 24), "?").View())
 	golden(t, "help_120x40", keys(newModel(120, 40), "?").View())
+	golden(t, "help_tools_120x40", keys(newModel(120, 40), "5", "?").View())
 	golden(t, "help_graph_80x24", keys(newModel(80, 24), "2", "?").View())
 	golden(t, "help_graph_120x40", keys(newModel(120, 40), "2", "?").View())
+	golden(t, "help_all_120x40", keys(newModel(120, 40), "?", "?").View())
 }
 
 // ---- model rules ----
@@ -502,7 +504,7 @@ func TestKeyLineGivesUpTheLeastUsefulHints(t *testing.T) {
 }
 
 func TestHelpOverlay(t *testing.T) {
-	m := keys(newModel(100, 40), "?")
+	m := keys(newModel(100, 40), "?", "?")
 	v := strings.Join(strings.Fields(ansi.Strip(m.View()+strings.Join(m.helpContent(100), "\n"))), " ")
 	for _, want := range []string{"Keys", "go into the selected thing", "q, ctrl+c", "Legend"} {
 		if !strings.Contains(v, want) {

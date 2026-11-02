@@ -305,7 +305,7 @@ func TestGoldenFeedSnippets(t *testing.T) {
 }
 
 func TestHelpListsTheMessageStates(t *testing.T) {
-	m := keys(newModel(120, 40), "?")
+	m := keys(newModel(120, 40), "4", "?")
 	out := strings.Join(m.helpContent(120), "\n")
 	for _, want := range []string{"pending", "delivered", "replied", "failed", "...", "✓", "↩", "✗"} {
 		if !strings.Contains(out, want) {

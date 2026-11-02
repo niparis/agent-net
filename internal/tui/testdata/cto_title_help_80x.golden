@@ -147,6 +147,7 @@ Legend ────────────────────────�
  In overlays
  Message body
   esc, enter             close
+  ?                      help
   q                      quit
   up/down, j/k           scroll
   pgup/pgdn              page
@@ -164,6 +165,7 @@ Legend ────────────────────────�
 
  Quality details
   esc                    back
+  ?                      help
   up/down, j/k           scroll
   pgup/pgdn              page
   left/right             agent
@@ -185,11 +187,13 @@ Legend ────────────────────────�
  Tools plan
   enter, y, Y            apply
   esc, n, N              cancel
+  ?                      help
   up/down, j/k           scroll
   d                      use the exact folders
 
  Tools picker
   esc                    cancel
+  ?                      help
   up/down, j/k           select
   space                  tick
   /                      filter
@@ -197,6 +201,7 @@ Legend ────────────────────────�
 
  Tools menu
   esc                    back
+  ?                      help
   up/down, j/k           move
   enter                  choose
 
@@ -210,6 +215,7 @@ Legend ────────────────────────�
 
  Atlas box
   ctrl+], tab            back to Sessions
+  ?                      help
   esc                    skip tip
   enter                  opens the full Atlas
   pgup/pgdn, ctrl+u/d    scroll
@@ -220,7 +226,8 @@ Legend ────────────────────────�
 
  Help
   q                      quit
-  esc, ?                 close help
+  esc                    close
+  ?                      all screens
   up/down, j/k           scroll
   pgup/pgdn              page
   home/g, end/G          first, last line

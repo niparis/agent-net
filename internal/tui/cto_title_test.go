@@ -62,6 +62,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 		t.Errorf("conversation row is not the owner's title: %s", line)
 	}
 
+	m.helpAll = true
 	help := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(120), "\n"))), " ")
 	for _, want := range []string{"focus the Atlas box", "enter opens the full Atlas", "open the Atlas session"} {
 		if !strings.Contains(help, want) {
@@ -136,6 +137,7 @@ func TestCTOTitleGoldens(t *testing.T) {
 		box := strings.Join(m.ctoView(size[0], 10), "\n")
 		golden(t, fmt.Sprintf("cto_title_box_%dx%d", size[0], size[1]), box)
 
+		m.helpAll = true
 		help := strings.Join(m.helpContent(size[0]), "\n")
 		golden(t, fmt.Sprintf("cto_title_help_%dx", size[0]), help)
 
