@@ -221,7 +221,11 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 		COALESCE(SUM(CASE WHEN online = 1 THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN online = 0 AND last_seen >= ? THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN online = 0 THEN 1 ELSE 0 END), 0)
-		FROM sessions WHERE harness != 'owner'`, cutoff).Scan(&c.Online, &c.Offline24h, &c.OfflineTotal)
+		FROM (SELECT last_seen,
+			CASE WHEN harness='bot' THEN
+				CASE WHEN last_seen > ? AND EXISTS(SELECT 1 FROM apps WHERE apps.id=sessions.node_id AND revoked_at IS NULL) THEN 1 ELSE 0 END
+			ELSE online END AS online
+			FROM sessions WHERE harness != 'owner')`, cutoff, s.now().Add(-10*time.Minute).UnixNano()).Scan(&c.Online, &c.Offline24h, &c.OfflineTotal)
 	s.pendingMu.Lock()
 	c.PendingStalls = s.pendingStalls
 	s.pendingMu.Unlock()

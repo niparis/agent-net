@@ -195,6 +195,8 @@ var keyBindings = []keyBinding{
 	bind(contextApps, "esc", "back", "back", 1),
 	bind(contextApps, "up|k", actUp, "move", 1),
 	bind(contextApps, "down|j", actDown, "move", 1),
+	bind(contextApps, "p", "public", "internet access", 1),
+	bind(contextApps, "u", "url", "tunnel URL", 1),
 	bind(contextApps, "a", "add", "add", 1),
 	bind(contextApps, "x", "revoke", "revoke", 1),
 	bind(contextApps, "enter", "approve", "approve", 1),

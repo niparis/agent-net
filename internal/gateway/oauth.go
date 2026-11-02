@@ -29,7 +29,7 @@ func (g *Gateway) registerOAuth(mux *http.ServeMux) {
 	mux.HandleFunc("GET /oauth/authorize/status", g.oauthAuthorizeStatus)
 	mux.HandleFunc("POST /oauth/token", g.oauthToken)
 }
-func (g *Gateway) oauthBase() string { return strings.TrimRight(g.opts.PublicURL, "/") }
+func (g *Gateway) oauthBase() string { return strings.TrimRight(g.publicBase(), "/") }
 func oauthHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")

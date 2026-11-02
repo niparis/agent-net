@@ -13,6 +13,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/funnel"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 type connectedApp struct {
@@ -23,15 +25,17 @@ type connectedApp struct {
 }
 type pendingApp struct{ ID, ClientName, RedirectHost string }
 type appsForm struct {
-	apps        []connectedApp
-	index       int
-	stage       string
-	input       textinput.Model
-	pending     pendingApp
-	kind        string
-	err         string
-	loading     bool
-	editingName bool
+	public         protocol.AppsPublicStatus
+	addAfterPublic bool
+	apps           []connectedApp
+	index          int
+	stage          string
+	input          textinput.Model
+	pending        pendingApp
+	kind           string
+	err            string
+	loading        bool
+	editingName    bool
 }
 type appsResult struct {
 	op  string
@@ -64,6 +68,12 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 	f.loading = false
 	if r.err != nil {
 		f.err = r.err.Error()
+		if strings.HasPrefix(r.op, "apps.public.") {
+			f.public.Error = f.err
+			f.err = ""
+			f.stage = ""
+			return m, nil
+		}
 		if r.op == "apps.pending" && strings.Contains(f.err, "no rows") {
 			f.err = "No request with that code (expired or mistyped)"
 		}
@@ -97,6 +107,18 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 			}
 		}
 		f.index = min(f.index, max(0, len(f.apps)-1))
+		return m, m.appsCall("apps.public.status", struct{}{})
+	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
+		if err := json.Unmarshal(r.raw, &f.public); err != nil {
+			f.err = err.Error()
+			return m, nil
+		}
+		if f.addAfterPublic && f.public.On {
+			f.addAfterPublic = false
+			f.startCode()
+		} else if r.op != "apps.public.status" {
+			f.stage = ""
+		}
 	case "apps.pending":
 		var v struct {
 			Pending pendingApp `json:"pending"`
@@ -124,6 +146,18 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if f.loading {
 		return m, nil
 	}
+	if f.stage == "public-confirm" {
+		yes, no := confirmAnswer(k)
+		if yes {
+			f.addAfterPublic = true
+			f.loading = true
+			return m, m.appsCall("apps.public.on", struct{}{})
+		}
+		if no {
+			f.stage = ""
+		}
+		return m, nil
+	}
 	if f.stage == "confirm" {
 		yes, no := confirmAnswer(k)
 		if yes {
@@ -135,7 +169,7 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if f.stage == "code" || f.stage == "approve" {
+	if f.stage == "code" || f.stage == "approve" || f.stage == "url" {
 		if k.Type == tea.KeyEsc {
 			f.stage = ""
 			f.err = ""
@@ -163,6 +197,9 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if k.Type == tea.KeyEnter {
 			f.loading = true
+			if f.stage == "url" {
+				return m, m.appsCall("apps.public.url", map[string]string{"url": f.input.Value()})
+			}
 			if f.stage == "code" {
 				return m, m.appsCall("apps.pending", map[string]string{"code": f.input.Value()})
 			}
@@ -182,12 +219,25 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		f.index = max(0, f.index-1)
 	case actDown:
 		f.index = min(max(0, len(f.apps)-1), f.index+1)
-	case "add":
-		f.stage = "code"
+	case "public":
+		op := "apps.public.on"
+		if f.public.On {
+			op = "apps.public.off"
+		}
+		f.loading = true
+		return m, m.appsCall(op, struct{}{})
+	case "url":
+		f.stage = "url"
 		f.input = textinput.New()
-		f.input.CharLimit = 7
+		f.input.CharLimit = 2048
+		f.input.Width = 60
 		f.input.Focus()
-		f.err = ""
+	case "add":
+		if !f.public.On {
+			f.stage = "public-confirm"
+		} else {
+			f.startCode()
+		}
 	case "revoke":
 		if len(f.apps) > 0 {
 			f.stage = "confirm"
@@ -207,7 +257,29 @@ func (m Model) appsDate(t time.Time) string {
 func (m Model) appsView(w, rows int) []string {
 	f := m.apps
 	out := []string{section("Connected apps", w)}
+	status := "off"
+	if f.public.On {
+		status = "on  " + f.public.URL + "/mcp"
+	}
+	for _, line := range wrap("Reachable from the internet: "+status, w-2) {
+		out = append(out, "  "+line)
+	}
+	if f.public.Error != "" {
+		for _, line := range wrap(sanitize(f.public.Error), w-2) {
+			out = append(out, "  "+lipgloss.NewStyle().Foreground(roleWarning).Render(line))
+		}
+	}
+	if strings.Contains(firstNonEmpty(f.public.Error, f.err), funnel.ErrNotInstalled.Error()) {
+		out = append(out, "  u: paste your own tunnel URL")
+	}
+	out = append(out, "")
 	switch f.stage {
+	case "public-confirm":
+		out = append(out, "  Turn on internet access? y/n")
+	case "url":
+		in := f.input
+		in.Prompt = ""
+		out = append(out, "  Public tunnel URL (HTTPS):", "  "+in.View())
 	case "code":
 		in := f.input
 		in.Prompt = ""
@@ -253,7 +325,7 @@ func (m Model) appsView(w, rows int) []string {
 				if kind == "owner_app" {
 					kind = "owner app"
 				}
-				host := ""
+				host := "-"
 				if len(a.RedirectURIs) > 0 {
 					if u, e := url.Parse(a.RedirectURIs[0]); e == nil {
 						host = u.Hostname()
@@ -268,7 +340,7 @@ func (m Model) appsView(w, rows int) []string {
 					widths[j] = max(widths[j], ansi.StringWidth(sanitize(v)))
 				}
 			}
-			total := 2 + len(headers) - 1
+			total := 2 + 2*(len(headers)-1)
 			for _, n := range widths {
 				total += n
 			}
@@ -290,10 +362,10 @@ func (m Model) appsView(w, rows int) []string {
 				for i, v := range parts {
 					cols = append(cols, cell(v, widths[i]))
 				}
-				return strings.Join(cols, " ")
+				return strings.Join(cols, "  ")
 			}
 			out = append(out, sDim.Render(clip("  "+row(headers), w)))
-			visible := max(1, rows-3)
+			visible := max(1, rows-len(out)-2)
 			start := max(0, f.index-visible+1)
 			end := min(len(f.apps), start+visible)
 			for i := start; i < end; i++ {
@@ -313,10 +385,18 @@ func (m Model) appsView(w, rows int) []string {
 		out = append(out, "  Loading...")
 	}
 	if f.err != "" {
-		out = append(out, "  "+sanitize(f.err))
+		out = append(out, "  "+lipgloss.NewStyle().Foreground(roleWarning).Render(sanitize(f.err)))
 	}
 	for len(out) < rows {
 		out = append(out, "")
 	}
 	return out
+}
+
+func (f *appsForm) startCode() {
+	f.stage = "code"
+	f.input = textinput.New()
+	f.input.CharLimit = 7
+	f.input.Focus()
+	f.err = ""
 }

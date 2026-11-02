@@ -1,0 +1,34 @@
+1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online  14:05:00
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free │
+│  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
+│  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Connected apps ─────────────────────────────────────────────────────────────────
+  Reachable from the internet: off
+
+  NAME         KIND       CLIENT  RETURN HOST     CONNECTED    LAST USED
+▸ weather-bot  bot        Cursor  www.cursor.com  today 14:05  never
+  phone        owner app  Safari  -               today 14:05  never
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+p internet access  u tunnel URL  a add  x revoke  esc back

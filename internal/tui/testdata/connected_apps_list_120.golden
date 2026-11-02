@@ -5,11 +5,11 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 Connected apps ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-  NAME   KIND      CLIENT        RETURN HOST    CONNECTED LAST USED
-▸ cursor bot       Cursor        www.cursor.com Jan 02    never
-  iphone owner app iPhone Safari phone.example  Jan 02    Feb 03
+  Reachable from the internet: off
 
-
+  NAME    KIND       CLIENT         RETURN HOST     CONNECTED  LAST USED
+▸ cursor  bot        Cursor         www.cursor.com  Jan 02     never
+  iphone  owner app  iPhone Safari  phone.example   Jan 02     Feb 03
 
 
 
@@ -31,4 +31,4 @@ Connected apps ─────────────────────�
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-a add  x revoke  esc back
+p internet access  u tunnel URL  a add  x revoke  esc back

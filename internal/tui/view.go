@@ -222,6 +222,9 @@ func (m Model) machineRows() []machineRow {
 		rows = append(rows, r)
 	}
 	for _, a := range m.snap.Agents {
+		if a.Harness == "bot" {
+			continue
+		}
 		r := by[a.NodeID]
 		if r == nil {
 			r = &machineRow{nodeID: a.NodeID, host: a.Hostname}
