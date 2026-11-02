@@ -38,48 +38,45 @@ its own token, never the owner.
 ## 4. How a connection works
 
 ```
-Grok (xAI cloud)          agent-net gateway (via tunnel)        Owner
-     |  GET /mcp (no token) ->  401 + resource metadata URL
-     |  GET /.well-known/oauth-protected-resource
-     |  GET /.well-known/oauth-authorization-server
-     |  POST /oauth/register  (dynamic client registration)
-     |  owner's browser -> GET /oauth/authorize (PKCE)
-     |                         page: "Grok asks to connect as a bot.
-     |                                Approve it in your agent-net TUI."
-     |                                                   TUI Needs you row:
-     |                                                   "grok asks to connect"
-     |                                                   a approve / r refuse
-     |                         page redirects back with a code
-     |  POST /oauth/token  (code + PKCE verifier) -> access + refresh token
-     |  POST /mcp  Authorization: Bearer ...  -> tools for role "bot"
+Owner (TUI)               agent-net gateway (via tunnel)        Grok (xAI cloud)
+  S > Outside bots > Add a bot
+  -> 10-minute pairing window, code K7F-29Q
+                            GET /mcp (no token) -> 401 + resource metadata  <-
+                            GET /.well-known/oauth-*                         <-
+                            POST /oauth/register (only inside the window)    <-
+  owner's browser ->        GET /oauth/authorize (PKCE)
+                            page: "Type the code shown in your agent-net TUI"
+  types K7F-29Q             TUI row: client, redirect host: a approve / r refuse
+                            page redirects back with a one-time code
+                            POST /oauth/token (code + PKCE) -> tokens        <-
+                            POST /mcp  Authorization: Bearer ...             <-
 ```
 
-1. The owner adds a custom connector in Grok with the URL
+1. In the TUI the owner opens `S` > "Outside bots" > "Add a bot". This opens
+   a 10-minute pairing window and shows a pairing code, for example
+   `K7F-29Q`. Only one window is open at a time.
+2. The owner adds a custom connector in the bot's settings with the URL
    `https://<public host>/mcp`.
-2. agent-net answers the first unauthenticated call with `401` and the
+3. agent-net answers the first unauthenticated call with `401` and the
    protected resource metadata, as the MCP authorization spec requires.
-3. The client registers itself (dynamic client registration). Registration
-   alone grants nothing.
-4. The owner's browser opens agent-net's authorize page. The page names the
-   client and the redirect host, and waits.
-5. The TUI shows a Needs you row with the client name, the redirect host and
-   the time. `a` approves and asks for a bot name (default: the client name,
-   for example `grok-bot`). `r` refuses. A request not answered within 10
-   minutes expires.
-6. On approval the page redirects with a one-time code. The client trades it,
+4. The client registers itself (dynamic client registration). Outside a
+   pairing window registration is refused, and nothing is stored.
+5. The owner's browser opens agent-net's authorize page, which asks for the
+   pairing code. A wrong code is refused; 5 wrong codes close the window.
+6. With the right code, the TUI shows the request with the client name and
+   its redirect host. `a` approves and asks for a bot name (default: the
+   client name, for example `grok-bot`). `r` refuses. Either closes the
+   window.
+7. On approval the page redirects with a one-time code. The client trades it,
    with its PKCE verifier, for a short-lived access token (1 hour) and a
    refresh token (90 days, rotated on use).
-7. The bot calls `/mcp` with the access token.
+8. The bot calls `/mcp` with the access token.
 
 The authorize page never asks for a password. Knowing the URL is not enough
-to connect: every connection needs the owner's key press in the TUI.
-
-**Matching code.** A client picks its own name, so a stranger who finds the
-URL could start a request called "Grok" at the moment the owner expects one.
-The authorize page shows a short code (for example `K7F-29Q`), and the TUI
-row shows the same code next to the client's redirect host. The owner
-approves only when the code matches the page in their own browser and the
-redirect host is the expected one (an xAI domain for Grok).
+to connect: a connection needs the pairing code from the owner's TUI and the
+owner's key press. A stranger who finds the URL cannot put a request in front
+of the owner: outside a pairing window there is nothing to answer, and inside
+it they would need the code.
 
 ## 5. Why OAuth, and why this is not "Log in with Google"
 
@@ -156,7 +153,9 @@ and approve it in the TUI.
 - The settings menu (`S`) gets "Outside bots": the public URL, and the list
   of connected bots with their name, client, redirect host, connected since
   and last call.
-- `x` on a bot revokes it: its tokens stop working at once.
+- "Add a bot" opens the pairing window (section 4).
+- `x` on a bot revokes it: its tokens stop working at once. Revoking the last
+  bot turns Funnel off.
 - A fallback for clients that take a header: "New token" creates a fixed
   bearer token for a named bot, shown once, revocable the same way.
 
@@ -169,8 +168,19 @@ and approve it in the TUI.
 - Authorization codes are one-time, expire in 2 minutes, and are bound to the
   PKCE challenge and the registered redirect URI.
 - Redirect URIs must be `https` and are shown to the owner before approval.
-- Rate limits on registration, authorize and token: a public endpoint will be
-  scanned.
+- Spam and floods. A public endpoint will be scanned, so:
+  - registration and authorize work only inside a pairing window; outside it
+    they refuse at once and store nothing;
+  - a call without a valid token is refused before any database read;
+  - an address that sends repeated bad tokens or wrong pairing codes is
+    blocked for an hour;
+  - limits per address on every public path, small request size limits and
+    short timeouts;
+  - an approved bot has its own limits (for example 60 tool calls a minute
+    and 30 messages an hour). Over the limit, calls are refused and the TUI
+    shows it on the bot's row. This covers a looping bot and a stolen token.
+- With no bot connected, agent-net turns Funnel off: nothing is public until
+  the owner adds a bot.
 - Prompt injection is the main risk. A bot that browses the web can be told
   by a page to send harmful requests to the owner's agents. The bot role,
   the "outside bot" note and the receivers' charters are the defense: a bot
