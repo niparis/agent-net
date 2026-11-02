@@ -1,47 +1,77 @@
-# Remote MCP for outside bots
+# Connected apps: outside bots and the phone app
 
-**Status:** Proposal, for the owner's approval. Nothing is built.
+**Status:** Proposal. The owner agreed the direction on 2026-11-02; build not
+started.
 **Date:** 2026-11-02.
 
 ## 1. Goal
 
-Let an agent that runs outside the owner's machines use agent-net as an MCP
-server. The first client is Grok Bot: xAI's always-on agents, which run on
-their own computer in xAI's cloud. Its connectors call an MCP server by URL
-from xAI's servers, so the server must be reachable from the public internet.
-The same endpoint serves any other remote MCP client (for example the Claude
-app's custom connectors).
+Let apps that do not run on the owner's machines use agent-net, through one
+mechanism:
 
-It must be easy for any agent-net user to run in their own homelab: no
-outside account, no identity provider, no password.
+- **Outside bots**, first Grok Bot: xAI's always-on agents, which run on their
+  own computer in xAI's cloud and call MCP servers by URL from xAI's servers.
+- **The agent-net phone app**, which today is reachable only through
+  `tailscale serve` and needs the `agent-net phone owner` command.
+
+It must be easy for any agent-net user to run in their own homelab: no outside
+account, no identity provider, no password, and no command beyond setup.
 
 ## 2. What exists today
 
-- The MCP server is local only: each agent session starts `agent-net mcp`
-  and talks to it on stdin and stdout. The caller is always a local session.
+- The MCP server is local only: each agent session starts `agent-net mcp` and
+  talks to it on stdin and stdout. The caller is always a local session.
 - The tool list is one catalog (`internal/toolcatalog`), filtered by role:
   `agent`, `worker`, `cto`.
-- The phone app already uses the pattern this design needs: a listener on
-  `127.0.0.1` that only a tunnel (`tailscale serve`) exposes.
+- The phone app (phase 1) is a web app on a `127.0.0.1` listener, exposed by
+  `tailscale serve`, and trusts the Tailscale login set with
+  `agent-net phone owner LOGIN`.
 
-## 3. The design in one paragraph
+## 3. What Grok Bot told us (2026-11-02)
 
-The gateway gets a second loopback listener that serves MCP over streamable
-HTTP at `/mcp`, plus the few OAuth endpoints a remote MCP client needs. The
-owner exposes that listener with a tunnel of their choice and gives
-agent-net the public URL once. A client that connects is sent through a
-standard OAuth login. agent-net is its own authorization server, and the
-login step is an approval in the owner's TUI. The approved client becomes a
-**bot**: a new caller kind with its own name, its own role in the catalog and
-its own token, never the owner.
+Confirmed:
 
-## 4. How a connection works
+- It adds an MCP server by its public HTTPS URL, as a connector.
+- If the server supports OAuth, it starts the sign-in and shows a connect card
+  in its app; no token goes through chat. If the server only has a static key
+  or bearer token, it takes it in a masked field.
+- The server must use streamable HTTP (or SSE), be reachable from the
+  internet, and for OAuth serve the standard MCP authorization discovery
+  endpoints.
+
+Unknown, to be read from our logs in the first real test (task 6c): whether a
+port other than 443 works, whether it uses dynamic client registration, its
+redirect host, whether it sends `resource`, whether it refreshes tokens,
+whether it keeps one MCP session, its source addresses, and how long its
+sign-in waits. Grok Bot advised not to depend on a long sign-in wait.
+
+## 4. The design in one paragraph
+
+The gateway gets one public listener (loopback, exposed by a tunnel) that
+serves MCP over streamable HTTP at `/mcp`, the OAuth endpoints MCP clients
+need, and the phone app. Every app connects the same way: it shows a short
+code, the owner types the code in the TUI and approves. agent-net is its own
+authorization server; there are no passwords. Each approved app is one of two
+kinds, chosen by the owner at approval:
+
+| Kind | Example | Who decides each action | Authority |
+|---|---|---|---|
+| **owner app** | the agent-net phone app | the owner's tap | acts as the owner |
+| **bot** | Grok Bot | a model, sometimes on its own, reading web pages | its own name; model output, not the owner's words |
+
+The difference is not the device. Both may run on the owner's phone. It is who
+decides: a tap is the owner, a model's output is not. agent-net already applies
+this rule to the CTO.
+
+## 5. How an app connects
 
 The owner's experience is the device-code login of Codex and Claude: a page
-shows a short code, and the owner types it where they are trusted. Here the
-trusted place is the TUI. The wire protocol stays the standard MCP flow
-(authorization code with PKCE), because the client chooses its flow and MCP
-clients do not use the device grant (RFC 8628).
+shows a short code, and the owner types it where they are trusted, the TUI.
+For MCP clients the wire protocol stays the standard MCP flow (authorization
+code with PKCE), because the client chooses its flow and MCP clients do not use
+the device grant (RFC 8628).
+
+### A bot (MCP client)
 
 ```
 Grok (xAI cloud)          agent-net gateway (via tunnel)        Owner
@@ -50,92 +80,116 @@ Grok (xAI cloud)          agent-net gateway (via tunnel)        Owner
      |  POST /oauth/register
      |  owner's browser -> GET /oauth/authorize (PKCE)
      |                         page: "Enter K7F-29Q in your agent-net TUI"
-     |                                                   S > Outside bots >
-     |                                                   Add a bot: K7F-29Q
+     |                                                   S > Connected apps >
+     |                                                   Add: K7F-29Q
      |                                                   shows client + redirect
-     |                                                   host: a approve
+     |                                                   host, kind: bot; a
      |                         page sees the approval, redirects with a code
      |  POST /oauth/token  (code + PKCE verifier) -> access + refresh token
      |  POST /mcp  Authorization: Bearer ...  -> tools for role "bot"
 ```
 
-1. The owner adds a custom connector in the bot's settings with the URL
-   `https://<public host>/mcp`.
+1. The owner adds a connector in the bot with `https://<public host>/mcp`.
 2. agent-net answers the first unauthenticated call with `401` and the
    protected resource metadata, as the MCP authorization spec requires.
 3. The client registers itself (dynamic client registration). Registration
    alone grants nothing and shows nothing in the TUI.
-4. The owner's browser opens agent-net's authorize page. It shows a short
-   code, for example `K7F-29Q`, and "Enter this code in your agent-net TUI".
-   The page waits and polls for the answer.
-5. In the TUI the owner opens `S` > "Outside bots" > "Add a bot" and types
-   the code. The TUI then shows the client name and its redirect host. `a`
-   approves and asks for a bot name (default: the client name, for example
-   `grok-bot`). `r` refuses.
-6. The page sees the approval and redirects with a one-time authorization
-   code. The client trades it, with its PKCE verifier, for a short-lived
-   access token (1 hour) and a refresh token (90 days, rotated on use).
+4. The sign-in opens agent-net's authorize page. It shows a short code, for
+   example `K7F-29Q`, and "Enter this code in your agent-net TUI". The page
+   polls every 2 seconds.
+5. In the TUI the owner opens `S` > "Connected apps" > "Add" and types the
+   code. The TUI shows the client name, its redirect host and the kind
+   (default `bot` for an MCP client). `a` approves and asks for a name
+   (default: the client name, for example `grok-bot`). `r` refuses.
+6. The page redirects with a one-time authorization code. The client trades
+   it, with its PKCE verifier, for an access token (1 hour) and a refresh
+   token (90 days, rotated on use).
 7. The bot calls `/mcp` with the access token.
 
-The authorize page never asks for a password. Knowing the URL is not enough
-to connect: a connection needs the owner to type, in the TUI, the code shown
-in their own browser. A stranger's attempt only shows a code on the
-stranger's screen. The TUI has no list of pending requests, so there is
-nothing to flood and nothing to approve by mistake. Pending requests are
-capped (20, each expiring after 10 minutes) and limited per address.
+**If the sign-in times out before the owner types the code**, nothing is lost.
+The approval belongs to the registered client and its redirect URI, not to
+one page. For 10 minutes after approval, a new sign-in from the same client
+with the same redirect URI goes straight through without a new code. So a
+short sign-in timeout only means the owner presses "connect" once more.
 
-## 5. Why OAuth, and why this is not "Log in with Google"
+For a client that takes only a static key, "Add" can also create a bearer
+token for a named bot, shown once.
+
+### The phone app
+
+1. The owner opens `https://<public host>/` on the phone. The page shows a
+   short code.
+2. The owner types the code in the TUI under "Connected apps" > "Add". The
+   kind defaults to `owner app`. `a` approves and asks for a name (default:
+   the browser and device, for example `iPhone Safari`).
+3. The page receives a device token in a secure, `HttpOnly` cookie, renewed on
+   use (90 days without use expires it).
+
+This replaces `agent-net phone owner LOGIN` and the separate
+`tailscale serve` setup: the phone uses the same public listener.
+
+### Why this is safe to expose
+
+The authorize and phone pages never ask for a password. A connection needs
+the owner to type, in the TUI, a code shown on the owner's own screen. A
+stranger's attempt only shows a code on the stranger's screen. The TUI never
+lists pending requests, so there is nothing to flood and nothing to approve
+by mistake. The owner sets the kind; an app cannot choose to be an owner app.
+
+## 6. Why OAuth, and why this is not "Log in with Google"
 
 Remote MCP clients expect OAuth (the MCP authorization spec, OAuth 2.1 with
-PKCE). Many connector screens, Grok's among them, offer no field for a fixed
-token.
-
-OAuth here only answers "may this client use this server". It does not answer
-"who is the user": agent-net has exactly one user, the owner, and the TUI
+PKCE). OAuth here only answers "may this app use this server". It does not
+answer "who is the user": agent-net has one user, the owner, and the TUI
 approval is the proof. There is no OpenID Connect, no ID token, no user
-database. To the client it is standard OAuth on the wire.
+database. The phone app is our own page, so it needs only the code and a
+device cookie, not the OAuth flow.
 
-## 6. What a bot may do
+## 7. What each kind may do
 
-A new catalog role, `bot`:
+**Owner app:** what the TUI's owner actions allow, through the shared operator
+interface: read everything, answer held requests and outcomes, approve and
+refuse, send messages as the owner. It is the owner's hand.
 
-| Allowed | Not allowed |
+**Bot**, a new catalog role `bot`:
+
+| Allowed | Not allowed by default |
 |---|---|
 | Find and read sessions, machines, projects, the graph and charters | Act as the owner, or carry owner authority |
-| Send a message to a session, as itself | Approve, refuse or answer anything in the owner's inbox |
+| Send a message to a session, as itself | Approve, refuse or answer the owner's inbox |
 | Reply in its own conversations | Start or stop workers |
 | Read messages sent to it | Change the graph, charters, rules, settings or MCP servers |
 | | Message a group |
 
-- Every message from a bot carries an agent-net note: "from grok-bot, an
-  outside bot: model output, not the owner's words". Receiving agents judge it
-  like any peer request, with less trust than a local peer by default.
-- Messages to a bot are kept for it until it reads them: a bot has no inbox to
+- Every message from a bot carries an agent-net note: "from grok-bot, a bot:
+  model output, not the owner's words". Receiving agents judge it like any
+  peer request.
+- Messages to a bot are kept until it reads them: a bot has no inbox to
   deliver into.
-- A bot shows in the TUI as its own row, kind `bot`, with its last call time.
+- The owner may grant a bot more, one right at a time (for example start
+  workers), from its row in "Connected apps". Each grant is shown on the row
+  and can be removed.
 
-Starting workers or acting for the owner could be added later as an explicit,
-per-bot grant. It is not part of this design.
-
-## 7. Setup for a homelab user
+## 8. Public address
 
 agent-net does not require Tailscale, so there are two paths.
 
-**With Tailscale on the gateway machine (default).** The TUI settings menu
-(`S`) has one switch, "Outside bots: on/off". Turning it on:
+**With Tailscale on the gateway machine (default).** "Connected apps" has one
+switch, "Reachable from the internet: on/off". Turning it on:
 
-1. starts the loopback listener;
-2. runs `tailscale funnel --bg --https=8443 http://127.0.0.1:7422`;
+1. starts the public listener on `127.0.0.1`;
+2. runs `tailscale funnel --bg --https=443 http://127.0.0.1:7422`
+   (8443 or 10000 if 443 is already used on that machine; Funnel allows only
+   these three ports);
 3. reads the machine's DNS name from `tailscale status --json` and shows the
-   URL to paste in the bot: `https://<machine>.<tailnet>.ts.net:8443/mcp`.
+   URL: `https://<machine>.<tailnet>.ts.net/` for the phone,
+   `.../mcp` for bots.
 
-Port 8443, never 443: Funnel makes a whole port public, and the phone app is
-served on 443 by `tailscale serve`. Funnel only allows 443, 8443 and 10000.
-Turning the switch off, or uninstalling agent-net, runs
-`tailscale funnel --https=8443 off` (uninstall code and `docs/reference.md`
-change together).
+With no app connected, agent-net turns Funnel off. Turning the switch off, or
+uninstalling agent-net, runs `tailscale funnel ... off` (uninstall code and
+`docs/reference.md` change together).
 
-What agent-net cannot do, and shows the user instead:
+What agent-net cannot do, and shows the owner instead:
 
 - Allowing Funnel for the tailnet is an admin setting (the `funnel` node
   attribute and HTTPS certificates). The first attempt prints a link; the TUI
@@ -147,72 +201,75 @@ What agent-net cannot do, and shows the user instead:
 Funnel publishes a certificate for the machine name, so the name appears in
 public certificate logs. Nothing else is exposed.
 
-**Without Tailscale.** The user runs their own tunnel (Cloudflare Tunnel,
-ngrok) to `127.0.0.1:7422` for the paths `/mcp`, `/.well-known` and `/oauth`,
-and pastes the public URL in the same settings entry.
+**Without Tailscale.** The owner runs their own tunnel (Cloudflare Tunnel,
+ngrok) to `127.0.0.1:7422` and pastes its public URL in the same entry.
 
-Then, on both paths: add the connector in the bot's settings with that URL,
-and approve it in the TUI.
+## 9. Managing connected apps in the TUI
 
-## 8. Managing bots in the TUI
+- `S` > "Connected apps": the switch and URL, then one row per app: name,
+  kind, client, redirect host, connected since, last call, grants.
+- "Add" asks for the code shown on the app's page (section 5).
+- `x` on a row revokes it: its tokens stop working at once.
+- Bots also show in Sessions as their own rows, kind `bot`, with their last
+  call time.
 
-- The settings menu (`S`) gets "Outside bots": the public URL, and the list
-  of connected bots with their name, client, redirect host, connected since
-  and last call.
-- "Add a bot" asks for the code shown in the browser (section 4).
-- `x` on a bot revokes it: its tokens stop working at once. Revoking the last
-  bot turns Funnel off.
-- A fallback for clients that take a header: "New token" creates a fixed
-  bearer token for a named bot, shown once, revocable the same way.
+## 10. Security limits
 
-## 9. Security limits
-
-- Only `/mcp`, `/.well-known/oauth-*` and `/oauth/*` are served on the bot
-  listener. The gateway's own API, the phone app and the daemon socket are
-  never reachable through it.
+- The public listener serves only `/mcp`, `/.well-known/oauth-*`, `/oauth/*`
+  and the phone app. The gateway's own API and the daemon sockets are never
+  reachable through it.
 - Tokens are random 256-bit values, stored hashed in the gateway database.
 - Authorization codes are one-time, expire in 2 minutes, and are bound to the
-  PKCE challenge and the registered redirect URI.
-- Redirect URIs must be `https` and are shown to the owner before approval.
+  PKCE challenge and the registered redirect URI. Redirect URIs must be
+  `https` and are shown to the owner before approval.
 - Spam and floods. A public endpoint will be scanned, so:
-  - pending authorize requests are capped (20, each expiring after 10
+  - pending connection requests are capped (20, each expiring after 10
     minutes) and never shown in the TUI until the owner types their code;
   - a call without a valid token is refused before any database read;
-  - an address that sends repeated bad tokens or registrations is
-    blocked for an hour;
+  - an address that sends repeated bad tokens or registrations is blocked for
+    an hour;
   - limits per address on every public path, small request size limits and
     short timeouts;
-  - an approved bot has its own limits (for example 60 tool calls a minute
-    and 30 messages an hour). Over the limit, calls are refused and the TUI
-    shows it on the bot's row. This covers a looping bot and a stolen token.
-- With no bot connected, agent-net turns Funnel off: nothing is public until
-  the owner adds a bot.
-- Prompt injection is the main risk. A bot that browses the web can be told
-  by a page to send harmful requests to the owner's agents. The bot role,
-  the "outside bot" note and the receivers' charters are the defense: a bot
-  can ask, never order.
-- Revoking a bot, or clearing the public URL, cuts it off at once.
-- `docs/security.md` gets a section for this listener.
+  - each app has its own limits (for a bot, for example, 60 tool calls a
+    minute and 30 messages an hour). Over the limit, calls are refused and the
+    TUI shows it on the row. This covers a looping bot and a stolen token.
+- Prompt injection is the main risk for bots. A bot that browses the web can be
+  told by a page to send harmful requests. The bot role, the "model output"
+  note and the receivers' charters are the defense: a bot can ask, never
+  order, unless the owner granted it a right.
+- A stolen owner-app token is an owner key. It expires after 90 days unused,
+  each use is shown on its row, and `x` revokes it.
+- A connection log (one line per registration, authorize, token and MCP
+  session start: client, redirect URI, `resource`, session ID, source
+  address) answers the unknowns of section 3 in the first real test and stays
+  on for audit.
+- `docs/security.md` gets a section for the public listener.
 
-## 10. Not decided here
+## 11. Not decided here
 
-- Whether a bot may later get per-bot grants (start workers, act for the
-  owner on named actions).
-- Whether the phone app should move from Tailscale identity to this login.
-- Exact token lifetimes.
+- Exact token lifetimes and limits.
+- Which rights can be granted to a bot, beyond the first one (start workers).
 
-## 11. Build steps
+## 12. Build steps
 
-1. **Bot caller and role** (medium): caller kind `bot`, catalog role `bot`,
-   bot sessions in the gateway, messages held for bots, the "outside bot" note.
-2. **HTTP MCP listener** (small): streamable HTTP on a loopback listener,
-   serving the `bot` role, behind a token check.
-3. **OAuth endpoints** (medium): resource and server metadata, dynamic
-   registration, authorize page, token and refresh, token storage and revoke.
-4. **TUI** (medium): the Needs you row for connection requests, the "Outside
-   bots" entry in the settings menu, revoke, the fallback token.
-5. **Funnel switch, setup and docs** (small to medium): the "Outside bots"
-   switch that runs Tailscale Funnel on 8443 and reads the URL, the fallback
-   URL field, Funnel off on uninstall, tunnel examples in `docs/setup.md`,
-   `docs/security.md`, a decision record.
-6. **End-to-end test** with a real Grok Bot connector through a tunnel.
+| # | Task | Difficulty | Risk area |
+|---|---|---|---|
+| 1a | App records in the gateway: apps table, kinds, hashed tokens, revoke | normal | gateway database (migration) |
+| 1b | `bot` role in the tool catalog | simple | low |
+| 1c | Messages for bots: hold until read, "model output" note on send | hard | message delivery |
+| 2 | Public listener and HTTP MCP: loopback, token check, tools run as the bot, connection log | hard | new path, core of the feature |
+| 3a | OAuth: discovery, registration, token and refresh, PKCE, approval reuse after a timed-out sign-in | normal, security-sensitive | public endpoints |
+| 3b | Code pages: authorize page and phone pairing page, polling | normal | low |
+| 3c | Flood limits and per-app limits | normal | low |
+| 4a | TUI: "Connected apps" in `S`: switch, list, Add with code, kind, grants, revoke | normal | TUI |
+| 4b | Bots as rows in Sessions | simple | TUI |
+| 5a | Funnel switch: on/off, URL, admin link, operator line, off when unused and on uninstall | normal | the owner's Tailscale setup |
+| 5b | Phone app on the public listener with the device cookie; remove `phone owner` | normal | phone app |
+| 5c | Docs: setup, security, reference, decision record (and update decision 0006) | simple | none |
+| 6a | Automated end-to-end test: a fake OAuth MCP client and a fake phone through the whole flow | normal | test only |
+| 6b | Security review of 1c, 2, 3 and 5a/5b by a strong model, fresh | hard | review only |
+| 6c | Real test: the owner connects Grok Bot and the phone; read the connection log | simple, owner's time | none |
+
+Order: 1a and 1b, then 1c, 2, 3a and 4b in parallel, then 3b, 3c, 4a, 5a and
+5b, then 6a and 6b, release, then 6c. Bots first; the phone change (5b) can
+ship one release later.
