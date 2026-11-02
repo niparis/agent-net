@@ -49,7 +49,7 @@ func TestApproved01RefreshOnEveryScreen(t *testing.T) {
 		t.Fatal("r still refreshes the agent card")
 	}
 
-	tools, src := toolsAtScreen(120, 34, toolsDiffs)
+	tools, src := toolsAtScreen(120, 34)
 	if _, cmd := pressRune(tools, "R"); cmd == nil {
 		t.Fatal("R did not rescan Tools")
 	}
@@ -224,43 +224,15 @@ func TestApproved19CardCommaSelectsThePreviousLearnedChange(t *testing.T) {
 	}
 }
 
-func TestApproved23AcceptDifferenceOnA(t *testing.T) {
-	m, _ := toolsAtScreen(120, 34, toolsDiffs)
-	ds := m.shownDiffs()
-	row := -1
-	for i, d := range ds {
-		if !strings.HasPrefix(d.Key, "group:") && !d.Info {
-			row = i
-			break
-		}
-	}
-	if row < 0 {
-		t.Fatal("no difference to accept")
-	}
-	m.tl.row = row
-	key := ds[row].Key
-	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}); cmd != nil {
-		t.Fatal("x still accepts a difference")
-	}
-	if m.tl.accepted[key] {
-		t.Fatal("x still accepts a difference")
-	}
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	if cmd == nil || !next.tl.accepted[key] {
-		t.Fatal("a no longer accepts a difference")
-	}
-}
-
-func TestApproved24AllToolsEnterOpensTheItem(t *testing.T) {
-	m, _ := toolsAtScreen(120, 34, toolsDiffs)
+func TestApproved24EnterOpensTheListItemActions(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34)
 	m = keys(m, "]")
-	if m.tl.screen != toolsAll {
-		t.Fatal("] did not switch to All tools")
+	if plain(m) == "" {
+		t.Fatal("] left a blank screen")
 	}
-	m = keys(m, "right")
 	m = keys(m, "enter")
-	if m.tl.modal == nil {
-		t.Fatal("enter did not open the selected item")
+	if m.tl.modal == nil || m.tl.modal.menu == nil {
+		t.Fatal("enter did not open the selected item's actions")
 	}
 	if strings.Contains(plain(m), "details below") {
 		t.Fatal("the details below message is back")
@@ -271,8 +243,8 @@ func TestApproved25PickerTicksWithSpaceOnly(t *testing.T) {
 	m, _ := newToolsModel(120, 34)
 	m = openTools(m)
 	m = rowByName(m, "found-skill-10")
-	m.tl.col += 2
-	m = resolveTools(m.openRowPlan(true))
+	m = pressKey(m, "enter")
+	m = toolChoose(t, m, "Turn on for...")
 	p := m.tl.modal.picker
 	if p == nil {
 		t.Fatal("turn on did not open the project picker")

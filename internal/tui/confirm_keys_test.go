@@ -386,7 +386,7 @@ func TestToolsApplyConfirmKeys(t *testing.T) {
 		{"N", "N", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m, src := toolsAtScreen(120, 34, 0)
+			m, src := toolsAtScreen(120, 34)
 			for i, d := range m.shownDiffs() {
 				if d.Kind == toolsdiff.KindDrift {
 					m.tl.row = i

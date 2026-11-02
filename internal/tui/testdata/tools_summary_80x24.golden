@@ -1,24 +1,24 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
- Differences   All tools   By project   [ ] switch screen
-╭─Compare, then keep one───────────────────────────────────────────────────────╮
-│   selected file: SKILL.md                                                    │
-│   no clear winner: read the comparison                                       │
-│   summary by model: a runs tests first; b uses the old install command       │
-│ a  keep the copy on alpha                                                    │
-│      matches agent-net store v2; origin unknown; last change unknown         │
-│      used by alpha / pi                                                      │
-│ b  keep the copy on beta                                                     │
-│      origin unknown; last change unknown                                     │
-│      used by beta / claude                                                   │
-│   1 file differ: SKILL.md changed                                            │
-│   the one you keep goes into agent-net and to every machine                  │
+╭─this skill: 2 different copies on alpha and beta─────────────────────────────╮
+│            a  pi's copy                     b  claude's copy                 │
+│   changed  unknown                          unknown                          │
+│   used by  pi only                          claude only                      │
+│   files    SKILL.md                         SKILL.md                         │
+│   in short a runs tests first               b uses the old install command   │
 │                                                                              │
-│ a keep alpha  b keep beta  n/p select file  v view diff  d exact folders     │
-│   esc cancel                                                                 │
+│   The copy you keep goes to every harness on every machine. The other is     │
+│   backed up for 30 days.                                                     │
+│                                                                              │
+│ a keep a  b keep b  v full diff  esc back                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-a keep alpha  b keep beta  n/p select file  v view diff  d exact folders
+a keep a  b keep b  v full diff  esc back

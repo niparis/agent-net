@@ -38,7 +38,7 @@ func TestKeyLineContentPerTab(t *testing.T) {
 		{"Sessions", "1", "up/down select  enter open  m msg  n new  left/right cell  ? help  q quit"},
 		{"Messages", "4", "up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  R refresh  c CTO  ? help  q quit"},
-		{"Tools", "5", "j/k move  left/right column  enter detail  a/u on/off  [/] screen  ? help  q quit"},
+		{"Tools", "5", "j/k move  enter actions  / filter  n add  esc clear  ? help  q quit"},
 		{"Graph", "2", "1-7 tabs  c CTO  ? help  q quit"},
 	} {
 		m := keys(newModel(120, 34), tc.key)

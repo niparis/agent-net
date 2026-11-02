@@ -272,7 +272,7 @@ func (m Model) helpTabSections() []helpSection {
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
 		{"Quotas", []keyContext{contextQuotas}},
 		{"Messages", []keyContext{contextMessages}},
-		{"Tools", []keyContext{contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsCompare}},
+		{"Tools", []keyContext{contextTools}},
 		{"Settings", []keyContext{contextSettings}},
 		{"Inbox", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
 	}
@@ -320,14 +320,6 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 		return "On a " + m.ctoTitle() + " proposal row"
 	case contextCard:
 		return "Agent card"
-	case contextToolsDiff:
-		return "Differences"
-	case contextToolsAll:
-		return "All tools"
-	case contextToolsProject:
-		return "By project"
-	case contextToolsCompare:
-		return "Compare"
 	case contextBody:
 		return "Message body"
 	case contextInbox:

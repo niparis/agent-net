@@ -307,18 +307,15 @@ current onboarding tip. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
 failures, plus graph diffs; a graph change refreshes the Graph.
 
-Press `5` to open Tools. `[` and `]` switch between Differences, All tools
-and By project. Differences lists copies that need a decision. Press Enter to
-open a fix or its details, or `a` to accept a difference as it is. All tools
-shows skills and MCP servers by machine and project. Up/down selects a tool,
-left/right selects a column, Enter opens its details and actions, `a` turns it
-on and `u` turns it off through a plan. By project shows what one project gets;
-press `v` to select the next machine. `R` rescans tool copies. `h` and `l` do
-not move columns, and `m` does not select a machine.
+Press `5` to open Tools. It is one list of every skill and MCP server: one row
+per tool, with its name, kind and a status in plain words. Rows that need
+attention come first with a `!` and the reason, such as a version that differs
+between machines or two different copies on one machine. `R` rescans tool
+copies. There are no other Tools screens, so `[` and `]` do nothing here.
 
-Use `j`/`k` or up/down to select, `/` to filter, `n` to add, Esc to clear a
-nonempty filter, `?` for help and `q` to quit. Digits keep their global tab
-meanings.
+Use `j`/`k` or up/down to select, Enter to open the selected tool's actions,
+`/` to filter, `n` to add, Esc to clear a nonempty filter, `?` for help and `q`
+to quit. Digits keep their global tab meanings.
 
 The filter combines words with `project:NAME`, `node:NAME` and `machine:NAME`.
 A graph node is its network project, across registered checkouts. With a
@@ -337,11 +334,17 @@ backed up and a canonical version stays in the store.
 A tracked repository skill uses the existing branch-and-commit removal plan.
 Native MCP entries keep their import and guarded native-removal requirements.
 
-Compare uses labelled copies, with `n`/`p` to choose a file, `v` to read its
-diff and `d` for exact folders. A chosen copy is imported before other named,
-observed user copies are backed up. The host rechecks each hash and refuses
-tracked, external or changed sources. The normal assignment plan then installs
-the chosen copy. The plan title names the machine and harness.
+Compare the copies opens one box with the two copies side by side. Each column
+is headed `a  <harness>'s copy` or `b  <harness>'s copy` and shows the date of
+its last change, how many harness setups use it, the files that differ, and,
+when the daemon can make one, a model's short summary of that copy. A line under
+the box says that the kept copy goes to every harness on that machine and that
+the other copy is backed up for 30 days. `a` and `b` keep that copy, `v` opens
+the full diff of a changed file, and Esc goes back. A chosen copy is imported
+before other named, observed user copies are backed up. The host rechecks each
+hash and refuses tracked, external or changed sources. The normal assignment
+plan then installs the chosen copy. The plan title names the machine and
+harness.
 
 `n` offers MCP server or Skill from a folder. Choose the target machine in the
 form. An MCP server takes a name, command or HTTP URL, arguments as a JSON
@@ -1468,7 +1471,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Quotas | `p` protects or unprotects; `s` shows unset subscriptions; `R` refreshes. Enter is unused. |
 | Graph | Arrows select; Shift+arrows pan; `,` and `.` select linked nodes; Enter opens the card; `/` finds a node. The graph fits itself when the tab opens. `o`, Space, `t` and `0` do nothing. |
 | Agent card | Ctrl+U and Ctrl+D scroll. `,` and `.` select learned changes; `u` undoes the selected change. `!` does nothing; the legend is in the help overlay under Graph. `[` and `]` do not scroll. |
-| Tools | `[` and `]` switch its three screens; left/right moves between columns on All tools; `v` selects the next machine on By project; `a` accepts a difference. Enter opens the selected difference fix or tool details. The picker ticks with Space only. |
+| Tools | The tab is one list. Enter opens the selected tool's actions; `/` filters, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
 | Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. |
 | Help | Esc and `?` close. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: Global keys first, the current tab next, the other tabs in tab order, then In overlays. |
 | Confirmations | Enter or `y` says yes; Esc or `n` says no. Every question footer shows all four keys. |

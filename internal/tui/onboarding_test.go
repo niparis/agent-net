@@ -106,7 +106,7 @@ func TestOnboardingTriggersAdvance(t *testing.T) {
 			case "work-protect":
 				msg = actionMsg{onboarding: "work-protect"}
 			case "tools":
-				msg = toolsAcceptMsg{accepted: true}
+				msg = toolsModalMsg{onboarding: true}
 			}
 			next, cmd := m.Update(msg)
 			m = onboardingRun(next.(Model), cmd)

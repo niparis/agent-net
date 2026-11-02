@@ -55,7 +55,11 @@ func coverageRowIndex(m Model, prefix string) int {
 
 func TestToolsMCPCoverageRowsAndPlan(t *testing.T) {
 	m, src := coverageToolsModel(120, 34)
-	v := strings.Join(m.diffsView(120, 25), "\n")
+	var lines []string
+	for _, d := range m.shownDiffs() {
+		lines = append(lines, d.Title)
+	}
+	v := strings.Join(lines, "\n")
 	if !strings.Contains(v, "homelab-mcp · homelab · claude ✓ pi ✗ opencode ✗") {
 		t.Fatalf("coverage row is missing:\n%s", v)
 	}

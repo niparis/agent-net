@@ -35,11 +35,7 @@ const (
 	contextGraphFind       keyContext = "Graph find"
 	contextCard            keyContext = "agent card"
 	contextTools           keyContext = "Tools"
-	contextToolsDiff       keyContext = "Tools Differences"
-	contextToolsAll        keyContext = "Tools All tools"
-	contextToolsProject    keyContext = "Tools By project"
 	contextToolsPlan       keyContext = "tools plan"
-	contextToolsCompare    keyContext = "tools compare"
 	contextToolsPicker     keyContext = "tools picker"
 	contextToolsMenu       keyContext = "tools menu"
 	contextToolsAdd        keyContext = "tools add"
@@ -53,7 +49,7 @@ var allKeyContexts = []keyContext{
 	contextGlobal, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard,
-	contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsPlan, contextToolsCompare,
+	contextTools, contextToolsPlan,
 	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
 }
 
@@ -288,31 +284,13 @@ var keyBindings = []keyBinding{
 	bind(contextTools, "/", "filter", "filter", 0),
 	bind(contextTools, "esc", "clear filter", "clear", 1),
 	withHelp(bind(contextTools, "n", "add", "add", 0), "add an MCP server or a skill from a folder"),
+	withLocal(withHelp(bind(contextTools, "enter", "open actions", "actions", 0), "open the actions for the selected tool")),
 	withLocal(withHelp(bind(contextTools, "R", "rescan", "rescan", -1), "rescan tool copies")),
-	withHelp(bind(contextToolsDiff, "a", "accept difference", "accept", 1), "accept the difference as it is"),
-	withLocal(withHelp(bind(contextToolsDiff, "enter", "difference detail", "detail", 1), "open the difference plan")),
-	withHelp(bind(contextToolsDiff, ".", "show accepted", "accepted", -1), "show accepted copies"),
-	withHelp(bind(contextToolsDiff, "[", "previous screen", "screen", 2), "switch screens"),
-	withHelp(bind(contextToolsDiff, "]", "next screen", "screen", 2), "switch screens"),
-	withLocal(withHelp(bind(contextToolsAll, "enter", "item detail", "detail", 1), "open the item details and actions")),
-	withHelp(bind(contextToolsAll, "a", "turn on", "on", 1), "turn on the selected tool"),
-	withHelp(bind(contextToolsAll, "u", "turn off", "off", 1), "turn off the selected tool"),
-	withLocal(withHelp(bind(contextToolsAll, "left", "previous column", "column", 1), "move between columns")),
-	withLocal(withHelp(bind(contextToolsAll, "right", "next column", "column", 1), "move between columns")),
-	withHelp(bind(contextToolsAll, "[", "previous screen", "screen", -1), "switch screens"),
-	withHelp(bind(contextToolsAll, "]", "next screen", "screen", -1), "switch screens"),
-	withLocal(withHelp(bind(contextToolsProject, "left", "previous column", "column", 1), "move between columns")),
-	withLocal(withHelp(bind(contextToolsProject, "right", "next column", "column", 1), "move between columns")),
-	withHelp(bind(contextToolsProject, "[", "previous screen", "screen", -1), "switch screens"),
-	withHelp(bind(contextToolsProject, "]", "next screen", "screen", -1), "switch screens"),
-	withHelp(bind(contextToolsProject, "v", "next machine", "machine", 1), "select the next machine"),
 	bind(contextToolsPlan, "enter|y|Y", "apply", "apply", 1),
 	bind(contextToolsPlan, "esc|n|N", "cancel", "cancel", 1),
 	bind(contextToolsPlan, "up|k", actUp, "scroll", 1),
 	bind(contextToolsPlan, "down|j", actDown, "scroll", 1),
 	withHelp(bind(contextToolsPlan, "d", "exact folders", "folders", -1), "use the exact folders"),
-	withHelp(bind(contextToolsCompare, "n", "next file", "next", 1), "select the next file"),
-	withHelp(bind(contextToolsCompare, "p", "previous file", "previous", 1), "select the previous file"),
 	bind(contextToolsPicker, "esc", "cancel", "cancel", 1),
 	bind(contextToolsPicker, "up|k", actUp, "select", 1),
 	bind(contextToolsPicker, "down|j", actDown, "select", 1),

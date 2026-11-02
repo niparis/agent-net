@@ -100,29 +100,8 @@ Legend ────────────────────────�
 
  Tools
   n                      add an MCP server or a skill from a folder
+  enter                  open the actions for the selected tool
   R                      rescan tool copies
-
- Differences
-  a                      accept the difference as it is
-  enter                  open the difference plan
-  .                      show accepted copies
-  [ ]                    switch screens
-
- All tools
-  enter                  open the item details and actions
-  a                      turn on the selected tool
-  u                      turn off the selected tool
-  left/right             move between columns
-  [ ]                    switch screens
-
- By project
-  left/right             move between columns
-  [ ]                    switch screens
-  v                      select the next machine
-
- Compare
-  n                      select the next file
-  p                      select the previous file
 
  Settings
   tab, ]                 jump to the next section

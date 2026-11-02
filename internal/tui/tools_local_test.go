@@ -20,7 +20,7 @@ func TestRepoRemovalCopiesOnlyIncludeTrackedProjectLocations(t *testing.T) {
 }
 
 func TestToolsShowRepoOnlyForTrackedCopiesAndLocalForOthers(t *testing.T) {
-	m, _ := toolsAtScreen(120, 34, 1)
+	m, _ := toolsAtScreen(120, 34)
 	m.tl.search = "" // show the whole list
 	var repo, local *toolsdiff.Row
 	for _, r := range m.tl.cat.Rows {
@@ -45,15 +45,11 @@ func TestToolsShowRepoOnlyForTrackedCopiesAndLocalForOthers(t *testing.T) {
 }
 
 func TestToolsLocalCopyIsManagedLikeAUserCopy(t *testing.T) {
-	m, src := toolsAtScreen(120, 34, 1)
-	m = rowByNameFrom(m, "scratch-notes", "local")
-	m = resolveTools(m.openRowPlan(true))
-	if m.tl.modal == nil {
-		t.Fatalf("a must open a plan: %q", m.tl.toast)
-	}
-	if v := plain(m); !strings.Contains(v, "agent-net store") || strings.Contains(v, "branch") {
-		t.Errorf("a local copy goes into the store; there is no branch plan:\n%s", v)
-	}
+	m, src := toolsAtScreen(120, 34)
+	m = toolFilter(m, "scratch-notes")
+	m = pressKey(m, "enter")
+	m = toolChoose(t, m, "Turn on for...")
+	m = toolPick(t, m, "Machine: research")
 	m = pressKey(m, "enter")
 	if len(src.imports) != 1 || len(src.plans) != 1 || len(src.applied) != 1 {
 		t.Fatalf("imports %v plans %v applied %v", src.imports, src.plans, src.applied)
@@ -67,19 +63,16 @@ func TestToolsLocalCopyIsManagedLikeAUserCopy(t *testing.T) {
 }
 
 func TestToolsLocalCopyTurnOffUsesTheAssignmentPlan(t *testing.T) {
-	m, src := toolsAtScreen(120, 34, 1)
-	m = rowByNameFrom(m, "scratch-notes", "local")
-	// The first machine column is Nicolas-MBP; the copy lives on research.
-	m.tl.col++
-	m = resolveTools(m.openRowPlan(false))
-	if m.tl.modal == nil {
-		t.Fatalf("u must open a plan: %q", m.tl.toast)
-	}
-	if v := plain(m); strings.Contains(v, "branch") {
-		t.Errorf("no branch plan for a local copy:\n%s", v)
-	}
+	m, src := toolsAtScreen(120, 34)
+	m = toolFilter(m, "scratch-notes")
 	m = pressKey(m, "enter")
-	if len(src.plans) != 1 || src.plans[0].Target.Scope != "uninstalled" || len(src.sent) != 0 {
-		t.Fatalf("plans %+v sent %v", src.plans, src.sent)
+	m = toolChoose(t, m, "Turn off for...")
+	m = toolPick(t, m, "Machine: research")
+	m = pressKey(m, "enter")
+	if m.tl.modal != nil && strings.Contains(plain(m), "branch") {
+		t.Errorf("no branch plan for a local copy:\n%s", plain(m))
+	}
+	if len(src.imports) != 1 || len(src.plans) != 1 || src.plans[0].Target.Scope != "uninstalled" || len(src.sent) != 0 {
+		t.Fatalf("imports %v plans %+v sent %v", src.imports, src.plans, src.sent)
 	}
 }

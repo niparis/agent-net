@@ -749,13 +749,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyTools(msg)
 		return m, nil
 
-	case toolsAcceptMsg:
-		m.onToolsAccept(msg)
-		if msg.err == nil && msg.accepted {
-			return m.onboardingComplete("tools")
-		}
-		return m, nil
-
 	case toolsModalMsg:
 		next, cmd := m.onToolsModal(msg)
 		if msg.onboarding {
