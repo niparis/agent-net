@@ -251,7 +251,11 @@ func filledWorker(ctx context.Context, call Caller, m map[string]any) map[string
 	out := workerOutput(m)
 	id, _ := out["id"].(string)
 	if row, ok := roWorkerByID(ctx, call, id); ok {
-		return workerRowMap(row)
+		// The start, stop and rate results declare the short worker record;
+		// the assessment belongs to agent_workers_find with detail full.
+		full := workerRowMap(row)
+		delete(full, "assessment")
+		return full
 	}
 	if caller, ok := callerRef(ctx, call); ok {
 		out["caller"] = map[string]any{"id": caller.ID, "name": caller.Name}

@@ -216,3 +216,30 @@ func TestOwnerAskQuestionWithoutItemIsValid(t *testing.T) {
 		t.Fatalf("owner_ask question: %v %+v", err, res)
 	}
 }
+
+// A worker started since the difficulty judge carries an assessment. Rating it
+// returns the short worker record, which declares no assessment field, so the
+// tool must not pass it through (v0.4.95: "unexpected additional properties").
+func TestAgentWorkerRateLeavesOutTheAssessment(t *testing.T) {
+	worker := protocol.AgentView{
+		SessionID: "s_w1", Hostname: "research", Harness: "codex", Model: "gpt-6.1-sol:low",
+		Profile: protocol.Profile{Name: "worker-one"},
+		Worker: &protocol.WorkerInfo{ID: "w_1", Owner: "s_me", Project: "shop", Task: "do it", Title: "Skills",
+			StartedAt: 1700000000, DifficultyUsed: "normal", Assessment: &protocol.WorkerAssessment{Label: "normal", D: 2.7}},
+	}
+	list, _ := json.Marshal(protocol.AgentsResult{Agents: []protocol.AgentView{worker}})
+	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		switch method {
+		case protocol.OpRate:
+			return json.RawMessage(`{"accepted":true,"worker":"s_w1","model":"gpt-6.1-sol:low","harness":"codex","difficulty":"normal"}`), nil
+		case "list":
+			return list, nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_rate",
+		Arguments: map[string]any{"worker": "s_w1", "kind": "rating", "score": 4}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_rate: %v %+v", err, res)
+	}
+}
