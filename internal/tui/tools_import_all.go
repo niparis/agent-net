@@ -76,13 +76,19 @@ func (m Model) importAllSkills() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) outsideToolStatus(r toolsdiff.Row) string {
+	return "installed on " + strings.Join(m.outsideMachines(r), ", ") + ", outside agent-net (on for every session there)"
+}
+
+// outsideMachines names the machines where a skill installed outside
+// agent-net is found.
+func (m Model) outsideMachines(r toolsdiff.Row) []string {
 	var machines []string
 	for i, c := range r.Cells {
 		if i < len(m.tl.cat.Machines) && c.State != toolsdiff.CellOff {
 			machines = append(machines, m.tl.cat.Machines[i].Name)
 		}
 	}
-	return "installed on " + strings.Join(machines, ", ") + ", outside agent-net (on for every session there)"
+	return machines
 }
 
 func outsideSkillsBanner(n int) string {

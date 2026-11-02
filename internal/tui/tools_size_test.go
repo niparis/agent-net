@@ -174,3 +174,24 @@ func TestToolsOversizedRowOnlyMarkerAndCost(t *testing.T) {
 		}
 	}
 }
+
+// On a real machine a big skill's scan stops listing files (TooLarge, no
+// sizes), as for archify (11 MB, over 200 files). It must still be locked.
+func TestToolsSkillMarkedTooLargeByTheScanIsLocked(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
+	large := toolSkill("big-skill", "large", toolLoc(toolNodeR, "research", "/tmp/skills/big-skill", "user", "", "codex"))
+	large.Locations[0].Manifest = &protocol.SkillManifest{TooLarge: true}
+	s.items = append(s.items, large)
+	m = pressKey(m, "5")
+	m = pressKey(m, "right")
+	m = pressKey(m, "/")
+	m = typeText(m, "big-skill")
+	m = pressKey(m, "enter")
+	if !strings.Contains(plain(m), "too large to manage (over 200 files or 2 MB)") {
+		t.Fatal("missing lock for a skill the scan marked too large:\n" + plain(m))
+	}
+	m = pressKey(m, " ")
+	if len(m.tl.agentPending["homelab"]) != 0 {
+		t.Fatal("a skill marked too large queued a toggle")
+	}
+}

@@ -333,7 +333,8 @@ func (m Model) agentToolsView(w, h int) []string {
 		if r.Item.Desired != nil && r.Item.Desired.Assignment.Scope == "global" {
 			state = "on for every project"
 		}
-		if r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal {
+		outside := r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal
+		if outside {
 			state = m.outsideToolStatus(r)
 		}
 		if repo != "" {
@@ -362,8 +363,15 @@ func (m Model) agentToolsView(w, h int) []string {
 		line := check + cell(clip(sanitize(name), nameW), nameW) + cell(formatTokens(cost), 7)
 		if w >= 100 {
 			stateW := max(0, right-4-nameW-12)
-			if strings.Contains(state, "outside agent-net") && len(state) > stateW {
-				state = "outside agent-net"
+			// The row says where the skill is: off here usually means it is
+			// installed only on another machine.
+			if outside && strings.HasPrefix(state, "installed on ") && len(state) > stateW {
+				where := strings.Join(m.outsideMachines(r), ", ")
+				if on {
+					state = "outside agent-net · " + where
+				} else {
+					state = "only on " + where + " · outside agent-net"
+				}
 			}
 			line += " " + clip(sanitize(state), stateW)
 		}
