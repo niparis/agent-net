@@ -76,7 +76,7 @@ func TestToolsEnterOpensPlanFirstAndEscCancels(t *testing.T) {
 		t.Fatal("the scope must open a plan")
 	}
 	v := plain(m)
-	for _, want := range []string{"Turn on code-review", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter/y apply", "d exact folders", "esc/n cancel"} {
+	for _, want := range []string{"Turn on code-review", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter apply", "d exact folders", "esc cancel"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("plan lacks %q:\n%s", want, v)
 		}
@@ -637,7 +637,7 @@ func TestCompareBoxShowsBothCopiesAndTheKeys(t *testing.T) {
 	model, _ := m.openChoose("Keep the newer one in both places", toolsdiff.Action{Name: "demo", Copies: []toolsdiff.Copy{a, b}})
 	m = model.(Model)
 	v := plain(m)
-	for _, want := range []string{"demo: 2 different copies on alpha and beta", "a  pi's copy", "b  claude's copy", "20 Oct", "22 Oct", "pi only", "claude only", "extra", "The copy you keep goes to every harness on every machine.", "a keep a  b keep b  v full diff  esc back"} {
+	for _, want := range []string{"demo: 2 different copies on alpha and beta", "a  pi's copy", "b  claude's copy", "20 Oct", "22 Oct", "pi only", "claude only", "extra", "The copy you keep goes to every harness on every machine.", "a keep a  b keep b  v full diff"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}

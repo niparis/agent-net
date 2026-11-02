@@ -9,7 +9,7 @@
 │   Compare the copies / Keep this one                                         │
 │   Import it                                                                  │
 │                                                                              │
-│ j/k move  enter choose  esc back                                             │
+│ ↑↓ move  enter choose  esc back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter choose  esc back
+esc back  ? help  ↑↓ move  enter choose

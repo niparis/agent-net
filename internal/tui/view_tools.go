@@ -7,13 +7,18 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// toolsView draws either the single list or one clean modal box. The list is
+// toolsView draws skills per agent, the all-tools list or one modal. The list is
 // not drawn underneath a modal, so old panel borders cannot bleed through.
 func (m Model) toolsView(w, h int) []string {
 	out := []string{m.titleLine(w)}
+	if notice, ok := m.noticeLine(w); ok {
+		out[0] = notice
+	}
 	if m.tl.modal != nil {
 		box := m.modalBox(w, max(h-1, 6))
 		out = append(out, box...)
+	} else if !m.tl.allTools {
+		out = append(out, m.agentToolsView(w, max(h-1, 3))...)
 	} else if m.tl.projectsOpen {
 		out = append(out, m.projectCostView(w, max(h-1, 3))...)
 	} else if w >= 100 {
@@ -41,6 +46,9 @@ func (m Model) toolsHints() []hint {
 		}
 		return out
 	}
+	if !m.tl.allTools {
+		return m.agentToolsHints()
+	}
 	if m.tl.projectsOpen {
 		return []hint{{"j/k", "move", 0}, {"enter", "open", 0}, {"esc", "back", 0}}
 	}
@@ -48,6 +56,7 @@ func (m Model) toolsHints() []hint {
 		bindingPairHint(contextTools, actDown, actUp),
 		bindingHint(contextTools, "open actions"),
 		bindingHint(contextTools, "filter"),
+		bindingHint(contextTools, "skills per agent"),
 		bindingHint(contextTools, "add"),
 		bindingHint(contextTools, "clear filter"),
 		bindingHint(contextTools, "help"),
@@ -59,24 +68,7 @@ func (m Model) toolsHelpLine(w int) (string, bool) {
 	if m.focus == focusCTO {
 		return "", false
 	}
-	if md := m.tl.modal; md != nil {
-		var parts []string
-		foot := modalKeys(md)
-		for i := 0; i+1 < len(foot); i += 2 {
-			candidate := append(append([]string(nil), parts...), foot[i], foot[i+1])
-			if ansi.StringWidth(keyHints(candidate...)) <= w {
-				parts = candidate
-			}
-		}
-		return keyHints(parts...), true
-	}
-	if m.tl.searching {
-		return clip("/"+sanitize(m.tl.search)+"▏  enter keep · esc clear", w), true
-	}
-	if message := m.activeToast(); message != "" {
-		return clip(sanitize(message), w), true
-	}
-	return "", false
+	return strings.Join(m.toolsKeyLines(w), "\n"), true
 }
 
 func searchCursor(on bool) string {
@@ -244,8 +236,14 @@ func pickerLines(p *projPicker, width, rows int) []string {
 		}
 	}
 	noun := "projects"
+	if len(p.all) == 1 {
+		noun = "project"
+	}
 	if p.targets {
 		noun = "targets"
+		if len(p.all) == 1 {
+			noun = "target"
+		}
 	}
 	head := tsDim.Render(fmt.Sprintf("%d of %d %s shown · %d ticked", len(shown), len(p.all), noun, picked))
 	if p.remove {
@@ -307,5 +305,18 @@ func modalKeys(md *toolsModal) []string {
 	if md.loading {
 		return []string{"esc", "cancel"}
 	}
-	return md.foot
+	parts := append([]string(nil), md.foot...)
+	for i := 0; i+1 < len(parts); i += 2 {
+		switch parts[i] {
+		case "/":
+		// This is a literal key, not an alias separator.
+		case "j/k", "up/down":
+			parts[i] = "↑↓"
+		case "left/right":
+			parts[i] = "←→"
+		default:
+			parts[i] = strings.Split(parts[i], "/")[0]
+		}
+	}
+	return parts
 }

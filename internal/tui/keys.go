@@ -34,6 +34,11 @@ const (
 	contextGraph           keyContext = "Graph"
 	contextGraphFind       keyContext = "Graph find"
 	contextCard            keyContext = "agent card"
+	contextToolsFilter     keyContext = "tools filter"
+	contextToolsCosts      keyContext = "tools project costs"
+	contextToolsAgents     keyContext = "skills per agent"
+	contextToolsSkills     keyContext = "agent skills"
+	contextToolsDiscard    keyContext = "discard skill changes"
 	contextTools           keyContext = "Tools"
 	contextToolsPlan       keyContext = "tools plan"
 	contextToolsPicker     keyContext = "tools picker"
@@ -49,7 +54,7 @@ var allKeyContexts = []keyContext{
 	contextGlobal, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard,
-	contextTools, contextToolsPlan,
+	contextTools, contextToolsFilter, contextToolsCosts, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
 	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
 }
 
@@ -281,6 +286,36 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextCard, "ctrl+d|pgdown", actPageDown, "scroll", 1), "scroll the card: charter, rules and learned changes"),
 	withHelp(bind(contextCard, "ctrl+u|pgup", actPageUp, "scroll", 1), "scroll the card: charter, rules and learned changes"),
 	bind(contextCard, "R", "refresh", "refresh", -1),
+	bind(contextToolsFilter, "enter", "keep", "keep filter", 0),
+	bind(contextToolsFilter, "esc", "clear filter", "clear/back", 0),
+	bind(contextToolsFilter, "backspace|ctrl+h", "delete text", "delete", 0),
+	bind(contextToolsCosts, "j|down", actDown, "move", 0),
+	bind(contextToolsCosts, "k|up", actUp, "move", 0),
+	bind(contextToolsCosts, "enter", "open", "open", 0),
+	bind(contextToolsCosts, "esc", "back", "back", 0),
+	withLocal(bind(contextToolsAgents, "i", "import all", "import all", 0)),
+	withLocal(bind(contextToolsSkills, "i", "import all", "import all", 0)),
+	withLocal(bind(contextToolsAgents, "j|down", actDown, "move", 0)),
+	withLocal(bind(contextToolsAgents, "k|up", actUp, "move", 0)),
+	withLocal(bind(contextToolsAgents, "tab", "all tools", "all tools", 0)),
+	withLocal(bind(contextToolsAgents, "/", "filter", "filter", 0)),
+	withLocal(bind(contextToolsAgents, "?", "help", "help", 0)),
+	withLocal(bind(contextToolsAgents, "q", actQuit, "quit", 0)),
+	withLocal(bind(contextToolsAgents, "esc", "back", "back", 0)),
+	withLocal(bind(contextToolsSkills, "j|down", actDown, "move", 0)),
+	withLocal(bind(contextToolsSkills, "k|up", actUp, "move", 0)),
+	withLocal(bind(contextToolsSkills, "tab", "all tools", "all tools", 0)),
+	withLocal(bind(contextToolsSkills, "/", "filter", "filter", 0)),
+	withLocal(bind(contextToolsSkills, "?", "help", "help", 0)),
+	withLocal(bind(contextToolsSkills, "q", actQuit, "quit", 0)),
+	withLocal(bind(contextToolsSkills, "esc", "back", "back", 0)),
+	withLocal(bind(contextToolsAgents, "right|enter", "skills", "skills", 0)),
+	withLocal(bind(contextToolsSkills, "left", "agents", "agents", 0)),
+	withLocal(bind(contextToolsSkills, "space", "toggle", "on/off", 0)),
+	withLocal(bind(contextToolsSkills, "enter", "review", "review and apply", 0)),
+	withLocal(bind(contextToolsDiscard, "y|Y", "discard", "discard", 0)),
+	withLocal(bind(contextToolsDiscard, "n|N|esc", "keep", "keep changes", 0)),
+	bind(contextTools, "tab", "skills per agent", "skills per agent", 0),
 	bind(contextTools, "q", actQuit, "quit", 0),
 	bind(contextTools, "?", "help", "help", 1),
 	bind(contextTools, "j|down", actDown, "move", 0),

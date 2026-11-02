@@ -1,9 +1,13 @@
 Keys · Tools ───────────────────────────────────────────────────────────────────────────────────────────────────────────
  Tools
-  t                      show skill cost per project
-  n                      add an MCP server or a skill from a folder
-  enter                  open the actions for the selected tool
-  R                      rescan tool copies
+  i                      import all
+  j/k, down/up           move
+  tab                    all tools
+  /                      filter
+  ?                      help
+  q                      quit
+  esc                    back
+  right, enter           skills
 
  Global keys
   1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
@@ -16,10 +20,6 @@ Keys · Tools ──────────────────────
   C                      focus the CTO box
   ?                      help
   q, ctrl+c              quit
-
-
-
-
 
 
 

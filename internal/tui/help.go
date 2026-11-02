@@ -148,13 +148,13 @@ func (m Model) hints() []hint {
 // An action result takes the whole line while it is shown, so the screen keeps
 // its height and nothing above moves.
 func (m Model) helpLine(w int) string {
-	if line, ok := m.noticeLine(w); ok {
-		return line
-	}
 	if m.tab == toolsTab && !m.mapOn && !m.help {
 		if line, ok := m.toolsHelpLine(w); ok {
 			return line
 		}
+	}
+	if line, ok := m.noticeLine(w); ok {
+		return line
 	}
 	if m.tab == graphTab && m.mp.finding {
 		return clip("find: "+sanitize(m.mp.findQuery)+sDim.Render("  enter focus  esc cancel"), w)
@@ -314,6 +314,8 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextGraphFind)
 	case m.tab == toolsTab && m.tl.modal != nil:
 		return m.toolsHelpSection()
+	case m.tab == toolsTab && !m.tl.allTools:
+		return helpSection{title: "Tools", contexts: []keyContext{m.agentToolsContext()}}
 	}
 	return helpTabSection(m.tab)
 }
@@ -343,7 +345,7 @@ func helpSections() []helpSection {
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
 		{"Quotas", []keyContext{contextQuotas}},
 		{"Messages", []keyContext{contextMessages}},
-		{"Tools", []keyContext{contextTools}},
+		{"Tools", []keyContext{contextToolsAgents, contextToolsSkills, contextTools}},
 		{"Settings", []keyContext{contextSettings}},
 		{"Inbox", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
 	}
@@ -367,7 +369,7 @@ func (m Model) helpTabSections() []helpSection {
 func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
 		contextBody, contextApps, contextQualityDetails, contextProposalDetail, contextProposalHistory,
-		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd,
+		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd, contextToolsDiscard, contextToolsFilter, contextToolsCosts,
 		contextCTO, contextHelp, contextConfirm, contextForm,
 	}
 }

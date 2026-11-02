@@ -17,7 +17,7 @@
 │   [ ] Project: wbg-housing                                                                                           │
 │   [ ] Project: wbg-worldview                                                                                         │
 │                                                                                                                      │
-│ j/k move  space tick  / filter  enter apply  esc cancel                                                              │
+│ ↑↓ move  space tick  / filter  enter apply  esc cancel                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  space tick  / filter  enter apply  esc cancel
+esc cancel  ? help  ↑↓ select  space tick  / filter  enter apply

@@ -166,10 +166,10 @@ func (m Model) toolBaseStatus(r toolsdiff.Row) string {
 		}
 	}
 	if r.Origin == toolsdiff.OriginMachines {
-		return "found on " + nounCount(len(on), "machine", "machines") + ", not managed"
+		return m.outsideToolStatus(r)
 	}
 	if r.Origin == toolsdiff.OriginLocal {
-		return "local folder in " + r.Repo + ", not managed"
+		return "local folder in " + r.Repo + ", outside agent-net"
 	}
 	if len(r.Projects) > 0 {
 		var ps []string
@@ -195,14 +195,14 @@ func (m Model) toolListView(w, h int) []string {
 		title += " / " + sanitize(m.tl.search) + searchCursor(m.tl.searching)
 	}
 	rows := m.shownRows()
-	title += fmt.Sprintf(" · %d tools", len(rows))
+	title += " · " + nounCount(len(rows), "tool", "tools")
 	if len(m.toolScope().projects) > 0 {
 		p := m.toolScope().projects[0]
 		n, cost, _, machine := m.projectCost(p)
 		if machine == "" {
 			title = "-"
 		} else {
-			title = fmt.Sprintf("%s · %s tokens in every session on %s", nounCount(n, "skill", "skills"), formatTokens(cost), sanitize(machine))
+			title = fmt.Sprintf("%s · %s in every session on %s", nounCount(n, "skill", "skills"), tokenCountText(cost), sanitize(machine))
 		}
 	}
 	nameW := max(12, (w-14)*45/100)
@@ -224,7 +224,11 @@ func (m Model) toolListView(w, h int) []string {
 		if r.Kind == protocol.InventoryMCP {
 			name, cost = "◆ "+name, "-"
 		}
-		status := shortenWords(sanitize(m.toolBaseStatus(r)), statusW)
+		statusText := m.toolBaseStatus(r)
+		if strings.Contains(statusText, "outside agent-net") && len(statusText) > statusW {
+			statusText = "outside agent-net"
+		}
+		status := shortenWords(sanitize(statusText), statusW)
 		entry := []string{flag + cell(name, nameW) + " " + cell(status, statusW) + cost}
 		if i == m.tl.row {
 			for j := range entry {
@@ -256,7 +260,7 @@ func (m Model) toolListView(w, h int) []string {
 	for len(body) < room+1 {
 		body = append(body, "")
 	}
-	note := fmt.Sprintf("%d tools · ! needs attention · enter opens actions", len(rows))
+	note := nounCount(len(rows), "tool", "tools") + " · ! needs attention · enter opens actions"
 	if toast := m.activeToast(); toast != "" {
 		note = toast
 	}
@@ -860,6 +864,7 @@ func (m Model) submitToolAdd() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startNodeTools(name string) (tea.Model, tea.Cmd) {
+	m.tl.allTools = true
 	m.tl.search = "node:" + name
 	m.tl.row, m.tl.scroll = 0, 0
 	return m.startTools()
@@ -893,5 +898,5 @@ func (m Model) nodeToolsLine(name string) string {
 			}
 		}
 	}
-	return fmt.Sprintf("Tools: %d skills, %d MCP servers · t open", skills, servers)
+	return "Tools: " + nounCount(skills, "skill", "skills") + ", " + nounCount(servers, "MCP server", "MCP servers") + " · t open"
 }

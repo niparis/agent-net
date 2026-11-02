@@ -49,7 +49,7 @@ func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 }
 
 func TestToolsHelpScrolls(t *testing.T) {
-	m := keys(newModel(80, 24), "5", "?")
+	m := keys(newModel(80, 24), "5", "tab", "?")
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 10})
 	var seen strings.Builder
 	for i := 0; i < len(m.helpContent(80))+20; i++ {

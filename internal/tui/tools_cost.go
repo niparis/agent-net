@@ -10,6 +10,14 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
+func tokenCountText(n int64) string {
+	noun := "tokens"
+	if n == 1 {
+		noun = "token"
+	}
+	return formatTokens(n) + " " + noun
+}
+
 func formatTokens(n int64) string {
 	if n >= 1000 {
 		return fmt.Sprintf("~%.1fk", float64(n)/1000)
@@ -79,7 +87,7 @@ func (m Model) toolDetailView(w, h int) []string {
 				desc = append(desc[:keep], marker...)
 			}
 			body = append(body, desc...)
-			add(formatTokens(r.Item.StartTokens) + " tokens in every session")
+			add(tokenCountText(r.Item.StartTokens) + " in every session")
 			add("+" + formatTokens(r.Item.FullTokens) + " when the skill is used")
 			add("on: " + m.toolBaseStatus(r))
 			if reason := m.toolAttentionReason(r); reason != "" {
@@ -104,9 +112,9 @@ func (m Model) toolDetailView(w, h int) []string {
 				add("files: " + strings.Join(files, ", "))
 			}
 			if r.Item.Desired != nil || r.Item.VersionNo > 0 {
-				add("from: managed by agent-net " + r.Version)
+				add("from: agent-net " + r.Version)
 			} else {
-				add("from: found on your machines, not managed")
+				add("from: " + m.outsideToolStatus(r))
 			}
 		}
 	}

@@ -3,10 +3,9 @@
 │   NAME                          STATUS                              COST     │
 │ ! code-review                   v1 on Nicolas-MBP, v3 on research   ~0       │
 │ ! design-taste-frontend         2 different copies on research      ~0       │
-│ ! imnplementing-clean-architec… found on 1 machine, not managed     ~0       │
+│ ! imnplementing-clean-architec… outside agent-net                   ~0       │
 │ ! web-design-guidelines         on for wbg-housing, sovl-clone      ~0       │
 │   clean-architecture-python     on everywhere                       ~0       │
-│   deploy-test-server            in the sovl-clone repo              ~0       │
 │ 40 tools · ! needs attention · enter opens actions                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─code-review──────────────────────────────────────────────────────────────────╮
@@ -15,10 +14,11 @@
 │ on: v1 on Nicolas-MBP, v3 on research                                        │
 │ ! v1 on Nicolas-MBP, v3 on research                                          │
 │ enter: make every machine use v3                                             │
-│ from: managed by agent-net v3                                                │
+│ from: agent-net v3                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  n add  esc clear  ? help  q quit
+tab skills per agent  ? help  ↑↓ move  / filter  t costs  esc clear  n add
+  enter actions  R rescan

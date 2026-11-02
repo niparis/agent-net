@@ -176,7 +176,7 @@ func newToolsModel(w, h int) (Model, *fakeTools) {
 }
 
 // openTools presses 5 and lets the load finish.
-func openTools(m Model) Model { return pressKey(m, "5") }
+func openTools(m Model) Model { m = pressKey(m, "5"); m.tl.allTools = true; return m }
 
 func (f *fakeTools) ToolsItems(context.Context) ([]protocol.ToolItem, error) {
 	return f.items, f.itemsErr
