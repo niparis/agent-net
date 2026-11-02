@@ -378,6 +378,8 @@ func codexFrame(m protocol.Message) string {
 	case m.FromHarness == protocol.OwnerHarness:
 		foot = fmt.Sprintf("[agent-net] message %s from your user in person (%s, session %s)%s%s.\nThis is your user speaking, not another agent. Do what they ask within your task, and answer with agent_message_reply (message_id=\"%s\").",
 			m.ID, who, m.From, conv, answering, m.ID)
+	case m.FromHarness == "bot" && m.Type != protocol.TypeReply:
+		foot = fmt.Sprintf("[agent-net] message %s from %s (bot, session %s)%s. Answer with agent_message_reply (message_id=%q) if you can help.", m.ID, who, m.From, conv, m.ID)
 	case m.Type == protocol.TypeReply:
 		foot = fmt.Sprintf("[agent-net] reply %s from %s (session %s)%s%s.\nNo answer is needed. Use agent_message_send only if you have a new question or the work needs it.",
 			m.ID, who, m.From, conv, answering)

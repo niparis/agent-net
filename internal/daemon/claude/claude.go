@@ -260,6 +260,8 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		}
 		details = fmt.Sprintf("[agent-net] message %s from your user in person (%s, session %s)%s%s. This is your user speaking, not another agent. Do what they ask within your task, and answer it directly with your SendMessage tool to this sender.",
 			m.ID, name, m.From, conv, answering)
+	} else if m.FromHarness == "bot" && m.Type != protocol.TypeReply {
+		details = fmt.Sprintf("[agent-net] message %s from %s (bot, session %s)%s. Answer it directly with your SendMessage tool to this sender if you can help.", m.ID, name, m.From, conv)
 	} else if m.Type == "reply" {
 		answering := ""
 		if m.ParentID != "" {
