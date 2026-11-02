@@ -33,6 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
+	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true,
 	"tools_keep_copy": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
 	protocol.OpCTOGraphWindow: true,
 	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true,
@@ -463,6 +464,24 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if err == nil {
 			res = d.withLocalBackups(res, p.Item)
 		}
+	case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke":
+		var p struct {
+			ID   string `json:"id"`
+			Code string `json:"code"`
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad apps request")
+		}
+		frame := struct {
+			AppID string `json:"app_id"`
+			Code  string `json:"code"`
+			Kind  string `json:"kind"`
+			Name  string `json:"name"`
+		}{p.ID, p.Code, p.Kind, p.Name}
+		res, err = d.call(ctx, method, frame)
+
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "learned_list", "learned_answer", "learned_view":

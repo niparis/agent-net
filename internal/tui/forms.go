@@ -32,7 +32,8 @@ const (
 	modePolicy        // the delegation policy form (policy.go)
 	modeRename        // typing a display name for the selected session's machine
 	modeProjectRename // typing the selected project display name
-	modeIntegrations  // the setup integrations of the whole network (integrations.go)
+	modeApps
+	modeIntegrations // the setup integrations of the whole network (integrations.go)
 )
 
 // A result is shown in the key line at full brightness for its hold, then

@@ -1,0 +1,177 @@
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+)
+
+func TestConnectedAppsSettingsEntry(t *testing.T) {
+	m := keys(newModel(120, 34), "S")
+	if !strings.Contains(strings.Join(m.settingsMenuView(120), "\n"), "Connected apps") {
+		t.Fatal("Connected apps missing from settings")
+	}
+}
+
+type connectedAppsFake struct {
+	fakeSource
+	op     string
+	params map[string]string
+	result string
+	err    error
+}
+
+func (f *connectedAppsFake) Call(_ context.Context, op string, p any) (json.RawMessage, error) {
+	f.op = op
+	f.params, _ = p.(map[string]string)
+	return json.RawMessage(f.result), f.err
+}
+func runAppsCmd(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("missing command")
+	}
+	next, _ := m.Update(cmd())
+	return next.(Model)
+}
+func TestConnectedAppsFlow(t *testing.T) {
+	f := &connectedAppsFake{result: `{"apps":[]}`}
+	m := newModel(120, 34)
+	m.src = f
+	var cmd tea.Cmd
+	m, cmd = m.startApps()
+	m = runAppsCmd(t, m, cmd)
+	m = keys(m, "a")
+	m.apps.input.SetValue("ABC-234")
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	f.result = `{"pending":{"ID":"p1","ClientName":"Cursor","RedirectHost":"client.example"}}`
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.pending" || f.params["code"] != "ABC-234" || m.apps.input.Value() != "cursor" {
+		t.Fatalf("lookup: %+v %+v", f, m.apps)
+	}
+	m = keys(m, "right", "tab")
+	m.apps.input.SetValue("my app")
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	f.result = `{}`
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.approve" || f.params["kind"] != "owner_app" || f.params["name"] != "my app" {
+		t.Fatalf("approve: %+v", f)
+	}
+	m.apps.loading = false
+	m.apps.stage = "approve"
+	m.apps.editingName = false
+	m.apps.pending.ID = "p2"
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.refuse" || f.params["id"] != "p2" {
+		t.Fatalf("refuse: %+v", f)
+	}
+	m.apps.loading = false
+	m.apps.stage = ""
+	m.apps.apps = []connectedApp{{ID: "a1", Name: "bot"}}
+	m = keys(m, "x")
+	if m.apps.stage != "confirm" {
+		t.Fatal("no confirmation")
+	}
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.revoke" || f.params["id"] != "a1" {
+		t.Fatalf("revoke: %+v", f)
+	}
+}
+func TestConnectedAppsErrors(t *testing.T) {
+	for _, tc := range []struct{ err, want string }{{"sql: no rows in result set", "No request with that code (expired or mistyped)"}, {"too many tries", "Too many wrong codes. Try again in 10 minutes."}} {
+		m := newModel(80, 30)
+		m.mode = modeApps
+		m.apps.stage = "code"
+		m, _ = m.onAppsResult(appsResult{op: "apps.pending", err: errors.New(tc.err)})
+		if m.apps.err != tc.want {
+			t.Fatalf("got %q", m.apps.err)
+		}
+	}
+}
+
+func TestConnectedAppsScreens(t *testing.T) {
+	for _, sz := range [][2]int{{80, 30}, {120, 34}} {
+		m := newModel(sz[0], sz[1])
+		m.mode = modeApps
+		stamp := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+		used := time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC)
+		name := func(s string) string { return fmt.Sprintf("connected_apps_%s_%d", s, sz[0]) }
+		golden(t, name("empty"), m.View())
+		m.apps.apps = []connectedApp{{ID: "a", Name: "cursor", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://www.cursor.com/cb"}, CreatedAt: stamp}, {ID: "b", Name: "iphone", Kind: "owner_app", ClientName: "iPhone Safari", RedirectURIs: []string{"https://phone.example/cb"}, CreatedAt: stamp, LastUsedAt: &used}}
+		golden(t, name("list"), m.View())
+		m.apps.stage = "confirm"
+		golden(t, name("revoke"), m.View())
+		m.apps.stage = "code"
+		m.apps.input = textinput.New()
+		m.apps.input.Focus()
+		golden(t, name("code"), m.View())
+		m.apps.stage = "approve"
+		m.apps.pending = pendingApp{ID: "p", ClientName: "Cursor", RedirectHost: "www.cursor.com"}
+		m.apps.kind = "bot"
+		m.apps.input.SetValue("cursor")
+		golden(t, name("approval"), m.View())
+	}
+}
+
+func TestConnectedAppsHelp(t *testing.T) {
+	m := newModel(120, 34)
+	help := strings.Join(m.helpContent(120), "\n")
+	for _, want := range []string{"Connected apps", "add", "revoke", "approve", "refuse", "change kind", "edit name"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help missing %q", want)
+		}
+	}
+}
+
+func TestConnectedAppsPolishedViews(t *testing.T) {
+	m := newModel(80, 30)
+	m.mode = modeApps
+	m.apps.apps = []connectedApp{{Name: "cursor", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://www.cursor.com/cb"}, CreatedAt: m.now()}}
+	view := ansi.Strip(strings.Join(m.appsView(80, 20), "\n"))
+	for _, s := range []string{"NAME", "KIND", "CLIENT", "RETURN HOST", "CONNECTED", "LAST USED", "▸ cursor", "today 14:05", "never"} {
+		if !strings.Contains(view, s) {
+			t.Errorf("list missing %q: %s", s, view)
+		}
+	}
+	m.apps.stage = "approve"
+	m.apps.kind = "bot"
+	m.apps.pending = pendingApp{ClientName: "Cursor", RedirectHost: "www.cursor.com"}
+	m.apps.input = textinput.New()
+	m.apps.input.SetValue("cursor")
+	view = ansi.Strip(strings.Join(m.appsView(80, 20), "\n"))
+	for _, s := range []string{"Approve this app?", "Client       Cursor", "Return host  www.cursor.com", "Kind         ‹ bot ›", "Name         cursor", "Approve only if you just pressed connect"} {
+		if !strings.Contains(view, s) {
+			t.Errorf("approval missing %q: %s", s, view)
+		}
+	}
+	m.apps.stage = "code"
+	m, _ = m.onAppsResult(appsResult{op: "apps.pending", err: errors.New("too many tries: 3 minutes")})
+	if m.apps.err != "Too many wrong codes. Try again in 3 minutes." {
+		t.Errorf("countdown %q", m.apps.err)
+	}
+}
+
+func TestConnectedAppsColumnsFit(t *testing.T) {
+	m := newModel(80, 30)
+	m.mode = modeApps
+	m.apps.apps = []connectedApp{{Name: strings.Repeat("name", 20), Kind: "bot", ClientName: strings.Repeat("client", 15), RedirectURIs: []string{"https://" + strings.Repeat("host", 15) + ".example/cb"}, CreatedAt: m.now()}}
+	lines := m.appsView(80, 20)
+	for _, line := range lines {
+		if ansi.StringWidth(line) > 80 {
+			t.Fatalf("line exceeds width: %q", line)
+		}
+	}
+	if !strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "…") {
+		t.Fatal("long cells were not truncated")
+	}
+}

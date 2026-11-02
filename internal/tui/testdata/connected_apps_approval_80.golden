@@ -1,0 +1,30 @@
+1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online  14:05:00
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free │
+│  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
+│  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Connected apps ─────────────────────────────────────────────────────────────────
+  Approve this app?
+
+  Client       Cursor
+  Return host  www.cursor.com
+  Kind         ‹ bot ›   (left/right: bot or owner app)
+  Name         cursor
+
+  Approve only if you just pressed connect in this app and the return host is
+  the one you expect.
+  A bot acts under its own name; an owner app acts as you.
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+left/right kind  tab name  enter approve  r refuse  esc cancel

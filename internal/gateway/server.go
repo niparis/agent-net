@@ -1395,6 +1395,52 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"item": item}, err
 
+	case "apps.list":
+		apps, err := st.ListApps()
+		return map[string]any{"apps": apps}, err
+
+	case "apps.pending":
+		var p struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad apps.pending")
+		}
+		now := st.now()
+		pending, err := st.PendingByUserCode(p.Code, "tui", now)
+		if errors.Is(err, ErrOAuthTooManyTries) {
+			var oldest int64
+			if e := st.db.QueryRow("SELECT MIN(attempted_at) FROM oauth_code_misses WHERE source=? AND attempted_at>?", "tui", now.Add(-10*time.Minute).UnixNano()).Scan(&oldest); e == nil {
+				remaining := time.Unix(0, oldest).Add(10 * time.Minute).Sub(now)
+				minutes := max(1, int((remaining+time.Minute-1)/time.Minute))
+				err = fmt.Errorf("%w: %d minutes", err, minutes)
+			}
+		}
+		return map[string]any{"pending": pending}, err
+
+	case "apps.approve":
+		var p struct {
+			ID   string `json:"app_id"`
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad apps.approve")
+		}
+		return nil, st.ApprovePending(p.ID, p.Kind, p.Name, st.now())
+
+	case "apps.refuse", "apps.revoke":
+		var p struct {
+			ID string `json:"app_id"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad apps request")
+		}
+		if typ == "apps.refuse" {
+			return nil, st.RefusePending(p.ID)
+		}
+		return nil, st.RevokeApp(p.ID)
+
 	case "inbox.list":
 		items, err := st.ListInbox()
 		return map[string]any{"items": items}, err
