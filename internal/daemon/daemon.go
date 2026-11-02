@@ -165,6 +165,9 @@ type Config struct {
 	// pick the lowest-max Codex profile of the worker roster (see difficulty.go).
 	DifficultyHarness string
 	DifficultyModel   string
+	// DifficultyAnalyzer enables the repository-reading analyzer before judging.
+	// It is off by default; the judge scores the task brief directly.
+	DifficultyAnalyzer bool
 	// DifficultyJudgeHarness and DifficultyJudgeModel override the independent
 	// evidence judge. Defaults are opencode and opencode-go/deepseek-v4.1-flash.
 	DifficultyJudgeHarness string

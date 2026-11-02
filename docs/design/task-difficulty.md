@@ -1,9 +1,33 @@
 # Task difficulty from evidence
 
-**Status:** Proposal, for the owner's approval. Nothing is built.
 **Date:** 2026-11-02.
 
-## 1. The problem
+## Decision 2026-11-02: judge-only
+
+The analyzer is on ice. The orchestrator reads the code to write each worker
+brief, so the brief carries the evidence profile for the judge. Each brief has
+an `Evidence` section with one or two lines for each dimension:
+
+- Reasoning: closest existing code and new logic.
+- Scope: distinct changes and repeated edits.
+- Coupling: contracts and shared state.
+- Uncertainty: open questions.
+- Verification: existing tests and gaps.
+- Risk: what could break and reversibility.
+
+The judge is DeepSeek through `opencode run`. The orchestrator already reads
+the code while writing the brief; a separate analyzer at worker start adds
+about a minute to every start without adding needed evidence.
+
+The default assessor scores the brief directly. The analyzer path remains
+available behind `DifficultyAnalyzer` and `agent-net dev assess --analyzer`.
+
+## Analyzer design, on ice
+
+The sections below record the earlier analyzer proposal. They are historical
+design notes, not the current behavior.
+
+## 1. The problem (historical)
 
 The worker picker chooses a model from one label: `trivial`, `simple`,
 `normal`, `hard` or `very_complex`. Today the caller (the session that starts
@@ -20,7 +44,7 @@ the worker) picks that label, and `touches` raises it one level for `db` and
 The caller also has a reason to pick a label that gets the model it wants, so
 any label the caller gives can be gamed.
 
-## 2. The idea
+## 2. The idea (analyzer design, on ice)
 
 Three steps, none of them done by the caller:
 
@@ -34,7 +58,7 @@ The picker uses the label as today. The analyzer and the judge are cheap
 models run by agent-net. Most of the intelligence is needed to find the facts,
 little to score them.
 
-## 3. The six dimensions
+## 3. The six dimensions (rubric retained)
 
 Scores 2 and 4 are in-between cases.
 
@@ -58,7 +82,7 @@ Rules for the analyzer:
 - **A confidence for the whole profile.** Poor inspection gives low
   confidence, not high uncertainty.
 
-## 4. The evidence profile
+## 4. The evidence profile (analyzer design, on ice)
 
 The analyzer returns JSON, checked against a schema:
 
@@ -74,7 +98,7 @@ The analyzer returns JSON, checked against a schema:
 }
 ```
 
-## 5. The judge
+## 5. The judge (analyzer design, on ice)
 
 The judge gets the rubric and the profile, never the repository. It returns
 six scores with one line each on which evidence set the score, or
@@ -110,7 +134,7 @@ The weights and the cut points are starting values, to be tuned from results
 for today (for example a migration note), and the analyzer reads it as a hint
 for the risk evidence.
 
-## 7. Where it runs
+## 7. Where it runs (analyzer design, on ice)
 
 - `agent_worker_start` keeps its fields, but `difficulty` is no longer given
   by the caller. A caller may still name a `model`, which skips the picker as
@@ -123,7 +147,7 @@ for the risk evidence.
 - Time and cost are capped: the analyzer has a time limit (for example 3
   minutes); over it, the start goes ahead at `normal` with a note.
 
-## 8. Learning from results
+## 8. Learning from results (analyzer design, on ice)
 
 The profile, the six scores, D and the label are stored with the worker's
 record, next to the existing outcome counters (continues, fixes, rating,
@@ -132,7 +156,7 @@ the evidence (the analyzer missed coupling, or counted repeated edits as
 distinct), the rubric (scores that do not match outcomes), or the weights and
 cut points (which can change without running any analysis again).
 
-## 9. Build steps
+## 9. Build steps (historical plan, analyzer on ice)
 
 1. Schema, rubric text and the scoring function with tests (simple).
 2. The analyzer run: a read-only worker brief, output checked against the

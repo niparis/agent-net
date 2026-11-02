@@ -49,7 +49,11 @@ func NewDifficultyAssessor(cfg Config, sources DifficultySources) *DifficultyAss
 // err is set only when the caller's own context ended.
 func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (difficulty.Assessment, error) {
 	started := time.Now()
-	a0 := difficulty.Assessment{Label: "normal"}
+	mode := "judge-only"
+	if a.cfg.DifficultyAnalyzer {
+		mode = "analyzer + judge"
+	}
+	a0 := difficulty.Assessment{Label: "normal", Mode: mode}
 	judgeNote := ""
 	fallback := func(note string) (difficulty.Assessment, error) {
 		a0.Notes = note
@@ -72,11 +76,6 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	if strings.TrimSpace(task) == "" {
 		return fallback("difficulty: the task is empty; started at normal")
 	}
-	harness, model, err := a.difficultyModel(ctx)
-	if err != nil {
-		return fallback("difficulty: " + err.Error() + "; started at normal")
-	}
-	a0.AnalyzerModel = harness + ":" + model
 	judgeHarness := strings.ToLower(strings.TrimSpace(a.cfg.DifficultyJudgeHarness))
 	judgeModel := strings.TrimSpace(a.cfg.DifficultyJudgeModel)
 	if judgeHarness == "" {
@@ -87,8 +86,16 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	}
 	if judgeHarness == "opencode" {
 		if _, err := a.harnessBinary("opencode"); err != nil {
-			judgeHarness, judgeModel = "codex", model
-			judgeNote = "OpenCode is not installed; used the Codex judge instead"
+			if a.cfg.DifficultyAnalyzer {
+				_, model, modelErr := a.difficultyModel(ctx)
+				if modelErr != nil {
+					return fallback("difficulty: " + modelErr.Error() + "; started at normal")
+				}
+				judgeHarness, judgeModel = "codex", model
+				judgeNote = "OpenCode is not installed; used the Codex judge instead"
+			} else {
+				return fallback("difficulty: OpenCode is not installed; started at normal")
+			}
 		}
 	}
 	a0.JudgeModel = judgeHarness + ":" + judgeModel
@@ -96,6 +103,37 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	if timeout <= 0 {
 		timeout = defaultDifficultyTimeout
 	}
+	if !a.cfg.DifficultyAnalyzer {
+		judgeDir, err := os.MkdirTemp("", "agent-net-difficulty-judge-")
+		if err != nil {
+			return fallback("difficulty: cannot make a judge folder: " + err.Error() + "; started at normal")
+		}
+		defer os.RemoveAll(judgeDir)
+		raw, err := a.runDifficultyOneShot(ctx, judgeHarness, judgeModel, judgeDir, judgeBriefForTask(task), timeout)
+		if err != nil {
+			return fallback("difficulty: the judge " + err.Error() + "; started at normal")
+		}
+		scores, insufficient, err := difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
+		if err != nil {
+			return fallback("difficulty: the judge reply did not parse: " + err.Error() + "; started at normal")
+		}
+		if len(insufficient) > 0 {
+			return fallback("difficulty: the judge returned INSUFFICIENT_EVIDENCE in judge-only mode; started at normal")
+		}
+		a0.Scores = scores
+		a0.Confidence = scores.Confidence
+		if a0.Confidence == "" {
+			a0.Confidence = "unknown"
+		}
+		a0.Label, a0.D, a0.Bottleneck = difficulty.Label(scores)
+		a0.Elapsed = time.Since(started)
+		return a0, nil
+	}
+	harness, model, err := a.difficultyModel(ctx)
+	if err != nil {
+		return fallback("difficulty: " + err.Error() + "; started at normal")
+	}
+	a0.AnalyzerModel = harness + ":" + model
 
 	brief := analyzerBrief(task)
 	raw, err := a.runDifficultyOneShot(ctx, harness, model, dir, brief, timeout)
@@ -154,6 +192,9 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		}
 	}
 	a0.Scores = scores
+	if scores.Confidence != "" {
+		a0.Confidence = scores.Confidence
+	}
 	a0.Label, a0.D, a0.Bottleneck = difficulty.Label(scores)
 	a0.Notes = judgeNote
 	a0.Elapsed = time.Since(started)

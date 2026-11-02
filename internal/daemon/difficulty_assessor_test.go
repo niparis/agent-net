@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ func TestAssessDifficultyOutsideDaemon(t *testing.T) {
 		HarnessPaths:           map[string]string{"codex": os.Args[0]},
 		DifficultyHarness:      "codex",
 		DifficultyModel:        "gpt-cheap",
+		DifficultyAnalyzer:     true,
 		DifficultyJudgeHarness: "codex",
 		DifficultyJudgeModel:   "gpt-cheap",
 		DifficultyTimeout:      2 * time.Second,
@@ -57,6 +59,7 @@ func TestAssessDifficultyOutsideDaemonUsesRosterSources(t *testing.T) {
 	}
 	a, err := NewDifficultyAssessor(Config{
 		HarnessPaths:           map[string]string{"codex": os.Args[0]},
+		DifficultyAnalyzer:     true,
 		DifficultyJudgeHarness: "codex",
 		DifficultyJudgeModel:   "gpt-cheap",
 		DifficultyTimeout:      2 * time.Second,
@@ -70,12 +73,41 @@ func TestAssessDifficultyOutsideDaemonUsesRosterSources(t *testing.T) {
 }
 
 func TestAssessDifficultyOutsideDaemonWithoutRosterNamesTheModel(t *testing.T) {
-	a, err := NewDifficultyAssessor(Config{}, DifficultySources{}).
+	sources := DifficultySources{Binary: func(string) (string, error) { return "", os.ErrNotExist }}
+	a, err := NewDifficultyAssessor(Config{}, sources).
 		Assess(context.Background(), t.TempDir(), "rename a flag")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Label != "normal" || !strings.Contains(a.Notes, "name a model") {
+	if a.Label != "normal" || !strings.Contains(a.Notes, "OpenCode is not installed") {
 		t.Fatalf("assessment: %+v", a)
+	}
+}
+
+func TestJudgeOnlyDefaultUsesBriefAndDoesNotRunCodex(t *testing.T) {
+	dir := t.TempDir()
+	reply := filepath.Join(dir, "reply.json")
+	if err := os.WriteFile(reply, []byte(`{"reasoning":1,"scope":1,"coupling":1,"uncertainty":1,"verification":1,"risk":1,"confidence":"low"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	promptFile := filepath.Join(dir, "prompt.txt")
+	t.Setenv("FAKE_OPENCODE_PROMPT_FILE", promptFile)
+	a, err := NewDifficultyAssessor(Config{
+		HarnessPaths: map[string]string{"opencode": os.Args[0]}, DifficultyTimeout: 2 * time.Second,
+	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "BRIEF: add a small setting")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Mode != "judge-only" || a.Confidence != "low" || a.Label != "trivial" || a.Profile.Confidence != "" {
+		t.Fatalf("assessment: %+v", a)
+	}
+	prompt, err := os.ReadFile(promptFile)
+	if err != nil {
+		t.Fatalf("judge prompt missing: %v", err)
+	}
+	if !strings.Contains(string(prompt), "BRIEF: add a small setting") || !strings.Contains(string(prompt), "Start every dimension at 1") {
+		t.Fatalf("judge prompt missing brief or start-at-1 instruction: %s", prompt)
 	}
 }

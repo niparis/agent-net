@@ -90,6 +90,9 @@ func runFakeHarness() bool {
 
 // fakeOpenCodeRun is `opencode run -m MODEL PROMPT` for difficulty judges.
 func fakeOpenCodeRun() {
+	if path := os.Getenv("FAKE_OPENCODE_PROMPT_FILE"); path != "" && len(os.Args) > 3 {
+		_ = os.WriteFile(path, []byte(os.Args[len(os.Args)-1]), 0o600)
+	}
 	fmt.Println("> build · deepseek-v4.1-flash")
 	fmt.Print("\x1b[32m")
 	if path := os.Getenv(envFakeOpenCodeReply); path != "" {

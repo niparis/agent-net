@@ -173,6 +173,7 @@ func ParseProfile(raw []byte) (Profile, error) {
 type Scores struct {
 	Reasoning, Scope, Coupling, Uncertainty, Verification, Risk int
 	Reasons                                                     map[string]string
+	Confidence                                                  string `json:"confidence,omitempty"`
 }
 
 // ParseScores parses judge JSON or its INSUFFICIENT_EVIDENCE response.
@@ -214,6 +215,14 @@ func ParseScores(raw []byte) (Scores, []string, error) {
 			return Scores{}, nil, fmt.Errorf("decode reasons: %w", err)
 		}
 	}
+	if confidence, ok := obj["confidence"]; ok {
+		if err := json.Unmarshal(confidence, &s.Confidence); err != nil {
+			return Scores{}, nil, fmt.Errorf("decode confidence: %w", err)
+		}
+		if s.Confidence != "low" && s.Confidence != "medium" && s.Confidence != "high" {
+			return Scores{}, nil, errors.New("confidence must be low, medium, or high")
+		}
+	}
 	return s, nil, nil
 }
 
@@ -223,6 +232,7 @@ var dimensionNames = []string{"reasoning", "scope", "coupling", "uncertainty", "
 // produce. Notes explains a fallback to "normal" when the run could not finish.
 type Assessment struct {
 	Profile       Profile       `json:"profile"`
+	Mode          string        `json:"mode"`
 	Scores        Scores        `json:"scores"`
 	Label         string        `json:"label"`
 	D             float64       `json:"d"`

@@ -18,9 +18,9 @@ import (
 
 // The hidden developer commands. They are not in the normal usage text: they
 // exist for tuning agent-net itself, not for the people who use it. `dev
-// assess` runs the task-difficulty analyzer and judge for one task without a
-// running daemon, so scripts/dev/difficulty-backtest.sh can compare the label
-// with how the worker actually went.
+// assess` judges the task brief directly by default, or runs the analyzer and
+// judge when requested, without a running daemon. Scripts can compare the
+// label with how the worker actually went.
 
 // assessmentForDev is replaced in tests, so they never start a model.
 var assessmentForDev = func(ctx context.Context, cfg daemon.Config, project, task string) (difficulty.Assessment, error) {
@@ -38,7 +38,7 @@ var loadDevConfig = func() (daemon.Config, error) {
 
 func cmdDev(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--json]")
+		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--analyzer] [--json]")
 	}
 	switch args[0] {
 	case "assess":
@@ -56,11 +56,12 @@ func runDevAssess(ctx context.Context, out io.Writer, args []string) error {
 	judgeModel := fs.String("judge-model", "", "model for the independent judge (default: opencode-go/deepseek-v4.1-flash)")
 	judgeHarness := fs.String("judge-harness", "", "harness for the independent judge (default: opencode)")
 	asJSON := fs.Bool("json", false, "print the whole assessment as JSON")
+	analyzer := fs.Bool("analyzer", false, "run the repository analyzer before judging")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *project == "" || *taskFile == "" {
-		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--json]")
+		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--analyzer] [--json]")
 	}
 	task, err := readDevTaskFile(*taskFile)
 	if err != nil {
@@ -70,6 +71,7 @@ func runDevAssess(ctx context.Context, out io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
+	cfg.DifficultyAnalyzer = *analyzer
 	if strings.TrimSpace(*model) != "" {
 		cfg.DifficultyHarness = "codex"
 		cfg.DifficultyModel = strings.TrimSpace(*model)
@@ -83,6 +85,10 @@ func runDevAssess(ctx context.Context, out io.Writer, args []string) error {
 	a, err := assessmentForDev(ctx, cfg, *project, task)
 	if err != nil {
 		return err
+	}
+	a.Mode = "judge-only"
+	if cfg.DifficultyAnalyzer {
+		a.Mode = "analyzer + judge"
 	}
 	if *asJSON {
 		b, _ := json.MarshalIndent(a, "", "  ")
@@ -112,6 +118,10 @@ func readDevTaskFile(path string) (string, error) {
 }
 
 func printDevAssessment(out io.Writer, a difficulty.Assessment) {
+	mode := a.Mode
+	if mode == "" {
+		mode = "judge-only"
+	}
 	bottleneck := a.Bottleneck
 	if bottleneck == "" {
 		bottleneck = "none"
@@ -133,6 +143,7 @@ func printDevAssessment(out io.Writer, a difficulty.Assessment) {
 		judge = "none"
 	}
 	fmt.Fprintf(out, "label: %s  (D %.2f)\n", a.Label, a.D)
+	fmt.Fprintf(out, "mode: %s\n", mode)
 	fmt.Fprintf(out, "scores: reasoning %d, scope %d, coupling %d, uncertainty %d, verification %d, risk %d\n",
 		a.Scores.Reasoning, a.Scores.Scope, a.Scores.Coupling, a.Scores.Uncertainty, a.Scores.Verification, a.Scores.Risk)
 	fmt.Fprintf(out, "bottleneck: %s\n", bottleneck)

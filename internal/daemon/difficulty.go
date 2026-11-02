@@ -192,6 +192,15 @@ func judgeBrief(profile difficulty.Profile) string {
 		`Reply like {"reasoning":3,"scope":3,"coupling":3,"uncertainty":3,"verification":3,"risk":3,"reasons":{"reasoning":"...","scope":"...","coupling":"...","uncertainty":"...","verification":"...","risk":"..."}}.` + "\n"
 }
 
+func judgeBriefForTask(task string) string {
+	return difficulty.RubricText() + `
+
+Score each dimension 1 to 5 from the facts in this task brief (its Evidence section if present, otherwise the brief text). Start every dimension at 1 and raise it only for a concrete reason you name. Reply with JSON only: six scores with one line of reason each, plus confidence as low, medium, or high. Do not use INSUFFICIENT_EVIDENCE. A missing fact means score from what is there and lower confidence.
+
+Task brief:
+` + strings.TrimSpace(task)
+}
+
 // mergeDifficultyProfile replaces the named sections of base with the sections
 // the targeted analyzer returned, then validates the whole profile again.
 func mergeDifficultyProfile(base difficulty.Profile, patch []byte, dimensions []string) (difficulty.Profile, error) {

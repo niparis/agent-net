@@ -57,6 +57,7 @@ func newDifficultyDaemon(t *testing.T, harness, model string, timeout time.Durat
 		HarnessPaths:           map[string]string{harness: os.Args[0]},
 		DifficultyHarness:      harness,
 		DifficultyModel:        model,
+		DifficultyAnalyzer:     true,
 		DifficultyJudgeHarness: "codex",
 		DifficultyJudgeModel:   model,
 		DifficultyTimeout:      timeout,
@@ -154,6 +155,7 @@ func TestAssessDifficultyUsesOpenCodeJudgeAndExtractsNoisyJSON(t *testing.T) {
 		HarnessPaths:         map[string]string{"codex": os.Args[0], "opencode": os.Args[0]},
 		DifficultyHarness:    "codex",
 		DifficultyModel:      "gpt-analyzer",
+		DifficultyAnalyzer:   true,
 		DifficultyJudgeModel: "opencode-go/deepseek-v4.1-flash",
 		DifficultyTimeout:    2 * time.Second,
 	})
@@ -186,7 +188,7 @@ func TestAssessDifficultyFallsBackToCodexJudgeWhenOpenCodeMissing(t *testing.T) 
 		return "", errors.New("opencode is not installed")
 	}}
 	a, err := NewDifficultyAssessor(Config{
-		DifficultyHarness: "codex", DifficultyModel: "gpt-analyzer", DifficultyTimeout: 2 * time.Second,
+		DifficultyHarness: "codex", DifficultyModel: "gpt-analyzer", DifficultyAnalyzer: true, DifficultyTimeout: 2 * time.Second,
 	}, sources).Assess(context.Background(), t.TempDir(), "change a setting")
 	if err != nil {
 		t.Fatal(err)
