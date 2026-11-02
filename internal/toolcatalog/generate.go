@@ -52,13 +52,7 @@ func PluginTools() ([]PluginTool, error) {
 		if !ok {
 			return nil, fmt.Errorf("tool %q has no plugin daemon method mapping", tool.Name)
 		}
-		input := tool.InputSchema
-		if tool.Name == "agent_sessions_find" {
-			// Native plugins retain their existing session selector until their
-			// generated catalogs are updated with bot support.
-			input = bytes.Replace(input, []byte(`["agent","worker","owner","bot"]`), []byte(`["agent","worker","owner"]`), 1)
-		}
-		out = append(out, PluginTool{Name: tool.Name, Description: tool.Description, InputSchema: input, Roles: roles, Method: method})
+		out = append(out, PluginTool{Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema, Roles: roles, Method: method})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
