@@ -395,11 +395,18 @@ func (d *Daemon) workersView(ctx context.Context, q protocol.WorkersQuery) (*pro
 		ws = kept
 	}
 	if q.Recent {
+		assessments := make(map[string]*protocol.WorkerAssessment)
+		for _, a := range r.Agents {
+			if a.Worker != nil {
+				assessments[a.SessionID] = a.Worker.Assessment
+			}
+		}
 		index := map[string]int{}
 		for i, v := range ws {
 			index[v.SessionID] = i
 		}
 		for _, v := range d.recentWorkers(time.Now()) {
+			v.Assessment = assessments[v.SessionID]
 			if q.OwnerClaude != "" && v.Owner != owner {
 				continue
 			}

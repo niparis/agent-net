@@ -235,6 +235,7 @@ type Assessment struct {
 	Mode          string        `json:"mode"`
 	Scores        Scores        `json:"scores"`
 	Label         string        `json:"label"`
+	RulesVersion  string        `json:"rules_version"`
 	D             float64       `json:"d"`
 	Bottleneck    string        `json:"bottleneck,omitempty"`
 	Confidence    string        `json:"confidence,omitempty"`
@@ -243,6 +244,10 @@ type Assessment struct {
 	JudgeModel    string        `json:"judge_model,omitempty"`
 	Elapsed       time.Duration `json:"elapsed"`
 }
+
+// RulesVersion identifies the weights, cut points and bottleneck rule below.
+// Change it whenever any of those rules change.
+const RulesVersion = "2026-11-02.1"
 
 // The coefficients and cut points are centralized for future tuning.
 var scoreWeights = []float64{0.20, 0.10, 0.20, 0.15, 0.15, 0.20}
@@ -254,7 +259,8 @@ func labelIndex(d float64) int {
 }
 
 // Label applies the weighted score and the score-of-5 bottleneck rule.
-func Label(s Scores) (label string, d float64, bottleneck string) {
+func Label(s Scores) (label string, d float64, bottleneck string, version string) {
+	version = RulesVersion
 	values := []int{s.Reasoning, s.Scope, s.Coupling, s.Uncertainty, s.Verification, s.Risk}
 	for i, value := range values {
 		d += float64(value) * scoreWeights[i]
@@ -273,5 +279,11 @@ func Label(s Scores) (label string, d float64, bottleneck string) {
 			label = "hard"
 		}
 	}
-	return label, d, bottleneck
+	return label, d, bottleneck, version
+}
+
+// Relabel applies the current rules to a previously stored assessment.
+func Relabel(a Assessment) Assessment {
+	a.Label, a.D, a.Bottleneck, a.RulesVersion = Label(a.Scores)
+	return a
 }

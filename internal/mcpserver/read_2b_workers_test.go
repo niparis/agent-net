@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // An agent sees only its own workers by default (started_by me), and only the
@@ -51,5 +53,18 @@ func TestWorkersCursorRefusedWithOtherFilters(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("a worker cursor from another filter set was accepted")
+	}
+}
+
+func TestWorkerFullDetailIncludesAssessment(t *testing.T) {
+	assessment := &protocol.WorkerAssessment{Reasoning: 2, Scope: 1, Coupling: 1, Uncertainty: 1, Verification: 1, Risk: 1, D: 1.2, Label: "trivial", RulesVersion: "2026-11-02.1", PickerLabel: "normal"}
+	a := protocol.AgentView{SessionID: "s_test", Worker: &protocol.WorkerInfo{Assessment: assessment}}
+	full, _ := roWorkerRowOf(a, nil, true)
+	if full.Assessment != assessment {
+		t.Fatalf("full row: %+v", full)
+	}
+	compact, _ := roWorkerRowOf(a, nil, false)
+	if compact.Assessment != nil {
+		t.Fatalf("compact row: %+v", compact)
 	}
 }

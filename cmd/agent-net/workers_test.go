@@ -276,3 +276,18 @@ func TestStartRequiresTouches(t *testing.T) {
 		t.Fatalf("missing actionable refusal: %v", err)
 	}
 }
+
+func TestWorkersJSONIncludesAssessment(t *testing.T) {
+	op := &fakeOp{workers: []protocol.WorkerView{{SessionID: "s_test", Assessment: &protocol.WorkerAssessment{Reasoning: 2, Scope: 1, Coupling: 1, Uncertainty: 1, Verification: 1, Risk: 1, D: 1.2, Label: "trivial", RulesVersion: "2026-11-02.1", PickerLabel: "normal"}}}}
+	var out bytes.Buffer
+	if err := runWorkers(context.Background(), op, &out, []string{"-json"}); err != nil {
+		t.Fatal(err)
+	}
+	var result protocol.WorkersResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Workers) != 1 || result.Workers[0].Assessment == nil || result.Workers[0].Assessment.PickerLabel != "normal" || result.Workers[0].Assessment.Reasoning != 2 {
+		t.Fatalf("output: %s", out.String())
+	}
+}

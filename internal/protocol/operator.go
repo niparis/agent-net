@@ -424,13 +424,14 @@ type WorkersQuery struct {
 
 // WorkerView is one worker as the operator sees it.
 type WorkerView struct {
-	SessionID string `json:"session_id"`
-	NodeID    string `json:"node_id"`
-	Hostname  string `json:"hostname"`
-	Harness   string `json:"harness"`
-	Model     string `json:"model,omitempty"`
-	Project   string `json:"project"`
-	Path      string `json:"path"`
+	Assessment *WorkerAssessment `json:"assessment,omitempty"`
+	SessionID  string            `json:"session_id"`
+	NodeID     string            `json:"node_id"`
+	Hostname   string            `json:"hostname"`
+	Harness    string            `json:"harness"`
+	Model      string            `json:"model,omitempty"`
+	Project    string            `json:"project"`
+	Path       string            `json:"path"`
 	// Name is the session name the gateway gave the worker, when it knows it.
 	Name   string `json:"name,omitempty"`
 	Online bool   `json:"online"`
@@ -522,7 +523,7 @@ func WorkersOf(agents []AgentView) []WorkerView {
 			Owner: a.Worker.Owner, OwnerName: names[a.Worker.Owner], StartedAt: a.Worker.StartedAt,
 			Task: a.Worker.Task, Title: a.Worker.Title,
 			ContextTokens: a.Worker.ContextTokens, ContextLimit: a.Worker.ContextLimit, Tokens: a.Worker.Tokens,
-			Continue: a.Worker.Continue, Fix: a.Worker.Fix, DifficultyAsked: a.Worker.DifficultyAsked, DifficultyUsed: a.Worker.DifficultyUsed})
+			Assessment: a.Worker.Assessment, Continue: a.Worker.Continue, Fix: a.Worker.Fix, DifficultyAsked: a.Worker.DifficultyAsked, DifficultyUsed: a.Worker.DifficultyUsed})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].StartedAt > out[j].StartedAt

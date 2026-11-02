@@ -22,6 +22,8 @@ about a minute to every start without adding needed evidence.
 The default assessor scores the brief directly. The analyzer path remains
 available behind `DifficultyAnalyzer` and `agent-net dev assess --analyzer`.
 
+Shadow mode is live: each worker start is assessed in the background; the picker still uses the caller's label.
+
 ## Analyzer design, on ice
 
 The sections below record the earlier analyzer proposal. They are historical

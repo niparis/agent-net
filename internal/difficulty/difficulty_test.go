@@ -58,7 +58,7 @@ func TestParseScoresConfidenceOptional(t *testing.T) {
 
 func TestLabel(t *testing.T) {
 	s := Scores{Reasoning: 2, Scope: 4, Coupling: 2, Uncertainty: 1, Verification: 2, Risk: 2}
-	label, d, _ := Label(s)
+	label, d, _, _ := Label(s)
 	if label != "simple" || math.Abs(d-2.05) > 1e-12 {
 		t.Fatalf("Label=%s D=%v", label, d)
 	}
@@ -70,10 +70,10 @@ func TestLabel(t *testing.T) {
 			t.Errorf("D=%v: %s, want %s", tc.d, got, tc.want)
 		}
 	}
-	if got, _, _ := Label(Scores{1, 1, 1, 1, 1, 1, nil, ""}); got != "trivial" {
+	if got, _, _, _ := Label(Scores{1, 1, 1, 1, 1, 1, nil, ""}); got != "trivial" {
 		t.Errorf("ones=%s", got)
 	}
-	if got, _, _ := Label(Scores{5, 5, 5, 5, 5, 5, nil, ""}); got != "very_complex" {
+	if got, _, _, _ := Label(Scores{5, 5, 5, 5, 5, 5, nil, ""}); got != "very_complex" {
 		t.Errorf("fives=%s", got)
 	}
 	for i, name := range []string{"reasoning", "scope", "coupling", "uncertainty", "verification", "risk"} {
@@ -92,7 +92,7 @@ func TestLabel(t *testing.T) {
 		case 5:
 			scores.Risk = 5
 		}
-		got, _, b := Label(scores)
+		got, _, b, _ := Label(scores)
 		if got != "hard" && got != "very_complex" {
 			t.Errorf("%s score 5 gave %s", name, got)
 		}

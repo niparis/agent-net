@@ -58,6 +58,11 @@ func (m Model) detailLines(w, n int) []string {
 		rightW = min(w*45/100, 64)
 	}
 	leftW := w - rightW - 3
+	// Leave room for the complete difficulty summary when a wide pane has one.
+	if two && a.Worker != nil && a.Worker.Assessment != nil && w >= 105 && leftW < 66 {
+		leftW = 66
+		rightW = w - leftW - 3
+	}
 	if !two {
 		leftW = w
 	}
@@ -134,6 +139,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		// line: the table shows the task instead (decision 0017).
 		out = append(out, kv("worker", fmt.Sprintf("started by %s, %s, project %s", m.who(a.Worker.Owner),
 			m.clock(time.Unix(a.Worker.StartedAt, 0)), dashIfEmpty(m.projectName(a.Worker.Project)))))
+		if a.Worker.Assessment != nil {
+			out = append(out, wrap("  difficulty "+sanitize(a.Worker.Assessment.Summary("picker")), w)...)
+		}
 		context := protocol.ContextText(a.Worker.ContextTokens, a.Worker.ContextLimit)
 		tokens := protocol.CompactTokens(a.Worker.Tokens)
 		switch {

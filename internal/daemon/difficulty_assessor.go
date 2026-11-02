@@ -84,6 +84,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	if judgeModel == "" {
 		judgeModel = "opencode-go/deepseek-v4.1-flash"
 	}
+	a0.JudgeModel = judgeHarness + ":" + judgeModel
 	if judgeHarness == "opencode" {
 		if _, err := a.harnessBinary("opencode"); err != nil {
 			if a.cfg.DifficultyAnalyzer {
@@ -125,7 +126,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		if a0.Confidence == "" {
 			a0.Confidence = "unknown"
 		}
-		a0.Label, a0.D, a0.Bottleneck = difficulty.Label(scores)
+		a0.Label, a0.D, a0.Bottleneck, a0.RulesVersion = difficulty.Label(scores)
 		a0.Elapsed = time.Since(started)
 		return a0, nil
 	}
@@ -195,7 +196,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	if scores.Confidence != "" {
 		a0.Confidence = scores.Confidence
 	}
-	a0.Label, a0.D, a0.Bottleneck = difficulty.Label(scores)
+	a0.Label, a0.D, a0.Bottleneck, a0.RulesVersion = difficulty.Label(scores)
 	a0.Notes = judgeNote
 	a0.Elapsed = time.Since(started)
 	return a0, nil

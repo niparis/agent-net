@@ -90,6 +90,17 @@ func runFakeHarness() bool {
 
 // fakeOpenCodeRun is `opencode run -m MODEL PROMPT` for difficulty judges.
 func fakeOpenCodeRun() {
+	if marker := os.Getenv("FAKE_DIFFICULTY_MARKER"); marker != "" {
+		_ = os.WriteFile(marker, []byte("started"), 0600)
+	}
+	if gate := os.Getenv("FAKE_DIFFICULTY_GATE"); gate != "" {
+		for {
+			if _, err := os.Stat(gate); err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	if path := os.Getenv("FAKE_OPENCODE_PROMPT_FILE"); path != "" && len(os.Args) > 3 {
 		_ = os.WriteFile(path, []byte(os.Args[len(os.Args)-1]), 0o600)
 	}

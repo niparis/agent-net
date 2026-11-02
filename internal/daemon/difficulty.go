@@ -14,8 +14,7 @@ import (
 
 // Task difficulty from evidence (docs/design/task-difficulty.md sections 2, 4,
 // 5 and 7). assessDifficulty runs two short one-shot models and turns their
-// answer into a label. It changes nothing and is not called by a worker start
-// yet.
+// answer into a label. Worker starts run the judge-only path asynchronously.
 //
 // The analyzer runs through `codex exec`, the worker harness that supports a
 // read-only sandbox in the same command: -s read-only, -C <folder>, -m <model>,
