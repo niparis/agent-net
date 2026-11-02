@@ -173,25 +173,8 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, 
 		return p, err
 	}
 	p = oauthPendingRequest{ClientID: clientID, ClientName: client.ClientName, RedirectURI: redirect, Challenge: challenge, State: state, Resource: resource, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(oauthPendingTTL)}
-	var count int
-	// Check each quota separately, so overlaps do not count twice.
-	var clientCount, sourceCount int
-	if err = tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND client_id=?`, clientID).Scan(&clientCount); err != nil {
+	if err = oauthPendingQuota(tx, clientID, source, false); err != nil {
 		return p, err
-	}
-	if err = tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND source=?`, source).Scan(&sourceCount); err != nil {
-		return p, err
-	}
-	if clientCount >= 3 || sourceCount >= 3 {
-		return p, errOAuthLimit
-	}
-	if err = tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending'`).Scan(&count); err != nil {
-		return p, err
-	}
-	if count >= oauthPendingLimit {
-		if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE id=(SELECT id FROM oauth_pending WHERE status='pending' ORDER BY created_at,rowid LIMIT 1)`); err != nil {
-			return p, err
-		}
 	}
 	p.ID, err = oauthRandom(16)
 	if err != nil {
@@ -215,6 +198,36 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, 
 		return p, err
 	}
 	return p, tx.Commit()
+}
+
+// oauthPendingQuota enforces the shared pending pool within the caller's transaction.
+func oauthPendingQuota(tx *sql.Tx, clientID, source string, phone bool) error {
+	var clientCount, sourceCount, count int
+	if !phone {
+		if err := tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND client_id=?`, clientID).Scan(&clientCount); err != nil {
+			return err
+		}
+	}
+	if err := tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND source=?`, source).Scan(&sourceCount); err != nil {
+		return err
+	}
+	if clientCount >= 3 || (!phone && sourceCount >= 3) {
+		return errOAuthLimit
+	}
+	if phone && sourceCount >= 3 {
+		if _, err := tx.Exec(`DELETE FROM oauth_pending WHERE id=(SELECT id FROM oauth_pending WHERE status='pending' AND source=? ORDER BY created_at,rowid LIMIT 1)`, source); err != nil {
+			return err
+		}
+	}
+	if err := tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending'`).Scan(&count); err != nil {
+		return err
+	}
+	if count >= oauthPendingLimit {
+		if _, err := tx.Exec(`DELETE FROM oauth_pending WHERE id=(SELECT id FROM oauth_pending WHERE status='pending' ORDER BY created_at,rowid LIMIT 1)`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // PendingByUserCode looks up a live request. Five misses per source in ten

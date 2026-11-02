@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -175,19 +175,33 @@ func TestPhoneSlidingRenewal(t *testing.T) {
 func TestPhonePendingSharesOAuthLimitAndExpires(t *testing.T) {
 	s, c, oauth := oauthFixture(t)
 	client := oauthRegister(t, oauth)
+	var oldest oauthPendingRequest
 	for i := 0; i < oauthPendingLimit; i++ {
-		if _, err := s.newPhonePending("Phone", c.t); err != nil {
+		p, err := s.newPhonePending("Phone", fmt.Sprintf("source-%d", i), c.t.Add(time.Duration(i)*time.Millisecond))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			oldest = p
+		}
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := s.newPhonePending("Phone", "same-source", c.t.Add(time.Second)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if w := oauthAuthorize(oauth, client, nil); w.Code != http.StatusTooManyRequests {
-		t.Fatalf("OAuth ignored phone limit: %d %s", w.Code, w.Body.String())
+	var count int
+	if err := s.db.QueryRow(`SELECT count(*) FROM oauth_pending WHERE source='same-source'`).Scan(&count); err != nil || count != 3 {
+		t.Fatalf("source count %d: %v", count, err)
 	}
-	if _, err := s.newPhonePending("Phone", c.t); !errors.Is(err, errOAuthLimit) {
-		t.Fatalf("phone limit: %v", err)
+	if err := s.db.QueryRow(`SELECT count(*) FROM oauth_pending WHERE id=?`, oldest.ID).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("oldest count %d: %v", count, err)
+	}
+	if _, err := s.newOAuthPending(client, oauthCallback, oauthChallenge(oauthVerifier), "", "", "oauth-source", c.t.Add(time.Second)); err != nil {
+		t.Fatal(err)
 	}
 	c.t = c.t.Add(oauthPendingTTL)
-	p, err := s.newPhonePending("Phone", c.t)
+	p, err := s.newPhonePending("Phone", "source", c.t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +214,7 @@ func TestPhonePendingSharesOAuthLimitAndExpires(t *testing.T) {
 
 func TestPhoneStatusRefusalAndOAuthIsolation(t *testing.T) {
 	s, c, h, _ := phoneFixture(t)
-	p, err := s.newPhonePending("Phone", c.t)
+	p, err := s.newPhonePending("Phone", "source", c.t)
 	if err != nil {
 		t.Fatal(err)
 	}

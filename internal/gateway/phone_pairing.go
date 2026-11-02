@@ -14,7 +14,7 @@ import (
 
 // Phone requests use oauth_pending and its shared cap and code namespace.
 // The reserved client ID identifies them; state holds the device name.
-func (s *Store) newPhonePending(name string, now time.Time) (oauthPendingRequest, error) {
+func (s *Store) newPhonePending(name, source string, now time.Time) (oauthPendingRequest, error) {
 	var p oauthPendingRequest
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -24,13 +24,10 @@ func (s *Store) newPhonePending(name string, now time.Time) (oauthPendingRequest
 	if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE expires_at <= ? AND (status != 'approved' OR approved_at <= ?)`, now.UnixNano(), now.Add(-oauthPendingTTL).UnixNano()); err != nil {
 		return p, err
 	}
-	var count int
-	if err = tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND expires_at>?`, now.UnixNano()).Scan(&count); err != nil {
+	if err = oauthPendingQuota(tx, "phone", source, true); err != nil {
 		return p, err
 	}
-	if count >= oauthPendingLimit {
-		return p, errOAuthLimit
-	}
+	var count int
 	if _, err = tx.Exec(`INSERT OR IGNORE INTO oauth_clients (client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at) VALUES ('phone','Phone','[]','[]','[]','none',?)`, now.UnixNano()); err != nil {
 		return p, err
 	}
@@ -55,7 +52,7 @@ func (s *Store) newPhonePending(name string, now time.Time) (oauthPendingRequest
 	p.CreatedAt = now
 	p.ExpiresAt = now.Add(oauthPendingTTL)
 	p.Status = "pending"
-	_, err = tx.Exec(`INSERT INTO oauth_pending (id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status) VALUES (?,?,'phone','','',?,'',?,?,'pending')`, p.ID, p.UserCode, name, now.UnixNano(), p.ExpiresAt.UnixNano())
+	_, err = tx.Exec(`INSERT INTO oauth_pending (id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status,source) VALUES (?,?,'phone','','',?,'',?,?,'pending',?)`, p.ID, p.UserCode, name, now.UnixNano(), p.ExpiresAt.UnixNano(), source)
 	if err != nil {
 		return p, err
 	}
@@ -142,7 +139,7 @@ func phoneClientName(ua string) string {
 var phonePairTemplate = template.Must(template.New("pair").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connect phone</title><style>body{font:1.1rem system-ui;max-width:34rem;margin:4rem auto;padding:0 1.2rem;color:#102c29}strong{font-size:2.5rem;letter-spacing:.12em}</style></head><body><h1>Connect phone</h1><p>Enter this code in your agent-net TUI: S, Connected apps, Add</p><strong id="user-code">{{.Code}}</strong><p id="status">Waiting for approval...</p><script>async function poll(){try{const r=await fetch('/phone/status?id={{.ID}}',{cache:'no-store'});const v=await r.json();if(v.status==='approved'){location.reload();return}if(v.status==='refused'||v.status==='expired'){document.getElementById('status').textContent='Request '+v.status+'. Reload to try again.';return}}catch(e){}setTimeout(poll,2000)}setTimeout(poll,2000)</script></body></html>`))
 
 func (g *Gateway) phonePairPage(w http.ResponseWriter, r *http.Request) {
-	p, err := g.store.newPhonePending(phoneClientName(r.UserAgent()), g.store.now())
+	p, err := g.store.newPhonePending(phoneClientName(r.UserAgent()), ratelimit.ClientAddr(r), g.store.now())
 	if errors.Is(err, errOAuthLimit) {
 		http.Error(w, "Too many pending requests. Try again later.", http.StatusTooManyRequests)
 		return
