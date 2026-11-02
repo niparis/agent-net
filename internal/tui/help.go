@@ -66,6 +66,8 @@ func (m Model) hints() []hint {
 		open := bindingHint(contextCTO, "open CTO")
 		open.label = "open " + m.ctoTitle()
 		return []hint{open, bindingHint(contextCTO, "back"), bindingHint(contextCTO, "model"), bindingHint(contextCTO, "new conversation"), bindingHint(contextCTO, "undo")}
+	case m.tab == inboxTab:
+		return m.inboxHints()
 	case m.tab == messagesTab:
 		move := bindingPairHint(contextMessages, actUp, actDown)
 		msg := bindingPairHint(contextMessages, "previous message", "next message")
@@ -102,7 +104,7 @@ func (m Model) hints() []hint {
 			return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextHeld, "approve"), bindingHint(contextHeld, "refuse"), sessionHelp, sessionQuit}
 		}
 	}
-	if m.tab == sessionsTab && m.sessionCell > 0 && !m.selNeeds {
+	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
 			if m.sessionCell == 1 {
 				rule := m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project))
@@ -151,11 +153,8 @@ func (m Model) helpLine(w int) string {
 	if m.tab == graphTab && m.mp.finding {
 		return clip("find: "+sanitize(m.mp.findQuery)+sDim.Render("  enter focus  esc cancel"), w)
 	}
-	if m.inboxOn {
-		if m.inboxEditing {
-			return clip(m.inboxInput.View()+" enter sends, esc cancels", w)
-		}
-		return sDim.Render(clip("up/down select  enter details  a approve  r refuse  t answer  esc back", w))
+	if m.tab == inboxTab && m.inboxEditing {
+		return clip(m.inboxInput.View()+" enter sends, esc cancels", w)
 	}
 
 	if m.filtering {
@@ -267,12 +266,13 @@ type helpSection struct {
 // helpTabSections puts the current tab first, then the others in tab order.
 func (m Model) helpTabSections() []helpSection {
 	sections := []helpSection{
-		{"Sessions", []keyContext{contextSessions, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
+		{"Sessions", []keyContext{contextSessions}},
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
 		{"Quotas", []keyContext{contextQuotas}},
 		{"Messages", []keyContext{contextMessages}},
 		{"Tools", []keyContext{contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsCompare}},
 		{"Settings", []keyContext{contextSettings}},
+		{"Inbox", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
 	}
 	tab := min(max(m.tab, 0), len(sections)-1)
 	ordered := []helpSection{sections[tab]}
@@ -283,7 +283,7 @@ func (m Model) helpTabSections() []helpSection {
 
 func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
-		contextBody, contextInbox, contextApps, contextProposalDetail, contextProposalHistory,
+		contextBody, contextApps, contextProposalDetail, contextProposalHistory,
 		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd,
 		contextCTO, contextHelp, contextConfirm, contextForm,
 	}

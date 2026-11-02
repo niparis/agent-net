@@ -52,7 +52,7 @@ type Model struct {
 	proposalHistory                     bool
 	proposalHistoryIndex                int
 	inboxItems                          []protocol.InboxItem
-	inboxOn, inboxDetail, inboxEditing  bool
+	inboxDetail, inboxEditing           bool
 	inboxIndex                          int
 	inboxError                          string
 	inboxInput                          textinput.Model
@@ -123,7 +123,6 @@ type Model struct {
 	frozenOrder               map[string]int
 	selected                  string // session ID
 	selIdx                    int    // position in the visible list, to move on when the session leaves
-	selNeeds                  bool   // whether the selected visible row is in the Needs you section
 	tableTop                  int    // first table row on screen
 	resumeConfirm             *protocol.AgentView
 	showOffline               bool
@@ -667,6 +666,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.inboxItems[i].Status = "answered"
 				}
 			}
+			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
 		}
 		return m, nil
 	case onboardingMsg:
@@ -700,6 +700,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		before := m.onboardingStep().id
 		if msg.inboxOK {
 			m.inboxItems = msg.inboxItems
+			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
 		}
 		m.fetching = false
 		m.applyFetch(msg)
@@ -1072,9 +1073,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return updated, cmd
 	}
-	if m.inboxOn {
-		return m.inboxKey(k)
-	}
 	if m.help {
 		switch keyAction(contextHelp, k.String()) {
 		case actQuit:
@@ -1194,12 +1192,16 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	for i := range tabNames {
-		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab"}[i] {
+		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab"}[i] {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
 			if i == sessionsTab {
 				m.sessionCell = 0
+			}
+			if i == inboxTab {
+				m.inboxDetail, m.inboxEditing = false, false
+				m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
 			}
 			if i == settingsTab {
 				m.settingsRow = 0
@@ -1279,106 +1281,20 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.focus == focusSessions {
-		if k.String() == "x" && strings.HasPrefix(m.selected, appNoticePrefix) {
-			id := strings.TrimPrefix(m.selected, appNoticePrefix)
-			for _, item := range m.inboxItems {
-				if item.ID == id && item.Status == "open" && isAppApprovalNotice(item) {
-					return m, m.inboxAnswer(item.ID, "seen")
-				}
-			}
-		}
-		if p, ok := m.selectedProposal(); ok {
-			key := keyAction(contextProposal, k.String())
-			switch key {
-			case "detail":
-				m.proposalDetail = &proposalDetail{proposal: p, loading: true}
-				return m, m.proposalDetailCmd(p)
-			case "approve", "decline":
-				action := "a"
-				if key == "decline" {
-					action = "x"
-				}
-				return m, m.proposalAnswerCmd(p, action)
-			case "approve all":
-				m.openProposalConfirm()
-				return m, nil
-			}
-		}
-		for _, suggestion := range m.snap.Learned {
-			key := keyAction(contextSuggestion, k.String())
-			if m.selected == fmt.Sprintf("learned:%d", suggestion.ID) && suggestion.Status == "pending" && key != "" {
-				c, ok := m.src.(inboxCaller)
-				if !ok {
-					m.fail("Learned suggestion actions unavailable.")
-					return m, nil
-				}
-				action := "accept"
-				if key == "reject" {
-					action = "reject"
-				}
-				return m, func() tea.Msg {
-					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-					defer cancel()
-					_, err := c.Call(ctx, "learned_answer", map[string]any{"suggestion_id": suggestion.ID, "action": action})
-					if err != nil {
-						return actionMsg{err: err}
-					}
-					return actionMsg{text: "Suggestion " + action + "ed."}
-				}
-			}
-		}
-		for _, held := range m.snap.Held {
-			key := keyAction(contextHeld, k.String())
-			if held.ID == m.selected && key != "" {
-				answerer, ok := m.src.(interface {
-					AnswerHeld(context.Context, protocol.HeldAnswer) error
-				})
-				if !ok {
-					m.fail("Held request actions unavailable.")
-					return m, nil
-				}
-				action := "a"
-				if key == "refuse" {
-					action = "r"
-				}
-				answer := protocol.HeldAnswer{MessageID: held.ID, Action: action}
-				return m, func() tea.Msg {
-					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-					defer cancel()
-					err := answerer.AnswerHeld(ctx, answer)
-					if err != nil {
-						return actionMsg{err: err}
-					}
-					return actionMsg{text: "Request answered."}
-				}
-			}
-		}
+	if m.tab == inboxTab {
+		return m.inboxTabKey(k)
 	}
 	context := contextSessions
 	if m.tab == messagesTab {
 		context = contextMessages
 	}
 	key := keyAction(context, k.String())
-	if strings.HasPrefix(m.selected, "outcome:") && m.tab == sessionsTab {
-		if rowKey := keyAction(contextOutcome, k.String()); rowKey != "" {
-			key = rowKey
-		}
-	}
 	switch key {
 	case actQuit:
 		m.quitting = true
 		return m, tea.Quit
-	case "inbox":
-		m.inboxOn = true
-		m.inboxIndex = 0
-		return m, nil
 	case "compose":
 		return m.startCompose()
-	case "let stand":
-		if cmd := m.resolveOutcome("let_stand"); cmd != nil {
-			return m, cmd
-		}
 	case "new session":
 		if m.tab == sessionsTab {
 			return m.startSessionForm()
@@ -1424,10 +1340,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.ensureSelection()
 			m.fixScroll()
 		}
-	case "overrule":
-		if cmd := m.resolveOutcome("overrule"); cmd != nil {
-			return m, cmd
-		}
 	case "offline":
 		m.showOffline = !m.showOffline
 		m.ensureSelection()
@@ -1441,7 +1353,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureSelection()
 		m.fixScroll()
 	case "cell":
-		if m.tab == sessionsTab && !m.selNeeds {
+		if m.tab == sessionsTab {
 			if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
 				if k.String() == "right" {
 					m.sessionCell = min(m.sessionCell+1, 2)
@@ -1458,11 +1370,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "change cell":
-		if m.tab == sessionsTab && m.sessionCell == 1 && !m.selNeeds {
+		if m.tab == sessionsTab && m.sessionCell == 1 {
 			return m.startTrust()
 		}
 	case "message body", "open session":
-		if m.tab == sessionsTab && !m.selNeeds {
+		if m.tab == sessionsTab {
 			if m.sessionCell == 2 {
 				return m.startPolicy()
 			}
@@ -1577,7 +1489,6 @@ func (m *Model) move(delta int) {
 	i = min(max(i+delta, 0), len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
 	m.sessionCell = 0
-	m.selNeeds = i < len(m.needsRows())
 	m.fixScroll()
 }
 
@@ -1820,12 +1731,9 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 	return out
 }
 
-// visible is the selection order: the "Needs you" rows first, then every
-// table row. A waiting session can be selected in both places where it is
-// drawn.
+// visible is the selection order: every table row.
 func (m Model) visible() []protocol.AgentView {
-	needs := m.needsRows()
-	out := append([]protocol.AgentView(nil), needs...)
+	var out []protocol.AgentView
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
 			out = append(out, a)
@@ -1834,51 +1742,26 @@ func (m Model) visible() []protocol.AgentView {
 	return out
 }
 
-func (m Model) indexOf(list []protocol.AgentView, id string) int {
-	for i, a := range list {
-		if a.SessionID == id {
-			return i
-		}
-	}
-	return -1
-}
-
 // ensureSelection keeps the selected session valid after the data, the filter
 // or the offline switch changed: it stays where it is, or moves to the session
 // that took its place in the list.
 func (m *Model) ensureSelection() {
 	vis := m.visible()
 	if len(vis) == 0 {
-		m.selected, m.selIdx, m.selNeeds = "", 0, false
+		m.selected, m.selIdx = "", 0
 		return
 	}
-	needs := len(m.needsRows())
-	if m.selIdx >= 0 && m.selIdx < len(vis) && vis[m.selIdx].SessionID == m.selected && (m.selIdx < needs) == m.selNeeds {
-		m.selNeeds = m.selIdx < needs
+	if m.selIdx >= 0 && m.selIdx < len(vis) && vis[m.selIdx].SessionID == m.selected {
 		return
 	}
-	// A refresh can move the row while preserving its section. Prefer the
-	// matching occurrence in that section when a session appears twice.
-	start, end := needs, len(vis)
-	if m.selNeeds {
-		start, end = 0, needs
-	}
-	for i := start; i < end; i++ {
-		if vis[i].SessionID == m.selected {
+	for i, a := range vis {
+		if a.SessionID == m.selected {
 			m.selIdx = i
 			return
 		}
 	}
-	// If the selected section row disappeared but its table row remains, keep
-	// the same session there.
-	if i := m.indexOf(vis, m.selected); i >= 0 {
-		m.selIdx = i
-		m.selNeeds = i < needs
-		return
-	}
 	i := min(m.selIdx, len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
-	m.selNeeds = i < needs
 }
 
 // selectedAgent returns the selected session.
@@ -1983,7 +1866,7 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	m.inboxOn, m.help, m.mapOn = false, false, false
+	m.help, m.mapOn = false, false
 	m.open = nil
 	m.mode = modeNormal
 	m.filtering = false
@@ -2073,5 +1956,5 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) graphMouseActive() bool {
-	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help
+	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.help
 }

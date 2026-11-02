@@ -75,31 +75,24 @@ func TestEnterKeyEntersTheSession(t *testing.T) {
 }
 
 func TestEnterOnAWaitingRowEntersItWithoutCompose(t *testing.T) {
-	for _, inNeeds := range []bool{true, false} {
-		row := "table"
-		if inNeeds {
-			row = "Needs you"
-		}
-		t.Run(row, func(t *testing.T) {
-			m, src := waitingTableModel()
-			m = selectWaitingRow(m, inNeeds)
-			src.enterPlan = protocol.EnterPlan{Note: "cogforge-maintenance is not in a tmux pane agent-net can reach: open its window on build-vm"}
+	m, src := waitingTableModel()
+	m.selected = cogforgeMaintenanceID
+	m.selIdx = tableOrdinal(m, cogforgeMaintenanceID)
+	src.enterPlan = protocol.EnterPlan{Note: "cogforge-maintenance is not in a tmux pane agent-net can reach: open its window on build-vm"}
 
-			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
-			if m.mode != modeNormal {
-				t.Fatalf("enter opened mode %v, want no compose form", m.mode)
-			}
-			if cmd == nil {
-				t.Fatal("enter gave no enter command")
-			}
-			m, _ = press2(m, cmd())
-			if len(src.enters) != 1 || src.enters[0].SessionID != cogforgeMaintenanceID {
-				t.Fatalf("enter asked for %+v", src.enters)
-			}
-			if v := m.View(); !strings.Contains(v, "open its window on build-vm") {
-				t.Errorf("the plan note is not on screen:\n%s", v)
-			}
-		})
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeNormal {
+		t.Fatalf("enter opened mode %v, want no compose form", m.mode)
+	}
+	if cmd == nil {
+		t.Fatal("enter gave no enter command")
+	}
+	m, _ = press2(m, cmd())
+	if len(src.enters) != 1 || src.enters[0].SessionID != cogforgeMaintenanceID {
+		t.Fatalf("enter asked for %+v", src.enters)
+	}
+	if v := m.View(); !strings.Contains(v, "open its window on build-vm") {
+		t.Errorf("the plan note is not on screen:\n%s", v)
 	}
 }
 

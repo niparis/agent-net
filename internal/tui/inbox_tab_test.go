@@ -1,0 +1,414 @@
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// inboxOpsSource records the calls the Inbox tab makes. It keeps the same
+// method names and parameters the old Needs you rows and inbox overlay used.
+type inboxOpsSource struct {
+	fakeSource
+	calls   []inboxOpsCall
+	held    protocol.HeldAnswer
+	outID   string
+	outAct  string
+	callErr error
+}
+
+type inboxOpsCall struct {
+	method string
+	params any
+}
+
+func (s *inboxOpsSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	s.calls = append(s.calls, inboxOpsCall{method: method, params: params})
+	if s.callErr != nil {
+		return nil, s.callErr
+	}
+	if method == protocol.OpProposalList {
+		return json.RawMessage(`{"proposals":[]}`), nil
+	}
+	return json.RawMessage(`{}`), nil
+}
+
+func (s *inboxOpsSource) AnswerHeld(_ context.Context, q protocol.HeldAnswer) error {
+	s.held = q
+	return nil
+}
+
+func (s *inboxOpsSource) ResolveOutcome(_ context.Context, id, action string) error {
+	s.outID, s.outAct = id, action
+	return nil
+}
+
+func (s *inboxOpsSource) method(name string) *inboxOpsCall {
+	for i := range s.calls {
+		if s.calls[i].method == name {
+			return &s.calls[i]
+		}
+	}
+	return nil
+}
+
+// inboxAllKindsModel has one waiting row of each kind the Inbox shows.
+func inboxAllKindsModel(w, h int) (Model, *inboxOpsSource) {
+	snap := fakeSnapshot()
+	snap.Held = []protocol.Message{{
+		ID: "m_held", FromName: "alice", To: "s_0000000000000002",
+		Body: "please help\nthis second line is hidden", CreatedAt: t0.Add(-5 * time.Minute),
+	}}
+	snap.Outcomes = []protocol.OutcomeInboxEntry{{
+		EdgeOutcome: protocol.EdgeOutcome{
+			From: "ops", To: "app", ReplyID: "r_outcome",
+			ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "not now"},
+			At:           t0.Add(-6 * time.Minute).UnixNano(),
+		},
+		Request: "deploy app",
+	}}
+	snap.Learned = []protocol.LearnedSuggestion{{
+		ID: 7, Node: "ops", Field: "refuses", Kind: "add", Phrase: "deploys",
+		Status: "pending", Severity: "major", CreatedAt: t0.Add(-7 * time.Minute).UnixNano(),
+	}}
+	src := &inboxOpsSource{fakeSource: fakeSource{snap: snap, events: fakeEvents()}}
+	src.usage, src.counts, src.tops = fakeUsage(), fakeCounts(), fakeTops()
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
+	m = settle(refresh(m, src))
+	m.proposals = []protocol.CTOProposal{{
+		ID: "p1", NodeID: "n_mac", Tool: "session_change", Action: "session_start",
+		Args:      json.RawMessage(`{"project":"shop","node_id":"n_mac","harness":"pi"}`),
+		CreatedAt: t0.Add(-8 * time.Minute), Status: "open",
+	}}
+	m.inboxItems = []protocol.InboxItem{
+		{ID: "i_app", Kind: "approval", SessionID: "s_0000000000000004", Text: "deploy abc", Status: "open", CreatedAt: t0.Add(-9 * time.Minute)},
+		{ID: "i_question", Kind: "question", SessionID: "s_0000000000000004", Text: "which branch?", Status: "open", CreatedAt: t0.Add(-10 * time.Minute)},
+		{ID: "i_notice", Kind: "check", SessionID: "s_owner", Node: "apps",
+			Text:   "Connected: cursor (bot, Cursor, www.cursor.com). If this was not you, revoke it in Settings.",
+			Status: "open", CreatedAt: t0.Add(-11 * time.Minute)},
+	}
+	return m, src
+}
+
+func openInbox(m Model) Model { return keys(m, "7") }
+
+func inboxRowIndex(m Model, kind string) int {
+	for i, row := range m.inboxRows() {
+		if row.kind == kind {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestInboxTabOpensWithSeven(t *testing.T) {
+	m := openInbox(newModel(100, 30))
+	if m.tab != inboxTab {
+		t.Fatalf("7 opened tab %d, want Inbox", m.tab)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "Inbox") {
+		t.Fatal("the Inbox view is missing")
+	}
+}
+
+func TestInboxTabLabelShowsTheCount(t *testing.T) {
+	m := newModel(120, 34)
+	title := ansi.Strip(m.titleLine(120))
+	if !strings.Contains(title, "7 Inbox") || strings.Contains(title, "7 Inbox (") {
+		t.Fatalf("zero count label: %q", title)
+	}
+
+	m, _ = inboxAllKindsModel(120, 34)
+	title = ansi.Strip(m.titleLine(120))
+	want := fmt.Sprintf("7 Inbox (%d)", m.waitingCount())
+	if !strings.Contains(title, want) {
+		t.Fatalf("label %q does not hold %q", title, want)
+	}
+}
+
+func TestInboxTabLabelUsesTheWarningColour(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+	m, _ := inboxAllKindsModel(120, 34)
+	title := m.titleLine(120)
+	want := sNeeds.Render(fmt.Sprintf("7 Inbox (%d)", m.waitingCount()))
+	if !strings.Contains(title, want) {
+		t.Fatalf("count label is not in the warning colour: %q", ansi.Strip(title))
+	}
+}
+
+func TestInboxListsEveryKindWithItsActions(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = openInbox(m)
+	rows := m.inboxRows()
+	for i := 1; i < len(rows); i++ {
+		if rows[i-1].group == rows[i].group && rows[i-1].since < rows[i].since {
+			t.Fatalf("group %d is not newest first: %d then %d", rows[i].group, rows[i-1].since, rows[i].since)
+		}
+	}
+	view := ansi.Strip(m.View())
+	for _, heading := range []string{"Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+		if !strings.Contains(view, heading) {
+			t.Errorf("missing group heading %q:\n%s", heading, view)
+		}
+	}
+	if strings.Contains(view, "second line is hidden") {
+		t.Fatal("a row wrapped its text")
+	}
+
+	cases := []struct {
+		kind string
+		keys []string
+	}{
+		{"held", []string{"a approve", "r refuse", "enter"}},
+		{"outcome", []string{"s let stand", "O overrule"}},
+		{"learned", []string{"a accept", "r reject"}},
+		{"proposal", []string{"a approve", "r decline", "A approve all"}},
+		{"approval", []string{"a approve", "r refuse", "t answer"}},
+		{"question", []string{"a approve", "r refuse", "t answer"}},
+		{"notice", []string{"x dismiss"}},
+	}
+	for _, tc := range cases {
+		i := inboxRowIndex(m, tc.kind)
+		if i < 0 {
+			t.Fatalf("no %s row", tc.kind)
+		}
+		m.inboxIndex = i
+		line := ansi.Strip(lastLine(m.View()))
+		for _, want := range tc.keys {
+			if !strings.Contains(line, want) {
+				t.Errorf("%s key line %q lacks %q", tc.kind, line, want)
+			}
+		}
+	}
+}
+
+func TestInboxActionsCallTheSameOperations(t *testing.T) {
+	t.Run("held approve", func(t *testing.T) {
+		m, src := inboxAllKindsModel(100, 30)
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "held")
+		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		if cmd == nil {
+			t.Fatal("a did not answer the held request")
+		}
+		send(next, cmd())
+		if src.held.MessageID != "m_held" || src.held.Action != "a" {
+			t.Fatalf("held answer %+v", src.held)
+		}
+	})
+	t.Run("learned accept", func(t *testing.T) {
+		m, src := inboxAllKindsModel(100, 30)
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "learned")
+		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		if cmd == nil {
+			t.Fatal("a did not accept the suggestion")
+		}
+		send(next, cmd())
+		call := src.method("learned_answer")
+		if call == nil || !strings.Contains(fmt.Sprint(call.params), "accept") {
+			t.Fatalf("learned call %+v", call)
+		}
+	})
+	t.Run("outcome overrule", func(t *testing.T) {
+		m, src := inboxAllKindsModel(100, 30)
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "outcome")
+		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("O")})
+		if cmd == nil {
+			t.Fatal("O did not resolve the outcome")
+		}
+		send(next, cmd())
+		if src.outID != "r_outcome" || src.outAct != "overrule" {
+			t.Fatalf("outcome call %s %s", src.outID, src.outAct)
+		}
+	})
+	t.Run("proposal approve", func(t *testing.T) {
+		m, src := inboxAllKindsModel(100, 30)
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "proposal")
+		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		if cmd == nil {
+			t.Fatal("a did not answer the proposal")
+		}
+		send(next, cmd())
+		call := src.method(protocol.OpProposalAnswer)
+		if call == nil || !strings.Contains(fmt.Sprintf("%+v", call.params), "Action:a") {
+			t.Fatalf("proposal call %+v", call)
+		}
+	})
+	t.Run("proposal approve all", func(t *testing.T) {
+		m, _ := inboxAllKindsModel(100, 30)
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "proposal")
+		next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+		if !next.proposalConfirm {
+			t.Fatal("A did not open the approve-all confirmation")
+		}
+	})
+	t.Run("approval approve", func(t *testing.T) {
+		m, src := inboxAllKindsModel(100, 30)
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "approval")
+		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		if cmd == nil {
+			t.Fatal("a did not answer the inbox item")
+		}
+		send(next, cmd())
+		call := src.method("inbox_answer")
+		if call == nil || !strings.Contains(fmt.Sprint(call.params), "i_app") || !strings.Contains(fmt.Sprint(call.params), "approve") {
+			t.Fatalf("inbox call %+v", call)
+		}
+	})
+	t.Run("question typed answer", func(t *testing.T) {
+		m, src := inboxAllKindsModel(100, 30)
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "question")
+		m = keys(m, "t")
+		if !m.inboxEditing {
+			t.Fatal("t did not start an answer")
+		}
+		for _, r := range "feat" {
+			m = send(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil {
+			t.Fatal("enter did not send the answer")
+		}
+		send(next, cmd())
+		call := src.method("inbox_answer")
+		if call == nil || !strings.Contains(fmt.Sprint(call.params), "i_question") || !strings.Contains(fmt.Sprint(call.params), "feat") {
+			t.Fatalf("inbox answer %+v", call)
+		}
+	})
+}
+
+func TestInboxDismissesANoticeWithX(t *testing.T) {
+	m, src := inboxAllKindsModel(100, 30)
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "notice")
+	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if cmd == nil {
+		t.Fatal("x did not dismiss the notice")
+	}
+	next = send(next, cmd())
+	call := src.method("inbox_answer")
+	if call == nil || !strings.Contains(fmt.Sprint(call.params), "i_notice") || !strings.Contains(fmt.Sprint(call.params), "seen") {
+		t.Fatalf("dismiss call %+v", call)
+	}
+	if got := next.waitingCount(); got != 6 {
+		t.Fatalf("%d waiting after the dismiss", got)
+	}
+}
+
+func TestInboxEnterOnHeldRequestEntersTheSession(t *testing.T) {
+	m, src := inboxAllKindsModel(100, 30)
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "held")
+	_, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter did nothing on the held request")
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if c != nil {
+				c()
+			}
+		}
+	}
+	if len(src.enters) != 1 || src.enters[0].SessionID != "s_0000000000000002" {
+		t.Fatalf("enter calls %+v", src.enters)
+	}
+}
+
+func TestInboxEmptyState(t *testing.T) {
+	m := openInbox(newModel(80, 24))
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Nothing is waiting for you.") {
+		t.Fatalf("empty state missing:\n%s", view)
+	}
+	for _, heading := range []string{"Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+		if strings.Contains(view, heading) {
+			t.Fatalf("empty state shows group %q", heading)
+		}
+	}
+}
+
+func TestSessionsShowsTheInboxSummaryAndNoNeedsRows(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = keys(m, "1")
+	view := ansi.Strip(m.View())
+	want := fmt.Sprintf("%d waiting in Inbox (7)", m.waitingCount())
+	if !strings.Contains(view, want) {
+		t.Fatalf("Sessions lacks %q:\n%s", want, view)
+	}
+	if strings.Contains(view, "Needs you") {
+		t.Fatalf("Sessions still shows the Needs you section:\n%s", view)
+	}
+	if strings.Contains(view, "deploy abc") {
+		// The waiting text belongs to the Inbox tab, not the Sessions table.
+		t.Fatalf("a waiting row leaked into Sessions:\n%s", view)
+	}
+
+	empty := keys(newModel(120, 34), "1")
+	if strings.Contains(ansi.Strip(empty.View()), "waiting in Inbox") {
+		t.Fatalf("empty Sessions shows a summary:\n%s", empty.View())
+	}
+}
+
+func TestIKeyDoesNothing(t *testing.T) {
+	m := newModel(80, 24)
+	before := m.View()
+	next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	if next.tab != sessionsTab || next.inboxDetail || next.inboxEditing {
+		t.Fatalf("i opened inbox state: tab=%d detail=%v editing=%v", next.tab, next.inboxDetail, next.inboxEditing)
+	}
+	if next.View() != before {
+		t.Fatalf("i changed the screen:\n%s", next.View())
+	}
+}
+
+func TestInboxGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := inboxAllKindsModel(size[0], size[1])
+		m = openInbox(m)
+		golden(t, fmt.Sprintf("inbox_items_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestInboxEmptyGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := openInbox(newModel(size[0], size[1]))
+		golden(t, fmt.Sprintf("inbox_empty_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestSessionsSummaryGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := inboxAllKindsModel(size[0], size[1])
+		m = keys(m, "1")
+		golden(t, fmt.Sprintf("sessions_inbox_summary_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestInboxTabBarGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := inboxAllKindsModel(size[0], size[1])
+		golden(t, fmt.Sprintf("inbox_tab_bar_%dx%d", size[0], size[1]), m.View())
+	}
+}

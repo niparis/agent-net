@@ -7,34 +7,34 @@ Keys ─────────────────────────
   a                      add a connected app
   x                      revoke the selected app
 
- In overlays
- Message body
-  esc, enter             close
-  q                      quit
-  up/down, j/k           scroll
-  pgup/pgdn              page
-
  Inbox
-  esc                    back
-  up/down, j/k           select
-  enter                  details
+  pgup/pgdn              page
+  home/g, end            first, last row
   a                      approve
   r                      refuse
+  s                      let stand
+  O                      overrule
+  A                      approve all
   t                      answer
+  x                      dismiss
 
- Connected apps
-  up/down, j/k           move
-  p                      internet access
-  u                      tunnel URL
-  a                      add
-  x                      revoke
-  enter                  approve
+ On a held request row
+  a                      approve
   r                      refuse
-  left, right            change kind
-  tab                    edit name
 
- Proposal detail
-  esc                    back
-  up/down, j/k           scroll
+ On a learned suggestion row
+  a                      accept
+  r                      reject
+
+ On an outcome row
+  s                      let stand
+  O                      overrule
+
+ On a CTO proposal row
+  enter                  open the proposal detail
+  a                      approve
+  r                      decline
+  A                      approve all
+
   more below
 up/down scroll  esc close help  q quit

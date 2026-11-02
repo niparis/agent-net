@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -84,7 +85,7 @@ func TestApproved07HeldRequestDoesNotAnswerOnShiftKeys(t *testing.T) {
 	m := New(src)
 	m.snap = src.snap
 	m.snap.Held = []protocol.Message{{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"}}
-	m.selected = "m_held"
+	m.tab = inboxTab
 	for _, key := range []string{"A", "R"} {
 		_, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 		if cmd != nil && src.answer.MessageID != "" {
@@ -124,7 +125,7 @@ func TestApproved09ProposalDeclineOnRAndNotX(t *testing.T) {
 	s := &proposalSource{proposals: []protocol.CTOProposal{p}}
 	m := New(s)
 	m.proposals = s.proposals
-	m.selected = proposalKey(p)
+	m.tab = inboxTab
 	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}); cmd != nil || len(s.answers) != 0 {
 		t.Fatal("x still declines a proposal")
 	}
@@ -297,4 +298,16 @@ func TestApproved27HelpNIsTheNotificationKey(t *testing.T) {
 	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")}); cmd != nil {
 		t.Fatal("N still toggles desktop notifications")
 	}
+}
+
+type notificationSource struct {
+	*fakeSource
+	disabled bool
+}
+
+func (s *notificationSource) NotificationSettings(_ context.Context, disabled *bool) (bool, error) {
+	if disabled != nil {
+		s.disabled = *disabled
+	}
+	return s.disabled, nil
 }

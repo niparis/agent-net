@@ -1,19 +1,19 @@
-1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 12 online · 1
-Needs you (1) ──────────────────────────────────────────────────────────────────
-▍▸ CTO proposes: charter shop purpose
-╭─Machines─────────────────────────────────────────────────────────────────────╮
-│  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free │
-│  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
-│  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
-╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME               STATUS    TRUST RULE   DLG        CPU   RAM  view: all  (v)
- Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-  tenebrae-53        busy      -     normal -          38%  1.2G
-  strategies         idle      -     normal -         240%  4.6G
-  web                idle      -     normal -            ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner          idle      -     normal -           5%  300M
-  scratch            shell     -     normal -          <1%   80M
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (1) 12 online
+CTO proposals
+▸ CTO proposal charter shop purpose                                         107…
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -31,4 +31,4 @@ Needs you (1) ──────────────────────
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter detail  a approve  r decline  A approve all  ? help
+enter details  a approve  r decline  A approve all  ? help  q quit

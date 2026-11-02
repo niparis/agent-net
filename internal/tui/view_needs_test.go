@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -14,79 +11,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-type appNoticeDismissSource struct {
-	*fakeSource
-	method string
-	params map[string]string
-}
-
-func (s *appNoticeDismissSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
-	s.method = method
-	s.params, _ = params.(map[string]string)
-	return json.RawMessage(`{}`), nil
-}
-
-func connectedAppNoticeModel(w, h int) Model {
-	m := newModel(w, h)
-	m.inboxItems = []protocol.InboxItem{{
-		ID: "i_app", Kind: "check", SessionID: "s_owner", Node: "apps",
-		Text:   "Connected: cursor (bot, Cursor, www.cursor.com). If this was not you, revoke it in Settings.",
-		Status: "open", CreatedAt: t0,
-	}}
-	m.selected, m.selIdx, m.selNeeds, m.focus = "app-notice:i_app", 0, true, focusSessions
-	return m
-}
-
-func TestConnectedAppNoticeNeedsGoldens(t *testing.T) {
-	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		golden(t, fmt.Sprintf("view_needs_app_notice_%d", size[0]), connectedAppNoticeModel(size[0], size[1]).View())
-	}
-}
-
-func TestConnectedAppNoticeDismissedWithX(t *testing.T) {
-	src := &appNoticeDismissSource{fakeSource: &fakeSource{snap: fakeSnapshot(), events: fakeEvents()}}
-	m := connectedAppNoticeModel(80, 24)
-	m.src = src
-	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "x dismiss") || strings.Contains(view, "permission:") || strings.Contains(view, "you (on") {
-		t.Fatalf("app notice looks like a permission request or has no dismiss hint:\n%s", view)
-	}
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	if cmd == nil {
-		t.Fatal("x did not dismiss the app notice")
-	}
-	next = send(next, cmd())
-	if src.method != "inbox_answer" || src.params["id"] != "i_app" || src.params["answer"] != "seen" {
-		t.Fatalf("dismiss call: %s %+v", src.method, src.params)
-	}
-	if len(next.needsRows()) != 0 || next.inboxItems[0].Status != "answered" {
-		t.Fatalf("notice remains open: rows=%+v inbox=%+v", next.needsRows(), next.inboxItems)
-	}
-}
-
 // waiting asks the fake session a stays waiting since the given time.
 func waiting(a *protocol.AgentView, since time.Duration, kind, text string) {
 	a.Waiting = &protocol.Waiting{Kind: kind, Text: text, Since: t0.Add(since).Unix()}
-}
-
-// needsModel is the fake screen with two sessions that wait for the owner.
-func needsModel(w, h int) Model {
-	snap := fakeSnapshot()
-	for i := range snap.Agents {
-		switch snap.Agents[i].SessionID {
-		case "s_0000000000000002":
-			waiting(&snap.Agents[i], -12*time.Minute, protocol.WaitingQuestion, "Merge tenebrae-nexus/truenas-stacks #817?")
-		case "s_0000000000000004":
-			waiting(&snap.Agents[i], -3*time.Minute, protocol.WaitingPermission, "Bash(git push origin main)")
-		}
-	}
-	src := &fakeSource{snap: snap, events: fakeEvents()}
-	src.usage, src.counts, src.tops = fakeUsage(), fakeCounts(), fakeTops()
-	m := New(src)
-	m.loc = time.UTC
-	m.now = func() time.Time { return t0 }
-	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
-	return settle(refresh(m, src))
 }
 
 const cogforgeMaintenanceID = "s_00000000000000c1"
@@ -140,169 +67,21 @@ func TestWaitingSessionTableRowCanBeReached(t *testing.T) {
 	if m.selected != cogforgeMaintenanceID {
 		t.Fatalf("down from %q skipped the table row and selected %q", above.Profile.Name, m.selected)
 	}
-	want := len(m.needsRows()) + ordinal
-	if m.selIdx != want {
-		t.Fatalf("selected position %d, want table position %d", m.selIdx, want)
+	if m.selIdx != ordinal {
+		t.Fatalf("selected position %d, want table position %d", m.selIdx, ordinal)
 	}
 }
 
 func TestWaitingSelectionMarkerShowsOnOneRow(t *testing.T) {
 	m, _ := waitingTableModel()
 	m.selected = cogforgeMaintenanceID
-	m.selIdx = len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
-	m.selNeeds = false
+	m.selIdx = tableOrdinal(m, cogforgeMaintenanceID)
 	if got := strings.Count(m.View(), "▸ "); got != 1 {
 		t.Fatalf("selection marker appears on %d rows, want one:\n%s", got, m.View())
 	}
 }
 
-func TestRefreshKeepsWaitingTableRowSelected(t *testing.T) {
-	m, src := waitingTableModel()
-	m.selected = cogforgeMaintenanceID
-	m.selIdx = len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
-	m.selNeeds = false
-	// A new waiting row shifts the table section down without changing the
-	// selected session's section.
-	newWait := agent("s_00000000000000c2", "n_mac", "Mac", "pi", "other-wait", func(a *protocol.AgentView) {
-		a.Status = "busy"
-		waiting(a, -2*time.Minute, protocol.WaitingPermission, "Allow command?")
-	})
-	src.snap.Agents = append(src.snap.Agents, newWait)
-	m = refresh(m, src)
-	want := len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
-	if m.selected != cogforgeMaintenanceID || m.selIdx != want {
-		t.Fatalf("refresh selected %q at %d, want table row %q at %d", m.selected, m.selIdx, cogforgeMaintenanceID, want)
-	}
-}
-
-func TestNeedsAndTableRowsAreVisitedOnceInOrder(t *testing.T) {
-	m, _ := waitingTableModel()
-	vis := m.visible()
-	if got := strings.Count(strings.Join(ids(m), ","), cogforgeMaintenanceID); got != 2 {
-		t.Fatalf("waiting session appears %d times in visible rows, want needs and table rows", got)
-	}
-	m.move(-1 << 20)
-	for i, want := range vis {
-		if m.selIdx != i || m.selected != want.SessionID {
-			t.Fatalf("row %d selected position=%d session=%q, want %q", i, m.selIdx, m.selected, want.SessionID)
-		}
-		m.move(1)
-	}
-}
-
-func selectWaitingRow(m Model, inNeeds bool) Model {
-	index := len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
-	if inNeeds {
-		for i, a := range m.needsRows() {
-			if a.SessionID == cogforgeMaintenanceID {
-				index = i
-				break
-			}
-		}
-	}
-	m.selected, m.selIdx, m.selNeeds = cogforgeMaintenanceID, index, inNeeds
-	return m
-}
-
-func TestWaitingRowsUseTheSameSessionActions(t *testing.T) {
-	for _, inNeeds := range []bool{true, false} {
-		row := "table"
-		if inNeeds {
-			row = "Needs you"
-		}
-		t.Run(row, func(t *testing.T) {
-			m, src := waitingTableModel()
-			m = selectWaitingRow(m, inNeeds)
-			if got := detailText(m); !strings.Contains(got, "cogforge-maintenance") {
-				t.Fatalf("details for the %s row show a different session:\n%s", row, got)
-			}
-
-			answer, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
-			if answer.mode != modeNormal || cmd == nil {
-				t.Fatalf("enter on the %s row opened mode %v (command %t), want the enter action", row, answer.mode, cmd != nil)
-			}
-
-			m, src = waitingTableModel()
-			m = selectWaitingRow(m, inNeeds)
-			_, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-			if cmd != nil || len(src.enters) != 0 {
-				t.Fatal("e still enters a session")
-			}
-			m, _ = waitingTableModel()
-			m = selectWaitingRow(m, inNeeds)
-			composed, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
-			if composed.mode != modeCompose || composed.composeTo != cogforgeMaintenanceID {
-				t.Fatalf("m composed to %q in mode %v", composed.composeTo, composed.mode)
-			}
-		})
-	}
-}
-
-func TestNeedsSectionIsAboveTheMachinesAndOldestFirst(t *testing.T) {
-	m := needsModel(100, 30)
-	text := m.View()
-	ls := lines(text)
-	head, machine := -1, -1
-	for i, l := range ls {
-		switch {
-		case strings.Contains(l, "Needs you (2)"):
-			head = i
-		case strings.Contains(l, "Mac (here)"):
-			machine = i
-		}
-	}
-	if head < 0 || machine < 0 {
-		t.Fatalf("section or machine header missing:\n%s", text)
-	}
-	first, second := head+1, head+2
-	if !(head < first && first < second && second < machine) {
-		t.Fatalf("rows must sit above the machines, oldest first: head=%d machine=%d first=%d second=%d\n%s",
-			head, machine, first, second, text)
-	}
-	if !strings.Contains(ls[first], `"Merge tenebrae-nexus/truenas-stacks #817?"`) || !strings.Contains(ls[first], "12m") {
-		t.Errorf("question row: %q", ls[first])
-	}
-	if !strings.Contains(ls[second], "permission: Bash(git push origin main)") || !strings.Contains(ls[second], "3m") {
-		t.Errorf("permission row: %q", ls[second])
-	}
-	// Both sessions also say "needs you" in the main table.
-	if got := strings.Count(text, "needs you"); got < 2 {
-		t.Fatalf("STATUS does not say needs you: %d times\n%s", got, text)
-	}
-}
-
-func TestNeedsSectionIsHiddenWhenNobodyWaits(t *testing.T) {
-	if got := newModel(80, 24).View(); strings.Contains(got, "Needs you") {
-		t.Fatalf("empty section shown:\n%s", got)
-	}
-	if n := newModel(80, 24).needsHeight(); n != 0 {
-		t.Fatalf("empty section takes %d rows", n)
-	}
-}
-
-func TestNeedsRowsFollowTheFilter(t *testing.T) {
-	m := keys(needsModel(100, 30), "/", "c", "i", "-", "r", "u", "n", "n", "e", "r", "enter")
-	if got := len(m.needsRows()); got != 1 {
-		t.Fatalf("filter left %d needs rows, want 1:\n%s", got, m.View())
-	}
-	if !strings.Contains(m.View(), "Needs you (1)") {
-		t.Fatalf("the heading did not follow the filter:\n%s", m.View())
-	}
-}
-
-// The keys act on the selected row of the section, like on a table row.
-func TestNeedsKeysWorkLikeATableRow(t *testing.T) {
-	m := keys(needsModel(100, 30), "g")
-	if m.selected != "s_0000000000000002" {
-		t.Fatalf("home selected %q, want the oldest wait", m.selected)
-	}
-	m = keys(m, "m")
-	if m.mode != modeCompose || m.composeTo != "s_0000000000000002" {
-		t.Fatalf("m did not compose to the waiting session: mode=%v to=%q", m.mode, m.composeTo)
-	}
-}
-
-func TestNeedsStatusCell(t *testing.T) {
+func TestWaitingStatusCell(t *testing.T) {
 	a := agent("s_1", "n_mac", "Mac", "claude", "alice", func(a *protocol.AgentView) {
 		waiting(a, -time.Minute, protocol.WaitingPermission, "Bash(ls)")
 	})
@@ -317,107 +96,12 @@ func TestNeedsStatusCell(t *testing.T) {
 	}
 }
 
-func TestViewGoldenNeeds(t *testing.T) {
-	m := needsModel(100, 30)
-	golden(t, "view_needs_100x30", m.View())
-}
-
-func TestNeedsViewFitsEverySize(t *testing.T) {
-	m := needsModel(80, 24)
-	for w := 30; w <= 140; w += 11 {
-		for h := 8; h <= 40; h += 4 {
-			v := send(m, tea.WindowSizeMsg{Width: w, Height: h})
-			out := v.View()
-			if ls := lines(out); len(ls) > max(h, 10) {
-				t.Fatalf("%dx%d: %d lines", w, h, len(ls))
-			}
-			for i, l := range lines(out) {
-				if ansi.StringWidth(l) > max(w, 40) {
-					t.Fatalf("%dx%d line %d is %d columns wide: %q", w, h, i, ansi.StringWidth(l), l)
-				}
-			}
-		}
-	}
-}
-
-func TestNeedsStatusDoesNotPushTablePastWidth(t *testing.T) {
-	for _, line := range lines(needsModel(100, 30).View()) {
-		if strings.Contains(line, "NAME") && strings.Contains(line, "STATUS") && strings.HasSuffix(strings.TrimSpace(line), "…") {
-			t.Fatalf("table heading is clipped: %q", line)
-		}
-	}
-}
-
-func TestNeedsRowsShowKindAndRightAlignedAge(t *testing.T) {
-	m := needsModel(100, 30)
-	rows := m.needsLines(100)
-	if !strings.Contains(rows[1], "▍") || !strings.Contains(rows[1], "question:") {
-		t.Fatalf("question: %q", rows[1])
-	}
-	if !strings.HasSuffix(strings.TrimSpace(ansi.Strip(rows[1])), "12m") || !strings.HasSuffix(strings.TrimSpace(ansi.Strip(rows[2])), "3m") {
-		t.Fatalf("ages: %q", rows)
-	}
-}
-
-func TestNeedsMComposesWithoutEntering(t *testing.T) {
-	m := needsModel(100, 30)
-	for i := range m.snap.Agents {
-		if m.snap.Agents[i].SessionID == "s_0000000000000002" {
-			m.snap.Agents[i].Waiting.Options = []string{"Yes", "No"}
-		}
-	}
-	m = keys(m, "g", "m")
-	if m.mode != modeCompose || m.compose.Value() != "" {
-		t.Fatalf("compose mode=%v value=%q", m.mode, m.compose.Value())
-	}
-}
-
-func TestNotifySettingInHelp(t *testing.T) {
-	m := newModel(100, 30)
-	m.tab = settingsTab
-	if !strings.Contains(strings.Join(m.settingsView(100, 40), "\n"), "Desktop notifications: on") {
-		t.Fatal("missing notification setting")
-	}
-}
-
-type notificationSource struct {
-	*fakeSource
-	disabled bool
-}
-
-func (s *notificationSource) NotificationSettings(_ context.Context, disabled *bool) (bool, error) {
-	if disabled != nil {
-		s.disabled = *disabled
-	}
-	return s.disabled, nil
-}
-func TestNotifyHelpToggle(t *testing.T) {
-	src := &notificationSource{fakeSource: &fakeSource{}}
-	m := newModel(100, 30)
-	m.src = src
-	m.tab = settingsTab
-	for i, row := range m.settingsItems() {
-		if row.kind == "notifications" {
-			m.settingsRow = i
-		}
-	}
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	if cmd == nil {
-		t.Fatal("no settings command")
-	}
-	m = next.(Model)
-	m = send(m, cmd())
-	if !src.disabled || !m.snap.NotificationsDisabled || !strings.Contains(strings.Join(m.settingsView(100, 40), "\n"), "Desktop notifications: off") {
-		t.Fatalf("toggle did not persist: %+v", m.snap)
-	}
-}
-
 func TestWorkerWaitingDoesNotNeedOwner(t *testing.T) {
 	m := newModel(80, 24)
 	a := protocol.AgentView{SessionID: "s_worker", Harness: "opencode", Online: true, Status: "busy", Worker: &protocol.WorkerInfo{}, Waiting: &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "Blocked"}}
 	m.snap.Agents = []protocol.AgentView{a}
-	if got := m.needsRows(); len(got) != 0 {
-		t.Fatalf("worker in Needs you: %+v", got)
+	if got := m.inboxRows(); len(got) != 0 {
+		t.Fatalf("worker in Inbox: %+v", got)
 	}
 	if got := m.statusCell(a); got == "needs you" {
 		t.Fatal("worker status needs you")
@@ -437,7 +121,7 @@ func TestWorkerWaitingScreen(t *testing.T) {
 				waiting(a, -time.Minute, protocol.WaitingQuestion, "Which branch?")
 			})}
 			view := ansi.Strip(m.View())
-			if strings.Contains(view, "Needs you") || strings.Contains(view, "needs you") || !strings.Contains(view, "blocked-w") {
+			if strings.Contains(view, "Needs you") || !strings.Contains(view, "blocked-w") {
 				t.Fatalf("unexpected worker screen:\n%s", view)
 			}
 			golden(t, tc.name, m.View())
@@ -445,11 +129,50 @@ func TestWorkerWaitingScreen(t *testing.T) {
 	}
 }
 
-func TestCheckInboxItemShowsInNeedsYou(t *testing.T) {
+func TestCheckInboxItemAppearsInInbox(t *testing.T) {
 	m := newModel(100, 30)
 	m.snap.Agents = []protocol.AgentView{agent("s_check", "n_mac", "test-host", "pi", "checker", nil)}
 	m.inboxItems = []protocol.InboxItem{{ID: "i_check", Kind: "check", SessionID: "s_check", Text: "checker stopped with work left: write the docs", Status: "open", CreatedAt: t0}}
-	if got := m.needsRows(); len(got) != 1 || !strings.Contains(got[0].Waiting.Text, "stopped with work left") {
-		t.Fatalf("check row = %+v", got)
+	rows := m.inboxRows()
+	if len(rows) != 1 || !strings.Contains(rows[0].text, "stopped with work left") {
+		t.Fatalf("check row = %+v", rows)
+	}
+}
+
+func TestInboxRowsFollowTheFilter(t *testing.T) {
+	m := newModel(100, 30)
+	for i := range m.snap.Agents {
+		switch m.snap.Agents[i].SessionID {
+		case "s_0000000000000002":
+			waiting(&m.snap.Agents[i], -12*time.Minute, protocol.WaitingQuestion, "Merge tenebrae-nexus/truenas-stacks #817?")
+		case "s_0000000000000004":
+			waiting(&m.snap.Agents[i], -3*time.Minute, protocol.WaitingPermission, "Bash(git push origin main)")
+		}
+	}
+	if got := len(m.inboxRows()); got != 2 {
+		t.Fatalf("inbox has %d rows, want 2", got)
+	}
+	m = keys(m, "/", "c", "i", "-", "r", "u", "n", "n", "e", "r", "enter")
+	if got := len(m.inboxRows()); got != 1 {
+		t.Fatalf("filter left %d rows, want 1:\n%s", got, m.View())
+	}
+}
+
+func TestInboxViewFitsEverySize(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	m = openInbox(m)
+	for w := 30; w <= 140; w += 11 {
+		for h := 8; h <= 40; h += 4 {
+			v := send(m, tea.WindowSizeMsg{Width: w, Height: h})
+			out := v.View()
+			if ls := lines(out); len(ls) > max(h, 10) {
+				t.Fatalf("%dx%d: %d lines", w, h, len(ls))
+			}
+			for i, l := range lines(out) {
+				if ansi.StringWidth(l) > max(w, 40) {
+					t.Fatalf("%dx%d line %d is %d columns wide: %q", w, h, i, ansi.StringWidth(l), l)
+				}
+			}
+		}
 	}
 }

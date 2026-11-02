@@ -1,8 +1,8 @@
 Keys ───────────────────────────────────────────────────────────────────────────
 
  Global keys
-  1-6                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
-                         Settings
+  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
+                         Settings, Inbox
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed

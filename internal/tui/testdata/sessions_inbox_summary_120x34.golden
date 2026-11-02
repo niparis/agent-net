@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (7) │ 12 online · 1 busy · 7 needs you      14:05:00
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free                                         │
+│  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
+│  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+7 waiting in Inbox (7)
+  NAME               AGENT    PROJECT    MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK         view: all  (v)
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+▸ tenebrae-53        claude   tenebrae   opus-5-5   busy   -     normal -          38%  1.2G
+  strategies         claude   strategies sonnet-5-5 idle   -     normal -         240%  4.6G backtest v2
+  web                opencode shop       sonnet-5   idle   -     normal -            ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net  gpt-6      idle   -     normal -           5%  300M
+  scratch            pi       -          -          shell  -     normal -          <1%   80M
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO · 1 open proposal────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open  m msg  n new  left/right cell  ? help  q quit
