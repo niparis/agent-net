@@ -1,7 +1,7 @@
 # 0044 - Worker cleanup
 
 **Date:** 2026-11-01
-**Status:** Built on a worktree branch.
+**Status:** Built on a worktree branch. Project folder cleanup was removed later; only worker worktree cleanup remains.
 **Context:** Worker worktrees and declared build folders can accumulate after work ends.
 
 ## Decision

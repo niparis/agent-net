@@ -12,38 +12,6 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestCleanupDeclaredFolders(t *testing.T) {
-	project := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(project, ".agent-net"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"cache", "undeclared"} {
-		dir := filepath.Join(project, name)
-		if err := os.Mkdir(dir, 0700); err != nil {
-			t.Fatal(err)
-		}
-		file := filepath.Join(dir, "old")
-		if err := os.WriteFile(file, []byte("x"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		past := time.Now().Add(-3 * time.Hour)
-		if err := os.Chtimes(file, past, past); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(project, ".agent-net", "worker.md"), []byte("cleanup: cache 2h\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	d := &Daemon{cfg: Config{CacheEntryInUse: func(string) (bool, error) { return false, nil }}}
-	d.cleanupProjectFolders(project, time.Now())
-	if _, err := os.Stat(filepath.Join(project, "cache", "old")); !os.IsNotExist(err) {
-		t.Fatalf("declared remains: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(project, "undeclared", "old")); err != nil {
-		t.Fatalf("undeclared removed: %v", err)
-	}
-}
-
 func TestCleanupWorktreeMergedRunningAndUnique(t *testing.T) {
 	project := newRepo(t, "project")
 	state := t.TempDir()
@@ -222,37 +190,6 @@ func TestCleanupWorktreeRemovesLedger(t *testing.T) {
 	}
 }
 
-func TestCleanupDeclaredFolderCannotRemoveWorkerWorktrees(t *testing.T) {
-	project := t.TempDir()
-	stateDir := t.TempDir()
-	root := filepath.Join(stateDir, "worktrees")
-	live := filepath.Join(root, "w_live")
-	if err := os.MkdirAll(live, 0700); err != nil {
-		t.Fatal(err)
-	}
-	file := filepath.Join(live, "old")
-	if err := os.WriteFile(file, []byte("x"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-3 * time.Hour)
-	for _, p := range []string{file, live} {
-		if err := os.Chtimes(p, old, old); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(project, ".agent-net"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(project, ".agent-net", "worker.md"), []byte("cleanup: "+root+" 2h\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	d := &Daemon{cfg: Config{StateDir: stateDir, CacheEntryInUse: func(string) (bool, error) { return false, nil }}, workers: map[string]*worker{"w_live": {id: "w_live"}}}
-	d.cleanupProjectFolders(project, time.Now())
-	if _, err := os.Stat(file); err != nil {
-		t.Fatalf("worker file removed: %v", err)
-	}
-}
-
 func TestCleanupWorktreeKeepsCommitOnlyOnAnotherBranch(t *testing.T) {
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
@@ -352,9 +289,11 @@ func TestCleanupWorktreeForgetsAlreadyRemoved(t *testing.T) {
 	}
 }
 
-func TestCleanupRegisteredProject(t *testing.T) {
+// A cleanup line in a project's worker.md is no longer honoured: the daemon
+// only removes its own worker worktrees.
+func TestCleanupIgnoresDeclaredFolders(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, func(c *Config) { c.CacheEntryInUse = func(string) (bool, error) { return false, nil } })
+	w := startWorkerNode(t, g, shortSet, nil)
 	project := newRepo(t, "project")
 	w.register(t, project)
 	if err := os.MkdirAll(filepath.Join(project, ".agent-net"), 0700); err != nil {
@@ -376,8 +315,8 @@ func TestCleanupRegisteredProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.d.cleanupProjects(context.Background())
-	if _, err := os.Stat(file); !os.IsNotExist(err) {
-		t.Fatalf("registered cleanup failed: %v", err)
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("declared folder trimmed: %v", err)
 	}
 }
 
@@ -575,7 +514,6 @@ func TestCleanupWorktreeUsesConfiguredDefaultBranch(t *testing.T) {
 
 // A project that agent-net only saw (a session works there, nobody registered
 // it) still gets its ended worker worktrees cleaned: they are the daemon's own.
-// Its declared folders are not trimmed without registration.
 func TestCleanupSeenProjectRemovesEndedWorktree(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
