@@ -180,6 +180,8 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdPolicyHook(ctx, args)
 	case "needs-hook": // hidden: the Claude Code "needs you" hook (decision 0016)
 		err = cmdNeedsHook(ctx, args)
+	case "dev": // hidden: developer tools for tuning agent-net itself
+		err = cmdDev(ctx, args)
 	case "version", "--version":
 		fmt.Println(version)
 	case "-h", "--help", "help":
