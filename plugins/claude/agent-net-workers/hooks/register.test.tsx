@@ -39,6 +39,8 @@ test('the band lists a running worker and the status line counts it', async ($, 
           started_at: Math.floor(NOW / 1000) - 120,
           task: 'write the tests',
           title: 'Fix the parser',
+          difficulty_used: 'simple',
+          assessment: { d: 1.9, label: 'simple', picker_label: 'simple' },
         }],
       })),
     }
@@ -56,7 +58,7 @@ test('the band lists a running worker and the status line counts it', async ($, 
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface, ...BAND })
-    expect(await ui.find({ type: 'Text', text: /claude +sonnet-5 +2m/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /claude +sonnet-5 +simple 1\.90 +2m/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Fix the parser/ })).toBeDefined()
     await ui.unmount()
   }
@@ -364,7 +366,7 @@ function running(overrides: Partial<AgentNetWorker> = {}): AgentNetWorker {
     project: 'shop', status: 'busy', online: true, startedAt: NOW / 1000 - 720,
     task: 'Build part 5 of the documentation', title: 'Build the documentation',
     contextTokens: 105000, contextLimit: 475000,
-    tokens: 0, endedAt: 0, endStatus: '', endNote: '', ...overrides,
+    tokens: 0, endedAt: 0, endStatus: '', endNote: '', difficulty: '', ...overrides,
   }
 }
 
@@ -450,4 +452,10 @@ test('high context has the warning and error colours it had before', () => {
   ], NOW / 1000, 100)
   expect(rows[0]?.lastColor).toBe('warning')
   expect(rows[1]?.lastColor).toBe('error')
+})
+
+test('a failed judge shows only the level the picker used', async () => {
+  const rows = formatWorkerRows([running({ difficulty: 'normal' })], NOW / 1000, 120)
+  expect(rows[0].difficulty).toBe('normal')
+  expect(rows[0].line).toMatch(/sol:medium +normal +12m/)
 })

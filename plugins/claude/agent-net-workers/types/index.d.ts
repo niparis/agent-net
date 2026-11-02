@@ -15,10 +15,12 @@ export type AgentNetWorker = {
   endedAt: number
   endStatus: string
   endNote: string
+  // The level the picker used, with the judge's D: "normal 2.60".
+  difficulty: string
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-net-workers': { workers: AgentNetWorker[]; notified: string[] }
+    'agent-net-workers': { workers: AgentNetWorker[]; notified: string[]; 'stale-seconds': number }
   }
 }

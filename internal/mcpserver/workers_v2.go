@@ -78,6 +78,10 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if note, ok := m["model_note"].(string); ok && note != "" {
 			out["model_note"] = note
 		}
+		// The judge's difficulty, worded for the caller to tell its user.
+		if line, ok := m["owner_line"].(string); ok && line != "" {
+			out["owner_line"] = line
+		}
 		if q, ok := m["queue_id"].(string); ok {
 			out["queued"] = map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}
 			return out, nil

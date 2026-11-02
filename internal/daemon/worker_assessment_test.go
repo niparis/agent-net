@@ -40,6 +40,9 @@ func TestWorkerJudgeRunsBeforeStartAndIsStored(t *testing.T) {
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatal("the judge did not run before the start returned")
 	}
+	if want := "Tell your user: worker on fake/m1, difficulty trivial (D 1.20; R2 S1 C1 U1 V1 K1)."; res.OwnerLine != want {
+		t.Fatalf("owner line = %q, want %q", res.OwnerLine, want)
+	}
 	a := storedAssessment(t, g, res.SessionID)
 	if a.Reasoning != 2 || a.Scope != 1 || a.Coupling != 1 || a.Uncertainty != 1 || a.Verification != 1 || a.Risk != 1 || a.D < 1.199 || a.D > 1.201 || a.Label != "trivial" || a.PickerLabel != "trivial" || a.RulesVersion != "2026-11-02.1" || a.JudgeHarness != "opencode" || a.JudgeModel == "" || len(a.Reasons) != 6 || a.Confidence != "high" || a.AssessedAt == 0 {
 		t.Fatalf("assessment: %+v", a)

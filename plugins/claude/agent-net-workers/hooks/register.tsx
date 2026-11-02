@@ -29,6 +29,8 @@ type RawWorker = {
   ended_at?: number
   end_status?: string
   end_note?: string
+  difficulty_used?: string
+  assessment?: { d?: number; label?: string; picker_label?: string; error?: string }
 }
 
 function workerOf(raw: RawWorker): AgentNetWorker | null {
@@ -49,7 +51,17 @@ function workerOf(raw: RawWorker): AgentNetWorker | null {
     endedAt: raw.ended_at ?? 0,
     endStatus: raw.end_status ?? '',
     endNote: raw.end_note ?? '',
+    difficulty: difficultyOf(raw),
   }
+}
+
+// difficultyOf is the level the picker used, with the judge's D when the
+// judge's label was the one used: "normal 2.60", or "normal" alone.
+function difficultyOf(raw: RawWorker): string {
+  const a = raw.assessment
+  const level = a?.picker_label || raw.difficulty_used || ''
+  if (a && !a.error && a.d && a.label === level) return `${level} ${a.d.toFixed(2)}`
+  return level
 }
 
 // isVisible drops a worker the gateway still lists as offline long after it
@@ -104,6 +116,7 @@ export type WorkerRow = {
   title: string
   harness: string
   model: string
+  difficulty: string
   runTime: string
   last: string
   lastColor?: 'warning' | 'error' | 'success' | 'dim'
@@ -135,11 +148,12 @@ export function formatWorkerRows(workers: AgentNetWorker[], now: number, columns
     const runTime = shortDuration(((ended ? w.endedAt : now) - w.startedAt) * 1000)
     const harness = w.harness
     const model = displayModel(w.model)
-    const tail = `${harness} ${model}${' '.repeat(gap)}${runTime}`
+    const difficulty = w.difficulty
+    const tail = `${harness} ${model}${difficulty ? ' '.repeat(gap) + difficulty : ''}${' '.repeat(gap)}${runTime}`
     if (ended) {
-      return { w, state, harness, model, runTime, tail, last: w.endStatus, lastColor: (w.endStatus === 'done' ? 'success' : 'error') as WorkerRow['lastColor'], lastIsContext: false }
+      return { w, state, harness, model, difficulty, runTime, tail, last: w.endStatus, lastColor: (w.endStatus === 'done' ? 'success' : 'error') as WorkerRow['lastColor'], lastIsContext: false }
     }
-    return { w, state, harness, model, runTime, tail, last: ctx?.text ?? '', lastColor: ctx?.color, lastIsContext: ctx !== undefined }
+    return { w, state, harness, model, difficulty, runTime, tail, last: ctx?.text ?? '', lastColor: ctx?.color, lastIsContext: ctx !== undefined }
   })
 
   // One title column for every row, so the harness, model and run time line
@@ -171,6 +185,7 @@ export function formatWorkerRows(workers: AgentNetWorker[], now: number, columns
       title: paddedTitle,
       harness: row.harness,
       model: row.model,
+      difficulty: row.difficulty,
       runTime: row.runTime,
       last: row.last,
       lastColor: row.lastColor,
@@ -324,7 +339,7 @@ export const register: Register = on => {
             <Text wrap="truncate-end">
               <Text color={row.symbolColor === 'dim' ? undefined : row.symbolColor} dimColor={row.symbolColor === 'dim'}>{row.symbol}</Text>
               <Text> {row.title}{row.title.length > 0 ? '  ' : ''}</Text>
-              <Text dimColor>{row.harness} {row.model}  {row.runTime}</Text>
+              <Text dimColor>{row.harness} {row.model}{row.difficulty ? '  ' + row.difficulty : ''}  {row.runTime}</Text>
               <Text color={row.lastColor}>{row.last ? '  ' + row.last : ''}</Text>
             </Text>
           </Box>

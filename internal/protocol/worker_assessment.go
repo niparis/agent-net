@@ -39,6 +39,26 @@ func (a WorkerAssessment) Summary(picker string) string {
 	return a.DifficultyLine() + " (" + picker + ": " + a.PickerLabel + ")"
 }
 
+// WorkerOwnerLine is the line the caller passes on to its user when it starts
+// a worker: the model and the difficulty the judge gave. Empty when the start
+// was not assessed (a continued worker keeps its earlier level).
+func WorkerOwnerLine(a *WorkerAssessment, model string) string {
+	if a == nil {
+		return ""
+	}
+	if model == "" {
+		model = "the chosen model"
+	}
+	level := WorkerLevel(a)
+	switch {
+	case a.Error != "":
+		return fmt.Sprintf("Tell your user: worker on %s, difficulty %s (no assessment: %s).", model, level, a.Error)
+	case level != a.Label:
+		return fmt.Sprintf("Tell your user: worker on %s, difficulty %s (the judge said %s, D %.2f, with low confidence).", model, level, a.Label, a.D)
+	}
+	return fmt.Sprintf("Tell your user: worker on %s, difficulty %s (D %.2f; R%d S%d C%d U%d V%d K%d).", model, level, a.D, a.Reasoning, a.Scope, a.Coupling, a.Uncertainty, a.Verification, a.Risk)
+}
+
 // WorkerLevel is the level the worker chooser uses: the judge's label, or
 // normal when the judge is missing, failed, timed out or has low confidence.
 func WorkerLevel(a *WorkerAssessment) string {

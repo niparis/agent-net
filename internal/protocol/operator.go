@@ -341,6 +341,9 @@ type WorkerStartResult struct {
 	// ModelNote says how a loose model name was resolved ("deepseek 4.1 ->
 	// opencode-go/deepseek-v4.1-flash"). Empty when the name was used as given.
 	ModelNote string `json:"model_note,omitempty"`
+	// OwnerLine is one line for the caller to pass on to its user: the model
+	// and the judge's difficulty. Empty for a continued worker.
+	OwnerLine string `json:"owner_line,omitempty"`
 	// Worktree and Branch are set when the worker got its own worktree.
 	Worktree string `json:"worktree,omitempty"`
 	Branch   string `json:"branch,omitempty"`
