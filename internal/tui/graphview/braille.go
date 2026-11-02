@@ -269,6 +269,43 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			hits[c] = n.Name
 		}
 	}
+	// Explain a wildcard above its target instead of an abbreviated suffix.
+	for _, n := range scene.Nodes {
+		if !n.Wildcard {
+			continue
+		}
+		text := n.WildcardLabel
+		if text == "" {
+			text = "all projects depend"
+		}
+		x, y := point(n.Position)
+		runes := []rune(text)
+		if len(runes) > width {
+			continue
+		}
+		col := max(0, min(width-len(runes), x/2-len(runes)/2))
+		row := -1
+		for candidate := y/4 - 2; candidate >= 0; candidate-- {
+			free := true
+			for i := range runes {
+				if cells[candidate*width+col+i].occupied {
+					free = false
+					break
+				}
+			}
+			if free {
+				row = candidate
+				break
+			}
+		}
+		if row < 0 {
+			continue
+		}
+		for i, r := range runes {
+			put(col+i, row, r, "label")
+			labels[Cell{col + i, row}] = LabelCell{Rune: r, Role: "label"}
+		}
+	}
 	labelNodes := append([]SceneNode(nil), scene.Nodes...)
 	sort.SliceStable(labelNodes, func(i, j int) bool { return labelNodes[i].Selected && !labelNodes[j].Selected })
 	for _, n := range labelNodes {
@@ -280,9 +317,6 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 		if scene.Level == "cards" {
 			label = "[" + label + "]"
-		}
-		if n.Wildcard {
-			label += " ◂all"
 		}
 		labelRole := "labelDim"
 		if n.HasCharter {
@@ -468,6 +502,9 @@ func colorRole(role, text string) string {
 		color = lipgloss.AdaptiveColor{Light: "#242a34", Dark: "#d7dce5"}
 	case "busy", "comet":
 		color = lipgloss.AdaptiveColor{Light: "#246b32", Dark: "#7ccf8a"}
+	}
+	if role == "pixelSelectedLabel" {
+		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#11151c")).Background(lipgloss.Color("#5fc4c9")).Render(text)
 	}
 	if role == "selectedLabel" {
 		return lipgloss.NewStyle().Bold(true).

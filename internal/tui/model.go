@@ -94,14 +94,18 @@ type Model struct {
 	graphState graphview.State
 	graphPixel *graphPixelState
 	// workerForecastMemo is shared by copies of the model, like graphPixel.
-	workerForecastMemo *workerForecastMemo
-	graphGeneration    int
-	graphTalkLoading   bool
-	graphTalkLastID    int64
-	graphTalkPending   []graphview.FeedEvents
-	graphTalkAt        time.Time
-	feed               feed
-	fetching           bool
+	workerForecastMemo     *workerForecastMemo
+	graphGeneration        int
+	graphTalkLoading       bool
+	graphTalkLastID        int64
+	graphTalkPending       []graphview.FeedEvents
+	graphTalkAt            time.Time
+	graphDragging          bool
+	graphDragX, graphDragY int
+	graphLastClick         time.Time
+	graphLastNode          string
+	feed                   feed
+	fetching               bool
 
 	// Stored conversations for the Messages tab. The gateway answers a page;
 	// View only reads convs, never calls the source.
@@ -408,6 +412,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{cmd}
 	wasMouse := m.graphMouseActive()
 	isMouse := nm.graphMouseActive() && !nm.quitting
+	if !isMouse {
+		nm.graphDragging = false
+		nm.graphLastNode = ""
+	}
 	if wasMouse != isMouse {
 		if isMouse {
 			cmds = append(cmds, tea.EnableMouseCellMotion)
@@ -439,18 +447,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
-		if m.graphMouseActive() && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.graphState.Graph != nil {
-			w, h := m.graphSize()
-			scene := graphview.BuildScene(m.graphState, graphview.Viewport{Width: float64(w), Height: float64(h)})
-			for i := range scene.Nodes {
-				scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
-			}
-			hit := (graphview.Braille{}).Render(scene, graphview.Size{Width: w, Height: h}).Hits[graphview.Cell{X: msg.X - 2, Y: msg.Y - 1}]
-			if hit != "" {
-				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: hit})
-			}
-		}
-		return m, nil
+		return m.graphMouse(msg), nil
 	case protocol.UIRequest:
 		return m.applyCTOUI(msg)
 	case tea.WindowSizeMsg:
@@ -477,6 +474,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		g.rendering = false
 		g.size = msg.size
 		g.lines = msg.lines
+		g.hits = msg.hits
 		g.hash = msg.hash
 		g.have = msg.have
 		g.transmit = msg.transmit
@@ -1972,5 +1970,5 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) graphMouseActive() bool {
-	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.help
+	return m.tab == graphTab && m.focus != focusCTO && m.mode == modeNormal && !m.mapOn && !m.help
 }

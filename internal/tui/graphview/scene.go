@@ -10,6 +10,8 @@ import (
 type Viewport struct{ Width, Height float64 }
 type SceneNode struct {
 	Activity                                  int
+	BusySessions                              int
+	WildcardLabel                             string
 	Name, Label, Kind, Role, PreferredSide    string
 	Position                                  Point
 	Selected, Flashing, Wildcard              bool
@@ -25,11 +27,11 @@ type SceneCard struct {
 	Sessions, Incoming, Outgoing int
 }
 type SceneEdge struct {
-	From, To, Arrow Point
-	Kind            string
-	Dashed          bool
-	Selected        bool
-	Dimmed          bool
+	From, To, Arrow  Point
+	Kind, Mode, Rule string
+	Dashed           bool
+	Selected         bool
+	Dimmed           bool
 }
 type SceneTalk struct {
 	From, To Point
@@ -63,15 +65,17 @@ type KeyHint struct {
 
 // Scene contains semantic elements in normalized viewport coordinates.
 type Scene struct {
-	Nodes   []SceneNode
-	Edges   []SceneEdge
-	Talk    []SceneTalk
-	Comets  []SceneComet
-	Ripples []SceneRipple
-	Level   string
-	Feed    []Message
-	Paused  bool
-	Hints   []KeyHint
+	Nodes      []SceneNode
+	Edges      []SceneEdge
+	Talk       []SceneTalk
+	Comets     []SceneComet
+	Ripples    []SceneRipple
+	Level      string
+	Feed       []Message
+	Paused     bool
+	Hints      []KeyHint
+	ZoomRatio  float64
+	GridOrigin Point
 }
 
 // BuildScene derives a renderer-independent view without changing state.
@@ -96,16 +100,6 @@ func BuildScene(s State, viewport Viewport) Scene {
 		cam = g.Fit(int(viewport.Width), int(viewport.Height))
 	}
 	scene.Level = cam.Level()
-	if ownerVisible {
-		sx, sy := cam.ScaleX, cam.ScaleY
-		if sx == 0 {
-			sx = 1
-		}
-		if sy == 0 {
-			sy = 1
-		}
-		g.Positions[protocol.GraphVoiceOwner] = Point{X: cam.Center.X - .4*viewport.Width/(cam.Zoom*2*sx), Y: cam.Center.Y - .35*viewport.Height/(cam.Zoom*sy)}
-	}
 	project := func(p Point) Point {
 		sx, sy := cam.ScaleX, cam.ScaleY
 		if sx == 0 {
@@ -116,6 +110,29 @@ func BuildScene(s State, viewport Viewport) Scene {
 		}
 		return Point{0.5 + (p.X-cam.Center.X)*cam.Zoom*2*sx/viewport.Width, 0.5 + (p.Y-cam.Center.Y)*cam.Zoom*sy/viewport.Height}
 	}
+	// Screen-pinned markers have world positions only to share projection with
+	// edges and traffic. They do not participate in layout or fitting.
+	sx, sy := cam.ScaleX, cam.ScaleY
+	if sx == 0 {
+		sx = 1
+	}
+	if sy == 0 {
+		sy = 1
+	}
+	pin := func(y float64) Point {
+		return Point{cam.Center.X + (2.5-viewport.Width/2)/(cam.Zoom*2*sx), cam.Center.Y + (y-viewport.Height/2)/(cam.Zoom*sy)}
+	}
+	if ownerVisible {
+		g.Positions[protocol.GraphVoiceOwner] = pin(2)
+	}
+	if _, ok := g.Positions[protocol.CTONodeName]; ok {
+		g.Positions[protocol.CTONodeName] = pin(4)
+	}
+	scene.ZoomRatio = 1
+	if cam.FitZoom > 0 {
+		scene.ZoomRatio = cam.Zoom / cam.FitZoom
+	}
+	scene.GridOrigin = project(Point{})
 	now := s.Now
 	if s.Paused {
 		now = s.PausedAt
@@ -139,10 +156,14 @@ func BuildScene(s State, viewport Viewport) Scene {
 		for _, session := range n.Sessions {
 			if session.Status == "busy" {
 				role = "busy"
-				break
 			}
 		}
 		node := SceneNode{Name: n.Name, Label: n.Name, Kind: n.Kind, Role: role, PreferredSide: "right", Position: project(g.Positions[n.Name]), Selected: n.Name == selected, Flashing: flash[n.Name], HasCharter: n.Charter != (protocol.Charter{}), Architect: n.Kind == "architect", HasSessions: n.SessionCount > 0 || len(n.Sessions) > 0, Pulse: role == "busy" && !s.ReducedMotion && now.UnixMilli()%1000 >= 500, ShowCard: showCards && n.Charter != (protocol.Charter{}), Card: SceneCard{Name: n.Name, Maturity: n.Charter.Maturity, Purpose: n.Charter.Purpose, Sessions: max(n.SessionCount, len(n.Sessions))}}
+		for _, session := range n.Sessions {
+			if session.Status == "busy" {
+				node.BusySessions++
+			}
+		}
 		if role == "busy" {
 			if s.ReducedMotion {
 				node.PulsePhase = .5
@@ -161,13 +182,23 @@ func BuildScene(s State, viewport Viewport) Scene {
 		for _, e := range g.Edges {
 			if e.From == "*" && e.To == n.Name {
 				node.Wildcard = true
+				node.WildcardLabel = "all projects " + e.Kind
+				if e.Kind == "depends" {
+					node.WildcardLabel = "all projects depend"
+				}
+				if e.Mode != "" {
+					node.WildcardLabel += " · " + e.Mode
+				}
+				if e.Rule != "" {
+					node.WildcardLabel += " · " + e.Rule
+				}
 				break
 			}
 		}
 		scene.Nodes = append(scene.Nodes, node)
 	}
 	if p, ok := g.Positions[protocol.GraphVoiceOwner]; ok {
-		scene.Nodes = append(scene.Nodes, SceneNode{Name: protocol.GraphVoiceOwner, Label: "you", Role: "none", Position: project(p), Activity: 1})
+		scene.Nodes = append(scene.Nodes, SceneNode{Name: protocol.GraphVoiceOwner, Label: "you", Kind: "owner", Role: "voice", Position: project(p), Activity: 1, Selected: selected == protocol.GraphVoiceOwner})
 	}
 	counts := map[string]int{}
 	for _, t := range s.Talk {
@@ -198,7 +229,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 		for _, talk := range s.Talk {
 			a, ok := g.Positions[talk.From]
 			b, ok2 := g.Positions[talk.To]
-			if !ok || !ok2 || talk.Count <= 0 && !talk.Voice {
+			if !ok || !ok2 || talk.Count <= 0 && !talk.Voice || !s.ShowAllTalk && (selected == "" || talk.From != selected && talk.To != selected) {
 				continue
 			}
 			bucket := 1
@@ -225,7 +256,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 		}
 		a, b = project(a), project(b)
 		accented := selected != "" && (e.From == selected || e.To == selected)
-		scene.Edges = append(scene.Edges, SceneEdge{From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Dashed: e.Kind == "governs", Selected: accented, Dimmed: selected != "" && !accented})
+		scene.Edges = append(scene.Edges, SceneEdge{From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Mode: e.Mode, Rule: e.Rule, Dashed: e.Kind == "governs", Selected: accented, Dimmed: selected != "" && !accented})
 	}
 	for _, c := range comets {
 		a, b := g.Positions[c.From], g.Positions[c.To]

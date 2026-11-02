@@ -39,6 +39,7 @@ type graphPixelState struct {
 	size         graphview.Size
 	key          [32]byte
 	lines        []string
+	hits         map[graphview.Cell]string
 	transmit     string
 	// shown is the image id the placeholders point at now. Frames alternate
 	// between imageID and imageID+1: a new frame is sent under the other id
@@ -61,6 +62,7 @@ type graphFrameMsg struct {
 	key      [32]byte
 	size     graphview.Size
 	lines    []string
+	hits     map[graphview.Cell]string
 	hash     [32]byte
 	have     bool
 	transmit string
@@ -137,7 +139,7 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
 		return nil
 	}
-	if m.tab != graphTab || m.mapOn || m.help || m.graphState.Graph == nil {
+	if m.tab != graphTab || m.mode != modeNormal || m.mapOn || m.help || m.graphState.Graph == nil {
 		return nil
 	}
 	if g.rendering {
@@ -181,9 +183,10 @@ func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [3
 			return graphFrameMsg{id: shown, key: key, size: size, hash: previousHash, have: previousHave}
 		}
 		hash := graphview.HashImage(img)
+		labels, hits := graphview.PixelLayout(scene, size, metrics)
 		if previousHave && hash == previousHash && shown != 0 {
-			lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, shown, graphview.StyleRole)
-			return graphFrameMsg{id: shown, key: key, size: size, lines: lines, hash: hash, have: true, transmit: previousTransmit}
+			lines := graphview.PlaceholderLines(labels, size, shown, graphview.StyleRole)
+			return graphFrameMsg{id: shown, key: key, size: size, lines: lines, hits: hits, hash: hash, have: true, transmit: previousTransmit}
 		}
 		// Send the frame under the other id, then delete the one on screen:
 		// the placeholders switch to the new id in the same write.
@@ -191,8 +194,8 @@ func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [3
 		if shown != 0 {
 			transmit += graphview.DeleteImage(shown)
 		}
-		lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, next, graphview.StyleRole)
-		return graphFrameMsg{id: next, key: key, size: size, lines: lines, hash: hash, have: true, transmit: transmit}
+		lines := graphview.PlaceholderLines(labels, size, next, graphview.StyleRole)
+		return graphFrameMsg{id: next, key: key, size: size, lines: lines, hits: hits, hash: hash, have: true, transmit: transmit}
 	}
 }
 
@@ -267,6 +270,8 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var action graphview.Action
 	switch key {
+	case "show all traffic":
+		action = graphview.ToggleTalk{}
 	case "find":
 		m.mp.finding, m.mp.findQuery = true, ""
 	case "zoom in":
@@ -447,7 +452,9 @@ func graphHintLine(w int) string {
 	zoom.label, zoom.prio = "zoom", 1
 	card := bindingHint(contextGraph, "open card")
 	card.prio = 2
-	hs := []hint{direction, zoom, card, bindingHint(contextGraph, "help")}
+	traffic := bindingHint(contextGraph, "show all traffic")
+	traffic.prio = 2
+	hs := []hint{direction, zoom, traffic, card, bindingHint(contextGraph, "help")}
 	text := func() string {
 		parts := make([]string, 0, len(hs))
 		for _, h := range hs {
@@ -489,4 +496,69 @@ func edgeCount(n int) string {
 		return " · 1 edge"
 	}
 	return fmt.Sprintf(" · %d edges", n)
+}
+
+// graphMouse handles cell coordinates relative to the graph body. Pixel hit
+// testing uses the actual node radius; Braille label hits remain available.
+func (m Model) graphMouse(msg tea.MouseMsg) Model {
+	if !m.graphMouseActive() || m.graphState.Graph == nil {
+		return m
+	}
+	w, h := m.graphSize()
+	x, y := msg.X-2, msg.Y-1
+	inside := x >= 0 && y >= 0 && x < w && y < h
+	if msg.Action == tea.MouseActionRelease {
+		m.graphDragging = false
+		return m
+	}
+	if msg.Action == tea.MouseActionMotion && m.graphDragging {
+		m.graphState, _ = graphview.Update(m.graphState, graphview.DragPan{DX: float64(msg.X - m.graphDragX), DY: float64(msg.Y - m.graphDragY)})
+		m.graphDragX, m.graphDragY = msg.X, msg.Y
+		return m
+	}
+	if !inside || msg.Action != tea.MouseActionPress {
+		return m
+	}
+	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		factor := 1.25
+		if msg.Button == tea.MouseButtonWheelDown {
+			factor = 1 / factor
+		}
+		m.smoothCamera()
+		m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
+		m.graphState, _ = graphview.Update(m.graphState, graphview.ZoomAt{X: float64(x) + .5, Y: float64(y) + .5, Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}, Factor: factor})
+		return m
+	}
+	if msg.Button != tea.MouseButtonLeft {
+		return m
+	}
+	size := graphview.Size{Width: w, Height: h}
+	scene := m.graphScene(m.graphState, size)
+	hit := ""
+	pixelReady := m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.ready && m.graphPixel.size == size
+	if pixelReady {
+		hit = graphview.PixelHit(scene, size, graphview.PixelMetrics{CellWidth: m.graphPixel.cellW, CellHeight: m.graphPixel.cellH}, graphview.Cell{X: x, Y: y})
+		if hit == "" {
+			hit = m.graphPixel.hits[graphview.Cell{X: x, Y: y}]
+		}
+	} else {
+		hit = (graphview.Braille{}).Render(scene, size).Hits[graphview.Cell{X: x, Y: y}]
+	}
+	if hit == "" {
+		m.graphDragging = true
+		m.graphDragX, m.graphDragY = msg.X, msg.Y
+		m.graphLastNode = ""
+		return m
+	}
+	now := m.now()
+	double := hit == m.graphLastNode && !m.graphLastClick.IsZero() && now.Sub(m.graphLastClick) >= 0 && now.Sub(m.graphLastClick) <= 400*time.Millisecond
+	m.graphLastNode, m.graphLastClick = hit, now
+	m.smoothCamera()
+	m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: now})
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: hit})
+	if double {
+		m.graphState, _ = graphview.Update(m.graphState, graphview.CenterNode{Name: hit})
+		m.graphLastNode = ""
+	}
+	return m
 }

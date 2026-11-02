@@ -3,6 +3,8 @@ package graphview
 import (
 	"math"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // cameraEase is how long a zoom, fit or selection move takes. It is short
@@ -75,7 +77,11 @@ func (s State) easeToSelection() State {
 	if !s.Smooth || s.Graph == nil {
 		return s
 	}
-	p, ok := s.Graph.Positions[s.Graph.Selected()]
+	selected := s.Graph.Selected()
+	if selected == protocol.GraphVoiceOwner || selected == protocol.CTONodeName {
+		return s
+	}
+	p, ok := s.Graph.Positions[selected]
 	if !ok {
 		return s
 	}

@@ -16,7 +16,7 @@ func renderGraph(b Braille, g *Graph, cam Camera, width, height int, now time.Ti
 func TestBrailleGraphShowsNodesAndWildcard(t *testing.T) {
 	g := New(fixture())
 	out := strings.Join(renderGraph(Braille{}, g, g.Fit(60, 15), 60, 15, time.Time{}), "\n")
-	for _, want := range []string{"a", "b", "c", "◂all"} {
+	for _, want := range []string{"a", "b", "c", "all projects governs"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in\n%s", want, out)
 		}
@@ -34,7 +34,7 @@ func TestBrailleFeatures(t *testing.T) {
 	b := Braille{Color: func(role, text string) string { roles[role] = true; return text }}
 	now := time.Unix(11, 0)
 	out := strings.Join(renderGraph(b, g, Camera{Zoom: 2, FitZoom: 2}, 60, 20, now), "\n")
-	for _, want := range []string{"●", "○", "◂all", "→"} {
+	for _, want := range []string{"●", "○", "all projects deploys", "→"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
 		}
