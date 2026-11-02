@@ -128,6 +128,7 @@ func TestJudgeOpenCodeUsesPrivateServerAndDisabledSocket(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv(envFakeOpenCodeReply, reply)
 	t.Setenv("FAKE_OPENCODE_RUN_RECORD", record)
+	t.Setenv("PWD", t.TempDir())
 	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task")
 	if err != nil || a.Label != "trivial" {
 		t.Fatalf("judge: %+v %v", a, err)
@@ -140,6 +141,8 @@ func TestJudgeOpenCodeUsesPrivateServerAndDisabledSocket(t *testing.T) {
 		Args         []string `json:"args"`
 		Socket       string   `json:"socket"`
 		SocketExists bool     `json:"socket_exists"`
+		PWD          string   `json:"pwd"`
+		Dir          string   `json:"dir"`
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		t.Fatal(err)
@@ -149,6 +152,10 @@ func TestJudgeOpenCodeUsesPrivateServerAndDisabledSocket(t *testing.T) {
 	}
 	if rec.Socket == "" || rec.Socket == parentSocket || rec.SocketExists || !filepath.IsAbs(rec.Socket) {
 		t.Errorf("judge socket: %q exists=%v", rec.Socket, rec.SocketExists)
+	}
+	// OpenCode files the session under $PWD, so it must be the judge's folder.
+	if rec.PWD == "" || rec.PWD != rec.Dir {
+		t.Errorf("judge PWD %q, folder %q", rec.PWD, rec.Dir)
 	}
 }
 

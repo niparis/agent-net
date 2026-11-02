@@ -344,7 +344,10 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	env := workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock")})
+	// OpenCode files the session under $PWD when it is set, not under the
+	// process folder; an inherited PWD would put the judge's session in the
+	// caller's folder, where the cleanup below does not look.
+	env := workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock"), "PWD": dir})
 	// Even a standalone run saves its session in OpenCode's shared store, where
 	// it shows as an idle session. Delete it once the judge is done.
 	defer deleteOpenCodeSessions(bin, dir, env)

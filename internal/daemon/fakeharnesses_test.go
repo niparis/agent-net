@@ -95,11 +95,14 @@ func fakeOpenCodeRun() {
 	if path := os.Getenv("FAKE_OPENCODE_RUN_RECORD"); path != "" {
 		socket := os.Getenv("AGENT_NET_SOCKET")
 		_, err := os.Stat(socket)
+		wd, _ := os.Getwd()
 		rec := struct {
 			Args         []string `json:"args"`
 			Socket       string   `json:"socket"`
 			SocketExists bool     `json:"socket_exists"`
-		}{os.Args[1:], socket, err == nil}
+			PWD          string   `json:"pwd"`
+			Dir          string   `json:"dir"`
+		}{os.Args[1:], socket, err == nil, os.Getenv("PWD"), wd}
 		raw, _ := json.Marshal(rec)
 		_ = os.WriteFile(path, raw, 0600)
 	}
