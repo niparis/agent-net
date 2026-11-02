@@ -15,10 +15,10 @@
 ╭─ci-runner asks───────────────────────────────────────────────────────────────╮
 │ which branch?                                                                │
 │ session ci-runner · agent-net on build-vm · 10 minutes ago                   │
-│ enter details  a approve  r refuse  t answer                                 │
+│ t answer  enter details                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO · 1 open proposal────────────────────────────────────────────────────────╮
 │                                                                              │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter details  a approve  r refuse  t answer  ↑↓ select  ? help
+t answer  enter details  ↑↓ select  ? help

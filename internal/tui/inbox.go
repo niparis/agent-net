@@ -521,11 +521,11 @@ func (m Model) inboxTabView(w, h int) []string {
 	}
 
 	avail := max(h-len(out), 1)
-	display, selected := m.inboxBoxes(w)
 	if w >= 100 {
 		panelW := min(max(w*2/5, 30), 48)
-		leftW := max(w-panelW, 20)
-		panelW = w - leftW
+		leftW := max(w-panelW-1, 20)
+		panelW = w - leftW - 1
+		display, selected := m.inboxBoxes(leftW)
 		panelH := min(avail, max(len(display), 12))
 		left := windowLines(display, selected, panelH)
 		panel := m.inboxPanel(panelW, panelH)
@@ -537,7 +537,7 @@ func (m Model) inboxTabView(w, h int) []string {
 			if i < len(panel) {
 				r = panel[i]
 			}
-			out = append(out, padStyled(l, leftW)+padStyled(r, panelW))
+			out = append(out, padStyled(l, leftW)+" "+padStyled(r, panelW))
 		}
 		for len(out) < h {
 			out = append(out, "")
@@ -545,6 +545,7 @@ func (m Model) inboxTabView(w, h int) []string {
 		return out[:max(h, 1)]
 	}
 
+	display, selected := m.inboxBoxes(w)
 	panelH := min(8, max(avail-min(len(display), avail), 0))
 	if panelH < 3 && avail > 6 {
 		panelH = 3
@@ -1173,7 +1174,8 @@ func (m Model) inboxResolveOutcome(row inboxRow, action string) tea.Cmd {
 	}
 }
 
-// inboxItemHints lists only the keys that act on the selected row.
+// inboxItemHints lists only the keys that act on the selected row. A key
+// that acts on every proposal or on the whole inbox is not listed here.
 func (m Model) inboxItemHints(row inboxRow) []hint {
 	switch row.kind {
 	case "held":
@@ -1184,16 +1186,18 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 		open := bindingHint(contextInbox, "details")
 		open.label = "open session"
 		return []hint{open}
+	case "question":
+		return []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "details")}
+	case "approval":
+		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "details")}
+	case "proposal":
+		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse")}
 	case "outcome":
 		return []hint{bindingHint(contextInbox, "let stand"), bindingHint(contextInbox, "overrule")}
 	case "learned":
 		return []hint{{key: "a", label: "accept", prio: 1}, {key: "r", label: "reject", prio: 1}}
-	case "proposal":
-		return []hint{bindingHint(contextInbox, "details"), bindingHint(contextInbox, "approve"), {key: "r", label: "decline", prio: 1}, bindingHint(contextInbox, "approve all")}
 	case "notice":
-		return []hint{bindingHint(contextInbox, "details"), bindingHint(contextInbox, "dismiss")}
-	case "approval", "question":
-		return []hint{bindingHint(contextInbox, "details"), bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "answer")}
+		return []hint{bindingHint(contextInbox, "dismiss")}
 	}
 	return nil
 }

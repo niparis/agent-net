@@ -1,17 +1,17 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (7) │ 12 online · 1 busy · 7 needs you      14:05:00
-╭─Needs your answer · 3─────────────────────────────────────────────────╭─ci-runner asks───────────────────────────────╮
-│ ▸ ci-runner     asks: which branch?                                   │ which branch?                                │
-│   ci-runner     wants approval: deploy abc                            │                                              │
-│   alice         held request → strategies                             │ session ci-runner · agent-net on build-vm    │
-╰───────────────────────────────────────────────────────────────────────│ 10 minutes ago                               │
-╭─Proposals · 2─────────────────────────────────────────────────────────│                                              │
-│   CTO           start a Pi session in shop, on Mac                    │ enter details  a approve  r refuse  t answer │
-│   ops (learned) add "deploys" to what it refuses                      │                                              │
-╰───────────────────────────────────────────────────────────────────────│                                              │
-╭─For your information · 2──────────────────────────────────────────────│                                              │
-│   ops → app     deploy app refused: "not now"                         │                                              │
-│   cursor        connected as a bot (www.cursor.com)                   │                                              │
-╰───────────────────────────────────────────────────────────────────────╰──────────────────────────────────────────────╯
+╭─Needs your answer · 3───────────────────────────────────────────────╮ ╭─ci-runner asks───────────────────────────────╮
+│ ▸ ci-runner     asks: which branch?                             10m │ │ which branch?                                │
+│   ci-runner     wants approval: deploy abc                       9m │ │                                              │
+│   alice         held request → strategies                        5m │ │ session ci-runner · agent-net on build-vm    │
+╰─────────────────────────────────────────────────────────────────────╯ │ 10 minutes ago                               │
+╭─Proposals · 2───────────────────────────────────────────────────────╮ │                                              │
+│   CTO           start a Pi session in shop, on Mac               8m │ │ t answer  enter details                      │
+│   ops (learned) add "deploys" to what it refuses                 7m │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─For your information · 2────────────────────────────────────────────╮ │                                              │
+│   ops → app     deploy app refused: "not now"                    6m │ │                                              │
+│   cursor        connected as a bot (www.cursor.com)             11m │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter details  a approve  r refuse  t answer  ↑↓ select  ? help
+t answer  enter details  ↑↓ select  ? help

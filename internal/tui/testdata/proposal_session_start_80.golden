@@ -8,7 +8,7 @@
 │                                                                              │
 │ CTO · Mac · 1079 days ago                                                    │
 │                                                                              │
-│ enter details  a approve  r decline  A approve all                           │
+│ a approve  r refuse                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -31,4 +31,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter details  a approve  r decline  A approve all  ↑↓ select  ? help
+a approve  r refuse  ↑↓ select  ? help
