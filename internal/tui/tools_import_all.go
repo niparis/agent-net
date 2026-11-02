@@ -45,15 +45,34 @@ func (m Model) outsideSkillsCount() int {
 }
 func (m Model) importAllSkills() (tea.Model, tea.Cmd) {
 	var jobs []assignJob
+	names, skipped := map[string]bool{}, map[string]bool{}
+	var reasons []string
 	for _, c := range m.outsideSkillCopies() {
+		if why := m.skillCopyLockReason(c.Item); why != "" {
+			skipped[c.Name] = true
+			reasons = append(reasons, c.Name+": "+why)
+			continue
+		}
 		c := c
+		names[c.Name] = true
 		jobs = append(jobs, assignJob{name: c.Name, item: c.Item, imp: &c, importOnly: true})
 	}
+	notes := []string{"Backups kept in the store. Nothing is turned off.", "Every installed copy stays where it is, on for the same sessions."}
+	if len(skipped) > 0 {
+		notes = append(notes, fmt.Sprintf("%s skipped: too large to manage.", nounCount(len(skipped), "skill", "skills")))
+		notes = append(notes, reasons...)
+	}
 	if len(jobs) == 0 {
-		m.toolsToast("No skills outside agent-net to import.")
+		if len(skipped) == 0 {
+			m.toolsToast("No skills outside agent-net to import.")
+			return m, nil
+		}
+		md := m.openModal("Import all · no skills can be imported")
+		md.lines = notes
+		md.foot = []string{"esc", "back"}
 		return m, nil
 	}
-	return m.openAssign(fmt.Sprintf("Import all · %d skills", m.outsideSkillsCount()), "import", jobs, []string{"Backups kept in the store. Nothing is turned off.", "Every installed copy stays where it is, on for the same sessions."})
+	return m.openAssign(fmt.Sprintf("Import all · %d skills", len(names)), "import", jobs, notes)
 }
 
 func (m Model) outsideToolStatus(r toolsdiff.Row) string {

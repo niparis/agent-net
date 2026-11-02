@@ -831,6 +831,11 @@ When skills are installed outside agent-net, the view offers `i` to import
 them all in one review. Confirmation saves each distinct version in the store.
 Installed copies and their session availability stay unchanged; no assignment
 or installation is applied. Repo skills are excluded.
+Skills whose inventory manifest file sizes sum above the 2 MB import limit
+show a lock and cannot be toggled here. Each copy is measured separately;
+no bundle is packed for this check. Import all skips those skills and lists
+the skipped count, names, sizes and limit in its review. Missing manifests
+do not prove that a skill fits; the import service still checks the bundle.
 `/` filters skill names. Tab switches between this view and all tools,
 which keeps the action menu, comparison, filters and `n` to add a tool.
 Every Tools screen lists all its local keys in the key bar, wrapping to a

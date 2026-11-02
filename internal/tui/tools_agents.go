@@ -71,6 +71,9 @@ func (m Model) agentJobs(project string) ([]assignJob, string) {
 		if !ok {
 			continue
 		}
+		if why := m.skillLockReason(r); why != "" {
+			return nil, r.Name + ": " + why
+		}
 		target := protocol.ToolAssignment{Scope: "projects"}
 		if r.Item.Desired != nil {
 			target = r.Item.Desired.Assignment
@@ -217,6 +220,10 @@ func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		r := rows[min(m.tl.skillRow, len(rows)-1)]
+		if why := m.skillLockReason(r); why != "" {
+			m.toolsToast(why)
+			break
+		}
 		on, repo := m.agentSkillState(r.Name, project)
 		if repo == "" && r.Origin == toolsdiff.OriginRepo {
 			repo = r.Repo
@@ -285,6 +292,17 @@ func (m Model) agentToolsView(w, h int) []string {
 		banner = append(banner, lines...)
 		h -= len(lines)
 	}
+	if m.activeToast() == "" && !m.tl.agentDiscard {
+		rows := m.agentSkills()
+		if len(rows) > 0 {
+			r := rows[min(m.tl.skillRow, len(rows)-1)]
+			if why := m.skillLockReason(r); why != "" {
+				lines := wrapStyled("🔒 "+r.Name+": "+why, w)
+				banner = append(banner, lines...)
+				h -= len(lines)
+			}
+		}
+	}
 	left := min(25, max(20, w/5))
 	right := w - left
 	project := m.agentProject()
@@ -330,6 +348,10 @@ func (m Model) agentToolsView(w, h int) []string {
 		}
 		if repo != "" {
 			state = "in the " + repo + " repo (always on)"
+		}
+		if why := m.skillLockReason(r); why != "" {
+			check = "🔒  "
+			state = why
 		}
 		name := r.Name
 		if pending, ok := m.tl.agentPending[project][r.Name]; ok {
