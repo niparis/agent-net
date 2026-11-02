@@ -152,6 +152,105 @@ test('a missing or failing agent-net shows nothing', async ($, on) => {
   expect(statuses.at(-1)).toBeUndefined()
 })
 
+test('a failed poll keeps the last worker rows until a successful poll replaces them', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const statuses: Array<string | undefined> = []
+  let calls = 0
+  on('process.run', () => {
+    calls += 1
+    if (calls === 2) {
+      return { value: { exitCode: 1, stdout: '', stderr: 'busy', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    return { value: runResult(JSON.stringify({ workers: [{
+      session_id: 's_keep123456', harness: 'claude', model: 'claude-sonnet-5', status: 'busy', online: true,
+      started_at: Math.floor(NOW / 1000) - 120, task: 'keep this worker visible',
+    }] })) }
+  })
+  on('ui.status', (_, e) => { statuses.push(e.text); return { value: undefined } })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  await clock.advance(3000)
+  const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /keep this worker visible/ })).toBeDefined()
+  expect(statuses.at(-1)).toBe('agent-net: 1 busy')
+  await ui.unmount()
+  await clock.advance(3000)
+  const recovered = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await recovered.find({ type: 'Text', text: /keep this worker visible/ })).toBeDefined()
+  expect(statuses.at(-1)).toBe('agent-net: 1 busy')
+  await recovered.unmount()
+})
+
+test('failed polls mark the last good band stale after more than 15 seconds and a good poll clears it', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const statuses: Array<string | undefined> = []
+  let calls = 0
+  on('process.run', () => {
+    calls += 1
+    if (calls > 1 && calls < 9) {
+      return { value: { exitCode: 1, stdout: '', stderr: 'busy', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    return { value: runResult(JSON.stringify({ workers: [{
+      session_id: 's_stale12345', harness: 'claude', model: 'claude-sonnet-5', status: 'busy', online: true,
+      started_at: Math.floor(NOW / 1000) - 120, task: 'stale worker remains visible',
+    }] })) }
+  })
+  on('ui.status', (_, e) => { statuses.push(e.text); return { value: undefined } })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  await clock.advance(21000)
+  const stale = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await stale.find({ type: 'Text', text: /agent-net workers · not updated for 18s/ })).toBeDefined()
+  expect(await stale.find({ type: 'Text', text: /stale worker remains visible/ })).toBeDefined()
+  expect(statuses.at(-1)).toBe('agent-net: 1 busy · not updated for 18s')
+  await stale.unmount()
+  await clock.advance(3000)
+  const fresh = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await fresh.find({ type: 'Text', text: /agent-net workers/ })).toBeDefined()
+  expect(await fresh.find({ type: 'Text', text: /not updated for/ })).toBeUndefined()
+  expect(statuses.at(-1)).toBe('agent-net: 1 busy')
+  await fresh.unmount()
+})
+
+test('a successful empty poll clears the worker band', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const statuses: Array<string | undefined> = []
+  let calls = 0
+  on('process.run', () => {
+    calls += 1
+    return { value: runResult(JSON.stringify(calls === 1 ? { workers: [{
+      session_id: 's_empty12345', harness: 'claude', model: 'claude-sonnet-5', status: 'busy', online: true,
+      started_at: Math.floor(NOW / 1000) - 120, task: 'remove this worker',
+    }] } : { workers: [] })) }
+  })
+  on('ui.status', (_, e) => { statuses.push(e.text); return { value: undefined } })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  await clock.advance(3000)
+  const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /remove this worker/ })).toBeUndefined()
+  expect(statuses.at(-1)).toBeUndefined()
+  await ui.unmount()
+})
+
 test('the band adds the context window after the run time', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   on('process.run', () => ({

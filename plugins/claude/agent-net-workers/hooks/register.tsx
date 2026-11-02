@@ -5,6 +5,7 @@ import type { AgentNetWorker } from '../types'
 
 const workersAtom = atom({ plugin: 'agent-net-workers', key: 'workers' } as const, [] as AgentNetWorker[])
 const notifiedAtom = atom({ plugin: 'agent-net-workers', key: 'notified' } as const, [] as string[])
+const staleSecondsAtom = atom({ plugin: 'agent-net-workers', key: 'stale-seconds' } as const, 0)
 
 const POLL_MS = 3000
 const RUN_TIMEOUT_MS = 2000
@@ -201,19 +202,30 @@ function statusText(rows: AgentNetWorker[]): string | undefined {
   return `agent-net: ${parts.join(', ')}`
 }
 
-async function clear($: EngineInterface): Promise<void> {
-  await update($, workersAtom, () => [])
-  $.ui.status(undefined)
+type PollState = { lastGoodAt?: number; failedAt?: number }
+
+async function failedPoll($: EngineInterface, state: PollState): Promise<void> {
+  if (state.lastGoodAt === undefined) return
+  const now = await $.clock.now()
+  state.failedAt ??= now
+  const elapsedMs = now - state.failedAt
+  if (elapsedMs <= 15_000) return
+
+  const seconds = Math.floor(elapsedMs / 1000)
+  await update($, staleSecondsAtom, () => seconds)
+  const rows = await read($, workersAtom)
+  const status = statusText(rows)
+  $.ui.status(status ? `${status} · not updated for ${seconds}s` : undefined)
 }
 
-async function poll($: EngineInterface, sessionId: string): Promise<void> {
+async function poll($: EngineInterface, sessionId: string, state: PollState): Promise<void> {
   try {
     const { exitCode, stdout } = await $.process.run(
       ['agent-net', 'workers', '-json', '-recent', '-owner-claude', sessionId],
       { timeoutMs: RUN_TIMEOUT_MS },
     )
     if (exitCode !== 0) {
-      await clear($)
+      await failedPoll($, state)
       return
     }
     const parsed = JSON.parse(stdout) as { workers?: RawWorker[] }
@@ -222,12 +234,15 @@ async function poll($: EngineInterface, sessionId: string): Promise<void> {
       const worker = workerOf(raw)
       if (worker && isVisible(worker)) rows.push(worker)
     }
+    state.lastGoodAt = await $.clock.now()
+    state.failedAt = undefined
     await update($, workersAtom, () => rows)
+    await update($, staleSecondsAtom, () => 0)
     $.ui.status(statusText(rows))
     await notifyEnds($, rows)
   } catch {
-    // agent-net is not installed, or it failed: show nothing, and no error.
-    await clear($)
+    // agent-net is not installed, or it failed: keep the last good state.
+    await failedPoll($, state)
   }
 }
 
@@ -235,8 +250,9 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const sessionId = await $.session.id()
+    const state: PollState = {}
     const tick = () => {
-      void poll($, sessionId)
+      void poll($, sessionId, state)
     }
     tick()
     $.clock.every(POLL_MS, tick)
@@ -253,7 +269,9 @@ export const register: Register = on => {
     const columns = e.props.bodyColumns
     const { Box, Text } = $.ui.resolve(e)
 
-    const label = ' agent-net workers '
+    const staleSeconds = await read($, staleSecondsAtom)
+    const staleSuffix = staleSeconds === 0 ? '' : ` · not updated for ${staleSeconds}s`
+    const label = ` agent-net workers${staleSuffix} `
     const rule = '─'.repeat(2) + label + '─'.repeat(Math.max(0, columns - 2 - label.length))
     return (
       <Box flexDirection="column">
