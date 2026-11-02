@@ -6,12 +6,12 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 Connected apps ─────────────────────────────────────────────────────────────────
   Reachable from the internet: off
-  Run once in a terminal: sudo tailscale set --operator=$USER, then try again.
+  On research-gateway (the gateway machine, where internet access runs), run
+  once in a terminal: sudo tailscale set --operator=$USER. Then press p again.
 
   NAME         KIND       CLIENT  RETURN HOST     CONNECTED    LAST USED
 ▸ weather-bot  bot        Cursor  www.cursor.com  today 14:05  never
   phone        owner app  Safari  -               today 14:05  never
-
 
 
 

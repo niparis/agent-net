@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -60,7 +61,7 @@ func (g *Gateway) restorePublic() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := g.enablePublic(ctx, "", true); err != nil {
-			g.public.Error = err.Error()
+			g.public.Error = g.ownerFunnelError(err).Error()
 		}
 	}
 	return nil
@@ -176,7 +177,7 @@ type publicStatus struct {
 func (g *Gateway) publicStatus(ctx context.Context) publicStatus {
 	if !g.public.On {
 		if _, err := funnel.Cleanup(ctx, g.publicRunner(), g.opts.DataDir); err != nil {
-			g.public.Error = err.Error()
+			g.public.Error = g.ownerFunnelError(err).Error()
 		} else if g.public.Error != "" {
 			g.public.Error = ""
 			_ = g.savePublic()
@@ -221,6 +222,7 @@ func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (a
 		err = g.enablePublic(ctx, strings.TrimRight(u.String(), "/"), false)
 	}
 	if err != nil {
+		err = g.ownerFunnelError(err)
 		g.public.Error = err.Error()
 	} else if op != "apps.public.status" {
 		g.public.Error = ""
@@ -230,6 +232,55 @@ func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (a
 	}
 	return g.public, err
 }
+
+type ownerFacingError struct {
+	message string
+	cause   error
+}
+
+func (e ownerFacingError) Error() string { return e.message }
+func (e ownerFacingError) Unwrap() error { return e.cause }
+
+// ownerFunnelError turns errors from the gateway's local Tailscale install
+// into instructions that identify which machine the owner needs to use.
+func (g *Gateway) ownerFunnelError(err error) error {
+	if err == nil {
+		return nil
+	}
+	machine := g.gatewayMachineName()
+	switch {
+	case errors.Is(err, funnel.ErrNeedsOperator):
+		return ownerFacingError{message: fmt.Sprintf("On %s (the gateway machine, where internet access runs), run once in a terminal: sudo tailscale set --operator=$USER. Then press p again.", machine), cause: err}
+	case errors.Is(err, funnel.ErrNotInstalled):
+		return ownerFacingError{message: fmt.Sprintf("Tailscale is not installed on %s (the gateway machine). Install it there, or use your own tunnel URL (u).", machine), cause: err}
+	case errors.Is(err, funnel.ErrNotRunning):
+		return ownerFacingError{message: fmt.Sprintf("Tailscale is not running on %s (the gateway machine). Start it there, then press p again.", machine), cause: err}
+	case errors.Is(err, funnel.ErrFunnelNotAllowed):
+		var denied *funnel.FunnelNotAllowedError
+		link := "https://tailscale.com/s/no-funnel"
+		if errors.As(err, &denied) {
+			link = denied.Link
+		}
+		return ownerFacingError{message: "Allow Funnel for your tailnet: open " + link + ", then press p again.", cause: err}
+	}
+	return err
+}
+
+func (g *Gateway) gatewayMachineName() string {
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		return "the gateway host"
+	}
+	var name string
+	err = g.store.db.QueryRow(`SELECT COALESCE(NULLIF(display_name, ''), NULLIF(reported_hostname, ''), hostname)
+		FROM nodes WHERE lower(reported_hostname) = lower(?) OR lower(hostname) = lower(?)
+		ORDER BY CASE WHEN lower(reported_hostname) = lower(?) THEN 0 ELSE 1 END LIMIT 1`, host, host, host).Scan(&name)
+	if err == nil && strings.TrimSpace(name) != "" {
+		return name
+	}
+	return host
+}
+
 func (g *Gateway) revokeApp(ctx context.Context, id string) error {
 	g.publicMu.Lock()
 	defer g.publicMu.Unlock()

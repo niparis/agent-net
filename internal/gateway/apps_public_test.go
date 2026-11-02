@@ -112,7 +112,7 @@ func TestAppsPublicPastedURLAndLastRevoke(t *testing.T) {
 	}
 	defer g.Close()
 	_, err = g.handle(context.Background(), &nodeConn{}, "apps.public.on", nil)
-	if err == nil || err.Error() != "Tailscale is not installed on this machine. Use your own tunnel and paste its URL." {
+	if err == nil || !strings.HasPrefix(err.Error(), "Tailscale is not installed on ") || !strings.HasSuffix(err.Error(), " (the gateway machine). Install it there, or use your own tunnel URL (u).") {
 		t.Fatal(err)
 	}
 	publicCall(t, g, "apps.public.url", map[string]string{"url": "https://tunnel.example/"})

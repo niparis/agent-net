@@ -46,7 +46,7 @@ func TestAppsPublicAndBotsScreens(t *testing.T) {
 		m.apps.public.URL = "https://host.example.ts.net:8443"
 		golden(t, fmt.Sprintf("connected_apps_public_on_%d", w), m.View())
 		m.apps.public.On = false
-		m.apps.public.Error = "Run once in a terminal: sudo tailscale set --operator=$USER, then try again."
+		m.apps.public.Error = "On research-gateway (the gateway machine, where internet access runs), run once in a terminal: sudo tailscale set --operator=$USER. Then press p again."
 		golden(t, fmt.Sprintf("connected_apps_public_error_%d", w), m.View())
 	}
 }
