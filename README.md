@@ -272,6 +272,7 @@ agent-net uses MCP to give Claude Code its tools. It is not an implementation of
 
 ## Roadmap
 
+- Approve CTO proposals in the CTO chat: agent-net asks the owner in a dialog of the CTO's own harness (an MCP elicitation, answered by the person, not the model), so a typed "approved" is not needed and the TUI is optional. The CTO's text still names "Needs you" (now the Inbox, tab 7) and is too long.
 - Leaving the network: let a session opt out of being listed
 - MCP registry tools in OpenCode (Claude Code and Pi have them today)
 - MCP resources, prompts and OAuth logins in the registry
