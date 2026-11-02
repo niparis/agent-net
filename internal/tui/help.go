@@ -85,7 +85,7 @@ func (m Model) hints() []hint {
 		}
 		return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "toggle"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 	case m.tab == graphTab:
-		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "settings tab").key, label: "tabs", prio: 1}
+		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "inbox tab").key, label: "tabs", prio: 1}
 		return []hint{tabs, cto, bindingHint(contextGraph, "help"), bindingHint(contextGraph, actQuit)}
 	case m.tab == toolsTab:
 		return m.toolsHints()
