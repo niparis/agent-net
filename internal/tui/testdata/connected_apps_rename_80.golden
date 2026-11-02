@@ -1,0 +1,24 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 12 online · 1
+Connected apps
+  Control internet access and the apps connected to your network.
+▸ Internet access: off
+  Use your own tunnel URL
+  Add an app
+  NAME           KIND       CLIENT        RETURN HOST    CONNECTED     LAST USED
+  grok-bot       bot        Grok Bot      -              Jan 02        never
+    name for grok-bot> grok-bot
+
+Integrations
+  Choose integrations for every machine in your network.
+  Configure integrations
+
+Machines
+  The name every machine in your network shows for each machine.
+  NAME                  HOST NAME             VERSION       ONLINE
+  Mac                   Mac                   v0.4.0        yes
+  build-vm              build-vm              v0.4.0        yes
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down row  tab/[ ] section  enter open  space toggle  p internet  q quit

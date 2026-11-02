@@ -49,8 +49,7 @@ func (m Model) hints() []hint {
 		case "approve":
 			kind := bindingHint(contextApps, "kind")
 			kind.key, kind.label = "left/right", "kind"
-			name := bindingHint(contextApps, "name")
-			name.label = "name"
+			name := hint{key: "up/down", label: "kind/name"}
 			back := bindingHint(contextApps, "back")
 			back.label = "cancel"
 			return []hint{kind, name, bindingHint(contextApps, "approve"), bindingHint(contextApps, "refuse"), back}

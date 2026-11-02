@@ -1280,6 +1280,14 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.focus == focusSessions {
+		if k.String() == "x" && strings.HasPrefix(m.selected, appNoticePrefix) {
+			id := strings.TrimPrefix(m.selected, appNoticePrefix)
+			for _, item := range m.inboxItems {
+				if item.ID == id && item.Status == "open" && isAppApprovalNotice(item) {
+					return m, m.inboxAnswer(item.ID, "seen")
+				}
+			}
+		}
 		if p, ok := m.selectedProposal(); ok {
 			key := keyAction(contextProposal, k.String())
 			switch key {

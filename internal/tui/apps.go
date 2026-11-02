@@ -146,7 +146,9 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 			name = strings.Join(strings.Fields(strings.ToLower(name)), "-")
 		}
 		f.input.SetValue(name)
+		f.input.CursorEnd()
 		f.input.Focus()
+		f.editingName = true
 	default:
 		f.stage = ""
 		f.loading = true
@@ -182,6 +184,25 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if f.stage == "rename" {
+		if k.Type == tea.KeyEsc {
+			f.stage = ""
+			f.err = ""
+			return m, nil
+		}
+		if k.Type == tea.KeyEnter {
+			name := strings.TrimSpace(f.input.Value())
+			if name == "" {
+				f.err = "Name cannot be empty"
+				return m, nil
+			}
+			f.loading = true
+			return m, m.appsCall(protocol.OpAppsRename, map[string]string{"id": f.apps[f.index].ID, "name": name})
+		}
+		var cmd tea.Cmd
+		f.input, cmd = f.input.Update(k)
+		return m, cmd
+	}
 	if f.stage == "code" || f.stage == "approve" || f.stage == "url" {
 		if k.Type == tea.KeyEsc {
 			f.stage = ""
@@ -190,7 +211,7 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if f.stage == "approve" {
 			switch k.String() {
-			case "tab":
+			case "up", "down", "tab":
 				f.editingName = !f.editingName
 				return m, nil
 			case "r":
@@ -199,6 +220,9 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, m.appsCall("apps.refuse", map[string]string{"id": f.pending.ID})
 				}
 			case "left", "right":
+				if f.editingName {
+					break
+				}
 				if f.kind == "bot" {
 					f.kind = "owner_app"
 				} else {
@@ -256,6 +280,16 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			f.stage = "confirm"
 		}
 	}
+	if k.Type == tea.KeyEnter && len(f.apps) > 0 {
+		f.stage = "rename"
+		f.input = textinput.New()
+		f.input.CharLimit = protocol.MaxNodeName
+		f.input.Prompt = "name for " + sanitize(f.apps[f.index].Name) + "> "
+		f.input.SetValue(f.apps[f.index].Name)
+		f.input.CursorEnd()
+		f.input.Focus()
+		f.err = ""
+	}
 	return m, nil
 }
 func (m Model) appsDate(t time.Time) string {
@@ -312,6 +346,13 @@ func (m Model) appsView(w, rows int) []string {
 		in := f.input
 		in.Prompt = ""
 		out = append(out, "  Code shown in your browser:", "  "+in.View())
+	case "rename":
+		in := f.input
+		in.Prompt = ""
+		out = append(out, "  "+f.input.Prompt+in.View())
+		if f.err != "" {
+			out = append(out, "  "+sBad.Render(f.err))
+		}
 	case "approve":
 		kind := "bot"
 		if f.kind == "owner_app" {
@@ -323,7 +364,14 @@ func (m Model) appsView(w, rows int) []string {
 			in.Prompt = ""
 			name = in.View()
 		}
-		out = append(out, "  Approve this app?", "", "  Client       "+sanitize(f.pending.ClientName), "  Return host  "+sBold.Render(sanitize(f.pending.RedirectHost)), "  Kind         ‹ "+kind+" ›   "+sDim.Render("(left/right: bot or owner app)"), "  Name         "+name, "")
+		kindFocus := "  "
+		nameFocus := "  "
+		if !f.editingName {
+			kindFocus = "▸ "
+		} else {
+			nameFocus = "▸ "
+		}
+		out = append(out, "  Approve this app?", "", "    Client       "+sanitize(f.pending.ClientName), "    Return host  "+sBold.Render(sanitize(f.pending.RedirectHost)), "  "+kindFocus+"Kind         ‹ "+kind+" ›   "+sDim.Render("(left/right: bot or owner app)"), "  "+nameFocus+"Name         "+name, "")
 		first := "Approve only if you just pressed connect in this app and the return host is the one you expect."
 		second := "A bot acts under its own name; an owner app acts as you."
 		for _, line := range wrap(first, w-4) {

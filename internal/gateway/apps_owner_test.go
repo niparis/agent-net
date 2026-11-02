@@ -37,6 +37,13 @@ func TestConnectedAppsOwnerOperations(t *testing.T) {
 	if err != nil || len(apps) != 1 {
 		t.Fatalf("apps: %v %v", apps, err)
 	}
+	if _, err := call("apps.rename", map[string]string{"app_id": apps[0].ID, "name": "renamed bot"}); err != nil {
+		t.Fatal(err)
+	}
+	apps, err = s.ListApps()
+	if err != nil || apps[0].Name != "renamed bot" {
+		t.Fatalf("rename: %+v %v", apps, err)
+	}
 	if _, err := call("apps.revoke", map[string]string{"app_id": apps[0].ID}); err != nil {
 		t.Fatal(err)
 	}

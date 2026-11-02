@@ -20,6 +20,19 @@ import (
 // are counted in one line.
 const maxNeedsRows = 5
 
+const appNoticePrefix = "app-notice:"
+
+func isAppApprovalNotice(item protocol.InboxItem) bool {
+	return item.Kind == "check" && item.Node == "apps" && (strings.HasPrefix(item.Text, "Connected: ") || strings.HasPrefix(item.Text, "New app approved: "))
+}
+
+func appApprovalNoticeText(text string) string {
+	if strings.HasPrefix(text, "New app approved: ") {
+		text = "Connected: " + strings.TrimPrefix(text, "New app approved: ") + ". If this was not you, revoke it in Settings."
+	}
+	return text
+}
+
 // sNeeds is the warning colour of a wait.
 var sNeeds = lipgloss.NewStyle().Foreground(roleWarning)
 
@@ -71,6 +84,13 @@ func (m Model) needsRows() []protocol.AgentView {
 	}
 	for _, item := range m.inboxItems {
 		if item.Status != "open" || (item.Kind != "approval" && item.Kind != "check") {
+			continue
+		}
+		if isAppApprovalNotice(item) {
+			out = append(out, protocol.AgentView{
+				SessionID: appNoticePrefix + item.ID, Harness: "notice", Online: true,
+				Waiting: &protocol.Waiting{Kind: "notice", Text: appApprovalNoticeText(item.Text), Since: item.CreatedAt.Unix()},
+			})
 			continue
 		}
 		var a protocol.AgentView
@@ -222,6 +242,9 @@ func (m Model) needsLines(w int) []string {
 	}
 	nameW, harnessW, hostW := 0, len("AGENT"), 0
 	for _, a := range shown {
+		if a.Waiting.Kind == "notice" {
+			continue
+		}
 		nameW = max(nameW, ansi.StringWidth(m.needsName(a)))
 		harnessW = max(harnessW, ansi.StringWidth(sanitize(a.Harness)))
 		if a.NodeID != m.snap.NodeID {
@@ -247,6 +270,14 @@ func (m Model) needsLines(w int) []string {
 		}
 		if a.Waiting.Kind == "proposal" {
 			out = append(out, clip(sNeeds.Render("▍")+marker+"CTO proposes: "+sanitize(a.Waiting.Text), w))
+			continue
+		}
+		if a.Waiting.Kind == "notice" {
+			prefix := sNeeds.Render("▍") + marker
+			action := sDim.Render("x dismiss")
+			textWidth := max(w-ansi.StringWidth(prefix)-ansi.StringWidth(action)-2, 0)
+			line := prefix + clip(sanitize(a.Waiting.Text), textWidth) + "  " + action
+			out = append(out, clip(line, w))
 			continue
 		}
 		prefix := sNeeds.Render("▍") + marker + cell(m.needsName(a), nameW) + " " + cell(sanitize(a.Harness), harnessW)

@@ -71,6 +71,31 @@ func TestAppsCreateListRevoke(t *testing.T) {
 	}
 }
 
+func TestRenameAppAndBotSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, err := s.CreateApp("old bot", "bot", "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.touchBot(a); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RenameApp(a.ID, "new bot"); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	if err = s.db.QueryRow(`SELECT name FROM sessions WHERE harness='bot' AND native_id=?`, a.ID).Scan(&name); err != nil || name != "new bot" {
+		t.Fatalf("session name %q: %v", name, err)
+	}
+	b, err := s.CreateApp("other", "bot", "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RenameApp(a.ID, b.Name); err == nil || err.Error() != "name in use" {
+		t.Fatalf("duplicate rename: %v", err)
+	}
+}
+
 func TestAppTokensHashExpiryAndCleanup(t *testing.T) {
 	s, c := newTestStore(t)
 	app, err := s.CreateApp("bot", "bot", "", "", nil)

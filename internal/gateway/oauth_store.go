@@ -307,7 +307,7 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time, ownerSessio
 		if err != nil {
 			return err
 		}
-		text := fmt.Sprintf("New app approved: %s (%s, %s, %s)", safeAppLog(name), kind, safeAppLog(clientName), safeAppLog(u.Hostname()))
+		text := fmt.Sprintf("Connected: %s (%s, %s, %s). If this was not you, revoke it in Settings.", safeAppLog(name), kind, safeAppLog(clientName), safeAppLog(u.Hostname()))
 		if _, err = s.createInboxItem(tx, protocol.InboxItem{Kind: "check", SessionID: ownerSession[0], Node: "apps", Text: text, MessageID: "app-approval:" + id}); err != nil {
 			return err
 		}

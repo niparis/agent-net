@@ -9,10 +9,10 @@ Connected apps ─────────────────────�
 
   Approve this app?
 
-  Client       Cursor
-  Return host  www.cursor.com
-  Kind         ‹ bot ›   (left/right: bot or owner app)
-  Name         cursor
+    Client       Cursor
+    Return host  www.cursor.com
+    Kind         ‹ bot ›   (left/right: bot or owner app)
+  ▸ Name         cursor
 
   Approve only if you just pressed connect in this app and the return host is
   the one you expect.
@@ -27,4 +27,4 @@ Connected apps ─────────────────────�
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-left/right kind  tab name  enter approve  r refuse  esc cancel
+left/right kind  up/down kind/name  enter approve  r refuse  esc cancel

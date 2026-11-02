@@ -112,6 +112,10 @@ func (m Model) settingsItems() []settingsItem {
 }
 
 func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.apps.stage == "rename" {
+		next, cmd := m.appsKey(k)
+		return next, cmd
+	}
 	items := m.settingsItems()
 	m.settingsRow = min(max(m.settingsRow, 0), len(items)-1)
 	item := items[m.settingsRow]
@@ -163,7 +167,7 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "app":
 			if open {
 				m.apps.index = item.index
-				return m.settingsAppsKey(keyRunesForSettings("x"))
+				return m.appsKey(tea.KeyMsg{Type: tea.KeyEnter})
 			}
 		case "integrations":
 			if open {
@@ -208,7 +212,7 @@ func keyRunesForSettings(s string) tea.KeyMsg {
 func (m Model) settingsAppsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	next, cmd := m.appsKey(k)
 	m = next.(Model)
-	if m.apps.stage != "" {
+	if m.apps.stage != "" && m.apps.stage != "rename" {
 		m.mode = modeApps
 	}
 	return m, cmd
@@ -318,6 +322,14 @@ func (m Model) settingsView(w, h int) []string {
 			line = selectedRow(clip("▸ "+item.text, w))
 		}
 		body = append(body, clip(line, w))
+		if item.kind == "app" && m.apps.stage == "rename" && item.index == m.apps.index {
+			in := m.apps.input
+			in.Prompt = ""
+			body = append(body, clip("    name for "+sanitize(m.apps.apps[item.index].Name)+"> "+in.View(), w))
+			if m.apps.err != "" {
+				body = append(body, sBad.Render(clip("    "+m.apps.err, w)))
+			}
+		}
 	}
 	if m.apps.loading {
 		body = append(body, sDim.Render("  Loading connected apps..."))

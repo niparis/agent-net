@@ -58,7 +58,7 @@ func TestConnectedAppsFlow(t *testing.T) {
 	if f.op != "apps.pending" || f.params["code"] != "ABC-234" || m.apps.input.Value() != "cursor" {
 		t.Fatalf("lookup: %+v %+v", f, m.apps)
 	}
-	m = keys(m, "right", "tab")
+	m = keys(m, "down", "right", "up")
 	m.apps.input.SetValue("my app")
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	f.result = `{}`
@@ -120,14 +120,34 @@ func TestConnectedAppsScreens(t *testing.T) {
 		m.apps.pending = pendingApp{ID: "p", ClientName: "Cursor", RedirectHost: "www.cursor.com"}
 		m.apps.kind = "bot"
 		m.apps.input.SetValue("cursor")
+		m.apps.input.CursorEnd()
+		m.apps.input.Focus()
+		m.apps.editingName = true
 		golden(t, name("approval"), m.View())
+	}
+}
+
+func TestConnectedAppRenameSettingsGoldens(t *testing.T) {
+	for _, sz := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(sz[0], sz[1])
+		m.tab = settingsTab
+		stamp := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+		m.apps.apps = []connectedApp{{ID: "a", Name: "grok-bot", Kind: "bot", ClientName: "Grok Bot", CreatedAt: stamp}}
+		m.apps.stage = "rename"
+		m.apps.index = 0
+		m.apps.input = textinput.New()
+		m.apps.input.Prompt = "name for grok-bot> "
+		m.apps.input.SetValue("grok-bot")
+		m.apps.input.CursorEnd()
+		m.apps.input.Focus()
+		golden(t, fmt.Sprintf("connected_apps_rename_%d", sz[0]), m.View())
 	}
 }
 
 func TestConnectedAppsHelp(t *testing.T) {
 	m := newModel(120, 34)
 	help := strings.Join(m.helpContent(120), "\n")
-	for _, want := range []string{"Connected apps", "add", "revoke", "approve", "refuse", "change kind", "edit name"} {
+	for _, want := range []string{"Connected apps", "add", "revoke", "approve", "refuse", "change kind"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help missing %q", want)
 		}
@@ -184,6 +204,68 @@ func TestConnectedAppsPhoneDefault(t *testing.T) {
 	if m.apps.kind != "owner_app" || m.apps.input.Value() != "iPhone Safari" {
 		t.Fatalf("phone default: kind=%q name=%q", m.apps.kind, m.apps.input.Value())
 	}
+}
+
+func TestApprovalNameFocusedAndSettingsRename(t *testing.T) {
+	f := &connectedAppsFake{result: `{}`}
+	m := newModel(120, 34)
+	m.src = f
+	m.mode = modeApps
+	m, _ = m.onAppsResult(appsResult{op: "apps.pending", raw: json.RawMessage(`{"pending":{"ID":"p","ClientName":"Grok Bot"}}`)})
+	if !m.apps.editingName {
+		t.Fatal("name is not focused")
+	}
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	if m.apps.input.Value() != "grok-bot2" {
+		t.Fatalf("typing: %q", m.apps.input.Value())
+	}
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("approval did not issue a call")
+	}
+	m = runAppsCmd(t, m, cmd)
+	if f.op != "apps.approve" || f.params["name"] != "grok-bot2" {
+		t.Fatalf("approval: %s %+v", f.op, f.params)
+	}
+	m.mode = modeNormal
+	m.apps.loading = false
+	m.apps.stage = ""
+	m.apps.apps = []connectedApp{{ID: "app_1", Name: "grok-bot", Kind: "bot"}}
+	m.tab = settingsTab
+	items := m.settingsItems()
+	for i, item := range items {
+		if item.kind == "app" {
+			m.settingsRow = i
+			break
+		}
+	}
+	var next tea.Model
+	next, cmd = m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if cmd != nil || m.apps.stage != "rename" {
+		t.Fatalf("enter did not open rename field: stage=%q cmd=%v row=%d items=%+v", m.apps.stage, cmd != nil, m.settingsRow, m.settingsItems())
+	}
+	m.apps.input.SetValue(" ")
+	next, cmd = m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if cmd != nil || m.apps.stage != "rename" || m.apps.err == "" {
+		t.Fatal("empty app name was not refused")
+	}
+	m.apps.input.SetValue("new bot")
+	next, cmd = m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("rename did not issue a call")
+	}
+	updated, _ := m.Update(cmd())
+	if f.op != "apps.rename" || f.params["name"] != "new bot" {
+		t.Fatalf("rename call: %s %+v", f.op, f.params)
+	}
+	m, _ = m.onAppsResult(appsResult{op: "apps.list", raw: json.RawMessage(`{"apps":[{"ID":"app_1","Name":"new bot","Kind":"bot"}]}`)})
+	if len(m.apps.apps) != 1 || m.apps.apps[0].Name != "new bot" {
+		t.Fatalf("renamed app not shown in list: %+v", m.apps.apps)
+	}
+	_ = updated
 }
 
 func TestAppsPublicKeys(t *testing.T) {
