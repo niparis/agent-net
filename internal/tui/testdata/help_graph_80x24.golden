@@ -1,0 +1,24 @@
+Keys ───────────────────────────────────────────────────────────────────────────
+
+ Global keys
+  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the CTO session
+  C                      focus the CTO box
+  ?                      help
+  q, ctrl+c              quit
+
+ Graph
+  /                      find a node; enter selects the first match
+  +, =                   zoom in
+  -                      zoom out
+  shift+arrows           pan
+  , .                    select a linked neighbour
+  n                      start a session in this project
+  enter                  open the selected agent card
+  more below
+up/down scroll  esc close help  q quit

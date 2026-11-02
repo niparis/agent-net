@@ -22,18 +22,17 @@ func TestHelpIntegrationCountMatchesTheCode(t *testing.T) {
 	}
 }
 
-// Notifications are a setting for the whole screen, so the line belongs under
-// a heading, in the section that holds the keys for everywhere.
-func TestHelpNotificationsUnderEverywhere(t *testing.T) {
+// Notifications are an overlay setting, so the line belongs in the last
+// section that lists the help key itself.
+func TestHelpNotificationsInOverlays(t *testing.T) {
 	text := ansi.Strip(strings.Join(keys(newModel(80, 24), "?").helpContent(80), "\n"))
-	every := strings.Index(text, " Everywhere")
+	overlays := strings.Index(text, " In overlays")
 	n := strings.Index(text, "desktop notifications")
-	reading := strings.Index(text, " Reading the screen")
-	if every < 0 || n < 0 || reading < 0 {
+	if overlays < 0 || n < 0 {
 		t.Fatalf("help lacks a heading or the notifications line:\n%s", text)
 	}
-	if !(every < n && n < reading) {
-		t.Fatalf("desktop notifications is outside the Everywhere section:\n%s", text)
+	if n < overlays {
+		t.Fatalf("desktop notifications is outside In overlays:\n%s", text)
 	}
 }
 
@@ -49,14 +48,14 @@ func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 		seen.WriteByte('\n')
 		m = keys(m, "down")
 	}
-	all := seen.String()
+	all := strings.Join(strings.Fields(seen.String()), " ")
 	for _, line := range m.helpContent(80) {
-		line = strings.TrimSpace(ansi.Strip(line))
+		line = strings.Join(strings.Fields(ansi.Strip(line)), " ")
 		if line != "" && !strings.Contains(all, line) {
 			t.Errorf("help line unreachable: %q", line)
 		}
 	}
-	for _, want := range []string{"more below", "more above", "delegation policy:", "Messages", "select a message in the conversation", "Everywhere", "Reading the screen", "a figure that is missing", "the first line of the body"} {
+	for _, want := range []string{"more below", "more above", "delegation policy", "Messages", "select the previous or next message", "In overlays", "states", "open the selected message body"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("help did not show %q", want)
 		}
@@ -75,7 +74,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 		seen.WriteString(ansi.Strip(m.View()))
 		m = keys(m, "j")
 	}
-	for _, want := range []string{"Tools keys", "move through tools", "filter:", "close help", "more below", "more above"} {
+	for _, want := range []string{"Tools keys", "add an MCP server or a skill from a folder", "Differences", "close help", "more below", "more above"} {
 		if !strings.Contains(seen.String(), want) {
 			t.Errorf("missing %q", want)
 		}
@@ -84,14 +83,14 @@ func TestToolsHelpScrolls(t *testing.T) {
 
 func TestHelpShowsWaitingAndNotificationSettings(t *testing.T) {
 	m := keys(newModel(80, 24), "?")
-	content := ansi.Strip(strings.Join(m.helpContent(80), "\n"))
-	for _, want := range []string{"desktop notifications: on (toggle)", "open session in herdr (ctrl+] returns on fallback)"} {
+	content := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(80), "\n"))), " ")
+	for _, want := range []string{"desktop notifications: on (toggle)", "go into the selected thing"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("help lacks %q", want)
 		}
 	}
 	m.snap.NotificationsDisabled = true
-	if !strings.Contains(ansi.Strip(strings.Join(m.helpContent(80), "\n")), "desktop notifications: off (toggle)") {
+	if !strings.Contains(strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(80), "\n"))), " "), "desktop notifications: off (toggle)") {
 		t.Fatal("help does not show disabled notifications")
 	}
 }
@@ -108,9 +107,10 @@ func TestToolsHelpWrapsAndEveryLineCanBeReached(t *testing.T) {
 		seen.WriteByte('\n')
 		m = keys(m, "j")
 	}
+	seenText := strings.Join(strings.Fields(seen.String()), " ")
 	for _, line := range m.helpContent(40) {
-		line = strings.TrimSpace(ansi.Strip(line))
-		if line != "" && !strings.Contains(seen.String(), line) {
+		line = strings.Join(strings.Fields(ansi.Strip(line)), " ")
+		if line != "" && !strings.Contains(seenText, line) {
 			t.Errorf("tools help line unreachable: %q", line)
 		}
 	}

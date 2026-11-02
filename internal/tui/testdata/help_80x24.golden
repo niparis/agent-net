@@ -1,24 +1,24 @@
 Keys ───────────────────────────────────────────────────────────────────────────
 
+ Global keys
+  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the CTO session
+  C                      focus the CTO box
+  ?                      help
+  q, ctrl+c              quit
+
  Sessions
-  1-5                  switch between Sessions, Graph, Quotas, Messages and
-                       Tools
-  up/down, j/k         select a session
-  pgup/pgdn, home/end  page, first, last
-  enter                open session in herdr (ctrl+] returns on fallback)
-  m                    send a message to the session as yourself
-  n                    start a session in herdr: project, harness, model, folder
-                       and first message (a form). Empty first message starts it
-                       and enters it; text starts it in the background and sends
-                       it.
-  x                    stop the selected worker or session
-  h, H                 hide or unhide the session; show hidden sessions (dim)
-  t                    cycle request rule: normal, ask, auto
-  p                    delegation policy: subagent or worker for code changes (a
-                       form)
-  I                    integrations for all machines: 7 checkboxes (a form)
-  c, C                 c opens the CTO; C focuses its box: enter opens the full
-                       CTO, ctrl+] returns, esc skips a tip; n new, u undo, w
-                       drive 30m, m title, harness and model; pgup/pgdn scroll
+  pgup/pgdn              page
+  home/g, end            first, last row
+  m                      send a message to the session as yourself
+  n                      start a session in herdr: project, harness, model,
+                         folder and first message (a form)
+  x                      stop the selected worker or session
+  h                      hide or unhide the selected session
   more below
 up/down scroll  esc close help  q quit

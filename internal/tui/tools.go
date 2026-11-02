@@ -353,7 +353,7 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "help":
-		m.help = true
+		m.openHelp()
 	case "previous screen":
 		m.toolsSetScreen(m.tl.screen - 1)
 	case "next screen":

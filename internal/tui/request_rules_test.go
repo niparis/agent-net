@@ -30,7 +30,7 @@ func TestTrustKeyCyclesWildcardRule(t *testing.T) {
 		if tc.current != "normal" {
 			m.snap.Edges = []protocol.Edge{{From: "*", To: node, Kind: "depends", Rule: tc.current}}
 		}
-		_, cmd := press(m, keyT())
+		_, cmd := openSessionSetting(m, 0)
 		if cmd == nil {
 			t.Fatalf("%s: no action", tc.current)
 		}

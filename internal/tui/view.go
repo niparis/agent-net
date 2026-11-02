@@ -410,17 +410,8 @@ func (m Model) who(id string) string {
 
 func (m Model) feedHeading(w int) string {
 	title := "Messages (live)"
-	note := ""
-	switch m.events {
-	case eventsAll:
-		note = ", all events"
-	case eventsNone:
-		note = ", events hidden"
-	}
 	if m.focus == focusFeed {
-		title = "Messages (live, enter opens the conversation" + note + ")"
-	} else if note != "" {
-		title = "Messages (live" + note + ")"
+		title = "Messages (live, enter opens the conversation)"
 	}
 	return section(title, w)
 }

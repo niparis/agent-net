@@ -227,13 +227,13 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	if !strings.Contains(strings.Join(names(m), ","), "web") {
 		t.Fatal("the active filter is on by default")
 	}
-	m = keys(m, "A")
+	m = keys(m, "v", "v", "v")
 	if strings.Contains(strings.Join(names(m), ","), "web") {
 		t.Fatalf("web was not hidden: %v", names(m))
 	}
 	v := m.View()
-	if !strings.Contains(v, "filter: active") {
-		t.Fatalf("the header does not show the filter:\n%s", v)
+	if !strings.Contains(v, "Sessions active") {
+		t.Fatalf("the header does not show the view:\n%s", v)
 	}
 	if !strings.Contains(v, "2 sessions · 1 hidden") {
 		t.Fatalf("the machine heading does not say what is hidden:\n%s", v)
@@ -251,10 +251,10 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 }
 
 func TestActiveFilterCombinesWithTheTextFilterInTheHeader(t *testing.T) {
-	m := keys(newModel(120, 34), "A", "/", "t", "e", "enter")
+	m := keys(newModel(120, 34), "v", "v", "v", "/", "t", "e", "enter")
 	v := m.View()
-	if !strings.Contains(v, "filter: active, /te") {
-		t.Fatalf("filters not listed together:\n%s", v)
+	if !strings.Contains(v, "Sessions active") || !strings.Contains(v, "filter: /te") {
+		t.Fatalf("the view and the text filter are not listed together:\n%s", v)
 	}
 }
 

@@ -1,24 +1,24 @@
 Keys ───────────────────────────────────────────────────────────────────────────
   more above
- Everywhere
-  N                    desktop notifications: on (toggle)
-  T                    turn onboarding tips off or on
-  R                    restart onboarding from the first step
-  ?                    this help
-  q, ctrl+c            quit
+  T                      toggle tips
+  R                      restart tips
+  N                      desktop notifications: on (toggle)
+  q                      quit
+  esc, ?                 close help
+  up/down, j/k           scroll
+  pgup/pgdn              page
+  home/g, end/G          first, last line
 
- Reading the screen
-  CPU                  machine: all cores. session: one core. (x%): 5 min avg
-  red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
-  shared               one process many sessions share; its figures are on the
-                       machine line
-  dim row              offline, or idle for more than an hour
-  ?                    a figure that is missing or older than 45 seconds
-  └                    a reply, under the message it answers
-  "..."                the first line of the body, when this machine is in the
-                       conversation
+ Confirmations
+  enter, y, Y            yes
+  esc, n, N              no
 
- Bindings
- global
-  more below
+ Forms
+  enter                  submit or next field
+  esc                    cancel
+  tab/down               move to the next field
+  shift+tab, up          previous field
+  left/right             change the choice
+  space                  toggle
+
 up/down scroll  esc close help  q quit

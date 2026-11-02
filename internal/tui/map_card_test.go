@@ -145,17 +145,20 @@ func cardText(m Model, w, h int) string {
 	return ansi.Strip(strings.Join(m.mapFocusView(w, h), "\n"))
 }
 
-func TestMapCardLegendToggles(t *testing.T) {
+func TestMapCardLegendLivesInHelp(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, richGraph()))
 	m.mp.selected = "tenebrae"
 	if strings.Contains(cardText(m, 120, 60), "Legend") {
-		t.Fatal("the legend is shown by default")
+		t.Fatal("the card still carries the legend")
 	}
-	if line := ansi.Strip(m.helpLine(120)); !strings.Contains(line, "! legend") {
-		t.Fatalf("the key line does not offer the legend: %q", line)
+	if line := ansi.Strip(m.helpLine(120)); strings.Contains(line, "! legend") {
+		t.Fatalf("the key line still offers the legend: %q", line)
 	}
 	m = keys(m, "!")
-	shown := cardText(m, 120, 60)
+	if strings.Contains(cardText(m, 120, 60), "Legend") {
+		t.Fatal("a removed key opened the legend on the card")
+	}
+	shown := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
 	for _, want := range []string{
 		"Legend", "consumer uses provider", "advisor, arbiter or owner",
 		"deployer runs the app's deploys", "delivered; B judges it",
@@ -166,20 +169,18 @@ func TestMapCardLegendToggles(t *testing.T) {
 		"first 40 characters", "Tools tab", "another agent looks this node up",
 	} {
 		if !strings.Contains(shown, want) {
-			t.Errorf("legend lacks %q:\n%s", want, shown)
+			t.Errorf("help legend lacks %q:\n%s", want, shown)
 		}
-	}
-	m = keys(m, "!")
-	if strings.Contains(cardText(m, 120, 60), "Legend") {
-		t.Fatal("the legend did not hide again")
 	}
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {190, 45}} {
 		wide := openMap(t, mapModel(size[0], size[1], richGraph()))
 		wide.mp.selected = "tenebrae"
-		wide = keys(wide, "!")
 		for _, line := range wide.mapFocusView(size[0], size[1]-1) {
 			if ansi.StringWidth(line) > size[0] {
-				t.Errorf("%v: legend line too wide: %q", size, ansi.Strip(line))
+				t.Errorf("%v: card line too wide: %q", size, ansi.Strip(line))
+			}
+			if strings.Contains(ansi.Strip(line), "Legend") {
+				t.Errorf("%v: card still draws the legend: %q", size, ansi.Strip(line))
 			}
 		}
 	}
@@ -328,7 +329,5 @@ func TestGoldenMapCard(t *testing.T) {
 		m := openMap(t, mapModel(size[0], size[1], richGraph()))
 		m.mp.selected = "tenebrae"
 		golden(t, fmt.Sprintf("map_card_%dx%d", size[0], size[1]), m.View())
-		m = keys(m, "!")
-		golden(t, fmt.Sprintf("map_card_legend_%dx%d", size[0], size[1]), m.View())
 	}
 }

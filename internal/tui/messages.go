@@ -120,9 +120,6 @@ func (m Model) feedConversations() []messageConversation {
 			if it.isMessage() {
 				continue
 			}
-			if m.events == eventsNone && (strings.HasPrefix(it.Kind, "worker.") || strings.HasPrefix(it.Kind, "session.")) {
-				continue
-			}
 			if firstNonEmpty(m.uiFilter, m.filter) != "" && !strings.Contains(strings.ToLower(m.infoText(it)), strings.ToLower(firstNonEmpty(m.uiFilter, m.filter))) {
 				continue
 			}

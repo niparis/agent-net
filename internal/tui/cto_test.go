@@ -541,7 +541,7 @@ func TestCTOBoxHintAndHelp(t *testing.T) {
 			t.Errorf("key line still says %q: %s", old, line)
 		}
 	}
-	help := ansi.Strip(strings.Join(m.helpContent(100), "\n"))
+	help := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(100), "\n"))), " ")
 	if !strings.Contains(help, "enter opens the full CTO") {
 		t.Fatalf("help does not describe Enter: %s", help)
 	}

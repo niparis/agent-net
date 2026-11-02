@@ -1,0 +1,40 @@
+Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ Global keys
+  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the CTO session
+  C                      focus the CTO box
+  ?                      help
+  q, ctrl+c              quit
+
+ Graph
+  /                      find a node; enter selects the first match
+  +, =                   zoom in
+  -                      zoom out
+  shift+arrows           pan
+  , .                    select a linked neighbour
+  n                      start a session in this project
+  enter                  open the selected agent card
+
+ Graph find
+  enter                  select the first match
+  backspace, ctrl+h      delete
+
+ Agent card
+  enter                  open Sessions filtered to this agent's project
+  n                      start a new session in this project (the same form, filled from here)
+  t                      open Tools filtered to this node
+  a                      toggle autonomy off or wake
+  D                      name this project
+  u                      undo the selected one (a learned change)
+  , .                    select a previous or next learned change
+  h                      hide or unhide this project
+  H                      show hidden projects
+  ctrl+u/d, pgup/pgdn    scroll the card: charter, rules and learned changes
+  more below
+up/down scroll  esc close help  q quit

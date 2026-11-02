@@ -17,16 +17,6 @@ const maxFeedItems = 300
 // maxSnippetRunes caps the first line of a body that the feed keeps.
 const maxSnippetRunes = 500
 
-// feedEvents is how much of the quiet news the feed shows: by default the
-// worker lines, then all session and worker lines, then none.
-type feedEvents int
-
-const (
-	eventsDefault feedEvents = iota
-	eventsAll
-	eventsNone
-)
-
 // snippetState says whether the first line of a message body was fetched. A
 // fetch happens once per message, in the background.
 type snippetState int
@@ -344,9 +334,8 @@ func (m Model) feedShows(it *feedItem) bool {
 	}
 	switch it.Kind {
 	case "session.new":
-		return m.events == eventsAll
-	case "worker.started", "worker.stopped", "worker.refused":
-		return m.events != eventsNone
+		// Quiet news: a new session does not fill the feed by itself.
+		return false
 	}
 	return true
 }

@@ -506,7 +506,7 @@ func golden(t *testing.T, name, got string) {
 func TestViewGolden120(t *testing.T) { golden(t, "view_120x34", newModel(120, 34).View()) }
 
 func TestViewGoldenOfflineAndFilter(t *testing.T) {
-	m := keys(newModel(100, 30), "o", "/", "p", "i", "enter", "down")
+	m := keys(newModel(100, 30), "v", "/", "p", "i", "enter", "down")
 	golden(t, "view_100x30_offline_filter", m.View())
 }
 
@@ -539,7 +539,7 @@ func TestViewFitsEverySize(t *testing.T) {
 	for _, filter := range []string{"", "tenebrae"} {
 		for w := 30; w <= 200; w += 7 {
 			for h := 8; h <= 60; h += 5 {
-				v := keys(send(m, tea.WindowSizeMsg{Width: w, Height: h}), "o")
+				v := keys(send(m, tea.WindowSizeMsg{Width: w, Height: h}), "v")
 				v.filter = filter
 				v.ensureSelection()
 				out := v.View()
@@ -589,20 +589,20 @@ func TestOfflineToggle(t *testing.T) {
 	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch" {
 		t.Fatalf("online sessions: %s", got)
 	}
-	m = keys(m, "o")
+	m = keys(m, "v")
 	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch,old-session" {
 		t.Fatalf("with offline: %s", got)
 	}
 	m = keys(m, "end") // the offline session is last
-	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "filter: offline") {
+	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "Sessions offline") {
 		t.Fatalf("the offline session is not on screen:\n%s", m.View())
 	}
 	if !strings.Contains(detailText(m), "offline, last seen 13 Oct") && !strings.Contains(detailText(m), "offline, last seen 28 Oct") {
 		t.Fatalf("the detail of an offline session lacks its last seen time:\n%s", m.View())
 	}
-	m = keys(m, "o")
+	m = keys(m, "v", "v", "v")
 	if strings.Contains(strings.Join(names(m), ","), "old-session") {
-		t.Fatal("o again did not hide it")
+		t.Fatal("v again did not hide it")
 	}
 }
 
@@ -955,7 +955,7 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 		ev(15, time.Minute, "node.disconnected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build-vm" }),
 	)
 	m = refresh(m, src)
-	v := keys(m, "4", "e").View()
+	v := keys(m, "4", "l", "l").View()
 	if !strings.Contains(v, "ci-runner") || !strings.Contains(v, "tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
 		t.Fatalf("new events not shown:\n%s", v)
 	}
@@ -1110,7 +1110,7 @@ func TestTheScreenOnlyReads(t *testing.T) {
 	m := New(src)
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = refresh(m, src)
-	m = keys(m, "o", "/", "a", "enter", "esc", "tab", "up", "down", "r")
+	m = keys(m, "v", "/", "a", "enter", "esc", "tab", "up", "down", "r")
 	for _, c := range src.calls {
 		if c != "snapshot" && c != "events" && c != "message" {
 			t.Fatalf("unexpected call %s", c)
@@ -1135,7 +1135,7 @@ func (r *recordingSource) Events(ctx context.Context, a int64, l int) ([]protoco
 // With colours on, the codes must be well formed and no text of ours may be
 // broken by the clean-up of network text: stripping them leaves the plain view.
 func TestColourOutputIsWellFormed(t *testing.T) {
-	m := keys(newModel(100, 30), "o", "end")
+	m := keys(newModel(100, 30), "v", "end")
 	plain := m.View()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
@@ -1190,9 +1190,9 @@ func TestDormantSessionsAreHiddenWithTheOfflineOnes(t *testing.T) {
 	if strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
 		t.Fatalf("a dormant session is shown by default: %v", names(m))
 	}
-	m = keys(m, "o")
+	m = keys(m, "v")
 	if !strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
-		t.Fatalf("o does not show the dormant session: %v", names(m))
+		t.Fatalf("v does not show the dormant session: %v", names(m))
 	}
 	if got := statusShort(protocol.StatusDormant); got != "dorm" {
 		t.Fatalf("status text %q", got)

@@ -1,9 +1,9 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages · conversations─────────────────────────────────────────────────────╮
+╭─Messages · filter all────────────────────────────────────────────────────────╮
 │   tenebrae-53 ↔ strategies · The deploy is ready.         1 message · 6m ago │
 │ ▸ tenebrae-53 → worker: Polish the sessions panel          4 messages · done │
-│ 2 system events · e to show · w hide workers                                 │
+│ 2 system events · l filter: all                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │   13:56 tenebrae-53                                                          │

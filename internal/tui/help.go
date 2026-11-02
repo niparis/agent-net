@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The key line and the help overlay. The model (model.go) supplies the state;
@@ -41,8 +39,10 @@ func (m Model) hints() []hint {
 		return []hint{bindingHint(contextProposalDetail, "approve"), bindingHint(contextProposalDetail, "decline"), bindingHint(contextProposalDetail, "approve all"), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
 	case m.help:
 		return []hint{bindingPairHint(contextHelp, actUp, actDown), bindingHint(contextHelp, actClose), bindingHint(contextHelp, actQuit)}
+	case m.settingsMenuOn:
+		return []hint{bindingPairHint(contextSettingsMenu, actUp, actDown), bindingHint(contextSettingsMenu, "choose"), bindingHint(contextSettingsMenu, actClose)}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools"), bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "legend"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit)}
+		return []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools"), bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit)}
 	case m.open != nil:
 		return []hint{bindingPairHint(contextBody, actUp, actDown), bindingHint(contextBody, actClose), bindingHint(contextBody, actQuit)}
 	case m.focus == focusCTO:
@@ -124,9 +124,6 @@ func (m Model) helpLine(w int) string {
 		}
 		return sDim.Render(clip("up/down field  left/right harness  tab field  enter save  esc cancel", w))
 	}
-	if m.learned {
-		return sDim.Render(clip("L or esc: back to the sessions", w))
-	}
 	switch m.mode {
 	case modeCompose:
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
@@ -182,160 +179,342 @@ func (m Model) helpLine(w int) string {
 	return clip(keyHints(parts...), w)
 }
 
-// helpContent builds all help lines so none are lost on a small screen.
+// helpContent builds the overlay from keyBindings. The sections follow the
+// tabs: Global keys, the current tab, the other tabs in tab order, and the
+// overlays last. No key row is written by hand.
 func (m Model) helpContent(w int) []string {
-	state := "on"
-	if m.snap.NotificationsDisabled {
-		state = "off"
+	var out []string
+	out = append(out, " "+sBold.Render("Global keys"))
+	out = append(out, m.globalHelpLines(w)...)
+
+	for _, section := range m.helpTabSections() {
+		out = append(out, "")
+		out = append(out, " "+sBold.Render(section.title))
+		for _, context := range section.contexts {
+			if context != section.contexts[0] {
+				out = append(out, "", " "+sBold.Render(m.helpSubsectionTitle(context)))
+			}
+			out = append(out, m.contextHelpLines(context, w, true)...)
+		}
+		if section.title == "Messages" {
+			out = append(out, "  "+sTitle.Render(cell("states", 20))+" pending ... delivered ✓ replied ↩ failed ✗")
+		}
+		if section.title == "Graph" {
+			out = append(out, "")
+			out = append(out, mapLegendLines(w)...)
+		}
 	}
 
-	rows := [][2]string{
-		{"Sessions", ""},
-		{"1-5", "switch between Sessions, Graph, Quotas, Messages and Tools"},
-		{"up/down, j/k", "select a session"},
-		{"pgup/pgdn, home/end", "page, first, last"},
-		{"enter", "open session in herdr (ctrl+] returns on fallback)"},
-		{"m", "send a message to the session as yourself"},
-		{"n", "start a session in herdr: project, harness, model, folder and first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
-		{"x", "stop the selected worker or session"},
-		{"h, H", "hide or unhide the session; show hidden sessions (dim)"},
-		{"t", "cycle request rule: normal, ask, auto"},
-		{"p", "delegation policy: subagent or worker for code changes (a form)"},
-		{"I", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},
-		{"c, C", "c opens the " + m.ctoTitle() + "; C focuses its box: enter opens the full " + m.ctoTitle() + ", ctrl+] returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
-		{"N", "name the machine of the session (every machine sees it; empty resets)"},
-		{"L", "what the network learned: playbook notes and their support"},
-		{"/", "filter (words match name, project, branch, model, ...)"},
-		{"o, d", "show offline sessions; toggle the selected session details"},
-		{"A", "active only: hide sessions idle for over an hour"},
-		{"R", "refresh now"},
-		{"proposal", "enter details; a approve; r decline; A approve all after confirmation"},
-		{"", ""},
-		{"Messages", ""},
-		{"up/down", "select a conversation"},
-		{"left/right", "select a message in the conversation"},
-		{"enter", "open the selected message body"},
-		{"end", "select the latest message"},
-		{"f", "on a worker conversation: report a defect found later"},
-		{"w", "show or hide worker threads"},
-		{"e, l", "show system events; cycle the event filter"},
-		{"R", "refresh now"},
-		{"states", "pending ... delivered ✓ replied ↩ failed ✗"},
-		{"", ""},
-		{"Quotas", ""},
-		{"up/down, j/k", "select a subscription and scroll the panels"},
-		{"p", "protect or unprotect the selected subscription"},
-		{"s", "show or hide subscriptions that are not set up"},
-		{"left/right", "cycle the Quality panel agent: all agents, then each caller"},
-		{"d", "show or hide the Quality panel detail (fixes and continues)"},
-		{"R", "refresh the readings"},
-		{"", ""},
-		{"Graph", ""},
-		{"2", "open the Graph tab"},
-		{"arrows", "select a node; shift+arrows pan"},
-		{", .", "select a linked neighbour"},
-		{"/", "find a node; Enter selects the first match; Esc cancels"},
-		{"+ -, 0", "zoom; fit the graph"},
-		{"o, space", "orbit; pause traffic"},
-		{"t", "open Tools filtered to the selected graph node"},
-		{"enter", "open the selected agent card"},
-		{"Agent card", ""},
-		{"enter", "open Sessions filtered to this agent's project"},
-		{"n", "start a new session in this project (the same form, filled from here)"},
-		{"esc", "return to Graph with the same node selected"},
-		{"D", "name project (empty clears)"},
-		{"a", "toggle autonomy off or wake"},
-		{"h, H", "hide or unhide the selected project; show hidden projects"},
-		{", ., u", "select a learned change; undo the selected one"},
-		{"!", "legend: what the edge kinds, request rules and charter fields mean"},
-		{"ctrl+u/d", "scroll the card: legend, charter, rules and learned changes; pgup/pgdn also work"},
-		{"c", "focus the " + m.ctoTitle() + " box"},
-		{"R", "refresh"},
-		{"", ""},
-		{"Tools", ""},
-		{"[ ]", "switch between Differences, All tools and By project"},
-		{"j/k, up/down", "move through the selected Tools screen"},
-		{"left/right", "move between columns"},
-		{"enter", "open the selected difference plan or the selected tool's details and actions"},
-		{"a, u", "accept a difference or turn a tool on; turn a tool off"},
-		{"v", "next machine on By project"},
-		{"/", "combine text, project:NAME, node:NAME and machine:NAME filters"},
-		{"n", "add an MCP server or a skill from a folder"},
-		{"esc", "back, or clear the list filter"},
-		{"", ""},
-		{"Everywhere", ""},
-		{"N", "desktop notifications: " + state + " (toggle)"},
-		{"T", "turn onboarding tips off or on"},
-		{"R", "restart onboarding from the first step"},
-		{"?", "this help"},
-		{"q, ctrl+c", "quit"},
-		{"", ""},
-		{"Reading the screen", ""},
-		{"CPU", "machine: all cores. session: one core. (x%): 5 min avg"},
-		{"red numbers", "a heavy tree: over 20 processes, 200% CPU or 4G"},
-		{"shared", "one process many sessions share; its figures are on the machine line"},
-		{"dim row", "offline, or idle for more than an hour"},
-		{"?", "a figure that is missing or older than 45 seconds"},
-		{"└", "a reply, under the message it answers"},
-		{"\"...\"", "the first line of the body, when this machine is in the conversation"},
-	}
-	if m.tab == toolsTab && !m.mapOn {
-		rows = [][2]string{
-			{"[ ]", "switch between Differences, All tools and By project"},
-			{"j/k, up/down", "move through tools, differences or projects; scroll a read view or comparison"},
-			{"left/right", "move between columns"},
-			{"enter", "open the selected difference plan or the selected tool's details and actions"},
-			{"a", "accept a difference on Differences; turn on a tool on All tools"},
-			{"u", "turn off the selected tool on All tools"},
-			{"v", "select the next machine on By project"},
-			{"/", "filter: text project:NAME node:NAME machine:NAME (combine them)"},
-			{"n", "add an MCP server or a skill from a folder"},
-			{"R", "rescan tool copies"},
-			{"space", "tick a machine or project in the picker"},
-			{"a/b/...", "in compare only: keep the labelled copy"},
-			{"n and p, v", "in compare only: select a file, view its diff"},
-			{"tab", "in add form: next field; arrows choose machine"},
-			{"esc", "back or cancel; clear a nonempty filter first"},
-			{"c, C", "c opens the " + m.ctoTitle() + "; C focuses its box"},
-			{"q", "quit from the list"},
-			{"esc or ?", "close help"},
-		}
-	}
-	rows = append(rows, [2]string{"", ""}, [2]string{"Bindings", ""})
-	for _, context := range allKeyContexts {
-		rows = append(rows, [2]string{strings.ReplaceAll(string(context), "CTO", m.ctoTitle()), ""})
-		for _, binding := range keyBindings {
-			if binding.context != context {
-				continue
-			}
-			label := strings.ReplaceAll(binding.label, "CTO", m.ctoTitle())
-			keys := strings.Join(binding.keys, ", ")
-			if ansi.StringWidth(keys) <= 20 {
-				rows = append(rows, [2]string{keys, label})
-				continue
-			}
-			for _, key := range binding.keys {
-				rows = append(rows, [2]string{key, label})
-			}
-		}
-	}
-	var out []string
-	const indent = 23
-	for _, r := range rows {
-		switch {
-		case r[0] == "" && r[1] == "":
+	out = append(out, "", " "+sBold.Render("In overlays"))
+	for i, context := range m.overlayContexts() {
+		if i > 0 {
 			out = append(out, "")
-		case r[1] == "":
-			out = append(out, " "+sBold.Render(r[0]))
-		default:
-			lines := wrap(r[1], max(w-indent, 8))
-			out = append(out, "  "+sTitle.Render(cell(r[0], 20))+" "+lines[0])
-			for _, line := range lines[1:] {
-				out = append(out, strings.Repeat(" ", indent)+line)
+		}
+		out = append(out, " "+sBold.Render(m.helpSubsectionTitle(context)))
+		out = append(out, m.contextHelpLines(context, w, false)...)
+		if context == contextSettingsMenu {
+			for _, entry := range settingsEntries() {
+				out = append(out, m.helpRow(entry.label, entry.help, w)...)
 			}
 		}
 	}
 	return out
+}
+
+type helpSection struct {
+	title    string
+	contexts []keyContext
+}
+
+// helpTabSections puts the current tab first, then the others in tab order.
+func (m Model) helpTabSections() []helpSection {
+	sections := []helpSection{
+		{"Sessions", []keyContext{contextSessions, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
+		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
+		{"Quotas", []keyContext{contextQuotas}},
+		{"Messages", []keyContext{contextMessages}},
+		{"Tools", []keyContext{contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsCompare}},
+	}
+	tab := min(max(m.tab, 0), len(sections)-1)
+	ordered := []helpSection{sections[tab]}
+	ordered = append(ordered, sections[:tab]...)
+	ordered = append(ordered, sections[tab+1:]...)
+	return ordered
+}
+
+func (m Model) overlayContexts() []keyContext {
+	return []keyContext{
+		contextBody, contextInbox, contextSettingsMenu, contextProposalDetail, contextProposalHistory,
+		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd,
+		contextCTO, contextHelp, contextConfirm, contextForm,
+	}
+}
+
+func (m Model) overlayContext(context keyContext) bool {
+	for _, c := range m.overlayContexts() {
+		if c == context {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) globalHelpLines(w int) []string {
+	out := make([]string, 0, len(globalHelpRows))
+	for _, row := range globalHelpRows {
+		out = append(out, m.helpRow(row.keys, strings.ReplaceAll(row.help, "CTO", m.ctoTitle()), w)...)
+	}
+	return out
+}
+
+func (m Model) helpSubsectionTitle(context keyContext) string {
+	switch context {
+	case contextHeld:
+		return "On a held request row"
+	case contextSuggestion:
+		return "On a learned suggestion row"
+	case contextOutcome:
+		return "On an outcome row"
+	case contextProposal:
+		return "On a " + m.ctoTitle() + " proposal row"
+	case contextCard:
+		return "Agent card"
+	case contextToolsDiff:
+		return "Differences"
+	case contextToolsAll:
+		return "All tools"
+	case contextToolsProject:
+		return "By project"
+	case contextToolsCompare:
+		return "Compare"
+	case contextBody:
+		return "Message body"
+	case contextInbox:
+		return "Inbox"
+	case contextSettingsMenu:
+		return "Settings menu"
+	case contextProposalDetail:
+		return "Proposal detail"
+	case contextProposalHistory:
+		return "Proposal history"
+	case contextToolsPlan:
+		return "Tools plan"
+	case contextToolsPicker:
+		return "Tools picker"
+	case contextToolsMenu:
+		return "Tools menu"
+	case contextToolsAdd:
+		return "Tools add"
+	case contextCTO:
+		return m.ctoTitle() + " box"
+	case contextHelp:
+		return "Help"
+	case contextConfirm:
+		return "Confirmations"
+	case contextForm:
+		return "Forms"
+	}
+	return strings.ReplaceAll(string(context), "CTO", m.ctoTitle())
+}
+
+func bindingUsesAnyKey(binding keyBinding, keys []string) bool {
+	for _, key := range keys {
+		if key == " " {
+			key = "space"
+		}
+		for _, k := range binding.keys {
+			if k == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m Model) bindingHelpText(binding keyBinding) string {
+	help := binding.help
+	if help == "" {
+		help = binding.label
+	}
+	return strings.ReplaceAll(help, "CTO", m.ctoTitle())
+}
+
+type helpEntry struct {
+	keys   []string
+	help   string
+	action actionID
+}
+
+func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []string {
+	var entries []helpEntry
+	for _, binding := range keyBindings {
+		if binding.context != context {
+			continue
+		}
+		if skipGlobal && !binding.local && bindingUsesAnyKey(binding, globalSameKeys) {
+			continue
+		}
+		help := m.bindingHelpText(binding)
+		if context == contextHelp && binding.action == actNotifications {
+			state := "on"
+			if m.snap.NotificationsDisabled {
+				state = "off"
+			}
+			help = "desktop notifications: " + state + " (toggle)"
+		}
+		entries = append(entries, helpEntry{keys: append([]string(nil), binding.keys...), help: help, action: binding.action})
+	}
+	entries = mergeHelpEntries(entries)
+	var out []string
+	for _, entry := range entries {
+		keys := strings.Join(entry.keys, ", ")
+		if ansi.StringWidth(keys) <= helpKeyWidth {
+			out = append(out, m.helpRow(keys, entry.help, w)...)
+			continue
+		}
+		for _, key := range entry.keys {
+			out = append(out, m.helpRow(key, entry.help, w)...)
+		}
+	}
+	return out
+}
+
+// mergeHelpEntries puts a direction pair on one row: pgup/pgdn, up/down,
+// left/right, shift+arrows, and first/last. A pair shares one help text.
+func mergeHelpEntries(in []helpEntry) []helpEntry {
+	out := make([]helpEntry, 0, len(in))
+	for i := 0; i < len(in); {
+		if i+1 < len(in) && in[i].action == actFirst && in[i+1].action == actLast {
+			out = append(out, mergeFirstLast(in[i], in[i+1]))
+			i += 2
+			continue
+		}
+		if i+1 < len(in) && sameHelp(in[i], in[i+1]) && allShift(in[i]) && allShift(in[i+1]) {
+			j := i + 1
+			for j+1 < len(in) && sameHelp(in[i], in[j+1]) && allShift(in[j+1]) {
+				j++
+			}
+			out = append(out, helpEntry{keys: []string{"shift+arrows"}, help: in[i].help, action: in[i].action})
+			i = j + 1
+			continue
+		}
+		if i+1 < len(in) && sameHelp(in[i], in[i+1]) && mergeablePair(in[i], in[i+1]) {
+			out = append(out, mergePair(in[i], in[i+1]))
+			i += 2
+			continue
+		}
+		out = append(out, in[i])
+		i++
+	}
+	return out
+}
+
+func sameHelp(a, b helpEntry) bool {
+	return a.help == b.help
+}
+
+func allShift(e helpEntry) bool {
+	if len(e.keys) == 0 {
+		return false
+	}
+	for _, key := range e.keys {
+		if !strings.HasPrefix(key, "shift+") {
+			return false
+		}
+	}
+	return true
+}
+
+func mergeablePair(a, b helpEntry) bool {
+	if len(a.keys) == 0 || len(b.keys) == 0 {
+		return false
+	}
+	if len(a.keys) != len(b.keys) {
+		return false
+	}
+	switch a.keys[0] {
+	case "up", "down", "left", "right", "j", "k", "pgup", "pgdown", "home", "end", "ctrl+u", "ctrl+d", ",", ".", "[", "]", "tab":
+		return true
+	}
+	return false
+}
+
+func mergeFirstLast(a, b helpEntry) helpEntry {
+	keys := strings.Join(a.keys, "/") + ", " + strings.Join(b.keys, "/")
+	help := a.help + ", " + b.help
+	first, last := a.help, b.help
+	if strings.HasPrefix(first, "first ") && strings.HasPrefix(last, "last ") {
+		help = "first, last " + strings.TrimPrefix(last, "last ")
+	}
+	return helpEntry{keys: []string{keys}, help: help, action: a.action}
+}
+
+func mergePair(a, b helpEntry) helpEntry {
+	if len(a.keys) == len(b.keys) && reversePair(a.keys[0], b.keys[0]) {
+		a, b = b, a
+	}
+	if len(a.keys) == 1 && len(b.keys) == 1 {
+		switch a.keys[0] {
+		case ",":
+			return helpEntry{keys: []string{", ."}, help: a.help, action: a.action}
+		case "[":
+			return helpEntry{keys: []string{"[ ]"}, help: a.help, action: a.action}
+		}
+		return helpEntry{keys: []string{pairKey(a.keys[0], b.keys[0])}, help: a.help, action: a.action}
+	}
+	head := pairKey(a.keys[0], b.keys[0])
+	tail := pairKey(a.keys[1], b.keys[1])
+	return helpEntry{keys: []string{head + ", " + tail}, help: a.help, action: a.action}
+}
+
+func reversePair(a, b string) bool {
+	switch a {
+	case "down":
+		return b == "up"
+	case "right":
+		return b == "left"
+	case "pgdown":
+		return b == "pgup"
+	case "ctrl+d":
+		return b == "ctrl+u"
+	}
+	return false
+}
+
+func pairKey(a, b string) string {
+	if strings.HasPrefix(a, "ctrl+") && strings.HasPrefix(b, "ctrl+") {
+		return a + "/" + strings.TrimPrefix(b, "ctrl+")
+	}
+	a, b = shortKey(a), shortKey(b)
+	if len(a) == 1 && len(b) == 1 && a > b {
+		a, b = b, a
+	}
+	return a + "/" + b
+}
+
+func shortKey(key string) string {
+	if key == "pgdown" {
+		return "pgdn"
+	}
+	return key
+}
+
+const helpKeyWidth = 22
+
+func (m Model) helpRow(keys, help string, w int) []string {
+	const indent = 25
+	lines := wrap(help, max(w-indent, 8))
+	out := []string{"  " + sTitle.Render(cell(keys, helpKeyWidth)) + " " + lines[0]}
+	for _, line := range lines[1:] {
+		out = append(out, strings.Repeat(" ", indent)+line)
+	}
+	return out
+}
+
+// openHelp shows the overlay at its first line.
+func (m *Model) openHelp() {
+	m.help = true
+	m.helpScroll = 0
 }
 
 // helpView keeps the heading and reserves rows for scroll indicators.

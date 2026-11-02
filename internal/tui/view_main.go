@@ -143,10 +143,6 @@ func (m Model) View() string {
 		for _, s := range m.helpView(w, h-1) {
 			add(s)
 		}
-	case m.learned:
-		for _, s := range m.learnedView(w, h-1) {
-			add(s)
-		}
 	default:
 		box := m.ctoBoxHeight(m.tab)
 		contentHeight := h - 1 - box
@@ -226,6 +222,13 @@ func (m Model) mainView(w, h int) []string {
 	}
 	out = append(out, panel("Machines", machines, w, roleAccent)...)
 
+	if m.settingsMenuOn {
+		for _, s := range m.settingsMenuView(w) {
+			add(s)
+		}
+		return out
+	}
+
 	if m.expand && m.mode == modeNormal {
 		add(section("Selected session", w))
 		return append(out, m.detailLines(w, max(h-len(out), 0))...)
@@ -275,13 +278,31 @@ const (
 var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
+// sessionViewName is the view the v key selected.
+func (m Model) sessionViewName() string {
+	switch {
+	case m.activeOnly:
+		return "active"
+	case m.showHiddenSessions:
+		return "offline+hidden"
+	case m.showOffline:
+		return "offline"
+	}
+	return "all"
+}
+
 func (m Model) titleLine(w int) string {
 
 	var tabs []string
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
-		if i == 0 && len(m.hiddenSessions) > 0 {
-			label += fmt.Sprintf(" hidden %d", len(m.hiddenSessions))
+		if i == 0 {
+			if m.tab == sessionsTab {
+				label += " " + m.sessionViewName()
+			}
+			if len(m.hiddenSessions) > 0 {
+				label += fmt.Sprintf(" hidden %d", len(m.hiddenSessions))
+			}
 		}
 		if i == m.tab {
 			tabs = append(tabs, sActiveTab.Render(label))
@@ -336,13 +357,10 @@ func (m Model) titleLine(w int) string {
 	if n := m.learnedNew(); n > 0 {
 		mid += fmt.Sprintf(", learned %d new", n)
 	}
+	if m.tab == messagesTab {
+		mid += "  filter: " + m.messageFilterName()
+	}
 	var filters []string
-	if m.activeOnly {
-		filters = append(filters, "active")
-	}
-	if m.showOffline {
-		filters = append(filters, "offline")
-	}
 	if m.filter != "" {
 		filters = append(filters, "/"+sanitize(m.filter))
 	}
@@ -1369,13 +1387,6 @@ func (m Model) messagesView(w, h int) []string {
 		return append(out, m.messageView(w, h-1)...)
 	}
 	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: "+m.ctoTitle(), w)))
-	filter := "conversations"
-	switch m.events {
-	case eventsAll:
-		filter = "all events"
-	case eventsNone:
-		filter = "no session/worker events"
-	}
 	rows := m.messageConversations()
 	selected := m.selectedConversationIndex(rows)
 	list := []string{}
@@ -1397,20 +1408,12 @@ func (m Model) messagesView(w, h int) []string {
 			list = append(list, sDim.Render(line))
 		}
 	}
-	eventAction := "e to show"
-	if m.messageShowEvents {
-		eventAction = "e to hide"
-	}
-	workerAction := "w hide workers"
-	if m.hideWorkerThreads {
-		workerAction = "w show workers"
-	}
 	eventCount := m.systemEventCount()
 	eventWord := "events"
 	if eventCount == 1 {
 		eventWord = "event"
 	}
-	footer := fmt.Sprintf("%d system %s · %s · %s", eventCount, eventWord, eventAction, workerAction)
+	footer := fmt.Sprintf("%d system %s · l filter: %s", eventCount, eventWord, m.messageFilterName())
 	var chat []string
 	if len(rows) > 0 {
 		chat = m.conversationChat(rows[selected], chatW)
@@ -1429,7 +1432,7 @@ func (m Model) messagesView(w, h int) []string {
 		list = messageFit(list, max(height-1, 0), selected)
 		list = append(list, sDim.Render(clip(footer, listW)))
 		chat = messageFit(chat, height, chatSelected)
-		left := panel("Messages · "+filter, list, listW+4, roleAccent)
+		left := panel("Messages · filter "+m.messageFilterName(), list, listW+4, roleAccent)
 		right := panel("Conversation", chat, chatW+4, roleAccent)
 		for i := range left {
 			out = append(out, left[i]+right[i])
@@ -1444,7 +1447,7 @@ func (m Model) messagesView(w, h int) []string {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
 	chat = messageFit(chat, chatHeight, chatSelected)
-	out = append(out, panel("Messages · "+filter, list, w, roleAccent)...)
+	out = append(out, panel("Messages · filter "+m.messageFilterName(), list, w, roleAccent)...)
 	out = append(out, panel("Conversation", chat, w, roleAccent)...)
 	return out
 }

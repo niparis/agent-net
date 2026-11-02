@@ -23,15 +23,10 @@ func TestLearnedListAndQuietHeaderCount(t *testing.T) {
 	if line := m.titleLine(160); !strings.Contains(line, "learned 1 new") {
 		t.Errorf("header: %q", line)
 	}
+	// The overlay is gone; the notes stay on the Graph agent card and the
+	// header count stays quiet.
 	m = keys(m, "L")
-	v := m.View()
-	for _, want := range []string{"Learned", "terra", "auto, support 3", "Hands back partial work.", "4 runs: 1 complete, 3 partial", "shop", "Tests need the TEI service."} {
-		if !strings.Contains(v, want) {
-			t.Errorf("learned view lacks %q:\n%s", want, v)
-		}
-	}
-	m = keys(m, "esc")
 	if strings.Contains(m.View(), "auto, support 3") {
-		t.Error("esc did not close the learned list")
+		t.Error("L still opens a learned overlay")
 	}
 }

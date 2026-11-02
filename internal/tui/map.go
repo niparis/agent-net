@@ -36,7 +36,6 @@ type mapState struct {
 	findQuery        string
 	charterFor       string
 	charterScroll    int
-	legend           bool
 	learnedFor       string
 	learnedIndex     int
 }
@@ -123,11 +122,7 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mp.learnedIndex = (m.mp.learnedIndex + step) % len(changes)
 		}
 	case "help":
-		m.help = true
-	case "legend":
-		m.mp.legend = !m.mp.legend
-		// Show the top of the body again, where the legend starts when it is on.
-		m.mp.charterFor, m.mp.charterScroll = m.mp.selected, 0
+		m.openHelp()
 	case "hide project":
 		return m.toggleHiddenNode()
 	case "show hidden":

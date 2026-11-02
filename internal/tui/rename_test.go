@@ -22,7 +22,7 @@ func TestRenameKeySavesTheMachineName(t *testing.T) {
 	const target = "s_0000000000000001"
 	m = selectID(m, target)
 	a, _ := m.selectedAgent()
-	m, cmd := press(m, keyRunes("N"))
+	m, cmd := openSessionSetting(m, 3)
 	if m.mode != modeRename {
 		t.Fatalf("N must open the prompt: mode %v", m.mode)
 	}
@@ -70,7 +70,7 @@ func TestRenameWithEmptyNameResetsAndUnchangedDoesNothing(t *testing.T) {
 		}
 	}
 	m = refresh(m, src)
-	m, _ = press(m, keyRunes("N"))
+	m, _ = openSessionSetting(m, 3)
 	if m.rename.Value() != "laptop-1" {
 		t.Fatalf("prefill: %q", m.rename.Value())
 	}
@@ -86,7 +86,7 @@ func TestRenameWithEmptyNameResetsAndUnchangedDoesNothing(t *testing.T) {
 		src.snap.Nodes[i].DisplayName = ""
 	}
 	m = refresh(m, src)
-	m, _ = press(m, keyRunes("N"))
+	m, _ = openSessionSetting(m, 3)
 	m.rename.SetValue(m.renameShown)
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil || m.mode != modeNormal || len(src.renames) != 1 {
@@ -98,7 +98,7 @@ func TestRenameErrorAndHelp(t *testing.T) {
 	m, src := workerModel(160, 40)
 	src.renameErr = errTest("another machine is already called laptop-1")
 	m = selectID(m, "s_0000000000000001")
-	m, _ = press(m, keyRunes("N"))
+	m, _ = openSessionSetting(m, 3)
 	m.rename.SetValue("laptop-1")
 	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = send(m, cmd())
@@ -106,8 +106,8 @@ func TestRenameErrorAndHelp(t *testing.T) {
 		t.Errorf("notice: %+v", m.notice)
 	}
 	m, _ = press(m, keyRunes("?"))
-	if !strings.Contains(strings.Join(m.helpContent(160), "\n"), "name the machine of the session") {
-		t.Error("help lacks the N key")
+	if !strings.Contains(strings.Join(m.helpContent(160), "\n"), "name this machine") {
+		t.Error("help lacks the settings entry")
 	}
 }
 

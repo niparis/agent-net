@@ -10,8 +10,6 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func keyP() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")} }
-
 // settlePolicy runs the command of an Update (a batch of previews) and feeds
 // the preview answers back.
 func runPreviews(t *testing.T, m Model, cmd tea.Cmd) Model {
@@ -62,7 +60,7 @@ func TestPolicyFormResolvesBeforeSavingAndSaves(t *testing.T) {
 	src.policyFn = resolver(&saved)
 	const target = "s_0000000000000003" // the OpenCode session of the fixture
 	m = selectID(m, target)
-	m, cmd := press(m, keyP())
+	m, cmd := openSessionSetting(m, 1)
 	if m.mode != modePolicy {
 		t.Fatalf("p must open the form, mode %v", m.mode)
 	}
@@ -115,7 +113,7 @@ func TestPolicyFormShowsResolutionErrorsAndRefusesAnEmptyCoder(t *testing.T) {
 	var saved []protocol.SessionPolicyRequest
 	src.policyFn = resolver(&saved)
 	m = selectID(m, "s_0000000000000003")
-	m, cmd := press(m, keyP())
+	m, cmd := openSessionSetting(m, 1)
 	m = runPreviews(t, m, cmd)
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
 	m = runPreviews(t, m, cmd)
@@ -147,7 +145,7 @@ func TestPolicyGatewayRefusalKeepsTheFormOpen(t *testing.T) {
 		return protocol.SessionPolicyResult{}, errors.New("coder model: no model matches")
 	}
 	m = selectID(m, "s_0000000000000003")
-	m, _ = press(m, keyP())
+	m, _ = openSessionSetting(m, 1)
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight}) // off needs no coder
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
@@ -209,7 +207,7 @@ func TestPolicyNotesForHarnessesThatCannotDoPart(t *testing.T) {
 func TestPolicyKeyWithNothingSelected(t *testing.T) {
 	e := New(&fakeSource{snap: Snapshot{Connected: true}})
 	e = send(e, tea.WindowSizeMsg{Width: 100, Height: 24})
-	e, _ = press(e, keyP())
+	e, _ = openSessionSetting(e, 1)
 	if e.mode != modeNormal || !e.notice.err {
 		t.Errorf("empty selection: %v %+v", e.mode, e.notice)
 	}
@@ -220,7 +218,7 @@ func TestPolicyFormGolden(t *testing.T) {
 	var saved []protocol.SessionPolicyRequest
 	src.policyFn = resolver(&saved)
 	m = selectID(m, "s_0000000000000003")
-	m, cmd := press(m, keyP())
+	m, cmd := openSessionSetting(m, 1)
 	m = runPreviews(t, m, cmd)
 	for i := 0; i < 2; i++ {
 		m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
@@ -240,7 +238,7 @@ func TestPolicyFormWorkersLine(t *testing.T) {
 	var saved []protocol.SessionPolicyRequest
 	src.policyFn = resolver(&saved)
 	m = selectID(m, "s_0000000000000003")
-	m, cmd := press(m, keyP())
+	m, cmd := openSessionSetting(m, 1)
 	m = runPreviews(t, m, cmd)
 	for i := 0; i < 3; i++ {
 		m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown}) // Delegate, Coder, Main -> Workers
@@ -285,7 +283,7 @@ func TestPolicyFormRefusesWorkersAtSessionScope(t *testing.T) {
 	var saved []protocol.SessionPolicyRequest
 	src.policyFn = resolver(&saved)
 	m = selectID(m, "s_0000000000000003")
-	m, _ = press(m, keyP())
+	m, _ = openSessionSetting(m, 1)
 	m.pol.workers = 3
 	m.pol.scope = protocol.ScopeSession
 	m.pol.cur = pfScope
@@ -340,7 +338,7 @@ func TestPolicyFormLoadsTheProjectWorkersLevel(t *testing.T) {
 	}
 	m = refresh(m, src)
 	m = selectID(m, "s_0000000000000003")
-	m, _ = press(m, keyP())
+	m, _ = openSessionSetting(m, 1)
 	if got := workersChoices[m.pol.workers]; got != protocol.WorkersReadOnly {
 		t.Errorf("the form starts at %q", got)
 	}

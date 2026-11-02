@@ -241,18 +241,8 @@ func TestFeedLifecycleEventsAreHiddenByDefault(t *testing.T) {
 		}
 	}
 	m = keys(m, "l")
-	all := feedText(m, 100)
-	if !strings.Contains(all, "new session") || !strings.Contains(all, "worker refused") {
-		t.Fatalf("l did not show every lifecycle line:\n%s", all)
-	}
-	m = keys(m, "l")
-	none := feedText(m, 100)
-	if strings.Contains(none, "new session") || strings.Contains(none, "worker started") {
-		t.Fatalf("l did not hide the lifecycle lines:\n%s", none)
-	}
-	m = keys(m, "l")
-	if !strings.Contains(feedText(m, 100), "worker started") {
-		t.Fatalf("l did not return to the default:\n%s", feedText(m, 100))
+	if text := feedText(m, 100); strings.Contains(text, "new session") {
+		t.Fatalf("the dropped lifecycle filter changed the feed:\n%s", text)
 	}
 }
 

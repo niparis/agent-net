@@ -12,7 +12,7 @@ func TestMapProjectDisplayForm(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	src := m.src.(*fakeSource)
 	m.mp.selected = "cogforge"
-	if !strings.Contains(strings.Join(m.helpContent(120), "\n"), "name project") {
+	if !strings.Contains(strings.Join(m.helpContent(120), "\n"), "name this project") {
 		t.Fatalf("help: %s", strings.Join(m.helpContent(120), "\n"))
 	}
 	m, _ = press(m, keyRunes("D"))
@@ -38,7 +38,7 @@ func TestMapProjectDisplayForm(t *testing.T) {
 		t.Fatalf("cleared: %v", src.projectNames)
 	}
 	m, _ = press(m, keyRunes("?"))
-	if !strings.Contains(strings.Join(m.helpContent(120), "\n"), "name project") {
+	if !strings.Contains(strings.Join(m.helpContent(120), "\n"), "name this project") {
 		t.Fatal("help missing display name key")
 	}
 }
