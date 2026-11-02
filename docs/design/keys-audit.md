@@ -380,3 +380,13 @@ are a fixed short list with one text per row. A tab section repeats a global key
 only when it does something different there, and direction pairs share one row
 (`pgup/pgdn`, `home/g, end`, `up/down, j/k`, `shift+arrows`, `, .`). No key row
 is written by hand.
+
+## 6. Settings tab and session cells
+
+The owner moved Connected apps, integrations, machine names, notifications
+and tips to tab 6, Settings. Up/down moves between rows, Tab or `[`/`]`
+jumps sections, Space toggles and Enter opens. Sessions now puts RULE and
+DELEGATE beside TRUST. Left/right selects the editable cell, Space cycles
+RULE, Enter opens DELEGATE and Esc returns to NAME. The `S` menu and the
+help-only `N`, `T` and `R` actions are removed. The Sessions view and
+Messages filter appear in their column headers instead of the tab bar.

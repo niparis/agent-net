@@ -322,7 +322,7 @@ func TestMessagesPanelAndCTOColors(t *testing.T) {
 	defer lipgloss.SetColorProfile(old)
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	v := m.View()
-	for _, want := range []string{"Messages ·", "▸", "CTO", "48;2;34;48;58"} {
+	for _, want := range []string{"Messages", "▸", "CTO", "48;2;34;48;58"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q", want)
 		}

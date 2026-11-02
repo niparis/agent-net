@@ -1,24 +1,24 @@
 Keys ───────────────────────────────────────────────────────────────────────────
   more above
-  T                      toggle tips
-  R                      restart tips
-  N                      desktop notifications: on (toggle)
+                         machine, or restart tips
+  space                  toggle internet access, desktop notifications or tips
+  p                      switch internet access in Connected apps
+  u                      set the tunnel URL in Connected apps
+  a                      add a connected app
+  x                      revoke the selected app
+
+ In overlays
+ Message body
+  esc, enter             close
   q                      quit
-  esc, ?                 close help
   up/down, j/k           scroll
   pgup/pgdn              page
-  home/g, end/G          first, last line
 
- Confirmations
-  enter, y, Y            yes
-  esc, n, N              no
-
- Forms
-  enter                  submit or next field
-  esc                    cancel
-  tab/down               move to the next field
-  shift+tab, up          previous field
-  left/right             change the choice
-  space                  toggle
-
+ Inbox
+  esc                    back
+  up/down, j/k           select
+  enter                  details
+  a                      approve
+  r                      refuse
+  more below
 up/down scroll  esc close help  q quit

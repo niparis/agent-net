@@ -561,8 +561,8 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	out := keys(newModel(80, 24), "down").View() // tenebrae-53
 	for _, want := range []string{
 		"Mac (here)", "old-box", "12 online", "cpu", "mem", "disk 180G free", "disk 31G free",
-		"AGENT", "NAME", "PROJECT", "MODEL", "STATUS", "TRUST", "CPU", "RAM", "TASK",
-		"tenebrae-53", "opus-5-5", "busy", "shell", "CTO",
+		"AGENT", "NAME", "STATUS", "TRUST", "RULE", "DLG", "CPU", "RAM",
+		"tenebrae-53", "busy", "shell", "CTO",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -594,7 +594,7 @@ func TestOfflineToggle(t *testing.T) {
 		t.Fatalf("with offline: %s", got)
 	}
 	m = keys(m, "end") // the offline session is last
-	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "Sessions offline") {
+	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "view: offline") {
 		t.Fatalf("the offline session is not on screen:\n%s", m.View())
 	}
 	if !strings.Contains(detailText(m), "offline, last seen 13 Oct") && !strings.Contains(detailText(m), "offline, last seen 28 Oct") {
@@ -764,7 +764,7 @@ func TestDaemonDownBanner(t *testing.T) {
 		t.Fatalf("problem %v", m.problem)
 	}
 	// The last data stays.
-	for _, want := range []string{"tenebrae-53", "Mac (here)", "14:05:00", "sonnet-5-5"} {
+	for _, want := range []string{"tenebrae-53", "Mac (here)", "strategies"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lost %q while the daemon is down", want)
 		}

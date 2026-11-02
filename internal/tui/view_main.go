@@ -163,6 +163,8 @@ func (m Model) View() string {
 			out = append(out, m.messagesView(w, contentHeight)...)
 		case m.tab == quotasTab:
 			out = append(out, m.quotasView(w, contentHeight)...)
+		case m.tab == settingsTab:
+			out = append(out, m.settingsView(w, contentHeight)...)
 		default:
 			out = append(out, m.mainView(w, contentHeight)...)
 		}
@@ -223,13 +225,6 @@ func (m Model) mainView(w, h int) []string {
 	}
 	out = append(out, panel("Machines", machines, w, roleAccent)...)
 
-	if m.settingsMenuOn {
-		for _, s := range m.settingsMenuView(w) {
-			add(s)
-		}
-		return out
-	}
-
 	if m.expand && m.mode == modeNormal {
 		add(section("Selected session", w))
 		return append(out, m.detailLines(w, max(h-len(out), 0))...)
@@ -280,9 +275,10 @@ const (
 	quotasTab   = 2
 	messagesTab = 3
 	toolsTab    = 4
+	settingsTab = 5
 )
 
-var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools"}
+var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 // sessionViewName is the view the v key selected.
@@ -303,14 +299,6 @@ func (m Model) titleLine(w int) string {
 	var tabs []string
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
-		if i == 0 {
-			if m.tab == sessionsTab {
-				label += " " + m.sessionViewName()
-			}
-			if len(m.hiddenSessions) > 0 {
-				label += fmt.Sprintf(" hidden %d", len(m.hiddenSessions))
-			}
-		}
 		if i == m.tab {
 			tabs = append(tabs, sActiveTab.Render(label))
 		} else {
@@ -318,6 +306,9 @@ func (m Model) titleLine(w int) string {
 		}
 	}
 	left := strings.Join(tabs, "  ")
+	if len(m.hiddenSessions) > 0 {
+		left += sDim.Render(fmt.Sprintf("  hidden %d", len(m.hiddenSessions)))
+	}
 	if m.tab == sessionsTab {
 		if warning, exhausted := m.quotaWarning(); warning != "" {
 			style := lipgloss.NewStyle().Foreground(roleWarning)
@@ -364,9 +355,6 @@ func (m Model) titleLine(w int) string {
 	if n := m.learnedNew(); n > 0 {
 		mid += fmt.Sprintf(", learned %d new", n)
 	}
-	if m.tab == messagesTab {
-		mid += "  filter: " + m.messageFilterName()
-	}
 	var filters []string
 	if m.filter != "" {
 		filters = append(filters, "/"+sanitize(m.filter))
@@ -412,8 +400,22 @@ func (m Model) titleLine(w int) string {
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
 	}
 	if used > w {
-		mid = ""
-		used = ansi.StringWidth(left)
+		room := w - ansi.StringWidth(left) - 3
+		if room > 0 {
+			plain := ansi.Strip(mid)
+			cut := strings.TrimSpace(ansi.Truncate(plain, room, ""))
+			if len(cut) < len(plain) && !strings.HasPrefix(plain[len(cut):], " ") {
+				if i := strings.LastIndex(cut, " "); i >= 0 {
+					cut = cut[:i]
+				} else {
+					cut = ""
+				}
+			}
+			mid = strings.TrimRight(strings.TrimSpace(cut), " ·,")
+		} else {
+			mid = ""
+		}
+		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
 	}
 	if mid == "" {
 		return clip(left, w)
@@ -857,22 +859,12 @@ type column struct {
 	right    bool
 }
 
-// columns picks the columns that fit in avail columns and gives each a width.
-// The columns are, in order: NAME, AGENT, PROJECT, MODEL, STATUS, TRUST,
-// POLICY, CPU, RAM, TASK. TRUST is always there. TASK takes whatever is left
-// after the others. When the terminal is narrow the columns that give way are
-// TASK, MODEL, PROJECT, then POLICY (decision 0017).
+// columns chooses the visible columns and fits them to the available width.
 func columns(avail, nameWant int) []column { return columnsFor(avail, nameWant, false) }
-
-// columnsFor is columns, with the POLICY column when some session has a
-// delegation policy (decision 0014). Without one the column would only take
-// room from the others.
 func columnsFor(avail, nameWant int, policy bool) []column {
 	return columnsForProject(avail, nameWant, 0, policy)
 }
 
-// columnsForProject is columnsFor, with PROJECT grown to fit the longest
-// project name (up to its maximum) before TASK takes the rest of the room.
 func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 	cols := []column{
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
@@ -881,20 +873,13 @@ func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 		{name: "MODEL", min: 10, max: 18},
 		{name: "STATUS", min: 6, max: 6},
 		{name: "TRUST", min: 5, max: 5},
+		{name: "RULE", min: 6, max: 6},
+		{name: "DELEGATE", min: 8, max: 8},
 		{name: "CPU", min: 5, max: 5, right: true},
 		{name: "RAM", min: 5, max: 5, right: true},
-		{name: "TASK", min: 10, max: 4000},
+		{name: "TASK", min: 1, max: 4000},
 	}
-	if policy {
-		// After TRUST.
-		for i, c := range cols {
-			if c.name == "TRUST" {
-				cols = append(cols[:i+1], append([]column{{name: "POLICY", min: 6, max: 6}}, cols[i+1:]...)...)
-				break
-			}
-		}
-	}
-	for _, drop := range []string{"TASK", "MODEL", "PROJECT", "POLICY"} {
+	for _, drop := range []string{"TASK", "MODEL", "PROJECT", "AGENT", "CPU", "RAM"} {
 		if sumMin(cols) <= avail {
 			break
 		}
@@ -995,21 +980,21 @@ func cellR(s string, w int) string {
 }
 
 func (m Model) sessionsTable(w, n int) []string {
-	nameWant, projectWant, policy := 0, 0, false
+	nameWant, projectWant := 0, 0
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
 			nameWant = max(nameWant, utf8.RuneCountInString(m.nameText(a, g.marks[a.SessionID], 1<<20)))
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
-			policy = policy || policyBadge(a.Delegation) != ""
 		}
 	}
-	avail := w - 2 // two columns for the selection marker
+	indicator := "view: " + m.sessionViewName() + "  (v)"
+	avail := w - 2 - ansi.StringWidth(indicator) - 2 // marker and view indicator
 	statusWidth := 6
 	if len(m.needsRows()) > 0 {
 		statusWidth = 9
 	}
 	avail -= statusWidth - 6
-	cols := columnsForProject(avail, nameWant, projectWant, policy)
+	cols := columnsForProject(avail, nameWant, projectWant, false)
 	for i := range cols {
 		if cols[i].name == "STATUS" {
 			cols[i].width = statusWidth
@@ -1037,12 +1022,17 @@ func (m Model) sessionsTable(w, n int) []string {
 		if i > 0 {
 			head += " "
 		}
+		label := c.name
+		if w <= 80 && label == "DELEGATE" {
+			label = "DLG"
+		}
 		if c.right {
-			head += cellR(c.name, c.width)
+			head += cellR(label, c.width)
 		} else {
-			head += cell(c.name, c.width)
+			head += cell(label, c.width)
 		}
 	}
+	head = padStyled(head, max(0, w-ansi.StringWidth(indicator))) + indicator
 	out := []string{sDim.Render(clip(head, w))}
 	rows := m.tableRows()
 	if !m.haveData {
@@ -1213,7 +1203,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				v = sanitize(a.Profile.Name)
 			case "AGENT":
 				v = "bot"
-			case "PROJECT", "MODEL", "TRUST", "POLICY":
+			case "PROJECT", "MODEL", "TRUST", "RULE", "DELEGATE":
 				v = "-"
 			case "STATUS":
 				v = state
@@ -1260,8 +1250,13 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			}
 		case "TRUST":
 			v = m.requestRuleBadge(a)
-		case "POLICY":
-			v = policyBadge(a.Delegation)
+		case "RULE":
+			v = m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project))
+		case "DELEGATE":
+			v = "-"
+			if a.Delegation != nil && a.Delegation.Delegate != "" {
+				v = a.Delegation.Delegate
+			}
 		case "TASK":
 			v = taskText(a)
 			if pending := m.pendingTask(a, c.width); pending != "" {
@@ -1280,7 +1275,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			switch c.name {
 			case "STATUS":
 				v = statusLabel(v)
-			case "AGENT", "POLICY", "TASK":
+			case "AGENT", "DELEGATE", "TASK":
 				v = sDim.Render(v)
 			case "TRUST":
 				if m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project)) != "normal" {
@@ -1289,6 +1284,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 					v = sDim.Render(v)
 				}
 			}
+		}
+		if selected && ((m.sessionCell == 0 && c.name == "NAME") || (m.sessionCell == 1 && c.name == "RULE") || (m.sessionCell == 2 && c.name == "DELEGATE")) {
+			v = sSel.Render(stripStyles(v))
 		}
 		parts = append(parts, v)
 	}
@@ -1453,7 +1451,7 @@ func (m Model) messagesView(w, h int) []string {
 	if eventCount == 1 {
 		eventWord = "event"
 	}
-	footer := fmt.Sprintf("%d system %s · l filter: %s", eventCount, eventWord, m.messageFilterName())
+	footer := fmt.Sprintf("%d system %s", eventCount, eventWord)
 	var chat []string
 	if len(rows) > 0 {
 		chat = m.conversationChat(rows[selected], chatW)
@@ -1472,7 +1470,7 @@ func (m Model) messagesView(w, h int) []string {
 		list = messageFit(list, max(height-1, 0), selected)
 		list = append(list, sDim.Render(clip(footer, listW)))
 		chat = messageFit(chat, height, chatSelected)
-		left := panel("Messages · filter "+m.messageFilterName(), list, listW+4, roleAccent)
+		left := panelWithRightHeader("Messages", "filter: "+m.messageFilterName()+"  (l)", list, listW+4, roleAccent)
 		right := panel("Conversation", chat, chatW+4, roleAccent)
 		for i := range left {
 			out = append(out, left[i]+right[i])
@@ -1487,7 +1485,7 @@ func (m Model) messagesView(w, h int) []string {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
 	chat = messageFit(chat, chatHeight, chatSelected)
-	out = append(out, panel("Messages · filter "+m.messageFilterName(), list, w, roleAccent)...)
+	out = append(out, panelWithRightHeader("Messages", "filter: "+m.messageFilterName()+"  (l)", list, w, roleAccent)...)
 	out = append(out, panel("Conversation", chat, w, roleAccent)...)
 	return out
 }

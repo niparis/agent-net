@@ -1,8 +1,8 @@
-1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools │ loading…
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ loading…
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │   no machines yet                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
   waiting for the daemon...
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  n new  c CTO  ? help  q quit
+up/down select  enter open  m msg  n new  left/right cell  ? help  q quit

@@ -24,8 +24,13 @@ type connectedApp struct {
 	LastUsedAt, RevokedAt      *time.Time
 }
 type pendingApp struct{ ID, ClientName, RedirectHost, DefaultKind string }
+type appsPublicStatus struct {
+	protocol.AppsPublicStatus
+	OtherRoutes json.RawMessage `json:"other_routes"`
+}
+
 type appsForm struct {
-	public         protocol.AppsPublicStatus
+	public         appsPublicStatus
 	addAfterPublic bool
 	apps           []connectedApp
 	index          int
@@ -61,7 +66,7 @@ func (m Model) appsCall(op string, params any) tea.Cmd {
 	}
 }
 func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
-	if m.mode != modeApps {
+	if m.mode != modeApps && m.tab != settingsTab {
 		return m, nil
 	}
 	f := &m.apps
@@ -109,10 +114,12 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 		f.index = min(f.index, max(0, len(f.apps)-1))
 		return m, m.appsCall("apps.public.status", struct{}{})
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
-		if err := json.Unmarshal(r.raw, &f.public); err != nil {
+		var status appsPublicStatus
+		if err := json.Unmarshal(r.raw, &status); err != nil {
 			f.err = err.Error()
 			return m, nil
 		}
+		f.public = status
 		if f.addAfterPublic && f.public.On {
 			f.addAfterPublic = false
 			f.startCode()
@@ -280,6 +287,12 @@ func (m Model) appsView(w, rows int) []string {
 	}
 	for _, line := range wrap("Reachable from the internet: "+status, w-2) {
 		out = append(out, "  "+line)
+	}
+	if ports := otherRoutePorts(f.public.OtherRoutes); len(ports) > 0 {
+		warning := "Other services are served on this machine's Tailscale name (ports " + strings.Join(ports, ", ") + "). They receive the phone's sign-in cookie. Remove them or accept the risk."
+		for _, line := range wrap(warning, w-2) {
+			out = append(out, "  "+lipgloss.NewStyle().Foreground(roleWarning).Render(line))
+		}
 	}
 	if f.public.Error != "" {
 		for _, line := range wrap(sanitize(f.public.Error), w-2) {

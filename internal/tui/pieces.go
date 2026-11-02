@@ -33,6 +33,16 @@ func panelWithBorder(title string, body []string, width int, color, borderColor 
 	return append(out, border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 }
 
+func panelWithRightHeader(title, right string, body []string, width int, color lipgloss.TerminalColor) []string {
+	out := panel(title, body, width, color)
+	border := lipgloss.NewStyle().Foreground(roleFaint)
+	heading := lipgloss.NewStyle().Foreground(color).Bold(true).Render(clip(title, width-4))
+	right = clip(right, max(width-ansi.StringWidth(heading)-6, 0))
+	rule := strings.Repeat("─", max(width-4-ansi.StringWidth(heading)-ansi.StringWidth(right), 0))
+	out[0] = border.Render("╭─") + heading + border.Render(rule) + sDim.Render(right) + border.Render("─╮")
+	return out
+}
+
 func keyHints(parts ...string) string {
 	var out []string
 	for i := 0; i+1 < len(parts); i += 2 {

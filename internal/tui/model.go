@@ -132,8 +132,8 @@ type Model struct {
 	hiddenNodes               map[string]bool
 	showHiddenSessions        bool
 	showHiddenNodes           bool
-	settingsMenuOn            bool
-	settingsMenu              int
+	settingsRow               int
+	sessionCell               int
 	filter                    string
 	uiFilter                  string
 	filtering                 bool
@@ -848,7 +848,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onPolicySaved(msg)
 
 	case appsResult:
-		return m.onAppsResult(msg)
+		next, cmd := m.onAppsResult(msg)
+		if next.tab == settingsTab && next.mode == modeApps && next.apps.stage == "" {
+			next.mode = modeNormal
+		}
+		return next, cmd
 
 	case integrationsLoadedMsg:
 		return m.onIntegrationsLoaded(msg)
@@ -1046,37 +1050,18 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeIntegrations:
 		return m.integrationsKey(k)
 	case modeApps:
-		return m.appsKey(k)
+		next, cmd := m.appsKey(k)
+		updated := next.(Model)
+		if updated.tab == settingsTab && updated.apps.stage == "" {
+			updated.mode = modeNormal
+		}
+		return updated, cmd
 	}
 	if m.inboxOn {
 		return m.inboxKey(k)
 	}
-	if m.settingsMenuOn {
-		return m.settingsMenuKey(k)
-	}
 	if m.help {
 		switch keyAction(contextHelp, k.String()) {
-		case actTips:
-			disabled := !m.onboarding.Disabled
-			return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Disabled: &disabled})
-		case actRestartTips:
-			return m.onboardingWrite("onboarding_restart", nil)
-		case actNotifications:
-			src, ok := m.src.(interface {
-				NotificationSettings(context.Context, *bool) (bool, error)
-			})
-			if !ok {
-				m.fail("Desktop notification settings are unavailable.")
-				return m, nil
-			}
-			disabled := !m.snap.NotificationsDisabled
-			return m, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-				defer cancel()
-				value, err := src.NotificationSettings(ctx, &disabled)
-				return notificationSettingMsg{disabled: value, err: err}
-			}
-
 		case actQuit:
 			m.quitting = true
 			return m, tea.Quit
@@ -1137,12 +1122,16 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.startGraph()
 		case "tools tab":
 			return m.startTools()
-		case "sessions tab", "quotas tab", "messages tab":
+		case "sessions tab", "quotas tab", "messages tab", "settings tab":
 			m.mapOn = false
 		}
 	}
 	if m.mapOn {
 		return m.mapKey(k)
+	}
+	if m.tab == sessionsTab && m.focus == focusSessions && m.sessionCell != 0 && k.Type == tea.KeyEsc {
+		m.sessionCell = 0
+		return m, nil
 	}
 	if m.filtering {
 		switch k.Type {
@@ -1190,10 +1179,18 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	for i := range tabNames {
-		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab"}[i] {
+		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab"}[i] {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
+			if i == sessionsTab {
+				m.sessionCell = 0
+			}
+			if i == settingsTab {
+				m.settingsRow = 0
+				m.apps = appsForm{loading: true}
+				return m, m.appsCall("apps.list", struct{}{})
+			}
 			if i == messagesTab {
 				m.focus = focusFeed
 				m.feedCur = m.feedLastVisible()
@@ -1211,6 +1208,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == toolsTab {
 		return m.toolsKey(k)
+	}
+	if m.tab == settingsTab {
+		return m.settingsKey(k)
 	}
 	if m.tab == quotasTab {
 		key := keyAction(contextQuotas, k.String())
@@ -1379,18 +1379,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.tab == sessionsTab && m.focus == focusSessions {
 			return m.toggleHiddenSession()
 		}
-	case "session settings":
-		if m.tab == sessionsTab {
-			m.openSettingsMenu()
-		}
-	case "request rule":
-		return m.startTrust()
-	case "policy":
-		return m.startPolicy()
-	case "integrations":
-		return m.startIntegrations()
-	case "rename machine":
-		return m.startRename()
 	case "help":
 		m.openHelp()
 	case "details":
@@ -1402,6 +1390,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.CursorEnd()
 		return m, m.input.Focus()
 	case "back":
+		if m.tab == sessionsTab && m.sessionCell != 0 {
+			m.sessionCell = 0
+			return m, nil
+		}
 		if m.filter != "" {
 			m.filter = ""
 			m.input.SetValue("")
@@ -1425,7 +1417,36 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleSessionView()
 		m.ensureSelection()
 		m.fixScroll()
+	case "cell":
+		if m.tab == sessionsTab && !m.selNeeds {
+			if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
+				if k.String() == "right" {
+					m.sessionCell = min(m.sessionCell+1, 2)
+				} else {
+					m.sessionCell = max(m.sessionCell-1, 0)
+				}
+				if m.sessionCell == 1 && firstNonEmpty(a.Repo.Project, a.Profile.Project) == "" {
+					if k.String() == "right" {
+						m.sessionCell = 2
+					} else {
+						m.sessionCell = 0
+					}
+				}
+			}
+		}
+	case "change cell":
+		if m.tab == sessionsTab && m.sessionCell == 1 && !m.selNeeds {
+			return m.startTrust()
+		}
 	case "message body", "open session":
+		if m.tab == sessionsTab && !m.selNeeds {
+			if m.sessionCell == 2 {
+				return m.startPolicy()
+			}
+			if m.sessionCell == 1 {
+				return m, nil
+			}
+		}
 		if m.focus == focusFeed {
 			if it := m.selectedConversationItem(); it != nil && it.isMessage() {
 				m.open = &openMsg{id: it.MsgID, loading: true}
@@ -1532,6 +1553,7 @@ func (m *Model) move(delta int) {
 	}
 	i = min(max(i+delta, 0), len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
+	m.sessionCell = 0
 	m.selNeeds = i < len(m.needsRows())
 	m.fixScroll()
 }
@@ -1938,7 +1960,7 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	m.inboxOn, m.help, m.mapOn, m.settingsMenuOn = false, false, false, false
+	m.inboxOn, m.help, m.mapOn = false, false, false
 	m.open = nil
 	m.mode = modeNormal
 	m.filtering = false
@@ -2028,5 +2050,5 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) graphMouseActive() bool {
-	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.settingsMenuOn
+	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help
 }

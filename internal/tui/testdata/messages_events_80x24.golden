@@ -1,11 +1,11 @@
-1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 7 sessions, 6
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages · filter with system events─────────────────────────────────────────╮
+╭─Messages─────────────────────────────────────filter: with system events  (l)─╮
 │ ▸ tenebrae-53 ↔ strategies · The deploy is ready.         1 message · 6m ago │
 │   tenebrae-53 → worker: Polish the sessions panel          4 messages · done │
 │   14:00 build disconnected                                                   │
 │   13:55 build connected                                                      │
-│ 2 system events · l filter: with system events                               │
+│ 2 system events                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ ▸ 13:59 tenebrae-53                                                          │

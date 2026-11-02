@@ -347,9 +347,13 @@ func (m Model) startRename() (Model, tea.Cmd) {
 		m.fail("Nothing is selected: pick a session on the machine first.")
 		return m, nil
 	}
-	shown, set := a.Hostname, false
+	return m.startRenameMachine(a.NodeID, a.Hostname)
+}
+
+func (m Model) startRenameMachine(id, host string) (Model, tea.Cmd) {
+	shown, set := host, false
 	for _, n := range m.snap.Nodes {
-		if n.NodeID == a.NodeID {
+		if n.NodeID == id {
 			shown, set = n.Hostname, n.DisplayName != ""
 		}
 	}
@@ -360,7 +364,7 @@ func (m Model) startRename() (Model, tea.Cmd) {
 	m.rename.Cursor.SetMode(cursor.CursorHide)
 	m.rename.SetValue(sanitize(shown))
 	m.rename.CursorEnd()
-	m.renameNode, m.renameShown, m.renameSet = a.NodeID, shown, set
+	m.renameNode, m.renameShown, m.renameSet = id, shown, set
 	m.notice = notice{}
 	return m, m.rename.Focus()
 }

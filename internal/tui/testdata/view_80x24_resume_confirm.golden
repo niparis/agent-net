@@ -1,20 +1,20 @@
-1 Sessions offline  2 Graph  3 Quotas  4 Messages  5 Tools
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 7 sessions, 5
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME              STATUS TRUST RULE   DLG        CPU   RAM  view: offline  (v)
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
-  ↳ tenebrae   opencode tenebrae  haiku-4-5  busy   -         ?     ?
-▸ tenebrae     claude   tenebrae  opus-5-5   off    -     -     -
-  strategies   claude   strategi… sonnet-5-5 idle   -         ?     ? backtest …
-  web          opencode shop      sonnet-5   idle   -         ?     ?
+  ↳ tenebrae        busy   -     normal -            ?     ?
+▸ tenebrae          off    -     normal -        -     -
+  strategies        idle   -     normal -            ?     ?
+  web               idle   -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
-  scratch      pi       -         -          shell  -         ?     ?
+  ci-runner         idle   -     normal -            ?     ?
+  scratch           shell  -     normal -            ?     ?
  old-box 1 session ─────────────────────────────────────────────────────────────
-  old-session  claude   old       -          off    -     -     -
+  old-session       off    -     normal -        -     -
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

@@ -177,7 +177,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		out = append(out, kv("sandbox", a.Worker.Permissions+note))
 	}
 	if a.Delegation != nil {
-		out = append(out, kv("policy", policySummary(a.Delegation)+"  (p: change)"))
+		out = append(out, kv("policy", policySummary(a.Delegation)+"  (edit in DELEGATE)"))
 		if a.Delegation.Main() != "" {
 			out = append(out, kv("main", a.Delegation.Main()))
 		}

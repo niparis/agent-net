@@ -1,5 +1,5 @@
  Global keys
-  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  1-6                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -13,11 +13,13 @@
  Sessions
   pgup/pgdn              page
   home/g, end            first, last row
+  enter                  go into the selected session on NAME, or open the delegation policy on DELEGATE
   m                      send a message to the session as yourself
   n                      start a session in herdr: project, harness, model, folder and first message (a form)
   x                      stop the selected worker or session
   h                      hide or unhide the selected session
-  S                      session settings: request rule, delegation policy, integrations, machine name
+  left, right            move between NAME, RULE and DELEGATE cells
+  space                  cycle the request rule: normal, ask, auto
   v                      cycle the view: active only, all, all with offline, all with offline and hidden
   d                      show or hide the selected session details
   i                      open the inbox
@@ -133,6 +135,16 @@ Legend ────────────────────────�
   n                      select the next file
   p                      select the previous file
 
+ Settings
+  tab, ]                 jump to the next section
+  shift+tab, [           jump to the previous section
+  enter                  open the selected setting: integrations, name this machine, or restart tips
+  space                  toggle internet access, desktop notifications or tips
+  p                      switch internet access in Connected apps
+  u                      set the tunnel URL in Connected apps
+  a                      add a connected app
+  x                      revoke the selected app
+
  In overlays
  Message body
   esc, enter             close
@@ -147,16 +159,6 @@ Legend ────────────────────────�
   a                      approve
   r                      refuse
   t                      answer
-
- Settings menu
-  esc                    close
-  up/down, j/k           move
-  enter                  choose
-  S > request rule       cycle the request rule: normal, ask, auto
-  S > delegation policy  subagent or worker for code changes (a form)
-  S > integrations       integrations for all machines: 7 checkboxes (a form)
-  S > name this machine  every machine sees it; empty resets
-  S > Connected apps     manage connected apps
 
  Connected apps
   up/down, j/k           move
@@ -220,9 +222,6 @@ Legend ────────────────────────�
   w                      drive
 
  Help
-  T                      toggle tips
-  R                      restart tips
-  N                      desktop notifications: on (toggle)
   q                      quit
   esc, ?                 close help
   up/down, j/k           scroll

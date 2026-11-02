@@ -1,21 +1,21 @@
-1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools │ 10 sessions, 9 online · 2 busy · workers 4 running, 0 queued
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 10 sessions, 9 online · 2 busy · workers 4 running, 0
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                             AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME                          AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM …  view: all  (v)
  Mac (here) 7 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ tenebrae                       opencode tenebrae   haiku-4-5  busy   -         ?     ?
-  tenebrae-53                      claude   tenebrae   opus-5-5   busy   -         ?     ?
-  strategies                       claude   strategies sonnet-5-5 idle   -         ?     ? backtest v2
-  ├─ backtest-a                    opencode -          haiku-4-5  idle   -         ?     ? probe
-▸ ├─ backtest-b                    opencode -          haiku-4-5  idle   -         ?     ? probe
-  └─ backtest-on-a-remo… @build-vm opencode -          haiku-4-5  idle   -         ?     ? probe
-  web                              opencode shop       sonnet-5   idle   -         ?     ?
+  ↳ tenebrae                    opencode tenebrae  haiku-4-5  busy   -     normal -            ?     ?
+  tenebrae-53                   claude   tenebrae  opus-5-5   busy   -     normal -            ?     ?
+  strategies                    claude   strategi… sonnet-5-5 idle   -     normal -            ?     ? b
+  ├─ backtest-a                 opencode -         haiku-4-5  idle   -     normal -            ?     ? p
+▸ ├─ backtest-b                 opencode -         haiku-4-5  idle   -     normal -            ?     ? p
+  └─ backtest-on-a-r… @build-vm opencode -         haiku-4-5  idle   -     normal -            ?     ? p
+  web                           opencode shop      sonnet-5   idle   -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner                        pi       agent-net  gpt-6      idle   -         ?     ?
-  scratch                          pi       -          -          shell  -         ?     ?
+  ci-runner                     pi       agent-net gpt-6      idle   -     normal -            ?     ?
+  scratch                       pi       -         -          shell  -     normal -            ?     ?
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop  c CTO  ? help  q quit
+up/down select  enter open  m msg  x stop  left/right cell  ? help  q quit

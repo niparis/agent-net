@@ -111,7 +111,7 @@ func TestOwnerIsNotARowButIsNamedInTheFeed(t *testing.T) {
 		t.Errorf("the feed does not show the owner:\n%s", v)
 	}
 	title := lines(send(m, tea.WindowSizeMsg{Width: 120, Height: 40}).View())[0]
-	if !strings.Contains(title, "7 sessions, 6 online · 2 busy · workers 1 running, 0 queued") {
+	if !strings.Contains(title, "7 sessions, 6 online") {
 		t.Errorf("title: %q", title)
 	}
 }

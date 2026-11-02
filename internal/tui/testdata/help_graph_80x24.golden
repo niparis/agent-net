@@ -1,7 +1,8 @@
 Keys ───────────────────────────────────────────────────────────────────────────
 
  Global keys
-  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  1-6                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
+                         Settings
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -19,6 +20,5 @@ Keys ─────────────────────────
   shift+arrows           pan
   , .                    select a linked neighbour
   n                      start a session in this project
-  enter                  open the selected agent card
   more below
 up/down scroll  esc close help  q quit

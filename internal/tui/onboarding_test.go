@@ -149,19 +149,27 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 	if fresh.onboarding.Steps["see"] != "skipped" {
 		t.Fatal("step did not survive restart")
 	}
-	m.help = true
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")})
+	m.focus = focusSessions
+	m.tab = settingsTab
+	for i, row := range m.settingsItems() {
+		if row.kind == "tips" {
+			m.settingsRow = i
+		}
+	}
+	next, cmd = m.key(tea.KeyMsg{Type: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
 	if !m.onboarding.Disabled || strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/7") {
 		t.Fatal("tips not hidden")
 	}
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	m.settingsRow++
+	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyEnter})
 	m = onboardingRun(next.(Model), cmd)
 	if m.onboarding.Disabled || m.onboardingStep().id != "see" {
 		t.Fatalf("restart: %+v", m.onboarding)
 	}
 	// A new model retrieves the gateway's persisted progress.
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")})
+	m.settingsRow--
+	next, cmd = m.key(tea.KeyMsg{Type: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
 	fresh = New(src)
 	fresh.snap = src.snap
@@ -169,7 +177,7 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 	if !fresh.onboarding.Disabled {
 		t.Fatal("preference did not survive restart")
 	}
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")})
+	next, cmd = m.key(tea.KeyMsg{Type: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
 	if m.onboarding.Disabled || !strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/7") {
 		t.Fatal("tips did not turn on")

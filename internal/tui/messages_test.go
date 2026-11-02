@@ -306,12 +306,12 @@ func TestMessageSystemEventsToggle(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "node.connected", Hostname: "build", Time: t0}}})
 	v := ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
-	if !strings.Contains(v, "1 system event · l filter: all") || strings.Contains(v, "build connected") {
+	if !strings.Contains(v, "1 system event") || strings.Contains(v, "build connected") {
 		t.Fatal(v)
 	}
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 2, Kind: "node.connected", Hostname: "test", Time: t0}}})
 	v = ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
-	if !strings.Contains(v, "2 system events · l filter: all") {
+	if !strings.Contains(v, "2 system events") {
 		t.Fatal(v)
 	}
 	m = keys(m, "l", "l")

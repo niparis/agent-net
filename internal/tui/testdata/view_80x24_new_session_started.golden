@@ -1,18 +1,18 @@
-1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 7 sessions, 6
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
-  ↳ tenebrae   opencode tenebrae  haiku-4-5  busy   -         ?     ?
-  tenebrae-53  claude   tenebrae  opus-5-5   busy   -         ?     ?
-▸ strategies   claude   strategi… sonnet-5-5 idle   -         ?     ? backtest …
-  web          opencode shop      sonnet-5   idle   -         ?     ?
+  ↳ tenebrae   opencode busy   -     normal -            ?     ?
+  tenebrae-53  claude   busy   -     normal -            ?     ?
+▸ strategies   claude   idle   -     normal -            ?     ?
+  web          opencode idle   -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
-  scratch      pi       -         -          shell  -         ?     ?
+  ci-runner    pi       idle   -     normal -            ?     ?
+  scratch      pi       shell  -     normal -            ?     ?
 
 
 

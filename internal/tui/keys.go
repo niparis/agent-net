@@ -28,7 +28,7 @@ const (
 	contextBody            keyContext = "message body"
 	contextInbox           keyContext = "inbox"
 	contextApps            keyContext = "connected apps"
-	contextSettingsMenu    keyContext = "settings menu"
+	contextSettings        keyContext = "Settings"
 	contextQuotas          keyContext = "Quotas"
 	contextGraph           keyContext = "Graph"
 	contextGraphFind       keyContext = "Graph find"
@@ -51,7 +51,7 @@ const (
 var allKeyContexts = []keyContext{
 	contextGlobal, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
-	contextSettingsMenu, contextApps, contextQuotas, contextGraph, contextGraphFind, contextCard,
+	contextSettings, contextApps, contextQuotas, contextGraph, contextGraphFind, contextCard,
 	contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsPlan, contextToolsCompare,
 	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
 }
@@ -75,7 +75,7 @@ func withLocal(b keyBinding) keyBinding {
 // globalHelpRows is the fixed Global keys list. It is written once here and
 // never built by joining other contexts' labels.
 var globalHelpRows = []struct{ keys, help string }{
-	{"1-5", "switch tabs: Sessions, Graph, Quotas, Messages, Tools"},
+	{"1-6", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings"},
 	{"enter", "go into the selected thing"},
 	{"arrows, j/k", "move"},
 	{"esc", "back; first clears a filter you typed"},
@@ -90,7 +90,7 @@ var globalHelpRows = []struct{ keys, help string }{
 // globalSameKeys are the keys the Global list describes. A tab section hides
 // one unless the binding is marked local and so means something different.
 var globalSameKeys = []string{
-	"1", "2", "3", "4", "5", "enter", "up", "down", "left", "right", "j", "k",
+	"1", "2", "3", "4", "5", "6", "enter", "up", "down", "left", "right", "j", "k",
 	"esc", "/", "R", "c", "C", "?", "q", "ctrl+c",
 }
 
@@ -114,6 +114,7 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),
 	bind(contextGlobal, "4", "messages tab", "Messages", -1),
 	bind(contextGlobal, "5", "tools tab", "Tools", -1),
+	bind(contextGlobal, "6", "settings tab", "Settings", -1),
 	withHelp(bind(contextGlobal, "c", "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
 	bind(contextGlobal, "ctrl+c", actQuit, "quit", -1),
@@ -124,12 +125,13 @@ var keyBindings = []keyBinding{
 	bind(contextSessions, "pgdown", actPageDown, "page", -1),
 	bind(contextSessions, "home|g", actFirst, "first row", -1),
 	bind(contextSessions, "end", actLast, "last row", -1),
-	withHelp(bind(contextSessions, "enter", "open session", "open", 1), "go into the selected session in herdr (ctrl+] returns on fallback), or run the selected row's action"),
+	withLocal(withHelp(bind(contextSessions, "enter", "open session", "open", 1), "go into the selected session on NAME, or open the delegation policy on DELEGATE")),
 	withHelp(bind(contextSessions, "m", "compose", "msg", 1), "send a message to the session as yourself"),
 	withHelp(bind(contextSessions, "n", "new session", "new", 1), "start a session in herdr: project, harness, model, folder and first message (a form)"),
 	withHelp(bind(contextSessions, "x", "stop worker", "stop", -1), "stop the selected worker or session"),
 	withHelp(bind(contextSessions, "h", "hide", "hide", -1), "hide or unhide the selected session"),
-	withHelp(bind(contextSessions, "S", "session settings", "settings", -1), "session settings: request rule, delegation policy, integrations, machine name"),
+	withLocal(withHelp(bind(contextSessions, "left|right", "cell", "cell", 1), "move between NAME, RULE and DELEGATE cells")),
+	withHelp(bind(contextSessions, "space", "change cell", "change", 1), "cycle the request rule: normal, ask, auto"),
 	withHelp(bind(contextSessions, "v", "cycle view", "view", -1), "cycle the view: active only, all, all with offline, all with offline and hidden"),
 	bind(contextSessions, "R", "refresh", "refresh", -1),
 	withHelp(bind(contextSessions, "d", "details", "details", -1), "show or hide the selected session details"),
@@ -203,10 +205,18 @@ var keyBindings = []keyBinding{
 	bind(contextApps, "r", "refuse", "refuse", 1),
 	bind(contextApps, "left|right", "kind", "change kind", 1),
 	bind(contextApps, "tab", "name", "edit name", 1),
-	bind(contextSettingsMenu, "esc", actClose, "close", 1),
-	bind(contextSettingsMenu, "up|k", actUp, "move", 1),
-	bind(contextSettingsMenu, "down|j", actDown, "move", 1),
-	bind(contextSettingsMenu, "enter", "choose", "choose", 1),
+	withHelp(bind(contextSettings, "up|k", actUp, "row", 1), "move between settings rows"),
+	withHelp(bind(contextSettings, "down|j", actDown, "row", 1), "move between settings rows"),
+	withHelp(bind(contextSettings, "tab|]", "next section", "section", 1), "jump to the next section"),
+	withHelp(bind(contextSettings, "shift+tab|[", "previous section", "section", 1), "jump to the previous section"),
+	withLocal(withHelp(bind(contextSettings, "enter", "open", "open", 1), "open the selected setting: integrations, name this machine, or restart tips")),
+	withHelp(bind(contextSettings, "space", "toggle", "toggle", 1), "toggle internet access, desktop notifications or tips"),
+	withHelp(bind(contextSettings, "p", "public", "internet", 1), "switch internet access in Connected apps"),
+	withHelp(bind(contextSettings, "u", "url", "URL", 1), "set the tunnel URL in Connected apps"),
+	withHelp(bind(contextSettings, "a", "add", "add", 1), "add a connected app"),
+	withHelp(bind(contextSettings, "x", "revoke", "revoke", 1), "revoke the selected app"),
+	bind(contextSettings, "?", "help", "help", 1),
+	bind(contextSettings, "q", actQuit, "quit", 0),
 	bind(contextQuotas, "q", actQuit, "quit", 0),
 	withHelp(bind(contextQuotas, "up|k", actUp, "select", 1), "select a subscription"),
 	withHelp(bind(contextQuotas, "down|j", actDown, "select", 1), "select a subscription"),
@@ -312,9 +322,6 @@ var keyBindings = []keyBinding{
 	bind(contextCTO, "n", "new conversation", "new", 2),
 	bind(contextCTO, "u", "undo", "undo", 2),
 	bind(contextCTO, "w", "drive window", "drive", -1),
-	{contextHelp, []string{"T"}, actTips, "toggle tips", "", false, 0},
-	{contextHelp, []string{"R"}, actRestartTips, "restart tips", "", false, 0},
-	{contextHelp, []string{"N"}, actNotifications, "toggle notifications", "", false, 0},
 	{contextHelp, []string{"q"}, actQuit, "quit", "", false, 1},
 	{contextHelp, []string{"esc", "?"}, actClose, "close help", "", false, 1},
 	{contextHelp, []string{"down", "j"}, actDown, "scroll down", "scroll", false, 1},
