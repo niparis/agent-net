@@ -46,7 +46,7 @@ func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
 	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{old}}); err != nil {
 		t.Fatal(err)
 	}
-	fresh := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "new", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK,
+	fresh := protocol.InventoryItem{Description: "Demo skill", Kind: "skill", Name: "demo", Hash: "new", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK,
 		Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10}}}}
 	broken := protocol.InventoryItem{Kind: "skill", Name: "linked", Hash: "", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/linked", State: protocol.InventoryError, Reason: "skill root is a symlink"}
 	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryError, Items: []protocol.InventoryItem{fresh, broken}}); err != nil {
@@ -67,6 +67,9 @@ func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
 	for _, item := range items {
 		if item.Name == "demo" && item.Hash == "new" {
 			found = true
+			if item.Description != "Demo skill" || item.StartTokens != 9 || item.FullTokens != 3 {
+				t.Fatalf("skill metadata: %+v", item)
+			}
 			if len(item.Locations) != 1 || item.Locations[0].Manifest == nil || len(item.Locations[0].Manifest.Files) != 1 {
 				t.Fatalf("fresh manifest lost: %+v", item.Locations)
 			}
@@ -312,5 +315,65 @@ func TestIdenticalScannedSkillsShareIdentityAcrossMachines(t *testing.T) {
 	}
 	if len(items) != 1 || len(items[0].Machines) != 2 {
 		t.Fatalf("identical skills: %+v", items)
+	}
+}
+
+func TestToolsSkillMetadataNewestCopyAndMCP(t *testing.T) {
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().UTC()
+	for i, node := range []string{"node-a", "node-b"} {
+		obs := protocol.InventoryItem{Kind: protocol.InventorySkill, Name: "demo", Hash: "same", Harness: "pi", Scope: "user", Location: "/skills/demo", State: protocol.InventoryOK, Description: "new description", ScannedAt: now, Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 81}}}}
+		if i == 1 {
+			obs.Description = "old"
+			obs.ScannedAt = now.Add(-time.Hour)
+			obs.Manifest.Files[0].Size = 4
+		}
+		mcp := protocol.InventoryItem{Kind: protocol.InventoryMCP, Name: "server", Hash: "server", Harness: "pi", Scope: "user", Location: "/config", State: protocol.InventoryOK}
+		if err := s.SetInventory(node, protocol.InventoryReport{Machine: node, State: protocol.InventoryOK, Items: []protocol.InventoryItem{obs, mcp}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("%+v", items)
+	}
+	for _, item := range items {
+		data, err := json.Marshal(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if item.Kind == protocol.InventoryMCP {
+			for _, key := range []string{"description", "start_tokens", "full_tokens"} {
+				if _, ok := fields[key]; ok {
+					t.Fatalf("MCP has %s: %s", key, data)
+				}
+			}
+			continue
+		}
+		if item.Description != "new description" || item.StartTokens != 10 || item.FullTokens != 21 {
+			t.Fatalf("%s", data)
+		}
+		detail, err := s.ToolsItem(item.ID, func(string) bool { return true })
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(detail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"description":"new description"`) {
+			t.Fatalf("%s", raw)
+		}
 	}
 }

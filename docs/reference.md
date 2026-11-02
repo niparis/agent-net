@@ -1863,3 +1863,5 @@ The gateway stores the public switch, chosen port and URL in its database. When 
 Bots appear after the machine groups in Sessions, under Bots. Their rows show their last call time and are online for ten minutes after a call. Enter opens Messages filtered to that bot. Press `x` to revoke its app.
 
 Press `a` and enter the code shown in the browser. Use left and right to choose bot or owner app, Tab to edit the name, Enter to approve, or `r` to refuse. Select an app and press `x`, then `y` to revoke it. Esc returns. Five wrong codes block further lookups for ten minutes.
+
+Skill items in `tools_items` and `tools_item` include `description`, `start_tokens` and `full_tokens` when nonempty. The description comes from the newest scanned copy. Token counts are estimates: start is (name length + description length + 20) / 4 rounded up; full is the manifest SKILL.md size / 4 rounded up, or zero when unknown. MCP items omit these fields.

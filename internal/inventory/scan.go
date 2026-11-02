@@ -204,6 +204,7 @@ func Scan(o Options) protocol.InventoryReport {
 				err = fpErr
 			}
 			files, filesErr := skillFilesRoot(skillRoot)
+			description := skillDescriptionRoot(skillRoot)
 			manifest, manifestErr := skillManifestRoot(skillRoot)
 			if err == nil {
 				err = manifestErr
@@ -228,11 +229,13 @@ func Scan(o Options) protocol.InventoryReport {
 				report.Items[index].Aliases = []string{alias}
 			}
 			if index < len(report.Items) {
-				if totalFields+len(fingerprint) > 512<<10 {
+				if totalFields+len(fingerprint)+len(description) > 512<<10 {
 					report.State = protocol.InventoryError
 					report.Reason = "inventory exceeds report limit"
 					return
 				}
+				report.Items[index].Description = description
+				totalFields += len(description)
 				report.Items[index].ContentFingerprint = fingerprint
 				totalFields += len(fingerprint)
 			}
@@ -323,6 +326,37 @@ func Scan(o Options) protocol.InventoryReport {
 				add("pi", protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "configured skill path is outside allowed root or contains a symlink", "manual")
 				continue
 			}
+			if filepath.Base(source) != "SKILL.md" && strings.HasSuffix(source, ".md") {
+				rel, relErr := filepath.Rel(base, source)
+				if relErr != nil {
+					continue
+				}
+				f, openErr := dir.Open(rel)
+				if openErr != nil {
+					continue
+				}
+				data, readErr := io.ReadAll(io.LimitReader(f, 1<<20+1))
+				info, statErr := f.Stat()
+				f.Close()
+				if readErr != nil || statErr != nil || !info.Mode().IsRegular() || len(data) > 1<<20 {
+					continue
+				}
+				digest := sha256.Sum256(data)
+				index := len(report.Items)
+				add("pi", protocol.InventorySkill, scope, project, root, source, strings.TrimSuffix(filepath.Base(source), ".md"), hex.EncodeToString(digest[:]), protocol.InventoryOK, "")
+				if index < len(report.Items) {
+					description := skillDescription(data)
+					if totalFields+len(description) > 512<<10 {
+						report.State = protocol.InventoryError
+						report.Reason = "inventory exceeds report limit"
+						return
+					}
+					report.Items[index].Description = description
+					totalFields += len(description)
+					attachManifest(index, &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: info.Size(), Fingerprint: hex.EncodeToString(digest[:])}}, Newest: info.ModTime()})
+				}
+				continue
+			}
 			if filepath.Base(source) != "SKILL.md" {
 				candidate := filepath.Join(source, "SKILL.md")
 				rel, relErr := filepath.Rel(base, candidate)
@@ -354,6 +388,7 @@ func Scan(o Options) protocol.InventoryReport {
 					err = fpErr
 				}
 				files, filesErr := skillFilesRoot(skillRoot)
+				description := skillDescriptionRoot(skillRoot)
 				manifest, manifestErr := skillManifestRoot(skillRoot)
 				if err == nil {
 					err = manifestErr
@@ -369,11 +404,13 @@ func Scan(o Options) protocol.InventoryReport {
 					index := len(report.Items)
 					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")
 					if index < len(report.Items) {
-						if totalFields+len(fingerprint) > 512<<10 {
+						if totalFields+len(fingerprint)+len(description) > 512<<10 {
 							report.State = protocol.InventoryError
 							report.Reason = "inventory exceeds report limit"
 							return
 						}
+						report.Items[index].Description = description
+						totalFields += len(description)
 						report.Items[index].ContentFingerprint = fingerprint
 						totalFields += len(fingerprint)
 					}
