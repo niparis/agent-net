@@ -9,9 +9,9 @@ This key audit uses sessions, workers, charters and the CTO. It records the exis
 record the old keys and the reasons for changing them. The current keys are in
 [the TUI keys reference](../reference.md#tui-keys).
 **Date:** 2026-11-02.
-**Scope:** every key handler and hint line under `internal/tui`: the five tabs,
-the Needs you rows, Messages, the inbox, Quotas, Graph, Tools, help,
-the forms and the CTO box.
+**Scope:** every key handler and hint line under `internal/tui`: the seven tabs,
+the Inbox, Messages, Quotas, Graph, Tools, Settings, help, the forms and the CTO
+box.
 
 The rule the owner asked for is simple: Enter means "go into it". This audit
 lists what the keys did before the change, where one key did more than one job,
@@ -390,3 +390,16 @@ DELEGATE beside TRUST. Left/right selects the editable cell, Space cycles
 RULE, Enter opens DELEGATE and Esc returns to NAME. The `S` menu and the
 help-only `N`, `T` and `R` actions are removed. The Sessions view and
 Messages filter appear in their column headers instead of the tab bar.
+
+## 7. Inbox tab (7)
+
+On 2026-11-02 the owner moved every waiting item into one place. Tab 7, Inbox,
+now holds the held requests, outcomes, learned suggestions, CTO proposals,
+approvals and questions from the inbox, and notices that the Needs you rows
+and the old inbox overlay used to show. The key line shows only the keys that
+fit the selected row: `a` approve or accept, `r` refuse or reject, `s` let
+stand, `O` overrule, `A` approve all, `t` type an answer, `x` dismiss a notice,
+and Enter opens the details or goes into the session. The old `i` key and its
+overlay are gone; the details view and typed answers live in the tab. Sessions
+keeps no Needs you rows: while anything waits, one accent line at the top says
+`<N> waiting in Inbox (7)`, and the tab label carries the same count.

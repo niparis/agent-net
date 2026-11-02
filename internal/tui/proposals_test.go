@@ -42,7 +42,7 @@ func TestProposalKeysAndConfirm(t *testing.T) {
 			s := &proposalSource{proposals: []protocol.CTOProposal{p}}
 			m := New(s)
 			m.proposals = s.proposals
-			m.selected = proposalKey(p)
+			m.tab = inboxTab
 			_, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 			if cmd == nil {
 				t.Fatal("no command")
@@ -61,7 +61,7 @@ func TestProposalKeysAndConfirm(t *testing.T) {
 	s := &proposalSource{proposals: []protocol.CTOProposal{p}}
 	m := New(s)
 	m.proposals = s.proposals
-	m.selected = proposalKey(p)
+	m.tab = inboxTab
 	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
 	m = updated.(Model)
 	if cmd != nil || len(s.answers) != 0 || !strings.Contains(ansi.Strip(m.View()), "Approve all") {
@@ -83,14 +83,15 @@ func TestProposalExpiredHidden(t *testing.T) {
 	m.usage.at = m.now()
 	updated, _ := m.update(m.fetchCmd()())
 	m = updated.(Model)
-	if len(m.proposals) != 1 || !strings.Contains(m.View(), "CTO proposes:") {
+	m = keys(m, "7")
+	if len(m.proposals) != 1 || !strings.Contains(m.View(), "CTO proposal") {
 		t.Fatal("open proposal not fetched")
 	}
 	s.proposals[0].Status = "expired"
 	updated, _ = m.update(m.fetchCmd()())
 	m = updated.(Model)
-	if strings.Contains(m.View(), "CTO proposes:") {
-		t.Fatal("expired proposal shown")
+	if got := len(m.inboxRows()); got != 0 {
+		t.Fatalf("expired proposal shown in %d rows", got)
 	}
 }
 
@@ -100,7 +101,7 @@ func TestProposalFreshDiffAndResult(t *testing.T) {
 	s := &proposalSource{proposals: []protocol.CTOProposal{p}, graph: protocol.Graph{Nodes: []protocol.Node{{Name: "shop", Charter: protocol.Charter{Purpose: "old value"}}}}}
 	m := New(s)
 	m.proposals = s.proposals
-	m.selected = proposalKey(p)
+	m.tab = inboxTab
 	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
 	if cmd == nil {
@@ -139,7 +140,7 @@ func TestProposalGoldens(t *testing.T) {
 		p := proposalFixture()
 		p.Messages = []protocol.CTOProposalMessage{{Sender: "design agent", At: time.Date(2026, 1, 2, 15, 4, 0, 0, time.UTC)}, {Sender: "owner", At: time.Date(2026, 1, 2, 15, 5, 0, 0, time.UTC)}}
 		m.proposals = []protocol.CTOProposal{p}
-		m.selected = proposalKey(p)
+		m.tab = inboxTab
 		m.selIdx = 0
 		golden(t, fmt.Sprintf("proposal_row_%d", w), m.View())
 		m.proposalDetail = &proposalDetail{proposal: p, diff: []string{"- old purpose", "+ new purpose"}}
@@ -157,7 +158,7 @@ func TestProposalSessionStartGoldens(t *testing.T) {
 		p.Tool, p.Action = "session_change", "session_start"
 		p.Args = json.RawMessage(`{"action":"session_start","project":"garden","node_id":"build-vm","harness":"claude","folder":"worktree","first_message":"Review the garden planner and report what needs fixing"}`)
 		m.proposals = []protocol.CTOProposal{p}
-		m.selected = proposalKey(p)
+		m.tab = inboxTab
 		m.selIdx = 0
 		golden(t, fmt.Sprintf("proposal_session_start_%d", w), m.View())
 	}

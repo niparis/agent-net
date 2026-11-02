@@ -75,7 +75,7 @@ func withLocal(b keyBinding) keyBinding {
 // globalHelpRows is the fixed Global keys list. It is written once here and
 // never built by joining other contexts' labels.
 var globalHelpRows = []struct{ keys, help string }{
-	{"1-6", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings"},
+	{"1-7", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox"},
 	{"enter", "go into the selected thing"},
 	{"arrows, j/k", "move"},
 	{"esc", "back; first clears a filter you typed"},
@@ -90,7 +90,7 @@ var globalHelpRows = []struct{ keys, help string }{
 // globalSameKeys are the keys the Global list describes. A tab section hides
 // one unless the binding is marked local and so means something different.
 var globalSameKeys = []string{
-	"1", "2", "3", "4", "5", "6", "enter", "up", "down", "left", "right", "j", "k",
+	"1", "2", "3", "4", "5", "6", "7", "enter", "up", "down", "left", "right", "j", "k",
 	"esc", "/", "R", "c", "C", "?", "q", "ctrl+c",
 }
 
@@ -115,6 +115,7 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "4", "messages tab", "Messages", -1),
 	bind(contextGlobal, "5", "tools tab", "Tools", -1),
 	bind(contextGlobal, "6", "settings tab", "Settings", -1),
+	bind(contextGlobal, "7", "inbox tab", "Inbox", -1),
 	withHelp(bind(contextGlobal, "c", "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
 	bind(contextGlobal, "ctrl+c", actQuit, "quit", -1),
@@ -137,7 +138,6 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextSessions, "d", "details", "details", -1), "show or hide the selected session details"),
 	bind(contextSessions, "/", "filter", "filter", -1),
 	bind(contextSessions, "esc", "back", "back", -1),
-	withHelp(bind(contextSessions, "i", "inbox", "inbox", -1), "open the inbox"),
 	bind(contextSessions, "?", "help", "help", 2),
 	bind(contextHeld, "a", "approve", "approve", 1),
 	bind(contextHeld, "r", "refuse", "refuse", 1),
@@ -179,7 +179,6 @@ var keyBindings = []keyBinding{
 	bind(contextMessages, "/", "filter", "filter", -1),
 	bind(contextMessages, "esc", "back", "back", -1),
 	bind(contextMessages, "R", "refresh", "refresh", -1),
-	withHelp(bind(contextMessages, "i", "inbox", "inbox", -1), "open the inbox"),
 	bind(contextMessages, "?", "help", "help", 2),
 	bind(contextBody, "esc|enter", actClose, "close", 1),
 	bind(contextBody, "q", actQuit, "quit", 1),
@@ -188,12 +187,22 @@ var keyBindings = []keyBinding{
 	bind(contextBody, "pgup", actPageUp, "page", -1),
 	bind(contextBody, "pgdown", actPageDown, "page", -1),
 	bind(contextInbox, "esc", "back", "back", 1),
-	bind(contextInbox, "up|k", actUp, "select", 1),
-	bind(contextInbox, "down|j", actDown, "select", 1),
-	bind(contextInbox, "enter", "details", "details", 1),
+	withHelp(bind(contextInbox, "up|k", actUp, "select", 1), "move the selection"),
+	withHelp(bind(contextInbox, "down|j", actDown, "select", 1), "move the selection"),
+	bind(contextInbox, "pgup", actPageUp, "page", -1),
+	bind(contextInbox, "pgdown", actPageDown, "page", -1),
+	bind(contextInbox, "home|g", actFirst, "first row", -1),
+	bind(contextInbox, "end", actLast, "last row", -1),
+	withHelp(bind(contextInbox, "enter", "details", "details", 1), "open the details, the proposal, or the session"),
 	bind(contextInbox, "a", "approve", "approve", 1),
 	bind(contextInbox, "r", "refuse", "refuse", 1),
+	bind(contextInbox, "s", "let stand", "let stand", 1),
+	bind(contextInbox, "O", "overrule", "overrule", 1),
+	bind(contextInbox, "A", "approve all", "approve all", 1),
 	bind(contextInbox, "t", "answer", "answer", 1),
+	bind(contextInbox, "x", "dismiss", "dismiss", 1),
+	bind(contextInbox, "?", "help", "help", 1),
+	bind(contextInbox, "q", actQuit, "quit", 0),
 	bind(contextApps, "esc", "back", "back", 1),
 	bind(contextApps, "up|k", actUp, "move", 1),
 	bind(contextApps, "down|j", actDown, "move", 1),

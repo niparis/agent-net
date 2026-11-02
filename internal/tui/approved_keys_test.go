@@ -107,10 +107,11 @@ func TestApprovedOverlayCloseKeys(t *testing.T) {
 	if m.open != nil {
 		t.Fatal("enter did not close message body")
 	}
-	m.inboxOn = true
+	m.tab = inboxTab
+	m.inboxDetail = true
 	m = keys(m, "backspace")
-	if !m.inboxOn {
-		t.Fatal("backspace closed inbox")
+	if !m.inboxDetail {
+		t.Fatal("backspace closed inbox details")
 	}
 }
 

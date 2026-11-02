@@ -23,7 +23,6 @@ import (
 
 type layout struct {
 	banner       bool
-	needs        int // rows of the "Needs you" section
 	machines     int // machine rows shown
 	moreMachines int // machines not shown
 	sessions     int // rows of the table
@@ -51,7 +50,6 @@ func (m Model) layout() layout {
 	var l layout
 	h := max(m.height, 10)
 	l.banner = m.problem != ProblemNone || (m.haveData && len(m.snap.FailedCalls) > 0)
-	l.needs = m.needsHeight()
 	n := len(m.machineRows())
 	l.machines = min(n, maxMachineRows)
 	if n > maxMachineRows {
@@ -60,15 +58,18 @@ func (m Model) layout() layout {
 	}
 	if m.mode == modeNormal {
 		box := m.ctoBoxHeight(m.tab)
-		fixed := 1 + max(l.machines, 1) + 3 + l.needs + 1 + box
+		fixed := 1 + max(l.machines, 1) + 3 + 1 + box
 		if l.banner {
 			fixed++
+		}
+		if !m.expand && m.waitingCount() > 0 {
+			fixed++ // the "waiting in Inbox" line
 		}
 		l.sessions = max(h-fixed, 1)
 		return l
 	}
 	// title, machines, column heads, detail heading, feed heading, key line
-	fixed := 1 + l.machines + 1 + 1 + 1 + 1 + l.needs
+	fixed := 1 + l.machines + 1 + 1 + 1 + 1
 	if l.banner {
 		fixed++
 	}
@@ -136,10 +137,6 @@ func (m Model) View() string {
 		out = append(out, m.proposalHistoryView(w)...)
 	case m.proposalDetail != nil && !m.help:
 		out = append(out, m.proposalDetailView(w)...)
-	case m.inboxOn:
-		for _, s := range m.inboxView(w) {
-			add(s)
-		}
 	case m.help:
 		for _, s := range m.helpView(w, h-1) {
 			add(s)
@@ -165,6 +162,8 @@ func (m Model) View() string {
 			out = append(out, m.quotasView(w, contentHeight)...)
 		case m.tab == settingsTab:
 			out = append(out, m.settingsView(w, contentHeight)...)
+		case m.tab == inboxTab:
+			out = append(out, m.inboxTabView(w, contentHeight)...)
 		default:
 			out = append(out, m.mainView(w, contentHeight)...)
 		}
@@ -208,9 +207,6 @@ func (m Model) mainView(w, h int) []string {
 			add(m.partialLine(w))
 		}
 	}
-	for _, s := range m.needsLines(w) {
-		add(s)
-	}
 	rows := m.machineRows()
 	var machines []string
 	for i, r := range rows {
@@ -231,6 +227,9 @@ func (m Model) mainView(w, h int) []string {
 	}
 
 	if m.mode == modeNormal {
+		if n := m.waitingCount(); n > 0 && !m.expand {
+			add(sAccent.Render(clip(fmt.Sprintf("%d waiting in Inbox (7)", n), w)))
+		}
 		for _, s := range m.sessionsTable(w, l.sessions) {
 			add(s)
 		}
@@ -276,9 +275,10 @@ const (
 	messagesTab = 3
 	toolsTab    = 4
 	settingsTab = 5
+	inboxTab    = 6
 )
 
-var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings"}
+var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Inbox"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 // sessionViewName is the view the v key selected.
@@ -297,15 +297,22 @@ func (m Model) sessionViewName() string {
 func (m Model) titleLine(w int) string {
 
 	var tabs []string
+	count := m.waitingCount()
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
-		if i == m.tab {
+		if i == inboxTab && count > 0 {
+			label += fmt.Sprintf(" (%d)", count)
+		}
+		switch {
+		case i == m.tab:
 			tabs = append(tabs, sActiveTab.Render(label))
-		} else {
+		case i == inboxTab && count > 0:
+			tabs = append(tabs, sNeeds.Render(label))
+		default:
 			tabs = append(tabs, sDim.Render(label))
 		}
 	}
-	left := strings.Join(tabs, "  ")
+	left := strings.Join(tabs, " ")
 	if len(m.hiddenSessions) > 0 {
 		left += sDim.Render(fmt.Sprintf("  hidden %d", len(m.hiddenSessions)))
 	}
@@ -335,9 +342,6 @@ func (m Model) titleLine(w int) string {
 			}
 		}
 	}
-	if n := m.inboxCount(); n > 0 {
-		left += sDim.Render(fmt.Sprintf("  inbox %d", n))
-	}
 	// The gateway's online count is the one to trust; an older gateway has
 	// none, so the screen counts what it has. Offline sessions are mostly old
 	// ghosts, so the header leaves them out and says what the owner can act
@@ -346,7 +350,7 @@ func (m Model) titleLine(w int) string {
 	if c := m.usage.counts; c != nil {
 		mid = fmt.Sprintf("%d online · %d busy", c.Online, busy)
 	}
-	if n := len(m.needsRows()); n > 0 {
+	if n := m.waitingCount(); n > 0 {
 		mid += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
 	}
 	if q := m.queuedWorkers(); workers > 0 || q > 0 {
@@ -389,10 +393,13 @@ func (m Model) titleLine(w int) string {
 		right = strings.TrimPrefix(right, "updated ")
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
 	}
-	if used > w && w <= 80 && m.usage.counts != nil && len(filters) == 0 && !m.mapOn && right != "" {
+	if used > w && w <= 80 && m.usage.counts != nil && len(filters) == 0 && !m.mapOn {
 		short := fmt.Sprintf("%d online", m.usage.counts.Online)
-		if ansi.StringWidth(left)+3+ansi.StringWidth(short)+2+ansi.StringWidth(right) <= w {
-			return clip(left+" │ "+short+"  "+sDim.Render(right), w)
+		if ansi.StringWidth(left)+3+ansi.StringWidth(short) <= w {
+			return clip(left+" │ "+short, w)
+		}
+		if ansi.StringWidth(left)+1+ansi.StringWidth(short) <= w {
+			return clip(left+" "+short, w)
 		}
 	}
 	if used > w {
@@ -990,7 +997,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	indicator := "view: " + m.sessionViewName() + "  (v)"
 	avail := w - 2 - ansi.StringWidth(indicator) - 2 // marker and view indicator
 	statusWidth := 6
-	if len(m.needsRows()) > 0 {
+	if m.anySessionWaiting() {
 		statusWidth = 9
 	}
 	avail -= statusWidth - 6
@@ -1063,7 +1070,7 @@ func (m Model) sessionsTable(w, n int) []string {
 			}
 		}
 	}
-	visibleIndex := len(m.needsRows())
+	visibleIndex := 0
 	for i := 0; i < top; i++ {
 		if !rows[i].header {
 			visibleIndex++
@@ -1185,7 +1192,7 @@ func (m Model) pendingTask(a protocol.AgentView, width int) string {
 }
 
 func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int) string {
-	selected := a.SessionID == m.selected && (m.selIdx == visibleIndex && !m.selNeeds || m.selNeeds && m.selIdx >= maxNeedsRows)
+	selected := a.SessionID == m.selected && m.selIdx == visibleIndex
 	marker := "  "
 	if selected {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "

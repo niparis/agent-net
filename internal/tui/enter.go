@@ -38,7 +38,13 @@ type enterDoneMsg struct {
 
 // startEnter asks how to enter the selected session.
 func (m Model) startEnter() (Model, tea.Cmd) {
-	a, ok := m.selectedAgent()
+	return m.startEnterID(m.selected)
+}
+
+// startEnterID asks how to enter one session, for a row that is not the table
+// selection (the Inbox opens the session a held request belongs to).
+func (m Model) startEnterID(id string) (Model, tea.Cmd) {
+	a, ok := m.agentByID(id)
 	switch {
 	case !ok:
 		m.fail("Nothing is selected: pick a session first.")

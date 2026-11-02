@@ -1,5 +1,5 @@
  Global keys
-  1-6                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings
+  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -22,25 +22,6 @@
   space                  cycle the request rule: normal, ask, auto
   v                      cycle the view: active only, all, all with offline, all with offline and hidden
   d                      show or hide the selected session details
-  i                      open the inbox
-
- On a held request row
-  a                      approve
-  r                      refuse
-
- On a learned suggestion row
-  a                      accept
-  r                      reject
-
- On an outcome row
-  s                      let stand
-  O                      overrule
-
- On a Atlas proposal row
-  enter                  open the proposal detail
-  a                      approve
-  r                      decline
-  A                      approve all
 
  Graph
   /                      find a node; enter selects the first match
@@ -106,7 +87,6 @@ Legend ────────────────────────�
   m                      send a message to the session as yourself
   x                      stop the selected worker or session
   d                      show or hide details
-  i                      open the inbox
   states               pending ... delivered ✓ replied ↩ failed ✗
 
  Tools
@@ -145,20 +125,41 @@ Legend ────────────────────────�
   a                      add a connected app
   x                      revoke the selected app
 
+ Inbox
+  pgup/pgdn              page
+  home/g, end            first, last row
+  a                      approve
+  r                      refuse
+  s                      let stand
+  O                      overrule
+  A                      approve all
+  t                      answer
+  x                      dismiss
+
+ On a held request row
+  a                      approve
+  r                      refuse
+
+ On a learned suggestion row
+  a                      accept
+  r                      reject
+
+ On an outcome row
+  s                      let stand
+  O                      overrule
+
+ On a Atlas proposal row
+  enter                  open the proposal detail
+  a                      approve
+  r                      decline
+  A                      approve all
+
  In overlays
  Message body
   esc, enter             close
   q                      quit
   up/down, j/k           scroll
   pgup/pgdn              page
-
- Inbox
-  esc                    back
-  up/down, j/k           select
-  enter                  details
-  a                      approve
-  r                      refuse
-  t                      answer
 
  Connected apps
   up/down, j/k           move

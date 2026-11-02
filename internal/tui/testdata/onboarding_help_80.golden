@@ -7,18 +7,18 @@ Keys ─────────────────────────
   a                      add a connected app
   x                      revoke the selected app
 
- In overlays
- Message body
-  esc, enter             close
-  q                      quit
-  up/down, j/k           scroll
-  pgup/pgdn              page
-
  Inbox
-  esc                    back
-  up/down, j/k           select
-  enter                  details
+  pgup/pgdn              page
+  home/g, end            first, last row
   a                      approve
   r                      refuse
+  s                      let stand
+  O                      overrule
+  A                      approve all
+  t                      answer
+  x                      dismiss
+
+ On a held request row
+  a                      approve
   more below
 up/down scroll  esc close help  q quit

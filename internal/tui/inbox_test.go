@@ -1,17 +1,19 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestInboxScreenShowsContext(t *testing.T) {
+func TestInboxTabShowsDetails(t *testing.T) {
 	m := newModel(80, 24)
 	m.inboxItems = []protocol.InboxItem{{ID: "i_1", Kind: "approval", Text: "deploy abc", Recommendation: "yes", Status: "open", CreatedAt: time.Now()}}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = keys(m, "7")
 	if !strings.Contains(m.View(), "deploy abc") {
 		t.Fatal(m.View())
 	}
@@ -21,10 +23,14 @@ func TestInboxScreenShowsContext(t *testing.T) {
 	}
 }
 
-func TestApprovalAppearsInNeedsYou(t *testing.T) {
+func TestApprovalAppearsInInbox(t *testing.T) {
 	m := newModel(80, 24)
 	m.inboxItems = []protocol.InboxItem{{ID: "i_1", Kind: "approval", SessionID: "s_1", Text: "deploy abc", Status: "open", CreatedAt: time.Now()}}
-	if !strings.Contains(m.View(), "deploy abc") || !strings.Contains(m.View(), "inbox 1") {
+	if !strings.Contains(m.View(), "7 Inbox (1)") {
+		t.Fatal(m.View())
+	}
+	m = keys(m, "7")
+	if !strings.Contains(m.View(), "deploy abc") {
 		t.Fatal(m.View())
 	}
 }

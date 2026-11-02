@@ -23,7 +23,7 @@ func TestOutcomeKeys(t *testing.T) {
 	src := &outcomeTestSource{}
 	m := New(src)
 	m.snap = Snapshot{Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"}}}
-	m.selected = "outcome:r"
+	m.tab = inboxTab
 	for _, tc := range []struct{ key, action string }{{"s", "let_stand"}, {"O", "overrule"}} {
 		key, action := tc.key, tc.action
 		_, cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})

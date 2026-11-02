@@ -149,7 +149,7 @@ func orderedTableNames(m Model) []string {
 	return out
 }
 
-func TestNeedsRowDownToTableKeepsActivityOrderDuringFreeze(t *testing.T) {
+func TestSessionSelectionFollowsActivityOrderDuringFreeze(t *testing.T) {
 	const waitingID = "waiting-session"
 	snap := fakeSnapshot()
 	snap.Agents = []protocol.AgentView{
@@ -173,13 +173,13 @@ func TestNeedsRowDownToTableKeepsActivityOrderDuringFreeze(t *testing.T) {
 	if got := strings.Join(orderedTableNames(m), ","); got != wantOrder {
 		t.Fatalf("initial activity order: %s, want %s", got, wantOrder)
 	}
-	if m.selected != waitingID || !m.selNeeds || m.selIdx != 0 {
-		t.Fatalf("initial selection is %q at %d (Needs you: %v), want the Needs you row", m.selected, m.selIdx, m.selNeeds)
+	if m.selected != waitingID || m.selIdx != 0 {
+		t.Fatalf("initial selection is %q at %d, want the first table row", m.selected, m.selIdx)
 	}
 
 	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
-	if m.selected != waitingID || m.selNeeds || m.selIdx != 1 {
-		t.Fatalf("down selected %q at %d (Needs you: %v), want the table row", m.selected, m.selIdx, m.selNeeds)
+	if m.selected != "recent-session" || m.selIdx != 1 {
+		t.Fatalf("down selected %q at %d, want the second table row", m.selected, m.selIdx)
 	}
 	if got := strings.Join(orderedTableNames(m), ","); got != wantOrder {
 		t.Fatalf("order changed on down: %s, want %s", got, wantOrder)
@@ -190,8 +190,8 @@ func TestNeedsRowDownToTableKeepsActivityOrderDuringFreeze(t *testing.T) {
 	if got := strings.Join(orderedTableNames(m), ","); got != wantOrder {
 		t.Fatalf("activity order jumped during freeze: %s, want %s", got, wantOrder)
 	}
-	if m.selected != waitingID || m.selNeeds || m.selIdx != 1 {
-		t.Fatalf("refresh selected %q at %d (Needs you: %v), want the table row", m.selected, m.selIdx, m.selNeeds)
+	if m.selected != "recent-session" || m.selIdx != 1 {
+		t.Fatalf("refresh selected %q at %d, want the second table row", m.selected, m.selIdx)
 	}
 
 	now = now.Add(3 * time.Second)
@@ -199,8 +199,8 @@ func TestNeedsRowDownToTableKeepsActivityOrderDuringFreeze(t *testing.T) {
 	if got := strings.Join(orderedTableNames(m), ","); got != "recent,waiting" {
 		t.Fatalf("order did not update after freeze: %s", got)
 	}
-	if m.selected != waitingID || m.selNeeds || m.selIdx != 2 {
-		t.Fatalf("post-freeze selection is %q at %d (Needs you: %v), want the moved table row", m.selected, m.selIdx, m.selNeeds)
+	if m.selected != "recent-session" || m.selIdx != 0 {
+		t.Fatalf("post-freeze selection is %q at %d, want the moved table row", m.selected, m.selIdx)
 	}
 }
 

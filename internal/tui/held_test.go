@@ -2,16 +2,18 @@ package tui
 
 import (
 	"context"
-	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestHeldRequestShownInNeeds(t *testing.T) {
+func TestHeldRequestShownInInbox(t *testing.T) {
 	m := newModel(120, 30)
 	m.snap.Held = []protocol.Message{{ID: "m_held", FromName: "alice", To: "s_0000000000000002", Body: "please help\nsecond line"}}
+	m = keys(m, "7")
 	if !strings.Contains(m.View(), "alice ->") || !strings.Contains(m.View(), "please help") || strings.Contains(m.View(), "second line") {
 		t.Fatalf("held request missing: %s", m.View())
 	}
@@ -24,7 +26,7 @@ func TestHeldRequestKeys(t *testing.T) {
 			src.snap.Held = []protocol.Message{{ID: "m_held", FromName: "alice", To: "s_0000000000000002", Body: "hello"}}
 			m := New(src)
 			m.snap = src.snap
-			m.selected = "m_held"
+			m.tab = inboxTab
 			_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 			if cmd == nil {
 				t.Fatal("missing command")
@@ -47,12 +49,13 @@ func (s *heldTestSource) AnswerHeld(_ context.Context, q protocol.HeldAnswer) er
 	return nil
 }
 
-func TestHeldAndInboxApprovalBothAppearInNeeds(t *testing.T) {
+func TestHeldAndInboxApprovalBothAppearInInbox(t *testing.T) {
 	m := newModel(120, 30)
 	m.snap.Held = []protocol.Message{{ID: "m_held", FromName: "alice", To: "s_2", Body: "please help"}}
 	m.inboxItems = []protocol.InboxItem{{ID: "i_1", Kind: "approval", SessionID: "s_1", Text: "deploy abc", Status: "open"}}
+	m = keys(m, "7")
 	view := m.View()
-	if !strings.Contains(view, "please help") || !strings.Contains(view, "deploy abc") || !strings.Contains(view, "Needs you (2)") {
-		t.Fatalf("needs: %s", view)
+	if !strings.Contains(view, "please help") || !strings.Contains(view, "deploy abc") || !strings.Contains(view, "Approvals and questions") {
+		t.Fatalf("inbox: %s", view)
 	}
 }
