@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -364,6 +366,25 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 // the single place to add a CTO tool and its argument schema.
 func NewCTO(call Caller, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net-cto", Version: version}, nil)
+	originalCall := call
+	call = func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		raw, err := originalCall(ctx, method, params)
+		if err != nil {
+			return raw, err
+		}
+		var proposal ctoDialogProposal
+		if json.Unmarshal(raw, &proposal) == nil && proposal.Kind == "result" && proposal.Value != nil {
+			return proposal.Value, nil
+		}
+		if proposal.Kind == "proposal" && proposal.ID != "" && proposal.Message != "" {
+			if slot, ok := ctx.Value(ctoDialogKey{}).(*ctoDialogProposal); ok {
+				*slot = proposal
+				return json.Marshal(proposal.Text)
+			}
+		}
+		return raw, nil
+	}
+	s.AddReceivingMiddleware(ctoDialogMiddleware(originalCall))
 	for name, spec := range ctoTools {
 		if ctoV2Tools[name] {
 			continue
@@ -394,6 +415,99 @@ func NewCTO(call Caller, version string) *mcp.Server {
 	return s
 }
 
+type ctoDialogKey struct{}
+type ctoDialogProposal struct {
+	Kind    string          `json:"kind"`
+	Value   json.RawMessage `json:"value"`
+	ID      string          `json:"proposal_id"`
+	Message string          `json:"message"`
+	Text    string          `json:"text"`
+}
+
+type pendingCTODialog struct {
+	proposal ctoDialogProposal
+	session  *mcp.ServerSession
+	tool     string
+}
+
+func ctoDialogMiddleware(call Caller) mcp.Middleware {
+	var mu sync.Mutex
+	pending := make(map[string]pendingCTODialog)
+	finish := func(ctx context.Context, proposal ctoDialogProposal, action string) *mcp.CallToolResult {
+		text := proposal.Text
+		if text == "" {
+			text = "Waiting in the Inbox."
+		}
+		if action == "accept" || action == "decline" {
+			approve := action == "accept"
+			outcome, err := call(ctx, "cto_dialog_answer", map[string]any{"id": proposal.ID, "approve": approve})
+			if err == nil {
+				if approve {
+					text = "Approved by the owner in the dialog."
+					var note string
+					if json.Unmarshal(outcome, &note) == nil && note != "" {
+						text += " " + note
+					}
+				} else {
+					text = "Refused by the owner in the dialog."
+				}
+			}
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+	}
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			request, isTool := req.(*mcp.CallToolRequest)
+			if method == "tools/call" && isTool && request.Params != nil && (request.Params.RequestState != "" || request.Params.InputResponses != nil) {
+				mu.Lock()
+				item, ok := pending[request.Params.RequestState]
+				if ok {
+					delete(pending, request.Params.RequestState)
+				}
+				mu.Unlock()
+				if !ok || item.session != request.Session || item.tool != request.Params.Name {
+					return finish(ctx, ctoDialogProposal{}, ""), nil
+				}
+				action := ""
+				if response, ok := request.Params.InputResponses["approval"].(*mcp.ElicitResult); ok && response != nil {
+					action = response.Action
+				}
+				return finish(ctx, item.proposal, action), nil
+			}
+			var proposal ctoDialogProposal
+			res, err := next(context.WithValue(ctx, ctoDialogKey{}, &proposal), method, req)
+			if err != nil || method != "tools/call" || proposal.ID == "" || !isTool {
+				return res, err
+			}
+			result, ok := res.(*mcp.CallToolResult)
+			if !ok || result.IsError {
+				return res, err
+			}
+			init := request.Session.InitializeParams()
+			if init == nil || init.Capabilities == nil || init.Capabilities.Elicitation == nil {
+				return finish(ctx, proposal, ""), nil
+			}
+			params := &mcp.ElicitParams{Message: proposal.Message, RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{}}}
+			if init.ProtocolVersion >= "2026-07-28" {
+				var bytes [32]byte
+				if _, err := rand.Read(bytes[:]); err != nil {
+					return finish(ctx, proposal, ""), nil
+				}
+				token := hex.EncodeToString(bytes[:])
+				mu.Lock()
+				pending[token] = pendingCTODialog{proposal: proposal, session: request.Session, tool: request.Params.Name}
+				mu.Unlock()
+				return &mcp.CallToolResult{InputRequests: mcp.InputRequestMap{"approval": params}, RequestState: token}, nil
+			}
+			answer, err := request.Session.Elicit(ctx, params)
+			if err != nil || answer == nil {
+				return finish(ctx, proposal, ""), nil
+			}
+			return finish(ctx, proposal, answer.Action), nil
+		}
+	}
+}
+
 // CTOToolNames returns the exposed CTO tool names, sorted.
 func CTOToolNames() []string {
 	names := make([]string, 0, len(ctoTools))
@@ -417,6 +531,9 @@ func RunCTO(ctx context.Context, socket, version string) error {
 	}
 	defer ch.close()
 	s := NewCTO(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "cto_dialog_answer" {
+			return ch.call(ctx, method, params)
+		}
 		return ch.call(ctx, "cto_tool", map[string]any{"name": method, "arguments": params})
 	}, version)
 	return s.Run(ctx, stdioTransport{conn})

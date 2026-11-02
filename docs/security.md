@@ -449,7 +449,7 @@ stored and again before it runs. All non-graph owner-only CTO changes use this
 path, including plans, previews, MCP tests and arbitrary MCP calls. Major graph
 changes also use it outside the owner window. Only the
 daemon's runner executes an approved call, with actor
-`owner (CTO proposal p_N)`. The model cannot approve its own proposals. Identical open calls are refused, open proposals expire after 24
+`owner (CTO proposal p_N)`. For a dialog answer the daemon accepts only the private CTO MCP connection, and checks its process tree again on each call. The MCP server sends an answer only after the harness returns an elicitation response; the model has no approval tool. The dialog text comes from the stored proposal. The daemon wraps ordinary tool results separately so their contents cannot masquerade as a proposal. This relies on the harness presenting elicitation to the owner, and on the existing local process checks described above. The model cannot approve its own proposals through the tool interface. Identical open calls are refused, open proposals expire after 24
 hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
 only the status or a bounded error, never a successful call's result.
 The daemon retains only sender names and times for the last three messages it

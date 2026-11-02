@@ -15,6 +15,8 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+type dialogProposalKey struct{}
+
 // Propose validates and stores a call for the owner's decision.
 func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.RawMessage, reason string) (string, error) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
@@ -53,7 +55,13 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 			}
 		}
 	}
-	return d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
+	id, err := d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
+	if err == nil {
+		if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
+			*dest = id
+		}
+	}
+	return id, err
 }
 
 // ProposalToolResult is the brief response intended for the CTO tool call.

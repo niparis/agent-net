@@ -32,7 +32,80 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	if json.Unmarshal(raw, &q) != nil {
 		return nil, errors.New("bad CTO tool request")
 	}
-	return lc.d.runCTOTool(ctx, q.Name, q.Arguments)
+	var id string
+	result, err := lc.d.runCTOTool(context.WithValue(ctx, dialogProposalKey{}, &id), q.Name, q.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	if id == "" {
+		return map[string]any{"kind": "result", "value": result}, nil
+	}
+	items, err := lc.d.proposalRunner().list()
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
+		}
+	}
+	return nil, errors.New("proposal not found")
+}
+
+func dialogArguments(raw json.RawMessage) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return "  " + string(raw)
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var lines []string
+	for _, key := range keys {
+		value := string(fields[key])
+		var str string
+		if json.Unmarshal(fields[key], &str) == nil {
+			if strings.ContainsAny(str, "\r\n") {
+				value = strconv.Quote(str)
+			} else {
+				value = str
+			}
+		}
+		lines = append(lines, "  "+key+": "+value)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (any, error) {
+	lc.mu.Lock()
+	client, pid := lc.client, lc.peerPID
+	lc.mu.Unlock()
+	if client != "cto-mcp" || !lc.d.isCTOPeer(pid) {
+		return nil, errors.New("CTO dialog requires the CTO server's process tree")
+	}
+	var q struct {
+		ID      string `json:"id"`
+		Approve *bool  `json:"approve"`
+	}
+	if json.Unmarshal(raw, &q) != nil || q.ID == "" || q.Approve == nil {
+		return nil, errors.New("bad CTO dialog answer")
+	}
+	err := lc.d.proposalRunner().decide(ctx, q.ID, *q.Approve)
+	if err != nil && err.Error() == "proposal is not open" {
+		return nil, err
+	}
+	items, listErr := lc.d.proposalRunner().list()
+	if listErr != nil {
+		return nil, listErr
+	}
+	for _, item := range items {
+		if item.ID == q.ID && (err == nil || item.Status == "failed") && item.Status != "open" {
+			return item.Note, nil
+		}
+	}
+	return nil, err
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
