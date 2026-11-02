@@ -517,6 +517,10 @@ CREATE TABLE IF NOT EXISTS app_tokens (
  expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS app_tokens_app ON app_tokens (app_id);
 CREATE INDEX IF NOT EXISTS app_tokens_expiry ON app_tokens (expires_at);
+`, `
+-- Token families and source limits for the public app listener.
+CREATE TABLE IF NOT EXISTS oauth_registration_attempts (source TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS oauth_registration_attempts_source ON oauth_registration_attempts (source,created_at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -572,6 +576,32 @@ func (s *Store) migrate() error {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
+		}
+		// Add the public app columns only when absent. Old migration tests replay
+		// later migrations on an already migrated database.
+		if strings.Contains(migrations[i], "Token families and source limits") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"app_tokens", "family_id", `family_id TEXT NOT NULL DEFAULT ''`},
+				{"app_tokens", "used_at", `used_at INTEGER`},
+				{"oauth_clients", "source", `source TEXT NOT NULL DEFAULT ''`},
+				{"oauth_pending", "source", `source TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT count(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+			if _, err := tx.Exec(`UPDATE app_tokens SET family_id=app_id WHERE family_id=''; CREATE INDEX IF NOT EXISTS app_tokens_family ON app_tokens(family_id); CREATE INDEX IF NOT EXISTS oauth_clients_source ON oauth_clients(source,created_at); CREATE INDEX IF NOT EXISTS oauth_pending_source ON oauth_pending(source,status,created_at);`); err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 		result, err := tx.Exec(migrations[i])
 		if err != nil {

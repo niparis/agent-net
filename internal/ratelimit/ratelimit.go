@@ -27,13 +27,13 @@ type Rate struct {
 // addresses and 10,000 apps are tracked; idle entries expire after at least
 // one hour. See New for the memory and eviction behavior.
 type Config struct {
-	MCP, OAuth, Page      Rate
-	AppCalls, AppMessages Rate
-	FailureLimit          int
-	FailureWindow         time.Duration
-	BanDuration           time.Duration
-	MaxAddresses, MaxApps int
-	IdleTTL               time.Duration
+	MCP, OAuth, Page               Rate
+	AppCalls, AppMessages          Rate
+	FailureLimit                   int
+	FailureWindow                  time.Duration
+	BanDuration                    time.Duration
+	MaxAddresses, MaxApps, MaxBans int
+	IdleTTL                        time.Duration
 }
 
 type bucket struct {
@@ -43,11 +43,10 @@ type bucket struct {
 }
 
 type address struct {
-	key         string
-	seen        time.Time
-	buckets     [3]bucket
-	failures    []time.Time
-	bannedUntil time.Time
+	key      string
+	seen     time.Time
+	buckets  [3]bucket
+	failures []time.Time
 }
 
 type app struct {
@@ -67,6 +66,7 @@ type Limiter struct {
 	appIdle     time.Duration
 	addresses   map[string]*list.Element
 	addressLRU  list.List
+	bans        map[string]time.Time
 	apps        map[string]*list.Element
 	appLRU      list.List
 }
@@ -74,7 +74,7 @@ type Limiter struct {
 // New creates a limiter. If now is nil, it uses time.Now.
 //
 // Address and app entries are each capped and evicted in least recently seen
-// order. Eviction also forgets any ban or limit state in that entry. The app
+// order. Eviction forgets bucket and failure state, but not active bans. The app
 // methods must therefore be called only with approved app IDs. Idle entries
 // are removed on subsequent operations, without a background goroutine. Their
 // retention is at least IdleTTL and long enough to preserve bans, failure
@@ -97,6 +97,9 @@ func New(cfg Config, now func() time.Time) *Limiter {
 	if cfg.MaxAddresses <= 0 {
 		cfg.MaxAddresses = 10_000
 	}
+	if cfg.MaxBans <= 0 {
+		cfg.MaxBans = 50_000
+	}
 	if cfg.MaxApps <= 0 {
 		cfg.MaxApps = 10_000
 	}
@@ -112,6 +115,7 @@ func New(cfg Config, now func() time.Time) *Limiter {
 		addressIdle: max(cfg.IdleTTL, cfg.FailureWindow, cfg.BanDuration, cfg.MCP.Per, cfg.OAuth.Per, cfg.Page.Per),
 		appIdle:     max(cfg.IdleTTL, cfg.AppCalls.Per, cfg.AppMessages.Per),
 		addresses:   make(map[string]*list.Element),
+		bans:        make(map[string]time.Time),
 		apps:        make(map[string]*list.Element),
 	}
 }
@@ -258,10 +262,11 @@ func (l *Limiter) Allow(addr, class string) (bool, time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.current()
-	a := l.getAddress(addr, now)
-	if now.Before(a.bannedUntil) {
-		return false, a.bannedUntil.Sub(now)
+	if until := l.bans[addr]; now.Before(until) {
+		return false, until.Sub(now)
 	}
+	delete(l.bans, addr)
+	a := l.getAddress(addr, now)
 	return a.buckets[index].allow(rate, now)
 }
 
@@ -272,10 +277,11 @@ func (l *Limiter) Fail(addr string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.current()
-	a := l.getAddress(addr, now)
-	if now.Before(a.bannedUntil) {
+	if now.Before(l.bans[addr]) {
 		return true
 	}
+	delete(l.bans, addr)
+	a := l.getAddress(addr, now)
 	cutoff := now.Add(-l.cfg.FailureWindow)
 	first := 0
 	for first < len(a.failures) && !a.failures[first].After(cutoff) {
@@ -284,10 +290,34 @@ func (l *Limiter) Fail(addr string) bool {
 	a.failures = append(a.failures[first:], now)
 	if len(a.failures) >= l.cfg.FailureLimit {
 		a.failures = nil
-		a.bannedUntil = now.Add(l.cfg.BanDuration)
+		l.addBan(addr, now.Add(l.cfg.BanDuration), now)
 		return true
 	}
 	return false
+}
+
+// addBan retains the active bans with the latest expiry when full.
+func (l *Limiter) addBan(addr string, until, now time.Time) {
+	if len(l.bans) >= l.cfg.MaxBans {
+		var oldest string
+		var expiry time.Time
+		for key, value := range l.bans {
+			if !now.Before(value) {
+				delete(l.bans, key)
+				continue
+			}
+			if oldest == "" || value.Before(expiry) {
+				oldest, expiry = key, value
+			}
+		}
+		if len(l.bans) >= l.cfg.MaxBans {
+			if !until.After(expiry) {
+				return
+			}
+			delete(l.bans, oldest)
+		}
+	}
+	l.bans[addr] = until
 }
 
 // Banned reports whether addr is currently banned. Looking up an unseen
@@ -295,13 +325,13 @@ func (l *Limiter) Fail(addr string) bool {
 func (l *Limiter) Banned(addr string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	e := l.addresses[addr]
-	if e == nil {
+	now := l.current()
+	until := l.bans[addr]
+	if !now.Before(until) {
+		delete(l.bans, addr)
 		return false
 	}
-	now := l.current()
-	a := l.touchAddress(e, now)
-	return now.Before(a.bannedUntil)
+	return true
 }
 
 // AllowApp checks the rolling window for an approved app ID and kind "call"
@@ -341,8 +371,8 @@ func Middleware(l *Limiter, class string, next http.Handler) http.Handler {
 }
 
 // ClientAddr uses the last entry of the last X-Forwarded-For header only for a
-// loopback peer. The tunnel appends the client address; earlier entries may be
-// supplied by the client and spoofed. Headers from other peers are ignored.
+// loopback peer. Only the loopback tunnel is trusted. Tailscale Funnel replaces
+// the header; other tunnels must overwrite it. Headers from other peers are ignored.
 // If the last entry is not an IP address, the remote host is returned.
 func ClientAddr(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

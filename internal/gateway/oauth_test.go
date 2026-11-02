@@ -230,43 +230,23 @@ func TestOAuthPendingCapsExpiryReuseAndRefusal(t *testing.T) {
 	if got := oauthStatus(t, h, id); got["status"] != "refused" || got["redirect"] != nil {
 		t.Fatalf("refused %v", got)
 	}
-	for range 20 {
+	for range 3 {
 		oauthPage(t, oauthAuthorize(h, client, nil))
 	}
 	if w := oauthAuthorize(h, client, nil); w.Code != 429 {
-		t.Fatalf("cap: %d", w.Code)
+		t.Fatalf("per-client cap: %d", w.Code)
 	}
 	c.t = c.t.Add(10 * time.Minute)
 	if got := oauthStatus(t, h, id); got["status"] != "expired" {
 		t.Fatalf("expired %v", got)
 	}
-	if _, err = s.PendingByUserCode(code, "source", c.t); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("expired lookup %v", err)
-	}
-	page := oauthAuthorize(h, client, nil)
-	code, id = oauthPage(t, page)
-	cookie := oauthBrowserCookie(t, page, c.t)
+	_, id = oauthPage(t, oauthAuthorize(h, client, nil))
 	if err = s.ApprovePending(id, "bot", "retry bot", c.t); err != nil {
 		t.Fatal(err)
 	}
-	// A retry is already approved, and cannot be looked up as a pending code.
-	retry := oauthAuthorize(oauthWithCookie(h, cookie), client, nil)
-	match := oauthPageID.FindStringSubmatch(retry.Body.String())
-	if retry.Code != 200 || len(match) != 2 || strings.Contains(retry.Body.String(), `id="user-code"`) {
-		t.Fatalf("retry page: %d %s", retry.Code, retry.Body.String())
-	}
-	retryID := match[1]
-	if retryID == id {
-		t.Fatal("reused pending ID")
-	}
-	oauthRedirectCode(t, oauthStatus(t, h, retryID))
-	if _, err = s.PendingByUserCode(code, "source", c.t); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("approved lookup %v", err)
-	}
-	c.t = c.t.Add(10 * time.Minute)
-	_, lateID := oauthPage(t, oauthAuthorize(oauthWithCookie(h, cookie), client, nil))
-	if got := oauthStatus(t, h, lateID); got["status"] != "pending" {
-		t.Fatalf("reuse outlived window %v", got)
+	_, retryID := oauthPage(t, oauthAuthorize(h, client, nil))
+	if got := oauthStatus(t, h, retryID); got["status"] != "pending" {
+		t.Fatalf("retry %v", got)
 	}
 }
 func TestOAuthPendingAttempts(t *testing.T) {
@@ -301,12 +281,12 @@ func TestOAuthClientLimitCleanup(t *testing.T) {
 	if err := s.ApprovePending(id, "bot", "kept", c.t); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < oauthClientLimit-1; i++ {
+	for i := 0; i < 4; i++ {
 		oauthRegister(t, h)
 	}
 	w := oauthRequest(h, "POST", "/oauth/register", `{"redirect_uris":["https://example.test/cb"]}`, "application/json")
 	if w.Code != 429 {
-		t.Fatalf("client limit: %d %s", w.Code, w.Body.String())
+		t.Fatalf("source limit: %d", w.Code)
 	}
 	c.t = c.t.Add(7 * 24 * time.Hour)
 	replacement := oauthRegister(t, h)
@@ -407,25 +387,19 @@ func TestOAuthRefreshClientBinding(t *testing.T) {
 func TestOAuthCompletedCleanup(t *testing.T) {
 	s, c, h := oauthFixture(t)
 	client := oauthRegister(t, h)
-	page := oauthAuthorize(h, client, nil)
-	_, first := oauthPage(t, page)
-	cookie := oauthBrowserCookie(t, page, c.t)
+	_, first := oauthPage(t, oauthAuthorize(h, client, nil))
 	c.t = c.t.Add(9 * time.Minute)
 	if err := s.ApprovePending(first, "bot", "late approval", c.t); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(30 * time.Second)
-	// A recent approval can be reused from the same browser.
-	retry := oauthAuthorize(oauthWithCookie(h, cookie), client, nil)
-	match := oauthPageID.FindStringSubmatch(retry.Body.String())
-	if len(match) != 2 || strings.Contains(retry.Body.String(), `id="user-code"`) {
-		t.Fatalf("late approval reuse: %s", retry.Body.String())
-	}
+	_, second := oauthPage(t, oauthAuthorize(h, client, nil))
 	c.t = c.t.Add(11 * time.Minute)
-	oauthPage(t, oauthAuthorize(h, client, nil))
+	if err := s.CleanupOAuth(c.t); err != nil {
+		t.Fatal(err)
+	}
 	var count int
-	if err := s.db.QueryRow("SELECT count(*) FROM oauth_pending WHERE id IN (?,?)", first, match[1]).Scan(&count); err != nil || count != 0 {
-		t.Fatalf("old completed requests not removed: %d %v", count, err)
+	if err := s.db.QueryRow("SELECT count(*) FROM oauth_pending WHERE id IN (?,?)", first, second).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("old requests: %d %v", count, err)
 	}
 }
 func TestOAuthEscapingAndDefaultGrants(t *testing.T) {

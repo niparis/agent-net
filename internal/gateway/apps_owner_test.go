@@ -13,9 +13,16 @@ func TestConnectedAppsOwnerOperations(t *testing.T) {
 	client := oauthRegister(t, h)
 	code, id := oauthPage(t, oauthAuthorize(h, client, nil))
 	g := &Gateway{store: s}
+	node, _, err := s.CreateNode("example", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.UpsertSession(node, owner("example")); err != nil {
+		t.Fatal(err)
+	}
 	call := func(op string, v any) (any, error) {
 		raw, _ := json.Marshal(v)
-		return g.handle(context.Background(), &nodeConn{}, op, raw)
+		return g.handle(context.Background(), &nodeConn{id: node}, op, raw)
 	}
 	if _, err := call("apps.pending", map[string]string{"code": code}); err != nil {
 		t.Fatal(err)

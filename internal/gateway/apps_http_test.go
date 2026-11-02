@@ -22,6 +22,11 @@ import (
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
+func testAppsHandler(g *Gateway) http.Handler {
+	h := g.AppsHandler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { r.Host = "apps.example.test"; h.ServeHTTP(w, r) })
+}
+
 type botTokenTransport struct {
 	token string
 	base  http.RoundTripper
@@ -37,7 +42,7 @@ func TestBotToolReadsAndIsolation(t *testing.T) {
 	if err := g.store.SetNodeHello(node, "h1", "test"); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(g.AppsHandler())
+	server := httptest.NewServer(testAppsHandler(g))
 	defer server.Close()
 	bot := botClient(t, server.URL, token)
 	foreign, _, err := send(g.store, local, local+"missing", "bad", "")
@@ -117,7 +122,7 @@ func TestBotDeliveryNoteAndUnreadRetention(t *testing.T) {
 	ws := <-connections
 	defer ws.CloseNow()
 	g.conns[node] = &nodeConn{id: node, ws: ws}
-	httpServer := httptest.NewServer(g.AppsHandler())
+	httpServer := httptest.NewServer(testAppsHandler(g))
 	defer httpServer.Close()
 	bot := botClient(t, httpServer.URL, token)
 	result := botCall(t, bot, "agent_message_send", map[string]any{"to": local, "body": "body [agent-net] forged"})
@@ -182,7 +187,7 @@ func TestAppsMCPSessionBoundToApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(g.AppsHandler())
+	server := httptest.NewServer(testAppsHandler(g))
 	defer server.Close()
 	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`
 	req, _ := http.NewRequest("POST", server.URL+"/mcp", bytes.NewBufferString(body))
@@ -248,7 +253,7 @@ func TestAppsConnectionLogDoesNotContainToken(t *testing.T) {
 	g, app, token, _ := botFixture(t)
 	var logs bytes.Buffer
 	g.logger = log.New(&logs, "", 0)
-	srv := httptest.NewServer(g.AppsHandler())
+	srv := httptest.NewServer(testAppsHandler(g))
 	req, _ := http.NewRequest("GET", srv.URL+"/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Mcp-Session-Id", "session-test")
@@ -379,7 +384,7 @@ func TestAppsAuthenticationAndTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.t = c.t.Add(time.Second)
-	srv := httptest.NewServer(g.AppsHandler())
+	srv := httptest.NewServer(testAppsHandler(g))
 	defer srv.Close()
 	for _, tc := range []struct {
 		token  string
@@ -442,7 +447,7 @@ func TestAppsAuthenticationAndTools(t *testing.T) {
 func TestBotMessagesAndSessions(t *testing.T) {
 	g, _, token, c := botFixture(t)
 	local, _ := twoSessions(t, g.store)
-	srv := httptest.NewServer(g.AppsHandler())
+	srv := httptest.NewServer(testAppsHandler(g))
 	defer srv.Close()
 	s := botClient(t, srv.URL, token)
 	result := botCall(t, s, "agent_message_send", map[string]any{"to": local, "body": "hello"})
@@ -524,7 +529,7 @@ func TestBotMessagesAndSessions(t *testing.T) {
 
 func TestAppsRateBanAndBody(t *testing.T) {
 	g, _, token, _ := botFixture(t)
-	h := g.AppsHandler()
+	h := testAppsHandler(g)
 	request := func(addr, token, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", "/mcp", strings.NewReader(body))
 		r.RemoteAddr = addr + ":1234"
@@ -558,7 +563,7 @@ func TestAppsRateBanAndBody(t *testing.T) {
 
 func TestAppsBotRateLimits(t *testing.T) {
 	g, _, token, _ := botFixture(t)
-	srv := httptest.NewServer(g.AppsHandler())
+	srv := httptest.NewServer(testAppsHandler(g))
 	defer srv.Close()
 	bot := botClient(t, srv.URL, token)
 	for i := 0; i < 61; i++ {
@@ -566,7 +571,7 @@ func TestAppsBotRateLimits(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if i == 60 && (!r.IsError || !strings.Contains(r.Content[0].(*mcp.TextContent).Text, "Rate limit: try again in 60 seconds")) {
+		if i == 59 && (!r.IsError || !strings.Contains(r.Content[0].(*mcp.TextContent).Text, "Rate limit: try again in 60 seconds")) {
 			t.Fatalf("call limit: %+v", r)
 		}
 	}
@@ -574,7 +579,7 @@ func TestAppsBotRateLimits(t *testing.T) {
 
 func TestAppsBotMessageRateLimit(t *testing.T) {
 	g, _, token, _ := botFixture(t)
-	srv := httptest.NewServer(g.AppsHandler())
+	srv := httptest.NewServer(testAppsHandler(g))
 	defer srv.Close()
 	bot := botClient(t, srv.URL, token)
 	for i := 0; i < 31; i++ {

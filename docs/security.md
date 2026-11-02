@@ -1006,3 +1006,28 @@ same bounded text reader as an observed file. Neither operation runs scripts.
 A copy choice validates all named observations before any removal, imports the
 chosen copy first, and uses the host's hash-checked backup journal for the other
 native user copies. Tracked, package, plugin and system sources are refused.
+
+### Public apps listener
+
+The public listener trusts only its loopback tunnel to supply the client
+address. Tailscale Funnel replaces X-Forwarded-For. Other tunnels must be
+configured to overwrite this header, not append to a client-supplied value.
+The MCP endpoint checks the configured public host and any Origin header.
+It authenticates before reading a request body and limits body size, read time,
+concurrent requests, app calls, and MCP sessions. An app may hold four sessions;
+the listener permits 200 in total and closes idle sessions after ten minutes.
+Revoking an app closes its sessions.
+
+Each OAuth sign-in requires a fresh code approved by the owner. Unapproved
+registrations expire after one hour and are limited to five per source per
+hour and 200 total. Pending sign-ins expire after ten minutes and are limited
+to three per client, three per source, and 20 total. Oldest unapproved entries
+are evicted when a total pool is full. Access tokens are limited to 20 per app.
+Refresh tokens rotate; reuse of a consumed token revokes its token family.
+Consumed refresh hashes are kept for 90 days after use. Active address bans
+are stored separately from rate buckets, with at most 50,000 bans retained.
+
+The owner-only check for apps.* operations uses process ancestry. A detached
+process running as the owner's user can escape that check, the same limit as
+other owner actions. Every app approval is logged and appears in the owner's
+inbox so that such an approval is visible.
