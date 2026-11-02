@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,19 +64,29 @@ func TestCTODialogApprovalAppliesProposal(t *testing.T) {
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
 	ctx := context.Background()
-	id, err := n.d.Propose(ctx, "graph_change", "charter_set", json.RawMessage(`{"node":"dialog-node","attr":"purpose","value":"dialog purpose"}`), "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
 	n.d.cto.pid.Store(int64(os.Getpid()))
 	defer n.d.cto.pid.Store(0)
 	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
+	response, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, ok := response.(map[string]any)
+	if !ok || payload["kind"] != "proposal" {
+		t.Fatalf("proposal payload: %v", response)
+	}
+	id, ok := payload["proposal_id"].(string)
+	message, msgOK := payload["message"].(string)
+	if !ok || !msgOK || !strings.Contains(message, "dialog purpose") || !strings.Contains(message, "Reason: ") || strings.Contains(message, `"reason"`) {
+		t.Fatalf("stored proposal payload: %v", response)
+	}
 	raw, _ := json.Marshal(map[string]any{"id": id, "approve": true})
 	if _, err := cto.dispatch(ctx, "cto_dialog_answer", raw); err != nil {
 		t.Fatal(err)
 	}
 	var history []protocol.CharterChange
-	if err := json.Unmarshal(cli.mustCall("charter_history", map[string]string{"node": "dialog-node"}), &history); err != nil || len(history) != 1 || history[0].By != "owner (CTO proposal "+id+")" {
+	if err := json.Unmarshal(cli.mustCall("charter_history", map[string]string{"node": "dialog-node"}), &history); err != nil || len(history) != 2 || history[0].By != "owner (CTO proposal "+id+")" {
 		t.Fatalf("history: %+v %v", history, err)
 	}
 }

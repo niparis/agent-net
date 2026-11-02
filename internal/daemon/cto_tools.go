@@ -34,8 +34,11 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	}
 	var id string
 	result, err := lc.d.runCTOTool(context.WithValue(ctx, dialogProposalKey{}, &id), q.Name, q.Arguments)
-	if err != nil || id == "" {
-		return result, err
+	if err != nil {
+		return nil, err
+	}
+	if id == "" {
+		return map[string]any{"kind": "result", "value": result}, nil
 	}
 	items, err := lc.d.proposalRunner().list()
 	if err != nil {
@@ -43,7 +46,7 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	}
 	for _, item := range items {
 		if item.ID == id {
-			return map[string]any{"proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments: %s\nReason: %s", item.Call.Tool, item.Call.Action, item.Call.Args, item.Reason)}, nil
+			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments: %s\nReason: %s", item.Call.Tool, item.Call.Action, item.Call.Args, item.Reason)}, nil
 		}
 	}
 	return nil, errors.New("proposal not found")

@@ -371,7 +371,10 @@ func NewCTO(call Caller, version string) *mcp.Server {
 			return raw, err
 		}
 		var proposal ctoDialogProposal
-		if json.Unmarshal(raw, &proposal) == nil && proposal.ID != "" && proposal.Message != "" {
+		if json.Unmarshal(raw, &proposal) == nil && proposal.Kind == "result" && proposal.Value != nil {
+			return proposal.Value, nil
+		}
+		if proposal.Kind == "proposal" && proposal.ID != "" && proposal.Message != "" {
 			if slot, ok := ctx.Value(ctoDialogKey{}).(*ctoDialogProposal); ok {
 				*slot = proposal
 				return json.Marshal(proposal.Text)
@@ -412,9 +415,11 @@ func NewCTO(call Caller, version string) *mcp.Server {
 
 type ctoDialogKey struct{}
 type ctoDialogProposal struct {
-	ID      string `json:"proposal_id"`
-	Message string `json:"message"`
-	Text    string `json:"text"`
+	Kind    string          `json:"kind"`
+	Value   json.RawMessage `json:"value"`
+	ID      string          `json:"proposal_id"`
+	Message string          `json:"message"`
+	Text    string          `json:"text"`
 }
 
 func ctoDialogMiddleware(call Caller) mcp.Middleware {

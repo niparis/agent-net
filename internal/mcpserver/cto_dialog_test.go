@@ -32,7 +32,7 @@ func TestCTODialog(t *testing.T) {
 					}
 					return json.RawMessage(`"done"`), nil
 				}
-				return json.RawMessage(`{"proposal_id":"p_1","message":"Stored proposal","text":"waiting"}`), nil
+				return json.RawMessage(`{"kind":"proposal","proposal_id":"p_1","message":"Stored proposal","text":"waiting"}`), nil
 			}, "test")
 			ss, err := srv.Connect(ctx, st, nil)
 			if err != nil {
@@ -61,5 +61,34 @@ func TestCTODialog(t *testing.T) {
 				t.Fatalf("result=%+v answered=%v", result.Content[0].(*mcp.TextContent).Text, answered)
 			}
 		})
+	}
+}
+
+func TestCTODialogIgnoresToolResultThatLooksLikeProposal(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	called := false
+	srv := NewCTO(func(_ context.Context, _ string, _ any) (json.RawMessage, error) {
+		return json.RawMessage(`{"kind":"result","value":{"proposal_id":"p_1","message":"misleading","text":"waiting"}}`), nil
+	}, "test")
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, &mcp.ClientOptions{ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+		called = true
+		return &mcp.ElicitResult{Action: "accept"}, nil
+	}}).Connect(ctx, ct, &mcp.ClientSessionOptions{ProtocolVersion: "2025-11-25"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "graph_change", Arguments: map[string]any{"action": "node_add", "name": "x"}})
+	if err != nil || result.IsError || called {
+		t.Fatalf("result %v, error %v, elicited %v", result, err, called)
+	}
+	if strings.Contains(result.Content[0].(*mcp.TextContent).Text, `"kind"`) || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "misleading") {
+		t.Fatalf("ordinary result lost: %+v", result.Content)
 	}
 }
