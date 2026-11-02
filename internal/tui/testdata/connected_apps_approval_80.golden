@@ -5,16 +5,16 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 Connected apps ─────────────────────────────────────────────────────────────────
-  Client: Cursor
-  Redirect host: client.example
-  Kind: bot  (left/right)
-  Name: > cursor
-  Tab edits name; Enter approves; r refuses; Esc cancels.
+  Approve this app?
 
+  Client       Cursor
+  Return host  www.cursor.com
+  Kind         ‹ bot ›   (left/right: bot or owner app)
+  Name         cursor
 
-
-
-
+  Approve only if you just pressed connect in this app and the return host is
+  the one you expect.
+  A bot acts under its own name; an owner app acts as you.
 
 
 
@@ -27,4 +27,4 @@ Connected apps ─────────────────────�
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-left change kind  tab edit name  enter approve  r refuse  esc back
+left/right kind  tab name  enter approve  r refuse  esc cancel

@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestConnectedAppsOwnerOperations(t *testing.T) {
@@ -34,5 +36,19 @@ func TestConnectedAppsOwnerOperations(t *testing.T) {
 	_, id = oauthPage(t, oauthAuthorize(h, client, nil))
 	if _, err := call("apps.refuse", map[string]string{"app_id": id}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConnectedAppsBlockRemaining(t *testing.T) {
+	s, c := newTestStore(t)
+	g := &Gateway{store: s}
+	raw := []byte(`{"code":"WRONGX"}`)
+	for i := 0; i < 5; i++ {
+		_, _ = g.handle(context.Background(), &nodeConn{}, "apps.pending", raw)
+	}
+	c.t = c.t.Add(7 * time.Minute)
+	_, err := g.handle(context.Background(), &nodeConn{}, "apps.pending", raw)
+	if err == nil || !strings.Contains(err.Error(), "too many tries: 3 minutes") {
+		t.Fatalf("remaining: %v", err)
 	}
 }

@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestConnectedAppsSettingsEntry(t *testing.T) {
@@ -105,7 +107,7 @@ func TestConnectedAppsScreens(t *testing.T) {
 		used := time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC)
 		name := func(s string) string { return fmt.Sprintf("connected_apps_%s_%d", s, sz[0]) }
 		golden(t, name("empty"), m.View())
-		m.apps.apps = []connectedApp{{ID: "a", Name: "cursor", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://client.example/cb"}, CreatedAt: stamp}, {ID: "b", Name: "phone", Kind: "owner_app", ClientName: "Phone", RedirectURIs: []string{"https://phone.example/cb"}, CreatedAt: stamp, LastUsedAt: &used}}
+		m.apps.apps = []connectedApp{{ID: "a", Name: "cursor", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://www.cursor.com/cb"}, CreatedAt: stamp}, {ID: "b", Name: "iphone", Kind: "owner_app", ClientName: "iPhone Safari", RedirectURIs: []string{"https://phone.example/cb"}, CreatedAt: stamp, LastUsedAt: &used}}
 		golden(t, name("list"), m.View())
 		m.apps.stage = "confirm"
 		golden(t, name("revoke"), m.View())
@@ -114,7 +116,7 @@ func TestConnectedAppsScreens(t *testing.T) {
 		m.apps.input.Focus()
 		golden(t, name("code"), m.View())
 		m.apps.stage = "approve"
-		m.apps.pending = pendingApp{ID: "p", ClientName: "Cursor", RedirectHost: "client.example"}
+		m.apps.pending = pendingApp{ID: "p", ClientName: "Cursor", RedirectHost: "www.cursor.com"}
 		m.apps.kind = "bot"
 		m.apps.input.SetValue("cursor")
 		golden(t, name("approval"), m.View())
@@ -128,5 +130,48 @@ func TestConnectedAppsHelp(t *testing.T) {
 		if !strings.Contains(help, want) {
 			t.Errorf("help missing %q", want)
 		}
+	}
+}
+
+func TestConnectedAppsPolishedViews(t *testing.T) {
+	m := newModel(80, 30)
+	m.mode = modeApps
+	m.apps.apps = []connectedApp{{Name: "cursor", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://www.cursor.com/cb"}, CreatedAt: m.now()}}
+	view := ansi.Strip(strings.Join(m.appsView(80, 20), "\n"))
+	for _, s := range []string{"NAME", "KIND", "CLIENT", "RETURN HOST", "CONNECTED", "LAST USED", "▸ cursor", "today 14:05", "never"} {
+		if !strings.Contains(view, s) {
+			t.Errorf("list missing %q: %s", s, view)
+		}
+	}
+	m.apps.stage = "approve"
+	m.apps.kind = "bot"
+	m.apps.pending = pendingApp{ClientName: "Cursor", RedirectHost: "www.cursor.com"}
+	m.apps.input = textinput.New()
+	m.apps.input.SetValue("cursor")
+	view = ansi.Strip(strings.Join(m.appsView(80, 20), "\n"))
+	for _, s := range []string{"Approve this app?", "Client       Cursor", "Return host  www.cursor.com", "Kind         ‹ bot ›", "Name         cursor", "Approve only if you just pressed connect"} {
+		if !strings.Contains(view, s) {
+			t.Errorf("approval missing %q: %s", s, view)
+		}
+	}
+	m.apps.stage = "code"
+	m, _ = m.onAppsResult(appsResult{op: "apps.pending", err: errors.New("too many tries: 3 minutes")})
+	if m.apps.err != "Too many wrong codes. Try again in 3 minutes." {
+		t.Errorf("countdown %q", m.apps.err)
+	}
+}
+
+func TestConnectedAppsColumnsFit(t *testing.T) {
+	m := newModel(80, 30)
+	m.mode = modeApps
+	m.apps.apps = []connectedApp{{Name: strings.Repeat("name", 20), Kind: "bot", ClientName: strings.Repeat("client", 15), RedirectURIs: []string{"https://" + strings.Repeat("host", 15) + ".example/cb"}, CreatedAt: m.now()}}
+	lines := m.appsView(80, 20)
+	for _, line := range lines {
+		if ansi.StringWidth(line) > 80 {
+			t.Fatalf("line exceeds width: %q", line)
+		}
+	}
+	if !strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "…") {
+		t.Fatal("long cells were not truncated")
 	}
 }

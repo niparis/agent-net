@@ -5,10 +5,10 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 Connected apps ─────────────────────────────────────────────────────────────────
-> cursor  bot  Cursor  client.example
-    connected 2026-01-02  last used never
-  phone  owner app  Phone  phone.example
-    connected 2026-01-02  last used 2026-02-03
+  NAME   KIND      CLIENT        RETURN HOST    CONNECTED LAST USED
+▸ cursor bot       Cursor        www.cursor.com Jan 02    never
+  iphone owner app iPhone Safari phone.example  Jan 02    Feb 03
+
 
 
 

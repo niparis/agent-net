@@ -44,7 +44,13 @@ func (m Model) hints() []hint {
 		case "code":
 			return []hint{{key: "enter", label: "look up"}, bindingHint(contextApps, "back")}
 		case "approve":
-			return []hint{bindingHint(contextApps, "kind"), bindingHint(contextApps, "name"), bindingHint(contextApps, "approve"), bindingHint(contextApps, "refuse"), bindingHint(contextApps, "back")}
+			kind := bindingHint(contextApps, "kind")
+			kind.key, kind.label = "left/right", "kind"
+			name := bindingHint(contextApps, "name")
+			name.label = "name"
+			back := bindingHint(contextApps, "back")
+			back.label = "cancel"
+			return []hint{kind, name, bindingHint(contextApps, "approve"), bindingHint(contextApps, "refuse"), back}
 		case "confirm":
 			return []hint{bindingHint(contextConfirm, "yes"), bindingHint(contextConfirm, "no")}
 		default:

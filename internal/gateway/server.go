@@ -1406,7 +1406,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, reject("bad apps.pending")
 		}
-		pending, err := st.PendingByUserCode(p.Code, "tui", st.now())
+		now := st.now()
+		pending, err := st.PendingByUserCode(p.Code, "tui", now)
+		if errors.Is(err, ErrOAuthTooManyTries) {
+			var oldest int64
+			if e := st.db.QueryRow("SELECT MIN(attempted_at) FROM oauth_code_misses WHERE source=? AND attempted_at>?", "tui", now.Add(-10*time.Minute).UnixNano()).Scan(&oldest); e == nil {
+				remaining := time.Unix(0, oldest).Add(10 * time.Minute).Sub(now)
+				minutes := max(1, int((remaining+time.Minute-1)/time.Minute))
+				err = fmt.Errorf("%w: %d minutes", err, minutes)
+			}
+		}
 		return map[string]any{"pending": pending}, err
 
 	case "apps.approve":

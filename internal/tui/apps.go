@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type connectedApp struct {
@@ -65,7 +68,15 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 			f.err = "No request with that code (expired or mistyped)"
 		}
 		if strings.Contains(f.err, "too many tries") {
-			f.err = "Too many wrong codes. Try again in 10 minutes."
+			minutes := 10
+			if _, suffix, ok := strings.Cut(f.err, "too many tries: "); ok {
+				if fields := strings.Fields(suffix); len(fields) > 0 {
+					if n, err := strconv.Atoi(fields[0]); err == nil && n > 0 {
+						minutes = n
+					}
+				}
+			}
+			f.err = fmt.Sprintf("Too many wrong codes. Try again in %d minutes.", minutes)
 		}
 		return m, nil
 	}
@@ -184,47 +195,115 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+func (m Model) appsDate(t time.Time) string {
+	t = t.In(m.loc)
+	now := m.now().In(m.loc)
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return "today " + t.Format("15:04")
+	}
+	return t.Format("Jan 02")
+}
+
 func (m Model) appsView(w, rows int) []string {
 	f := m.apps
 	out := []string{section("Connected apps", w)}
 	switch f.stage {
 	case "code":
-		out = append(out, "  Code shown in your browser:", "  "+f.input.View())
+		in := f.input
+		in.Prompt = ""
+		out = append(out, "  Code shown in your browser:", "  "+in.View())
 	case "approve":
 		kind := "bot"
-		if f.kind != "bot" {
+		if f.kind == "owner_app" {
 			kind = "owner app"
 		}
-		out = append(out, "  Client: "+sanitize(f.pending.ClientName), "  Redirect host: "+sBold.Render(sanitize(f.pending.RedirectHost)), "  Kind: "+kind+"  (left/right)", "  Name: "+f.input.View(), "  Tab edits name; Enter approves; r refuses; Esc cancels.")
+		name := sanitize(f.input.Value())
+		if f.editingName {
+			in := f.input
+			in.Prompt = ""
+			name = in.View()
+		}
+		out = append(out, "  Approve this app?", "", "  Client       "+sanitize(f.pending.ClientName), "  Return host  "+sBold.Render(sanitize(f.pending.RedirectHost)), "  Kind         ‹ "+kind+" ›   "+sDim.Render("(left/right: bot or owner app)"), "  Name         "+name, "")
+		first := "Approve only if you just pressed connect in this app and the return host is the one you expect."
+		second := "A bot acts under its own name; an owner app acts as you."
+		for _, line := range wrap(first, w-4) {
+			out = append(out, "  "+sDim.Render(line))
+		}
+		for _, line := range wrap(second, w-4) {
+			if f.kind == "owner_app" {
+				out = append(out, "  "+sBad.Render(line))
+			} else {
+				out = append(out, "  "+sDim.Render(line))
+			}
+		}
 	default:
 		if len(f.apps) == 0 {
-			out = append(out, "  No connected apps.")
-		}
-		visible := max(1, (rows-3)/2)
-		start := max(0, f.index-visible+1)
-		end := min(len(f.apps), start+visible)
-		for i := start; i < end; i++ {
-			a := f.apps[i]
-			mark := "  "
-			if i == f.index {
-				mark = "> "
+			for _, line := range wrap("No connected apps. Press a to add one: open the app's connect page, then type the code it shows.", w-4) {
+				out = append(out, "  "+line)
 			}
-			kind := a.Kind
-			if kind == "owner_app" {
-				kind = "owner app"
+		} else {
+			headers := []string{"NAME", "KIND", "CLIENT", "RETURN HOST", "CONNECTED", "LAST USED"}
+			cells := make([][]string, len(f.apps))
+			widths := make([]int, len(headers))
+			for i, h := range headers {
+				widths[i] = ansi.StringWidth(h)
 			}
-			host := ""
-			if len(a.RedirectURIs) > 0 {
-				if u, e := url.Parse(a.RedirectURIs[0]); e == nil {
-					host = u.Hostname()
+			for i, a := range f.apps {
+				kind := a.Kind
+				if kind == "owner_app" {
+					kind = "owner app"
+				}
+				host := ""
+				if len(a.RedirectURIs) > 0 {
+					if u, e := url.Parse(a.RedirectURIs[0]); e == nil {
+						host = u.Hostname()
+					}
+				}
+				used := "never"
+				if a.LastUsedAt != nil {
+					used = m.appsDate(*a.LastUsedAt)
+				}
+				cells[i] = []string{a.Name, kind, a.ClientName, host, m.appsDate(a.CreatedAt), used}
+				for j, v := range cells[i] {
+					widths[j] = max(widths[j], ansi.StringWidth(sanitize(v)))
 				}
 			}
-			used := "never"
-			if a.LastUsedAt != nil {
-				used = a.LastUsedAt.Format("2006-01-02")
+			total := 2 + len(headers) - 1
+			for _, n := range widths {
+				total += n
 			}
-			out = append(out, clip(mark+sanitize(a.Name)+"  "+kind+"  "+sanitize(a.ClientName)+"  "+sanitize(host), w))
-			out = append(out, clip("    connected "+a.CreatedAt.Format("2006-01-02")+"  last used "+used, w))
+			for total > w {
+				biggest := -1
+				for i, n := range widths {
+					if n > ansi.StringWidth(headers[i]) && (biggest < 0 || n > widths[biggest]) {
+						biggest = i
+					}
+				}
+				if biggest < 0 {
+					break
+				}
+				widths[biggest]--
+				total--
+			}
+			row := func(parts []string) string {
+				var cols []string
+				for i, v := range parts {
+					cols = append(cols, cell(v, widths[i]))
+				}
+				return strings.Join(cols, " ")
+			}
+			out = append(out, sDim.Render(clip("  "+row(headers), w)))
+			visible := max(1, rows-3)
+			start := max(0, f.index-visible+1)
+			end := min(len(f.apps), start+visible)
+			for i := start; i < end; i++ {
+				line := "  " + row(cells[i])
+				if i == f.index {
+					line = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " " + row(cells[i])
+					line = selectedRow(clip(line, w))
+				}
+				out = append(out, clip(line, w))
+			}
 		}
 		if f.stage == "confirm" && len(f.apps) > 0 {
 			out = append(out, fmt.Sprintf("  Revoke %s? Its tokens stop working at once. (y/n)", sanitize(f.apps[f.index].Name)))
