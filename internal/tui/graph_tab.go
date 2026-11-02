@@ -229,25 +229,27 @@ func (m Model) startGraph() (tea.Model, tea.Cmd) {
 
 func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mp.finding {
-		switch k.Type {
-		case tea.KeyEsc:
+		switch keyAction(contextGraphFind, k.String()) {
+		case "clear or back":
 			if m.mp.findQuery != "" {
 				m.mp.findQuery = ""
 			} else {
 				m.mp.finding = false
 			}
-		case tea.KeyEnter:
+		case "select match":
 			if nodes := m.mapProjectNodes(); len(nodes) > 0 {
 				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: nodes[0].Name})
 			}
 			m.mp.finding, m.mp.findQuery = false, ""
-		case tea.KeyBackspace, tea.KeyCtrlH:
+		case "delete text":
 			r := []rune(m.mp.findQuery)
 			if len(r) > 0 {
 				m.mp.findQuery = string(r[:len(r)-1])
 			}
-		case tea.KeyRunes:
-			m.mp.findQuery += string(k.Runes)
+		default:
+			if k.Type == tea.KeyRunes {
+				m.mp.findQuery += string(k.Runes)
+			}
 		}
 		return m, nil
 	}

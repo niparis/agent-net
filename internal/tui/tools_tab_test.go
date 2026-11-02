@@ -94,7 +94,7 @@ func TestToolsEnterOpensPlanFirstAndEscCancels(t *testing.T) {
 		t.Fatal("enter must open a plan")
 	}
 	v := plain(m)
-	for _, want := range []string{"Make every machine use v3", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter apply", "d exact folders", "esc cancel"} {
+	for _, want := range []string{"Make every machine use v3", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter/y apply", "d exact folders", "esc/n cancel"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("plan lacks %q:\n%s", want, v)
 		}

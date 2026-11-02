@@ -14,11 +14,16 @@ the Needs you rows, Messages, the inbox, Quotas, Graph, Tools, help,
 the forms and the CTO box.
 
 The rule the owner asked for is simple: Enter means "go into it". This audit
-lists what the keys do today, where one key does more than one job, and a
-smaller map that follows that rule. Changes are marked **small**, **medium** or
-**large**.
+lists what the keys did before the change, where one key did more than one job,
+and the smaller map that follows that rule. Changes are marked **small**,
+**medium** or **large**.
 
-## 1. Keys by screen
+Sections 1 to 3 record the map before the approved changes. They are kept for
+the reasons behind each change, not as a description of the current keys. The
+current keys are in [the TUI keys reference](../reference.md#tui-keys) and in
+[`internal/tui/keys.go`](../../internal/tui/keys.go).
+
+## 1. Keys before the change
 
 ### Everywhere
 
@@ -129,12 +134,12 @@ session. The extra actions apply only when such a row is selected.
 
 ### Tools (tab 5)
 
-Implemented single list: NAME, KIND and STATUS in words. `!` means needs
-attention. There are no screen switches or machine-column keys.
+Three screens: Differences, All tools and By project. `!` means needs
+attention.
 
 | Mode | Keys |
 |---|---|
-| List | `j`/`k` or up/down move; Enter actions; `/` filter; `n` add; Esc clear filter; `?` help; `q` quit. Digits and global keys stay. |
+| List | `j`/`k` or up/down move; Enter actions; `/` filter; `n` add; `R` rescan; Esc clear filter; `?` help; `q` quit. Digits and global keys stay. |
 | Filter | Text combines words, `project:NAME`, `node:NAME`, `machine:NAME`; Enter keeps; Esc clears. |
 | Menu | `j`/`k` or up/down move; Enter choose; Esc back. Only applicable actions appear. |
 | Picker | `j`/`k` or up/down move; space ticks; `/` filters; Enter applies; Esc cancels. Empty selection explains what to tick. |
@@ -144,8 +149,9 @@ attention. There are no screen switches or machine-column keys.
 | Plan | Enter or `y` applies; `d` exact folders; up/down scroll; Esc or `n` cancels. |
 
 Project and node filters scope Turn on/Turn off directly, without a picker.
-The bottom key bar follows the current mode. The old Differences, All tools
-and By project screens and their list shortcuts have been removed.
+The bottom key bar follows the current mode. `[` and `]` switch the three
+screens; left and right move between columns; `a` accepts a difference; `v`
+selects the next machine on By project.
 
 ### Graph (tab 2)
 

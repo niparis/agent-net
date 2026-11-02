@@ -9,32 +9,32 @@ Keys ─────────────────────────
   m                    send a message to the session as yourself
   n                    start a session in herdr: project, harness, model, folder and first message (a form). Empty first
                        message starts it and enters it; text starts it in the background and sends it.
-  x, h, H              stop session; h hides/unhides; H shows hidden sessions (dim)
+  x                    stop the selected worker or session
+  h, H                 hide or unhide the session; show hidden sessions (dim)
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: 7 checkboxes (a form)
+  c, C                 c opens the CTO; C focuses its box: enter opens the full CTO, ctrl+] returns, esc skips a tip; n
+                       new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll
+  N                    name the machine of the session (every machine sees it; empty resets)
+  L                    what the network learned: playbook notes and their support
+  /                    filter (words match name, project, branch, model, ...)
+  o, d                 show offline sessions; toggle the selected session details
+  A                    active only: hide sessions idle for over an hour
+  R                    refresh now
+
+ Messages
+  up/down              select a conversation
+  left/right           select a message in the conversation
+  enter                open the selected message body
+  end                  select the latest message
+  f                    on a worker conversation: report a defect found later
+  w                    show or hide worker threads
+  e, l                 show system events; cycle the event filter
+  R                    refresh now
+  states               pending ... delivered ✓ replied ↩ failed ✗
 
  Quotas
   up/down, j/k         select a subscription and scroll the panels
-  p                    protect or unprotect the selected subscription
-  s                    show or hide subscriptions that are not set up
-  left/right           cycle the Quality panel agent: all agents, then each caller
-  d                    show or hide the Quality panel detail (fixes and continues)
-  R                    refresh the readings
-
- Graph
-  2                    open the network
-  arrows               select a node; shift+arrows pan
-  , .                  select a linked neighbour
-  /                    find a node; Enter selects the first match; Esc cancels
-  + -, 0               zoom; fit the graph
-  o, space             orbit; pause traffic
-  t                    open Tools filtered to the selected graph node
-  enter                open the selected agent card
- Agent card
-  enter                open Sessions filtered to this agent's project
-  n                    start a new session in this project (the same form, filled from here)
-  esc                  return to Graph with the same node selected
-  D                    name project (empty clears)
   more below
 up/down scroll up  esc close help  q quit

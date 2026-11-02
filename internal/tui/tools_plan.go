@@ -96,7 +96,7 @@ func (m Model) onToolsModal(r toolsModalMsg) (Model, tea.Cmd) {
 }
 
 func (md *toolsModal) planFoot(verb string) {
-	md.foot = []string{"enter", verb, "d", "exact folders", "esc", "cancel"}
+	md.foot = []string{"enter/y", verb, "d", "exact folders", "esc/n", "cancel"}
 }
 
 func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {

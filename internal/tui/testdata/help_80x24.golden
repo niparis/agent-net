@@ -13,12 +13,12 @@ Keys ─────────────────────────
                        and first message (a form). Empty first message starts it
                        and enters it; text starts it in the background and sends
                        it.
-  x, h, H              stop session; h hides/unhides; H shows hidden sessions
-                       (dim)
+  x                    stop the selected worker or session
+  h, H                 hide or unhide the session; show hidden sessions (dim)
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a
                        form)
   I                    integrations for all machines: 7 checkboxes (a form)
-
+  c, C                 c opens the CTO; C focuses its box: enter opens the full
   more below
 up/down scroll up  esc close help  q quit
