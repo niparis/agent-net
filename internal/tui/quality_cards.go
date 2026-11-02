@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -15,11 +16,19 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 	levels := qualityLevels(q, agent)
 	byLevel := map[string]protocol.QualityLevel{}
 	largest := 0.0
+	familyWidth, minutesWidth, tasksWidth := 0, 7, 0
 	for _, level := range levels {
 		byLevel[level.Difficulty] = level
 		for _, f := range level.Families {
-			if f.Headache > largest {
-				largest = f.Headache
+			largest = max(largest, f.Headache)
+		}
+		switch level.Difficulty {
+		case "simple", "normal", "hard", "very_complex":
+			ranked, _ := qualityRankedFamilies(level.Families)
+			for _, f := range ranked[:min(len(ranked), 3)] {
+				familyWidth = max(familyWidth, ansi.StringWidth(sanitize(f.Family)))
+				minutesWidth = max(minutesWidth, ansi.StringWidth(fmt.Sprintf("%.0f min", f.Headache)))
+				tasksWidth = max(tasksWidth, ansi.StringWidth(fmt.Sprintf("· %d tasks", f.Tasks)))
 			}
 		}
 	}
@@ -31,21 +40,7 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 		for j := 0; j < 2; j++ {
 			name := []string{"simple", "normal", "hard", "very_complex"}[i+j]
 			level := byLevel[name]
-			var eligible []protocol.QualityFamily
-			few := 0
-			for _, f := range level.Families {
-				if f.Tasks < protocol.CalibrationMinTasks {
-					few++
-				} else {
-					eligible = append(eligible, f)
-				}
-			}
-			sort.Slice(eligible, func(a, b int) bool {
-				if eligible[a].Headache == eligible[b].Headache {
-					return eligible[a].Family < eligible[b].Family
-				}
-				return eligible[a].Headache < eligible[b].Headache
-			})
+			eligible, few := qualityRankedFamilies(level.Families)
 			var rows []string
 			for _, f := range eligible[:min(len(eligible), 3)] {
 				marker := " "
@@ -63,7 +58,12 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 						bug += "s"
 					}
 				}
-				rows = append(rows, fmt.Sprintf("%s %s %.0f min %s · %d tasks%s", marker, f.Family, f.Headache, progressBar(frac, 5, roleAccent), f.Tasks, bug))
+				row := marker + " " + cell(f.Family, familyWidth) + " " + cellR(fmt.Sprintf("%.0f min", f.Headache), minutesWidth) + " " + progressBar(frac, 5, roleAccent) + " " + cellR(fmt.Sprintf("· %d tasks", f.Tasks), tasksWidth)
+				if bug != "" && ansi.StringWidth(row+bug) > widths[j]-4 {
+					rows = append(rows, row, sDim.Render(strings.TrimSpace(bug)))
+				} else {
+					rows = append(rows, row+bug)
+				}
 			}
 			if len(eligible) > 3 {
 				var rest []string
@@ -105,6 +105,25 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 	return panel("Quality analysis · read only", body, w, roleAccent)
 }
 
+func qualityRankedFamilies(families []protocol.QualityFamily) ([]protocol.QualityFamily, int) {
+	var eligible []protocol.QualityFamily
+	few := 0
+	for _, f := range families {
+		if f.Tasks < protocol.CalibrationMinTasks {
+			few++
+		} else {
+			eligible = append(eligible, f)
+		}
+	}
+	sort.Slice(eligible, func(i, j int) bool {
+		if eligible[i].Headache == eligible[j].Headache {
+			return eligible[i].Family < eligible[j].Family
+		}
+		return eligible[i].Headache < eligible[j].Headache
+	})
+	return eligible, few
+}
+
 func (m Model) qualityDetailsView(w, h int) []string {
 	q := m.snap.Calibration.Quality
 	var picks, reasons map[string]string
@@ -124,14 +143,25 @@ func (m Model) qualityDetailsView(w, h int) []string {
 			largest = max(largest, f.Headache)
 		}
 	}
+	familyWidth := 5
+	for _, l := range levels {
+		for _, f := range l.Families {
+			familyWidth = max(familyWidth, ansi.StringWidth(sanitize(f.Family)))
+		}
+	}
 	body := []string{qualitySelector(q, m.qualityAgent, w)}
-	for _, name := range []string{"simple", "normal", "hard", "very_complex"} {
+	for index, name := range []string{"simple", "normal", "hard", "very_complex"} {
 		l := byLevel[name]
+		if index > 0 {
+			body = append(body, "")
+		}
 		body = append(body, sBold.Render(fmt.Sprintf("%s · %d tasks", strings.ReplaceAll(name, "_", " "), l.Tasks)))
-		if w < 95 {
-			body = append(body, sBold.Render("MODEL      MY TIME / TASK  TASKS NEEDED HELP NUDGES / TASK"), sBold.Render("           LATE BUGS  WORST  RATING  PICKED"))
+		header := []string{cell("MODEL", familyWidth), cellR("MY TIME / TASK", 14), cellR("TASKS", 5), cellR("NEEDED HELP", 11), cellR("NUDGES / TASK", 13), cellR("LATE BUGS", 9), cellR("WORST", 5), cellR("RATING", 6), cellR("PICKED", 6)}
+		narrow := ansi.StringWidth(strings.Join(header, "  ")) > w
+		if narrow {
+			body = append(body, sBold.Render(strings.Join(header[:5], "  ")), sBold.Render(strings.Repeat(" ", familyWidth+2)+strings.Join(header[5:], "  ")))
 		} else {
-			body = append(body, sBold.Render("MODEL      MY TIME / TASK  TASKS NEEDED HELP NUDGES / TASK LATE BUGS WORST RATING PICKED"))
+			body = append(body, sBold.Render(strings.Join(header, "  ")))
 		}
 		families := append([]protocol.QualityFamily(nil), l.Families...)
 		sort.Slice(families, func(i, j int) bool { return families[i].Headache < families[j].Headache })
@@ -156,16 +186,16 @@ func (m Model) qualityDetailsView(w, h int) []string {
 			if f.Tasks < protocol.CalibrationMinTasks {
 				few = fmt.Sprintf(" (only %d tasks)", f.Tasks)
 			}
-			line := fmt.Sprintf("%-10s %3.0f min %s %5d %10.0f%% %13.2f %9d %5s %6s %6s%s", f.Family, f.Headache, progressBar(bar, 5, roleAccent), f.Tasks, f.NeededHelp*100, float64(f.Continues)/float64(max(f.Tasks, 1)), f.LateDefects, worst, rating, picked, few)
-			if w < 95 {
-				line = fmt.Sprintf("%-10s %3.0f min %s %5d %10.0f%% %13.2f", f.Family, f.Headache, progressBar(bar, 5, roleAccent), f.Tasks, f.NeededHelp*100, float64(f.Continues)/float64(max(f.Tasks, 1)))
-				second := fmt.Sprintf("           %9d %6s %7s %7s%s", f.LateDefects, worst, rating, picked, few)
-				if f.Tasks < protocol.CalibrationMinTasks {
-					line = sDim.Render(line)
-					second = sDim.Render(second)
-				}
-				body = append(body, clip(line, w), clip(second, w))
+			timeValue := fmt.Sprintf("%3.0f min ", f.Headache) + progressBar(bar, 5, roleAccent)
+			timeValue = strings.Repeat(" ", max(0, 14-ansi.StringWidth(timeValue))) + timeValue
+			columns := []string{cell(f.Family, familyWidth), timeValue, cellR(fmt.Sprint(f.Tasks), 5), cellR(fmt.Sprintf("%.0f%%", f.NeededHelp*100), 11), cellR(fmt.Sprintf("%.2f", float64(f.Continues)/float64(max(f.Tasks, 1))), 13), cellR(fmt.Sprint(f.LateDefects), 9), cellR(worst, 5), cellR(rating, 6), cellR(picked, 6)}
+			var lines []string
+			if narrow {
+				lines = []string{strings.Join(columns[:5], "  "), strings.Repeat(" ", familyWidth+2) + strings.Join(columns[5:], "  ") + few}
 			} else {
+				lines = []string{strings.Join(columns, "  ") + few}
+			}
+			for _, line := range lines {
 				if f.Tasks < protocol.CalibrationMinTasks {
 					line = sDim.Render(line)
 				}
@@ -181,9 +211,9 @@ func (m Model) qualityDetailsView(w, h int) []string {
 		areas = q.Agents[m.qualityAgent-1].Areas
 	}
 	if len(areas) > 0 {
-		body = append(body, sBold.Render("by touched area"), strings.Replace(qualityColumnHeader(8, false), "FAMILY", "AREA  ", 1))
+		body = append(body, "", sBold.Render("by touched area"), sBold.Render(strings.Join([]string{cell("AREA", 8), cellR("TASKS", 5), cellR("FOLLOW-UPS", 10), cellR("LATE DEFECTS", 12), cellR("HEADACHE", 8)}, "  ")))
 		for _, a := range areas {
-			line := qualityFamilyLine(a, 8, false)
+			line := strings.Join([]string{cell(a.Family, 8), cellR(fmt.Sprint(a.Tasks), 5), cellR(fmt.Sprintf("%.2f", a.FollowUps), 10), cellR(qualityLateDefects(a), 12), cellR(fmt.Sprintf("%.0f min", a.Headache), 8)}, "  ")
 			if a.Tasks < protocol.CalibrationMinTasks {
 				line = sDim.Render(line)
 			}

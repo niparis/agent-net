@@ -1,14 +1,14 @@
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                         │
 │ ╭─simple · 9 tasks──────────────────╮ ╭─normal · 196 tasks─────────────────╮ │
-│ │   luna 1 min █░░░░ · 9 tasks      │ │   opus 0 min ░░░░░ · 6 tasks       │ │
-│ │                                   │ │   luna 2 min █░░░░ · 24 tasks      │ │
-│ │                                   │ │ ▸ sol 4 min ██░░░ · 19 tasks       │ │
+│ │   luna    1 min █░░░░  · 9 tasks  │ │   opus    0 min ░░░░░  · 6 tasks   │ │
+│ │                                   │ │   luna    2 min █░░░░ · 24 tasks   │ │
+│ │                                   │ │ ▸ sol     4 min ██░░░ · 19 tasks   │ │
 │ │                                   │ │ 2 more: deepseek 8 min · terra 9 … │ │
 │ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
 │ ╭─hard · 42 tasks───────────────────╮ ╭─very complex · 5 tasks─────────────╮ │
-│ │   sol 5 min ███░░ · 10 tasks      │ │   terra 7 min ████░ · 5 tasks      │ │
-│ │ ▸ terra 8 min ████░ · 32 tasks    │ │                                    │ │
+│ │   sol     5 min ███░░ · 10 tasks  │ │   terra   7 min ████░  · 5 tasks   │ │
+│ │ ▸ terra   8 min ████░ · 32 tasks  │ │                                    │ │
 │ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
 │ ▸ = the model the picker would choose on workstation.  My time = minutes the │
 │ orchestrator spends after a worker: nudges, fixes and bugs found later.      │

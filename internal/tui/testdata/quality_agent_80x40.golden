@@ -1,10 +1,10 @@
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ agent ◂ agent-net ▸                                                          │
 │ ╭─simple · 0 tasks──────────────────╮ ╭─normal · 20 tasks──────────────────╮ │
-│ │                                   │ │   terra 6 min █████ · 20 tasks     │ │
+│ │                                   │ │   terra   6 min █████ · 20 tasks   │ │
 │ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
 │ ╭─hard · 8 tasks────────────────────╮ ╭─very complex · 0 tasks─────────────╮ │
-│ │   sol 4 min ███░░ · 8 tasks       │ │                                    │ │
+│ │   sol     4 min ███░░  · 8 tasks  │ │                                    │ │
 │ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
 │ ▸ = the model the picker would choose on Mac.  My time = minutes the         │
 │ orchestrator spends after a worker: nudges, fixes and bugs found later.      │
