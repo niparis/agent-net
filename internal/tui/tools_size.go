@@ -34,6 +34,7 @@ func skillSizeReason(size int64) string {
 	}
 	return fmt.Sprintf("too large to manage (%s, the limit is %s)", skillSizeText(size), skillSizeText(inventory.MaxBundleBytes))
 }
+
 // skillTooLarge reports a copy whose scan stopped listing files because the
 // skill was too large: its manifest has no file sizes to add up.
 func skillTooLarge(item protocol.ToolItem) bool {
