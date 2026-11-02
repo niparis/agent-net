@@ -126,7 +126,9 @@ Cloud agents (for example Grok Bot) and your phone can use agent-net through MCP
 
 See [connected apps](docs/reference.md#connected-apps).
 
-### Shared MCP servers
+### Skills and MCP servers
+
+Tools (tab 5) lists every skill and MCP server found on every machine, including the ones agent-net did not install. Turn one on for every project, for some projects, or for one machine; compare two copies of a skill and keep one; remove or restore. Filter with `node:`, `project:` or `machine:`, or press `t` on a node in the Graph to see what that agent gets. Every change is a plan you can undo. Details: [decision 0027](docs/decisions/0027-skills-and-mcp-management.md).
 
 Add an MCP server once, and sessions on every machine can use its tools. Tokens stay on the machine that hosts it.
 
@@ -203,7 +205,6 @@ agent-net uses MCP to give agents their tools. It is not an implementation of A2
 - **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
 - **The phone app.**
 - MCP resources, prompts and OAuth logins in the registry.
-- A shared skills registry.
 
 ## Development
 
