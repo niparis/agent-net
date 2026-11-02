@@ -13,6 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/phone"
 	"github.com/niparis/agent-net/internal/ratelimit"
 )
 
@@ -58,8 +59,14 @@ func appsAuthenticate(base string, lookup func(string, time.Time) (App, error), 
 	})
 }
 
-// AppsHandler serves only the public app routes, separate from the gateway API.
-func (g *Gateway) AppsHandler() http.Handler {
+// AppsHandler serves only public app routes, separate from the gateway API.
+// Pass the phone handler backed by the gateway host daemon; without one the
+// phone shows a disconnected view and cannot perform actions.
+func (g *Gateway) AppsHandler(phoneApps ...http.Handler) http.Handler {
+	phoneApp := phone.New(nil)
+	if len(phoneApps) > 0 && phoneApps[0] != nil {
+		phoneApp = phoneApps[0]
+	}
 	mux := http.NewServeMux()
 	server := g.botMCPServer()
 	stream := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
@@ -87,6 +94,8 @@ func (g *Gateway) AppsHandler() http.Handler {
 		h.ServeHTTP(w, r)
 	}))
 	g.registerOAuth(mux)
+	mux.HandleFunc("GET /phone/status", g.phoneStatus)
+	mux.Handle("/", g.phoneAuth(phoneApp))
 	return g.appsMiddleware(mux)
 }
 
@@ -97,7 +106,7 @@ func (g *Gateway) appsMiddleware(next http.Handler) http.Handler {
 		class := "oauth"
 		if r.URL.Path == "/mcp" {
 			class = "mcp"
-		} else if r.URL.Path == "/oauth/authorize" || r.URL.Path == "/oauth/authorize/status" {
+		} else if r.URL.Path == "/oauth/authorize" || r.URL.Path == "/oauth/authorize/status" || r.URL.Path == "/phone/status" || r.URL.Path == "/" || r.URL.Path == "/events" || strings.HasPrefix(r.URL.Path, "/session/") {
 			class = "page"
 		}
 		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

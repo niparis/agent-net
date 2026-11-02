@@ -38,7 +38,6 @@ var version = "dev"
 
 const usage = `usage: agent-net <command>
 
-  phone      configure the phone app owner
   gateway    run the gateway server
   setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod, --quota, --[no-]quota-axi
   invite     print the one-line installer for a new machine (run on the gateway host)
@@ -111,8 +110,6 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 	switch cmd {
 	case "gateway":
 		err = cmdGateway(ctx, args)
-	case "phone":
-		err = cmdPhone(args)
 	case "setup":
 		err = cmdSetup(ctx, args)
 	case "invite":
@@ -215,7 +212,6 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	fs := flag.NewFlagSet("gateway", flag.ExitOnError)
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on")
-	phoneListen := fs.String("phone-listen", "", "phone HTTP listener on 127.0.0.1:port (disabled by default)")
 	appsListen := fs.String("apps-listen", "", "apps HTTP listener on 127.0.0.1:port (disabled by default)")
 	appsPublicURL := fs.String("apps-public-url", "", "public base URL of the apps listener")
 	data := fs.String("data", defaultGatewayData(), "data directory")
@@ -245,20 +241,13 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	defer gw.Close()
 	if *appsListen != "" {
-		apps, err := startAppsListener(ctx, *appsListen, gw.AppsHandler())
+		op := operator.New(daemon.SocketPath())
+		defer op.Close()
+		apps, err := startAppsListener(ctx, *appsListen, gw.AppsHandler(phone.New(op)))
 		if err != nil {
 			return err
 		}
 		defer apps.Close()
-	}
-	if *phoneListen != "" {
-		op := operator.New(daemon.SocketPath())
-		defer op.Close()
-		phone, err := startPhoneListener(ctx, *phoneListen, gw.PhoneHandler(phone.New(op)))
-		if err != nil {
-			return err
-		}
-		defer phone.Close()
 	}
 	if err := gw.WriteAdminInfo(*listen); err != nil {
 		return err

@@ -137,6 +137,15 @@ In the TUI, press `2`, `M` or `G` for Graph. Find an agent with `/`, then
 press Enter for its charter card. Esc returns to the Graph with the same node
 selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages and 5 Tools.
 
+## Phone app
+
+Run the gateway and its joined daemon under the same user on the gateway host.
+Expose the connected apps listener over HTTPS and set its public URL. Open that
+URL on the phone, then enter its code under `S` > Connected apps > Add in the
+TUI. Approve the owner app and its name. In Safari, use Share, then Add to Home
+Screen. To sign out a phone, revoke it under Connected apps. See the [phone
+app reference](reference.md#phone-app).
+
 ## Workers on a machine
 
 Machines accept workers (agent sessions that other sessions, or you, start there) by default. To refuse them, run `agent-net setup --no-launch` on that machine; `agent-net setup --launch` accepts them again. `agent-net nodes` shows the choice in the WORKERS column. The OpenCode plugin must be installed there for OpenCode workers (`setup` does it when `~/.config/opencode` exists). See [reference.md](reference.md#workers).

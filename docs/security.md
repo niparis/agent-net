@@ -785,14 +785,21 @@ The full CTO UI attaches as a client of the private OpenCode server or Claude ba
 
 ### Phone owner identity
 
-The phone owner setting records the Tailscale login once in the gateway database.
-The phone authentication check accepts only requests from 127.0.0.1 with exactly
-one `Tailscale-User-Login` header equal to that setting. This relies on
-Tailscale Serve to authenticate the caller and supply the identity header. A
-local process can connect to a loopback listener and forge this header; the
-check does not protect the gateway from other processes on its host. The host
-and its local users must be trusted. Do not expose the HTTP listener directly
-on a network or put an untrusted proxy in front of it.
+The phone app uses the public connected apps listener. An unpaired phone shows
+a code that the owner enters in the TUI. Phone requests share the OAuth
+pending request cap of 20 and expire after ten minutes. The TUI defaults phone
+requests to owner app; the owner chooses the kind and name. A phone pairing
+approved as a bot cannot receive a phone token.
+
+A successful approval issues a random access token, stored hashed in the
+gateway database and in a Secure, HttpOnly, SameSite=Strict device cookie. Only
+an active owner app token opens the phone. Revoking the app immediately blocks
+new requests. The token and cookie expire 90 days after issue or renewal; use with less
+than 30 days left extends them to 90 days. Each phone action is logged
+with the app name. POST actions also require an Origin exactly matching the
+configured public URL's scheme and host. The apps listener must be reached
+over HTTPS through a trusted tunnel. Its loopback HTTP port is not a boundary
+against other local users on the gateway host.
 
 Skill file previews use the owner-only operator gate. The gateway checks the owner session and the current observed skill location; the originating daemon checks that the relative path is in its current manifest and that the file still matches its fingerprint. Previews reject symlinks, non-regular files, invalid UTF-8, NUL bytes and files over 64 KiB. Contents pass through the gateway on request and are not stored by the preview operation. Enrolled daemons remain inside the gateway trust boundary.
 

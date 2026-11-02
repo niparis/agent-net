@@ -434,7 +434,6 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | Command | What it does |
 |---|---|
 | `agent-net gateway` | Run the gateway server. |
-| `agent-net phone owner LOGIN` | Set the phone owner Tailscale login once on the gateway machine. `--data DIR` selects its gateway data directory. |
 | `agent-net daemon` | Run the per-machine daemon. |
 | `agent-net mcp` | Stdio MCP server for one Claude Code session. Claude Code starts it, you do not. `agent-net mcp --codex` is the same for Codex: Codex starts one per thread. |
 | `agent-net setup` | Set this machine up. See [what setup changes](#what-setup-changes-on-your-machine). |
@@ -497,41 +496,30 @@ The model is required, and the note is at most 1024 bytes after cleaning (contro
 
 ## Phone app
 
-The phone app is off by default. Run a daemon on the gateway machine, joined to
-that gateway, under the same user as the gateway. The app uses that daemon's
-socket and the same operator calls as the TUI. Actions run as that machine's
-owner session. The gateway and daemon must both be running.
+The phone app uses the connected apps listener and the gateway host's daemon.
+The gateway and daemon must run under the same user. The app uses the daemon's
+socket and the same operator calls as the TUI. Actions run as the owner.
 
-After the gateway has created its data directory, set the Tailscale login once:
+For a manually configured gateway, pass `--apps-listen 127.0.0.1:7422` and
+`--apps-public-url https://apps.example.test` to `agent-net gateway`. Point a
+trusted HTTPS tunnel at that loopback listener and use its actual public URL in
+the flag. Open that URL on the phone. In the TUI, press `S`, choose Connected
+apps, press `a`, and enter the code on the phone. Check the client name and
+approve the owner app. In Safari, use Share, then Add to Home Screen. Revoke a
+device in Connected apps to sign it out. A paired device expires 90 days after
+issue or renewal; use with less than 30 days left renews it. See the [phone
+security boundary](security.md#phone-owner-identity).
 
-```sh
-agent-net phone owner owner@example.com
-```
-
-Pass `--data DIR` before the login when the gateway uses a non-default data
-directory. The same login may be set again; a different login is refused.
-Start the gateway with `--phone-listen 127.0.0.1:7421` and run:
-
-```sh
-tailscale serve --bg http://127.0.0.1:7421
-```
-
-Open the HTTPS URL printed by Tailscale on a phone connected to the tailnet.
-In Safari, use Share, then Add to Home Screen. Tailscale Serve must be enabled
-for the tailnet. Do not use Funnel. Tagged devices do not send user identity
-headers. Only the configured login can use the app. See the [phone security
-boundary](security.md#phone-owner-identity).
-
-For a gateway installed as a service, add the flag to the gateway service
-command and restart it. A later `setup` run rewrites that command, so restore
-the flag after setup. The app refreshes its machine, session and Needs you
-sections while open. It does not send push notifications.
+The old `agent-net phone owner` command and `--phone-listen` flag are removed.
+Remove the flag from any manually edited service command. The app refreshes
+its machine, session and Needs you sections while open. It does not send push
+notifications.
 
 ## Ports
 
 | Port | Used by |
 |---|---|
-| TCP 7421 | Optional phone HTTP listener, bound only to 127.0.0.1 when enabled. The port is configurable. |
+| TCP 7422 | Example apps HTTP listener, bound only to 127.0.0.1 when enabled. The port is configurable. |
 | TCP 7420 | The gateway. HTTPS and WebSocket, on `0.0.0.0` by default. Every daemon connects to it. Open it to your other machines and to nothing else. |
 
 The daemon and the agents talk over Unix sockets, not network ports.
@@ -635,8 +623,8 @@ The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUS
 | Command | Flag | Default |
 |---|---|---|
 | `gateway` | `--listen ADDR` | `0.0.0.0:7420` |
-| | `--apps-listen ADDR` | off. Serve the connected apps MCP endpoint on `127.0.0.1:PORT` only. |
-| | `--apps-public-url URL` | empty. Public base URL of the apps listener, used for authorization discovery. |
+| | `--apps-listen ADDR` | off. Serve the phone app and connected apps MCP endpoint on `127.0.0.1:PORT` only. |
+| | `--apps-public-url URL` | empty. Public HTTPS base URL of the apps listener, used for authorization discovery and phone action origin checks. |
 | | `--data DIR` | `~/.local/state/agent-net/gateway` |
 | | `--dist DIR` | `~/.local/share/agent-net/dist` |
 | | `--san LIST` | none. Extra host names or IPs for the TLS certificate, comma separated. |

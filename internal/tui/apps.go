@@ -21,7 +21,7 @@ type connectedApp struct {
 	CreatedAt                  time.Time
 	LastUsedAt, RevokedAt      *time.Time
 }
-type pendingApp struct{ ID, ClientName, RedirectHost string }
+type pendingApp struct{ ID, ClientName, RedirectHost, DefaultKind string }
 type appsForm struct {
 	apps        []connectedApp
 	index       int
@@ -108,9 +108,16 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 		f.pending = v.Pending
 		f.editingName = false
 		f.kind = "bot"
+		if v.Pending.DefaultKind == "owner_app" {
+			f.kind = "owner_app"
+		}
 		f.stage = "approve"
 		f.input = textinput.New()
-		f.input.SetValue(strings.Join(strings.Fields(strings.ToLower(v.Pending.ClientName)), "-"))
+		name := v.Pending.ClientName
+		if f.kind != "owner_app" {
+			name = strings.Join(strings.Fields(strings.ToLower(name)), "-")
+		}
+		f.input.SetValue(name)
 		f.input.Focus()
 	default:
 		f.stage = ""

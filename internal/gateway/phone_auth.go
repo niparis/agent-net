@@ -1,62 +1,132 @@
 package gateway
 
 import (
+	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
-	"fmt"
-	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
+
+	"github.com/niparis/agent-net/internal/ratelimit"
 )
 
-const phoneOwnerKey = "phone_owner"
+const phoneCookieName = "__Host-agent_net_phone"
+const phoneTokenTTL = 90 * 24 * time.Hour
+const phoneRenewBefore = 30 * 24 * time.Hour
 
-// SetPhoneOwner records the identity once. Repeating the same value is harmless.
-func (s *Store) SetPhoneOwner(login string) error {
-	if login == "" || strings.TrimSpace(login) != login || strings.ContainsAny(login, "\r\n") {
-		return errors.New("invalid phone owner login")
+func validPhoneToken(raw string) bool {
+	if len(raw) != 43 {
+		return false
 	}
-	_, err := s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO NOTHING`, phoneOwnerKey, login, s.now().UnixNano())
-	if err != nil {
-		return err
-	}
-	owner, err := s.PhoneOwner()
-	if err != nil {
-		return err
-	}
-	if owner != login {
-		return fmt.Errorf("phone owner is already set")
-	}
-	return nil
+	b, err := base64.RawURLEncoding.Strict().DecodeString(raw)
+	return err == nil && len(b) == 32
 }
 
-func (s *Store) PhoneOwner() (string, error) {
-	var login string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, phoneOwnerKey).Scan(&login)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
+// phoneAppForToken validates and extends the existing token in one transaction.
+// Keeping the token avoids invalidating simultaneous requests from the device.
+func (s *Store) phoneAppForToken(raw string, now time.Time) (App, bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return App{}, false, err
 	}
-	return login, err
+	defer tx.Rollback()
+	var expires int64
+	err = tx.QueryRow(`SELECT t.expires_at FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.expires_at>? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(raw), now.UnixNano()).Scan(&expires)
+	if err != nil {
+		return App{}, false, err
+	}
+	app, err := appForToken(tx, raw, "access", now)
+	if err != nil {
+		return App{}, false, err
+	}
+	renewed := time.Unix(0, expires).Sub(now) < phoneRenewBefore
+	if renewed {
+		if _, err = tx.Exec(`UPDATE app_tokens SET expires_at=? WHERE hash=?`, now.Add(phoneTokenTTL).UnixNano(), hashHex(raw)); err != nil {
+			return App{}, false, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return App{}, false, err
+	}
+	return app, renewed, nil
 }
-
-func phoneAuth(s *Store, next http.Handler) http.Handler {
+func setPhoneCookie(w http.ResponseWriter, token string, now time.Time) {
+	http.SetCookie(w, &http.Cookie{Name: phoneCookieName, Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(phoneTokenTTL / time.Second), Expires: now.Add(phoneTokenTTL)})
+}
+func phoneRoute(path string) bool {
+	return path == "/" || path == "/action" || path == "/events" || path == "/manifest.webmanifest" || strings.HasPrefix(path, "/session/") || strings.HasPrefix(path, "/static/")
+}
+func (g *Gateway) phoneAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil || host != "127.0.0.1" {
-			http.Error(w, "forbidden", http.StatusForbidden)
+		if !phoneRoute(r.URL.Path) {
+			http.NotFound(w, r)
 			return
 		}
-		owner, err := s.PhoneOwner()
-		values := r.Header.Values("Tailscale-User-Login")
-		if err != nil || owner == "" || len(values) != 1 || values[0] != owner {
-			http.Error(w, "forbidden", http.StatusForbidden)
+		oauthHeaders(w)
+		cookie, err := r.Cookie(phoneCookieName)
+		var app App
+		var renewed bool
+		if err == nil && validPhoneToken(cookie.Value) {
+			app, renewed, err = g.store.phoneAppForToken(cookie.Value, g.store.now())
+		} else {
+			err = sql.ErrNoRows
+		}
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "Authentication unavailable", http.StatusInternalServerError)
+				return
+			}
+			if cookie != nil {
+				g.limiter.Fail(ratelimit.ClientAddr(r))
+			}
+			if r.Method != http.MethodGet || r.URL.Path == "/events" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			g.phonePairPage(w, r)
+			return
+		}
+		if renewed {
+			setPhoneCookie(w, cookie.Value, g.store.now())
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/action" {
+			g.logLine("phone.action", "app", app.Name, "app_id", app.ID, "source", ratelimit.ClientAddr(r))
+			base, err := url.Parse(g.opts.PublicURL)
+			origins := r.Header.Values("Origin")
+			if err != nil || base.Host == "" || (base.Scheme != "https" && base.Scheme != "http") || len(origins) != 1 || origins[0] != base.Scheme+"://"+base.Host {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/events" {
+			ctx, cancel := context.WithCancel(r.Context())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						var valid int
+						err := g.store.db.QueryRowContext(ctx, `SELECT 1 FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.expires_at>? AND a.id=? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(cookie.Value), g.store.now().UnixNano(), app.ID).Scan(&valid)
+						if err != nil {
+							cancel()
+							return
+						}
+					}
+				}
+			}()
+			next.ServeHTTP(w, r.WithContext(ctx))
+			cancel()
+			<-done
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// PhoneHandler puts the owner identity check in front of all phone routes.
-func (g *Gateway) PhoneHandler(app http.Handler) http.Handler {
-	return phoneAuth(g.store, app)
 }

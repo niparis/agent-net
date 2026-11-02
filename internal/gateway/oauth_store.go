@@ -37,8 +37,8 @@ type oauthClient struct {
 
 // OAuthPending is the information the owner can inspect before approval.
 type OAuthPending struct {
-	ID, UserCode, ClientID, ClientName, RedirectURI, RedirectHost, Resource string
-	CreatedAt, ExpiresAt                                                    time.Time
+	ID, UserCode, ClientID, ClientName, RedirectURI, RedirectHost, Resource, DefaultKind string
+	CreatedAt, ExpiresAt                                                                 time.Time
 }
 
 func oauthRandom(bytes int) (string, error) {
@@ -230,7 +230,7 @@ func (s *Store) PendingByUserCode(code, source string, now time.Time) (OAuthPend
 	}
 	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), "-", ""))
 	var created, expires int64
-	err = tx.QueryRow(`SELECT p.id,p.user_code,p.client_id,c.client_name,p.redirect_uri,p.resource,p.created_at,p.expires_at FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.user_code=? AND p.status='pending' AND p.expires_at>?`, normalized, now.UnixNano()).Scan(&p.ID, &p.UserCode, &p.ClientID, &p.ClientName, &p.RedirectURI, &p.Resource, &created, &expires)
+	err = tx.QueryRow(`SELECT p.id,p.user_code,p.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,p.redirect_uri,p.resource,p.created_at,p.expires_at FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.user_code=? AND p.status='pending' AND p.expires_at>?`, normalized, now.UnixNano()).Scan(&p.ID, &p.UserCode, &p.ClientID, &p.ClientName, &p.RedirectURI, &p.Resource, &created, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err = tx.Exec("INSERT INTO oauth_code_misses (source,attempted_at) VALUES (?,?)", source, now.UnixNano()); err != nil {
 			return p, err
@@ -250,6 +250,10 @@ func (s *Store) PendingByUserCode(code, source string, now time.Time) (OAuthPend
 	if err != nil {
 		return p, err
 	}
+	p.DefaultKind = "bot"
+	if p.ClientID == "phone" {
+		p.DefaultKind = "owner_app"
+	}
 	p.RedirectHost = u.Hostname()
 	p.CreatedAt = time.Unix(0, created)
 	p.ExpiresAt = time.Unix(0, expires)
@@ -267,7 +271,7 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time) error {
 	}
 	defer tx.Rollback()
 	var clientID, clientName, uris string
-	err = tx.QueryRow(`SELECT c.client_id,c.client_name,c.redirect_uris FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.id=? AND p.status='pending' AND p.expires_at>?`, id, now.UnixNano()).Scan(&clientID, &clientName, &uris)
+	err = tx.QueryRow(`SELECT c.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,c.redirect_uris FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.id=? AND p.status='pending' AND p.expires_at>?`, id, now.UnixNano()).Scan(&clientID, &clientName, &uris)
 	if err != nil {
 		return err
 	}
@@ -314,6 +318,9 @@ func (s *Store) oauthStatus(id string, now time.Time) (string, string, error) {
 	}
 	if err != nil {
 		return "", "", err
+	}
+	if p.ClientID == "phone" {
+		return "expired", "", nil
 	}
 	if expires <= now.UnixNano() {
 		return "expired", "", nil

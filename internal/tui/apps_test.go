@@ -175,3 +175,12 @@ func TestConnectedAppsColumnsFit(t *testing.T) {
 		t.Fatal("long cells were not truncated")
 	}
 }
+
+func TestConnectedAppsPhoneDefault(t *testing.T) {
+	m := newModel(80, 30)
+	m.mode = modeApps
+	m, _ = m.onAppsResult(appsResult{op: "apps.pending", raw: json.RawMessage(`{"pending":{"ID":"p","ClientName":"iPhone Safari","DefaultKind":"owner_app"}}`)})
+	if m.apps.kind != "owner_app" || m.apps.input.Value() != "iPhone Safari" {
+		t.Fatalf("phone default: kind=%q name=%q", m.apps.kind, m.apps.input.Value())
+	}
+}
