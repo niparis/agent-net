@@ -992,7 +992,7 @@ off. When enabled, predicted quality multiplies rotation weights by 0.5 to
 exclusions. Ratings from callers below score 45 count half; without a strong
 rating, a model cannot receive a prediction above the fitted average.
 
-Worker cleanup removes only managed worktrees after the worker has ended and all branch commits are reachable from the project's default branch. It keeps worktrees with uncommitted changes or untracked files, running workers, queued branches and branches used by starts in progress. Ignored files are removed with the worktree. Project folder cleanup runs only for folders explicitly named by `cleanup: path age` in the registered project's `.agent-net/worker.md`. It checks the age of every descendant, rejects symlinked roots and skips hard links. The open-file check is best effort; an inconclusive check does not prevent age-based removal. Cleanup logs bytes removed.
+Worker cleanup removes only managed worktrees after the worker has ended and all branch commits are reachable from the project's default branch. It keeps worktrees with uncommitted changes or untracked files, running workers, queued branches and branches used by starts in progress. Ignored files are removed with the worktree. Cleanup logs bytes removed.
 
 ### Tools owner actions
 

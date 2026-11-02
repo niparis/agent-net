@@ -12,52 +12,6 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func (d *Daemon) cleanupProjectFolders(project string, now time.Time) {
-	rules := projectWorkerRules(project)
-	for _, line := range strings.Split(rules, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "cleanup:") {
-			continue
-		}
-		fields := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "cleanup:")))
-		if len(fields) != 2 {
-			continue
-		}
-		age, err := time.ParseDuration(fields[1])
-		if err != nil || age <= 0 {
-			continue
-		}
-		path := fields[0]
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(project, path)
-		}
-		path = filepath.Clean(path)
-		// Never permit a declaration to target the checkout itself, its Git data,
-		// or a parent containing the checkout.
-		rel, err := filepath.Rel(path, project)
-		if err != nil || rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-			continue
-		}
-		worktrees := d.worktreesDir()
-		if worktrees != "" && (path == worktrees || strings.HasPrefix(path, worktrees+string(filepath.Separator)) || strings.HasPrefix(worktrees, path+string(filepath.Separator))) {
-			continue
-		}
-		gitDir := filepath.Join(project, ".git")
-		relGit, err := filepath.Rel(gitDir, path)
-		if err != nil || (relGit != ".." && !strings.HasPrefix(relGit, ".."+string(filepath.Separator))) {
-			continue
-		}
-		inUse := d.cfg.CacheEntryInUse
-		if inUse == nil {
-			inUse = processHasOpenPath
-		}
-		n, err := trimFolder(path, now.Add(-age), inUse)
-		if d.log != nil {
-			d.Logf("worker.cleanup path=%q freed=%d error=%v", path, n, err)
-		}
-	}
-}
-
 // The first cleanup runs soon after start. The daemon restarts on every
 // upgrade, so a cleanup that waited for the first 30-minute tick could be
 // postponed for days.
@@ -101,12 +55,6 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 			continue
 		}
 		now := time.Now()
-		// Folder trimming needs the owner's registration. The worktrees below
-		// are the daemon's own, made for its workers, so they are cleaned in
-		// every project on this machine, registered or only seen.
-		if p.Source == protocol.SourceRegistered || p.Source == protocol.SourceBoth {
-			d.cleanupProjectFolders(p.Path, now)
-		}
 		if err := d.observeLegacyWorktrees(ctx, p.Path, now); err != nil {
 			if d.log != nil {
 				d.Logf("worker.cleanup project=%q error=%v", p.Path, err)

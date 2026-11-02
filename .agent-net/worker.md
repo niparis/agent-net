@@ -7,7 +7,3 @@ Write a failing test first for each behavior. Run gofmt -l . and go vet on the p
 Stay on the branch you started from. Do not merge or rebase main, even if main moves; the caller merges at release time. Commit on your branch. Do not push or merge.
 
 In your report say what you built, list the files, show the failing tests first, and give the check results. Use absolute paths.
-
-Cache folders agent-net may trim (entries unused for 2 hours):
-cleanup: /tmp/agent-net-gocache 2h
-cleanup: /tmp/agent-net-gotmp 2h
