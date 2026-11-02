@@ -88,8 +88,30 @@ func runFakeHarness() bool {
 	return true
 }
 
-// fakeOpenCodeRun is `opencode run -m MODEL PROMPT` for difficulty judges.
+// fakeOpenCodeRun is the one-shot OpenCode command for difficulty judges.
 func fakeOpenCodeRun() {
+	if path := os.Getenv("FAKE_OPENCODE_RUN_RECORD"); path != "" {
+		socket := os.Getenv("AGENT_NET_SOCKET")
+		_, err := os.Stat(socket)
+		rec := struct {
+			Args         []string `json:"args"`
+			Socket       string   `json:"socket"`
+			SocketExists bool     `json:"socket_exists"`
+		}{os.Args[1:], socket, err == nil}
+		raw, _ := json.Marshal(rec)
+		_ = os.WriteFile(path, raw, 0600)
+	}
+	if marker := os.Getenv("FAKE_DIFFICULTY_MARKER"); marker != "" {
+		_ = os.WriteFile(marker, []byte("started"), 0600)
+	}
+	if gate := os.Getenv("FAKE_DIFFICULTY_GATE"); gate != "" {
+		for {
+			if _, err := os.Stat(gate); err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	if path := os.Getenv("FAKE_OPENCODE_PROMPT_FILE"); path != "" && len(os.Args) > 3 {
 		_ = os.WriteFile(path, []byte(os.Args[len(os.Args)-1]), 0o600)
 	}

@@ -194,6 +194,7 @@ type WorkerCleanup struct {
 // worker reports it; the gateway keeps it. A session with it is a worker, and
 // a worker cannot start workers.
 type WorkerInfo struct {
+	Assessment *WorkerAssessment `json:"assessment,omitempty"`
 	// ID is the worker's local ID on its machine.
 	ID string `json:"id"`
 	// Owner is the session that started the worker (the owner's own

@@ -536,6 +536,15 @@ DELETE FROM app_tokens WHERE rowid IN (
 -- this column existed read an empty title, and a view derives one from the
 -- task. The column is added by the migration code so a replay is safe.
 SELECT 1 /* worker title column */;
+`, `
+CREATE TABLE IF NOT EXISTS worker_assessments (
+ run_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, started_at INTEGER NOT NULL,
+ assessed_at INTEGER NOT NULL, reasoning INTEGER NOT NULL, scope INTEGER NOT NULL,
+ coupling INTEGER NOT NULL, uncertainty INTEGER NOT NULL, verification INTEGER NOT NULL,
+ risk INTEGER NOT NULL, d REAL NOT NULL, label TEXT NOT NULL, bottleneck TEXT NOT NULL,
+ confidence TEXT NOT NULL, rules_version TEXT NOT NULL, judge_harness TEXT NOT NULL,
+ judge_model TEXT NOT NULL, reasons TEXT NOT NULL, picker_label TEXT NOT NULL, error TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS worker_assessments_session ON worker_assessments(session_id, started_at DESC);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1612,14 +1621,21 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
 	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),''),
-	COALESCE(p.task_started,0)
+	COALESCE(p.task_started,0),
+ COALESCE((SELECT json_object('run_id',wa.run_id,'session_id',wa.session_id,'started_at',wa.started_at,
+ 'assessed_at',wa.assessed_at,'reasoning',wa.reasoning,'scope',wa.scope,'coupling',wa.coupling,
+ 'uncertainty',wa.uncertainty,'verification',wa.verification,'risk',wa.risk,'d',wa.d,
+ 'label',wa.label,'bottleneck',wa.bottleneck,'confidence',wa.confidence,'rules_version',wa.rules_version,
+ 'judge_harness',wa.judge_harness,'judge_model',wa.judge_model,'reasons',json(wa.reasons),
+ 'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
+ WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),'')
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var a protocol.AgentView
 	var online int
 	var lastSeen, lastActive, created int64
-	var caps, worker string
+	var caps, worker, assessment string
 	var trust int
 	var deleg, waiting string
 	var toolsOld int
@@ -1627,7 +1643,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.TaskStarted)
+		&a.TaskStarted, &assessment)
 	if err != nil {
 		return a, err
 	}
@@ -1649,6 +1665,12 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		var w protocol.WorkerInfo
 		if json.Unmarshal([]byte(worker), &w) == nil {
 			a.Worker = &w
+			if assessment != "" {
+				var v protocol.WorkerAssessment
+				if json.Unmarshal([]byte(assessment), &v) == nil {
+					a.Worker.Assessment = &v
+				}
+			}
 		}
 	}
 	a.Online = online == 1
@@ -2234,11 +2256,12 @@ func (s *Store) MessagesPage(nodeID string, q protocol.QueryMessages) ([]protoco
 
 // workerNoticeLifecycleSQL is true for a worker notice that carries no content
 // of its own: a start that is queued or has begun, or a start that never
-// became a worker. The list skips these messages as rows and as activity, but
-// the worker's conversation still shows them.
+// became a worker, or a difficulty assessment. The list skips these messages
+// as rows and as activity, but the worker's conversation still shows them.
 func workerNoticeLifecycleSQL(alias string) string {
 	return `(` + alias + `.body LIKE '[agent-net worker notice]%' AND (
 	instr(` + alias + `.body, char(10)||'status: started'||char(10)) > 0 OR
+	instr(` + alias + `.body, char(10)||'status: difficulty'||char(10)) > 0 OR
 	instr(` + alias + `.body, char(10)||'status: queued'||char(10)) > 0 OR
 	instr(` + alias + `.body, char(10)||'status: not started'||char(10)) > 0))`
 }

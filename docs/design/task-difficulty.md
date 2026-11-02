@@ -22,6 +22,8 @@ about a minute to every start without adding needed evidence.
 The default assessor scores the brief directly. The analyzer path remains
 available behind `DifficultyAnalyzer` and `agent-net dev assess --analyzer`.
 
+Shadow mode is live: each worker start is assessed in the background; the picker still uses the caller's label.
+
 ## Decision 2026-11-02: no `touches`
 
 `touches` is dropped entirely when the picker switches to the judge's label

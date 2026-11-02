@@ -24,6 +24,8 @@ enrolled node token, which is an owner credential. Scores and minimums are
 limited to 0 through 100. The CTO's `settings_change` with `area: score` uses
 the same settings only after the owner approves its proposal.
 
+The daemon sends each worker brief to the configured difficulty judge after the worker starts. The default is OpenCode with the DeepSeek judge model. The gateway stores the scores and judge reasons, which may reflect the brief, but not the brief itself. Enrolled nodes and agents can read assessments with worker records. The assessment write is a daemon-to-gateway operation: the gateway accepts it only from the node that owns the worker session. An assessment never changes the worker picker.
+
 Worker profiles are stored at the gateway. The owner CLI and bound non-worker agent sessions may list, add or remove them. The private CTO may list them and propose adds or removals. The daemon and gateway both reject worker sessions, and the gateway verifies that the requesting session belongs to the sending node. It resolves each added model against the advertised model list of a machine and records the requester and time. The gateway does not verify that an agent received an owner's instruction, so agents must follow their normal instruction and approval rules. Registered profiles remain subject to the owner-controlled worker provider filter. Automatic choice also requires the task to be at the profile's maximum difficulty or exactly one level below it. The maximum is the highest level whose score minimum it meets. Ineligible profiles have no rotation weight. When none qualify, the start fails with registration guidance; explicit model requests override this eligibility rule and the start note says when they do. Recent failure and success marks apply only to the same node and harness.
 
 The OpenCode CTO server binds only to localhost and requires a random password.
@@ -639,10 +641,11 @@ A registered project is a folder where workers may start sessions (see [decision
 | Instruction signals, including matched owner prompt excerpts | 90 days | none |
 | Sessions that are offline and not seen | 30 days | `--keep-sessions` |
 | Worker runs behind the model track record | until you delete them (for ever) | `--keep-worker-runs` |
+| Worker difficulty assessments, including judge reasons | until you delete them (for ever) | none |
 | Registered projects | until you remove them | none |
 | Nodes and their token hashes | until you delete them | none |
 
-A timer deletes older data once at start and then every hour. A period of `0` keeps the data controlled by that flag for ever. Messages and worker runs default to `0`, so they stay until you set a period with `--keep-messages` or `--keep-worker-runs`, or delete them by hand. Instruction signals have a fixed 90-day retention. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` only keeps delivered message IDs and its outbox.
+A timer deletes older data once at start and then every hour. A period of `0` keeps the data controlled by that flag for ever. Messages and worker runs default to `0`, so they stay until you set a period with `--keep-messages` or `--keep-worker-runs`, or delete them by hand. Instruction signals have a fixed 90-day retention. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` keeps delivered message IDs, its outbox and pending worker assessments until the gateway accepts them.
 
 **File modes.** `gateway.db` and the daemon's `daemon.db`, with their `-wal` and `-shm` files, are mode 0600. The gateway and the daemon create them with that mode and set it again at each start, so files made by an older version are fixed. The gateway creates its data folder with mode 0700.
 

@@ -283,7 +283,7 @@ func TestReviewTokenPurposeMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Re-run the purpose migration too, which is no longer the last one.
-	if _, err = s.db.Exec(`ALTER TABLE app_tokens DROP COLUMN purpose; ALTER TABLE oauth_codes DROP COLUMN retry_code; DROP TABLE app_refresh_budget; DELETE FROM schema_version WHERE version >= (SELECT max(version)-2 FROM schema_version)`); err != nil {
+	if _, err = s.db.Exec(`ALTER TABLE app_tokens DROP COLUMN purpose; ALTER TABLE oauth_codes DROP COLUMN retry_code; DROP TABLE app_refresh_budget; DELETE FROM schema_version WHERE version >= ?`, migrationVersion(t, "App token purpose, OAuth retry code")); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.migrate(); err != nil {
@@ -418,7 +418,7 @@ func TestReviewRefreshRetentionCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Re-run the retention migration, which is no longer the last one.
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version >= (SELECT max(version)-1 FROM schema_version)`); err != nil {
+	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, migrationVersion(t, "Bound consumed refresh history")); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.migrate(); err != nil {

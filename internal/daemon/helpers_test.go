@@ -248,6 +248,9 @@ func shortDir(t *testing.T) string {
 
 func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	t.Helper()
+	// Worker starts also invoke the one-shot judge; never run the test binary
+	// as a normal test process, or find a real model in these tests.
+	t.Setenv(envFakeOpenCode, "1")
 	cfgDir := t.TempDir()
 	nc, ca, err := func() (NodeConfig, []byte, error) {
 		if _, err := Join(context.Background(), g.joinString(), cfgDir); err != nil {

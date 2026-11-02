@@ -26,20 +26,21 @@ type roWorkersFindIn struct {
 }
 
 type roWorkerRow struct {
-	ID         string           `json:"id"`
-	Name       string           `json:"name"`
-	Task       string           `json:"task"`
-	Title      string           `json:"title"`
-	Machine    string           `json:"machine"`
-	Project    string           `json:"project"`
-	Harness    string           `json:"harness"`
-	Model      string           `json:"model"`
-	Difficulty string           `json:"difficulty"`
-	Caller     roSessionRefType `json:"caller"`
-	State      string           `json:"state"`
-	RunTime    string           `json:"run_time"`
-	Started    string           `json:"started,omitempty"`
-	Branch     string           `json:"branch,omitempty"`
+	Assessment *protocol.WorkerAssessment `json:"assessment,omitempty"`
+	ID         string                     `json:"id"`
+	Name       string                     `json:"name"`
+	Task       string                     `json:"task"`
+	Title      string                     `json:"title"`
+	Machine    string                     `json:"machine"`
+	Project    string                     `json:"project"`
+	Harness    string                     `json:"harness"`
+	Model      string                     `json:"model"`
+	Difficulty string                     `json:"difficulty"`
+	Caller     roSessionRefType           `json:"caller"`
+	State      string                     `json:"state"`
+	RunTime    string                     `json:"run_time"`
+	Started    string                     `json:"started,omitempty"`
+	Branch     string                     `json:"branch,omitempty"`
 	key        string
 }
 
@@ -168,6 +169,7 @@ func roWorkerRowOf(agent protocol.AgentView, names map[string]string, full bool)
 		row.State = "running"
 	}
 	if full {
+		row.Assessment = agent.Worker.Assessment
 		row.Started = roUnixText(agent.Worker.StartedAt)
 	}
 	return row, true

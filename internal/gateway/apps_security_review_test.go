@@ -356,7 +356,7 @@ func TestAppTokenFamilyMigrationUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.db.Exec(`DROP INDEX app_tokens_family; DROP INDEX oauth_clients_source; DROP INDEX oauth_pending_source; DROP TABLE oauth_registration_attempts; ALTER TABLE app_tokens DROP COLUMN family_id; ALTER TABLE app_tokens DROP COLUMN used_at; ALTER TABLE oauth_clients DROP COLUMN source; ALTER TABLE oauth_pending DROP COLUMN source; DELETE FROM schema_version WHERE version >= (SELECT max(version)-3 FROM schema_version)`)
+	_, err = s.db.Exec(`DROP INDEX app_tokens_family; DROP INDEX oauth_clients_source; DROP INDEX oauth_pending_source; DROP TABLE oauth_registration_attempts; ALTER TABLE app_tokens DROP COLUMN family_id; ALTER TABLE app_tokens DROP COLUMN used_at; ALTER TABLE oauth_clients DROP COLUMN source; ALTER TABLE oauth_pending DROP COLUMN source; DELETE FROM schema_version WHERE version >= ?`, migrationVersion(t, "Token families and source limits"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -64,6 +64,23 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return g.workerStop(ctx, nc, p)
 
+	case "worker.assessment":
+		p, err := decode[protocol.WorkerAssessment](raw)
+		if err != nil || p.RunID == "" || p.SessionID == "" {
+			return nil, reject("bad worker.assessment")
+		}
+		a, ok, err := g.store.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || a.NodeID != nc.id || a.Worker == nil {
+			return nil, reject("session %q is not a worker of this node", p.SessionID)
+		}
+		if err := g.store.RecordWorkerAssessment(p); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
 	case "worker.stopped":
 		p, err := decode[protocol.WorkerStopped](raw)
 		if err != nil {

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,5 +110,44 @@ func TestJudgeOnlyDefaultUsesBriefAndDoesNotRunCodex(t *testing.T) {
 	}
 	if !strings.Contains(string(prompt), "BRIEF: add a small setting") || !strings.Contains(string(prompt), "Start every dimension at 1") {
 		t.Fatalf("judge prompt missing brief or start-at-1 instruction: %s", prompt)
+	}
+}
+
+func TestJudgeOpenCodeUsesPrivateServerAndDisabledSocket(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record.json")
+	reply := filepath.Join(dir, "reply.json")
+	if err := os.WriteFile(reply, []byte(`{"reasoning":1,"scope":1,"coupling":1,"uncertainty":1,"verification":1,"risk":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	parentSocket := filepath.Join(dir, "real.sock")
+	if err := os.WriteFile(parentSocket, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENT_NET_SOCKET", parentSocket)
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	t.Setenv("FAKE_OPENCODE_RUN_RECORD", record)
+	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task")
+	if err != nil || a.Label != "trivial" {
+		t.Fatalf("judge: %+v %v", a, err)
+	}
+	raw, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec struct {
+		Args         []string `json:"args"`
+		Socket       string   `json:"socket"`
+		SocketExists bool     `json:"socket_exists"`
+	}
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.Args) < 4 || rec.Args[0] != "run" || rec.Args[1] != "--standalone" || rec.Args[2] != "-m" {
+		t.Errorf("judge arguments: %v", rec.Args)
+	}
+	if rec.Socket == "" || rec.Socket == parentSocket || rec.SocketExists || !filepath.IsAbs(rec.Socket) {
+		t.Errorf("judge socket: %q exists=%v", rec.Socket, rec.SocketExists)
 	}
 }

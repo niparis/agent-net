@@ -84,6 +84,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	if judgeModel == "" {
 		judgeModel = "opencode-go/deepseek-v4.1-flash"
 	}
+	a0.JudgeModel = judgeHarness + ":" + judgeModel
 	if judgeHarness == "opencode" {
 		if _, err := a.harnessBinary("opencode"); err != nil {
 			if a.cfg.DifficultyAnalyzer {
@@ -125,7 +126,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		if a0.Confidence == "" {
 			a0.Confidence = "unknown"
 		}
-		a0.Label, a0.D, a0.Bottleneck = difficulty.Label(scores)
+		a0.Label, a0.D, a0.Bottleneck, a0.RulesVersion = difficulty.Label(scores)
 		a0.Elapsed = time.Since(started)
 		return a0, nil
 	}
@@ -195,7 +196,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	if scores.Confidence != "" {
 		a0.Confidence = scores.Confidence
 	}
-	a0.Label, a0.D, a0.Bottleneck = difficulty.Label(scores)
+	a0.Label, a0.D, a0.Bottleneck, a0.RulesVersion = difficulty.Label(scores)
 	a0.Notes = judgeNote
 	a0.Elapsed = time.Since(started)
 	return a0, nil
@@ -342,9 +343,13 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	args := []string{"run", "-m", model, prompt}
+	// A standalone server exits with the judge instead of leaving a session in
+	// OpenCode's shared service. The nonexistent socket also prevents the
+	// agent-net plugin from registering that private session or exposing tools.
+	args := []string{"run", "--standalone", "-m", model, prompt}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
+	cmd.Env = workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock")})
 	stdout, stderr := &capWriter{limit: 1 << 20}, &capWriter{limit: 4096}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

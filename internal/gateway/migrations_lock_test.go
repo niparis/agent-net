@@ -45,3 +45,16 @@ func TestMigrationsAreAppendOnly(t *testing.T) {
 		}
 	}
 }
+
+// migrationVersion finds the migration by its unique comment, so adding a
+// later migration cannot make an upgrade test replay the wrong one.
+func migrationVersion(t *testing.T, marker string) int {
+	t.Helper()
+	for i, migration := range migrations {
+		if strings.Contains(migration, marker) {
+			return i + 1
+		}
+	}
+	t.Fatalf("migration %q not found", marker)
+	return 0
+}
