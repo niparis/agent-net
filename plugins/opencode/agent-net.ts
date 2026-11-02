@@ -921,62 +921,6 @@ interface ToolDef {
 
 const TOOLS: ToolDef[] = [
   {
-    name: "agent_list",
-    description:
-      "List agent sessions known to agent-net, with their name, function, task, expertise (what they can answer about), project and status. Online agents only by default. " +
-      ASK_PEER_RULE,
-    properties: {
-      harness: str("Filter by harness: claude, codex, pi or opencode"),
-      capability: str("Filter by announced capability"),
-      project: str("Filter by project"),
-      online_only: { type: "boolean", description: "Only online agents (default true)" },
-      text: str("Free text match on name, function and task"),
-    },
-    required: [],
-    method: "list",
-    format: formatAgentList,
-  },
-  {
-    name: "agent_nodes",
-    description:
-      "List the machines on the network, with the agent harnesses installed on each (claude, opencode, pi, codex): path, version and model list.",
-    properties: {},
-    required: [],
-    method: "nodes",
-    format: formatNodes,
-  },
-  {
-    name: "agent_get",
-    description: "Get the full profile and status of one agent session, including its delegation policy and its node's rules (tests_before_merge, merge_authority, worker_sandbox, judge_consumers, deploy_rule), read-only.",
-    properties: { session_id: str("Session ID, like s_0123456789abcdef") },
-    required: ["session_id"],
-    method: "get",
-    format: formatAgentGet,
-  },
-  {
-    name: "agent_graph",
-    description:
-      "Read the component graph that every agent may see: every node's charter with its maturity, its rules with name and value (tests_before_merge, merge_authority, worker_sandbox, judge_consumers, deploy_rule and the delegation policies), and every edge's kind, mode and request rule. " +
-      "With node, show that one node's full charter, its rules and the edges that touch it. Without node, offset and limit page the list; total counts the nodes and next is the next page offset. " +
-      "Charters and rules are public read-only; only changes are owner-gated. Secrets or tokens, machine paths, learned-change history with evidence, hidden items and sessions stay hidden.",
-    properties: {
-      node: str("One node: its full charter and the edges that touch it"),
-      offset: { type: "integer", description: "Page start; 0 is the first node" },
-      limit: { type: "integer", description: "Page size; default 20, at most 50" },
-    },
-    required: [],
-    method: "agent_graph",
-    format: formatGraph,
-  },
-  {
-    name: "agent_ask_owner",
-    description: "Ask the owner a question in Needs you.",
-    properties: { question: str("Question in one line"), options: { type: "array", items: { type: "string" } }, urgency: { type: "string", enum: ["normal", "high"] } },
-    required: ["question"], method: "waiting",
-    mapParams: (p) => ({ kind: "question", explicit: true, text: p.question, options: p.options, urgency: p.urgency }),
-    format: () => "Question sent to the owner.",
-  },
-  {
     name: "agent_announce",
     description:
       "Tell the network what you are working on now, so other agents can find you with agent_sessions_find. " +
@@ -994,75 +938,6 @@ const TOOLS: ToolDef[] = [
     required: ["task"],
     method: "announce",
     format: (r) => `Announced task: ${r.profile?.task ?? "(none)"}.`,
-  },
-  {
-    name: "agent_request_approval",
-    description: "Ask the owner to approve one exact action with your recommendation.",
-    properties: { action: str("Exact action"), recommendation: str("Your recommendation") },
-    required: ["action", "recommendation"],
-    method: "request_approval",
-    format: () => "Approval request sent to the owner's inbox.",
-  },
-  {
-    name: "agent_propose_idea",
-    description: "Send a feature idea and your recommendation to the owner's inbox.",
-    properties: { text: str("Feature idea"), recommendation: str("Your recommendation") },
-    required: ["text", "recommendation"],
-    method: "propose_idea",
-    format: () => "Idea sent to the owner's inbox.",
-  },
-  {
-    name: "agent_send",
-    description:
-      "Send a message to another agent session. 'to' is a session ID, or an exact agent name if it is unique. " +
-      ASK_PEER_RULE +
-      " " +
-      RELAY_RULE +
-      NOT_INSTRUCTIONS,
-    properties: {
-      to: str("Session ID or exact agent name"),
-      body: str("Message text"),
-      message_type: str("request, reply or notification (default request)"),
-    },
-    required: ["to", "body"],
-    method: "send",
-    format: formatSent,
-  },
-  {
-    name: "agent_reply",
-    description:
-      "Reply to a message that came from another agent. Use the message_id from the incoming message." +
-      NOT_INSTRUCTIONS,
-    properties: {
-      message_id: str("The message_id you are answering"),
-      body: str("Reply text"),
-      outcome: str("accept, reject, redirect or escalate"),
-      reason: str("Required for reject, redirect and escalate"),
-      redirect_to: str("Node to redirect to"),
-      recommendation: str("Required for escalate"),
-    },
-    required: ["message_id", "body"],
-    method: "reply",
-    format: formatSent,
-  },
-  {
-    name: "agent_messages",
-    description: "List recent agent-net messages for this session.",
-    properties: {
-      conversation_id: str("Only this conversation"),
-      limit: { type: "number", description: "Maximum number of messages" },
-    },
-    required: [],
-    method: "messages",
-    format: formatMessages,
-  },
-  {
-    name: "agent_message_status",
-    description: "Get the delivery state of a message: stored, dispatched, delivered, replied, failed or expired.",
-    properties: { message_id: str("Message ID, like m_0123456789abcdef") },
-    required: ["message_id"],
-    method: "message_status",
-    format: (r) => `${r.message?.message_id}: ${r.message?.state}`,
   },
   {
     name: "agent_project_add",
@@ -1090,37 +965,6 @@ const TOOLS: ToolDef[] = [
     method: "project_add",
     format: formatProjectAdd,
   },
-  {
-    name: "agent_start",
-    description:
-      "Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. " +
-      "The project must be known (agent_projects_find). The machine that holds it must have the harness, and a model must be in that harness's model list (agent_machines_find; an exact id is used as given). " +
-      "The owner sets a worker level per project, and the result shows it. " +
-      "The worker gets your task as a message from you and answers with agent_message_reply: its answer arrives as a message in your session. " +
-      WORKER_NOTE +
-      " A worker cannot start workers. The project's .agent-net/worker.md, if present, is added to the brief." +
-      " If the machine has no room (CPU or memory is busy), the start is queued, not refused: the answer has status queued, a queue_id, the place in the queue and the reason, and a worker notice arrives in your session when the worker starts (or when it cannot). Cancel a queued start with agent_worker_stop and its queue_id." +
-      " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. " +
-      "When a worker ends with no hand-back (stopped, failed, timed out, lost, owner gone) and its worktree has uncommitted changes, the machine commits them on the worker's branch and the notice says so. " +
-      "To go on with such a worker, call agent_worker_start with continue set to its session_id: the new worker starts from that branch with the old first task, so nothing is lost. A continued start can be queued like any start. Only the session that started a worker can continue it, and its machine must be online. " +
-      "Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it.",
-    properties: {
-      project: str("The name of a project from agent_projects_find, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)"),
-      task: str("What the worker should do, with everything it needs to know; it can only ask you questions with agent_message_reply. Optional only with continue"),
-      harness: str("claude, opencode, pi or codex; empty lets automatic selection choose a harness (with continue, the old worker's harness). agent_machines_find shows which are installed on the machine. A pi worker needs isolation worktree."),
-      model: str("The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_machines_find). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high, and Codex keeps an :effort suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty or auto selects a registered worker profile by task difficulty and quota; an empty roster uses the harness default."),
-      touches: { type: "array", items: { type: "string", enum: ["db", "hot-path", "ui", "docs", "tests", "config", "other"] }, description: "Required areas touched; optional for continue. db means schema, migrations or stored data; hot-path means code run on every request, refresh, redraw or message." },
-      difficulty: { type: "string", enum: ["trivial", "simple", "normal", "hard", "very_complex"], description: "Task difficulty for automatic model choice (default normal)." },
-      machine: str("The machine, only when the project is on more than one"),
-      base: str("Existing local branch to start the worktree from."),
-      continue: str("The session_id or worker ID of an ended worker that you started. The new worker runs on the same machine, in the same project, with the same harness and model unless you give others, in a new worktree on a new branch made from the old worker's branch (a worker that ended with no hand-back has its unfinished changes saved as the last commit there), and gets the old worker's full first task. task is then optional and is added as an extra. project, machine, base and isolation must be empty."),
-      isolation: str("Default for a git repository: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. none: it works in the project folder; use it for read-only or non-code tasks"),
-    },
-    required: [],
-    method: "worker_start",
-    format: formatStarted,
-  },
-  { name: "agent_worker_profiles", description: "List registered worker profiles. Workers cannot use this tool.", properties: {}, required: [], method: "worker_profiles", format: (r) => JSON.stringify(r) },
   { name: "agent_worker_profile_add", description: "Register a worker profile when the owner asks. Reusing a profile name replaces its model or effort. The model must be available on an installed harness.", properties: { name: str("Optional profile name. Reuse an existing name to replace its model or effort."), harness: str("Installed worker harness."), model: str("Model ID or loose name."), effort: str("Optional reasoning effort.") }, required: ["harness", "model"], method: "worker_profile_add", format: (r) => JSON.stringify(r) },
   { name: "agent_worker_profile_remove", description: "Remove a registered worker profile when the owner asks.", properties: { name: str("Registered profile name.") }, required: ["name"], method: "worker_profile_remove", format: (r) => JSON.stringify(r) },
   {
@@ -1156,23 +1000,6 @@ const TOOLS: ToolDef[] = [
     required: ["subject_kind", "subject", "finding"],
     method: "agent_learn",
     format: (r) => (r.accepted === false ? `Not recorded: ${r.reason}` : `Recorded finding ${r.id} (${r.status}). ${r.remaining} left today.`),
-  },
-  {
-    name: "agent_stop",
-    description: "Stop a worker that you started, by its session_id. Its process ends at once. A start that is still queued (status queued) is cancelled with its queue_id. The person at the command line can stop any worker.",
-    properties: { session: str("The session_id of a worker you started, or the queue_id of a queued start") },
-    required: ["session"],
-    method: "worker_stop",
-    format: (r) => `Stopped worker ${r.session}.`,
-  },
-  {
-    name: "agent_project_list",
-    description:
-      "List the projects of the agent network: one row per repository per machine, with its path, remote and source (registered, seen because a session ran there, or both).",
-    properties: { name: str("Only projects with this name") },
-    required: [],
-    method: "projects",
-    format: formatProjects,
   },
 ];
 

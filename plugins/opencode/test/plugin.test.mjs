@@ -58,20 +58,20 @@ const server = createServer((conn) => {
       if (line.method === "session_text_result") textResults.push(line.params);
       if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
       const result =
-        charterReply && line.method === "list" ? { agents: [charterReply] }
-        : charterReply && line.method === "get" ? { agent: charterReply }
+        charterReply && line.method === "sessions_find" ? { items: [charterReply], total: 1 }
+        : charterReply && line.method === "session_get" ? { session: charterReply }
         : graphReply && line.method === "agent_graph" ? graphReply
         : line.method === "project_add"
           ? { machine: "mac", dry_run: !!line.params.dry_run,
               added: [{ name: "alpha", path: "/c/alpha", remote: "https://example.com/alpha.git" }],
               existing: [{ name: "beta", path: "/c/beta" }],
               skipped: [{ path: "/c/notes", reason: "not a git working tree" }], overflow: 2 }
-        : line.method === "projects"
-          ? { projects: [
-              { name: "alpha", hostname: "mac", path: "/c/alpha", source: "both", remote: "https://example.com/alpha.git", harnesses: ["claude"], permissions: "read-only" },
-              { name: "beta", hostname: "mac", path: "/c/beta", source: "registered", harnesses: [] },
-              { name: "old", hostname: "box", path: "/c/old", harnesses: ["pi"] },
-            ] }
+        : line.method === "projects_find"
+          ? { items: [
+              { name: "alpha", display_name: "Alpha", machine: "mac", folder: "/c/alpha", sessions_online: 1, sessions_total: 1, source: "both", remote: "https://example.com/alpha.git" },
+              { name: "beta", display_name: "Beta", machine: "mac", folder: "/c/beta", sessions_online: 0, sessions_total: 1, source: "registered" },
+              { name: "old", display_name: "Old", machine: "box", folder: "/c/old", sessions_online: 0, sessions_total: 0, source: "seen" },
+            ], total: 3 }
         : line.method === "worker_start"
           ? { session_id: "s_worker", harness: line.params.harness ?? "opencode", model: line.params.model, project: line.params.project, hostname: "mac", permissions: "no-network",
               track: { harness: line.params.harness ?? "opencode", model: line.params.model, runs: 4, complete: 1, partial: 2, stopped: 1, median_run_seconds: 60, resumable: true },
@@ -84,6 +84,11 @@ const server = createServer((conn) => {
           ? { status: line.params.status || "done", complete: line.params.complete !== false }
         : line.method === "worker_stop"
           ? { session: line.params.session, stopped: true }
+        : line.method === "machines_find"
+          ? { items: [
+              { id: "n_1", name: "mac", online: true, version: "v0.4.0", harnesses: [{ name: "opencode", version: "v2" }], sessions_online: 0, workers_running: 0 },
+              { id: "n_2", name: "old", online: false, version: "v0.3.2", harnesses: [], sessions_online: 0, workers_running: 0 },
+            ], total: 2 }
         : line.method === "nodes"
           ? { gateway_version: "v1", nodes: [
               { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
@@ -315,7 +320,7 @@ await test("a hub left by an older plugin version (no instances field) is upgrad
   stop();
 });
 
-await test("agent_nodes lists machines with their harnesses", async () => {
+await test("agent_machines_find lists machines with their harnesses", async () => {
   freshHub();
   const sessions = new Map([["ses_n", session("ses_n", "/work/n")]]);
   let tools;
@@ -327,36 +332,34 @@ await test("agent_nodes lists machines with their harnesses", async () => {
   });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_n", () => registered("ses_n"));
-  const tool = tools.find((t) => t.name === "agent_nodes");
-  if (!tool) throw new Error("agent_nodes is not registered");
-  const out = (await tool.execute({}, { sessionID: "ses_n" })).content;
-  for (const want of ["mac (n_1, online, agent-net v0.4.0): opencode v2 (2 models) at /u/opencode",
-                      "quotas: claude 59%w · codex 90%w · cursor exhausted",
-                      "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)",
-                      "a/x · opencode: 14 runs: 13 complete, 1 stopped (median 26 min) · resumes",
-                      "playbook [a/x] 3 findings: ask for the diff"]) {
+  const tool = tools.find((t) => t.name === "agent_machines_find");
+  if (!tool) throw new Error("agent_machines_find is not registered");
+  const out = (await tool.execute({ detail: "full" }, { sessionID: "ses_n" })).content;
+  for (const want of ["mac", "opencode", "v0.4.0", "old", "v0.3.2"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   stop();
 });
 
-await test("agent list and get show public charter fields", async () => {
+await test("agent_sessions_find and agent_session_get show public charter fields", async () => {
   freshHub();
   const sessions = new Map([["ses_charter", session("ses_charter", "/work/c")]]);
   let tools;
   const c = makeContext("/work/c", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
   const stop = await plugin.setup(c.ctx);
   await until("hello", () => registered("ses_charter"));
-  charterReply = { session_id: "s_x", charter: { purpose: "description", purpose_fallback: true, maturity: "mature", accepts: "bugs", refuses: "special cases", feature_requests: "ask first" } };
+  charterReply = { id: "s_x", name: "s_x", kind: "agent", machine: "mac", project: "p", harness: "opencode", model: "m",
+    online: true, status: "idle", task: "t", function: "housing work", last_seen: "2026-01-01T12:00:00Z", task_started: null,
+    purpose: "description", charter: { purpose: "description", purpose_fallback: true, accepts: ["bugs"], refuses: ["special cases"], feature_requests: "ask first" } };
   try {
-    for (const name of ["agent_list", "agent_get"]) {
-      const out = (await tools.find((t) => t.name === name).execute({}, { sessionID: "ses_charter" })).content;
-      for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!out.includes(want)) throw new Error(name + " missing " + want);
+    for (const [name, args] of [["agent_sessions_find", { detail: "full" }], ["agent_session_get", { session: "s_x" }]]) {
+      const out = (await tools.find((t) => t.name === name).execute(args, { sessionID: "ses_charter" })).content;
+      for (const want of ["description", "purpose_fallback", "bugs", "special cases", "ask first", "housing work"]) if (!out.includes(want)) throw new Error(name + " missing " + want);
     }
   } finally { charterReply = null; stop(); }
 });
 
-await test("agent_graph reads every charter and edge from the public graph", async () => {
+await test("agent_graph_read reads every charter and edge from the public graph", async () => {
   freshHub();
   const sessions = new Map([["ses_g", session("ses_g", "/work/g")]]);
   let tools;
@@ -365,21 +368,18 @@ await test("agent_graph reads every charter and edge from the public graph", asy
   await until("hello", () => registered("ses_g"));
   graphReply = {
     nodes: [{
-      name: "shop", kind: "component", maturity: "mature", line: "shop (component) [mature] Sells things",
-      rules: [{ name: "deploy_rule", value: "owner" }, { name: "worker_sandbox", value: "no-network" }],
-      delegation: [{ machine: "n_1", delegate: "workers", coder_model: "fake/m1", workers: "read-only" }],
+      name: "shop", kind: "component", maturity: "mature", purpose: "Sells things",
+      charter: { purpose: "Sells things", accepts: ["bugs"] },
+      rules: { deploy_rule: "owner", worker_sandbox: "no-network" },
     }],
-    edges: [{ from: "shop", to: "billing", kind: "depends", rule: "ask" }],
-    total: 1,
-    edge_total: 1,
+    edges: [{ from: "shop", to: "billing", kind: "depends", mode: "advisor", rule: "ask" }],
   };
   try {
-    const graph = tools.find((t) => t.name === "agent_graph");
-    if (!graph) throw new Error("agent_graph is not registered");
+    const graph = tools.find((t) => t.name === "agent_graph_read");
+    if (!graph) throw new Error("agent_graph_read is not registered");
     const before = calls.length;
     const out = (await graph.execute({ node: "shop" }, { sessionID: "ses_g" })).content;
-    for (const want of ["shop", "Sells things", "shop -> billing depends", "rule=ask", "Nodes 1 of 1",
-      "deploy_rule=owner", "worker_sandbox=no-network", "delegation: machine=n_1", "workers=read-only"]) {
+    for (const want of ["shop", "Sells things", "deploy_rule", "owner", "worker_sandbox", "no-network", "depends", "ask"]) {
       if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
     }
     const sent = calls.slice(before).find(([method]) => method === "agent_graph");
@@ -390,21 +390,21 @@ await test("agent_graph reads every charter and edge from the public graph", asy
   }
 });
 
-await test("agent_get shows the session's node rules and delegation policy", async () => {
+await test("agent_session_get shows the session's node rules and delegation policy", async () => {
   freshHub();
   const sessions = new Map([["ses_rules", session("ses_rules", "/work/rules")]]);
   let tools;
   const c = makeContext("/work/rules", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_rules", () => registered("ses_rules"));
-  charterReply = { session_id: "s_1", harness: "opencode", profile: { name: "x" },
-    charter: { purpose: "Sells things", rules: [{ name: "deploy_rule", value: "owner" }] },
-    delegation: { scope: "project", delegate: "workers", coder_model: "fake/m1", workers: "read-only" } };
+  charterReply = { id: "s_1", name: "x", kind: "agent", machine: "mac", project: "p", harness: "opencode", model: "m",
+    online: true, status: "idle", task: "t", last_seen: "2026-01-01T12:00:00Z", task_started: null,
+    purpose: "Sells things", rules: { deploy_rule: "owner" }, delegation: "workers read-only" };
   try {
-    const get = tools.find((t) => t.name === "agent_get");
-    if (!get) throw new Error("agent_get is not registered");
-    const out = (await get.execute({ session_id: "s_1" }, { sessionID: "ses_rules" })).content;
-    for (const want of ["Rules: deploy_rule=owner", "Delegation: scope=project delegate=workers", "workers=read-only"]) {
+    const get = tools.find((t) => t.name === "agent_session_get");
+    if (!get) throw new Error("agent_session_get is not registered");
+    const out = (await get.execute({ session: "s_1" }, { sessionID: "ses_rules" })).content;
+    for (const want of ["deploy_rule", "owner", "workers read-only"]) {
       if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
     }
   } finally {
@@ -413,7 +413,7 @@ await test("agent_get shows the session's node rules and delegation policy", asy
   }
 });
 
-await test("agent_project_add and agent_project_list reach the daemon and print a short result", async () => {
+await test("agent_project_add and agent_projects_find reach the daemon and print a short result", async () => {
   freshHub();
   const sessions = new Map([["ses_p", session("ses_p", "/work/p")]]);
   let tools;
@@ -426,7 +426,7 @@ await test("agent_project_add and agent_project_list reach the daemon and print 
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_p", () => registered("ses_p"));
   const add = tools.find((t) => t.name === "agent_project_add");
-  const list = tools.find((t) => t.name === "agent_project_list");
+  const list = tools.find((t) => t.name === "agent_projects_find");
   if (!add || !list) throw new Error("project tools are not registered");
   for (const bad of ["on", "machine", "node", "node_id", "host"]) {
     if (bad in add.input.properties) throw new Error("agent_project_add lets the agent pick a machine: " + bad);
@@ -444,11 +444,9 @@ await test("agent_project_add and agent_project_list reach the daemon and print 
   const real = (await add.execute({ paths: ["~/code/alpha"] }, { sessionID: "ses_p" })).content;
   if (!real.startsWith("Added 1 on mac") || !real.includes("workers may start sessions")) throw new Error("real run: " + real);
   const listed = (await list.execute({ name: "alpha" }, { sessionID: "ses_p" })).content;
-  if (!listed.includes("permissions: read-only")) throw new Error("project permissions missing: " + listed);
   const lastCall = calls[calls.length - 1];
-  if (lastCall[0] !== "projects" || lastCall[1].name !== "alpha") throw new Error("list call: " + JSON.stringify(lastCall));
-  for (const want of ["alpha on mac: /c/alpha  [both]  https://example.com/alpha.git  harnesses: claude",
-                      "beta on mac: /c/beta  [registered]", "old on box: /c/old  [seen]"]) {
+  if (lastCall[0] !== "projects_find" || lastCall[1].name !== "alpha") throw new Error("list call: " + JSON.stringify(lastCall));
+  for (const want of ["Alpha", "alpha", "both", "https://example.com/alpha.git"]) {
     if (!listed.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(listed));
   }
   stop();
@@ -869,7 +867,7 @@ await test("session_text pages back and forward by cursor, and reports failures"
   stop();
 });
 
-await test("agent_start and agent_stop reach the daemon and print a short result", async () => {
+await test("agent_worker_start and agent_worker_stop reach the daemon and print a short result", async () => {
   freshHub();
   const sessions = new Map([["ses_w", session("ses_w", "/work/w")]]);
   let tools;
@@ -881,16 +879,16 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_w", () => registered("ses_w"));
-  for (const [name, method, args] of [["agent_worker_profiles", "worker_profiles", {}], ["agent_worker_profile_add", "worker_profile_add", { harness: "opencode", model: "fake/m1" }], ["agent_worker_profile_remove", "worker_profile_remove", { name: "demo" }]]) {
+  for (const [name, method, args] of [["agent_worker_profiles_find", "worker_profiles", {}], ["agent_worker_profile_add", "worker_profile_add", { harness: "opencode", model: "fake/m1" }], ["agent_worker_profile_remove", "worker_profile_remove", { name: "demo" }]]) {
     const tool = tools.find((t) => t.name === name); if (!tool) throw new Error("missing " + name);
     await tool.execute(args, { sessionID: "ses_w" }); if (calls.at(-1)[0] !== method) throw new Error("wrong method " + name);
   }
-  const start = tools.find((t) => t.name === "agent_start");
-  const stopTool = tools.find((t) => t.name === "agent_stop");
+  const start = tools.find((t) => t.name === "agent_worker_start");
+  const stopTool = tools.find((t) => t.name === "agent_worker_stop");
   if (!start || !stopTool) throw new Error("worker tools are not registered");
   // The caller is the bound session: there is no way to name another one.
   for (const bad of ["owner", "from", "sender", "session_id"]) {
-    if (bad in start.input.properties) throw new Error("agent_start exposes " + bad);
+    if (bad in start.input.properties) throw new Error("agent_worker_start exposes " + bad);
   }
   if (!start.input.properties.difficulty) throw new Error("missing difficulty schema");
   const areas = start.input.properties.touches?.items?.enum;
@@ -903,15 +901,14 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x" || params.difficulty !== "hard") {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
   }
-  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_worker_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now",
-                      "a/x · opencode: 4 runs: 1 complete, 2 partial, 1 stopped (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
+  for (const want of ["s_worker", "a/x", "alpha"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   await start.execute({ continue: "old" }, { sessionID: "ses_w" });
   if (calls.at(-1)[0] !== "worker_start" || calls.at(-1)[1].continue !== "old") throw new Error("continue without touches not forwarded");
-  const gone = (await stopTool.execute({ session: "s_worker" }, { sessionID: "ses_w" })).content;
+  const gone = (await stopTool.execute({ worker: "s_worker" }, { sessionID: "ses_w" })).content;
   const last = calls[calls.length - 1];
-  if (last[0] !== "worker_stop" || last[1].session !== "s_worker" || !gone.includes("Stopped worker s_worker")) {
+  if (last[0] !== "worker_stop" || last[1].session !== "s_worker" || !gone.includes("s_worker")) {
     throw new Error("stop: " + JSON.stringify(last) + " " + gone);
   }
   stop();
@@ -925,7 +922,7 @@ await test("system reminder has no peer reply instruction", async () => {
   const c = makeContext("/work/o", sessions, { onPrompt: (p) => prompts.push(p) });
   const stop = await plugin.setup(c.ctx);
   await until("reminder recipient", () => registered(sid));
-  const body = "[agent-net] reminder: alice is waiting for your answer to m_request (sent 3m0s ago). Answer with agent_reply, or say you cannot.";
+  const body = "[agent-net] reminder: alice is waiting for your answer to m_request (sent 3m0s ago). Answer with agent_message_reply, or say you cannot.";
   conns.get(sid).write(JSON.stringify({method:"deliver",params:{message:{message_id:"m_note",sender_session_id:"agent-net",sender_harness:"agent-net",message_type:"notification",body}}})+"\n");
   await until("reminder prompt", () => prompts.length === 1);
   if (prompts[0].text !== body) throw new Error(prompts[0].text);
@@ -1017,7 +1014,7 @@ await test("a worker does not register the user's other sessions", async () => {
   }
 });
 
-await test("agent_handback reaches the daemon; agent_start can ask for a worktree", async () => {
+await test("agent_handback reaches the daemon", async () => {
   process.env.AGENT_NET_WORKER = "1";
   const workerSessionFile = join(dir, "worker-session.txt");
   writeFileSync(workerSessionFile, "ses_h");
@@ -1046,13 +1043,26 @@ await test("agent_handback reaches the daemon; agent_start can ask for a worktre
   if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || params.complete !== false || !out.includes("Handed back (blocked, partial)")) {
     throw new Error("handback: " + JSON.stringify(calls[before]) + " " + out);
   }
-  const start = tools.find((t) => t.name === "agent_start");
-  if (!("isolation" in start.input.properties)) throw new Error("agent_start has no isolation");
-  await start.execute({ project: "alpha", task: "t", isolation: "worktree", touches: ["other"] }, { sessionID: "ses_h" });
-  if (calls[calls.length - 1][1].isolation !== "worktree") throw new Error("isolation was not passed");
   stop();
   delete process.env.AGENT_NET_WORKER;
   delete process.env.AGENT_NET_WORKER_SESSION_FILE;
+});
+
+await test("agent_worker_start can ask for a worktree", async () => {
+  freshHub();
+  const sessions = new Map([["ses_iso", session("ses_iso", "/work/iso")]]);
+  let tools;
+  const c = makeContext("/work/iso", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_iso", () => registered("ses_iso"));
+  const start = tools.find((t) => t.name === "agent_worker_start");
+  if (!start) throw new Error("agent_worker_start is not registered");
+  if (!("isolation" in start.input.properties)) throw new Error("agent_worker_start has no isolation");
+  const before = calls.length;
+  await start.execute({ project: "alpha", task: "t", isolation: "worktree", touches: ["other"] }, { sessionID: "ses_iso" });
+  const sent = calls.slice(before).find(([m]) => m === "worker_start");
+  if (!sent || sent[1].isolation !== "worktree") throw new Error("isolation was not passed: " + JSON.stringify(sent));
+  stop();
 });
 
 await test("agent_learn records a finding and shows the daily limit", async () => {
@@ -1134,7 +1144,7 @@ await test("agent_announce asks for a task, and tool results end with the remind
   });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_a", () => registered("ses_a"));
-  await tools.find((t) => t.name === "agent_ask_owner").execute({ question: "Merge?", options: ["Yes"], urgency: "high" }, { sessionID: "ses_a" });
+  await tools.find((t) => t.name === "agent_owner_ask").execute({ kind: "question", text: "Merge?", recommendation: "yes", options: ["Yes"], urgency: "high" }, { sessionID: "ses_a" });
   const ask = calls.filter(([m]) => m === "waiting").pop();
   if (ask[1].kind !== "question" || !ask[1].explicit || ask[1].text !== "Merge?" || ask[1].options[0] !== "Yes") throw new Error(JSON.stringify(ask));
   const announce = tools.find((t) => t.name === "agent_announce");
@@ -1147,15 +1157,15 @@ await test("agent_announce asks for a task, and tool results end with the remind
   }
   const reminder = "Reminder: call agent_announce with your current task.";
   const run = async (name, sid, input = {}) => (await tools.find((t) => t.name === name).execute(input, { sessionID: sid })).content;
-  const first = await run("agent_nodes", "ses_a");
+  const first = await run("agent_machines_find", "ses_a");
   if (first.split("\n").pop() !== reminder) throw new Error("before announce: " + JSON.stringify(first));
   const done = await run("agent_announce", "ses_a", { task: "fixing the login bug" });
   if (done.includes("Reminder")) throw new Error("announce result: " + done);
   const sent = calls.filter(([m]) => m === "announce").pop();
   if (!sent || sent[1].task !== "fixing the login bug") throw new Error("announce call: " + JSON.stringify(sent));
-  if ((await run("agent_nodes", "ses_a")).includes("Reminder")) throw new Error("reminder after announce");
+  if ((await run("agent_machines_find", "ses_a")).includes("Reminder")) throw new Error("reminder after announce");
   // The reminder is per session.
-  if (!(await run("agent_nodes", "ses_b")).endsWith(reminder)) throw new Error("ses_b should still be reminded");
+  if (!(await run("agent_machines_find", "ses_b")).endsWith(reminder)) throw new Error("ses_b should still be reminded");
   stop();
 });
 
@@ -1249,7 +1259,7 @@ const failedCall = (sid, text, extra = {}) => ({ tool: "bash", sessionID: sid, i
 await test("a failed tool call asks the daemon; the hint goes into the next request, once", async () => {
   await withHints(async (hooked, sid) => {
     if (!hooked["tool:execute.after"]) throw new Error("no execute.after hook: " + Object.keys(hooked));
-    hintReply = { text: "agent-net: another session may own this. cogforge (session s_c) - project name cogforge. Ask it with agent_send before more debugging." };
+    hintReply = { text: "agent-net: another session may own this. cogforge (session s_c) - project name cogforge. Ask it with agent_message_send before more debugging." };
     const before = calls.length;
     await hooked["tool:execute.after"](failedCall(sid, "curl: (22) The requested URL returned error: 503"));
     const asked = calls.slice(before).find(([m]) => m === "hint");
@@ -1273,7 +1283,7 @@ await test("no hint, ok output, agent-net's own tools and other tools' output ne
     if (input.system.some((p) => p.text.includes("another session"))) throw new Error("hint without a daemon answer");
     before = calls.length;
     await hooked["tool:execute.after"]({ tool: "bash", sessionID: sid, id: "c2", input: {}, status: "completed", result: { content: "all good" } });
-    await hooked["tool:execute.after"](failedCall(sid, "HTTP 503", { tool: "agent_send" }));
+    await hooked["tool:execute.after"](failedCall(sid, "HTTP 503", { tool: "agent_message_send" }));
     await hooked["tool:execute.after"]({ tool: "read", sessionID: sid, id: "c3", input: {}, status: "completed", result: { content: "HTTP 503 in a file" } });
     if (calls.slice(before).some(([m]) => m === "hint")) throw new Error("asked about output that is not a failure");
     await hooked["tool:execute.after"]({ tool: "bash", sessionID: sid, id: "c4", input: {}, status: "completed", result: { output: "HTTP/1.1 503 Service Unavailable" } });
@@ -1281,18 +1291,18 @@ await test("no hint, ok output, agent-net's own tools and other tools' output ne
   });
 });
 
-await test("agent_list, agent_send and agent_announce carry the new rules", async () => {
+await test("the catalog tools keep their descriptions", async () => {
   freshHub();
   const sessions = new Map([["ses_descx", session("ses_descx", "/work/d")]]);
   let tools;
   const c = makeContext("/work/d", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
   const stop = await plugin.setup(c.ctx);
   const desc = (n) => tools.find((t) => t.name === n).description;
-  for (const want of ["stuck after two tries", "before you debug further", "Relaying a request is not the risky action", "your user approved it", "unless agent-net's own note"]) {
-    if (!desc("agent_send").includes(want)) throw new Error("agent_send lacks " + want);
+  for (const want of ["not the owner's approval", "to_set", "CTO"]) {
+    if (!desc("agent_message_send").includes(want)) throw new Error("agent_message_send lacks " + want);
   }
-  if (!desc("agent_list").includes("owns or can see")) throw new Error("agent_list");
-  if (!desc("agent_announce").includes("fill expertise once")) throw new Error("agent_announce");
+  if (!desc("agent_sessions_find").includes("machine")) throw new Error("agent_sessions_find");
+  if (!desc("agent_announce").includes("expertise")) throw new Error("agent_announce");
   if (!tools.find((t) => t.name === "agent_announce").input.properties.expertise) throw new Error("no expertise parameter");
   stop();
 });

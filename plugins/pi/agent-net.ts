@@ -921,60 +921,10 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  defineTool(
-    "agent_list",
-    "List agents",
-    "List agent sessions known to agent-net, with their name, function, task, expertise (what they can answer about), project and status. Online agents only by default. " +
-      ASK_PEER_RULE,
-    Type.Object({
-      harness: Type.Optional(Type.String({ description: "Filter by harness: claude, codex or pi" })),
-      capability: Type.Optional(Type.String({ description: "Filter by announced capability" })),
-      project: Type.Optional(Type.String({ description: "Filter by project" })),
-      online_only: Type.Optional(Type.Boolean({ description: "Only online agents (default true)" })),
-      text: Type.Optional(Type.String({ description: "Free text match on name, function and task" })),
-    }),
-    "list",
-    formatAgentList,
-  );
 
-  defineTool(
-    "agent_nodes",
-    "List machines",
-    "List the machines on the network, with the agent harnesses installed on each (claude, opencode, pi, codex): path, version and model list.",
-    Type.Object({}),
-    "nodes",
-    formatNodes,
-  );
 
-  defineTool(
-    "agent_get",
-    "Get agent",
-    "Get the full profile and status of one agent session, including its delegation policy and its node's rules (tests_before_merge, merge_authority, worker_sandbox, judge_consumers, deploy_rule), read-only.",
-    Type.Object({ session_id: Type.String({ description: "Session ID, like s_0123456789abcdef" }) }),
-    "get",
-    formatAgentGet,
-  );
 
-  defineTool(
-    "agent_graph",
-    "Read the graph",
-    "Read the component graph that every agent may see: every node's charter with its maturity, its rules with name and value (tests_before_merge, merge_authority, worker_sandbox, judge_consumers, deploy_rule and the delegation policies), and every edge's kind, mode and request rule. " +
-      "With node, show that one node's full charter, its rules and the edges that touch it. Without node, offset and limit page the list; total counts the nodes and next is the next page offset. " +
-      "Charters and rules are public read-only; only changes are owner-gated. Secrets or tokens, machine paths, learned-change history with evidence, hidden items and sessions stay hidden.",
-    Type.Object({
-      node: Type.Optional(Type.String({ description: "One node: its full charter and the edges that touch it" })),
-      offset: Type.Optional(Type.Integer({ description: "Page start; 0 is the first node" })),
-      limit: Type.Optional(Type.Integer({ description: "Page size; default 20, at most 50" })),
-    }),
-    "agent_graph",
-    formatGraph,
-  );
 
-  defineTool(
-    "agent_ask_owner", "Ask owner", "Ask the owner a question in Needs you.",
-    Type.Object({ question: Type.String(), options: Type.Optional(Type.Array(Type.String())), urgency: Type.Optional(Type.Union([Type.Literal("normal"), Type.Literal("high")])) }),
-    "waiting", undefined, (p) => ({ kind: "question", explicit: true, text: p.question, options: p.options, urgency: p.urgency }),
-  );
 
   defineTool(
     "agent_announce",
@@ -998,71 +948,10 @@ export default function (pi: ExtensionAPI) {
     (r) => `Announced task: ${r.profile?.task ?? "(none)"}.`,
   );
 
-  defineTool(
-    "agent_request_approval", "Request approval", "Ask the owner to approve one exact action with your recommendation.",
-    Type.Object({ action: Type.String({ description: "Exact action" }), recommendation: Type.String({ description: "Your recommendation" }) }),
-    "request_approval", () => "Approval request sent to the owner's inbox.",
-  );
-  defineTool(
-    "agent_propose_idea", "Propose idea", "Send a feature idea and your recommendation to the owner's inbox.",
-    Type.Object({ text: Type.String({ description: "Feature idea" }), recommendation: Type.String({ description: "Your recommendation" }) }),
-    "propose_idea", () => "Idea sent to the owner's inbox.",
-  );
 
-  defineTool(
-    "agent_send",
-    "Send to agent",
-    "Send a message to another agent session. 'to' is a session ID, or an exact agent name if it is unique. " +
-      ASK_PEER_RULE +
-      " " +
-      RELAY_RULE +
-      NOT_INSTRUCTIONS,
-    Type.Object({
-      to: Type.String({ description: "Session ID or exact agent name" }),
-      body: Type.String({ description: "Message text" }),
-      message_type: Type.Optional(Type.String({ description: "request, reply or notification (default request)" })),
-    }),
-    "send",
-    formatSent,
-  );
 
-  defineTool(
-    "agent_reply",
-    "Reply to agent",
-    "Reply to a message that came from another agent. Use the message_id from the incoming message." +
-      NOT_INSTRUCTIONS,
-    Type.Object({
-      message_id: Type.String({ description: "The message_id you are answering" }),
-      body: Type.String({ description: "Reply text" }),
-      outcome: Type.Optional(Type.String({ description: "accept, reject, redirect or escalate" })),
-      reason: Type.Optional(Type.String({ description: "Required for reject, redirect and escalate" })),
-      redirect_to: Type.Optional(Type.String({ description: "Node to redirect to" })),
-      recommendation: Type.Optional(Type.String({ description: "Required for escalate" })),
-    }),
-    "reply",
-    formatSent,
-  );
 
-  defineTool(
-    "agent_messages",
-    "List messages",
-    "List recent agent-net messages for this session.",
-    Type.Object({
-      conversation_id: Type.Optional(Type.String({ description: "Only this conversation" })),
-      limit: Type.Optional(Type.Number({ description: "Maximum number of messages" })),
-    }),
-    "messages",
-    formatMessages,
-  );
 
-  defineTool(
-    "agent_message_status",
-    "Message status",
-    "Get the delivery state of a message: stored, dispatched, delivered, replied, failed or expired.",
-    Type.Object({ message_id: Type.String({ description: "Message ID, like m_0123456789abcdef" }) }),
-    "message_status",
-    (r) => `${r.message?.message_id}: ${r.message?.state}`,
-  );
 
   // ---- MCP registry ----
   // Registered servers' tools are registered with Pi at run time as <server>__<tool>.
@@ -1205,14 +1094,6 @@ export default function (pi: ExtensionAPI) {
     },
   );
 
-  defineTool(
-    "agent_mcp_list",
-    "List MCP servers",
-    "List the registered MCP servers: host machine, transport, auth source (a name or path, never a value), enabled, health, who added it, and tool names.",
-    Type.Object({}),
-    "mcp_list",
-    (r) => (r.servers ?? []).map(formatMcpServer).join("\n\n") || "No MCP servers are registered.",
-  );
 
   defineTool(
     "agent_mcp_test",
@@ -1263,56 +1144,7 @@ export default function (pi: ExtensionAPI) {
     "A worker is an agent session that agent-net starts for you with nobody watching it. It uses the project's own permission settings. " +
     "It ends on its own after 60 minutes without messages, after 4 hours, or when you end. Only start one when your user asks.";
 
-  defineTool(
-    "agent_start",
-    "Start a worker",
-    "Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. " +
-      "The project must be known (agent_projects_find). The machine that holds it must have the harness, and a model must be in that harness's model list (agent_machines_find; an exact id is used as given). " +
-      "The owner sets a worker level per project, and the result shows it. " +
-      "The worker gets your task as a message from you and answers with agent_message_reply: its answer arrives as a message in your session. " +
-      WORKER_NOTE +
-      " A worker cannot start workers. The project's .agent-net/worker.md, if present, is added to the brief." +
-      " If the machine has no room (CPU or memory is busy), the start is queued, not refused: the answer has status queued, a queue_id, the place in the queue and the reason, and a worker notice arrives in your session when the worker starts (or when it cannot). Cancel a queued start with agent_worker_stop and its queue_id." +
-      " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. " +
-      "When a worker ends with no hand-back (stopped, failed, timed out, lost, owner gone) and its worktree has uncommitted changes, the machine commits them on the worker's branch and the notice says so. " +
-      "To go on with such a worker, call agent_worker_start with continue set to its session_id: the new worker starts from that branch with the old first task, so nothing is lost. A continued start can be queued like any start. Only the session that started a worker can continue it, and its machine must be online. " +
-      "Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it.",
-    Type.Object({
-      project: Type.Optional(Type.String({ description: "The name of a project from agent_projects_find, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)" })),
-      task: Type.Optional(Type.String({ description: "What the worker should do, with everything it needs to know; it can only ask you questions with agent_message_reply. Optional only with continue" })),
-      harness: Type.Optional(Type.String({ description: "claude, opencode, pi or codex; empty lets automatic selection choose a harness (with continue, the old worker's harness). agent_machines_find shows which are installed on the machine. A pi worker needs isolation worktree." })),
-      model: Type.Optional(Type.String({ description: "The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_machines_find). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high, and Codex keeps an :effort suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty or auto selects a registered worker profile by task difficulty and quota; an empty roster uses the harness default." })),
-      touches: Type.Optional(Type.Array(Type.Union([Type.Literal("db"), Type.Literal("hot-path"), Type.Literal("ui"), Type.Literal("docs"), Type.Literal("tests"), Type.Literal("config"), Type.Literal("other")]), { description: "Required areas touched; optional for continue. db means schema, migrations or stored data; hot-path means code run on every request, refresh, redraw or message." })),
-      difficulty: Type.Optional(Type.Union([Type.Literal("trivial"), Type.Literal("simple"), Type.Literal("normal"), Type.Literal("hard"), Type.Literal("very_complex")], { description: "Task difficulty for automatic model choice (default normal)." })),
-      machine: Type.Optional(Type.String({ description: "The machine, only when the project is on more than one" })),
-      base: Type.Optional(Type.String({ description: "Existing local branch to start the worktree from." })),
-      continue: Type.Optional(Type.String({ description: "The session_id or worker ID of an ended worker that you started. The new worker runs on the same machine, in the same project, with the same harness and model unless you give others, in a new worktree on a new branch made from the old worker's branch (a worker that ended with no hand-back has its unfinished changes saved as the last commit there), and gets the old worker's full first task. task is then optional and is added as an extra. project, machine, base and isolation must be empty." })),
-      isolation: Type.Optional(
-        Type.String({ description: "Default for a git repository: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. none: it works in the project folder; use it for read-only or non-code tasks" }),
-      ),
-    }),
-    "worker_start",
-    (r) => {
-      const extra = [r.track ? formatTrack(r.track) : "", ...(r.playbooks ?? []).map(formatPlaybook)].filter(Boolean).join("\n");
-      return r.status === "queued"
-        ? `${r.queue_reason}\n` +
-          `Queued start ${r.queue_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}: no worker exists yet. ` +
-          `A worker notice arrives in this session when it starts, or when it cannot. Cancel it with agent_worker_stop and the queue_id.\n${workerPermissions(r)}` +
-          (r.machine_note ? `\nmachine: ${r.machine_note}` : "") +
-          (extra ? `\n${extra}` : "")
-        : `Started worker ${r.session_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}.\n` +
-          `${workerPermissions(r)}\n` +
-          (r.model_note ? `model: ${r.model_note}\n` : "") +
-          (r.worktree ? `worktree: ${r.worktree} (branch ${r.branch})\n` : "") +
-          (r.queued
-            ? "The task is queued: it is sent when the gateway link is back."
-            : "The task was sent as a message from you; the worker answers with agent_message_reply and its answer arrives in this session.") +
-          " Stop it with agent_worker_stop. It ends by itself after 60 minutes without messages or 4 hours." +
-          (extra ? `\n${extra}` : "");
-    },
-  );
 
-  defineTool("agent_worker_profiles", "List worker profiles", "List registered worker profiles. Workers cannot use this tool.", Type.Object({}), "worker_profiles");
   defineTool("agent_worker_profile_add", "Register worker profile", "Register a worker profile when the owner asks. Reusing a profile name replaces its model or effort. The model must be available on an installed harness.", Type.Object({
     name: Type.Optional(Type.String({ description: "Optional profile name. Reuse an existing name to replace its model or effort." })),
     harness: Type.String({ description: "Installed worker harness." }),
@@ -1357,23 +1189,7 @@ export default function (pi: ExtensionAPI) {
     (r) => (r.accepted === false ? `Not recorded: ${r.reason}` : `Recorded finding ${r.id} (${r.status}). ${r.remaining} left today.`),
   );
 
-  defineTool(
-    "agent_stop",
-    "Stop a worker",
-    "Stop a worker that you started, by its session_id. Its process ends at once. A start that is still queued (status queued) is cancelled with its queue_id. The person at the command line can stop any worker.",
-    Type.Object({ session: Type.String({ description: "The session_id of a worker you started, or the queue_id of a queued start" }) }),
-    "worker_stop",
-    (r) => `Stopped worker ${r.session}.`,
-  );
 
-  defineTool(
-    "agent_project_list",
-    "List projects",
-    "List the projects of the agent network: one row per repository per machine, with its path, remote and source (registered, seen because a session ran there, or both).",
-    Type.Object({ name: Type.Optional(Type.String({ description: "Only projects with this name" })) }),
-    "projects",
-    formatProjects,
-  );
 
   const workerRole = Boolean(process.env.AGENT_NET_WORKER);
   for (const tool of TOOL_CATALOG) {
