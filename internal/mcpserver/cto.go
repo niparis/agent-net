@@ -364,6 +364,22 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 // the single place to add a CTO tool and its argument schema.
 func NewCTO(call Caller, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net-cto", Version: version}, nil)
+	originalCall := call
+	call = func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		raw, err := originalCall(ctx, method, params)
+		if err != nil {
+			return raw, err
+		}
+		var proposal ctoDialogProposal
+		if json.Unmarshal(raw, &proposal) == nil && proposal.ID != "" && proposal.Message != "" {
+			if slot, ok := ctx.Value(ctoDialogKey{}).(*ctoDialogProposal); ok {
+				*slot = proposal
+				return json.Marshal(proposal.Text)
+			}
+		}
+		return raw, nil
+	}
+	s.AddReceivingMiddleware(ctoDialogMiddleware(originalCall))
 	for name, spec := range ctoTools {
 		if ctoV2Tools[name] {
 			continue
@@ -394,6 +410,56 @@ func NewCTO(call Caller, version string) *mcp.Server {
 	return s
 }
 
+type ctoDialogKey struct{}
+type ctoDialogProposal struct {
+	ID      string `json:"proposal_id"`
+	Message string `json:"message"`
+	Text    string `json:"text"`
+}
+
+func ctoDialogMiddleware(call Caller) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			var proposal ctoDialogProposal
+			res, err := next(context.WithValue(ctx, ctoDialogKey{}, &proposal), method, req)
+			if err != nil || method != "tools/call" || proposal.ID == "" {
+				return res, err
+			}
+			request, ok := req.(*mcp.CallToolRequest)
+			if !ok {
+				return res, err
+			}
+			result, ok := res.(*mcp.CallToolResult)
+			if !ok || result.IsError {
+				return res, err
+			}
+			text := proposal.Text
+			init := request.Session.InitializeParams()
+			if init != nil && init.Capabilities != nil && init.Capabilities.Elicitation != nil {
+				answer, e := request.Session.Elicit(ctx, &mcp.ElicitParams{Message: proposal.Message, RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{}}})
+				if e == nil && answer != nil && (answer.Action == "accept" || answer.Action == "decline") {
+					approve := answer.Action == "accept"
+					outcome, e := call(ctx, "cto_dialog_answer", map[string]any{"id": proposal.ID, "approve": approve})
+					if e == nil {
+						if approve {
+							text = "Approved by the owner in the dialog."
+							var note string
+							if json.Unmarshal(outcome, &note) == nil && note != "" {
+								text += " " + note
+							}
+						} else {
+							text = "Refused by the owner in the dialog."
+						}
+					}
+				}
+			}
+			result.Content = []mcp.Content{&mcp.TextContent{Text: text}}
+			result.StructuredContent = nil
+			return result, nil
+		}
+	}
+}
+
 // CTOToolNames returns the exposed CTO tool names, sorted.
 func CTOToolNames() []string {
 	names := make([]string, 0, len(ctoTools))
@@ -417,6 +483,9 @@ func RunCTO(ctx context.Context, socket, version string) error {
 	}
 	defer ch.close()
 	s := NewCTO(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "cto_dialog_answer" {
+			return ch.call(ctx, method, params)
+		}
 		return ch.call(ctx, "cto_tool", map[string]any{"name": method, "arguments": params})
 	}, version)
 	return s.Run(ctx, stdioTransport{conn})

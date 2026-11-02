@@ -681,6 +681,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	client, ls := lc.client, lc.ls
 	lc.mu.Unlock()
 	if client == "cto-mcp" {
+		if method == "cto_dialog_answer" {
+			return lc.ctoDialogAnswer(ctx, raw)
+		}
 		if method != "cto_tool" {
 			return nil, errors.New("method not available to CTO channel")
 		}

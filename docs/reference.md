@@ -36,13 +36,11 @@ integrations, notifications, CTO settings, providers, scores, worker profiles,
 playbooks, project registration and names, invites, onboarding restart and new
 CTO conversations. Even a dry run or a plan needs approval. `mcp_call` can have
 side effects and return private data, so it is always a proposal. An approval
-typed in the CTO chat never counts. Use `A` in the Inbox tab for proposals, or `w`
+typed in the CTO chat never counts. Use the dialog or `A` in the Inbox tab for proposals, or `w`
 in the CTO box for the graph window.
 
 Each proposal tool accepts an optional `reason`. The daemon validates the exact
-call before storing it. The CTO receives only:
-`proposal p_12 is in Needs you; the owner decides. You will get a note with the outcome.`
-Typing instructions in the CTO conversation does not approve a proposal.
+call before storing it. If the CTO harness supports form elicitation, it can show a dialog with the stored tool, action, arguments and reason. Accept approves and decline refuses the proposal. Cancel, an error, or no dialog leaves it open in the Inbox. The CTO sees a short result. Typing instructions in the CTO conversation does not approve a proposal.
 
 `proposal_list` lists proposals across online machines, or on one machine when
 passed `node_id`. `proposal_answer` takes `node_id`, `proposal_id` and an action:
