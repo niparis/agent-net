@@ -343,9 +343,13 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	args := []string{"run", "-m", model, prompt}
+	// A standalone server exits with the judge instead of leaving a session in
+	// OpenCode's shared service. The nonexistent socket also prevents the
+	// agent-net plugin from registering that private session or exposing tools.
+	args := []string{"run", "--standalone", "-m", model, prompt}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
+	cmd.Env = workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock")})
 	stdout, stderr := &capWriter{limit: 1 << 20}, &capWriter{limit: 4096}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
