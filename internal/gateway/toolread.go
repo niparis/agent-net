@@ -142,10 +142,10 @@ func checkKinds(kinds []string) (map[string]bool, error) {
 	out := map[string]bool{}
 	for _, kind := range kinds {
 		switch kind {
-		case "agent", "worker", "owner":
+		case "agent", "worker", "owner", "bot":
 			out[kind] = true
 		default:
-			return nil, fmt.Errorf("kind must be agent, worker or owner. Example: {\"kind\":[\"agent\"]}")
+			return nil, fmt.Errorf("kind must be agent, worker, owner or bot. Example: {\"kind\":[\"agent\"]}")
 		}
 	}
 	return out, nil
@@ -204,6 +204,9 @@ func durationText(d time.Duration) string {
 }
 
 func sessionKind(a protocol.AgentView) string {
+	if a.Harness == "bot" {
+		return "bot"
+	}
 	if protocol.IsOwner(a.Harness) {
 		return "owner"
 	}

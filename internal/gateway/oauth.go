@@ -295,3 +295,7 @@ func (g *Gateway) oauthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	oauthJSONResponse(w, 200, response)
 }
+
+func protectedResourceMetadataURL(base string) string {
+	return strings.TrimRight(base, "/") + "/.well-known/oauth-protected-resource"
+}

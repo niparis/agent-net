@@ -131,6 +131,10 @@ function formatDeliveryBase(m: DeliveredMessage): string {
       `This is your user speaking, not another agent. Do what they ask within your task, and answer with agent_message_reply (message_id="${m.message_id}").`
     );
   }
+  if (m.sender_harness === "bot" && m.message_type !== "reply") {
+    return `${m.body}\n\n[agent-net] message ${m.message_id} from ${who} (bot, session ${m.sender_session_id ?? "unknown"})${conv}. Answer with agent_message_reply (message_id="${m.message_id}") if you can help.` +
+      (m.recipient_relation ? ` ${m.recipient_relation}` : "");
+  }
   if (m.message_type === "reply") {
     const answering = m.parent_message_id ? `, answering your message ${m.parent_message_id}` : "";
     return (

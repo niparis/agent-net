@@ -747,7 +747,8 @@ export const TOOL_CATALOG = [
             "enum": [
               "agent",
               "worker",
-              "owner"
+              "owner",
+              "bot"
             ]
           },
           "description": "Select the kind or action.",

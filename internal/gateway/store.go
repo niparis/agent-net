@@ -947,6 +947,9 @@ func (s *Store) upsertSession(q interface {
 	Query(string, ...any) (*sql.Rows, error)
 	QueryRow(string, ...any) *sql.Row
 }, nodeID string, in protocol.SessionInfo, cto ...bool) (id string, created bool, err error) {
+	if in.Harness == "bot" {
+		return "", false, reject("bot sessions are reserved for connected apps")
+	}
 	if in.Harness == "cto" && (len(cto) == 0 || !cto[0]) {
 		return "", false, reject("CTO session requires owner registration")
 	}
@@ -1522,13 +1525,14 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	return a.Profile, nil
 }
 
-const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.native_id, s.status, s.online, s.last_seen, s.last_active,
+const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harness, s.cwd, s.native_id, s.status,
+	CASE WHEN s.harness='bot' THEN EXISTS(SELECT 1 FROM apps a WHERE a.id=s.node_id AND a.kind='bot' AND a.revoked_at IS NULL) ELSE s.online END, s.last_seen, s.last_active,
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
 	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),''),
 	COALESCE(p.task_started,0)
-	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
+	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var a protocol.AgentView
@@ -1578,13 +1582,14 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 }
 
 func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
-	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.id = ?`, sessionID))
+	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.id = ? AND (n.id IS NOT NULL OR s.harness='bot')`, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, false, nil
 	}
 	if err != nil {
 		return a, false, err
 	}
+	s.botOnline(&a)
 	one := []protocol.AgentView{a}
 	if err := s.applyDelegation(one); err != nil {
 		return a, false, err
@@ -1605,7 +1610,7 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
 
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
-	rows, err := s.db.Query(agentSelect + ` WHERE NOT (` + piChildSQL + `) ORDER BY s.last_seen DESC, s.id`)
+	rows, err := s.db.Query(agentSelect + ` WHERE (n.id IS NOT NULL OR s.harness='bot') AND NOT (` + piChildSQL + `) ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -1617,6 +1622,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		if err != nil {
 			return nil, err
 		}
+		s.botOnline(&a)
 		if f.OnlineOnly && !a.Online {
 			continue
 		}
@@ -1961,7 +1967,7 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 		states = `m.state IN ('stored','dispatched')`
 	}
 	rows, err := s.db.Query(msgSelect+` JOIN sessions r ON r.id = m.recipient
-		WHERE r.node_id = ? AND r.online = 1 AND `+states+` AND m.expires_at > ?
+		WHERE r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
 		ORDER BY m.created_at, m.rowid`, nodeID, s.now().UnixNano())
 	if err != nil {
 		return nil, err
@@ -2053,7 +2059,7 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 // Expire marks overdue undelivered messages expired and returns how many.
 func (s *Store) Expire() (int, error) {
 	now := s.now().UnixNano()
-	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched','held') AND expires_at <= ?`, now)
+	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched','held') AND expires_at <= ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored')`, now)
 	if err != nil {
 		return 0, err
 	}

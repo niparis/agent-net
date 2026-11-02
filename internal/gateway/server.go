@@ -1602,7 +1602,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 // connected and the session is online.
 func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 	a, ok, err := g.store.Agent(m.To)
-	if err != nil || !ok || !a.Online {
+	if err != nil || !ok || !a.Online || a.Harness == "bot" {
 		return
 	}
 	g.sendDeliver(ctx, a.NodeID, m)
@@ -1638,6 +1638,12 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 		m.RecipientTrust = rule == "auto"
 	} else if a, ok, err := g.store.Agent(m.To); err == nil && ok {
 		m.RecipientTrust = a.PeerTrust
+	}
+	// The sender identity comes from the stored session, never the message.
+	// Bot output cannot carry the receiver's peer authorization.
+	if m.FromHarness == "bot" {
+		m.RecipientTrust = false
+		m.ApprovalNote = botDeliveryNote(m.FromName)
 	}
 	// The relation from the sender's node to the recipient's node is graph
 	// data, computed here and never set by a sender (decision 0022).
