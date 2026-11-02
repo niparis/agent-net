@@ -56,8 +56,10 @@ type toolsState struct {
 	needs           []protocol.ToolNeed
 	cat             toolsdiff.Catalog
 
-	row, scroll int
-	summaries   map[string]string
+	row, scroll  int
+	projectsOpen bool
+	projectRow   int
+	summaries    map[string]string
 
 	search    string // the filter of the one list
 	searching bool   // the filter text box has the keys
@@ -239,6 +241,24 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tl.modal != nil {
 		return m.toolsModalKey(k)
 	}
+	if m.tl.projectsOpen {
+		projects := m.projectCosts()
+		switch k.String() {
+		case "esc":
+			m.tl.projectsOpen = false
+		case "j", "down":
+			m.tl.projectRow = min(m.tl.projectRow+1, max(len(projects)-1, 0))
+		case "k", "up":
+			m.tl.projectRow = max(m.tl.projectRow-1, 0)
+		case "enter":
+			if len(projects) > 0 {
+				m.tl.search = "project:" + projects[m.tl.projectRow].name
+				m.tl.row, m.tl.scroll = 0, 0
+				m.tl.projectsOpen = false
+			}
+		}
+		return m, nil
+	}
 	if m.tl.searching {
 		return m.toolsSearchKey(k)
 	}
@@ -249,6 +269,9 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "help":
 		m.openHelp()
+	case "project costs":
+		m.tl.projectsOpen = true
+		m.tl.projectRow = 0
 	case "rescan":
 		return m.toolsRescan()
 	case actDown:

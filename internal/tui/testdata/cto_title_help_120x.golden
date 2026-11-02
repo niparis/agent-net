@@ -90,6 +90,7 @@ Legend ────────────────────────�
   states               pending ... delivered ✓ replied ↩ failed ✗
 
  Tools
+  t                      show skill cost per project
   n                      add an MCP server or a skill from a folder
   enter                  open the actions for the selected tool
   R                      rescan tool copies

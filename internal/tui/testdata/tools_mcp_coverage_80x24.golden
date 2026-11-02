@@ -1,21 +1,21 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
-╭─Tools────────────────────────────────────────────────────────────────────────╮
-│   NAME                            KIND   STATUS                              │
-│   conflict-mcp                    MCP    local folder in homelab, not        │
-│                                          managed                             │
-│   homelab-mcp                     MCP    local folder in homelab, not        │
-│                                          managed                             │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+╭─Tools · 2 tools──────────────────────────────────────────────────────────────╮
+│   NAME                          STATUS                              COST     │
+│   ◆ conflict-mcp                local folder in homelab, not managed-        │
+│   ◆ homelab-mcp                 local folder in homelab, not managed-        │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │ 2 tools · ! needs attention · enter opens actions                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─conflict-mcp─────────────────────────────────────────────────────────────────╮
+│ scope: global                                                                │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

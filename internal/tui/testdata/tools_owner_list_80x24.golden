@@ -1,21 +1,21 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
-╭─Tools────────────────────────────────────────────────────────────────────────╮
-│   NAME                            KIND   STATUS                              │
-│ ! code-review                     skill  v1 on Nicolas-MBP, v3 on research   │
-│ ! design-taste-frontend           skill  2 different copies on research      │
-│ ! imnplementing-clean-architectu… skill  found on 1 machine, not managed ·   │
-│                                          looks like a copy of                │
-│                                          clean-architecture-python           │
-│ ! web-design-guidelines           skill  on for wbg-housing, sovl-clone ·    │
-│                                          repo copy in sovl-clone hides yours │
-│   clean-architecture-python       skill  on everywhere                       │
-│   deploy-test-server              skill  in the sovl-clone repo              │
-│   diagnosing-bugs                 skill  on everywhere; limited on one       │
-│                                          harness                             │
-│   estate-runbook                  skill  in the homelab repo                 │
-│   found-skill-00                  skill  found on 2 machines, not managed    │
-│   found-skill-01                  skill  found on 2 machines, not managed    │
+╭─Tools · 40 tools─────────────────────────────────────────────────────────────╮
+│   NAME                          STATUS                              COST     │
+│ ! code-review                   v1 on Nicolas-MBP, v3 on research   ~0       │
+│ ! design-taste-frontend         2 different copies on research      ~0       │
+│ ! imnplementing-clean-architec… found on 1 machine, not managed     ~0       │
+│ ! web-design-guidelines         on for wbg-housing, sovl-clone      ~0       │
+│   clean-architecture-python     on everywhere                       ~0       │
+│   deploy-test-server            in the sovl-clone repo              ~0       │
 │ 40 tools · ! needs attention · enter opens actions                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─code-review──────────────────────────────────────────────────────────────────╮
+│ ~0 tokens in every session                                                   │
+│ +~0 when the skill is used                                                   │
+│ on: v1 on Nicolas-MBP, v3 on research                                        │
+│ ! v1 on Nicolas-MBP, v3 on research                                          │
+│ enter: make every machine use v3                                             │
+│ from: managed by agent-net v3                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

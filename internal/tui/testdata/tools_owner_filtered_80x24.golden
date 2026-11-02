@@ -1,21 +1,21 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
-╭─Tools / node:homelab machine:research────────────────────────────────────────╮
-│   NAME                            KIND   STATUS                              │
-│ ! code-review                     skill  on for homelab · v1 on Nicolas-MBP, │
-│                                          v3 on research                      │
-│ ! design-taste-frontend           skill  2 different copies on research      │
-│ ! imnplementing-clean-architectu… skill  off for homelab · looks like a copy │
-│                                          of clean-architecture-python        │
-│   clean-architecture-python       skill  on for homelab                      │
-│   diagnosing-bugs                 skill  on for homelab                      │
-│   found-skill-00                  skill  off for homelab                     │
-│   found-skill-01                  skill  off for homelab                     │
-│   found-skill-02                  skill  off for homelab                     │
-│   found-skill-03                  skill  off for homelab                     │
-│   found-skill-04                  skill  off for homelab                     │
-│   found-skill-05                  skill  off for homelab                     │
-│   found-skill-06                  skill  off for homelab                     │
+╭─34 skills · ~0 tokens in every session on research───────────────────────────╮
+│   NAME                          STATUS                              COST     │
+│ ! code-review                   on for homelab                      ~0       │
+│ ! design-taste-frontend         2 different copies on research      ~0       │
+│ ! imnplementing-clean-architec… off for homelab                     ~0       │
+│   clean-architecture-python     on for homelab                      ~0       │
+│   diagnosing-bugs               on for homelab                      ~0       │
+│   found-skill-00                off for homelab                     ~0       │
 │ 35 tools · ! needs attention · enter opens actions                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─code-review──────────────────────────────────────────────────────────────────╮
+│ ~0 tokens in every session                                                   │
+│ +~0 when the skill is used                                                   │
+│ on: on for homelab                                                           │
+│ ! v1 on Nicolas-MBP, v3 on research                                          │
+│ enter: make every machine use v3                                             │
+│ from: managed by agent-net v3                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

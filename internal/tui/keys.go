@@ -282,6 +282,7 @@ var keyBindings = []keyBinding{
 	bind(contextTools, "j|down", actDown, "move", 0),
 	bind(contextTools, "k|up", actUp, "move", 0),
 	bind(contextTools, "/", "filter", "filter", 0),
+	withHelp(bind(contextTools, "t", "project costs", "costs", 0), "show skill cost per project"),
 	bind(contextTools, "esc", "clear filter", "clear", 1),
 	withHelp(bind(contextTools, "n", "add", "add", 0), "add an MCP server or a skill from a folder"),
 	withLocal(withHelp(bind(contextTools, "enter", "open actions", "actions", 0), "open the actions for the selected tool")),
