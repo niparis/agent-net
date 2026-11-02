@@ -1098,6 +1098,29 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpScroll = min(max(m.helpScroll, 0), max(len(m.helpContent(max(m.width, 40)))-room, 0))
 		return m, nil
 	}
+	if m.qualityDetail && m.tab == quotasTab {
+		switch keyAction(contextQualityDetails, k.String()) {
+		case actClose:
+			m.qualityDetail = false
+			m.quotaScroll = 0
+		case actDown:
+			m.quotaScroll++
+		case actUp:
+			m.quotaScroll = max(0, m.quotaScroll-1)
+		case actPageDown:
+			m.quotaScroll += max(1, m.height-5)
+		case actPageUp:
+			m.quotaScroll = max(0, m.quotaScroll-max(1, m.height-5))
+		case "next agent":
+			m.qualityAgent = (m.qualityAgent + 1) % (len(m.snap.Calibration.Quality.Agents) + 1)
+			m.quotaScroll = 0
+		case "previous agent":
+			n := len(m.snap.Calibration.Quality.Agents) + 1
+			m.qualityAgent = (m.qualityAgent + n - 1) % n
+			m.quotaScroll = 0
+		}
+		return m, nil
+	}
 	if m.focus == focusCTO && m.cto != nil {
 		return m.ctoKey(k)
 	}

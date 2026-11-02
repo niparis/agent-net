@@ -1,27 +1,16 @@
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                         │
-│ FAMILY   TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                              │
-│ simple · 8 tasks                                                             │
-│ luna         5       0.20            -    2 min                              │
-│ deepseek     1       0.33            -    2 min                              │
-│ sol          1       0.00            -    0 min                              │
-│ terra        1       1.00            -   10 min                              │
-│ normal · 154 tasks                                                           │
-│ deepseek    66       0.09            -    1 min                              │
-│ terra       53       0.72            -    6 min                              │
-│ luna        19       0.26            -    3 min                              │
-│ sol          9       0.26            -    2 min                              │
-│ opus         7       0.00            -    0 min                              │
-│ hard · 33 tasks                                                              │
-│ terra       25       0.61  1 · avg 4.0   13 min                              │
-│ sol          8       0.42            -    4 min                              │
-│ unknown · 23 tasks                                                           │
-│ deepseek    12       0.17            -    2 min                              │
-│ sol          8       0.13            -    1 min                              │
-│ terra        3       1.00            -   10 min                              │
-│ ratings: none yet                                                            │
-│ defects reported later: 0                                                    │
-│ ratings: 40 so far; what matters most: model / effort / harness              │
-│ headache = orchestrator minutes: continue 2, fix 10, late defect             │
-│ 10/30/60/180 by severity                                                     │
+│ ╭─simple · 8 tasks──────────────────╮ ╭─normal · 154 tasks─────────────────╮ │
+│ │   luna       2 min █░░░░  · 5 ta… │ │   opus       0 min ░░░░░  · 7 tas… │ │
+│ │ 3 more with too few tasks to rank │ │   deepseek   1 min █░░░░ · 66 tas… │ │
+│ │                                   │ │   sol        2 min █░░░░  · 9 tas… │ │
+│ │                                   │ │ 2 more: luna 3 min · terra 6 min   │ │
+│ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
+│ ╭─hard · 33 tasks───────────────────╮ ╭─very complex · 0 tasks─────────────╮ │
+│ │   sol        4 min ██░░░  · 8 ta… │ │                                    │ │
+│ │   terra     13 min █████ · 25 ta… │ │                                    │ │
+│ │ · 1 late bug                      │ │                                    │ │
+│ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
+│ ▸ = the model the picker would choose on Mac.  My time = minutes the         │
+│ orchestrator spends after a worker: nudges, fixes and bugs found later.      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

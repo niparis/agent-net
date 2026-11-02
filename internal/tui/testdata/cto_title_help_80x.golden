@@ -83,7 +83,7 @@ Legend ────────────────────────�
   left/right             cycle the Quality panel agent
   p                      protect or unprotect this subscription
   s                      show or hide subscriptions that are not set up
-  d                      show or hide the Quality panel detail
+  d                      open Quality details
 
  Messages
   left/right             select the previous or next message
@@ -181,6 +181,12 @@ Legend ────────────────────────�
   r                      refuse
   left, right            change kind
   tab                    edit name
+
+ Quality details
+  esc                    back
+  up/down, j/k           scroll
+  pgup/pgdn              page
+  left/right             agent
 
  Proposal detail
   esc                    back

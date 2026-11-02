@@ -34,15 +34,18 @@ type QualityFactor struct {
 // QualityFamily is one model family's work at one requested difficulty. The
 // gateway folds harnesses and efforts together and sums one row per task.
 type QualityFamily struct {
-	Family             string  `json:"family"`
-	Tasks              int     `json:"tasks"`
-	Fixes              int     `json:"fixes"`
-	Continues          int     `json:"continues"`
-	Midrun             int     `json:"midrun"`
-	FollowUps          float64 `json:"follow_ups"`
-	LateDefects        int     `json:"late_defects"`
-	LateDefectSeverity float64 `json:"late_defect_severity"`
-	Headache           float64 `json:"headache"`
+	Family             string   `json:"family"`
+	NeededHelp         float64  `json:"needed_help"`
+	WorstSeverity      int      `json:"worst_severity,omitempty"`
+	AvgRating          *float64 `json:"avg_rating,omitempty"`
+	Tasks              int      `json:"tasks"`
+	Fixes              int      `json:"fixes"`
+	Continues          int      `json:"continues"`
+	Midrun             int      `json:"midrun"`
+	FollowUps          float64  `json:"follow_ups"`
+	LateDefects        int      `json:"late_defects"`
+	LateDefectSeverity float64  `json:"late_defect_severity"`
+	Headache           float64  `json:"headache"`
 }
 
 // QualityLevel is one requested difficulty's table. Difficulty is a level

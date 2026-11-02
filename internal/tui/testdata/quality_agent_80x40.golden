@@ -1,13 +1,11 @@
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ agent ◂ agent-net ▸                                                          │
-│ FAMILY TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                                │
-│ normal · 20 tasks                                                            │
-│ terra     20       0.67            -    6 min                                │
-│ hard · 8 tasks                                                               │
-│ sol        8       0.42            -    4 min                                │
-│ ratings: none yet                                                            │
-│ defects reported later: 0                                                    │
-│ ratings: 40 so far; what matters most: model / effort / harness              │
-│ headache = orchestrator minutes: continue 2, fix 10, late defect             │
-│ 10/30/60/180 by severity                                                     │
+│ ╭─simple · 0 tasks──────────────────╮ ╭─normal · 20 tasks──────────────────╮ │
+│ │                                   │ │   terra   6 min █████ · 20 tasks   │ │
+│ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
+│ ╭─hard · 8 tasks────────────────────╮ ╭─very complex · 0 tasks─────────────╮ │
+│ │   sol     4 min ███░░  · 8 tasks  │ │                                    │ │
+│ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
+│ ▸ = the model the picker would choose on Mac.  My time = minutes the         │
+│ orchestrator spends after a worker: nudges, fixes and bugs found later.      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

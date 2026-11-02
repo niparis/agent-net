@@ -30,6 +30,7 @@ const (
 	contextApps            keyContext = "connected apps"
 	contextSettings        keyContext = "Settings"
 	contextQuotas          keyContext = "Quotas"
+	contextQualityDetails  keyContext = "Quality details"
 	contextGraph           keyContext = "Graph"
 	contextGraphFind       keyContext = "Graph find"
 	contextCard            keyContext = "agent card"
@@ -51,7 +52,7 @@ const (
 var allKeyContexts = []keyContext{
 	contextGlobal, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
-	contextSettings, contextApps, contextQuotas, contextGraph, contextGraphFind, contextCard,
+	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard,
 	contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsPlan, contextToolsCompare,
 	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
 }
@@ -233,8 +234,15 @@ var keyBindings = []keyBinding{
 	withLocal(withHelp(bind(contextQuotas, "right", "next agent", "agent", -1), "cycle the Quality panel agent")),
 	withHelp(bind(contextQuotas, "p", "protect", "protect", 1), "protect or unprotect this subscription"),
 	withHelp(bind(contextQuotas, "s", "show unset", "show unset", 2), "show or hide subscriptions that are not set up"),
-	withHelp(bind(contextQuotas, "d", "quality details", "details", -1), "show or hide the Quality panel detail"),
+	withHelp(bind(contextQuotas, "d", "quality details", "details", -1), "open Quality details"),
 	bind(contextQuotas, "R", "refresh", "refresh", 2),
+	bind(contextQualityDetails, "esc", actClose, "back", 1),
+	bind(contextQualityDetails, "up|k", actUp, "scroll", 1),
+	bind(contextQualityDetails, "down|j", actDown, "scroll", 1),
+	bind(contextQualityDetails, "pgup", actPageUp, "page", 1),
+	bind(contextQualityDetails, "pgdown", actPageDown, "page", 1),
+	bind(contextQualityDetails, "left", "previous agent", "agent", 1),
+	bind(contextQualityDetails, "right", "next agent", "agent", 1),
 	bind(contextQuotas, "?", "help", "help", 2),
 	bind(contextGraph, "q", actQuit, "quit", 0),
 	bind(contextGraph, "?", "help", "help", 0),

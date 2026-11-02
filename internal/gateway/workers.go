@@ -494,62 +494,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if len(profiles) == 0 {
 			return none, reject("no registered workers qualify for %s; register a profile for %s, or pass model explicitly", difficulty, difficulty)
 		} else {
-			tracks, err := g.store.TrackRecords(pick.NodeID, 0)
+			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidates(node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
 			if err != nil {
 				return none, err
-			}
-			trackByModel := make(map[string]protocol.TrackRecord, len(tracks))
-			for _, track := range tracks {
-				trackByModel[track.Harness+"\x00"+track.Model] = track
-			}
-			var candidates []protocol.WorkerModelCandidate
-			var skippedProfiles []string
-			resolutionNotes := map[string]string{}
-			for _, h := range node.Harnesses {
-				if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
-					continue
-				}
-				if p.RequireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
-					continue
-				}
-				failures, err := g.store.RecentWorkerFailures(pick.NodeID, h.Name)
-				if err != nil {
-					return none, err
-				}
-				successes, err := g.store.SucceededModels(pick.NodeID, h.Name)
-				if err != nil {
-					return none, err
-				}
-				for _, profile := range profiles {
-					if profile.Harness != h.Name {
-						continue
-					}
-					resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, h.Models)
-					if resolved == "" {
-						message := fmt.Sprintf("stale profile %q skipped: %s model %s is not listed by %s", profile.Name, h.Name, profile.Model, node.Hostname)
-						if len(ambiguous) > 0 {
-							message = fmt.Sprintf("stale profile %q skipped: %s model %s is ambiguous on %s (%s)", profile.Name, h.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
-						} else if closest := protocol.ClosestModels(profile.Model, h.Models, 3); len(closest) > 0 {
-							message += "; closest: " + strings.Join(closest, ", ")
-						}
-						skippedProfiles = append(skippedProfiles, message)
-						continue
-					}
-					if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {
-						continue
-					}
-					if p.RequireReadOnly && isProtected(h.Name, resolved, protected) {
-						continue
-					}
-					model := resolved
-					if profile.Effort != "" {
-						model += ":" + profile.Effort
-					}
-					candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero(), Track: trackByModel[h.Name+"\x00"+model]})
-					if resolved != profile.Model {
-						resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
-					}
-				}
 			}
 			if len(candidates) == 0 {
 				reason := fmt.Sprintf("no registered workers are available on an allowed worker provider on %s", node.Hostname)
@@ -558,20 +505,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				}
 				return none, reject("%s", reason)
 			}
-			if err := g.store.applyQualityWeights(candidates, difficulty); err != nil {
-				return none, err
-			}
-			g.rotationMu.Lock()
-			rotation, err := g.store.WorkerRotation()
-			if err != nil {
-				g.rotationMu.Unlock()
-				return none, err
-			}
-			choice, protectionNote, err := chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected)
-			if err == nil && !(len(validate) > 0 && validate[0]) {
-				err = g.store.saveWorkerRotation(rotation)
-			}
-			g.rotationMu.Unlock()
+			choice, protectionNote, err := g.chooseAutomaticWorker(candidates, difficulty, scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
 			if err != nil {
 				return none, reject("%v", err)
 			}
@@ -1305,4 +1239,85 @@ func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidate
 		note += "; " + name + " excluded: its max is " + protocol.WorkerMaximumLevel(score, minimums) + " (automatic picks may be at most one level below their max)"
 	}
 	return note
+}
+
+// workerModelCandidates builds the roster shared by starts and read-only previews.
+func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
+	tracks, err := g.store.TrackRecords(node.NodeID, 0)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	trackByModel := make(map[string]protocol.TrackRecord, len(tracks))
+	for _, track := range tracks {
+		trackByModel[track.Harness+"\x00"+track.Model] = track
+	}
+	var candidates []protocol.WorkerModelCandidate
+	var skippedProfiles []string
+	resolutionNotes := map[string]string{}
+	for _, h := range node.Harnesses {
+		if !protocol.WorkerHarnessSupported(h.Name) || harness != "" && harness != h.Name {
+			continue
+		}
+		if readOnly && !protocol.WorkerReadOnlySupported(h.Name) {
+			continue
+		}
+		failures, err := g.store.RecentWorkerFailures(node.NodeID, h.Name)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		successes, err := g.store.SucceededModels(node.NodeID, h.Name)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, profile := range profiles {
+			if profile.Harness != h.Name {
+				continue
+			}
+			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, h.Models)
+			if resolved == "" {
+				message := fmt.Sprintf("stale profile %q skipped: %s model %s is not listed by %s", profile.Name, h.Name, profile.Model, node.Hostname)
+				if len(ambiguous) > 0 {
+					message = fmt.Sprintf("stale profile %q skipped: %s model %s is ambiguous on %s (%s)", profile.Name, h.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
+				} else if closest := protocol.ClosestModels(profile.Model, h.Models, 3); len(closest) > 0 {
+					message += "; closest: " + strings.Join(closest, ", ")
+				}
+				skippedProfiles = append(skippedProfiles, message)
+				continue
+			}
+			if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {
+				continue
+			}
+			if readOnly && isProtected(h.Name, resolved, protected) {
+				continue
+			}
+			model := resolved
+			if profile.Effort != "" {
+				model += ":" + profile.Effort
+			}
+			candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero(), Track: trackByModel[h.Name+"\x00"+model]})
+			if resolved != profile.Model {
+				resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
+			}
+		}
+	}
+
+	return candidates, skippedProfiles, resolutionNotes, nil
+}
+
+// chooseAutomaticWorker applies the same weights and rotation for a start or a preview.
+func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
+	if err := g.store.applyQualityWeights(candidates, difficulty); err != nil {
+		return protocol.WorkerModelChoice{}, "", err
+	}
+	g.rotationMu.Lock()
+	defer g.rotationMu.Unlock()
+	rotation, err := g.store.WorkerRotation()
+	if err != nil {
+		return protocol.WorkerModelChoice{}, "", err
+	}
+	choice, note, err := chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected)
+	if err == nil && persist {
+		err = g.store.saveWorkerRotation(rotation)
+	}
+	return choice, note, err
 }

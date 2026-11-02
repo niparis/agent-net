@@ -1,0 +1,126 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+func TestQualityCardsRankAndPick(t *testing.T) {
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Tasks: 25, Families: []protocol.QualityFamily{
+		{Family: "slow", Tasks: 5, Headache: 9}, {Family: "fast", Tasks: 5, Headache: 1}, {Family: "mid", Tasks: 5, Headache: 3}, {Family: "fourth", Tasks: 5, Headache: 7}, {Family: "tiny", Tasks: 1},
+	}}}}
+	view := ansi.Strip(strings.Join(qualityCards(q, 120, 0, map[string]string{"normal": "mid"}, "test"), "\n"))
+	for _, want := range []string{"▸ mid", "1 more: slow 9 min", "1 more with too few tasks to rank"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("missing %q: %s", want, view)
+		}
+	}
+	if strings.Index(view, "fast") < 0 || strings.Index(view, "mid") < strings.Index(view, "fast") || strings.Index(view, "fourth") < strings.Index(view, "mid") || strings.Index(view, "slow") < strings.Index(view, "fourth") {
+		t.Fatal(view)
+	}
+}
+
+func TestQualityDetailsOpenClose(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m = keys(m, "d")
+	if !m.qualityDetail {
+		t.Fatal("d did not open details")
+	}
+	m = keys(m, "esc")
+	if m.qualityDetail {
+		t.Fatal("esc did not close details")
+	}
+}
+
+func TestQualityNewScreenGoldens(t *testing.T) {
+	score := 4.5
+	q := protocol.QualityAnalysis{Status: "ready", Areas: []protocol.QualityFamily{{Family: "ui", Tasks: 18, Headache: 2}}, Levels: []protocol.QualityLevel{
+		{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, Headache: 1}}},
+		{Difficulty: "normal", Tasks: 196, Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, Headache: 0}, {Family: "luna", Tasks: 24, Headache: 2}, {Family: "sol", Tasks: 19, Headache: 4, NeededHelp: .26, Continues: 3, AvgRating: &score}, {Family: "deepseek", Tasks: 87, Headache: 8}, {Family: "terra", Tasks: 60, Headache: 9, NeededHelp: .35, Continues: 12, LateDefects: 1, WorstSeverity: 3, AvgRating: &score}}},
+		{Difficulty: "hard", Tasks: 42, Families: []protocol.QualityFamily{{Family: "sol", Tasks: 10, Headache: 5}, {Family: "terra", Tasks: 32, Headache: 8}}},
+		{Difficulty: "very_complex", Tasks: 5, Families: []protocol.QualityFamily{{Family: "terra", Tasks: 5, Headache: 7}}},
+	}}
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		m := newModel(size[0], size[1])
+		m.tab = quotasTab
+		m.snap.Calibration.Quality = q
+		m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, Hostname: "workstation", QualityPicks: map[string]string{"normal": "sol", "hard": "terra"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
+		golden(t, fmt.Sprintf("quality_overview_%dx%d", size[0], size[1]), strings.Join(m.calibrationView(size[0]), "\n"))
+		m.qualityDetail = true
+		golden(t, fmt.Sprintf("quality_details_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestQualityDetailsShowsPickerPaceReason(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.snap.Calibration.Quality = protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "luna", Tasks: 6}}}}}
+	m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, QualityPicks: map[string]string{"normal": "luna"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
+	view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 33), "\n"))
+	if !strings.Contains(view, "▸ luna (codex 5% ahead of pace)") {
+		t.Fatal(view)
+	}
+}
+
+func TestQualityCardsColumnsAlign(t *testing.T) {
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, Headache: 1}, {Family: "deepseek", Tasks: 87, Headache: 12}}}}}
+	view := ansi.Strip(strings.Join(qualityCards(q, 120, 0, nil, ""), "\n"))
+	var rows []string
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "luna") || strings.Contains(line, "deepseek") {
+			rows = append(rows, line)
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatal(view)
+	}
+	for _, token := range []string{"min", "tasks"} {
+		if strings.Index(rows[0], token) != strings.Index(rows[1], token) {
+			t.Errorf("%s columns differ: %q / %q", token, rows[0], rows[1])
+		}
+	}
+	if strings.Index(rows[0], "█") != strings.Index(rows[1], "█") {
+		t.Errorf("bar columns differ: %q / %q", rows[0], rows[1])
+	}
+}
+
+func TestQualityDetailsAlignedSections(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Calibration.Quality = protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, Headache: 1}}}}, Areas: []protocol.QualityFamily{{Family: "ui", Tasks: 18}}}
+	view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n"))
+	for _, want := range []string{"MODEL", "  MY TIME / TASK  TASKS  NEEDED HELP  NUDGES / TASK  LATE BUGS  WORST  RATING  PICKED", "\n\nnormal ·", "\n\nhard ·", "\n\nvery complex ·", "\n\nby touched area"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("missing %q in %s", want, view)
+		}
+	}
+	var header, row string
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(line, "MODEL") && header == "" {
+			header = line
+		}
+		if strings.HasPrefix(line, "luna") {
+			row = line
+		}
+	}
+	for _, pair := range [][2]string{{"TASKS", "9"}, {"NEEDED HELP", "0%"}, {"NUDGES / TASK", "0.00"}} {
+		h := strings.Index(header, pair[0])
+		r := strings.Index(row, pair[1])
+		if h < 0 || r < 0 || h+len(pair[0]) != utf8.RuneCountInString(row[:r])+len(pair[1]) {
+			t.Errorf("%s not aligned: %q / %q", pair[0], header, row)
+		}
+	}
+}
+
+func TestQualityCardsNarrowKeepsTaskCounts(t *testing.T) {
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, Headache: 0}, {Family: "luna", Tasks: 24, Headache: 2}, {Family: "sol", Tasks: 19, Headache: 4}, {Family: "deepseek", Tasks: 87, Headache: 8}}}}}
+	view := ansi.Strip(strings.Join(qualityCards(q, 80, 0, nil, ""), "\n"))
+	if !strings.Contains(view, "· 24 tasks") || !strings.Contains(view, "· 19 tasks") {
+		t.Fatal(view)
+	}
+}

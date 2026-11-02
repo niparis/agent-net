@@ -40,3 +40,39 @@ func TestWorkerStartRequiresTouches(t *testing.T) {
 		t.Fatalf("missing actionable refusal: %v", err)
 	}
 }
+
+func TestQualityFamilyHelpWorstAndRating(t *testing.T) {
+	counts := map[string]*familyCount{}
+	addFamilyTask(counts, "sol", familyTask{fix: 2, cont: 1, worstSeverity: 4, ratings: []float64{3, 5}})
+	addFamilyTask(counts, "sol", familyTask{})
+	row := familyRows(counts)[0]
+	if row.NeededHelp != 0.5 || row.WorstSeverity != 4 || row.AvgRating == nil || *row.AvgRating != 4 {
+		t.Fatalf("help, severity and rating = %v, %v, %v", row.NeededHelp, row.WorstSeverity, row.AvgRating)
+	}
+}
+
+func TestQualityFamilySnapshotMetrics(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	now := s.now().Unix()
+	for _, run := range []protocol.WorkerRun{{NodeID: node, SessionID: "a", Caller: "caller", Harness: "codex", Model: "gpt-6.1-sol", Difficulty: "normal", Outcome: protocol.OutcomeComplete, EndedAt: now, Fix: 2, Continue: 1}, {NodeID: node, SessionID: "b", Caller: "caller", Harness: "codex", Model: "gpt-6.1-sol", Difficulty: "normal", Outcome: protocol.OutcomeComplete, EndedAt: now}} {
+		if err := s.RecordWorkerRun(run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, q := range []string{`INSERT INTO worker_defects (session_id,severity,at) VALUES ('a',2,?)`, `INSERT INTO worker_defects (session_id,severity,at) VALUES ('a',4,?)`, `INSERT INTO worker_ratings (session_id,score,at) VALUES ('a',5,?)`} {
+		if _, err := s.db.Exec(q, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	levels, _, agents, err := s.qualityFamilyTables()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ls := range [][]protocol.QualityLevel{levels, agents[0].Levels} {
+		f := qualityFamily(t, qualityLevel(t, ls, "normal").Families, "sol")
+		if f.NeededHelp != .5 || f.WorstSeverity != 4 || f.AvgRating == nil || *f.AvgRating != 5 {
+			t.Fatalf("metrics: %+v", f)
+		}
+	}
+}
