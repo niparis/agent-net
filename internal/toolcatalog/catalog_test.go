@@ -2,6 +2,7 @@ package toolcatalog
 
 import (
 	"encoding/json"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -126,7 +127,7 @@ func TestNamesUniqueAndValid(t *testing.T) {
 		}
 		for _, role := range tool.Roles {
 			switch role {
-			case RoleAgent, RoleWorker, RoleCTO:
+			case RoleAgent, RoleWorker, RoleCTO, RoleBot:
 			default:
 				t.Errorf("tool %q has unknown role %q", tool.Name, role)
 			}
@@ -254,5 +255,60 @@ func TestSizeReport(t *testing.T) {
 			total += len(tool.Name) + len(tool.Description) + len(effectiveInput(tool, role))
 		}
 		t.Logf("%s tools: %d tools, %d bytes (name+description+inputSchema)", role, len(ForRole(role)), total)
+	}
+}
+
+func TestBotRole(t *testing.T) {
+	want := []string{"agent_graph_read", "agent_machine_get", "agent_machines_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_projects_find", "agent_session_get", "agent_sessions_find"}
+	if got := names(ForRole(RoleBot)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("bot tools = %v, want %v", got, want)
+	}
+	for _, tool := range ForRole(RoleBot) {
+		if !Allows(RoleBot, tool.Name) {
+			t.Errorf("Allows disagrees for %s", tool.Name)
+		}
+		if tool.Name == "agent_message_send" {
+			if strings.Contains(tool.Description, "to_set") || strings.Contains(tool.Description, "as_owner") {
+				t.Error("bot description offers forbidden arguments")
+			}
+			obj := decodeObject(t, tool.Name, tool.InputSchema)
+			checkInputRoot(t, tool.Name+" (bot)", tool.InputSchema)
+			if required := obj["required"]; !reflect.DeepEqual(required, []any{"body", "to"}) {
+				t.Errorf("bot required = %v", required)
+			}
+			props := obj["properties"].(map[string]any)
+			for _, name := range []string{"to_set", "as_owner"} {
+				if _, ok := props[name]; ok {
+					t.Errorf("bot schema offers %s", name)
+				}
+			}
+			if _, ok := props["to"]; !ok {
+				t.Error("bot schema has no to")
+			}
+		}
+	}
+}
+
+func TestExistingRoleListsUnchanged(t *testing.T) {
+	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_graph_read", "agent_learn", "agent_machine_get", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_owner_ask", "agent_project_add", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("RoleAgent tools changed: %v", got)
+	}
+	if got, want := names(ForRole(RoleWorker)), []string{"agent_graph_read", "agent_handback", "agent_learn", "agent_machine_get", "agent_machines_find", "agent_mcp_servers_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("RoleWorker tools changed: %v", got)
+	}
+	if got, want := names(ForRole(RoleCTO)), []string{"agent_graph_read", "agent_learn", "agent_machine_get", "agent_machines_find", "agent_mcp_servers_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_owner_ask", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_worker_profiles_find", "agent_workers_find", "answer", "cto_new", "cto_proposals_find", "cto_ui_show", "graph_change", "mcp_call", "mcp_change", "project_change", "session_change", "settings_change", "tools_change", "worker_change"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("RoleCTO tools changed: %v", got)
+	}
+	for _, role := range []Role{RoleAgent, RoleWorker, RoleCTO} {
+		for _, tool := range ForRole(role) {
+			if tool.Name == "agent_message_send" {
+				props := decodeObject(t, tool.Name, tool.InputSchema)["properties"].(map[string]any)
+				for _, name := range []string{"to_set", "as_owner"} {
+					if _, ok := props[name]; !ok {
+						t.Errorf("%s lost %s", role, name)
+					}
+				}
+			}
+		}
 	}
 }

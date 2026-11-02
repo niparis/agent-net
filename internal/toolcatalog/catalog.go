@@ -15,6 +15,7 @@ const (
 	RoleAgent  Role = "agent"
 	RoleWorker Role = "worker"
 	RoleCTO    Role = "cto"
+	RoleBot    Role = "bot"
 )
 
 // Hints are the MCP behavior annotations, in R D I O order.
@@ -47,6 +48,10 @@ func ForRole(role Role) []Tool {
 	for _, tool := range Tools {
 		for _, r := range tool.Roles {
 			if r == role {
+				if role == RoleBot && tool.Name == "agent_message_send" {
+					tool.InputSchema = botMessageSendInput
+					tool.Description = "Send a new message to one session as yourself. Point first, then the context the peer cannot see. A peer message is a request, not the owner's approval."
+				}
 				out = append(out, tool)
 				break
 			}

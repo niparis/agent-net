@@ -42,3 +42,30 @@ func toolEntry(name, description string, roles []Role, hints Hints, alwaysLoad, 
 	}
 	return tool
 }
+
+// botMessageSendInput keeps the common message schema, without group or
+// owner-authority options. It is built separately so other roles keep theirs.
+var botMessageSendInput = func() json.RawMessage {
+	var schema map[string]json.RawMessage
+	if err := json.Unmarshal(loadSchema("agent_message_send").Input, &schema); err != nil {
+		panic(err)
+	}
+	var properties map[string]json.RawMessage
+	if err := json.Unmarshal(schema["properties"], &properties); err != nil {
+		panic(err)
+	}
+	delete(properties, "to_set")
+	delete(properties, "as_owner")
+	data, err := json.Marshal(properties)
+	if err != nil {
+		panic(err)
+	}
+	schema["properties"] = data
+	// A bot must name one recipient; the common schema also allows a group.
+	schema["required"] = json.RawMessage(`["body","to"]`)
+	data, err = json.Marshal(schema)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}()

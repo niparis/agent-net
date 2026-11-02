@@ -450,6 +450,21 @@ SELECT 1 /* session no project column */;
 -- The recorded start of the announced task (tool redesign, task 2a). It moves
 -- only when the task changes, never on last activity.
 SELECT 1 /* profile task started column */;
+`, `
+CREATE TABLE IF NOT EXISTS apps (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK (kind IN ('owner_app', 'bot')),
+ client_id TEXT NOT NULL, client_name TEXT NOT NULL,
+ redirect_uris TEXT NOT NULL DEFAULT '[]',
+ created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER,
+ grants TEXT NOT NULL DEFAULT '[]');
+CREATE UNIQUE INDEX IF NOT EXISTS apps_active_name ON apps (name) WHERE revoked_at IS NULL;
+CREATE TABLE IF NOT EXISTS app_tokens (
+ hash TEXT PRIMARY KEY, app_id TEXT NOT NULL REFERENCES apps(id),
+ type TEXT NOT NULL CHECK (type IN ('access', 'refresh')),
+ expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS app_tokens_app ON app_tokens (app_id);
+CREATE INDEX IF NOT EXISTS app_tokens_expiry ON app_tokens (expires_at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
