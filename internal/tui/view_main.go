@@ -127,6 +127,10 @@ func (m Model) View() string {
 		return ""
 	}
 	w, h := max(m.width, 40), max(m.height, 10)
+	keyRows := 1
+	if m.tab == toolsTab && !m.help && !m.mapOn && m.focus != focusCTO {
+		keyRows = len(m.toolsKeyLines(w))
+	}
 	var out []string
 	add := func(s string) { out = append(out, s) }
 
@@ -145,7 +149,7 @@ func (m Model) View() string {
 		}
 	default:
 		box := m.ctoBoxHeight(m.tab)
-		contentHeight := h - 1 - box
+		contentHeight := h - keyRows - box
 		switch {
 		case m.mode == modeSessionForm:
 			// The New session form replaces the Graph card too, so n on the
@@ -182,11 +186,11 @@ func (m Model) View() string {
 	}
 	// The key line sits on the last row; blank rows fill the gap. A result
 	// replaces its hints there, so no row is added or removed.
-	for len(out) < h-1 {
+	for len(out) < h-keyRows {
 		add("")
 	}
-	if len(out) > h-1 {
-		out = out[:h-1]
+	if len(out) > h-keyRows {
+		out = out[:h-keyRows]
 	}
 	add(m.helpLine(w))
 	return strings.Join(out, "\n")

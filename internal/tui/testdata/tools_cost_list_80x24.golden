@@ -3,10 +3,9 @@
 │   NAME                          STATUS                              COST     │
 │ ! code-review                   v1 on Nicolas-MBP, v3 on research   ~130     │
 │ ! design-taste-frontend         2 different copies on research      ~130     │
-│ ! imnplementing-clean-architec… found on 1 machine, not managed     ~235     │
+│ ! imnplementing-clean-architec… outside agent-net                   ~235     │
 │ ! web-design-guidelines         on for wbg-housing, sovl-clone      ~270     │
 │   clean-architecture-python     on everywhere                       ~200     │
-│   deploy-test-server            in the sovl-clone repo              ~270     │
 │ 40 tools · ! needs attention · enter opens actions                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─code-review──────────────────────────────────────────────────────────────────╮
@@ -21,4 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  tab skills per agent  n add  q quit
+tab skills per agent  ? help  j/down/k/up move  / filter  t costs  esc clear
+  n add  enter actions  R rescan

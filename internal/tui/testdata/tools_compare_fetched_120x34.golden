@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-a keep a  b keep b  v full diff  esc back
+esc/n/N back  ? help  up/k/down/j scroll  a keep a  b keep b  v full diff

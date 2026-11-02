@@ -16,9 +16,9 @@
 
 
 
-
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-tab next field  up/down field  left/right machine  enter add  esc cancel
+esc cancel  tab/down/shift+tab/up field  left/right machine  enter add
+  backspace/ctrl+h delete  text type

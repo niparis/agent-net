@@ -77,6 +77,19 @@ func (m Model) agentJobs(project string) ([]assignJob, string) {
 			target.Projects = append([]string(nil), target.Projects...)
 			target.Machines = append([]string(nil), target.Machines...)
 		}
+		// An imported user copy still loads in every session on its original
+		// machines. Turning it off for one agent must keep the other projects.
+		if r.Item.Desired == nil && !on && r.Origin == toolsdiff.OriginMachines {
+			target.Scope = "global"
+			for _, v := range r.Variants {
+				for _, loc := range v.Locations {
+					if loc.Scope == protocol.InventoryUser && loc.NodeID != "" && !hasStr(target.Machines, loc.NodeID) {
+						target.Machines = append(target.Machines, loc.NodeID)
+					}
+				}
+			}
+			sort.Strings(target.Machines)
+		}
 		if target.Scope == "global" {
 			target.Scope = "projects"
 			target.Projects = m.toolsProjects()
@@ -165,6 +178,8 @@ func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.tl.toast = ""
 	switch action {
+	case "import all":
+		return m.importAllSkills()
 	case "all tools":
 		m.tl.allTools = true
 	case "help":
@@ -257,6 +272,19 @@ func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) agentToolsView(w, h int) []string {
+	var banner []string
+	if n := m.outsideSkillsCount(); n > 0 {
+		banner = wrapStyled(fmt.Sprintf("%d skills are installed outside agent-net. i imports them all (backups kept, nothing is turned off)", n), w)
+		h -= len(banner)
+	}
+	if m.tl.agentDiscard {
+		banner = append(banner, fmt.Sprintf("Discard %d changes? y/n", len(m.tl.agentPending[m.agentProject()])))
+		h--
+	} else if toast := m.activeToast(); toast != "" {
+		lines := wrapStyled(toast, w)
+		banner = append(banner, lines...)
+		h -= len(lines)
+	}
 	left := min(25, max(20, w/5))
 	right := w - left
 	project := m.agentProject()
@@ -298,15 +326,7 @@ func (m Model) agentToolsView(w, h int) []string {
 			state = "on for every project"
 		}
 		if r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal {
-			var machines []string
-			for _, v := range r.Variants {
-				for _, l := range v.Locations {
-					if !hasStr(machines, l.Machine) {
-						machines = append(machines, l.Machine)
-					}
-				}
-			}
-			state = "found on " + strings.Join(machines, ", ") + ", not managed"
+			state = m.outsideToolStatus(r)
 		}
 		if repo != "" {
 			state = "in the " + repo + " repo (always on)"
@@ -329,7 +349,11 @@ func (m Model) agentToolsView(w, h int) []string {
 		nameW := min(34, right-17)
 		line := check + cell(clip(sanitize(name), nameW), nameW) + cell(formatTokens(cost), 7)
 		if w >= 100 {
-			line += " " + clip(sanitize(state), max(0, right-4-nameW-12))
+			stateW := max(0, right-4-nameW-12)
+			if strings.Contains(state, "outside agent-net") && len(state) > stateW {
+				state = "outside agent-net"
+			}
+			line += " " + clip(sanitize(state), stateW)
 		}
 		if i == m.tl.skillRow && m.tl.skillsFocus {
 			line = selectedRow(padStyled(line, right-4))
@@ -361,5 +385,5 @@ func (m Model) agentToolsView(w, h int) []string {
 	}
 	// The view label stays visible even when a narrow title must be clipped.
 
-	return out
+	return append(banner, out...)
 }

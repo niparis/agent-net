@@ -38,7 +38,7 @@ func TestToolsShowRepoOnlyForTrackedCopiesAndLocalForOthers(t *testing.T) {
 	if local == nil || local.Origin != toolsdiff.OriginLocal || local.From != "local homelab" {
 		t.Fatalf("uncommitted copy: %+v", local)
 	}
-	if !strings.Contains(m.toolStatus(*repo), "in the sovl-clone repo") || !strings.Contains(m.toolStatus(*local), "not managed") {
+	if !strings.Contains(m.toolStatus(*repo), "in the sovl-clone repo") || !strings.Contains(m.toolStatus(*local), "outside agent-net") {
 		t.Fatal("plain origin words missing")
 	}
 

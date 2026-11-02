@@ -33,7 +33,7 @@ func agentToolsFixture(w, h int) (Model, *fakeTools) {
 func TestToolsAgentsView(t *testing.T) {
 	m, _ := agentToolsFixture(120, 34)
 	text := plain(m)
-	for _, want := range []string{"Agents", "skills per agent", "[x] archify", "[x] estate-runbook", "[ ] found-skill", "[ ] react-best-practices", "always on", "not managed"} {
+	for _, want := range []string{"Agents", "skills per agent", "[x] archify", "[x] estate-runbook", "[ ] found-skill", "[ ] react-best-practices", "always on", "outside agent-net"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q:\n%s", want, text)
 		}

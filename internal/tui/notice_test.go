@@ -56,6 +56,12 @@ func TestNoticeKeepsTheLayoutAndUsesTheLastLine(t *testing.T) {
 			if n := len(lines(got)); n != size[1] {
 				t.Fatalf("%s %dx%d: %d rows with a result", screen.name, size[0], size[1], n)
 			}
+			if with.tab == toolsTab {
+				if !strings.Contains(ansi.Strip(got), text) || with.helpLine(size[0]) != screen.m.helpLine(size[0]) {
+					t.Fatalf("Tools must show the notice and retain every key: %s", got)
+				}
+				continue
+			}
 			for i := 0; i < size[1]-1; i++ {
 				if lines(got)[i] != lines(base)[i] {
 					t.Fatalf("%s %dx%d: row %d moved with a result:\n--- without ---\n%s\n--- with ---\n%s",

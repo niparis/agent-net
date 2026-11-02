@@ -171,11 +171,12 @@ func (m Model) machineTarget(on bool, machine toolsdiff.Machine) protocol.ToolAs
 
 // assignJob is one skill to change: import first when it is not in the store.
 type assignJob struct {
-	choice *protocol.ToolCopyChoice
-	name   string
-	item   string
-	imp    *toolsdiff.Copy
-	target protocol.ToolAssignment
+	importOnly bool
+	choice     *protocol.ToolCopyChoice
+	name       string
+	item       string
+	imp        *toolsdiff.Copy
+	target     protocol.ToolAssignment
 	// where names the machine the change is limited to, or "" for every machine.
 	where string
 }
@@ -289,11 +290,22 @@ func (m Model) openAssign(title, verb string, jobs []assignJob, notes []string) 
 }
 
 func jobLines(jobs []assignJob) []string {
+	if len(jobs) == 1 && jobs[0].importOnly {
+		j := jobs[0]
+		return []string{"+ Save " + j.name + " from " + sanitize(j.imp.Machine) + " in the agent-net store; keep its installed copies as they are"}
+	}
 	if len(jobs) > 1 {
 		var out []string
 		for _, job := range jobs {
 			lines := jobLines([]assignJob{job})
-			out = append(out, lines[:len(lines)-1]...)
+			if job.importOnly {
+				out = append(out, lines...)
+			} else {
+				out = append(out, lines[:len(lines)-1]...)
+			}
+		}
+		if jobs[0].importOnly {
+			return out
 		}
 		return append(out, tsDim.Render("  the gateway makes the exact plan for each one when you press enter"))
 	}
@@ -528,6 +540,10 @@ func (m Model) runJobs(jobs []assignJob) (Model, tea.Cmd) {
 					lines = append(lines, tsErr.Render("! ")+j.name+": could not import: "+sanitize(err.Error()))
 					continue
 				}
+			}
+			if j.importOnly {
+				lines = append(lines, "Saved "+j.name+" in the store; installed copies unchanged.")
+				continue
 			}
 			plan, err := ts.ToolsPlan(ctx, protocol.ToolPlanRequest{Item: j.item, Target: j.target})
 			if err != nil {

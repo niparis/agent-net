@@ -11,6 +11,9 @@ import (
 // not drawn underneath a modal, so old panel borders cannot bleed through.
 func (m Model) toolsView(w, h int) []string {
 	out := []string{m.titleLine(w)}
+	if notice, ok := m.noticeLine(w); ok {
+		out[0] = notice
+	}
 	if m.tl.modal != nil {
 		box := m.modalBox(w, max(h-1, 6))
 		out = append(out, box...)
@@ -65,43 +68,7 @@ func (m Model) toolsHelpLine(w int) (string, bool) {
 	if m.focus == focusCTO {
 		return "", false
 	}
-	if md := m.tl.modal; md != nil {
-		var parts []string
-		foot := modalKeys(md)
-		for i := 0; i+1 < len(foot); i += 2 {
-			candidate := append(append([]string(nil), parts...), foot[i], foot[i+1])
-			if ansi.StringWidth(keyHints(candidate...)) <= w {
-				parts = candidate
-			}
-		}
-		return keyHints(parts...), true
-	}
-	if m.tl.agentDiscard {
-		return "Discard " + fmt.Sprint(len(m.tl.agentPending[m.agentProject()])) + " changes? y/n", true
-	}
-	if m.tl.agentSearching {
-		return clip("/"+sanitize(m.tl.agentFilter)+"▏  enter keep · esc clear", w), true
-	}
-	if m.tl.searching {
-		return clip("/"+sanitize(m.tl.search)+"▏  enter keep · esc clear", w), true
-	}
-	if message := m.activeToast(); message != "" {
-		return clip(sanitize(message), w), true
-	}
-	if !m.tl.allTools && m.tl.skillsFocus {
-		ctx := contextToolsSkills
-		review := bindingHint(ctx, "review")
-		review.label = fmt.Sprintf("review %d", len(m.tl.agentPending[m.agentProject()]))
-		back := bindingPairHint(ctx, "agents", "back")
-		back.label = "back"
-		hints := []hint{bindingPairHint(ctx, actDown, actUp), bindingHint(ctx, "toggle"), review, back, bindingHint(ctx, "filter"), bindingHint(ctx, "all tools")}
-		var parts []string
-		for _, h := range hints {
-			parts = append(parts, h.key, h.label)
-		}
-		return keyHints(parts...), true
-	}
-	return "", false
+	return strings.Join(m.toolsKeyLines(w), "\n"), true
 }
 
 func searchCursor(on bool) string {

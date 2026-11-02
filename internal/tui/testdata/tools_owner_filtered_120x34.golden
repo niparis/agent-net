@@ -5,7 +5,7 @@
 │ ! design-taste-frontend   2 different copies on…      ~0       ││ on: on for homelab                                 │
 │ ! imnplementing-clean-ar… off for homelab             ~0       ││ ! v1 on Nicolas-MBP, v3 on research                │
 │   clean-architecture-pyt… on for homelab              ~0       ││ enter: make every machine use v3                   │
-│   diagnosing-bugs         on for homelab              ~0       ││ from: managed by agent-net v3                      │
+│   diagnosing-bugs         on for homelab              ~0       ││ from: agent-net v3                                 │
 │   found-skill-00          off for homelab             ~0       ││                                                    │
 │   found-skill-01          off for homelab             ~0       ││                                                    │
 │   found-skill-02          off for homelab             ~0       ││                                                    │
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  tab skills per agent  n add  esc clear  ? help  q quit
+tab skills per agent  ? help  j/down/k/up move  / filter  t costs  esc clear  n add  enter actions  R rescan

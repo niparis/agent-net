@@ -579,7 +579,7 @@ func TestCompareBoxAt80Columns(t *testing.T) {
 	m = pressKey(m, "enter")
 	m = toolChoose(t, m, "Compare the copies / Keep this one")
 	v := plain(m)
-	for _, item := range []string{"design-taste-frontend: 2 different copies on research", "changed", "used by", "files", "a keep a", "b keep b", "v full diff", "esc back"} {
+	for _, item := range []string{"design-taste-frontend: 2 different copies on research", "changed", "used by", "files", "a keep a", "b keep b", "v full diff", "esc/n/N back"} {
 		if !strings.Contains(v, item) {
 			t.Errorf("box lacks %q:\n%s", item, v)
 		}
@@ -637,7 +637,7 @@ func TestCompareBoxShowsBothCopiesAndTheKeys(t *testing.T) {
 	model, _ := m.openChoose("Keep the newer one in both places", toolsdiff.Action{Name: "demo", Copies: []toolsdiff.Copy{a, b}})
 	m = model.(Model)
 	v := plain(m)
-	for _, want := range []string{"demo: 2 different copies on alpha and beta", "a  pi's copy", "b  claude's copy", "20 Oct", "22 Oct", "pi only", "claude only", "extra", "The copy you keep goes to every harness on every machine.", "a keep a  b keep b  v full diff  esc back"} {
+	for _, want := range []string{"demo: 2 different copies on alpha and beta", "a  pi's copy", "b  claude's copy", "20 Oct", "22 Oct", "pi only", "claude only", "extra", "The copy you keep goes to every harness on every machine.", "a keep a  b keep b  v full diff"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}

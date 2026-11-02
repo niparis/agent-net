@@ -1,9 +1,8 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
 ╭─Tools · 2 tools──────────────────────────────────────────────────────────────╮
 │   NAME                          STATUS                              COST     │
-│   ◆ conflict-mcp                local folder in homelab, not managed-        │
-│   ◆ homelab-mcp                 local folder in homelab, not managed-        │
-│                                                                              │
+│   ◆ conflict-mcp                outside agent-net                   -        │
+│   ◆ homelab-mcp                 outside agent-net                   -        │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -21,4 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  tab skills per agent  n add  q quit
+tab skills per agent  ? help  j/down/k/up move  / filter  t costs  esc clear
+  n add  enter actions  R rescan

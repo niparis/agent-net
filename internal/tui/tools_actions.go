@@ -166,10 +166,10 @@ func (m Model) toolBaseStatus(r toolsdiff.Row) string {
 		}
 	}
 	if r.Origin == toolsdiff.OriginMachines {
-		return "found on " + nounCount(len(on), "machine", "machines") + ", not managed"
+		return m.outsideToolStatus(r)
 	}
 	if r.Origin == toolsdiff.OriginLocal {
-		return "local folder in " + r.Repo + ", not managed"
+		return "local folder in " + r.Repo + ", outside agent-net"
 	}
 	if len(r.Projects) > 0 {
 		var ps []string
@@ -224,7 +224,11 @@ func (m Model) toolListView(w, h int) []string {
 		if r.Kind == protocol.InventoryMCP {
 			name, cost = "◆ "+name, "-"
 		}
-		status := shortenWords(sanitize(m.toolBaseStatus(r)), statusW)
+		statusText := m.toolBaseStatus(r)
+		if strings.Contains(statusText, "outside agent-net") && len(statusText) > statusW {
+			statusText = "outside agent-net"
+		}
+		status := shortenWords(sanitize(statusText), statusW)
 		entry := []string{flag + cell(name, nameW) + " " + cell(status, statusW) + cost}
 		if i == m.tl.row {
 			for j := range entry {

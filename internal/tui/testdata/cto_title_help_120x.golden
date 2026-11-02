@@ -91,6 +91,7 @@ Legend ────────────────────────�
   states               pending ... delivered ✓ replied ↩ failed ✗
 
  Tools
+  i                      import all
   j/k, down/up           move
   tab                    all tools
   /                      filter
@@ -100,6 +101,7 @@ Legend ────────────────────────�
   right, enter           skills
 
  agent skills
+  i                      import all
   j/k, down/up           move
   tab                    all tools
   /                      filter
@@ -228,6 +230,16 @@ Legend ────────────────────────�
  discard skill changes
   y, Y                   discard
   n, N, esc              keep changes
+
+ tools filter
+  enter                  keep filter
+  esc                    clear/back
+  backspace, ctrl+h      delete
+
+ tools project costs
+  j/k, down/up           move
+  enter                  open
+  esc                    back
 
  Atlas box
   ctrl+], tab            back to Sessions

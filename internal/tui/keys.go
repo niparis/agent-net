@@ -34,6 +34,8 @@ const (
 	contextGraph           keyContext = "Graph"
 	contextGraphFind       keyContext = "Graph find"
 	contextCard            keyContext = "agent card"
+	contextToolsFilter     keyContext = "tools filter"
+	contextToolsCosts      keyContext = "tools project costs"
 	contextToolsAgents     keyContext = "skills per agent"
 	contextToolsSkills     keyContext = "agent skills"
 	contextToolsDiscard    keyContext = "discard skill changes"
@@ -52,7 +54,7 @@ var allKeyContexts = []keyContext{
 	contextGlobal, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard,
-	contextTools, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
+	contextTools, contextToolsFilter, contextToolsCosts, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
 	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
 }
 
@@ -284,6 +286,15 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextCard, "ctrl+d|pgdown", actPageDown, "scroll", 1), "scroll the card: charter, rules and learned changes"),
 	withHelp(bind(contextCard, "ctrl+u|pgup", actPageUp, "scroll", 1), "scroll the card: charter, rules and learned changes"),
 	bind(contextCard, "R", "refresh", "refresh", -1),
+	bind(contextToolsFilter, "enter", "keep", "keep filter", 0),
+	bind(contextToolsFilter, "esc", "clear filter", "clear/back", 0),
+	bind(contextToolsFilter, "backspace|ctrl+h", "delete text", "delete", 0),
+	bind(contextToolsCosts, "j|down", actDown, "move", 0),
+	bind(contextToolsCosts, "k|up", actUp, "move", 0),
+	bind(contextToolsCosts, "enter", "open", "open", 0),
+	bind(contextToolsCosts, "esc", "back", "back", 0),
+	withLocal(bind(contextToolsAgents, "i", "import all", "import all", 0)),
+	withLocal(bind(contextToolsSkills, "i", "import all", "import all", 0)),
 	withLocal(bind(contextToolsAgents, "j|down", actDown, "move", 0)),
 	withLocal(bind(contextToolsAgents, "k|up", actUp, "move", 0)),
 	withLocal(bind(contextToolsAgents, "tab", "all tools", "all tools", 0)),

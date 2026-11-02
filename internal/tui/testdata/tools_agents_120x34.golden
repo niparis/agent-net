@@ -1,8 +1,9 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
+1 skills are installed outside agent-net. i imports them all (backups kept, nothing is turned off)
 ╭─Agents───────────────╮╭─homelab · on research · 2 skills on · ~280 tokens per session────────────────────────────────╮
 │   a2a-ocs          1 ││ [x] archify                           ~120    on for every project                           │
 │   cogforge         1 ││ [x] estate-runbook                    ~160    in the homelab repo (always on)                │
-│   dotfiles         1 ││ [ ] found-skill                       ~200    found on laptop, not managed                   │
+│   dotfiles         1 ││ [ ] found-skill                       ~200    outside agent-net                              │
 │   flood-wargame    1 ││ [ ] react-best-practices              ~240                                                   │
 │ ▸ homelab          2 ││                                                                                              │
 │   homelab-portal   1 ││                                                                                              │
@@ -22,7 +23,6 @@
 │                      ││                                                                                              │
 │                      ││                                                                                              │
 │                      ││                                                                                              │
-│                      ││                                                                                              │
 │                      ││ skills per agent · tab: all tools                                                            │
 ╰──────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  right skills  / filter  tab all tools  esc back  ? help  q quit
+i import all  j/down/k/up move  tab all tools  / filter  ? help  esc back  right/enter skills

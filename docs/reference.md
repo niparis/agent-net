@@ -827,8 +827,15 @@ cancel to keep editing. Esc with pending changes asks `Discard N changes? y/n`.
 Repo skills stay on in their repo and must be changed there. Turning on a
 skill found on a machine imports it first, after confirmation. Turning off
 a global skill for one agent assigns it to every other known project.
+When skills are installed outside agent-net, the view offers `i` to import
+them all in one review. Confirmation saves each distinct version in the store.
+Installed copies and their session availability stay unchanged; no assignment
+or installation is applied. Repo skills are excluded.
 `/` filters skill names. Tab switches between this view and all tools,
 which keeps the action menu, comparison, filters and `n` to add a tool.
+Every Tools screen lists all its local keys in the key bar, wrapping to a
+second line when needed. The list includes `t` for costs and `R` for rescan;
+plans include `d` when exact folders are available.
 
 `agent-net tools` groups the latest observations by kind, name and content
 hash. Each row shows scope, harnesses, machines, the number of same-name

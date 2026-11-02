@@ -6,7 +6,6 @@
 │ ! imnplementing-clean-architec… off for homelab                     ~0       │
 │   clean-architecture-python     on for homelab                      ~0       │
 │   diagnosing-bugs               on for homelab                      ~0       │
-│   found-skill-00                off for homelab                     ~0       │
 │ 35 tools · ! needs attention · enter opens actions                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─code-review──────────────────────────────────────────────────────────────────╮
@@ -15,10 +14,11 @@
 │ on: on for homelab                                                           │
 │ ! v1 on Nicolas-MBP, v3 on research                                          │
 │ enter: make every machine use v3                                             │
-│ from: managed by agent-net v3                                                │
+│ from: agent-net v3                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  tab skills per agent  n add  q quit
+tab skills per agent  ? help  j/down/k/up move  / filter  t costs  esc clear
+  n add  enter actions  R rescan

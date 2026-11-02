@@ -104,9 +104,9 @@ func (m Model) toolDetailView(w, h int) []string {
 				add("files: " + strings.Join(files, ", "))
 			}
 			if r.Item.Desired != nil || r.Item.VersionNo > 0 {
-				add("from: managed by agent-net " + r.Version)
+				add("from: agent-net " + r.Version)
 			} else {
-				add("from: found on your machines, not managed")
+				add("from: " + m.outsideToolStatus(r))
 			}
 		}
 	}

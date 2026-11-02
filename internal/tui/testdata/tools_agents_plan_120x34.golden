@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter/y apply  d exact folders  esc/n cancel
+enter/y/Y apply  esc/n/N cancel  ? help  up/k/down/j scroll  d folders

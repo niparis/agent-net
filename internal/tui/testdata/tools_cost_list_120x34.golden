@@ -3,26 +3,26 @@
 │   NAME                    STATUS                      COST     ││ Description for code-review                        │
 │ ! code-review             v1 on Nicolas-MBP, v3 on…   ~130     ││ ~130 tokens in every session                       │
 │ ! design-taste-frontend   2 different copies on…      ~130     ││ +~3.4k when the skill is used                      │
-│ ! imnplementing-clean-ar… found on 1 machine, not…    ~235     ││ on: v1 on Nicolas-MBP, v3 on research              │
+│ ! imnplementing-clean-ar… outside agent-net           ~235     ││ on: v1 on Nicolas-MBP, v3 on research              │
 │ ! web-design-guidelines   on for wbg-housing,…        ~270     ││ ! v1 on Nicolas-MBP, v3 on research                │
 │   clean-architecture-pyt… on everywhere               ~200     ││ enter: make every machine use v3                   │
-│   deploy-test-server      in the sovl-clone repo      ~270     ││ from: managed by agent-net v3                      │
+│   deploy-test-server      in the sovl-clone repo      ~270     ││ from: agent-net v3                                 │
 │   diagnosing-bugs         on everywhere; limited on…  ~200     ││                                                    │
 │   estate-runbook          in the homelab repo         ~60      ││                                                    │
-│   found-skill-00          found on 2 machines, not…   ~130     ││                                                    │
-│   found-skill-01          found on 2 machines, not…   ~165     ││                                                    │
-│   found-skill-02          found on 2 machines, not…   ~200     ││                                                    │
-│   found-skill-03          found on 2 machines, not…   ~235     ││                                                    │
-│   found-skill-04          found on 1 machine, not…    ~270     ││                                                    │
-│   found-skill-05          found on 1 machine, not…    ~60      ││                                                    │
-│   found-skill-06          found on 1 machine, not…    ~95      ││                                                    │
-│   found-skill-07          found on 1 machine, not…    ~130     ││                                                    │
-│   found-skill-08          found on 1 machine, not…    ~165     ││                                                    │
-│   found-skill-09          found on 1 machine, not…    ~200     ││                                                    │
-│   found-skill-10          found on 1 machine, not…    ~235     ││                                                    │
-│   found-skill-11          found on 1 machine, not…    ~270     ││                                                    │
-│   found-skill-12          found on 1 machine, not…    ~60      ││                                                    │
-│   found-skill-13          found on 1 machine, not…    ~95      ││                                                    │
+│   found-skill-00          outside agent-net           ~130     ││                                                    │
+│   found-skill-01          outside agent-net           ~165     ││                                                    │
+│   found-skill-02          outside agent-net           ~200     ││                                                    │
+│   found-skill-03          outside agent-net           ~235     ││                                                    │
+│   found-skill-04          outside agent-net           ~270     ││                                                    │
+│   found-skill-05          outside agent-net           ~60      ││                                                    │
+│   found-skill-06          outside agent-net           ~95      ││                                                    │
+│   found-skill-07          outside agent-net           ~130     ││                                                    │
+│   found-skill-08          outside agent-net           ~165     ││                                                    │
+│   found-skill-09          outside agent-net           ~200     ││                                                    │
+│   found-skill-10          outside agent-net           ~235     ││                                                    │
+│   found-skill-11          outside agent-net           ~270     ││                                                    │
+│   found-skill-12          outside agent-net           ~60      ││                                                    │
+│   found-skill-13          outside agent-net           ~95      ││                                                    │
 │ 40 tools · ! needs attention · enter opens actions             ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter actions  / filter  tab skills per agent  n add  esc clear  ? help  q quit
+tab skills per agent  ? help  j/down/k/up move  / filter  t costs  esc clear  n add  enter actions  R rescan
