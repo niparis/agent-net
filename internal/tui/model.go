@@ -1049,13 +1049,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.inboxKey(k)
 	}
 	if m.help {
-		switch k.String() {
-		case "T":
+		switch keyAction(contextHelp, k.String()) {
+		case actTips:
 			disabled := !m.onboarding.Disabled
 			return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Disabled: &disabled})
-		case "R":
+		case actRestartTips:
 			return m.onboardingWrite("onboarding_restart", nil)
-		case "n":
+		case actNotifications:
 			src, ok := m.src.(interface {
 				NotificationSettings(context.Context, *bool) (bool, error)
 			})
@@ -1071,23 +1071,23 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return notificationSettingMsg{disabled: value, err: err}
 			}
 
-		case "q":
+		case actQuit:
 			m.quitting = true
 			return m, tea.Quit
-		case "esc", "?", "enter", "backspace":
+		case actClose:
 			m.help = false
 			m.helpScroll = 0
-		case "down", "j":
+		case actDown:
 			m.helpScroll++
-		case "up", "k":
+		case actUp:
 			m.helpScroll--
-		case "pgdown":
+		case actPageDown:
 			m.helpScroll += max(m.height-4, 1)
-		case "pgup":
+		case actPageUp:
 			m.helpScroll -= max(m.height-4, 1)
-		case "home", "g":
+		case actFirst:
 			m.helpScroll = 0
-		case "end", "G":
+		case actLast:
 			m.helpScroll = len(m.helpContent(max(m.width, 40)))
 		}
 		room := max(max(m.height, 10)-4, 1)
