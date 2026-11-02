@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -152,6 +153,9 @@ func withConfigLock(path string, fn func() string) string {
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return "cannot take the Claude config lock"
+		}
+		if claudetrust.RemoveStaleLock(lock) {
+			continue
 		}
 		if time.Now().After(deadline) {
 			return "the Claude config lock is held; try again"

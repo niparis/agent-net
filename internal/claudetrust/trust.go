@@ -10,8 +10,30 @@ import (
 	"time"
 )
 
-func Set(dir string) error    { return change(dir, true) }
+// Set trusts dir. A folder that is already trusted needs no write, so it does
+// not wait for the lock a running Claude Code may hold.
+func Set(dir string) error {
+	if ok, err := Trusted(dir); err == nil && ok {
+		return nil
+	}
+	return change(dir, true)
+}
 func Remove(dir string) error { return change(dir, false) }
+
+// staleLock is the age at which Claude Code's config lock counts as left
+// behind. Claude Code itself treats its lock as stale after 10 seconds.
+const staleLock = 30 * time.Second
+
+// RemoveStaleLock removes Claude Code's config lock when it was left behind:
+// Claude Code refreshes the lock while it holds it, so one untouched for
+// staleLock belongs to a Claude that crashed. It reports whether it did.
+func RemoveStaleLock(lock string) bool {
+	info, err := os.Stat(lock)
+	if err != nil || time.Since(info.ModTime()) <= staleLock {
+		return false
+	}
+	return os.Remove(lock) == nil
+}
 
 // configPath is the Claude Code configuration file that holds folder trust.
 func configPath() (dir, path string, err error) {
@@ -87,6 +109,9 @@ func change(dir string, set bool) error {
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return err
+		}
+		if RemoveStaleLock(lock) {
+			continue
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("Claude config lock is held: %s", lock)

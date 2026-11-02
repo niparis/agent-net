@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestTrustPreservesConfigAndRemovesOnlyTrust(t *testing.T) {
@@ -129,5 +130,49 @@ func TestRemovePreservesProjectFields(t *testing.T) {
 	}
 	if json.Unmarshal(raw, &root) != nil || root.Projects[project]["mcpServers"] == nil || root.Projects[project]["hasTrustDialogAccepted"] != nil {
 		t.Fatalf("config: %s", raw)
+	}
+}
+
+// Entering the CTO trusts its folder every time. When the folder is already
+// trusted there is nothing to write, so a lock a running Claude holds does not
+// block the entry.
+func TestSetSkipsTheLockWhenAlreadyTrusted(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	project := filepath.Join(t.TempDir(), "cto")
+	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(`{"projects":{"`+project+`":{"hasTrustDialogAccepted":true}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, ".claude.json.lock"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if err := Set(project); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("Set waited %s for a lock it did not need", time.Since(start))
+	}
+}
+
+// Claude Code refreshes its lock while it holds it. A lock untouched for long
+// is left by a Claude that crashed: it is removed and the edit goes on.
+func TestSetRemovesAStaleLock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	lock := filepath.Join(dir, ".claude.json.lock")
+	if err := os.Mkdir(lock, 0700); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(t.TempDir(), "cto")
+	if err := Set(project); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := Trusted(project); err != nil || !ok {
+		t.Fatalf("trusted %v, %v", ok, err)
 	}
 }
