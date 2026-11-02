@@ -1,0 +1,24 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 12 online · 1
+Connected apps
+  Control internet access and the apps connected to your network.
+  Tailscale is not installed on research-gateway (the gateway machine). Install
+  it there, or use your own tunnel URL (u).
+▸ Internet access: off
+  Use your own tunnel URL
+  Add an app
+  NAME           KIND       CLIENT        RETURN HOST    CONNECTED     LAST USED
+  phone          owner app  Safari        -              Jan 01        never
+  helper         bot        Cursor        -              Jan 01        never
+
+Integrations
+  Choose integrations for every machine in your network.
+  Configure integrations
+
+Machines
+  The name every machine in your network shows for each machine.
+  NAME                  HOST NAME             VERSION       ONLINE
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down row  tab/[ ] section  enter open  space toggle  p internet  q quit

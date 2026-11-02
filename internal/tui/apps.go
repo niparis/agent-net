@@ -13,7 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -298,7 +297,7 @@ func (m Model) appsView(w, rows int) []string {
 			out = append(out, "  "+lipgloss.NewStyle().Foreground(roleWarning).Render(line))
 		}
 	}
-	if strings.Contains(firstNonEmpty(f.public.Error, f.err), funnel.ErrNotInstalled.Error()) {
+	if strings.Contains(strings.ToLower(firstNonEmpty(f.public.Error, f.err)), "tailscale is not installed") {
 		out = append(out, "  u: paste your own tunnel URL")
 	}
 	out = append(out, "")

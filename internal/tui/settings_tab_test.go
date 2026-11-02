@@ -209,6 +209,8 @@ func TestSettingsGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("settings_%dx%d", w, h), m.View())
 		m.apps.public = appsPublicStatus{}
 		golden(t, fmt.Sprintf("settings_off_%dx%d", w, h), m.View())
+		m.apps.public.Error = "Tailscale is not installed on research-gateway (the gateway machine). Install it there, or use your own tunnel URL (u)."
+		golden(t, fmt.Sprintf("settings_public_error_%dx%d", w, h), m.View())
 		s := newModel(w, h)
 		s, _ = press(s, tea.KeyMsg{Type: tea.KeyRight})
 		golden(t, fmt.Sprintf("sessions_cells_%dx%d", w, h), s.View())
