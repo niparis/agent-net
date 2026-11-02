@@ -1,6 +1,6 @@
-1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 6 sessions, 5 online · 1 busy  filter: all       updated 14:05:00
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 6 sessions, 5 online · 1 busy        updated 14:05:00
 you→: your prompt · orange: waiting for a reply · red: failed · purple: Atlas
-╭─Messages · filter all──────────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
+╭─Messages──────────────────────────────────────filter: all  (l)─╮╭─Conversation───────────────────────────────────────╮
 │ ▸ Atlas ↔ tenebrae-53 · Please check the d… 1 message · 1m ago ││ ▸ 14:04 Atlas                                      │
 │                                                                ││ Please check the deployment.                       │
 │                                                                ││ It is on staging.                                  │
@@ -23,7 +23,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: Atl
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
-│ 0 system events · l filter: all                                ││                                                    │
+│ 0 system events                                                ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─Atlas · opencode · fake/m1───────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

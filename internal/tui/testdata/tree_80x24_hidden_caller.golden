@@ -1,15 +1,15 @@
-1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 10 sessions, 9
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
  Mac (here) 2 sessions ─────────────────────────────────────────────────────────
-▸ ↳ backtest-a opencode -         haiku-4-5  idle   -         ?     ? probe
-  ↳ backtest-b opencode -         haiku-4-5  idle   -         ?     ? probe
+▸ ↳ backtest-a opencode idle   -     normal -            ?     ?
+  ↳ backtest-b opencode idle   -     normal -            ?     ?
  build-vm 1 session ────────────────────────────────────────────────────────────
-  ↳ backtest-… opencode -         haiku-4-5  idle   -         ?     ? probe
+  ↳ backtest-… opencode idle   -     normal -            ?     ?
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop  c CTO  ? help  q quit
+up/down select  enter open  m msg  x stop  left/right cell  ? help  q quit

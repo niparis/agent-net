@@ -16,8 +16,7 @@ func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
 	src.intg = protocol.Integrations{HintHook: true}
 	src.intgSet = true
 
-	m = keys(m, "S", "down", "down")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := openSessionSetting(m, 2)
 	if m.mode != modeIntegrations || cmd == nil {
 		t.Fatalf("the settings menu must open the form and read the answers, mode %v", m.mode)
 	}
@@ -60,8 +59,7 @@ func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
 
 func TestIntegrationsFormEscCancels(t *testing.T) {
 	m, src := workerModel(120, 40)
-	m = keys(m, "S", "down", "down")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := openSessionSetting(m, 2)
 	m = send(m, cmd())
 	m, _ = press(m, spaceKey())
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEsc})

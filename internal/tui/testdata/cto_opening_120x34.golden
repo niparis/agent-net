@@ -1,18 +1,18 @@
-1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online · 1 busy                           updated 14:05:00
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 12 online · 1 busy                   updated 14:05:00
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free                                         │
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME               AGENT    PROJECT    MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK         view: all  (v)
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-▸ tenebrae-53        claude   tenebrae   opus-5-5   busy   -       38%  1.2G
-  Atlas              cto      -          -          idle   -         ?     ?
-  strategies         claude   strategies sonnet-5-5 idle   -      240%  4.6G backtest v2
-  web                opencode shop       sonnet-5   idle   -         ?     ?
+▸ tenebrae-53        claude   tenebrae   opus-5-5   busy   -     normal -          38%  1.2G
+  Atlas              cto      -          -          idle   -     normal -            ?     ?
+  strategies         claude   strategies sonnet-5-5 idle   -     normal -         240%  4.6G backtest v2
+  web                opencode shop       sonnet-5   idle   -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net  gpt-6      idle   -        5%  300M
-  scratch            pi       -          -          shell  -       <1%   80M
+  ci-runner          pi       agent-net  gpt-6      idle   -     normal -           5%  300M
+  scratch            pi       -          -          shell  -     normal -          <1%   80M
 
 
 

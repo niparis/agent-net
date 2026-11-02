@@ -43,7 +43,7 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"24_all_details", []check{{contextToolsAll, "enter", "item detail"}}},
 		{"25_picker_space", []check{{contextToolsPicker, " ", "tick"}, {contextToolsPicker, "x", ""}}},
 		{"26_help_close", []check{{contextHelp, "esc", actClose}, {contextHelp, "?", actClose}, {contextHelp, "enter", ""}, {contextHelp, "backspace", ""}}},
-		{"27_notifications", []check{{contextHelp, "N", actNotifications}, {contextHelp, "n", ""}}},
+		{"27_notifications", []check{{contextHelp, "N", ""}, {contextHelp, "n", ""}}},
 		{"28_confirm", []check{{contextConfirm, "enter", "yes"}, {contextConfirm, "y", "yes"}, {contextConfirm, "esc", "no"}, {contextConfirm, "n", "no"}}},
 	}
 	for _, tc := range cases {

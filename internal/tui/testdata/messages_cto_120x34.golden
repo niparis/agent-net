@@ -1,6 +1,6 @@
-1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online · 1 busy  filter: all                  updated 14:05:00
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 12 online · 1 busy                   updated 14:05:00
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages · filter all──────────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
+╭─Messages──────────────────────────────────────filter: all  (l)─╮╭─Conversation───────────────────────────────────────╮
 │   tenebrae-53 ↔ ended session · Which envi… 1 message · 1m ago ││ ▸ 13:56 CTO                                        │
 │   ci-runner ↔ tenebrae-53 · Rollback is r… 2 messages · 2m ago ││ Can you check the latest deployment plan?          │
 │ ▸ CTO ↔ strategies · The deployment plan … 2 messages · 8m ago ││ The release is planned for tonight.                │
@@ -23,7 +23,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
-│ 1 system event · l filter: all                                 ││                                                    │
+│ 1 system event                                                 ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

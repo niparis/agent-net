@@ -10,8 +10,8 @@ import (
 
 // The owner cut direct session settings keys in favour of one S menu.
 func TestSessionsHasOneSettingsKeyAndNoDirectOnes(t *testing.T) {
-	if got := keyAction(contextSessions, "S"); got != "session settings" {
-		t.Fatalf("S: got %q, want session settings", got)
+	if got := keyAction(contextSessions, "S"); got != "" {
+		t.Fatalf("S still acts: %q", got)
 	}
 	for _, key := range []string{"t", "p", "I", "N", "L", "o", "A", "H"} {
 		if got := keyAction(contextSessions, key); got != "" {
@@ -46,7 +46,7 @@ func TestSessionsViewCyclesWithOneKey(t *testing.T) {
 	if m.sessionViewName() != "all" || m.showOffline || m.activeOnly {
 		t.Fatalf("v did not return to all: %q", m.sessionViewName())
 	}
-	if !strings.Contains(ansi.Strip(m.titleLine(120)), "Sessions all") {
+	if !strings.Contains(ansi.Strip(strings.Join(m.sessionsTable(120, 10), "\n")), "view: all") {
 		t.Fatalf("the Sessions title does not name the view: %q", ansi.Strip(m.titleLine(120)))
 	}
 }
@@ -76,7 +76,7 @@ func TestMessagesFilterCyclesWithOneKey(t *testing.T) {
 	if m.hideWorkerThreads || m.messageShowEvents {
 		t.Fatalf("third l: workers hidden %v events %v", m.hideWorkerThreads, m.messageShowEvents)
 	}
-	if !strings.Contains(ansi.Strip(m.messagesView(120, 12)[0]), "filter: all") {
+	if !strings.Contains(ansi.Strip(strings.Join(m.messagesView(120, 12), "\n")), "filter: all") {
 		t.Fatalf("the Messages title does not name the filter:\n%s", ansi.Strip(strings.Join(m.messagesView(120, 12), "\n")))
 	}
 }
@@ -227,8 +227,8 @@ func TestRemovedDirectKeysDoNothing(t *testing.T) {
 	m := newModel(120, 34)
 	view := m.sessionViewName()
 	m = keys(m, "t", "p", "I", "N", "L", "o", "A", "H")
-	if m.mode != modeNormal || m.settingsMenuOn || m.sessionViewName() != view {
-		t.Fatalf("a removed Sessions key still acted: mode %v menu %v view %q", m.mode, m.settingsMenuOn, m.sessionViewName())
+	if m.mode != modeNormal || m.sessionViewName() != view {
+		t.Fatalf("a removed Sessions key still acted: mode %v view %q", m.mode, m.sessionViewName())
 	}
 	msg := newModel(120, 34)
 	msg.tab = messagesTab

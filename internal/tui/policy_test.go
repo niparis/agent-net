@@ -176,13 +176,13 @@ func TestPolicyShowsInTheTableAndDetailAndHelp(t *testing.T) {
 	m = refresh(m, src)
 	m = selectID(m, target)
 	screen := strings.Join(lines(m.View()), "\n") + "\n" + detailText(m)
-	for _, want := range []string{"POLICY", "sub", "native -> deepseek/deepseek-v4.1-flash (project)", "sol/sol-6.1", "p: change"} {
+	for _, want := range []string{"DELEGATE", "native", "native -> deepseek/deepseek-v4.1-flash (project)", "sol/sol-6.1"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("screen lacks %q:\n%s", want, screen)
 		}
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	if !strings.Contains(strings.Join(lines(m.View()), "\n"), "delegation policy") {
+	if !strings.Contains(strings.Join(m.helpContent(140), "\n"), "delegation policy") {
 		t.Error("help lacks the p key")
 	}
 }

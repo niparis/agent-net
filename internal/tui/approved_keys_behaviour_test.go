@@ -294,7 +294,7 @@ func TestApproved27HelpNIsTheNotificationKey(t *testing.T) {
 	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}); cmd != nil || src.disabled {
 		t.Fatal("n still toggles desktop notifications")
 	}
-	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")}); cmd == nil {
-		t.Fatal("N no longer toggles desktop notifications")
+	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")}); cmd != nil {
+		t.Fatal("N still toggles desktop notifications")
 	}
 }

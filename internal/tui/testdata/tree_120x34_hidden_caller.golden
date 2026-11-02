@@ -1,15 +1,15 @@
-1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 10 sessions, 9 online · 2 busy · workers 4 running, 0
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                           AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME                          AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM …  view: all  (v)
  Mac (here) 2 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-▸ ↳ backtest-a                   opencode -         haiku-4-5  idle   -         ?     ? probe
-  ↳ backtest-b                   opencode -         haiku-4-5  idle   -         ?     ? probe
+▸ ↳ backtest-a                  opencode -         haiku-4-5  idle   -     normal -            ?     ? p
+  ↳ backtest-b                  opencode -         haiku-4-5  idle   -     normal -            ?     ? p
  build-vm 1 session ────────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ backtest-on-a-remote-machine opencode -         haiku-4-5  idle   -         ?     ? probe
+  ↳ backtest-on-a-remote-machi… opencode -         haiku-4-5  idle   -     normal -            ?     ? p
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop  c CTO  ? help  q quit
+up/down select  enter open  m msg  x stop  left/right cell  ? help  q quit

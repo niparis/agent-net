@@ -1,4 +1,4 @@
-1 Sessions all  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online · 1 busy · 2 needs you  14:05:00
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 12 online · 1 busy · 2 needs you
 Needs you (2) ──────────────────────────────────────────────────────────────────────────────────────
 ▍▸ strategies claude          question: "Merge tenebrae-nexus/truenas-stacks #817?"              12m
 ▍  ci-runner  pi     build-vm permission: Bash(git push origin main)                              3m
@@ -7,14 +7,14 @@ Needs you (2) ──────────────────────
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               AGENT    PROJECT    MODEL      STATUS    TRUST   CPU   RAM TASK
+  NAME               AGENT    PROJECT    STATUS    TRUST RULE   DELEGATE   CPU   RAM  view: all  (v)
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────
-  strategies         claude   strategies sonnet-5-5 needs you -      240%  4.6G backtest v2
-  tenebrae-53        claude   tenebrae   opus-5-5   busy      -       38%  1.2G
-  web                opencode shop       sonnet-5   idle      -         ?     ?
+  strategies         claude   strategies needs you -     normal -         240%  4.6G
+  tenebrae-53        claude   tenebrae   busy      -     normal -          38%  1.2G
+  web                opencode shop       idle      -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net  gpt-6      needs you -        5%  300M
-  scratch            pi       -          -          shell     -       <1%   80M
+  ci-runner          pi       agent-net  needs you -     normal -           5%  300M
+  scratch            pi       -          shell     -     normal -          <1%   80M
 
 
 
@@ -27,4 +27,4 @@ Needs you (2) ──────────────────────
 │                                                                                                  │
 │ c: open the CTO                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter answer  m msg  n new  c CTO  ? help  q quit
+up/down select  enter answer  m msg  n new  left/right cell  ? help  q quit

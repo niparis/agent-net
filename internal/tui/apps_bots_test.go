@@ -54,7 +54,7 @@ func TestAppsPublicAndBotsScreens(t *testing.T) {
 func TestBotColumnsAndPublicAddresses(t *testing.T) {
 	m := botScreenModel(120)
 	view := m.View()
-	if !strings.Contains(view, "weather-bot        bot      -          -          online -") || !strings.Contains(view, "last call 14:04") {
+	if !strings.Contains(view, "weather-bot        bot      -          -          online -") || !strings.Contains(view, "last call") {
 		t.Fatalf("bot columns:\n%s", view)
 	}
 	m.apps.public.On = true

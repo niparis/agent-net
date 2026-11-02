@@ -322,8 +322,8 @@ func TestNeedsMComposesWithoutEntering(t *testing.T) {
 
 func TestNotifySettingInHelp(t *testing.T) {
 	m := newModel(100, 30)
-	m.help = true
-	if !strings.Contains(strings.Join(m.helpContent(100), "\n"), "desktop notifications: on") {
+	m.tab = settingsTab
+	if !strings.Contains(strings.Join(m.settingsView(100, 40), "\n"), "Desktop notifications: on") {
 		t.Fatal("missing notification setting")
 	}
 }
@@ -343,14 +343,19 @@ func TestNotifyHelpToggle(t *testing.T) {
 	src := &notificationSource{fakeSource: &fakeSource{}}
 	m := newModel(100, 30)
 	m.src = src
-	m.help = true
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	m.tab = settingsTab
+	for i, row := range m.settingsItems() {
+		if row.kind == "notifications" {
+			m.settingsRow = i
+		}
+	}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if cmd == nil {
 		t.Fatal("no settings command")
 	}
 	m = next.(Model)
 	m = send(m, cmd())
-	if !src.disabled || !m.snap.NotificationsDisabled || !strings.Contains(strings.Join(m.helpContent(100), "\n"), "desktop notifications: off") {
+	if !src.disabled || !m.snap.NotificationsDisabled || !strings.Contains(strings.Join(m.settingsView(100, 40), "\n"), "Desktop notifications: off") {
 		t.Fatalf("toggle did not persist: %+v", m.snap)
 	}
 }

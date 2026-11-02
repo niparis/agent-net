@@ -1,7 +1,7 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  Global keys
-  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  1-6                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -15,11 +15,13 @@ Keys ─────────────────────────
  Sessions
   pgup/pgdn              page
   home/g, end            first, last row
+  enter                  go into the selected session on NAME, or open the delegation policy on DELEGATE
   m                      send a message to the session as yourself
   n                      start a session in herdr: project, harness, model, folder and first message (a form)
   x                      stop the selected worker or session
   h                      hide or unhide the selected session
-  S                      session settings: request rule, delegation policy, integrations, machine name
+  left, right            move between NAME, RULE and DELEGATE cells
+  space                  cycle the request rule: normal, ask, auto
   v                      cycle the view: active only, all, all with offline, all with offline and hidden
   d                      show or hide the selected session details
   i                      open the inbox
@@ -34,7 +36,5 @@ Keys ─────────────────────────
 
  On an outcome row
   s                      let stand
-  O                      overrule
-
   more below
 up/down scroll  esc close help  q quit

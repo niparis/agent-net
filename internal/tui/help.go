@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The key line and the help overlay. The model (model.go) supplies the state;
@@ -58,8 +59,6 @@ func (m Model) hints() []hint {
 		default:
 			return []hint{bindingHint(contextApps, "public"), bindingHint(contextApps, "url"), bindingHint(contextApps, "add"), bindingHint(contextApps, "revoke"), bindingHint(contextApps, "back")}
 		}
-	case m.settingsMenuOn:
-		return []hint{bindingPairHint(contextSettingsMenu, actUp, actDown), bindingHint(contextSettingsMenu, "choose"), bindingHint(contextSettingsMenu, actClose)}
 	case m.mapOn && m.focus != focusCTO:
 		return []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools"), bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit)}
 	case m.open != nil:
@@ -77,8 +76,13 @@ func (m Model) hints() []hint {
 		return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, actLast), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 	case m.tab == quotasTab:
 		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "refresh"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
+	case m.tab == settingsTab:
+		if m.settingsItems()[min(max(m.settingsRow, 0), len(m.settingsItems())-1)].section == 0 {
+			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "toggle"), bindingHint(contextSettings, "public"), bindingHint(contextSettings, "url"), bindingHint(contextSettings, "add"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
+		}
+		return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "toggle"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 	case m.tab == graphTab:
-		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "tools tab").key, label: "tabs", prio: 1}
+		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "settings tab").key, label: "tabs", prio: 1}
 		return []hint{tabs, cto, bindingHint(contextGraph, "help"), bindingHint(contextGraph, actQuit)}
 	case m.tab == toolsTab:
 		return m.toolsHints()
@@ -99,7 +103,24 @@ func (m Model) hints() []hint {
 			return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextHeld, "approve"), bindingHint(contextHeld, "refuse"), sessionHelp, sessionQuit}
 		}
 	}
-	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), cto, sessionHelp, sessionQuit}
+	if m.tab == sessionsTab && m.sessionCell > 0 && !m.selNeeds {
+		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
+			if m.sessionCell == 1 {
+				rule := m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project))
+				next := "ask"
+				if rule == "ask" {
+					next = "auto"
+				} else if rule == "auto" {
+					next = "normal"
+				}
+				return []hint{{key: "left/right", label: "cell"}, {key: "space", label: rule + " -> " + next}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
+			}
+			return []hint{{key: "left/right", label: "cell"}, {key: "enter", label: "delegation policy"}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
+		}
+	}
+	cell := bindingHint(contextSessions, "cell")
+	cell.key = "left/right"
+	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), cell, sessionHelp, sessionQuit}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
@@ -235,11 +256,6 @@ func (m Model) helpContent(w int) []string {
 		}
 		out = append(out, " "+sBold.Render(m.helpSubsectionTitle(context)))
 		out = append(out, m.contextHelpLines(context, w, false)...)
-		if context == contextSettingsMenu {
-			for _, entry := range settingsEntries() {
-				out = append(out, m.helpRow("S > "+entry.label, entry.help, w)...)
-			}
-		}
 	}
 	return out
 }
@@ -257,6 +273,7 @@ func (m Model) helpTabSections() []helpSection {
 		{"Quotas", []keyContext{contextQuotas}},
 		{"Messages", []keyContext{contextMessages}},
 		{"Tools", []keyContext{contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsCompare}},
+		{"Settings", []keyContext{contextSettings}},
 	}
 	tab := min(max(m.tab, 0), len(sections)-1)
 	ordered := []helpSection{sections[tab]}
@@ -267,7 +284,7 @@ func (m Model) helpTabSections() []helpSection {
 
 func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
-		contextBody, contextInbox, contextSettingsMenu, contextApps, contextProposalDetail, contextProposalHistory,
+		contextBody, contextInbox, contextApps, contextProposalDetail, contextProposalHistory,
 		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd,
 		contextCTO, contextHelp, contextConfirm, contextForm,
 	}
@@ -314,8 +331,6 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 		return "Message body"
 	case contextInbox:
 		return "Inbox"
-	case contextSettingsMenu:
-		return "Settings menu"
 	case contextApps:
 		return "Connected apps"
 	case contextProposalDetail:
@@ -383,13 +398,6 @@ func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []st
 			continue
 		}
 		help := m.bindingHelpText(binding)
-		if context == contextHelp && binding.action == actNotifications {
-			state := "on"
-			if m.snap.NotificationsDisabled {
-				state = "off"
-			}
-			help = "desktop notifications: " + state + " (toggle)"
-		}
 		entries = append(entries, helpEntry{keys: append([]string(nil), binding.keys...), help: help, action: binding.action})
 	}
 	entries = mergeHelpEntries(entries)

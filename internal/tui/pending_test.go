@@ -70,12 +70,12 @@ func TestPendingTaskAndLayout(t *testing.T) {
 			}
 		}
 		after := m.sessionsTable(width, 12)
-		if before[0] != after[0] || !strings.Contains(after[0], "MODEL") || !strings.Contains(after[0], "TASK") {
+		if before[0] != after[0] || !strings.Contains(after[0], "RULE") {
 			t.Fatalf("width %d: headers %q vs %q", width, before[0], after[0])
 		}
 		for i := range before {
 			if strings.Contains(before[i], "strategies") {
-				if !strings.Contains(after[i], "12m") || !strings.Contains(after[i], "wait") {
+				if (width >= 120 && !strings.Contains(after[i], "12m")) || !strings.Contains(after[i], "wait") {
 					t.Fatalf("width %d: %q", width, after[i])
 				}
 				for _, marker := range []string{" - ", "240%", "4.6G"} {
