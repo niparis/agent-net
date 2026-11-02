@@ -105,7 +105,7 @@ func TestWorkerModelIsResolved(t *testing.T) {
 	w.register(t, repo)
 
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "M2", Task: "x"})
-	if res.Model != "openai/m2" || res.ModelNote != "M2 -> openai/m2" {
+	if res.Model != "openai/m2" || !strings.HasPrefix(res.ModelNote, "difficulty") || !strings.HasSuffix(res.ModelNote, "M2 -> openai/m2") {
 		t.Errorf("resolved model: %q, note %q", res.Model, res.ModelNote)
 	}
 	rec := readFake(t, repo)
@@ -114,7 +114,7 @@ func TestWorkerModelIsResolved(t *testing.T) {
 	}
 	// An exact name needs no note.
 	res = w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "openai/m1", Task: "x"})
-	if res.Model != "openai/m1" || res.ModelNote != "" {
+	if res.Model != "openai/m1" || !strings.HasPrefix(res.ModelNote, "difficulty") || strings.Contains(res.ModelNote, "->") {
 		t.Errorf("exact model: %q, note %q", res.Model, res.ModelNote)
 	}
 	// Two models match equally well: an error that lists them.

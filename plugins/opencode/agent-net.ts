@@ -1592,9 +1592,6 @@ export default {
             const sid = String(context.sessionID);
             const text = (s: string) => ({ content: announced.has(sid) ? s : `${s}\n${ANNOUNCE_REMINDER}` });
             try {
-              if (def.method === "worker_start" && !String(input?.continue ?? "").trim() && (!Array.isArray(input?.touches) || input.touches.length === 0)) {
-                throw new Error('touches is required: choose db, hot-path, ui, docs, tests, config or other; for example {"touches":["ui"]}');
-              }
               const link = await ensureLink(sid);
               if (!link) return text("agent-net: this session is not registered with the daemon.");
               link.touch(); // using an agent-net tool is activity

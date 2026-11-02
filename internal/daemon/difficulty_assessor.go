@@ -121,6 +121,9 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		if len(insufficient) > 0 {
 			return fallback("difficulty: the judge returned INSUFFICIENT_EVIDENCE in judge-only mode; started at normal")
 		}
+		if scores.Confidence == "low" {
+			return fallback("difficulty: the judge confidence is low; started at normal")
+		}
 		a0.Scores = scores
 		a0.Confidence = scores.Confidence
 		if a0.Confidence == "" {

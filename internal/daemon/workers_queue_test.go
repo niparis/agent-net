@@ -298,9 +298,6 @@ func withLoad(f *fakeLoad) func(*Config) {
 // startFrom starts a worker as the agent session pi and returns the result.
 func startFrom(t *testing.T, pi *localClient, req protocol.WorkerStartRequest) protocol.WorkerStartResult {
 	t.Helper()
-	if len(req.Touches) == 0 && req.Continue == "" {
-		req.Touches = []string{"other"}
-	}
 	if req.Isolation == "" {
 		req.Isolation = protocol.IsolationNone
 	}

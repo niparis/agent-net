@@ -35,7 +35,7 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 	harness := fs.String("harness", "opencode", "harness to run: "+strings.Join(protocol.WorkerHarnesses, ", "))
 	model := fs.String("model", "", "model: a loose name such as \"deepseek 4.1\" is resolved against the machine's model list (opencode); an alias like haiku for claude; a name for pi and codex (default: the harness default)")
 	isolation := fs.String("isolation", "", "worktree (the default for a git repository: the worker gets its own worktree and branch) or none (work in the project folder)")
-	touches := fs.String("touches", "", "required comma-separated areas: db, hot-path, ui, docs, tests, config, other")
+	touches := fs.String("touches", "", "deprecated and ignored: the level comes from the difficulty judge")
 	asJSON := fs.Bool("json", false, "print JSON")
 	words, err := parseInterspersed(fs, args)
 	if err != nil {
@@ -45,10 +45,10 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 	if *project == "" || task == "" {
 		return errors.New("usage: agent-net start --project <name> [--harness opencode|claude|pi|codex] [--model M] [--machine host] [--isolation worktree|none] \"<task>\"")
 	}
-	if strings.TrimSpace(*touches) == "" {
-		return errors.New(protocol.WorkerTouchesError)
+	var areas []string
+	if strings.TrimSpace(*touches) != "" {
+		areas = strings.Split(*touches, ",")
 	}
-	areas := strings.Split(*touches, ",")
 	for i := range areas {
 		areas[i] = strings.TrimSpace(areas[i])
 	}

@@ -893,8 +893,10 @@ await test("agent_worker_start and agent_worker_stop reach the daemon and print 
   if (!start.input.properties.difficulty) throw new Error("missing difficulty schema");
   const areas = start.input.properties.touches?.items?.enum;
   if (JSON.stringify(areas) !== JSON.stringify(["db", "hot-path", "ui", "docs", "tests", "config", "other"])) throw new Error("wrong touches schema");
-  const missing = (await start.execute({ project: "alpha", task: "say ok" }, { sessionID: "ses_w" })).content;
-  if (!missing.includes('touches is required') || !missing.includes('{"touches":["ui"]}')) throw new Error("missing touches was not refused: " + missing);
+  const plainBefore = calls.length;
+  const plain = (await start.execute({ project: "alpha", task: "say ok" }, { sessionID: "ses_w" })).content;
+  if (calls[plainBefore][1].touches) throw new Error("touches was sent for a plain start");
+  if (!plain.includes("s_worker")) throw new Error("start without touches: " + plain);
   const before = calls.length;
   const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x", difficulty: "hard", touches: ["ui"] }, { sessionID: "ses_w" })).content;
   const [method, params] = calls[before];

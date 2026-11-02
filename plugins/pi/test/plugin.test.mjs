@@ -265,7 +265,7 @@ await test("worker profile tools reach the daemon", async () => {
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_worker_start requires touches and forwards", async () => {
+await test("agent_worker_start forwards difficulty and touches", async () => {
   const p = makePi();
   extension(p.api);
   const n = hellos.length;
@@ -273,8 +273,9 @@ await test("agent_worker_start requires touches and forwards", async () => {
   await until("hello", () => hellos.length === n + 1);
   replies.worker_start = { status: "started", session_id: "s_w", harness: "opencode", model: "a/x", project: "p", hostname: "mac",
     permissions: "sandboxed" };
-  const missing = (await p.tools.get("agent_worker_start").execute("id", { project: "p", task: "t" })).content[0].text;
-  if (!missing.includes("touches is required") || !missing.includes('{"touches":["ui"]}')) throw new Error("missing touches was not refused: " + missing);
+  const plain = (await p.tools.get("agent_worker_start").execute("id", { project: "p", task: "t" })).content[0].text;
+  if (requests.filter((r) => r.method === "worker_start").pop().params.touches) throw new Error("touches was sent for a plain start");
+  if (!plain.includes("s_w")) throw new Error("start without touches: " + plain);
   const started = (await p.tools.get("agent_worker_start").execute("id", { project: "p", task: "t", difficulty: "hard", touches: ["ui"] })).content[0].text;
   if (!p.tools.get("agent_worker_start").parameters.properties.difficulty) throw new Error("missing difficulty schema");
   if (!p.tools.get("agent_worker_start").parameters.properties.touches) throw new Error("missing touches schema");

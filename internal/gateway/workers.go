@@ -126,9 +126,6 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		difficulty := p.DifficultyAsked
 		if difficulty == "" {
 			difficulty = p.DifficultyUsed
-			if _, reason := protocol.WorkerEffectiveDifficulty("normal", p.Touches); reason != "" {
-				difficulty = "normal"
-			}
 		}
 		if difficulty == "" {
 			difficulty = "normal"
@@ -287,13 +284,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err := protocol.ValidWorkerTitle(p.Title); err != nil {
 		return none, reject("%v", err)
 	}
+	// Difficulty and touches are still accepted from older callers, but the
+	// level comes from the judge. Validate the fields so a malformed old
+	// request fails the same way, and ignore their values.
 	if p.Difficulty != "" {
 		if _, err := protocol.DifficultyFit(0, p.Difficulty, nil); err != nil {
 			return none, reject("%v", err)
 		}
-	}
-	if len(p.Touches) == 0 && p.Continue == "" {
-		return none, reject(protocol.WorkerTouchesError)
 	}
 	for _, touch := range p.Touches {
 		switch touch {
@@ -302,8 +299,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, reject("unknown touches value %q", touch)
 		}
 	}
-	difficultyAsked := p.Difficulty
-	difficultyUsed, touchReason := protocol.WorkerEffectiveDifficulty(p.Difficulty, p.Touches)
+	level := protocol.WorkerLevel(p.Assessment)
+	if p.Assessment == nil && p.Level != "" {
+		if _, err := protocol.DifficultyFit(0, p.Level, nil); err != nil {
+			return none, reject("%v", err)
+		}
+		level = p.Level
+	}
+	difficultyAsked, difficultyUsed := level, level
 	if p.Continue == "" && p.Project == "" {
 		return none, reject("a worker needs a project")
 	}
@@ -576,7 +579,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, reject("%v", err)
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model
-			automaticNote = workerChoiceNote(difficulty, choice, candidates, scores, minimums)
+			automaticNote = "(" + workerChoiceNote(difficulty, choice, candidates, scores, minimums)
 			if note := resolutionNotes[p.Harness+"\x00"+p.Model]; note != "" {
 				automaticNote += "; " + note
 			}
@@ -611,19 +614,18 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if p.RequireReadOnly && (!automatic || !protocol.WorkerReadOnlySupported(p.Harness) || p.Model == "" || isProtected(p.Harness, p.Model, protected)) {
 		return none, reject("no safe automatic read-only worker is available")
 	}
-	modelNote := automaticNote
-	if automatic && touchReason != "" {
-		if modelNote != "" {
-			modelNote += "; "
-		}
-		modelNote += fmt.Sprintf("touches %s: chose as %s", touchReason, difficultyUsed)
-	}
+	lead := workerDifficultyLead(p.Assessment, difficultyUsed)
 	quotas := g.nodeQuotas(pick.NodeID)
-	if !automatic {
-		p.Model, modelNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, modelNote)
+	var modelNote string
+	if automatic {
+		modelNote = lead + " -> " + p.Harness + " " + p.Model + " " + automaticNote
+	} else {
+		var resolveNote string
+		p.Model, resolveNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, "")
 		if err != nil {
 			return none, err
 		}
+		modelNote = appendModelNote(lead, resolveNote)
 	}
 	if !automatic {
 		scores, err := g.store.scores()
@@ -701,7 +703,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, AutoContinue: p.AutoContinue})
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -979,7 +981,8 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, err
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
-		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Title: p.Title, Touches: p.Touches})
+		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Title: p.Title, Touches: p.Touches,
+		Assessment: old.Worker.Assessment})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			return none, reject("machine %s did not start the worker: %v", old.Hostname, err)
@@ -992,8 +995,9 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		if track, books, nerr := g.choiceNotes(old.NodeID, old.Hostname, c.Project, c.Harness, c.Model); nerr == nil {
 			c.Track, c.Playbooks = track, books
 		}
+		modelNote = workerDifficultyLead(c.Assessment, protocol.WorkerLevel(c.Assessment))
 		if c.Model != "" && protocol.PayPerUseProvider(c.Harness, c.Model, g.nodeQuotas(old.NodeID)) {
-			modelNote = fmt.Sprintf("uses pay-per-use provider (%s)", protocol.ProfileProvider(c.Harness, c.Model))
+			modelNote = appendModelNote(modelNote, fmt.Sprintf("uses pay-per-use provider (%s)", protocol.ProfileProvider(c.Harness, c.Model)))
 		}
 	}
 	if err == nil && c.Queued && c.QueueID != "" {
@@ -1265,9 +1269,34 @@ func (g *Gateway) notifyResumeRefusal(ctx context.Context, p protocol.MsgSend, r
 	}
 }
 
+// workerDifficultyLead begins every start note with the judge result that set
+// the level. A failed judge says why the start used normal.
+func workerDifficultyLead(a *protocol.WorkerAssessment, level string) string {
+	if a != nil && a.Error != "" {
+		return "difficulty: no assessment (" + a.Error + "); started at " + level
+	}
+	if a != nil && a.Label != "" && protocol.WorkerLevel(a) == a.Label {
+		return "difficulty " + a.DifficultyLine()
+	}
+	if a != nil && a.Label != "" {
+		return "difficulty: no assessment (the judge confidence is low); started at " + level
+	}
+	return "difficulty: no assessment (no judge result); started at " + level
+}
+
+func appendModelNote(note, more string) string {
+	switch {
+	case more == "":
+		return note
+	case note == "":
+		return more
+	}
+	return note + "; " + more
+}
+
 // workerChoiceNote leaves the parenthesis open for resolution and protection notes.
 func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidates []protocol.WorkerModelCandidate, scores []protocol.ModelScore, minimums map[string]float64) string {
-	note := fmt.Sprintf("%s -> %s %s (%g, good enough", level, choice.Harness, choice.Model, choice.Score)
+	note := fmt.Sprintf("%g, good enough", choice.Score)
 	if choice.QuotaNote != "" {
 		note += "; " + choice.QuotaNote
 	} else {

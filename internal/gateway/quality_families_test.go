@@ -1,10 +1,9 @@
 package gateway
 
 import (
-	"context"
-	"github.com/niparis/agent-net/internal/protocol"
-	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestTouchedAreaCountsEachTask(t *testing.T) {
@@ -30,13 +29,5 @@ func TestTouchedAreaCountsEachTask(t *testing.T) {
 				t.Errorf("%s: %+v", name, row)
 			}
 		}
-	}
-}
-
-func TestWorkerStartRequiresTouches(t *testing.T) {
-	g := &Gateway{}
-	_, err := g.workerStart(context.Background(), nil, protocol.WorkerStartFrame{WorkerStartRequest: protocol.WorkerStartRequest{Project: "p", Task: "t"}})
-	if err == nil || !strings.Contains(err.Error(), protocol.WorkerTouchesError) {
-		t.Fatalf("missing actionable refusal: %v", err)
 	}
 }

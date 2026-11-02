@@ -327,21 +327,6 @@ func TestWorkerRotationCloneIsIndependent(t *testing.T) {
 	}
 }
 
-func TestWorkerEffectiveDifficulty(t *testing.T) {
-	for _, tc := range []struct {
-		level   string
-		touches []string
-		want    string
-	}{
-		{"normal", []string{"docs"}, "simple"}, {"normal", []string{"tests"}, "simple"}, {"normal", []string{"docs", "db"}, "hard"}, {"trivial", []string{"docs"}, "trivial"}, {"normal", []string{"other"}, "normal"}, {"normal", []string{"db"}, "hard"}, {"normal", []string{"ui"}, "normal"}, {"normal", nil, "normal"}, {"very_complex", []string{"hot-path"}, "very_complex"},
-	} {
-		got, _ := WorkerEffectiveDifficulty(tc.level, tc.touches)
-		if got != tc.want {
-			t.Errorf("%s %v: got %s, want %s", tc.level, tc.touches, got, tc.want)
-		}
-	}
-}
-
 func TestWorkerCandidateMaximumLevelEligibility(t *testing.T) {
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	for _, tc := range []struct {

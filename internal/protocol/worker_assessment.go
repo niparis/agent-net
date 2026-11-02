@@ -27,11 +27,28 @@ type WorkerAssessment struct {
 	Error        string            `json:"error,omitempty"`
 }
 
+// DifficultyLine is the one-line score profile: the six scores, D and label.
+func (a WorkerAssessment) DifficultyLine() string {
+	return fmt.Sprintf("R%d S%d C%d U%d V%d K%d · D %.2f · %s", a.Reasoning, a.Scope, a.Coupling, a.Uncertainty, a.Verification, a.Risk, a.D, a.Label)
+}
+
 func (a WorkerAssessment) Summary(picker string) string {
 	if a.Error != "" {
 		return "no assessment (" + a.Error + ")"
 	}
-	return fmt.Sprintf("R%d S%d C%d U%d V%d K%d · D %.2f · %s (%s: %s)", a.Reasoning, a.Scope, a.Coupling, a.Uncertainty, a.Verification, a.Risk, a.D, a.Label, picker, a.PickerLabel)
+	return a.DifficultyLine() + " (" + picker + ": " + a.PickerLabel + ")"
+}
+
+// WorkerLevel is the level the worker chooser uses: the judge's label, or
+// normal when the judge is missing, failed, timed out or has low confidence.
+func WorkerLevel(a *WorkerAssessment) string {
+	if a == nil || a.Error != "" || a.Label == "" || a.Confidence == "low" {
+		return "normal"
+	}
+	if _, err := DifficultyFit(0, a.Label, nil); err != nil {
+		return "normal"
+	}
+	return a.Label
 }
 
 // WorkerAssessmentNotice is a non-final notice, separate from a hand-back.

@@ -201,7 +201,6 @@ func TestCTOToolsForward(t *testing.T) {
 			args["server"], args["tool"], args["arguments"] = "test", "list", map[string]any{}
 		}
 		if name == "worker_change" {
-			args["touches"] = []string{"tests"}
 			args["project"] = "example"
 			args["task"] = "Do the task"
 		}
@@ -389,12 +388,12 @@ func TestCTOCharterGuideView(t *testing.T) {
 	}
 }
 
-func TestCTOWorkerStartRequiresTouches(t *testing.T) {
+func TestCTOWorkerStartWithoutTouches(t *testing.T) {
 	for _, tc := range []struct{ name, args string }{
-		{"worker_start", `{"task":"x"}`}, {"worker_change", `{"action":"start","task":"x"}`},
+		{"worker_start", `{"task":"x","project":"p"}`}, {"worker_change", `{"action":"start","task":"x","project":"p"}`},
 	} {
-		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err == nil {
-			t.Errorf("%s accepted missing touches", tc.name)
+		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err != nil {
+			t.Errorf("%s refused a start without touches: %v", tc.name, err)
 		}
 	}
 	for _, tc := range []struct{ name, args string }{
@@ -403,22 +402,5 @@ func TestCTOWorkerStartRequiresTouches(t *testing.T) {
 		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err != nil {
 			t.Errorf("%s %s: %v", tc.name, tc.args, err)
 		}
-	}
-}
-
-func TestCTOWorkerStartMissingTouchesError(t *testing.T) {
-	cs := ctoTestSession(t)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "worker_change", Arguments: map[string]any{"action": "start", "task": "x"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := ""
-	for _, c := range res.Content {
-		if v, ok := c.(*mcp.TextContent); ok {
-			text += v.Text
-		}
-	}
-	if !res.IsError || !strings.Contains(text, protocol.WorkerTouchesError) {
-		t.Fatalf("missing actionable refusal: %+v %s", res, text)
 	}
 }

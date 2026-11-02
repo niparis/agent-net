@@ -903,9 +903,6 @@ export default function (pi: ExtensionAPI) {
       parameters,
       async execute(_toolCallId: string, params: any) {
         try {
-          if (method === "worker_start" && !String(params?.continue ?? "").trim() && (!Array.isArray(params?.touches) || params.touches.length === 0)) {
-            throw new Error('touches is required: choose db, hot-path, ui, docs, tests, config or other; for example {"touches":["ui"]}');
-          }
           // The daemon does not default online_only; the tool says it does.
           const mapped = mapParams(params);
           const callMethod = mapped?.__method ?? method;

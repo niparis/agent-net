@@ -58,7 +58,7 @@ func TestCodexLooseModelNameIsResolved(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Model: "luna 6", Task: "say ok"})
-	if res.Model != "gpt-6-luna" || res.ModelNote != "luna 6 -> gpt-6-luna; explicit model overrides the max-or-one-level-below eligibility rule" {
+	if res.Model != "gpt-6-luna" || !strings.HasPrefix(res.ModelNote, "difficulty") || !strings.HasSuffix(res.ModelNote, "luna 6 -> gpt-6-luna; explicit model overrides the max-or-one-level-below eligibility rule") {
 		t.Fatalf("start result: %+v", res)
 	}
 }
@@ -100,7 +100,7 @@ func TestCodexRecentSuccessBreaksTheTie(t *testing.T) {
 	})
 	_ = first
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Model: "luna 6", Task: "say ok"})
-	if res.Model != "gpt-6.1-luna" || res.ModelNote != "luna 6 -> gpt-6.1-luna; explicit model overrides the max-or-one-level-below eligibility rule" {
+	if res.Model != "gpt-6.1-luna" || !strings.HasPrefix(res.ModelNote, "difficulty") || !strings.HasSuffix(res.ModelNote, "luna 6 -> gpt-6.1-luna; explicit model overrides the max-or-one-level-below eligibility rule") {
 		t.Fatalf("after a success: %+v", res)
 	}
 }

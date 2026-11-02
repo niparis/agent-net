@@ -22,20 +22,30 @@ about a minute to every start without adding needed evidence.
 The default assessor scores the brief directly. The analyzer path remains
 available behind `DifficultyAnalyzer` and `agent-net dev assess --analyzer`.
 
-Shadow mode is live: each worker start is assessed in the background; the picker still uses the caller's label.
+## Decision 2026-11-02: the judge decides the level
+
+The switch is done. The daemon runs the judge on the brief before it asks the
+gateway to choose a model, with a 30 second limit, and the gateway uses the
+judge's label as the level. The caller's `difficulty` no longer influences the
+level, and the shadow period ends: there is no separate `status: difficulty`
+notice for a start that was assessed before it. A missing judge, a failure, a
+timeout or low confidence starts at `normal` with the reason in `model_note`.
+An explicit `model` still bypasses the chooser; the label is recorded but does
+not choose the model. Queued starts keep the label through the queue. A
+continue reuses the label of the run it continues unless the brief changed, and
+a resumed run is assessed in the background.
 
 ## Decision 2026-11-02: no `touches`
 
-`touches` is dropped entirely when the picker switches to the judge's label
-(build step 5). The level comes only from the six scores, the scoring function
-and the bottleneck rule. The rules that let `touches` change the level go: the
-one-level bump for `db` and `hot-path`, and the shortcut to `trivial` for
-`docs`/`tests` only. Blast radius is the Risk dimension, written in the brief's
-Evidence section and scored like the other five; a Risk of 5 forces at least
-`hard`. The brief checklists `touches` added (for example a migration note) are
-written by the orchestrator into the brief. During the switch-over the field is
-still accepted and ignored, so callers that send it do not fail, and the
-guidance stops mentioning it.
+`touches` no longer changes the level. The level comes only from the six
+scores, the scoring function and the bottleneck rule. The rules that let
+`touches` change the level are gone: the one-level bump for `db` and
+`hot-path`, and the shortcut to `trivial` for `docs`/`tests` only. Blast radius
+is the Risk dimension, written in the brief's Evidence section and scored like
+the other five; a Risk of 5 forces at least `hard`. The brief checklists
+`touches` added (for example a migration note) are written by the orchestrator
+into the brief. The field is still accepted and ignored, so callers that send
+it do not fail, and the guidance stops mentioning it.
 
 ## Analyzer design, on ice
 

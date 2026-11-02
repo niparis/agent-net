@@ -18,3 +18,22 @@ func TestWorkerAssessmentNotice(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestWorkerLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		a    *WorkerAssessment
+		want string
+	}{
+		{"missing", nil, "normal"},
+		{"judge label", &WorkerAssessment{Label: "trivial", PickerLabel: "trivial"}, "trivial"},
+		{"failed", &WorkerAssessment{Label: "normal", Error: "judge failed"}, "normal"},
+		{"low confidence", &WorkerAssessment{Label: "hard", Confidence: "low"}, "normal"},
+		{"empty label", &WorkerAssessment{}, "normal"},
+		{"unknown label", &WorkerAssessment{Label: "huge"}, "normal"},
+	} {
+		if got := WorkerLevel(tc.a); got != tc.want {
+			t.Errorf("%s: got %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}

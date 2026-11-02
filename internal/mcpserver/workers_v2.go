@@ -53,12 +53,9 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 	case "agent_worker_start":
 		task, continuation := str("task"), str("continue")
 		if (task == "") == (continuation == "") {
-			return nil, errors.New(`set exactly one of task or continue, for example {"task":"Fix the login bug","touches":["ui"]}`)
+			return nil, errors.New(`set exactly one of task or continue, for example {"task":"Fix the login bug"}`)
 		}
 		touches, _ := a["touches"].([]any)
-		if len(touches) == 0 {
-			return nil, errors.New(`touches is required, for example ["ui"]`)
-		}
 		var areas []string
 		for _, v := range touches {
 			if x, ok := v.(string); ok {
@@ -85,13 +82,14 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			out["queued"] = map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}
 			return out, nil
 		}
-		// The daemon's answer does not repeat the request: fill the task and
-		// difficulty from it.
+		// The daemon's answer does not repeat the request: fill the task from
+		// it. The difficulty comes from the worker record, never from the
+		// caller's ignored field.
 		if m["task"] == nil {
 			m["task"] = in.Task
 		}
 		if m["difficulty"] == nil {
-			m["difficulty"] = firstNonEmptyString(in.Difficulty, "normal")
+			m["difficulty"] = "normal"
 		}
 		out["worker"] = filledWorker(ctx, call, m)
 		return out, nil
