@@ -1,30 +1,30 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools  6 Settings │ 12 online · 1 busy                   updated 14:05:00
 Connected apps
   Control internet access and the apps connected to your network.
-  Other services are served on this machine's Tailscale name (ports 10000). They receive the phone's sign-in cookie.
+  Other services are served on this machine's Tailscale name (port 10000). They receive the phone's sign-in cookie.
   Remove them or accept the risk.
 ▸ Internet access: on   phone https://example.test:8443/   bots https://example.test:8443/mcp
-  Tunnel URL: https://example.test:8443
   Add an app
-  NAME             KIND      CLIENT       RETURN HOST          CONNECTED    LAST USED
-  phone            owner app Safari       -                    Jan 01       never
-  helper           bot       Cursor       -                    Jan 01       never
+  NAME              KIND       CLIENT        RETURN HOST           CONNECTED     LAST USED
+  phone             owner app  Safari        -                     Jan 01        never
+  helper            bot        Cursor        -                     Jan 01        never
+
 Integrations
   Choose integrations for every machine in your network.
   Configure integrations
+
 Machines
   The name every machine in your network shows for each machine.
-  NAME                 HOST NAME            VERSION      ONLINE
-  Mac                  Mac                  v0.4.0       yes
-  build-vm             build-vm             v0.4.0       yes
-  old-box              old-box              v0.3.2       no
+  NAME                  HOST NAME             VERSION       ONLINE
+  Mac                   Mac                   v0.4.0        yes
+  build-vm              build-vm              v0.4.0        yes
+  old-box               old-box               v0.3.2        no
+
 Notifications
   Choose whether this machine shows desktop notifications.
   Desktop notifications: on
+
 Tips
-  Show or restart the onboarding tips.
-  Tips: on
-  Restart tips
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -25,7 +26,7 @@ type settingsItem struct {
 func settingsAppRow(width int, fields []string) string {
 	headers := []string{"NAME", "KIND", "CLIENT", "RETURN HOST", "CONNECTED", "LAST USED"}
 	widths := []int{16, 9, 12, 20, 12, 9}
-	total := 2 + len(widths) - 1
+	total := 2 + 2*(len(widths)-1)
 	for _, n := range widths {
 		total += n
 	}
@@ -46,7 +47,7 @@ func settingsAppRow(width int, fields []string) string {
 	for i := range widths {
 		parts[i] = cellDots(fields[i], widths[i])
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, "  ")
 }
 
 func (m Model) settingsItems() []settingsItem {
@@ -62,7 +63,11 @@ func (m Model) settingsItems() []settingsItem {
 	if tunnelURL == "" {
 		tunnelURL = "not set"
 	}
-	items := []settingsItem{{0, "public", 0, "Internet access: " + state}, {0, "url", 0, "Tunnel URL: " + tunnelURL}, {0, "add", 0, "Add an app"}}
+	items := []settingsItem{{0, "public", 0, "Internet access: " + state}}
+	if m.apps.public.Port == 0 && m.apps.public.URL != "" || strings.Contains(m.apps.public.Error, funnel.ErrNotInstalled.Error()) || strings.Contains(m.apps.public.Error, funnel.ErrNotRunning.Error()) {
+		items = append(items, settingsItem{0, "url", 0, "Tunnel URL: " + tunnelURL})
+	}
+	items = append(items, settingsItem{0, "add", 0, "Add an app"})
 	for i, a := range m.apps.apps {
 		kind := a.Kind
 		if kind == "owner_app" {
@@ -96,7 +101,7 @@ func (m Model) settingsItems() []settingsItem {
 		if n.online {
 			online = "yes"
 		}
-		items = append(items, settingsItem{2, "machine", i, fmt.Sprintf("%-20s %-20s %-12s %s", cellDots(n.host, 20), cellDots(host, 20), cellDots(dashIfEmpty(n.version), 12), online)})
+		items = append(items, settingsItem{2, "machine", i, fmt.Sprintf("%-20s  %-20s  %-12s  %s", cellDots(n.host, 20), cellDots(host, 20), cellDots(dashIfEmpty(n.version), 12), online)})
 	}
 	notifications := "on"
 	if m.snap.NotificationsDisabled {
@@ -238,8 +243,33 @@ func otherRoutePorts(raw json.RawMessage) []string {
 			ports = append(ports, strconv.Itoa(object.Port))
 		}
 	}
-	sort.Strings(ports)
+	sort.SliceStable(ports, func(i, j int) bool {
+		a, errA := strconv.Atoi(ports[i])
+		b, errB := strconv.Atoi(ports[j])
+		if errA == nil && errB == nil {
+			return a < b
+		}
+		if errA == nil {
+			return true
+		}
+		if errB == nil {
+			return false
+		}
+		return ports[i] < ports[j]
+	})
 	return ports
+}
+
+func otherRoutesWarning(raw json.RawMessage) string {
+	ports := otherRoutePorts(raw)
+	if len(ports) == 0 {
+		return ""
+	}
+	label := "ports"
+	if len(ports) == 1 {
+		label = "port"
+	}
+	return "Other services are served on this machine's Tailscale name (" + label + " " + strings.Join(ports, ", ") + "). They receive the phone's sign-in cookie. Remove them or accept the risk."
 }
 
 func (m Model) settingsView(w, h int) []string {
@@ -259,11 +289,13 @@ func (m Model) settingsView(w, h int) []string {
 	section := -1
 	for i, item := range items {
 		if item.section != section {
+			if section >= 0 {
+				body = append(body, "")
+			}
 			section = item.section
 			body = append(body, sBold.Render(names[section]), sDim.Render(clip("  "+descriptions[section], w)))
 			if section == 0 {
-				if ports := otherRoutePorts(m.apps.public.OtherRoutes); len(ports) > 0 {
-					warning := "Other services are served on this machine's Tailscale name (ports " + strings.Join(ports, ", ") + "). They receive the phone's sign-in cookie. Remove them or accept the risk."
+				if warning := otherRoutesWarning(m.apps.public.OtherRoutes); warning != "" {
 					for _, line := range wrap(warning, w-2) {
 						body = append(body, lipgloss.NewStyle().Foreground(roleWarning).Render("  "+line))
 					}
@@ -275,7 +307,7 @@ func (m Model) settingsView(w, h int) []string {
 				}
 			}
 			if section == 2 {
-				body = append(body, sDim.Render(clip(fmt.Sprintf("  %-20s %-20s %-12s %s", "NAME", "HOST NAME", "VERSION", "ONLINE"), w)))
+				body = append(body, sDim.Render(clip(fmt.Sprintf("  %-20s  %-20s  %-12s  %s", "NAME", "HOST NAME", "VERSION", "ONLINE"), w)))
 			}
 		}
 		if item.kind == "app" && item.index == 0 {

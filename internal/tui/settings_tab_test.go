@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/funnel"
 )
 
 func TestSettingsTabAndRemovedKeys(t *testing.T) {
@@ -117,6 +118,7 @@ func TestSettingsActionsUseExistingOperations(t *testing.T) {
 		t.Fatal(f.op)
 	}
 	m.apps.loading = false
+	m.apps.public.Error = funnel.ErrNotInstalled.Error()
 	m = selectSettingsKind(m, "url")
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeApps || m.apps.stage != "url" {
@@ -200,6 +202,7 @@ func TestSettingsGoldens(t *testing.T) {
 		m := newModel(w, h)
 		m.tab = settingsTab
 		m.apps.public.On = true
+		m.apps.public.Port = 8443
 		m.apps.public.URL = "https://example.test:8443"
 		m.apps.public.OtherRoutes = json.RawMessage(`[10000]`)
 		m.apps.apps = []connectedApp{{ID: "a1", Name: "phone", Kind: "owner_app", ClientName: "Safari"}, {ID: "a2", Name: "helper", Kind: "bot", ClientName: "Cursor"}}

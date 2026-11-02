@@ -1275,12 +1275,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			switch c.name {
 			case "STATUS":
 				v = statusLabel(v)
-			case "AGENT", "DELEGATE", "TASK":
+			case "AGENT", "TASK":
 				v = sDim.Render(v)
-			case "TRUST":
-				if m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project)) != "normal" {
-					v = sBusy.Render(v)
-				} else {
+			case "TRUST", "RULE", "DELEGATE":
+				value := strings.TrimSpace(v)
+				if value == "-" || c.name == "RULE" && value == "normal" {
 					v = sDim.Render(v)
 				}
 			}

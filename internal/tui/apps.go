@@ -288,8 +288,7 @@ func (m Model) appsView(w, rows int) []string {
 	for _, line := range wrap("Reachable from the internet: "+status, w-2) {
 		out = append(out, "  "+line)
 	}
-	if ports := otherRoutePorts(f.public.OtherRoutes); len(ports) > 0 {
-		warning := "Other services are served on this machine's Tailscale name (ports " + strings.Join(ports, ", ") + "). They receive the phone's sign-in cookie. Remove them or accept the risk."
+	if warning := otherRoutesWarning(f.public.OtherRoutes); warning != "" {
 		for _, line := range wrap(warning, w-2) {
 			out = append(out, "  "+lipgloss.NewStyle().Foreground(roleWarning).Render(line))
 		}

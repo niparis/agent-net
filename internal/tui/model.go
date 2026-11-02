@@ -848,7 +848,22 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onPolicySaved(msg)
 
 	case appsResult:
+		var selected settingsItem
+		if m.tab == settingsTab {
+			items := m.settingsItems()
+			selected = items[min(max(m.settingsRow, 0), len(items)-1)]
+		}
 		next, cmd := m.onAppsResult(msg)
+		if next.tab == settingsTab {
+			items := next.settingsItems()
+			next.settingsRow = min(next.settingsRow, len(items)-1)
+			for i, item := range items {
+				if item.kind == selected.kind && item.index == selected.index {
+					next.settingsRow = i
+					break
+				}
+			}
+		}
 		if next.tab == settingsTab && next.mode == modeApps && next.apps.stage == "" {
 			next.mode = modeNormal
 		}
