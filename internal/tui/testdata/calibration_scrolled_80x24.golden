@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
-╭─Quality analysis · read only─────────────────────────────────────────────────╮
+╭─Quality analysis · read only · d details─────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                         │
 │ ╭─simple · 8 tasks──────────────────╮ ╭─normal · 154 tasks─────────────────╮ │
 │ │   luna       2 min ·  3 this week │ │   deepseek   1 min · 22 this week  │ │
@@ -21,4 +21,4 @@
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  R refresh  c CTO  ? help  q quit
+up/down select  p protect  s show unset  d quality details  c CTO  q quit

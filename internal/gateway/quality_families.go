@@ -53,6 +53,16 @@ func qualityModelFamily(model string) string {
 	return name
 }
 
+// qualityModelKey is a model's row name in Quality details: its family and,
+// when the model names one, its effort ("gpt-6.1-terra:high" is "terra high").
+func qualityModelKey(model string) string {
+	family := qualityModelFamily(model)
+	if i := strings.LastIndex(model, ":"); i >= 0 && i < len(model)-1 {
+		return family + " " + model[i+1:]
+	}
+	return family
+}
+
 // qualityLevelName buckets the requested difficulty. Anything that is not a
 // known level is the dim "unknown" table. An empty value defaults to normal.
 func qualityLevelName(difficulty string) string {
@@ -135,7 +145,7 @@ func copyQualityLevels(levels []protocol.QualityLevel) []protocol.QualityLevel {
 	return out
 }
 
-func levelRows(levels map[string]map[string]*familyCount) []protocol.QualityLevel {
+func levelRows(levels, models map[string]map[string]*familyCount) []protocol.QualityLevel {
 	out := []protocol.QualityLevel{}
 	for _, level := range qualityLevelOrder() {
 		families := familyRows(levels[level])
@@ -146,7 +156,7 @@ func levelRows(levels map[string]map[string]*familyCount) []protocol.QualityLeve
 		for _, f := range families {
 			tasks += f.Tasks
 		}
-		out = append(out, protocol.QualityLevel{Difficulty: level, Tasks: tasks, Families: families})
+		out = append(out, protocol.QualityLevel{Difficulty: level, Tasks: tasks, Families: families, Models: familyRows(models[level])})
 	}
 	return out
 }
@@ -254,6 +264,8 @@ func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.Quali
 	callerAreas := map[string]map[string]*familyCount{}
 	all := map[string]map[string]*familyCount{}
 	byCaller := map[string]map[string]map[string]*familyCount{}
+	allModels := map[string]map[string]*familyCount{}
+	callerModels := map[string]map[string]map[string]*familyCount{}
 	for _, task := range tasks {
 		if callerAreas[task.caller] == nil {
 			callerAreas[task.caller] = map[string]*familyCount{}
@@ -285,6 +297,18 @@ func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.Quali
 			callerLevels[level] = callerCounts
 		}
 		addFamilyTask(callerCounts, family, task)
+		key := qualityModelKey(task.model)
+		if allModels[level] == nil {
+			allModels[level] = map[string]*familyCount{}
+		}
+		addFamilyTask(allModels[level], key, task)
+		if callerModels[task.caller] == nil {
+			callerModels[task.caller] = map[string]map[string]*familyCount{}
+		}
+		if callerModels[task.caller][level] == nil {
+			callerModels[task.caller][level] = map[string]*familyCount{}
+		}
+		addFamilyTask(callerModels[task.caller][level], key, task)
 	}
 	names, _, _, err := s.callerFacts(nil, callers)
 	if err != nil {
@@ -292,7 +316,7 @@ func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.Quali
 	}
 	agents := make([]protocol.QualityAgent, 0, len(callers))
 	for _, caller := range callers {
-		agents = append(agents, protocol.QualityAgent{Caller: caller, Name: names[caller], Levels: levelRows(byCaller[caller]), Areas: areaRows(callerAreas[caller])})
+		agents = append(agents, protocol.QualityAgent{Caller: caller, Name: names[caller], Levels: levelRows(byCaller[caller], callerModels[caller]), Areas: areaRows(callerAreas[caller])})
 	}
 	sort.SliceStable(agents, func(i, j int) bool {
 		a, b := agents[i], agents[j]
@@ -308,7 +332,7 @@ func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.Quali
 		}
 		return a.Caller < b.Caller
 	})
-	return levelRows(all), areaRows(allAreas), agents, nil
+	return levelRows(all, allModels), areaRows(allAreas), agents, nil
 }
 
 func areaRows(counts map[string]*familyCount) []protocol.QualityFamily {

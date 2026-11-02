@@ -230,7 +230,7 @@ var keyBindings = []keyBinding{
 	withLocal(withHelp(bind(contextQuotas, "right", "next agent", "agent", -1), "cycle the Quality panel agent")),
 	withHelp(bind(contextQuotas, "p", "protect", "protect", 1), "protect or unprotect this subscription"),
 	withHelp(bind(contextQuotas, "s", "show unset", "show unset", 2), "show or hide subscriptions that are not set up"),
-	withHelp(bind(contextQuotas, "d", "quality details", "details", -1), "open Quality details"),
+	withHelp(bind(contextQuotas, "d", "quality details", "quality details", 1), "open Quality details"),
 	bind(contextQuotas, "R", "refresh", "refresh", 2),
 	bind(contextQualityDetails, "esc", actClose, "back", 1),
 	bind(contextQualityDetails, "up|k", actUp, "scroll", 1),

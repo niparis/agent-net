@@ -131,7 +131,7 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 			}
 		}
 		nodes[i].Quotas = g.nodeQuotas(nodes[i].NodeID)
-		nodes[i].QualityPicks, nodes[i].QualityPickReasons, err = g.qualityPreview(nodes[i])
+		nodes[i].QualityPicks, nodes[i].QualityPickReasons, nodes[i].QualityPickModels, err = g.qualityPreview(nodes[i])
 		if err != nil {
 			return protocol.NodesInfo{}, err
 		}

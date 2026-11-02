@@ -57,6 +57,10 @@ type QualityLevel struct {
 	Difficulty string          `json:"difficulty"`
 	Tasks      int             `json:"tasks"`
 	Families   []QualityFamily `json:"families,omitempty"`
+	// Models are the same tasks counted per model and effort, for example
+	// "terra high" and "terra max". The cards use Families; Quality details
+	// use Models.
+	Models []QualityFamily `json:"models,omitempty"`
 }
 
 // QualityAgent is one caller's level tables. The TUI selector shows Name.

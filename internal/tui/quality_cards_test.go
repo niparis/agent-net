@@ -43,14 +43,15 @@ func TestQualityNewScreenGoldens(t *testing.T) {
 	q := protocol.QualityAnalysis{Status: "ready", Areas: []protocol.QualityFamily{{Family: "ui", Tasks: 18, Headache: 2}}, Levels: []protocol.QualityLevel{
 		{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, TasksWeek: 3, Headache: 1}}},
 		{Difficulty: "normal", Tasks: 196, Families: []protocol.QualityFamily{{Family: "opus", Tasks: 6, TasksWeek: 1, Headache: 0}, {Family: "luna", Tasks: 24, TasksWeek: 6, Headache: 2}, {Family: "sol", Tasks: 19, TasksWeek: 4, Headache: 4, NeededHelp: .26, Continues: 3, AvgRating: &score}, {Family: "deepseek", Tasks: 87, TasksWeek: 25, Headache: 8}, {Family: "terra", Tasks: 60, TasksWeek: 18, Headache: 9, NeededHelp: .35, Continues: 12, LateDefects: 1, WorstSeverity: 3, AvgRating: &score}}},
-		{Difficulty: "hard", Tasks: 42, Families: []protocol.QualityFamily{{Family: "sol", Tasks: 10, TasksWeek: 3, Headache: 5}, {Family: "terra", Tasks: 32, TasksWeek: 9, Headache: 8}}},
+		{Difficulty: "hard", Tasks: 42, Families: []protocol.QualityFamily{{Family: "sol", Tasks: 10, TasksWeek: 3, Headache: 5}, {Family: "terra", Tasks: 32, TasksWeek: 9, Headache: 8}},
+			Models: []protocol.QualityFamily{{Family: "sol medium", Tasks: 10, TasksWeek: 3, Headache: 5}, {Family: "terra high", Tasks: 26, TasksWeek: 7, Headache: 9, LateDefects: 2, WorstSeverity: 3}, {Family: "terra max", Tasks: 6, TasksWeek: 2, Headache: 4}}},
 		{Difficulty: "very_complex", Tasks: 5, Families: []protocol.QualityFamily{{Family: "terra", Tasks: 5, TasksWeek: 2, Headache: 7}}},
 	}}
 	for _, size := range [][2]int{{120, 34}, {80, 24}} {
 		m := newModel(size[0], size[1])
 		m.tab = quotasTab
 		m.snap.Calibration.Quality = q
-		m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, Hostname: "workstation", QualityPicks: map[string]string{"normal": "sol", "hard": "terra"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
+		m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, Hostname: "workstation", QualityPicks: map[string]string{"normal": "sol", "hard": "terra"}, QualityPickModels: map[string]string{"normal": "sol", "hard": "terra high"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
 		golden(t, fmt.Sprintf("quality_overview_%dx%d", size[0], size[1]), strings.Join(m.calibrationView(size[0]), "\n"))
 		m.qualityDetail = true
 		golden(t, fmt.Sprintf("quality_details_%dx%d", size[0], size[1]), m.View())
@@ -94,24 +95,28 @@ func TestQualityDetailsAlignedSections(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.Calibration.Quality = protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, Headache: 1}}}}, Areas: []protocol.QualityFamily{{Family: "ui", Tasks: 18}}}
 	view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n"))
-	for _, want := range []string{"MODEL", "  MY TIME / TASK  TASKS  NEEDED HELP  NUDGES / TASK  LATE BUGS  WORST  RATING  PICKED", "\n\nnormal ·", "\n\nhard ·", "\n\nvery complex ·", "\n\nby touched area"} {
+	for _, want := range []string{"MODEL", "  MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING", "╭─simple · 9 tasks", "╭─normal · ", "╭─hard · ", "╭─very complex · "} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q in %s", want, view)
 		}
 	}
+	// The retired touches field no longer has a section.
+	if strings.Contains(view, "touched area") {
+		t.Errorf("the touched area section is still shown:\n%s", view)
+	}
 	var header, row string
 	for _, line := range strings.Split(view, "\n") {
-		if strings.HasPrefix(line, "MODEL") && header == "" {
+		if strings.Contains(line, "MODEL") && header == "" {
 			header = line
 		}
-		if strings.HasPrefix(line, "luna") {
+		if strings.Contains(line, " luna ") {
 			row = line
 		}
 	}
-	for _, pair := range [][2]string{{"TASKS", "9"}, {"NEEDED HELP", "0%"}, {"NUDGES / TASK", "0.00"}} {
+	for _, pair := range [][2]string{{"TASKS", "9"}, {"NEEDED HELP", "0%"}} {
 		h := strings.Index(header, pair[0])
 		r := strings.Index(row, pair[1])
-		if h < 0 || r < 0 || h+len(pair[0]) != utf8.RuneCountInString(row[:r])+len(pair[1]) {
+		if h < 0 || r < 0 || utf8.RuneCountInString(header[:h])+len(pair[0]) != utf8.RuneCountInString(row[:r])+len(pair[1]) {
 			t.Errorf("%s not aligned: %q / %q", pair[0], header, row)
 		}
 	}
@@ -132,5 +137,36 @@ func TestQualityCardsMarkThePickInTheMoreLine(t *testing.T) {
 	view := ansi.Strip(strings.Join(qualityCards(q, 120, 0, map[string]string{"normal": "opus"}, "workstation"), "\n"))
 	if !strings.Contains(view, "2 more: ▸ opus 0 min · sol 4 min") {
 		t.Fatal(view)
+	}
+}
+
+// The bars compare the rows on the cards. A model with too few tasks to rank
+// does not set the scale, and a row that reads "0 min" has an empty bar.
+func TestQualityCardBarsScaleToTheShownRows(t *testing.T) {
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{
+		{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "deepseek", Tasks: 90, TasksWeek: 20, Headache: 6}, {Family: "luna", Tasks: 24, TasksWeek: 6, Headache: 2}, {Family: "opus", Tasks: 1, Headache: 60}}},
+		{Difficulty: "very_complex", Families: []protocol.QualityFamily{{Family: "terra", Tasks: 5, TasksWeek: 5, Headache: 0.4}}},
+	}}
+	view := ansi.Strip(strings.Join(qualityCards(q, 120, 0, nil, ""), "\n"))
+	bar := func(family string) string {
+		for _, line := range strings.Split(view, "\n") {
+			if i := strings.Index(line, " "+family+" "); i >= 0 {
+				rest := line[i:]
+				if j := strings.IndexAny(rest, "█░"); j >= 0 {
+					return strings.TrimRight(rest[j:j+len("█████")*3], " ")
+				}
+			}
+		}
+		t.Fatalf("no bar for %s in\n%s", family, view)
+		return ""
+	}
+	if got := strings.Count(bar("deepseek"), "█"); got != 5 {
+		t.Errorf("deepseek, the slowest shown row, fills %d of 5 cells", got)
+	}
+	if got := strings.Count(bar("luna"), "█"); got != 2 {
+		t.Errorf("luna at 2 of 6 minutes fills %d of 5 cells, want 2", got)
+	}
+	if got := strings.Count(bar("terra"), "█"); got != 0 {
+		t.Errorf("terra at 0 min fills %d cells, want none", got)
 	}
 }

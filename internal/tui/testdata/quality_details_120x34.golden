@@ -1,34 +1,34 @@
-Quality analysis · details
+Quality analysis · details   j/k scroll · esc back
 agent ◂ all agents ▸
-simple · 9 tasks
-MODEL     MY TIME / TASK  TASKS  NEEDED HELP  NUDGES / TASK  LATE BUGS  WORST  RATING  PICKED
-luna         1 min █░░░░      9           0%           0.00          0      -       -
-
-normal · 196 tasks
-MODEL     MY TIME / TASK  TASKS  NEEDED HELP  NUDGES / TASK  LATE BUGS  WORST  RATING  PICKED
-deepseek     8 min ████░     87           0%           0.00          0      -       -
-terra        9 min █████     60          35%           0.20          1      3     4.5
-luna         2 min █░░░░     24           0%           0.00          0      -       -
-sol          4 min ██░░░     19          26%           0.16          0      -     4.5     yes
-▸ sol (codex 5% ahead of pace)
-opus         0 min ░░░░░      6           0%           0.00          0      -       -
-
-hard · 42 tasks
-MODEL     MY TIME / TASK  TASKS  NEEDED HELP  NUDGES / TASK  LATE BUGS  WORST  RATING  PICKED
-terra        8 min ████░     32           0%           0.00          0      -       -     yes
-sol          5 min ███░░     10           0%           0.00          0      -       -
-
-very complex · 5 tasks
-MODEL     MY TIME / TASK  TASKS  NEEDED HELP  NUDGES / TASK  LATE BUGS  WORST  RATING  PICKED
-terra        7 min ████░      5           0%           0.00          0      -       -
-
-by touched area
-AREA      TASKS  FOLLOW-UPS  LATE DEFECTS  HEADACHE
-ui           18        0.00             -     2 min
+╭─simple · 9 tasks─────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ MODEL         MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING                                    │
+│   luna           1 min █████          3      9           0%             -       -                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─normal · 196 tasks · picker: ▸ sol (codex 5% ahead of pace)──────────────────────────────────────────────────────────╮
+│ MODEL         MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING                                    │
+│   deepseek       8 min ████░         25     87           0%             -       -                                    │
+│   terra          9 min █████         18     60          35%    1, worst 3     4.5                                    │
+│   luna           2 min █░░░░          6     24           0%             -       -                                    │
+│ ▸ sol            4 min ██░░░          4     19          26%             -     4.5                                    │
+│   opus           0 min ░░░░░          1      6           0%             -       -                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─hard · 42 tasks · picker: ▸ terra high───────────────────────────────────────────────────────────────────────────────╮
+│ MODEL         MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING                                    │
+│ ▸ terra high     9 min █████          7     26           0%    2, worst 3       -                                    │
+│   sol medium     5 min ███░░          3     10           0%             -       -                                    │
+│   terra max      4 min ██░░░          2      6           0%             -       -                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─very complex · 5 tasks───────────────────────────────────────────────────────────────────────────────────────────────╮
+│ MODEL         MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING                                    │
+│   terra          7 min █████          2      5           0%             -       -                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
 
 
 
-NEEDED HELP: share of tasks with at least one nudge or fix. WORST: highest severity among late bugs (1 to 4).
+
+
+NEEDED HELP: share of tasks with at least one nudge or fix. LATE BUGS: bugs found after the hand-back, with the worst
+severity (1 to 4).
 up/down scroll  pgup/pgdown page  esc back

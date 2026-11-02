@@ -78,7 +78,7 @@ func (m Model) hints() []hint {
 	case m.tab == quotasTab && m.qualityDetail:
 		return []hint{bindingPairHint(contextQualityDetails, actUp, actDown), bindingPairHint(contextQualityDetails, actPageUp, actPageDown), bindingHint(contextQualityDetails, actClose)}
 	case m.tab == quotasTab:
-		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "refresh"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
+		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "quality details"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == settingsTab:
 		if m.settingsItems()[min(max(m.settingsRow, 0), len(m.settingsItems())-1)].section == 0 {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "toggle"), bindingHint(contextSettings, "public"), bindingHint(contextSettings, "url"), bindingHint(contextSettings, "add"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}

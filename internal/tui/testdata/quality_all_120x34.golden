@@ -1,8 +1,8 @@
-╭─Quality analysis · read only─────────────────────────────────────────────────────────────────────────────────────────╮
+╭─Quality analysis · read only · d details─────────────────────────────────────────────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                                                                 │
 │ ╭─simple · 8 tasks──────────────────────────────────────╮ ╭─normal · 154 tasks─────────────────────────────────────╮ │
 │ │   luna       2 min █░░░░ ·  3 this week               │ │   deepseek   1 min █░░░░ · 22 this week                │ │
-│ │ 3 more with too few tasks to rank                     │ │   terra      6 min ███░░ · 18 this week                │ │
+│ │ 3 more with too few tasks to rank                     │ │   terra      6 min ██░░░ · 18 this week                │ │
 │ │                                                       │ │   luna       3 min █░░░░ ·  6 this week                │ │
 │ │                                                       │ │ 2 more: sol 2 min · opus 0 min                         │ │
 │ ╰───────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────╯ │

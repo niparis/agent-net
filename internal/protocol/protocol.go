@@ -466,6 +466,9 @@ type (
 type NodeView struct {
 	QualityPicks       map[string]string `json:"quality_picks,omitempty"`
 	QualityPickReasons map[string]string `json:"quality_pick_reasons,omitempty"`
+	// QualityPickModels is the picker's choice per level as a Models row
+	// name: family and effort, for example "terra high".
+	QualityPickModels map[string]string `json:"quality_pick_models,omitempty"`
 	NodeID             string            `json:"node_id"`
 	Hostname           string            `json:"hostname"`
 	OS                 string            `json:"os"`

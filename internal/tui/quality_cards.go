@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -19,13 +20,13 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 	familyWidth, minutesWidth, weekDigits := 0, 7, 1
 	for _, level := range levels {
 		byLevel[level.Difficulty] = level
-		for _, f := range level.Families {
-			largest = max(largest, f.Headache)
-		}
 		switch level.Difficulty {
 		case "simple", "normal", "hard", "very_complex":
 			ranked, _ := qualityRankedFamilies(level.Families)
 			for _, f := range ranked[:min(len(ranked), 3)] {
+				// The bars compare the rows the cards show, not models with too
+				// few tasks to rank, which would shrink every bar to one cell.
+				largest = max(largest, math.Round(f.Headache))
 				familyWidth = max(familyWidth, ansi.StringWidth(sanitize(f.Family)))
 				minutesWidth = max(minutesWidth, ansi.StringWidth(fmt.Sprintf("%.0f min", f.Headache)))
 				weekDigits = max(weekDigits, len(fmt.Sprint(f.TasksWeek)))
@@ -47,9 +48,10 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 				if picks[name] == f.Family {
 					marker = "▸"
 				}
+				// The bar follows the minutes as written: "0 min" is an empty bar.
 				frac := 0.0
 				if largest > 0 {
-					frac = f.Headache / largest
+					frac = math.Round(f.Headache) / largest
 				}
 				bug := ""
 				if f.LateDefects > 0 {
@@ -114,7 +116,7 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 	for _, line := range wrap(legend, w-4) {
 		body = append(body, sDim.Render(line))
 	}
-	return panel("Quality analysis · read only", body, w, roleAccent)
+	return panel("Quality analysis · read only · d details", body, w, roleAccent)
 }
 
 func qualityRankedFamilies(families []protocol.QualityFamily) ([]protocol.QualityFamily, int) {
@@ -151,102 +153,38 @@ func (m Model) qualityDetailsView(w, h int) []string {
 	var picks, reasons map[string]string
 	for _, n := range m.snap.Nodes {
 		if n.NodeID != "" && n.NodeID == m.snap.NodeID {
-			picks = n.QualityPicks
+			// The details list models with their effort, so the pick names one
+			// too; an older gateway sends only the family.
+			picks = n.QualityPickModels
+			if len(picks) == 0 {
+				picks = n.QualityPicks
+			}
 			reasons = n.QualityPickReasons
 			break
 		}
 	}
 	levels := qualityLevels(q, m.qualityAgent)
 	byLevel := map[string]protocol.QualityLevel{}
-	largest := 0.0
-	for _, l := range levels {
-		byLevel[l.Difficulty] = l
-		for _, f := range l.Families {
-			largest = max(largest, f.Headache)
-		}
-	}
 	familyWidth := 5
 	for _, l := range levels {
+		// One row per model and effort; an older gateway has families only.
+		if len(l.Models) > 0 {
+			l.Families = l.Models
+		}
+		byLevel[l.Difficulty] = l
 		for _, f := range l.Families {
 			familyWidth = max(familyWidth, ansi.StringWidth(sanitize(f.Family)))
 		}
 	}
 	body := []string{qualitySelector(q, m.qualityAgent, w)}
-	for index, name := range []string{"simple", "normal", "hard", "very_complex"} {
-		l := byLevel[name]
-		if index > 0 {
-			body = append(body, "")
-		}
-		body = append(body, sBold.Render(fmt.Sprintf("%s · %d tasks", strings.ReplaceAll(name, "_", " "), l.Tasks)))
-		header := []string{cell("MODEL", familyWidth), cellR("MY TIME / TASK", 14), cellR("TASKS", 5), cellR("NEEDED HELP", 11), cellR("NUDGES / TASK", 13), cellR("LATE BUGS", 9), cellR("WORST", 5), cellR("RATING", 6), cellR("PICKED", 6)}
-		narrow := ansi.StringWidth(strings.Join(header, "  ")) > w
-		if narrow {
-			body = append(body, sBold.Render(strings.Join(header[:5], "  ")), sBold.Render(strings.Repeat(" ", familyWidth+2)+strings.Join(header[5:], "  ")))
-		} else {
-			body = append(body, sBold.Render(strings.Join(header, "  ")))
-		}
-		families := append([]protocol.QualityFamily(nil), l.Families...)
-		sortQualityFamilies(families)
-		for _, f := range families {
-			bar := 0.0
-			if largest > 0 {
-				bar = f.Headache / largest
-			}
-			worst := "-"
-			if f.WorstSeverity > 0 {
-				worst = fmt.Sprint(f.WorstSeverity)
-			}
-			rating := "-"
-			if f.AvgRating != nil {
-				rating = fmt.Sprintf("%.1f", *f.AvgRating)
-			}
-			picked := ""
-			if picks[name] == f.Family {
-				picked = "yes"
-			}
-			few := ""
-			if f.Tasks < protocol.CalibrationMinTasks {
-				few = fmt.Sprintf(" (only %d tasks)", f.Tasks)
-			}
-			timeValue := fmt.Sprintf("%3.0f min ", f.Headache) + progressBar(bar, 5, roleAccent)
-			timeValue = strings.Repeat(" ", max(0, 14-ansi.StringWidth(timeValue))) + timeValue
-			columns := []string{cell(f.Family, familyWidth), timeValue, cellR(fmt.Sprint(f.Tasks), 5), cellR(fmt.Sprintf("%.0f%%", f.NeededHelp*100), 11), cellR(fmt.Sprintf("%.2f", float64(f.Continues)/float64(max(f.Tasks, 1))), 13), cellR(fmt.Sprint(f.LateDefects), 9), cellR(worst, 5), cellR(rating, 6), cellR(picked, 6)}
-			var lines []string
-			if narrow {
-				lines = []string{strings.Join(columns[:5], "  "), strings.Repeat(" ", familyWidth+2) + strings.Join(columns[5:], "  ") + few}
-			} else {
-				lines = []string{strings.Join(columns, "  ") + few}
-			}
-			for _, line := range lines {
-				if f.Tasks < protocol.CalibrationMinTasks {
-					line = sDim.Render(line)
-				}
-				body = append(body, clip(line, w))
-			}
-			if picked != "" && reasons[name] != "" {
-				body = append(body, clip(fmt.Sprintf("▸ %s (%s)", f.Family, sanitize(reasons[name])), w))
-			}
-		}
+	for _, name := range []string{"simple", "normal", "hard", "very_complex"} {
+		body = append(body, qualityDetailsLevel(byLevel[name], name, picks[name], reasons[name], familyWidth, w)...)
 	}
-	areas := q.Areas
-	if m.qualityAgent > 0 && m.qualityAgent <= len(q.Agents) {
-		areas = q.Agents[m.qualityAgent-1].Areas
-	}
-	if len(areas) > 0 {
-		body = append(body, "", sBold.Render("by touched area"), sBold.Render(strings.Join([]string{cell("AREA", 8), cellR("TASKS", 5), cellR("FOLLOW-UPS", 10), cellR("LATE DEFECTS", 12), cellR("HEADACHE", 8)}, "  ")))
-		for _, a := range areas {
-			line := strings.Join([]string{cell(a.Family, 8), cellR(fmt.Sprint(a.Tasks), 5), cellR(fmt.Sprintf("%.2f", a.FollowUps), 10), cellR(qualityLateDefects(a), 12), cellR(fmt.Sprintf("%.0f min", a.Headache), 8)}, "  ")
-			if a.Tasks < protocol.CalibrationMinTasks {
-				line = sDim.Render(line)
-			}
-			body = append(body, line)
-		}
-	}
-	legend := wrap("NEEDED HELP: share of tasks with at least one nudge or fix. WORST: highest severity among late bugs (1 to 4).", w)
+	legend := wrap("NEEDED HELP: share of tasks with at least one nudge or fix. LATE BUGS: bugs found after the hand-back, with the worst severity (1 to 4).", w)
 	room := max(0, h-1-len(legend))
 	offset := min(m.quotaScroll, max(0, len(body)-room))
 	end := min(len(body), offset+room)
-	out := []string{sBold.Render("Quality analysis · details")}
+	out := []string{sBold.Render("Quality analysis · details") + sDim.Render("   j/k scroll · esc back")}
 	out = append(out, body[offset:end]...)
 	for len(out) < h-len(legend) {
 		out = append(out, "")
@@ -255,6 +193,127 @@ func (m Model) qualityDetailsView(w, h int) []string {
 		out = append(out, sDim.Render(line))
 	}
 	return out
+}
+
+// qualityDetailsColumn is one column of a details table. drop orders the
+// columns that give way on a narrow screen: higher goes first, 0 never.
+type qualityDetailsColumn struct {
+	head  string
+	width int
+	right bool
+	drop  int
+}
+
+// qualityDetailsLevel is one level's box: the ranked models in the cards'
+// order, each with its bar, and one dim line for models with too few tasks to
+// rank, which get no bar.
+func qualityDetailsLevel(l protocol.QualityLevel, name, pick, reason string, familyWidth, w int) []string {
+	title := fmt.Sprintf("%s · %s", strings.ReplaceAll(name, "_", " "), plural(l.Tasks, "task"))
+	if pick != "" {
+		title += " · picker: ▸ " + sanitize(pick)
+		if reason != "" {
+			title += " (" + sanitize(reason) + ")"
+		}
+	}
+	ranked, _ := qualityRankedFamilies(l.Families)
+	var few []protocol.QualityFamily
+	for _, f := range l.Families {
+		if f.Tasks < protocol.CalibrationMinTasks {
+			few = append(few, f)
+		}
+	}
+	largest := 0.0
+	for _, f := range ranked {
+		largest = max(largest, math.Round(f.Headache))
+	}
+	cols := []qualityDetailsColumn{
+		{head: "MODEL", width: 2 + familyWidth},
+		{head: "MY TIME / TASK", width: 14, right: true},
+		{head: "THIS WEEK", width: 9, right: true, drop: 2},
+		{head: "TASKS", width: 5, right: true, drop: 3},
+		{head: "NEEDED HELP", width: 11, right: true},
+		{head: "LATE BUGS", width: 12, right: true},
+		{head: "RATING", width: 6, right: true, drop: 1},
+	}
+	inner := w - 4
+	for total := 0; ; total = 0 {
+		for _, c := range cols {
+			total += c.width + 2
+		}
+		if total-2 <= inner {
+			break
+		}
+		worst := -1
+		for i, c := range cols {
+			if c.drop > 0 && (worst < 0 || c.drop > cols[worst].drop) {
+				worst = i
+			}
+		}
+		if worst < 0 {
+			break
+		}
+		cols = append(cols[:worst], cols[worst+1:]...)
+	}
+	row := func(values map[string]string) string {
+		parts := make([]string, 0, len(cols))
+		for _, c := range cols {
+			v := values[c.head]
+			if c.right {
+				v = strings.Repeat(" ", max(0, c.width-ansi.StringWidth(v))) + v
+			} else {
+				v = cell(v, c.width)
+			}
+			parts = append(parts, v)
+		}
+		return strings.Join(parts, "  ")
+	}
+	heads := map[string]string{}
+	for _, c := range cols {
+		heads[c.head] = c.head
+	}
+	var lines []string
+	if len(ranked) == 0 {
+		lines = append(lines, sDim.Render("no model has enough tasks to rank yet"))
+	} else {
+		lines = append(lines, sBold.Render(row(heads)))
+	}
+	for _, f := range ranked {
+		marker := "  "
+		if pick == f.Family {
+			marker = "▸ "
+		}
+		frac := 0.0
+		if largest > 0 {
+			frac = math.Round(f.Headache) / largest
+		}
+		late := "-"
+		if f.LateDefects > 0 {
+			late = fmt.Sprintf("%d, worst %d", f.LateDefects, f.WorstSeverity)
+		}
+		rating := "-"
+		if f.AvgRating != nil {
+			rating = fmt.Sprintf("%.1f", *f.AvgRating)
+		}
+		lines = append(lines, row(map[string]string{
+			"MODEL":          marker + sanitize(f.Family),
+			"MY TIME / TASK": fmt.Sprintf("%.0f min ", f.Headache) + progressBar(frac, 5, roleAccent),
+			"THIS WEEK":      fmt.Sprint(f.TasksWeek),
+			"TASKS":          fmt.Sprint(f.Tasks),
+			"NEEDED HELP":    fmt.Sprintf("%.0f%%", f.NeededHelp*100),
+			"LATE BUGS":      late,
+			"RATING":         rating,
+		}))
+	}
+	if len(few) > 0 {
+		names := make([]string, 0, len(few))
+		for _, f := range few {
+			names = append(names, fmt.Sprintf("%s %.0f min (%s)", sanitize(f.Family), f.Headache, plural(f.Tasks, "task")))
+		}
+		for _, line := range wrap("too few tasks to rank: "+strings.Join(names, " · "), inner) {
+			lines = append(lines, sDim.Render(line))
+		}
+	}
+	return panel(title, lines, w, roleAccent)
 }
 
 // qualityTaskCount is a card's count column, "·  9 this week", right-aligned

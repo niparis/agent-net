@@ -91,3 +91,32 @@ func TestQualityFamilyCountsTasksThisWeek(t *testing.T) {
 		t.Fatalf("tasks %d, this week %d; want 3 and 2", f.Tasks, f.TasksWeek)
 	}
 }
+
+// Quality details list each model with its effort: terra high and terra max
+// are different choices for the picker, so they are different rows.
+func TestQualityModelsSplitByEffort(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	now := s.now().Unix()
+	for i, model := range []string{"gpt-6.1-terra:high", "gpt-6.1-terra:high", "gpt-6.1-terra:max", "opencode-go/deepseek-v4.1-flash"} {
+		run := protocol.WorkerRun{NodeID: node, SessionID: fmt.Sprintf("s%d", i), Caller: "caller", Harness: "codex", Model: model, Difficulty: "hard", Outcome: protocol.OutcomeComplete, EndedAt: now}
+		if err := s.RecordWorkerRun(run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	levels, _, _, err := s.qualityFamilyTables()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hard := qualityLevel(t, levels, "hard")
+	got := map[string]int{}
+	for _, m := range hard.Models {
+		got[m.Family] = m.Tasks
+	}
+	if got["terra high"] != 2 || got["terra max"] != 1 || got["deepseek"] != 1 || len(got) != 3 {
+		t.Fatalf("models: %v", got)
+	}
+	if f := qualityFamily(t, hard.Families, "terra"); f.Tasks != 3 {
+		t.Fatalf("the terra family has %d tasks, want 3", f.Tasks)
+	}
+}
