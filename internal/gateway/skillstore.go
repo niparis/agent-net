@@ -173,7 +173,8 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 	}
 	raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Name: name, Hash: hash, Location: p.Location.Location}, 60*time.Second)
 	if err != nil {
-		return v, reject("cannot obtain skill bundle")
+		// Say why: the owner sees this text when an import fails.
+		return v, reject("cannot obtain skill bundle: %v", err)
 	}
 	var result protocol.SkillBundle
 	if json.Unmarshal(raw, &result) != nil {

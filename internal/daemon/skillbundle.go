@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -30,14 +32,16 @@ func (d *Daemon) onSkillBundle(ctx context.Context, l *link, h protocol.Header, 
 		} else {
 			var bundle []byte
 			bundle, err = inventory.PackSkill(p.Location)
-			if err != nil {
+			if err != nil && err.Error() == "skill exceeds bundle limit" {
+				err = fmt.Errorf("the skill is larger than the %d MB import limit", inventory.MaxBundleBytes>>20)
+			} else if err != nil {
 				err = errors.New("cannot safely read skill bundle")
 			} else {
 				data = protocol.SkillBundle{Data: bundle}
 			}
 		}
 	}
-	if err != nil && data == nil {
+	if err != nil && data == nil && !strings.Contains(err.Error(), "import limit") {
 		err = errors.New("cannot import skill from this location")
 	}
 	if b, e := protocol.EncodeResult(h.ID, data, err); e == nil {
