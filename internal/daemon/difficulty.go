@@ -194,7 +194,7 @@ func judgeBrief(profile difficulty.Profile) string {
 func judgeBriefForTask(task string) string {
 	return difficulty.RubricText() + `
 
-Score each dimension 1 to 5 from the facts in this task brief (its Evidence section if present, otherwise the brief text). Start every dimension at 1 and raise it only for a concrete reason you name. Reply with JSON only: six scores with one line of reason each, plus confidence as low, medium, or high. Do not use INSUFFICIENT_EVIDENCE. A missing fact means score from what is there and lower confidence.
+Score each dimension 1 to 5 from the facts in this task brief (its Evidence section if present, otherwise the brief text). Start every dimension at 1 and raise it only for a concrete reason you name. Reply with JSON only, in exactly this shape: {"reasoning":2,"scope":1,"coupling":1,"uncertainty":1,"verification":2,"risk":1,"reasons":{"reasoning":"...","scope":"...","coupling":"...","uncertainty":"...","verification":"...","risk":"..."},"confidence":"high"}. Each score is a whole number from 1 to 5; each reason is one line; confidence is low, medium, or high. Do not use INSUFFICIENT_EVIDENCE. A missing fact means score from what is there and lower confidence.
 
 Task brief:
 ` + strings.TrimSpace(task)

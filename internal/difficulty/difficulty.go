@@ -197,6 +197,7 @@ func ParseScores(raw []byte) (Scores, []string, error) {
 		return Scores{}, nil, fmt.Errorf("decode scores: %w", err)
 	}
 	var s Scores
+	nested := map[string]string{}
 	values := map[string]*int{"reasoning": &s.Reasoning, "scope": &s.Scope, "coupling": &s.Coupling, "uncertainty": &s.Uncertainty, "verification": &s.Verification, "risk": &s.Risk}
 	for name, ptr := range values {
 		value, ok := obj[name]
@@ -204,7 +205,18 @@ func ParseScores(raw []byte) (Scores, []string, error) {
 			return Scores{}, nil, fmt.Errorf("missing score %q", name)
 		}
 		if err := json.Unmarshal(value, ptr); err != nil {
-			return Scores{}, nil, fmt.Errorf("score %q: %w", name, err)
+			// The judge sometimes nests each score with its reason.
+			var pair struct {
+				Score  *int   `json:"score"`
+				Reason string `json:"reason"`
+			}
+			if json.Unmarshal(value, &pair) != nil || pair.Score == nil {
+				return Scores{}, nil, fmt.Errorf("score %q: %w", name, err)
+			}
+			*ptr = *pair.Score
+			if pair.Reason != "" {
+				nested[name] = pair.Reason
+			}
 		}
 		if *ptr < 1 || *ptr > 5 {
 			return Scores{}, nil, fmt.Errorf("score %q must be 1 to 5", name)
@@ -213,6 +225,14 @@ func ParseScores(raw []byte) (Scores, []string, error) {
 	if reasons, ok := obj["reasons"]; ok {
 		if err := json.Unmarshal(reasons, &s.Reasons); err != nil {
 			return Scores{}, nil, fmt.Errorf("decode reasons: %w", err)
+		}
+	}
+	for name, reason := range nested {
+		if s.Reasons == nil {
+			s.Reasons = map[string]string{}
+		}
+		if s.Reasons[name] == "" {
+			s.Reasons[name] = reason
 		}
 	}
 	if confidence, ok := obj["confidence"]; ok {

@@ -44,6 +44,19 @@ func TestParseScores(t *testing.T) {
 	}
 }
 
+// DeepSeek sometimes nests each score with its reason. The scores and reasons
+// are the same facts, so the nested form is accepted.
+func TestParseScoresNestedScoreAndReason(t *testing.T) {
+	raw := `{"reasoning":{"score":2,"reason":"copies the panel"},"scope":{"score":1,"reason":"one file"},"coupling":{"score":1,"reason":"isolated"},"uncertainty":{"score":1,"reason":"known"},"verification":{"score":2,"reason":"unit tests"},"risk":{"score":1,"reason":"easy revert"},"confidence":"high"}`
+	got, _, err := ParseScores([]byte(raw))
+	if err != nil || got.Reasoning != 2 || got.Verification != 2 || got.Reasons["reasoning"] != "copies the panel" || got.Confidence != "high" {
+		t.Fatalf("scores=%+v err=%v", got, err)
+	}
+	if _, _, err := ParseScores([]byte(strings.Replace(raw, `"score":2,"reason":"copies the panel"`, `"reason":"no score"`, 1))); err == nil {
+		t.Fatal("a nested reply without a score was accepted")
+	}
+}
+
 func TestParseScoresConfidenceOptional(t *testing.T) {
 	base := `{"reasoning":1,"scope":2,"coupling":3,"uncertainty":4,"verification":5,"risk":1}`
 	got, _, err := ParseScores([]byte(base))
