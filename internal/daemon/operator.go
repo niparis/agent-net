@@ -345,11 +345,11 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return &protocol.WorkerStartResult{Status: "queued", QueueID: ans.QueueID, Position: ans.Position, QueueReason: ans.Reason,
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
 			Model: ans.Model, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
-			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks}, nil
+			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, ans.Model)}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
-		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks}
+		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, ans.Model)}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil

@@ -37,3 +37,22 @@ func TestWorkerLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerOwnerLine(t *testing.T) {
+	ok := &WorkerAssessment{Reasoning: 2, Scope: 1, Coupling: 2, Uncertainty: 2, Verification: 2, Risk: 1, D: 1.75, Label: "simple", Confidence: "high"}
+	if got := WorkerOwnerLine(ok, "gpt-6-luna:xhigh"); got != "Tell your user: worker on gpt-6-luna:xhigh, difficulty simple (D 1.75; R2 S1 C2 U2 V2 K1)." {
+		t.Errorf("judged: %q", got)
+	}
+	failed := &WorkerAssessment{Label: "normal", Error: "the judge timed out after 30s"}
+	if got := WorkerOwnerLine(failed, "m"); got != "Tell your user: worker on m, difficulty normal (no assessment: the judge timed out after 30s)." {
+		t.Errorf("failed: %q", got)
+	}
+	low := *ok
+	low.Confidence = "low"
+	if got := WorkerOwnerLine(&low, "m"); got != "Tell your user: worker on m, difficulty normal (the judge said simple, D 1.75, with low confidence)." {
+		t.Errorf("low confidence: %q", got)
+	}
+	if got := WorkerOwnerLine(nil, "m"); got != "" {
+		t.Errorf("continued worker: %q", got)
+	}
+}
