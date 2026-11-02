@@ -103,3 +103,15 @@ A dry run prints the tasks without starting a model:
 scripts/dev/difficulty-backtest.sh --project /path/to/repo --dry-run
 ```
 
+
+## capability-backtest.py
+
+Shows what the model capability plan (`docs/design/model-capability.md`) would
+pick with today's data: each model's capability C and the odds for sample D
+values, next to today's picker. It reads a copy of the gateway database and
+never the live one.
+
+```
+cp ~/.local/state/agent-net/gateway/gateway.db* /tmp/gw/
+python3 scripts/dev/capability-backtest.py /tmp/gw/gateway.db
+```

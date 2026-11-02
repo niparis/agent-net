@@ -23,6 +23,7 @@
 - [design/start-sessions.md](design/start-sessions.md): proposed owner session starts.
 - [design/tool-redesign.md](design/tool-redesign.md): the agent and CTO tool redesign: contracts, owner decisions and the task list.
 - [design/keys-audit.md](design/keys-audit.md): every TUI key, where the meanings collide, and a proposed consistent key map.
+- [design/model-capability.md](design/model-capability.md): plan, on hold: the picker matches model capability C to task difficulty D, and review time is measured.
 
 ## Design history
 
