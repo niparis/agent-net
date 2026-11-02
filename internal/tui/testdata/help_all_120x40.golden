@@ -1,0 +1,40 @@
+Keys · all screens ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ Global keys
+  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the CTO session
+  C                      focus the CTO box
+  ?                      help
+  q, ctrl+c              quit
+
+ Sessions
+  pgup/pgdn              page
+  home/g, end            first, last row
+  enter                  go into the selected session on NAME, or open the delegation policy on DELEGATE
+  m                      send a message to the session as yourself
+  n                      start a session in herdr: project, harness, model, folder and first message (a form)
+  x                      stop the selected worker or session
+  h                      hide or unhide the selected session
+  left, right            move between NAME, RULE and DELEGATE cells
+  space                  cycle the request rule: normal, ask, auto
+  v                      cycle the view: active only, all, all with offline, all with offline and hidden
+  d                      show or hide the selected session details
+
+ Graph
+  /                      find a node; enter selects the first match
+  +, =                   zoom in
+  -                      zoom out
+  shift+arrows           pan
+  , .                    select a linked neighbour
+  n                      start a session in this project
+  enter                  open the selected agent card
+  m                      toggle all message and owner lines
+
+ Graph find
+  more below
+up/down scroll  ? this screen  esc close

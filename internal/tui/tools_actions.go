@@ -358,6 +358,8 @@ func (m Model) openToolMenu() (tea.Model, tea.Cmd) {
 func (m Model) toolMenuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p := m.tl.modal.menu
 	switch keyAction(contextToolsMenu, k.String()) {
+	case "help":
+		m.openHelp()
 	case "back":
 		m.tl.modal = nil
 	case actDown:

@@ -123,6 +123,9 @@ func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		key = "esc"
 	}
 	switch {
+	case action == "help":
+		m.openHelp()
+		return m, nil
 	case action == "cancel" && key == "esc" && md.back != nil:
 		m.tl.modal = md.back
 		return m, nil
@@ -612,6 +615,8 @@ func (m Model) pickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	shown := p.shown()
 	switch keyAction(contextToolsPicker, k.String()) {
+	case "help":
+		m.openHelp()
 	case "cancel":
 		m.tl.modal = nil
 	case actDown:

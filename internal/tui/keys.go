@@ -97,6 +97,7 @@ const (
 	actNotifications actionID = "notifications"
 	actQuit          actionID = "quit"
 	actClose         actionID = "close"
+	actAllScreens    actionID = "all screens"
 	actDown          actionID = "down"
 	actUp            actionID = "up"
 	actPageDown      actionID = "page down"
@@ -178,6 +179,7 @@ var keyBindings = []keyBinding{
 	bind(contextMessages, "R", "refresh", "refresh", -1),
 	bind(contextMessages, "?", "help", "help", 2),
 	bind(contextBody, "esc|enter", actClose, "close", 1),
+	bind(contextBody, "?", "help", "help", 1),
 	bind(contextBody, "q", actQuit, "quit", 1),
 	bind(contextBody, "up|k", actUp, "scroll", 1),
 	bind(contextBody, "down|j", actDown, "scroll", 1),
@@ -233,6 +235,7 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextQuotas, "d", "quality details", "quality details", 1), "open Quality details"),
 	bind(contextQuotas, "R", "refresh", "refresh", 2),
 	bind(contextQualityDetails, "esc", actClose, "back", 1),
+	bind(contextQualityDetails, "?", "help", "help", 1),
 	bind(contextQualityDetails, "up|k", actUp, "scroll", 1),
 	bind(contextQualityDetails, "down|j", actDown, "scroll", 1),
 	bind(contextQualityDetails, "pgup", actPageUp, "page", 1),
@@ -290,16 +293,19 @@ var keyBindings = []keyBinding{
 	withLocal(withHelp(bind(contextTools, "R", "rescan", "rescan", -1), "rescan tool copies")),
 	bind(contextToolsPlan, "enter|y|Y", "apply", "apply", 1),
 	bind(contextToolsPlan, "esc|n|N", "cancel", "cancel", 1),
+	bind(contextToolsPlan, "?", "help", "help", 1),
 	bind(contextToolsPlan, "up|k", actUp, "scroll", 1),
 	bind(contextToolsPlan, "down|j", actDown, "scroll", 1),
 	withHelp(bind(contextToolsPlan, "d", "exact folders", "folders", -1), "use the exact folders"),
 	bind(contextToolsPicker, "esc", "cancel", "cancel", 1),
+	bind(contextToolsPicker, "?", "help", "help", 1),
 	bind(contextToolsPicker, "up|k", actUp, "select", 1),
 	bind(contextToolsPicker, "down|j", actDown, "select", 1),
 	bind(contextToolsPicker, "space", "tick", "tick", 1),
 	bind(contextToolsPicker, "/", "filter", "filter", 1),
 	bind(contextToolsPicker, "enter", "apply", "apply", 1),
 	bind(contextToolsMenu, "esc", "back", "back", 1),
+	bind(contextToolsMenu, "?", "help", "help", 1),
 	bind(contextToolsMenu, "up|k", actUp, "move", 1),
 	bind(contextToolsMenu, "down|j", actDown, "move", 1),
 	bind(contextToolsMenu, "enter", "choose", "choose", 1),
@@ -311,6 +317,7 @@ var keyBindings = []keyBinding{
 	bind(contextToolsAdd, "enter", "add", "add", 1),
 	bind(contextToolsAdd, "backspace|ctrl+h", "delete text", "delete", -1),
 	withHelp(bind(contextCTO, "ctrl+]|tab", "back", "back", 1), "back to Sessions"),
+	bind(contextCTO, "?", "help", "help", 1),
 	bind(contextCTO, "esc", "skip tip", "skip tip", -1),
 	withHelp(bind(contextCTO, "enter", "open CTO", "open", 1), "opens the full CTO"),
 	bind(contextCTO, "pgup|ctrl+u", actPageUp, "scroll", -1),
@@ -320,7 +327,8 @@ var keyBindings = []keyBinding{
 	bind(contextCTO, "u", "undo", "undo", 2),
 	bind(contextCTO, "w", "drive window", "drive", -1),
 	{contextHelp, []string{"q"}, actQuit, "quit", "", false, 1},
-	{contextHelp, []string{"esc", "?"}, actClose, "close help", "", false, 1},
+	{contextHelp, []string{"esc"}, actClose, "close", "", false, 1},
+	{contextHelp, []string{"?"}, actAllScreens, "all screens", "", false, 1},
 	{contextHelp, []string{"down", "j"}, actDown, "scroll down", "scroll", false, 1},
 	{contextHelp, []string{"up", "k"}, actUp, "scroll up", "scroll", false, 1},
 	{contextHelp, []string{"pgdown"}, actPageDown, "page down", "page", false, 0},

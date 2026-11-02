@@ -106,6 +106,7 @@ func TestRenameErrorAndHelp(t *testing.T) {
 		t.Errorf("notice: %+v", m.notice)
 	}
 	m, _ = press(m, keyRunes("?"))
+	m.helpAll = true
 	if !strings.Contains(strings.Join(m.helpContent(160), "\n"), "name this machine") {
 		t.Error("help lacks the settings entry")
 	}

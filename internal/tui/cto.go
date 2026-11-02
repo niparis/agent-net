@@ -294,6 +294,10 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.ctoSettingsKey(k)
 	}
 	key := keyAction(contextCTO, k.String())
+	if key == "help" {
+		m.openHelp()
+		return m, nil
+	}
 	if key == "back" {
 		c.confirming = false
 		m.focus = focusSessions

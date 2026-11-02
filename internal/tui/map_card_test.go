@@ -158,6 +158,7 @@ func TestMapCardLegendLivesInHelp(t *testing.T) {
 	if strings.Contains(cardText(m, 120, 60), "Legend") {
 		t.Fatal("a removed key opened the legend on the card")
 	}
+	m.helpAll = true
 	shown := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
 	for _, want := range []string{
 		"Legend", "consumer uses provider", "advisor, arbiter or owner",

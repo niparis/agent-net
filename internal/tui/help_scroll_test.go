@@ -9,8 +9,9 @@ import (
 )
 
 func TestHelpListsSettings(t *testing.T) {
-	text := strings.Join(strings.Fields(ansi.Strip(strings.Join(newModel(80, 24).helpContent(80), "\n"))), " ")
-	for _, want := range []string{"Settings", "integrations", "desktop notifications", "restart tips", "delegation policy"} {
+	m := keys(newModel(80, 24), "6", "?")
+	text := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(80), "\n"))), " ")
+	for _, want := range []string{"Settings", "integrations", "desktop notifications", "restart tips"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help lacks %q", want)
 		}
@@ -18,7 +19,7 @@ func TestHelpListsSettings(t *testing.T) {
 }
 
 func TestHelpScrollsAndWrapsAt80(t *testing.T) {
-	m := keys(newModel(80, 24), "?")
+	m := keys(newModel(80, 24), "?", "?")
 	var seen strings.Builder
 	for i := 0; i < len(m.helpContent(80))+20; i++ {
 		v := ansi.Strip(m.View())
@@ -55,7 +56,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 		seen.WriteString(ansi.Strip(m.View()))
 		m = keys(m, "j")
 	}
-	for _, want := range []string{"Tools keys", "add an MCP server or a skill from a folder", "open the actions for the selected tool", "close help", "more below", "more above"} {
+	for _, want := range []string{"Keys · Tools", "add an MCP server or a skill from a folder", "open the actions for the selected tool", "? all screens", "esc close", "more below", "more above"} {
 		if !strings.Contains(seen.String(), want) {
 			t.Errorf("missing %q", want)
 		}

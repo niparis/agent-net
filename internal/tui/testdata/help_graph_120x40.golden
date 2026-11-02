@@ -1,16 +1,4 @@
-Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
- Global keys
-  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
-  enter                  go into the selected thing
-  arrows, j/k            move
-  esc                    back; first clears a filter you typed
-  /                      filter or search
-  R                      refresh
-  c                      open the CTO session
-  C                      focus the CTO box
-  ?                      help
-  q, ctrl+c              quit
+Keys · Graph ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  Graph
   /                      find a node; enter selects the first match
@@ -36,5 +24,17 @@ Keys ─────────────────────────
   , .                    select a previous or next learned change
   h                      hide or unhide this project
   H                      show hidden projects
+  ctrl+u/d, pgup/pgdn    scroll the card: charter, rules and learned changes
+
+Legend ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Edges
+  ──▶ depends  consumer uses provider
+  ──▶ governs  architect over component; mode advisor, arbiter or owner
+  ──▶ deploys  deployer runs the app's deploys
+  Request rule on an edge from A to B
+  normal  delivered; B judges it
+  auto    delivered with a trust note; B can act without asking you, still inside B's merge authority and refusals
+  ask     held in the Inbox
+  never   refused
   more below
-up/down scroll  esc close help  q quit
+up/down scroll  ? all screens  esc close

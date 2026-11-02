@@ -1,17 +1,4 @@
-Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
- Global keys
-  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
-  enter                  go into the selected thing
-  arrows, j/k            move
-  esc                    back; first clears a filter you typed
-  /                      filter or search
-  R                      refresh
-  c                      open the CTO session
-  C                      focus the CTO box
-  ?                      help
-  q, ctrl+c              quit
-
+Keys · Sessions ────────────────────────────────────────────────────────────────────────────────────────────────────────
  Sessions
   pgup/pgdn              page
   home/g, end            first, last row
@@ -25,16 +12,29 @@ Keys ─────────────────────────
   v                      cycle the view: active only, all, all with offline, all with offline and hidden
   d                      show or hide the selected session details
 
- Graph
-  /                      find a node; enter selects the first match
-  +, =                   zoom in
-  -                      zoom out
-  shift+arrows           pan
-  , .                    select a linked neighbour
-  n                      start a session in this project
-  enter                  open the selected agent card
-  m                      toggle all message and owner lines
+ Global keys
+  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the CTO session
+  C                      focus the CTO box
+  ?                      help
+  q, ctrl+c              quit
 
- Graph find
-  more below
-up/down scroll  esc close help  q quit
+
+
+
+
+
+
+
+
+
+
+
+
+
+up/down scroll  ? all screens  esc close

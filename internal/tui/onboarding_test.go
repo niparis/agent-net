@@ -208,6 +208,7 @@ func TestOnboardingHelpGoldens(t *testing.T) {
 			m.height = 24
 		}
 		m.help = true
+		m.helpAll = true
 		for i, line := range m.helpContent(width) {
 			if strings.Contains(line, "desktop notifications") {
 				m.helpScroll = i - 1

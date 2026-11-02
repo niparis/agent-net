@@ -39,6 +39,7 @@ func TestKeyBindingsUnique(t *testing.T) {
 
 func TestHelpListsEveryBinding(t *testing.T) {
 	m := newModel(120, 34)
+	m.helpAll = true
 	help := strings.Join(strings.Fields(strings.Join(m.helpContent(120), " ")), " ")
 	for _, binding := range keyBindings {
 		helpText := binding.help
@@ -99,7 +100,7 @@ func stringIn(s string, list []string) bool {
 func TestKeyBindingsEveryActionHasAHandler(t *testing.T) {
 	shared := map[actionID]bool{
 		actTips: true, actRestartTips: true, actNotifications: true, actQuit: true,
-		actClose: true, actDown: true, actUp: true, actPageDown: true,
+		actClose: true, actAllScreens: true, actDown: true, actUp: true, actPageDown: true,
 		actPageUp: true, actFirst: true, actLast: true,
 	}
 	entries, err := os.ReadDir(".")

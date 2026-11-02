@@ -39,7 +39,11 @@ func (m Model) hints() []hint {
 		}
 		return []hint{bindingHint(contextProposalDetail, "approve"), bindingHint(contextProposalDetail, "decline"), bindingHint(contextProposalDetail, "approve all"), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
 	case m.help:
-		return []hint{bindingPairHint(contextHelp, actUp, actDown), bindingHint(contextHelp, actClose), bindingHint(contextHelp, actQuit)}
+		toggle := bindingHint(contextHelp, actAllScreens)
+		if m.helpAll {
+			toggle.label = "this screen"
+		}
+		return []hint{bindingPairHint(contextHelp, actUp, actDown), toggle, bindingHint(contextHelp, actClose)}
 	case m.mode == modeApps:
 		switch m.apps.stage {
 		case "url":
@@ -223,30 +227,28 @@ func (m Model) helpLine(w int) string {
 	return clip(keyHints(parts...), w)
 }
 
-// helpContent builds the overlay from keyBindings. The sections follow the
-// tabs: Global keys, the current tab, the other tabs in tab order, and the
-// overlays last. No key row is written by hand.
+// helpContent builds the overlay from keyBindings. The current screen comes
+// first, then the fixed Global keys. The full list keeps the old order: Global
+// keys, the current tab, the other tabs in tab order, and the overlays last.
+// No key row is written by hand.
 func (m Model) helpContent(w int) []string {
+	if m.helpAll {
+		return m.helpAllContent(w)
+	}
+	out := m.helpSectionContent(m.currentHelpSection(), w)
+	out = append(out, "", " "+sBold.Render("Global keys"))
+	out = append(out, m.globalHelpLines(w)...)
+	return out
+}
+
+func (m Model) helpAllContent(w int) []string {
 	var out []string
 	out = append(out, " "+sBold.Render("Global keys"))
 	out = append(out, m.globalHelpLines(w)...)
 
 	for _, section := range m.helpTabSections() {
 		out = append(out, "")
-		out = append(out, " "+sBold.Render(section.title))
-		for _, context := range section.contexts {
-			if context != section.contexts[0] {
-				out = append(out, "", " "+sBold.Render(m.helpSubsectionTitle(context)))
-			}
-			out = append(out, m.contextHelpLines(context, w, true)...)
-		}
-		if section.title == "Messages" {
-			out = append(out, "  "+sTitle.Render(cell("states", 20))+" pending ... delivered ✓ replied ↩ failed ✗")
-		}
-		if section.title == "Graph" {
-			out = append(out, "")
-			out = append(out, mapLegendLines(w)...)
-		}
+		out = append(out, m.helpSectionContent(section, w)...)
 	}
 
 	out = append(out, "", " "+sBold.Render("In overlays"))
@@ -260,14 +262,83 @@ func (m Model) helpContent(w int) []string {
 	return out
 }
 
+func (m Model) helpSectionContent(section helpSection, w int) []string {
+	out := []string{" " + sBold.Render(section.title)}
+	skipGlobal := !m.overlayContext(section.contexts[0])
+	for _, context := range section.contexts {
+		if context != section.contexts[0] {
+			out = append(out, "", " "+sBold.Render(m.helpSubsectionTitle(context)))
+		}
+		out = append(out, m.contextHelpLines(context, w, skipGlobal)...)
+	}
+	if section.title == "Messages" {
+		out = append(out, "  "+sTitle.Render(cell("states", 20))+" pending ... delivered ✓ replied ↩ failed ✗")
+	}
+	if section.title == "Graph" {
+		out = append(out, "")
+		out = append(out, mapLegendLines(w)...)
+	}
+	return out
+}
+
 type helpSection struct {
 	title    string
 	contexts []keyContext
 }
 
-// helpTabSections puts the current tab first, then the others in tab order.
-func (m Model) helpTabSections() []helpSection {
-	sections := []helpSection{
+// currentHelpSection names the screen the owner was on: an open overlay or
+// form when the key table has a context for it, else the current tab.
+func (m Model) currentHelpSection() helpSection {
+	switch {
+	case m.proposalConfirm:
+		return m.helpContextSection(contextConfirm)
+	case m.proposalHistory:
+		return m.helpContextSection(contextProposalHistory)
+	case m.proposalDetail != nil:
+		return m.helpContextSection(contextProposalDetail)
+	case m.mode == modeApps:
+		return m.helpContextSection(contextApps)
+	case m.mode == modeConfirm, m.mode == modeQuotaConfirm, m.mode == modeTrust:
+		return m.helpContextSection(contextConfirm)
+	case m.mode != modeNormal:
+		return m.helpContextSection(contextForm)
+	case m.qualityDetail && m.tab == quotasTab:
+		return m.helpContextSection(contextQualityDetails)
+	case m.focus == focusCTO && m.cto != nil:
+		return m.helpContextSection(contextCTO)
+	case m.open != nil:
+		return m.helpContextSection(contextBody)
+	case m.mapOn:
+		return m.helpContextSection(contextCard)
+	case m.tab == graphTab && m.mp.finding:
+		return m.helpContextSection(contextGraphFind)
+	case m.tab == toolsTab && m.tl.modal != nil:
+		return m.toolsHelpSection()
+	}
+	return helpTabSection(m.tab)
+}
+
+func (m Model) helpContextSection(context keyContext) helpSection {
+	return helpSection{title: m.helpSubsectionTitle(context), contexts: []keyContext{context}}
+}
+
+// toolsHelpSection names the Tools overlay on screen.
+func (m Model) toolsHelpSection() helpSection {
+	md := m.tl.modal
+	context := contextToolsPlan
+	switch {
+	case md.menu != nil:
+		context = contextToolsMenu
+	case md.form != nil:
+		context = contextToolsAdd
+	case md.picker != nil && !md.loading:
+		context = contextToolsPicker
+	}
+	return m.helpContextSection(context)
+}
+
+func helpSections() []helpSection {
+	return []helpSection{
 		{"Sessions", []keyContext{contextSessions}},
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
 		{"Quotas", []keyContext{contextQuotas}},
@@ -276,6 +347,16 @@ func (m Model) helpTabSections() []helpSection {
 		{"Settings", []keyContext{contextSettings}},
 		{"Inbox", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
 	}
+}
+
+func helpTabSection(tab int) helpSection {
+	sections := helpSections()
+	return sections[min(max(tab, 0), len(sections)-1)]
+}
+
+// helpTabSections puts the current tab first, then the others in tab order.
+func (m Model) helpTabSections() []helpSection {
+	sections := helpSections()
 	tab := min(max(m.tab, 0), len(sections)-1)
 	ordered := []helpSection{sections[tab]}
 	ordered = append(ordered, sections[:tab]...)
@@ -540,19 +621,24 @@ func (m Model) helpRow(keys, help string, w int) []string {
 	return out
 }
 
-// openHelp shows the overlay at its first line.
+// openHelp shows the overlay at its first line, on the current screen.
 func (m *Model) openHelp() {
 	m.help = true
+	m.helpAll = false
 	m.helpScroll = 0
+}
+
+// helpTitle names the view: this screen first, then the full list.
+func (m Model) helpTitle() string {
+	if m.helpAll {
+		return "Keys · all screens"
+	}
+	return "Keys · " + m.currentHelpSection().title
 }
 
 // helpView keeps the heading and reserves rows for scroll indicators.
 func (m Model) helpView(w, h int) []string {
-	title := "Keys"
-	if m.tab == toolsTab && !m.mapOn {
-		title = "Tools keys"
-	}
-	out := []string{section(title, w)}
+	out := []string{section(m.helpTitle(), w)}
 	lines := m.helpContent(w)
 	if len(lines) <= h-1 {
 		return append(out, lines...)
