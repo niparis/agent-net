@@ -60,6 +60,18 @@ type Graph struct {
 	messages      []Message
 }
 
+// firstProject is the index of the first node that is a project, not the CTO
+// or the owner: the CTO sorts first ("CTO" before lowercase names), and
+// selecting it would draw its lines to every project.
+func (g *Graph) firstProject() int {
+	for i, n := range g.Nodes {
+		if n.Name != protocol.CTONodeName && n.Name != protocol.GraphVoiceOwner && n.Kind != "cto" {
+			return i
+		}
+	}
+	return 0
+}
+
 func New(view protocol.GraphView) *Graph {
 	g := NewWithoutLayout(view)
 	g.layout()
@@ -85,6 +97,7 @@ func NewWithoutLayout(view protocol.GraphView) *Graph {
 		}
 		return a.Rule < b.Rule
 	})
+	g.selected = g.firstProject()
 	return g
 }
 func (g *Graph) Selected() string {
@@ -205,7 +218,7 @@ func (g *Graph) Update(view protocol.GraphView) bool {
 	g.Nodes, g.Edges = next.Nodes, next.Edges
 	g.Positions = make(map[string]Point)
 	g.layout()
-	g.selected = 0
+	g.selected = g.firstProject()
 	g.selectedOwner = selected == protocol.GraphVoiceOwner
 	for i, n := range g.Nodes {
 		if n.Name == selected {

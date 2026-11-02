@@ -1,9 +1,9 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
 
 
-                                            ⢀  ⡀ ⢠  • ⠠  ⠄ ⠠  ⠄ project-02 ⠾○⠶
-   ⠶⠶    ⢀  ⡀ ⢀  ⡀ ⠠  ⠄ ⠠  ⠂ ⠐  ⠂ ⠐  ⠁ ⠈  ⠁ ⠈                 ⢀⣀⡠⠤⠔⠒⠉⠉
-   (○)  CTO                                            ⢀⣀⡠⠤⠒⠒→⠁
+                                            ⢀  ⡀ ⠠  •           project-02 ⠾○⠶
+   ⠶⠶                                                         ⢀⣀⡠⠤⠔⠒⠉⠉
+   ⠶○⠶ CTO                                             ⢀⣀⡠⠤⠒⠒→⠁
     ↑                                           ⢀⣀⠤⠤⠒⠊⠉⠁
     •                                    ⣀⣀⠤⠔⠒⠊⠉⠁
     ⢸                             ⣀⡠⠤⠔⠒⠊⠉
@@ -11,11 +11,11 @@
     ⡇              ⢀⣀⡠⠤⠒⠒⠉⠁
     ⡇       ⢀⣀⠤⠤⠒⠊⠉⠁
     ⡇⣀⣀⠤⠔⠒⠊⠉⠁
-    ○ project-01
+   (○) project-01
 
   CTO → project-01 request  ·  CTO → project-02 request
   ● charter  ·  ○ no charter  ·  gold: your words  ·  pink: talked, no rule set
-  selected: CTO · cto · 1 edge
+  selected: project-01 · component · 2 edges
   left/right select  +/- zoom  m traffic  enter card  ? help
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
