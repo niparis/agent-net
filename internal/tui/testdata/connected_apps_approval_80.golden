@@ -9,8 +9,8 @@ Connected apps ─────────────────────�
 
   Approve this app?
 
-  Client       Cursor
-  Return host  www.cursor.com
+    Client       Cursor
+    Return host  www.cursor.com
     Kind         ‹ bot ›   (left/right: bot or owner app)
   ▸ Name         cursor
 

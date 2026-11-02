@@ -371,7 +371,7 @@ func (m Model) appsView(w, rows int) []string {
 		} else {
 			nameFocus = "▸ "
 		}
-		out = append(out, "  Approve this app?", "", "  Client       "+sanitize(f.pending.ClientName), "  Return host  "+sBold.Render(sanitize(f.pending.RedirectHost)), "  "+kindFocus+"Kind         ‹ "+kind+" ›   "+sDim.Render("(left/right: bot or owner app)"), "  "+nameFocus+"Name         "+name, "")
+		out = append(out, "  Approve this app?", "", "    Client       "+sanitize(f.pending.ClientName), "    Return host  "+sBold.Render(sanitize(f.pending.RedirectHost)), "  "+kindFocus+"Kind         ‹ "+kind+" ›   "+sDim.Render("(left/right: bot or owner app)"), "  "+nameFocus+"Name         "+name, "")
 		first := "Approve only if you just pressed connect in this app and the return host is the one you expect."
 		second := "A bot acts under its own name; an owner app acts as you."
 		for _, line := range wrap(first, w-4) {
