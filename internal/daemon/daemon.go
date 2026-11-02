@@ -57,11 +57,15 @@ type Config struct {
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.
 	testStopCTOOnExit bool
-	InventoryHome     string // Empty disables tools inventory (used by tests).
-	GatewayURL        string
-	NodeID            string
-	Token             string
-	CAPEM             []byte // pinned CA; nil means the system roots (plain http in tests)
+	// testNoDifficulty skips the difficulty judge at worker start. Test
+	// daemons set it, because their fake harnesses cannot answer the judge;
+	// the assessment tests turn it off again.
+	testNoDifficulty bool
+	InventoryHome    string // Empty disables tools inventory (used by tests).
+	GatewayURL       string
+	NodeID           string
+	Token            string
+	CAPEM            []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.
 	GatewayData string

@@ -34,7 +34,7 @@ const shadowReply = `{"reasoning":2,"scope":1,"coupling":1,"uncertainty":1,"veri
 func TestWorkerShadowAssessmentAsyncAndStored(t *testing.T) {
 	marker, gate := setupShadowJudge(t, shadowReply, true)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
+	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "Evidence: local", Difficulty: "normal"})
@@ -70,7 +70,7 @@ func TestWorkerShadowAssessmentAsyncAndStored(t *testing.T) {
 func TestWorkerShadowAssessmentFailure(t *testing.T) {
 	setupShadowJudge(t, "not json", false)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
+	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "test"})
@@ -92,7 +92,7 @@ func TestWorkerShadowQueuedStartsOnlyWhenDequeued(t *testing.T) {
 	marker, _ := setupShadowJudge(t, shadowReply, false)
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
-	w := startWorkerNode(t, g, queueSet, withLoad(fl))
+	w := startWorkerNode(t, g, queueSet, withDifficulty(withLoad(fl)))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
@@ -118,7 +118,7 @@ func TestWorkerShadowQueuedStartsOnlyWhenDequeued(t *testing.T) {
 func TestWorkerShadowResumedRunGetsNewAssessment(t *testing.T) {
 	setupShadowJudge(t, shadowReply, false)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
+	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback first"})
@@ -168,7 +168,7 @@ func TestWorkerShadowAssessmentQueueSurvivesRestart(t *testing.T) {
 func TestWorkerShadowAssessmentQueueFlush(t *testing.T) {
 	_, gate := setupShadowJudge(t, shadowReply, true)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
+	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "test"})
@@ -187,5 +187,15 @@ func TestWorkerShadowAssessmentQueueFlush(t *testing.T) {
 	}
 	if err := os.WriteFile(gate, nil, 0600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// withDifficulty turns the difficulty judge back on for a test daemon.
+func withDifficulty(next func(*Config)) func(*Config) {
+	return func(c *Config) {
+		c.testNoDifficulty = false
+		if next != nil {
+			next(c)
+		}
 	}
 }

@@ -14,6 +14,9 @@ import (
 // startWorkerAssessment never waits for the judge, gateway, or notice. Each
 // actual start gets a distinct run ID, including a resumed session.
 func (d *Daemon) startWorkerAssessment(w *worker, project, task string) {
+	if d.cfg.testNoDifficulty {
+		return
+	}
 	d.wmu.Lock()
 	sid, owner, used := w.sessionID, w.owner, w.difficultyUsed
 	d.wmu.Unlock()
