@@ -17,13 +17,11 @@ import (
 // answer into a label. It changes nothing and is not called by a worker start
 // yet.
 //
-// The one-shot run is `codex exec`. Codex is the only worker harness that runs
-// one prompt non-interactively and enforces a read-only sandbox in the same
-// command: -s read-only, -C <folder>, -m <model>, and -o <file> for the final
-// message. `opencode run` needs its own server and has no read-only mode,
-// `claude -p` leaves read-only to a tool allowlist, and Pi has no read-only
-// mode at all. The model and harness come from the worker roster, so no new
-// model client is built here.
+// The analyzer runs through `codex exec`, the worker harness that supports a
+// read-only sandbox in the same command: -s read-only, -C <folder>, -m <model>,
+// and -o <file> for the final message. The independent judge runs through
+// `opencode run` in an empty folder and gets only the profile. The analyzer's
+// model and harness come from the worker roster unless explicitly configured.
 //
 // The analyzer runs in the project folder and may read it. The judge runs in an
 // empty temporary folder and gets only the profile. Each run has its own time
@@ -36,8 +34,8 @@ const defaultDifficultyTimeout = 3 * time.Minute
 // cannot hold a worker start past the run limits.
 const difficultyLookupTimeout = 10 * time.Second
 
-// difficultyOneShotHarnesses are the harnesses whose one-shot run is supported.
-// Codex alone, for the reason above.
+// difficultyOneShotHarnesses are the harnesses considered for the repository
+// reading analyzer. Codex alone supports the required read-only sandbox.
 var difficultyOneShotHarnesses = map[string]bool{"codex": true}
 
 // difficultySchema is the evidence profile of section 4, as the analyzer sees

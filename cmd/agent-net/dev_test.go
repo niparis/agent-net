@@ -57,7 +57,7 @@ func TestRunDevAssessPrintsTheAssessment(t *testing.T) {
 	project, task, cfg := stubDev(t, devAssessmentFixture())
 	file := devTaskFile(t, "  change the settings tab\n")
 	var out bytes.Buffer
-	err := runDevAssess(context.Background(), &out, []string{"--project", "/repo/shop", "--task-file", file, "--model", "gpt-cheap"})
+	err := runDevAssess(context.Background(), &out, []string{"--project", "/repo/shop", "--task-file", file, "--model", "gpt-cheap", "--judge-model", "deepseek-test", "--judge-harness", "opencode"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +66,9 @@ func TestRunDevAssessPrintsTheAssessment(t *testing.T) {
 	}
 	if cfg.DifficultyHarness != "codex" || cfg.DifficultyModel != "gpt-cheap" {
 		t.Fatalf("config: %+v", cfg)
+	}
+	if cfg.DifficultyJudgeHarness != "opencode" || cfg.DifficultyJudgeModel != "deepseek-test" {
+		t.Fatalf("judge config: %+v", cfg)
 	}
 	for _, want := range []string{
 		"label: hard  (D 3.60)",

@@ -38,7 +38,7 @@ var loadDevConfig = func() (daemon.Config, error) {
 
 func cmdDev(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--json]")
+		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--json]")
 	}
 	switch args[0] {
 	case "assess":
@@ -52,13 +52,15 @@ func runDevAssess(ctx context.Context, out io.Writer, args []string) error {
 	fs := flag.NewFlagSet("dev assess", flag.ContinueOnError)
 	project := fs.String("project", "", "repository folder the analyzer may read")
 	taskFile := fs.String("task-file", "", "file with the task text (- for stdin)")
-	model := fs.String("model", "", "Codex model for the analyzer and judge (default: the cheapest Codex profile of the worker roster)")
+	model := fs.String("model", "", "Codex model for the analyzer (default: the cheapest Codex profile of the worker roster)")
+	judgeModel := fs.String("judge-model", "", "model for the independent judge (default: opencode-go/deepseek-v4.1-flash)")
+	judgeHarness := fs.String("judge-harness", "", "harness for the independent judge (default: opencode)")
 	asJSON := fs.Bool("json", false, "print the whole assessment as JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *project == "" || *taskFile == "" {
-		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--json]")
+		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--json]")
 	}
 	task, err := readDevTaskFile(*taskFile)
 	if err != nil {
@@ -71,6 +73,12 @@ func runDevAssess(ctx context.Context, out io.Writer, args []string) error {
 	if strings.TrimSpace(*model) != "" {
 		cfg.DifficultyHarness = "codex"
 		cfg.DifficultyModel = strings.TrimSpace(*model)
+	}
+	if strings.TrimSpace(*judgeModel) != "" {
+		cfg.DifficultyJudgeModel = strings.TrimSpace(*judgeModel)
+	}
+	if strings.TrimSpace(*judgeHarness) != "" {
+		cfg.DifficultyJudgeHarness = strings.TrimSpace(*judgeHarness)
 	}
 	a, err := assessmentForDev(ctx, cfg, *project, task)
 	if err != nil {

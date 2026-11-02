@@ -43,6 +43,8 @@ const (
 	envFakeClaudeMCP     = "FAKE_CLAUDE_MCP"     // set for the fake `agent-net mcp` inside the session
 	envFakePi            = "FAKE_PI_BIN"
 	envFakeCodex         = "FAKE_CODEX_BIN"
+	envFakeOpenCode      = "FAKE_OPENCODE_BIN"
+	envFakeOpenCodeReply = "FAKE_OPENCODE_REPLY"
 	envFakeCodexExec     = "FAKE_CODEX_EXEC_DIR" // canned one-shot replies
 	envFakeCodexExecHang = "FAKE_CODEX_EXEC_HANG"
 
@@ -76,12 +78,27 @@ func runFakeHarness() bool {
 		fakeCodex()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "exec":
 		fakeCodexExec()
+	case os.Getenv(envFakeOpenCode) != "" && len(os.Args) > 2 && os.Args[1] == "run":
+		fakeOpenCodeRun()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 2 && os.Args[1] == "debug" && os.Args[2] == "models":
 		fakeCodexModels()
 	default:
 		return false
 	}
 	return true
+}
+
+// fakeOpenCodeRun is `opencode run -m MODEL PROMPT` for difficulty judges.
+func fakeOpenCodeRun() {
+	fmt.Println("> build · deepseek-v4.1-flash")
+	fmt.Print("\x1b[32m")
+	if path := os.Getenv(envFakeOpenCodeReply); path != "" {
+		if raw, err := os.ReadFile(path); err == nil {
+			fmt.Print(string(raw))
+		}
+	}
+	fmt.Print("\x1b[0m\n")
+	os.Exit(0)
 }
 
 func argValue(args []string, name string) string {

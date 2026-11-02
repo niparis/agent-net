@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -49,8 +50,12 @@ func NewDifficultyAssessor(cfg Config, sources DifficultySources) *DifficultyAss
 func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (difficulty.Assessment, error) {
 	started := time.Now()
 	a0 := difficulty.Assessment{Label: "normal"}
+	judgeNote := ""
 	fallback := func(note string) (difficulty.Assessment, error) {
 		a0.Notes = note
+		if judgeNote != "" {
+			a0.Notes += "; " + judgeNote
+		}
 		a0.Elapsed = time.Since(started)
 		if ctx.Err() != nil {
 			return a0, ctx.Err()
@@ -72,7 +77,21 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		return fallback("difficulty: " + err.Error() + "; started at normal")
 	}
 	a0.AnalyzerModel = harness + ":" + model
-	a0.JudgeModel = a0.AnalyzerModel
+	judgeHarness := strings.ToLower(strings.TrimSpace(a.cfg.DifficultyJudgeHarness))
+	judgeModel := strings.TrimSpace(a.cfg.DifficultyJudgeModel)
+	if judgeHarness == "" {
+		judgeHarness = "opencode"
+	}
+	if judgeModel == "" {
+		judgeModel = "opencode-go/deepseek-v4.1-flash"
+	}
+	if judgeHarness == "opencode" {
+		if _, err := a.harnessBinary("opencode"); err != nil {
+			judgeHarness, judgeModel = "codex", model
+			judgeNote = "OpenCode is not installed; used the Codex judge instead"
+		}
+	}
+	a0.JudgeModel = judgeHarness + ":" + judgeModel
 	timeout := a.cfg.DifficultyTimeout
 	if timeout <= 0 {
 		timeout = defaultDifficultyTimeout
@@ -107,7 +126,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	}
 	defer os.RemoveAll(judgeDir)
 
-	scores, insufficient, err := a.judgeDifficulty(ctx, harness, model, judgeDir, profile, timeout)
+	scores, insufficient, err := a.judgeDifficulty(ctx, judgeHarness, judgeModel, judgeDir, profile, timeout)
 	if err != nil {
 		return fallback("difficulty: the judge " + err.Error() + "; started at normal")
 	}
@@ -126,7 +145,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		if profile.Confidence == "low" {
 			return fallback("difficulty: the analyzer confidence is low; started at normal")
 		}
-		scores, insufficient, err = a.judgeDifficulty(ctx, harness, model, judgeDir, profile, timeout)
+		scores, insufficient, err = a.judgeDifficulty(ctx, judgeHarness, judgeModel, judgeDir, profile, timeout)
 		if err != nil {
 			return fallback("difficulty: the judge " + err.Error() + "; started at normal")
 		}
@@ -136,6 +155,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	}
 	a0.Scores = scores
 	a0.Label, a0.D, a0.Bottleneck = difficulty.Label(scores)
+	a0.Notes = judgeNote
 	a0.Elapsed = time.Since(started)
 	return a0, nil
 }
@@ -203,7 +223,7 @@ func (a *DifficultyAssessor) judgeDifficulty(ctx context.Context, harness, model
 	if err != nil {
 		return difficulty.Scores{}, nil, err
 	}
-	return difficulty.ParseScores([]byte(raw))
+	return difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
 }
 
 // runDifficultyOneShot runs one prompt and returns its final text. It never
@@ -214,9 +234,99 @@ func (a *DifficultyAssessor) runDifficultyOneShot(ctx context.Context, harness, 
 	switch harness {
 	case "codex":
 		return a.runCodexExec(runCtx, model, dir, prompt, timeout)
+	case "opencode":
+		return a.runOpenCode(runCtx, model, prompt, timeout)
 	default:
 		return "", fmt.Errorf("harness %q has no supported one-shot run", harness)
 	}
+}
+
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+
+// extractDifficultyJudgeReply strips terminal formatting and returns the last
+// complete JSON object. OpenCode may print progress before its final answer.
+func extractDifficultyJudgeReply(raw string) string {
+	clean := ansiEscape.ReplaceAllString(raw, "")
+	start, depth := -1, 0
+	inString, escaped := false, false
+	last := ""
+	for i, r := range clean {
+		if start < 0 {
+			if r == '{' {
+				start, depth = i, 1
+			}
+			continue
+		}
+		if inString {
+			if escaped {
+				escaped = false
+			} else if r == '\\' {
+				escaped = true
+			} else if r == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				last = clean[start : i+1]
+				start = -1
+			}
+		}
+	}
+	if last != "" {
+		return last
+	}
+	if i := strings.Index(strings.ToUpper(clean), "INSUFFICIENT_EVIDENCE"); i >= 0 {
+		return strings.TrimSpace(clean[i:])
+	}
+	return strings.TrimSpace(clean)
+}
+
+// runOpenCode starts a one-shot judge in a fresh empty folder. OpenCode accepts
+// its prompt as the final positional argument, so the prompt is passed there.
+func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt string, timeout time.Duration) (string, error) {
+	bin, err := a.harnessBinary("opencode")
+	if err != nil {
+		return "", fmt.Errorf("cannot run: %w", err)
+	}
+	dir, err := os.MkdirTemp("", "agent-net-difficulty-opencode-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	args := []string{"run", "-m", model, prompt}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = dir
+	stdout, stderr := &capWriter{limit: 1 << 20}, &capWriter{limit: 4096}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 2 * time.Second
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return "", fmt.Errorf("timed out after %s", timeout)
+			}
+			return "", errors.New("was canceled")
+		}
+		detail := redact.Cut(strings.Join(strings.Fields(stderr.String()), " "), 300)
+		if detail == "" {
+			return "", fmt.Errorf("failed: %v", err)
+		}
+		return "", fmt.Errorf("failed: %v: %s", err, detail)
+	}
+	text := strings.TrimSpace(stdout.String())
+	if text == "" {
+		return "", errors.New("returned no message")
+	}
+	return text, nil
 }
 
 // runCodexExec is `codex exec` in a read-only sandbox. The final message goes

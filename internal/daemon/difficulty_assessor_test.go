@@ -20,10 +20,12 @@ func TestAssessDifficultyOutsideDaemon(t *testing.T) {
 	})
 	project := t.TempDir()
 	a, err := NewDifficultyAssessor(Config{
-		HarnessPaths:      map[string]string{"codex": os.Args[0]},
-		DifficultyHarness: "codex",
-		DifficultyModel:   "gpt-cheap",
-		DifficultyTimeout: 2 * time.Second,
+		HarnessPaths:           map[string]string{"codex": os.Args[0]},
+		DifficultyHarness:      "codex",
+		DifficultyModel:        "gpt-cheap",
+		DifficultyJudgeHarness: "codex",
+		DifficultyJudgeModel:   "gpt-cheap",
+		DifficultyTimeout:      2 * time.Second,
 	}, DifficultySources{}).Assess(context.Background(), project, "change the settings tab")
 	if err != nil {
 		t.Fatal(err)
@@ -54,8 +56,10 @@ func TestAssessDifficultyOutsideDaemonUsesRosterSources(t *testing.T) {
 		},
 	}
 	a, err := NewDifficultyAssessor(Config{
-		HarnessPaths:      map[string]string{"codex": os.Args[0]},
-		DifficultyTimeout: 2 * time.Second,
+		HarnessPaths:           map[string]string{"codex": os.Args[0]},
+		DifficultyJudgeHarness: "codex",
+		DifficultyJudgeModel:   "gpt-cheap",
+		DifficultyTimeout:      2 * time.Second,
 	}, sources).Assess(context.Background(), t.TempDir(), "rename a flag")
 	if err != nil {
 		t.Fatal(err)

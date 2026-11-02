@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,11 +53,13 @@ func fakeDifficultyRun(t *testing.T, replies map[string][]string) string {
 func newDifficultyDaemon(t *testing.T, harness, model string, timeout time.Duration) *Daemon {
 	t.Helper()
 	d, err := New(Config{
-		StateDir:          t.TempDir(),
-		HarnessPaths:      map[string]string{harness: os.Args[0]},
-		DifficultyHarness: harness,
-		DifficultyModel:   model,
-		DifficultyTimeout: timeout,
+		StateDir:               t.TempDir(),
+		HarnessPaths:           map[string]string{harness: os.Args[0]},
+		DifficultyHarness:      harness,
+		DifficultyModel:        model,
+		DifficultyJudgeHarness: "codex",
+		DifficultyJudgeModel:   model,
+		DifficultyTimeout:      timeout,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +138,75 @@ func TestAssessDifficultyHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(calls[1].Stdin, "Score each dimension 1 to 5") {
 		t.Errorf("judge brief lacks the instruction:\n%s", calls[1].Stdin)
+	}
+}
+
+func TestAssessDifficultyUsesOpenCodeJudgeAndExtractsNoisyJSON(t *testing.T) {
+	dir := fakeDifficultyRun(t, map[string][]string{"analyzer": {difficultyProfileJSON("high")}})
+	judgeReply := filepath.Join(dir, "opencode-reply")
+	if err := os.WriteFile(judgeReply, []byte(difficultyScoresJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, judgeReply)
+	d, err := New(Config{
+		StateDir:             t.TempDir(),
+		HarnessPaths:         map[string]string{"codex": os.Args[0], "opencode": os.Args[0]},
+		DifficultyHarness:    "codex",
+		DifficultyModel:      "gpt-analyzer",
+		DifficultyJudgeModel: "opencode-go/deepseek-v4.1-flash",
+		DifficultyTimeout:    2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.st.close() })
+	a, err := d.assessDifficulty(context.Background(), t.TempDir(), "change a setting")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Label != "hard" || a.AnalyzerModel != "codex:gpt-analyzer" || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
+		t.Fatalf("assessment: %+v", a)
+	}
+	calls := difficultyCalls(t, dir)
+	if len(calls) != 1 || calls[0].Kind != "analyzer" {
+		t.Fatalf("Codex calls: %+v", calls)
+	}
+}
+
+func TestAssessDifficultyFallsBackToCodexJudgeWhenOpenCodeMissing(t *testing.T) {
+	dir := fakeDifficultyRun(t, map[string][]string{
+		"analyzer": {difficultyProfileJSON("high")},
+		"judge":    {difficultyScoresJSON},
+	})
+	sources := DifficultySources{Binary: func(name string) (string, error) {
+		if name == "codex" {
+			return os.Args[0], nil
+		}
+		return "", errors.New("opencode is not installed")
+	}}
+	a, err := NewDifficultyAssessor(Config{
+		DifficultyHarness: "codex", DifficultyModel: "gpt-analyzer", DifficultyTimeout: 2 * time.Second,
+	}, sources).Assess(context.Background(), t.TempDir(), "change a setting")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Label != "hard" || a.JudgeModel != "codex:gpt-analyzer" || !strings.Contains(strings.ToLower(a.Notes), "opencode") {
+		t.Fatalf("assessment lacks fallback note: %+v", a)
+	}
+	if calls := difficultyCalls(t, dir); len(calls) != 2 || calls[1].Kind != "judge" {
+		t.Fatalf("Codex calls: %+v", calls)
+	}
+}
+
+func TestExtractDifficultyJudgeReplyFromNoisyOutput(t *testing.T) {
+	got := extractDifficultyJudgeReply("> build · model\n\x1b[32mnoise {\"bad\": {\"x\": 1}}\n" + difficultyScoresJSON + "\x1b[0m")
+	if got != difficultyScoresJSON {
+		t.Fatalf("reply = %q, want last JSON object", got)
+	}
+	insufficient := "INSUFFICIENT_EVIDENCE: risk - inspect the migration"
+	if got := extractDifficultyJudgeReply("> judge\n" + insufficient); got != insufficient {
+		t.Fatalf("insufficient answer = %q", got)
 	}
 }
 
