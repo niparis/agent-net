@@ -933,6 +933,9 @@ func fakeCodex() {
 						status, errObj = "failed", map[string]any{"message": "model overloaded"}
 					}
 					report := "codex done in " + cwd + " (" + strconv.Itoa(len(text)) + " bytes)"
+					if strings.Contains(text, "FAKE:partial") {
+						report += "\ncomplete: no"
+					}
 					if strings.Contains(text, "Turn each phrase in the JSON array below") {
 						report = `{"backups":"daily backup operations","ops for backups":"ops for backup operations"}`
 					}

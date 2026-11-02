@@ -74,13 +74,16 @@ func (d *Daemon) tryAutoContinue(ctx context.Context, w *worker) bool {
 // own adapter, and an OpenCode turn waits behind the current one.
 func (d *Daemon) deliverAutoContinue(ctx context.Context, w *worker, m protocol.Message) error {
 	d.wmu.Lock()
-	harness, sid, cc := w.harness, w.sessionID, w.codex
+	harness, sid, cc, owner, task := w.harness, w.sessionID, w.codex, w.owner, w.taskMsg
 	d.wmu.Unlock()
 	if harness == "codex" {
 		if cc == nil {
 			return errors.New("the Codex worker is not connected")
 		}
-		if !cc.submit(codexJob{from: m.From, msgID: m.ID, text: m.Body}) {
+		// The continue comes from the reserved agent-net sender and is never
+		// stored at the gateway, but the turn's report is the worker's
+		// hand-back: it goes to the caller, as a reply to the task.
+		if !cc.submit(codexJob{from: owner, msgID: task, text: m.Body}) {
 			return errors.New("the Codex worker is ending")
 		}
 		return nil

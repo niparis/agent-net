@@ -167,3 +167,26 @@ func TestAutoContinueFailedWorkerGetsNone(t *testing.T) {
 		t.Fatalf("a failed worker got %d automatic continues, want none", got)
 	}
 }
+
+// A Codex worker reports "complete: no", gets an automatic continue, and the
+// report of that next turn reaches the caller as a hand-back. The continue
+// comes from the reserved agent-net sender; the report must still go to the
+// caller, not back to that sender (v0.4.93 and earlier: "unknown recipient
+// session", and the caller was told "idle without hand-back").
+func TestAutoContinueCodexReportReachesTheCaller(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.IdleNotice = time.Hour
+	w := startCodexNode(t, g, set)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Model: "gpt-fake", Task: "FAKE:partial do half the task"})
+	n := w.waitNotice(t, 1)[0]
+	if strings.Contains(n.Body, "idle without hand-back") || !strings.Contains(n.Body, "status: done") {
+		t.Fatalf("the caller did not get the hand-back after the automatic continue:\n%s", n.Body)
+	}
+	if row := reworkRow(t, w, res.SessionID); row.AutoContinueCount != 1 {
+		t.Errorf("automatic continues: %d, want 1", row.AutoContinueCount)
+	}
+}
