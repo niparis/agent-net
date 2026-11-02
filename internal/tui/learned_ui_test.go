@@ -156,9 +156,9 @@ func TestLearnedMajorWording(t *testing.T) {
 		s    protocol.LearnedSuggestion
 		want string
 	}{
-		{"add owner words", protocol.LearnedSuggestion{Node: "ops", Field: "refuses", Kind: "add", Phrase: "deployment work", RawPhrase: "deploys", Origin: "owner", Evidence: []protocol.LearnedEvidence{{Excerpt: "owner said deploys"}}}, "ops: add «deploys» to refuses? because owner said deploys"},
-		{"remove", protocol.LearnedSuggestion{Node: "app", Field: "accepts", Kind: "remove", Phrase: "backups", Evidence: []protocol.LearnedEvidence{{Excerpt: "moved to ops"}}}, "app: remove «backups» from accepts? because moved to ops"},
-		{"edge", protocol.LearnedSuggestion{Node: "ops", Field: "edge", EdgeKind: "deploys", Kind: "add", Phrase: "app", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops deploys app"}}}, "ops: add a deploys edge ops → app? because ops deploys app"},
+		{"add owner words", protocol.LearnedSuggestion{Node: "ops", Field: "refuses", Kind: "add", Phrase: "deployment work", RawPhrase: "deploys", Origin: "owner", Evidence: []protocol.LearnedEvidence{{Excerpt: "owner said deploys"}}}, `add "deploys" to what it refuses`},
+		{"remove", protocol.LearnedSuggestion{Node: "app", Field: "accepts", Kind: "remove", Phrase: "backups", Evidence: []protocol.LearnedEvidence{{Excerpt: "moved to ops"}}}, `remove "backups" from what it accepts`},
+		{"edge", protocol.LearnedSuggestion{Node: "ops", Field: "edge", EdgeKind: "deploys", Kind: "add", Phrase: "app", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops deploys app"}}}, "add a deploys edge to app"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -14,7 +14,7 @@ func TestHeldRequestShownInInbox(t *testing.T) {
 	m := newModel(120, 30)
 	m.snap.Held = []protocol.Message{{ID: "m_held", FromName: "alice", To: "s_0000000000000002", Body: "please help\nsecond line"}}
 	m = keys(m, "7")
-	if !strings.Contains(m.View(), "alice ->") || !strings.Contains(m.View(), "please help") || strings.Contains(m.View(), "second line") {
+	if !strings.Contains(m.View(), "alice") || !strings.Contains(m.View(), "held request → strategies") || !strings.Contains(m.View(), "please help") {
 		t.Fatalf("held request missing: %s", m.View())
 	}
 }
@@ -55,7 +55,7 @@ func TestHeldAndInboxApprovalBothAppearInInbox(t *testing.T) {
 	m.inboxItems = []protocol.InboxItem{{ID: "i_1", Kind: "approval", SessionID: "s_1", Text: "deploy abc", Status: "open"}}
 	m = keys(m, "7")
 	view := m.View()
-	if !strings.Contains(view, "please help") || !strings.Contains(view, "deploy abc") || !strings.Contains(view, "Approvals and questions") {
+	if !strings.Contains(view, "held request →") || !strings.Contains(view, "wants approval: deploy abc") || !strings.Contains(view, "Needs your answer") {
 		t.Fatalf("inbox: %s", view)
 	}
 }

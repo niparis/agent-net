@@ -1,17 +1,17 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (7) │ 12 online · 1 busy · 7 needs you      14:05:00
-Held requests
-▸ alice -> strategies please help                                                                                     5m
-Outcomes
-  ops -> app          deploy app | reject: not now                                                                    6m
-Learned suggestions
-  ops                 ops: add «deploys» to refuses?                                                                  7m
-CTO proposals
-  CTO proposal        start shop @ n_mac · pi · project folder                                                        8m
-Approvals and questions
-  ci-runner           deploy abc                                                                                      9m
-  ci-runner           which branch?                                                                                  10m
-Notices
-  Connected app       Connected: cursor (bot, Cursor, www.cursor.com). If this was not you, revoke it in Settings.   11m
+╭─Needs your answer · 3───────────────────────────────────────────────╮ ╭─ci-runner asks───────────────────────────────╮
+│ ▸ ci-runner     asks: which branch?                             10m │ │ which branch?                                │
+│   ci-runner     wants approval: deploy abc                       9m │ │                                              │
+│   alice         held request → strategies                        5m │ │ session ci-runner · agent-net on build-vm    │
+╰─────────────────────────────────────────────────────────────────────╯ │ 10 minutes ago                               │
+╭─Proposals · 2───────────────────────────────────────────────────────╮ │                                              │
+│   CTO           start a Pi session in shop, on Mac               8m │ │ t answer  enter details                      │
+│   ops (learned) add "deploys" to what it refuses                 7m │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─For your information · 2────────────────────────────────────────────╮ │                                              │
+│   ops → app     deploy app refused: "not now"                    6m │ │                                              │
+│   cursor        connected as a bot (www.cursor.com)             11m │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
 
 
 
@@ -31,4 +31,4 @@ Notices
 │                                                                                                                      │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter open session  a approve  r refuse  ? help  q quit
+t answer  enter details  ↑↓ select  ? help

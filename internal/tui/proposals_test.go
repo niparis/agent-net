@@ -33,7 +33,7 @@ func (s *proposalSource) Call(_ context.Context, method string, arg any) (json.R
 	return json.RawMessage(`{}`), nil
 }
 func proposalFixture() protocol.CTOProposal {
-	return protocol.CTOProposal{ID: "p_1", NodeID: "n_1", Tool: "graph_change", Action: "charter_set", Args: json.RawMessage(`{"node":"shop","attr":"purpose","value":"new purpose"}`), Reason: "This reflects the current work.", Status: "open", CreatedAt: time.Unix(1700000000, 0)}
+	return protocol.CTOProposal{ID: "p_1", NodeID: "n_mac", Tool: "graph_change", Action: "charter_set", Args: json.RawMessage(`{"node":"shop","attr":"purpose","value":"new purpose"}`), Reason: "This reflects the current work.", Status: "open", CreatedAt: time.Unix(1700000000, 0)}
 }
 func TestProposalKeysAndConfirm(t *testing.T) {
 	for _, key := range []string{"a", "r"} {

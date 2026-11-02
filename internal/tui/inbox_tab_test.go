@@ -155,14 +155,19 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 	m = openInbox(m)
 	rows := m.inboxRows()
 	for i := 1; i < len(rows); i++ {
-		if rows[i-1].group == rows[i].group && rows[i-1].since < rows[i].since {
-			t.Fatalf("group %d is not newest first: %d then %d", rows[i].group, rows[i-1].since, rows[i].since)
+		if rows[i-1].kind == rows[i].kind && rows[i-1].since < rows[i].since {
+			t.Fatalf("%s rows are not newest first: %d then %d", rows[i].kind, rows[i-1].since, rows[i].since)
 		}
 	}
 	view := ansi.Strip(m.View())
-	for _, heading := range []string{"Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+	for _, heading := range []string{"Needs your answer · 3", "Proposals · 2", "For your information · 2"} {
 		if !strings.Contains(view, heading) {
-			t.Errorf("missing group heading %q:\n%s", heading, view)
+			t.Errorf("missing box heading %q:\n%s", heading, view)
+		}
+	}
+	for _, old := range []string{"Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+		if strings.Contains(view, old) {
+			t.Errorf("old group heading %q is still shown:\n%s", old, view)
 		}
 	}
 	if strings.Contains(view, "second line is hidden") {
@@ -173,12 +178,12 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		kind string
 		keys []string
 	}{
-		{"held", []string{"a approve", "r refuse", "enter"}},
+		{"held", []string{"enter open session", "a approve", "r refuse"}},
 		{"outcome", []string{"s let stand", "O overrule"}},
 		{"learned", []string{"a accept", "r reject"}},
-		{"proposal", []string{"a approve", "r decline", "A approve all"}},
-		{"approval", []string{"a approve", "r refuse", "t answer"}},
-		{"question", []string{"a approve", "r refuse", "t answer"}},
+		{"proposal", []string{"a approve", "r refuse"}},
+		{"approval", []string{"a approve", "r refuse", "enter details"}},
+		{"question", []string{"t answer", "enter details"}},
 		{"notice", []string{"x dismiss"}},
 	}
 	for _, tc := range cases {
@@ -342,9 +347,9 @@ func TestInboxEmptyState(t *testing.T) {
 	if !strings.Contains(view, "Nothing is waiting for you.") {
 		t.Fatalf("empty state missing:\n%s", view)
 	}
-	for _, heading := range []string{"Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+	for _, heading := range []string{"Needs your answer", "Proposals", "For your information", "Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
 		if strings.Contains(view, heading) {
-			t.Fatalf("empty state shows group %q", heading)
+			t.Fatalf("empty state shows box %q", heading)
 		}
 	}
 }
@@ -410,5 +415,241 @@ func TestInboxTabBarGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := inboxAllKindsModel(size[0], size[1])
 		golden(t, fmt.Sprintf("inbox_tab_bar_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+// The Inbox puts every item in one of three boxes and moves the selection
+// through all rows, box to box.
+func TestInboxGroupsItemsIntoThreeBoxes(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = openInbox(m)
+	rows := m.inboxRows()
+	if len(rows) != 7 {
+		t.Fatalf("%d rows, want 7", len(rows))
+	}
+	want := []struct {
+		box   inboxBox
+		kinds []string
+	}{
+		{inboxBoxAnswer, []string{"question", "approval", "held"}},
+		{inboxBoxProposals, []string{"proposal", "learned"}},
+		{inboxBoxInfo, []string{"outcome", "notice"}},
+	}
+	i := 0
+	for _, b := range want {
+		for _, kind := range b.kinds {
+			if i >= len(rows) {
+				t.Fatalf("row %d is missing (%s)", i, kind)
+			}
+			if rows[i].kind != kind || rows[i].group.box() != b.box {
+				t.Fatalf("row %d is %s in box %d, want %s in box %d", i, rows[i].kind, rows[i].group.box(), kind, b.box)
+			}
+			i++
+		}
+	}
+}
+
+// Each kind says in plain words what it is about, and cuts on a word boundary.
+func TestInboxRowsUsePlainWords(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = openInbox(m)
+	rows := m.inboxRows()
+	cases := map[string][2]string{
+		"held":     {"alice", "held request → strategies"},
+		"question": {"ci-runner", "asks: which branch?"},
+		"approval": {"ci-runner", "wants approval: deploy abc"},
+		"proposal": {"CTO", "start a Pi session in shop, on Mac"},
+		"learned":  {"ops (learned)", `add "deploys" to what it refuses`},
+		"outcome":  {"ops → app", `deploy app refused: "not now"`},
+		"notice":   {"cursor", "connected as a bot (www.cursor.com)"},
+	}
+	for _, row := range rows {
+		want, ok := cases[row.kind]
+		if !ok {
+			t.Fatalf("unexpected row kind %q", row.kind)
+		}
+		if row.name != want[0] {
+			t.Errorf("%s who: got %q, want %q", row.kind, row.name, want[0])
+		}
+		if row.text != want[1] {
+			t.Errorf("%s summary: got %q, want %q", row.kind, row.text, want[1])
+		}
+	}
+
+	// A narrow row cuts on a word, not in the middle of one.
+	if got := cutWords("start a Pi session in shop, on Mac", 12); strings.HasSuffix(got, "se…") {
+		t.Fatalf("cutWords split a word: %q", got)
+	}
+}
+
+// The panel shows the selected item's full text, where it comes from, how long
+// ago, and the keys that act on it.
+func TestInboxPanelShowsTheSelectedItem(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = openInbox(m)
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t answer", "enter details"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("question panel lacks %q:\n%s", want, view)
+		}
+	}
+
+	m.inboxIndex = inboxRowIndex(m, "outcome")
+	view = ansi.Strip(m.View())
+	for _, want := range []string{"ops → app", "deploy app refused: \"not now\"", "6 minutes ago", "s let stand", "O overrule"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("outcome panel lacks %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "ci-runner asks") {
+		t.Errorf("the panel did not follow the selection:\n%s", view)
+	}
+}
+
+// The bottom key bar lists only the keys that act on the selected row, then
+// the movement and help keys.
+func TestInboxKeyBarFollowsTheSelection(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = openInbox(m)
+	cases := []struct {
+		kind string
+		want []string
+		not  []string
+	}{
+		{"held", []string{"enter open session", "a approve", "r refuse"}, []string{"s let stand", "x dismiss"}},
+		{"outcome", []string{"s let stand", "O overrule"}, []string{"a approve", "t answer"}},
+		{"learned", []string{"a accept", "r reject"}, []string{"enter details", "x dismiss"}},
+		{"proposal", []string{"a approve", "r refuse"}, []string{"t answer", "enter details", "A approve all"}},
+		{"approval", []string{"a approve", "r refuse", "enter details"}, []string{"s let stand", "t answer"}},
+		{"question", []string{"t answer", "enter details"}, []string{"a approve", "r refuse"}},
+		{"notice", []string{"x dismiss"}, []string{"a approve", "t answer", "enter details"}},
+	}
+	for _, tc := range cases {
+		m.inboxIndex = inboxRowIndex(m, tc.kind)
+		line := ansi.Strip(lastLine(m.View()))
+		for _, want := range tc.want {
+			if !strings.Contains(line, want) {
+				t.Errorf("%s key bar %q lacks %q", tc.kind, line, want)
+			}
+		}
+		for _, not := range tc.not {
+			if strings.Contains(line, not) {
+				t.Errorf("%s key bar %q holds %q", tc.kind, line, not)
+			}
+		}
+		if !strings.Contains(line, "↑↓ select") || !strings.Contains(line, "? help") {
+			t.Errorf("%s key bar %q lacks the movement or help key", tc.kind, line)
+		}
+	}
+}
+
+// Each kind lists exactly the keys that act on the selected item, in both the
+// panel and the bottom key bar.
+func TestInboxItemKeysPerKind(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m.snap.Agents[0].Waiting = &protocol.Waiting{
+		Kind: protocol.WaitingQuestion, Text: "which branch?", Since: t0.Add(-4 * time.Minute).Unix(),
+	}
+	m = openInbox(m)
+	cases := []struct{ kind, item, bar string }{
+		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  ↑↓ select  ? help"},
+		{"waiting", "enter open session", "enter open session  ↑↓ select  ? help"},
+		{"question", "t answer  enter details", "t answer  enter details  ↑↓ select  ? help"},
+		{"approval", "a approve  r refuse  enter details", "a approve  r refuse  enter details  ↑↓ select  ? help"},
+		{"proposal", "a approve  r refuse", "a approve  r refuse  ↑↓ select  ? help"},
+		{"learned", "a accept  r reject", "a accept  r reject  ↑↓ select  ? help"},
+		{"outcome", "s let stand  O overrule", "s let stand  O overrule  ↑↓ select  ? help"},
+		{"notice", "x dismiss", "x dismiss  ↑↓ select  ? help"},
+	}
+	for _, tc := range cases {
+		m.inboxIndex = inboxRowIndex(m, tc.kind)
+		row, ok := m.inboxSelected(m.inboxRows())
+		if !ok || row.kind != tc.kind {
+			t.Fatalf("no %s row", tc.kind)
+		}
+		if got := ansi.Strip(keyHints(hintParts(m.inboxItemHints(row))...)); got != tc.item {
+			t.Errorf("%s item keys: got %q, want %q", tc.kind, got, tc.item)
+		}
+		if got := ansi.Strip(lastLine(m.View())); got != tc.bar {
+			t.Errorf("%s key bar: got %q, want %q", tc.kind, got, tc.bar)
+		}
+		panel := ansi.Strip(strings.Join(m.inboxPanel(48, 12), "\n"))
+		if !strings.Contains(panel, tc.item) {
+			t.Errorf("%s panel lacks %q:\n%s", tc.kind, tc.item, panel)
+		}
+	}
+}
+
+// A machine is shown by name, never by its node ID.
+func TestInboxNeverShowsANodeID(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m.proposals[0].NodeID = "n_mac"
+	m.proposals[0].Args = json.RawMessage(`{"project":"shop","node_id":"n_mac","harness":"pi"}`)
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "proposal")
+	view := ansi.Strip(m.View())
+	if strings.Contains(view, "n_mac") {
+		t.Fatalf("the Inbox shows a node ID:\n%s", view)
+	}
+	if !strings.Contains(view, "on Mac") {
+		t.Fatalf("the proposal does not name the machine:\n%s", view)
+	}
+}
+
+// On a narrow screen the panel sits under the boxes, at most eight lines.
+func TestInboxPanelSitsBelowTheBoxesOnANarrowScreen(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	m = openInbox(m)
+	view := ansi.Strip(m.View())
+	lines := strings.Split(view, "\n")
+	panelAt := -1
+	for i, line := range lines {
+		if strings.Contains(line, "ci-runner asks") {
+			panelAt = i
+		}
+	}
+	if panelAt < 0 {
+		t.Fatalf("no panel under the boxes:\n%s", view)
+	}
+	lastBox := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "╰") && i < panelAt {
+			lastBox = i
+		}
+	}
+	if lastBox < 0 || panelAt <= lastBox {
+		t.Fatalf("the panel is not under the boxes (box ends %d, panel at %d):\n%s", lastBox, panelAt, view)
+	}
+	if !strings.Contains(view, "which branch?") || !strings.Contains(view, "t answer") {
+		t.Fatalf("the narrow panel lacks the item text or keys:\n%s", view)
+	}
+}
+
+// On a wide screen every box is closed, keeps its age column, and leaves one
+// space before the panel.
+func TestInboxBoxesAreClosedAndAgedOnAWideScreen(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = openInbox(m)
+	view := ansi.Strip(m.View())
+	if strings.Contains(view, "───╭─ci-runner asks") {
+		t.Fatalf("a box runs into the panel:\n%s", view)
+	}
+	if !strings.Contains(view, "╮ ╭─ci-runner asks") {
+		t.Fatalf("the box does not close before the panel:\n%s", view)
+	}
+	if !strings.Contains(view, "10m │") {
+		t.Fatalf("the age is not right-aligned inside the box:\n%s", view)
+	}
+}
+
+// At 100 columns or more the panel sits to the right of the boxes.
+func TestInboxPanelSitsOnTheRightOnAWideScreen(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	m = openInbox(m)
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	first := lines[1]
+	box, panel := strings.Index(first, "Needs your answer"), strings.Index(first, "ci-runner asks")
+	if box < 0 || panel < 0 || panel <= box {
+		t.Fatalf("the panel is not to the right of the boxes: %q", first)
 	}
 }
