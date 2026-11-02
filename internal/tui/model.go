@@ -161,6 +161,7 @@ type Model struct {
 	defectName     string          // how the prompt names the worker
 	defectLevel    int             // the severity the owner chose
 	pol            policyForm
+	apps           appsForm
 	intg           integrationsForm // the setup integrations of the whole network
 	rename         textinput.Model  // the machine name prompt
 	renameNode     string           // node ID the name is for
@@ -846,6 +847,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case policySavedMsg:
 		return m.onPolicySaved(msg)
 
+	case appsResult:
+		return m.onAppsResult(msg)
+
 	case integrationsLoadedMsg:
 		return m.onIntegrationsLoaded(msg)
 
@@ -1041,6 +1045,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.projectRenameKey(k)
 	case modeIntegrations:
 		return m.integrationsKey(k)
+	case modeApps:
+		return m.appsKey(k)
 	}
 	if m.inboxOn {
 		return m.inboxKey(k)

@@ -22,6 +22,7 @@ func settingsEntries() []settingsEntry {
 		{"policy", "delegation policy", "subagent or worker for code changes (a form)"},
 		{"integrations", "integrations", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},
 		{"rename machine", "name this machine", "every machine sees it; empty resets"},
+		{"connected apps", "Connected apps", "manage connected apps"},
 	}
 }
 
@@ -51,6 +52,8 @@ func (m Model) settingsMenuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.startIntegrations()
 		case "rename machine":
 			return m.startRename()
+		case "connected apps":
+			return m.startApps()
 		}
 	}
 	return m, nil

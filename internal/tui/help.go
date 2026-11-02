@@ -39,6 +39,17 @@ func (m Model) hints() []hint {
 		return []hint{bindingHint(contextProposalDetail, "approve"), bindingHint(contextProposalDetail, "decline"), bindingHint(contextProposalDetail, "approve all"), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
 	case m.help:
 		return []hint{bindingPairHint(contextHelp, actUp, actDown), bindingHint(contextHelp, actClose), bindingHint(contextHelp, actQuit)}
+	case m.mode == modeApps:
+		switch m.apps.stage {
+		case "code":
+			return []hint{{key: "enter", label: "look up"}, bindingHint(contextApps, "back")}
+		case "approve":
+			return []hint{bindingHint(contextApps, "kind"), bindingHint(contextApps, "name"), bindingHint(contextApps, "approve"), bindingHint(contextApps, "refuse"), bindingHint(contextApps, "back")}
+		case "confirm":
+			return []hint{bindingHint(contextConfirm, "yes"), bindingHint(contextConfirm, "no")}
+		default:
+			return []hint{bindingHint(contextApps, "add"), bindingHint(contextApps, "revoke"), bindingHint(contextApps, "back")}
+		}
 	case m.settingsMenuOn:
 		return []hint{bindingPairHint(contextSettingsMenu, actUp, actDown), bindingHint(contextSettingsMenu, "choose"), bindingHint(contextSettingsMenu, actClose)}
 	case m.mapOn && m.focus != focusCTO:
@@ -244,7 +255,7 @@ func (m Model) helpTabSections() []helpSection {
 
 func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
-		contextBody, contextInbox, contextSettingsMenu, contextProposalDetail, contextProposalHistory,
+		contextBody, contextInbox, contextSettingsMenu, contextApps, contextProposalDetail, contextProposalHistory,
 		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd,
 		contextCTO, contextHelp, contextConfirm, contextForm,
 	}
@@ -293,6 +304,8 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 		return "Inbox"
 	case contextSettingsMenu:
 		return "Settings menu"
+	case contextApps:
+		return "Connected apps"
 	case contextProposalDetail:
 		return "Proposal detail"
 	case contextProposalHistory:

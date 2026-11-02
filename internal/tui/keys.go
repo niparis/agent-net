@@ -27,6 +27,7 @@ const (
 	contextMessages        keyContext = "Messages"
 	contextBody            keyContext = "message body"
 	contextInbox           keyContext = "inbox"
+	contextApps            keyContext = "connected apps"
 	contextSettingsMenu    keyContext = "settings menu"
 	contextQuotas          keyContext = "Quotas"
 	contextGraph           keyContext = "Graph"
@@ -50,7 +51,7 @@ const (
 var allKeyContexts = []keyContext{
 	contextGlobal, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
-	contextSettingsMenu, contextQuotas, contextGraph, contextGraphFind, contextCard,
+	contextSettingsMenu, contextApps, contextQuotas, contextGraph, contextGraphFind, contextCard,
 	contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsPlan, contextToolsCompare,
 	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
 }
@@ -191,6 +192,15 @@ var keyBindings = []keyBinding{
 	bind(contextInbox, "a", "approve", "approve", 1),
 	bind(contextInbox, "r", "refuse", "refuse", 1),
 	bind(contextInbox, "t", "answer", "answer", 1),
+	bind(contextApps, "esc", "back", "back", 1),
+	bind(contextApps, "up|k", actUp, "move", 1),
+	bind(contextApps, "down|j", actDown, "move", 1),
+	bind(contextApps, "a", "add", "add", 1),
+	bind(contextApps, "x", "revoke", "revoke", 1),
+	bind(contextApps, "enter", "approve", "approve", 1),
+	bind(contextApps, "r", "refuse", "refuse", 1),
+	bind(contextApps, "left|right", "kind", "change kind", 1),
+	bind(contextApps, "tab", "name", "edit name", 1),
 	bind(contextSettingsMenu, "esc", actClose, "close", 1),
 	bind(contextSettingsMenu, "up|k", actUp, "move", 1),
 	bind(contextSettingsMenu, "down|j", actDown, "move", 1),

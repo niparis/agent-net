@@ -1857,3 +1857,7 @@ process trees. They are not agent tools. The session uses the harness's normal
 project settings and MCP servers, with no worker brief, hand-back, worktree,
 worker list entry or completion notice. Idle and age limits do not stop it.
 Worker cleanup and daemon shutdown leave it running. When herdr is available, starts and resumes open their view there after registration, including starts approved from a CTO proposal. Enter on a session on another machine uses `enter_ssh` and `enter_ssh_hosts` from node.json.
+
+### Connected apps
+
+In Sessions, press `S` and choose Connected apps. Press `a` and enter the code shown in the browser. Use left and right to choose bot or owner app, Tab to edit the name, Enter to approve, or `r` to refuse. Select an app and press `x`, then `y` to revoke it. Esc returns. Five wrong codes block further lookups for ten minutes.
