@@ -133,7 +133,7 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 	}
 	if p.Explicit && d.workerBySession(ls.sessionID) != nil {
 		d.setWaiting(ls, &protocol.Waiting{Kind: p.Kind, Text: p.Text, Explicit: true})
-		return nil, errors.New("you are a worker: put the question in your hand-back or ask your caller with agent_reply")
+		return nil, errors.New("you are a worker: put the question in your hand-back or ask your caller with agent_message_reply")
 	}
 	if p.Clear {
 		d.setWaiting(ls, nil)

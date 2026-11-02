@@ -43,7 +43,7 @@ import (
 // each message from the owner as a turn, and turns the end of each turn into a
 // hand-back (the report is the final answer). The model does not need a tool
 // for it, and a hand-back cannot be forgotten. The cost is that the worker has
-// no agent_reply for questions in the middle of the work, and takes messages
+// no agent_message_reply for questions in the middle of the work, and takes messages
 // from its owner and from the person only.
 //
 // The approval policy is "never" and the sandbox is the permission level of the

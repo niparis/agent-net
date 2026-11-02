@@ -110,9 +110,9 @@ func TestMCPSendRetriedAfterDropStoredOnce(t *testing.T) {
 	}
 	t.Cleanup(func() { cs.Close() })
 
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_send", Arguments: map[string]any{"to": "alice", "body": "retry-me"}})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_message_send", Arguments: map[string]any{"to": "alice", "body": "retry-me"}})
 	if err != nil || res.IsError {
-		t.Fatalf("agent_send: %v %+v", err, res)
+		t.Fatalf("agent_message_send: %v %+v", err, res)
 	}
 	if !dropped.Load() {
 		t.Fatal("the connection was never dropped")

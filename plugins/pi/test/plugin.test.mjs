@@ -636,7 +636,7 @@ await test("agent_list, agent_send and agent_announce carry the new rules", asyn
 
 const POLICY_TEXT =
   "[agent-net] Your user's standing policy for this session, set in agent-net: delegate all code changes to a worker. " +
-  'Start one with agent_start in this project with model "deepseek/deepseek-v4.1-flash" (it gets its own git worktree by default), give it a brief, and wait for its report. ' +
+  'Start one with agent_worker_start in this project with model "deepseek/deepseek-v4.1-flash" (it gets its own git worktree by default), give it a brief, and wait for its report. ' +
   "You plan, review its diff and run the tests. Do not edit code yourself unless the worker fails twice.";
 
 const CHARTER =
@@ -716,7 +716,7 @@ for (const [authority, rule] of [
     if (text.split(rule).length !== 3) throw new Error("trust and owner notes must carry the same receiver rule: " + text);
     if (!text.includes("On its own this does not approve a merge.")) throw new Error(text);
     if (text.includes("or merging a pull request into the default branch")) throw new Error(text);
-    if (authority === "delegated" && (!text.includes("governs edge") || !text.includes("agent_request_approval"))) throw new Error(text);
+    if (authority === "delegated" && (!text.includes("governs edge") || !text.includes("agent_owner_ask"))) throw new Error(text);
   });
 }
 await test("in-process RPC helpers never register or take foreground deliveries", async () => {

@@ -102,10 +102,10 @@ const (
 
 	// OpRate records one caller's rating of a finished worker (difficulty
 	// calibration, part 4). Open to agent sessions, not to the command line.
-	OpRate = "agent_rate" // takes RateRequest, answers RateResult
+	OpRate = "agent_rate" // the daemon method behind agent_worker_rate
 	// OpWorkerDefect reports a defect found later on a worker's task as the
 	// owner. It is owner only, so the owner's score path stays separate from
-	// the caller's agent_rate.
+	// the caller's agent_worker_rate.
 	OpWorkerDefect = "worker_defect" // takes DefectRequest, answers RateResult
 )
 
@@ -350,7 +350,7 @@ type WorkerStartResult struct {
 	// Status is "starting", "started" or "queued". A starting worker has a
 	// session ID and receives its task after checkout and launch. A queued
 	// start has no SessionID yet:
-	// the machine has no room now, QueueID names the start (agent_stop takes
+	// the machine has no room now, QueueID names the start (agent_worker_stop takes
 	// it), Position is its place in that machine's queue, and QueueReason
 	// says why it waits. A worker notice follows when it starts.
 	Status      string `json:"status,omitempty"`

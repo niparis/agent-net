@@ -21,7 +21,7 @@ func TestPolicyTextPerModeAndHarness(t *testing.T) {
 	}
 	// Pi has no subagents: the same policy reads as workers.
 	pi := PolicyText(v, "pi", "")
-	for _, w := range []string{"agent_start", `"deepseek/deepseek-v4.1-flash"`, "git worktree", "fails twice"} {
+	for _, w := range []string{"agent_worker_start", `"deepseek/deepseek-v4.1-flash"`, "git worktree", "fails twice"} {
 		if !strings.Contains(pi, w) {
 			t.Errorf("pi text lacks %q: %s", w, pi)
 		}

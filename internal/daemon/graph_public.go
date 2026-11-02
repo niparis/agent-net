@@ -8,7 +8,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// agentGraph is the public graph read behind the agent_graph tool and the
+// agentGraph is the public graph read behind the agent_graph_read tool and the
 // CTO's graph view. The gateway frame graph.read is already public to enrolled
 // machines; this daemon call projects it onto the public fields, which drops a
 // node's owner-only settings before any agent can see them.

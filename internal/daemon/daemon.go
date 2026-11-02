@@ -972,7 +972,7 @@ func (d *Daemon) resolveTo(ctx context.Context, to string) (string, error) {
 	}
 	switch len(match) {
 	case 0:
-		return "", fmt.Errorf("no online agent is named %q; use agent_list to find a session_id", to)
+		return "", fmt.Errorf("no online agent is named %q; use agent_sessions_find to find a session_id", to)
 	case 1:
 		return match[0].SessionID, nil
 	}

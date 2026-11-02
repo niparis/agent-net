@@ -115,7 +115,7 @@ func TestHintNamesTheSessionThatOwnsTheService(t *testing.T) {
 	if len(r.Suggestions) != 1 || r.Suggestions[0].SessionID != cogID {
 		t.Fatalf("suggestions: %+v", r)
 	}
-	if !strings.Contains(r.Text, cogID) || !strings.Contains(r.Text, "agent_send") {
+	if !strings.Contains(r.Text, cogID) || !strings.Contains(r.Text, "agent_message_send") {
 		t.Errorf("text: %q", r.Text)
 	}
 	// The same suggestion is not repeated.

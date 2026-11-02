@@ -22,7 +22,7 @@ const (
 )
 
 type mcpNameIn struct {
-	Name string `json:"name" jsonschema:"the server name from agent_mcp_list"`
+	Name string `json:"name" jsonschema:"the server name from agent_mcp_servers_find"`
 }
 
 func addRegistryTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {

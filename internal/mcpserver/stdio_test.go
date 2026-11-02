@@ -135,7 +135,7 @@ func TestFramingSplitWritesAndBlankLines(t *testing.T) {
 	}
 	// Two messages in one write are both handled.
 	r.send(initDone + "\n" + listReq + "\n")
-	if l := r.next(); !strings.Contains(l, "agent_list") {
+	if l := r.next(); !strings.Contains(l, "agent_sessions_find") {
 		t.Fatalf("tools/list reply: %s", l)
 	}
 }
@@ -144,7 +144,7 @@ func TestExecWaitsForIdleAndHandsOverUnreadBytes(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	call := func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		if method == "list" {
+		if method == "sessions_find" {
 			started <- struct{}{}
 			<-release
 		}
@@ -155,7 +155,7 @@ func TestExecWaitsForIdleAndHandsOverUnreadBytes(t *testing.T) {
 	r.next() // initialize reply
 
 	// A tool call is in flight when the exec is requested: nothing may happen.
-	r.send(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"agent_list","arguments":{}}}` + "\n")
+	r.send(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"agent_sessions_find","arguments":{}}}` + "\n")
 	<-started
 	r.conn.requestExec("/new/binary")
 	// More input arrives while the call runs: one whole request and half of another.
@@ -172,7 +172,7 @@ func TestExecWaitsForIdleAndHandsOverUnreadBytes(t *testing.T) {
 		l := r.next()
 		if strings.Contains(l, `"id":2`) {
 			seen["call"] = true
-		} else if strings.Contains(l, `"id":1`) && strings.Contains(l, "agent_list") {
+		} else if strings.Contains(l, `"id":1`) && strings.Contains(l, "agent_sessions_find") {
 			seen["list"] = true
 		} else {
 			t.Fatalf("unexpected line: %s", l)
@@ -216,7 +216,7 @@ func TestReplayIntoNewProcess(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		l := r.next()
 		switch {
-		case strings.Contains(l, `"id":1`) && strings.Contains(l, "agent_list"):
+		case strings.Contains(l, `"id":1`) && strings.Contains(l, "agent_sessions_find"):
 			got["list"] = true
 		case strings.Contains(l, `"id":9`):
 			got["ping"] = true
@@ -234,7 +234,7 @@ func TestReplayWithoutInitializedDoesNotAnnounce(t *testing.T) {
 	r := newRig(t, &handover{V: 1, Init: []byte(initReq)}, okCaller)
 	r.noLine() // the initialize reply is swallowed and no list_changed is sent
 	r.send(initDone + "\n" + listReq + "\n")
-	if l := r.next(); !strings.Contains(l, "agent_list") {
+	if l := r.next(); !strings.Contains(l, "agent_sessions_find") {
 		t.Fatalf("tools/list reply: %s", l)
 	}
 }

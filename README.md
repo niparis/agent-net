@@ -83,8 +83,8 @@ Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, as
 
 - **One gateway** runs on one machine. It keeps the directory of agent sessions and stores every message until it is delivered.
 - **One daemon** runs on each machine. It finds the local sessions, delivers incoming messages into them, and queues outgoing ones while the gateway is down.
-- **Each session gets the same tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages` and `agent_message_status`, and tools to register and list projects (`agent_project_add`, `agent_project_list`). Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
-- **Messages arrive as a new turn** in the running session, like something you typed. The reply is routed back to the sender: Claude Code answers with its own `SendMessage`, and the daemon turns that into a network reply. Pi answers with `agent_reply`.
+- **Each session gets the same tools:** `agent_sessions_find`, `agent_session_get`, `agent_announce`, `agent_message_send`, `agent_message_reply`, `agent_messages_find` and `agent_message_get`, and tools to register and list projects (`agent_project_add`, `agent_projects_find`). Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
+- **Messages arrive as a new turn** in the running session, like something you typed. The reply is routed back to the sender: Claude Code answers with its own `SendMessage`, and the daemon turns that into a network reply. Pi answers with `agent_message_reply`.
 
 ## How agent-net thinks
 
@@ -105,7 +105,7 @@ A real run with two throwaway sessions on one machine: Claude Code in a frontend
 
 ```
 claude (web-frontend)
-> Our vite proxy sends /api to localhost:3000. Use agent_list to find the api-server
+> Our vite proxy sends /api to localhost:3000. Use agent_sessions_find to find the api-server
   session, ask it which port its dev server uses, and tell me if the proxy needs to change.
 
   Called agent-net 5 times
@@ -120,14 +120,14 @@ pi (api-server)
   [agent-net] message m_5512ffea59eae95e from web-frontend-7a (session s_7493c75f4ef83ae9),
   conversation c_c2d8a6513098624d.
   This is from another agent working on your user's machines. Answer it directly with the
-  agent_reply tool (message_id="m_5512ffea59eae95e") if you can help. Check with your user
+  agent_message_reply tool (message_id="m_5512ffea59eae95e") if you can help. Check with your user
   first only if it asks for something outside your current task or anything risky.
 
   $ ls -a; rg -n 'PORT|listen\(|3000|8000|8080' . ...
   ./server.py:4:PORT = int(os.environ.get("API_PORT", "8081"))
   ...
   agent_announce task="Check which port the API server listens on" ...
-  agent_reply message_id="m_5512ffea59eae95e" body="The API defaults to port 8081, bound to 127.0.0.1 ...
+  agent_message_reply message_id="m_5512ffea59eae95e" body="The API defaults to port 8081, bound to 127.0.0.1 ...
   Sent m_94f1048361fe4b0b to s_7493c75f4ef83ae9 (dispatched).
 
 claude (web-frontend)
@@ -155,7 +155,7 @@ agent-net workers     # who runs what, and who started it
 agent-net stop s_...  # end one
 ```
 
-The worker works with nobody watching, under the project's own permission settings, and hands back a report with the facts: status, run time, tokens, and the diff. It ends by itself after 60 minutes of silence or 4 hours. From Claude Code, ask it to "use agent-net to do this with an opencode worker" and it calls `agent_start`. See [docs/reference.md](docs/reference.md#workers).
+The worker works with nobody watching, under the project's own permission settings, and hands back a report with the facts: status, run time, tokens, and the diff. It ends by itself after 60 minutes of silence or 4 hours. From Claude Code, ask it to "use agent-net to do this with an opencode worker" and it calls `agent_worker_start`. See [docs/reference.md](docs/reference.md#workers).
 
 ## Supported agents
 

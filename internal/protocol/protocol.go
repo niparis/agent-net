@@ -238,7 +238,7 @@ type AgentCharter struct {
 	Refuses         string `json:"refuses,omitempty"`
 	FeatureRequests string `json:"feature_requests,omitempty"`
 	// Rules are the node's effective rules, the same read-only name/value
-	// pairs agent_graph returns. They are set on a single agent (agent_get),
+	// pairs agent_graph_read returns. They are set on a single agent (agent_session_get),
 	// not in a list.
 	Rules []PublicRule `json:"rules,omitempty"`
 }
@@ -590,7 +590,7 @@ type ProjectView struct {
 type NodesInfo struct {
 	GatewayVersion string     `json:"gateway_version"`
 	Nodes          []NodeView `json:"nodes"`
-	// Playbook is the fresh notes of the network, for agent_nodes and the
+	// Playbook is the fresh notes of the network, for agent_machines_find and the
 	// owner's "Learned" list (decision 0022).
 	Playbook []PlaybookNote `json:"playbook,omitempty"`
 	// Calibration is the read-only difficulty table: per caller and

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sort"
 	"strings"
 	"testing"
 
@@ -42,14 +41,15 @@ func TestServerReportsBuildVersion(t *testing.T) {
 }
 
 func TestToolsForwardToDaemon(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
 	var calls []call
 	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		raw, _ := json.Marshal(params)
 		var m map[string]any
 		json.Unmarshal(raw, &m)
 		calls = append(calls, call{method, m})
-		if method == "send" && m["body"] == "boom" {
-			return nil, errors.New("gateway says no")
+		if method == "info" {
+			return json.RawMessage(`{"sessions":[{"session_id":"s_me","harness":"claude","native_id":"n_me","name":"me"}]}`), nil
 		}
 		return json.RawMessage(`{"ok":true}`), nil
 	})
@@ -59,78 +59,73 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, tl := range tools.Tools {
-		names = append(names, tl.Name)
-	}
-	sort.Strings(names)
-	// The old tools keep working through the redesign. New tools may be added
-	// beside them; this test only requires that these remain listed.
-	want := []string{"agent_announce", "agent_ask_owner", "agent_get", "agent_graph", "agent_learn", "agent_list", "agent_mcp_list", "agent_mcp_test", "agent_message_status", "agent_messages", "agent_nodes", "agent_project_add", "agent_project_list", "agent_propose_idea", "agent_protected_providers_get", "agent_protected_providers_set", "agent_rate", "agent_reply", "agent_request_approval", "agent_send", "agent_start", "agent_stop", "agent_worker_profile_add", "agent_worker_profile_remove", "agent_worker_profiles"}
 	have := map[string]bool{}
-	for _, name := range names {
-		have[name] = true
+	for _, tl := range tools.Tools {
+		have[tl.Name] = true
 	}
+	want := []string{"agent_announce", "agent_owner_ask", "agent_session_get", "agent_sessions_find", "agent_learn",
+		"agent_graph_read", "agent_machines_find", "agent_machine_get", "agent_messages_find", "agent_message_get",
+		"agent_message_send", "agent_message_reply", "agent_projects_find", "agent_project_add",
+		"agent_protected_providers_get", "agent_protected_providers_set", "agent_worker_start", "agent_worker_stop",
+		"agent_worker_rate", "agent_worker_profiles_find", "agent_worker_profile_add", "agent_worker_profile_remove"}
 	for _, name := range want {
 		if !have[name] {
-			t.Errorf("old tool %s is no longer listed", name)
+			t.Errorf("tool %s is not listed", name)
+		}
+	}
+	for _, name := range []string{"agent_list", "agent_get", "agent_nodes", "agent_project_list", "agent_messages",
+		"agent_message_status", "agent_send", "agent_reply", "agent_graph", "agent_mcp_list", "agent_worker_profiles",
+		"agent_start", "agent_stop", "agent_rate", "agent_ask_owner", "agent_request_approval", "agent_propose_idea"} {
+		if have[name] {
+			t.Errorf("deprecated tool %s is still listed", name)
 		}
 	}
 	for _, tl := range tools.Tools {
-		if tl.Name == "agent_send" && !strings.Contains(tl.Description, "requests from peers") {
-			t.Fatalf("agent_send must say peer messages are requests from peers: %q", tl.Description)
+		if tl.Name == "agent_message_send" && !strings.Contains(tl.Description, "not the owner's approval") {
+			t.Fatalf("agent_message_send must say a peer message is not the owner's approval: %q", tl.Description)
 		}
-	}
-
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_list", Arguments: map[string]any{"text": "go"}})
-	if err != nil || res.IsError {
-		t.Fatalf("agent_list: %v %+v", err, res)
-	}
-	if calls[0].method != "list" || calls[0].params["online_only"] != true || calls[0].params["text"] != "go" {
-		t.Fatalf("list call: %+v", calls[0])
-	}
-	cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_list", Arguments: map[string]any{"online_only": false}})
-	if calls[1].params["online_only"] != false {
-		t.Fatalf("online_only=false not passed: %+v", calls[1])
-	}
-
-	cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_send", Arguments: map[string]any{"to": "s_x", "body": "hi"}})
-	if calls[2].method != "send" || calls[2].params["to"] != "s_x" {
-		t.Fatalf("send call: %+v", calls[2])
-	}
-	// The tool has no way to name a sender.
-	for _, tl := range tools.Tools {
-		if tl.Name == "agent_send" {
+		if tl.Name == "agent_message_send" {
 			b, _ := json.Marshal(tl.InputSchema)
 			if strings.Contains(string(b), "sender") || strings.Contains(string(b), "from") {
-				t.Fatalf("agent_send schema exposes a sender: %s", b)
+				t.Fatalf("agent_message_send schema exposes a sender: %s", b)
 			}
 		}
 	}
 
-	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_send", Arguments: map[string]any{"to": "s_x", "body": "boom"}})
-	if err != nil || !res.IsError {
-		t.Fatalf("daemon error should be a tool error: %v %+v", err, res)
-	}
 	cases := []struct {
 		tool, method string
 		args         map[string]any
 	}{
-		{"agent_reply", "reply", map[string]any{"message_id": "m_1", "body": "b"}},
-		{"agent_messages", "messages", map[string]any{"limit": 5}},
-		{"agent_message_status", "message_status", map[string]any{"message_id": "m_1"}},
-		{"agent_get", "get", map[string]any{"session_id": "s_1"}},
+		{"agent_sessions_find", "sessions_find", map[string]any{"text": "go", "online": "offline"}},
+		{"agent_message_send", "send", map[string]any{"to": "s_x", "body": "hi"}},
+		{"agent_message_reply", "reply", map[string]any{"message": "m_1", "body": "b"}},
+		{"agent_messages_find", "messages", map[string]any{"limit": 5}},
+		{"agent_message_get", "message_status", map[string]any{"message": "m_1"}},
+		{"agent_session_get", "session_get", map[string]any{"session": "s_1"}},
 		{"agent_announce", "announce", map[string]any{"task": "t"}},
-		{"agent_nodes", "machines_find", map[string]any{}},
+		{"agent_machines_find", "machines_find", map[string]any{}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},
-		{"agent_project_list", "projects", map[string]any{"name": "a"}},
+		{"agent_projects_find", "projects_find", map[string]any{"name": "a"}},
 	}
 	for _, c := range cases {
 		n := len(calls)
 		cs.CallTool(ctx, &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
-		if len(calls) == n || calls[n].method != c.method {
+		found := false
+		for _, got := range calls[n:] {
+			if got.method == c.method {
+				found = true
+				break
+			}
+		}
+		if !found {
 			t.Fatalf("%s did not call %s: %+v", c.tool, c.method, calls[n:])
 		}
+	}
+	if p := calls[1].params; calls[1].method != "send" || p["to"] != "s_x" || p["body"] != "hi" {
+		t.Fatalf("send call: %+v", calls[1])
+	}
+	if p := calls[0].params; p["online"] != "offline" || p["text"] != "go" {
+		t.Fatalf("sessions_find call: %+v", calls[0])
 	}
 	// A scan and a dry run reach the daemon as given, and the agent cannot name a machine.
 	n := len(calls)
@@ -159,9 +154,9 @@ func TestReplyOutcomeForwarded(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
 		raw, _ := json.Marshal(params)
 		json.Unmarshal(raw, &got)
-		return json.RawMessage(`{}`), nil
+		return json.RawMessage(`{"message_id":"m","to":{"id":"s","name":"s"},"state":"delivered"}`), nil
 	})
-	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_reply", Arguments: map[string]any{"message_id": "m", "body": "no", "outcome": "escalate", "reason": "unclear", "recommendation": "ask"}})
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_message_reply", Arguments: map[string]any{"message": "m", "body": "no", "outcome": "escalate", "reason": "unclear", "recommendation": "ask"}})
 	if err != nil || r.IsError || got["outcome"] != "escalate" || got["reason"] != "unclear" || got["recommendation"] != "ask" {
 		t.Fatalf("reply: %+v %v %+v", r, err, got)
 	}

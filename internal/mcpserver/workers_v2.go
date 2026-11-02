@@ -14,7 +14,7 @@ import (
 
 // addRedesignedTools registers the agent and worker contracts directly from
 // the shared catalog. The daemon methods remain the existing implementations.
-func addRedesignedTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
+func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, string, any) (any, error)) {
 	for _, name := range []string{"agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_learn", "agent_project_add", "agent_mcp_test"} {
 		entry := redesignedCatalogTool(name)
 		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema)}
@@ -23,7 +23,7 @@ func addRedesignedTools(s *mcp.Server, run func(context.Context, string, any) (a
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 			}
-			out, err := redesignedCall(ctx, name, args, run)
+			out, err := redesignedCall(ctx, call, name, args, run)
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 			}
@@ -31,9 +31,8 @@ func addRedesignedTools(s *mcp.Server, run func(context.Context, string, any) (a
 		})
 	}
 	if os.Getenv("AGENT_NET_WORKER") != "" {
-		// These are agent-only capabilities. Hide their legacy names too.
+		// These are agent-only capabilities.
 		s.RemoveTools("agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_owner_ask",
-			"agent_start", "agent_stop", "agent_rate", "agent_ask_owner", "agent_request_approval", "agent_propose_idea",
 			"agent_project_add", "agent_announce")
 	}
 }
@@ -47,7 +46,7 @@ func redesignedCatalogTool(name string) *toolcatalog.Tool {
 	panic("missing tool catalog entry: " + name)
 }
 
-func redesignedCall(ctx context.Context, name string, a map[string]any, run func(context.Context, string, any) (any, error)) (map[string]any, error) {
+func redesignedCall(ctx context.Context, call Caller, name string, a map[string]any, run func(context.Context, string, any) (any, error)) (map[string]any, error) {
 	str := func(k string) string { v, _ := a[k].(string); return v }
 	integer := func(k string) int { v, _ := a[k].(float64); return int(v) }
 	switch name {
@@ -94,7 +93,7 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if m["difficulty"] == nil {
 			m["difficulty"] = firstNonEmptyString(in.Difficulty, "normal")
 		}
-		out["worker"] = workerOutput(m)
+		out["worker"] = filledWorker(ctx, call, m)
 		return out, nil
 	case "agent_worker_stop":
 		m, err := workerStopCall(ctx, run, str("worker"))
@@ -119,7 +118,8 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if err != nil {
 			return nil, err
 		}
-		result := map[string]any{"recorded": m["accepted"], "worker": workerOutput(map[string]any{"session_id": m["worker"]}), "kind": kind}
+		worker := map[string]any{"session_id": m["worker"], "model": m["model"], "harness": m["harness"], "difficulty": m["difficulty"]}
+		result := map[string]any{"recorded": m["accepted"], "worker": filledWorker(ctx, call, worker), "kind": kind}
 		if score != 0 {
 			result["score"] = score
 		}
@@ -222,6 +222,22 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		return map[string]any{"ok": m["ok"], "tools": m["tools"], "detail": m["detail"]}, nil
 	}
 	return nil, fmt.Errorf("unknown redesigned tool %q", name)
+}
+
+// filledWorker returns the worker record the read tools would show. The
+// daemon's start and rate answers carry only a session ID, so read the record
+// from the gateway; when it is not listed yet, keep what the answer had and
+// fill the caller from the calling session.
+func filledWorker(ctx context.Context, call Caller, m map[string]any) map[string]any {
+	out := workerOutput(m)
+	id, _ := out["id"].(string)
+	if row, ok := roWorkerByID(ctx, call, id); ok {
+		return workerRowMap(row)
+	}
+	if caller, ok := callerRef(ctx, call); ok {
+		out["caller"] = map[string]any{"id": caller.ID, "name": caller.Name}
+	}
+	return out
 }
 
 func workerOutput(m map[string]any) map[string]any {

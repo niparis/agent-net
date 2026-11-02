@@ -294,7 +294,7 @@ func TestCodexDeliveryQueuesFramedMessage(t *testing.T) {
 	if q.Thread != "t1" || q.ClientID != m.ID {
 		t.Fatalf("queue entry: %+v (message %s)", q, m.ID)
 	}
-	for _, want := range []string{"please review the diff", "[agent-net] message " + m.ID, "not from your user", "agent_reply"} {
+	for _, want := range []string{"please review the diff", "[agent-net] message " + m.ID, "not from your user", "agent_message_reply"} {
 		if !strings.Contains(q.Text, want) {
 			t.Fatalf("frame lacks %q:\n%s", want, q.Text)
 		}
@@ -431,11 +431,11 @@ func TestCodexShimSendsAsItsThread(t *testing.T) {
 	sh := startCodexShim(t, n)
 
 	// Without a thread in _meta, a tool that needs a session fails.
-	if txt, isErr := sh.tool("", "agent_send", map[string]any{"to": piID, "body": "x"}); !isErr || !strings.Contains(txt, "bound session") {
+	if txt, isErr := sh.tool("", "agent_message_send", map[string]any{"to": piID, "body": "x"}); !isErr || !strings.Contains(txt, "bound session") {
 		t.Fatalf("send without a thread: %q %v", txt, isErr)
 	}
 	// With a thread, the message is from that thread's session.
-	txt, isErr := sh.tool("t1", "agent_send", map[string]any{"to": piID, "body": "hello from t1"})
+	txt, isErr := sh.tool("t1", "agent_message_send", map[string]any{"to": piID, "body": "hello from t1"})
 	if isErr {
 		t.Fatalf("send: %s", txt)
 	}
@@ -444,19 +444,19 @@ func TestCodexShimSendsAsItsThread(t *testing.T) {
 		t.Fatalf("message: %+v", got)
 	}
 	// The same process serves another thread as that thread.
-	if txt, isErr := sh.tool("t2", "agent_send", map[string]any{"to": piID, "body": "hello from t2"}); isErr {
+	if txt, isErr := sh.tool("t2", "agent_message_send", map[string]any{"to": piID, "body": "hello from t2"}); isErr {
 		t.Fatalf("send t2: %s", txt)
 	}
 	if got := pi.nextPush(); got.From != n.d.SessionID("codex", "t2") {
 		t.Fatalf("t2 message: %+v", got)
 	}
 	// A thread the daemon did not discover is refused.
-	if txt, isErr := sh.tool("0badbad0", "agent_send", map[string]any{"to": piID, "body": "forged"}); !isErr || !strings.Contains(txt, "not discovered") {
+	if txt, isErr := sh.tool("0badbad0", "agent_message_send", map[string]any{"to": piID, "body": "forged"}); !isErr || !strings.Contains(txt, "not discovered") {
 		t.Fatalf("unknown thread: %q %v", txt, isErr)
 	}
-	// agent_reply to a message that was sent to the thread comes from the thread.
+	// agent_message_reply to a message that was sent to the thread comes from the thread.
 	m := sendResult(t, pi.mustCall("send", map[string]any{"to": n.d.SessionID("codex", "t1"), "body": "question"}))
-	if txt, isErr := sh.tool("t1", "agent_reply", map[string]any{"message_id": m.ID, "body": "answer"}); isErr {
+	if txt, isErr := sh.tool("t1", "agent_message_reply", map[string]any{"message": m.ID, "body": "answer"}); isErr {
 		t.Fatalf("reply: %s", txt)
 	}
 	if got := pi.nextPush(); got.Body != "answer" || got.ParentID != m.ID {

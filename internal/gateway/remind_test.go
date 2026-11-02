@@ -67,7 +67,7 @@ func TestRemindEligibility(t *testing.T) {
 			}
 			if want == 1 {
 				m := reminders[0]
-				if m.From != "agent-net" || m.FromName != "agent-net" || m.FromHarness != "agent-net" || m.Type != protocol.TypeNotification || !strings.Contains(m.Body, "[agent-net] reminder: alice is waiting for your answer to "+req.ID+" (sent 3m0s ago). Answer with agent_reply, or say you cannot.") {
+				if m.From != "agent-net" || m.FromName != "agent-net" || m.FromHarness != "agent-net" || m.Type != protocol.TypeNotification || !strings.Contains(m.Body, "[agent-net] reminder: alice is waiting for your answer to "+req.ID+" (sent 3m0s ago). Answer with agent_message_reply, or say you cannot.") {
 					t.Fatalf("reminder = %+v", m)
 				}
 				again, err := s.remindPending()

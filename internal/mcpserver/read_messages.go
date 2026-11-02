@@ -171,7 +171,7 @@ func roFindMessages(ctx context.Context, call Caller, in roMessagesFindIn) (roMe
 func roMessageKey(row roMessageRow) string { return row.key }
 
 // roLoadMessage is the one message read. agent_message_get and the
-// agent_message_status alias both go through it.
+// agent_message_get go through it.
 func roLoadMessage(ctx context.Context, call Caller, id string) (protocol.MessageResult, error) {
 	raw, err := call(ctx, "message_status", map[string]any{"message_id": id})
 	if err != nil {

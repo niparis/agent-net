@@ -106,7 +106,7 @@ func TestInsideSessionAdvice(t *testing.T) {
 	if !strings.HasPrefix(msg, `method "worker_start" is not available from inside an agent session`) {
 		t.Errorf("the refusal reason must come first: %q", msg)
 	}
-	want := "agents start workers with the agent_start tool, not this command. If you do not have agent_start, " +
+	want := "agents start workers with the agent_worker_start tool, not this command. If you do not have agent_worker_start, " +
 		"your agent-net tools are out of date: ask your user to reconnect agent-net (in Claude Code: /mcp)."
 	if !strings.Contains(msg, want) {
 		t.Errorf("message lacks the advice %q: %q", want, msg)

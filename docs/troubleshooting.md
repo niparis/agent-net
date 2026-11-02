@@ -95,13 +95,13 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 - `queued #N on HOST: ...`: the machine has no room (CPU, memory, the `start_gap` between starts, or the cap of 12 workers). The start waits and a notice comes when it begins. `agent-net workers` shows the room of each machine (`room: cpu|mem|cap|gap|measuring`). Cancel with `agent-net stop <queue id>`. To allow more, raise `workers.cpu_target`, lower `workers.mem_reserve`, raise `workers.max` or lower `workers.start_gap` in `node.json`.
 - `runs inside an agent session`: `agent-net start`, `send` and `stop` act as you, so they refuse to run from an agent's shell. Run them in your own terminal.
 
-- `is not available from inside an agent session ... If you do not have agent_start`: the agent tried the command in a shell because its own agent-net tools are older than the machine (no `agent_start`). See the next entry.
+- `is not available from inside an agent session ... If you do not have agent_worker_start`: the agent tried the command in a shell because its own agent-net tools are older than the machine (no `agent_worker_start`). See the next entry.
 
 A worker that never answers may be waiting for a permission that nobody can give. It ends at the idle time with a `timed out` notice.
 
-## An agent has no agent_start, or other tools are missing (old tools)
+## An agent has no agent_worker_start, or other tools are missing (old tools)
 
-Each Claude Code or Codex session keeps the `agent-net mcp` process it started with. A session that began before an upgrade can keep the old tool list. Signs: the agent has no `agent_start`, or it tried `agent-net start` in a shell and was refused.
+Each Claude Code or Codex session keeps the `agent-net mcp` process it started with. A session that began before an upgrade can keep the old tool list. Signs: the agent has no `agent_worker_start`, or it tried `agent-net start` in a shell and was refused.
 
 - In the TUI, select the session. The detail pane shows `tools v0.4.5 (old: reconnect agent-net with /mcp)`, or `tools unknown (from before v0.4.7 ...)`.
 - Fix: in Claude Code type `/mcp`, pick `agent-net` and reconnect. For Codex, restart Codex and resume the thread. The new tools appear at once.

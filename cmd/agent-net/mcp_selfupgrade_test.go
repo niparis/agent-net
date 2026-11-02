@@ -290,7 +290,7 @@ func TestMCPSwitchesToNewerBinary(t *testing.T) {
 
 	// The next tool call makes the process dial the restarted daemon. It is
 	// answered, then the process becomes v0.0.2 and says the tools changed.
-	p.client.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"agent_list","arguments":{}}}`)
+	p.client.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"agent_sessions_find","arguments":{}}}`)
 	if l, _ := p.client.reply(3); !strings.Contains(l, "from-fake-daemon") {
 		t.Fatalf("tools/call before the switch: %s", l)
 	}
@@ -314,7 +314,7 @@ func TestMCPSwitchesToNewerBinary(t *testing.T) {
 	if got := toolNames(t, l); got != toolNames(t, before) {
 		t.Fatalf("tools after the switch %q, before %q", got, toolNames(t, before))
 	}
-	p.client.send(`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"agent_list","arguments":{}}}`)
+	p.client.send(`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"agent_sessions_find","arguments":{}}}`)
 	if l, _ := p.client.reply(5); !strings.Contains(l, "from-fake-daemon") {
 		t.Fatalf("tools/call after the switch: %s", l)
 	}
@@ -352,7 +352,7 @@ func TestMCPStaysWhenAutoUpgradeIsOff(t *testing.T) {
 	handshake(t, p.client)
 	swapBinary(t, newBin, exe)
 	d.restart("v0.0.2")
-	p.client.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"agent_list","arguments":{}}}`)
+	p.client.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"agent_sessions_find","arguments":{}}}`)
 	p.client.reply(3)
 	// The old code redialled (hello still says v0.0.1) and nothing else happens.
 	if h := d.waitHello(t, "v0.0.1"); h["native_id"] != "test-session" {

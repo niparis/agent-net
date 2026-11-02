@@ -38,7 +38,7 @@ import (
 // The daemon creates one session in it through the HTTP API, with the model
 // the caller picked. The agent-net plugin loads in this process (it is in the
 // user's plugin folder) and registers that session like any other, so the
-// worker can use agent_reply. The task then arrives as a normal message.
+// worker can use agent_message_reply. The task then arrives as a normal message.
 //
 // Isolation from the user's service: the worker's state folder
 // (XDG_STATE_HOME) is its own, so it never touches the service's service.json.

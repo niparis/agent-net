@@ -38,7 +38,7 @@ import (
 //     the session and its MCP servers (AGENT_NET_SOCKET). The user's own
 //     settings.json is not touched.
 //   - The agent-net MCP server (user scope) loads in the session as its child,
-//     so agent_handback and agent_reply are there. The user's copy may be older
+//     so agent_handback and agent_message_reply are there. The user's copy may be older
 //     than this daemon, so the worker gets `--mcp-config` with this daemon's own
 //     binary: a server of the same name there replaces the user's, for this
 //     session only.

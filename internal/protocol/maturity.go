@@ -210,8 +210,8 @@ func (d MaturityDefaults) TestText() string {
 // Merge rules are shared by charter context and delivery notes. Keep the TS
 // copies equal (the protocol tests compare them).
 const MergeFullText = "merge and push to the default branch"
-const MergeDelegatedText = "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_request_approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node"
-const MergeAskText = "merge always needs the owner's written approval for the exact action (ask with agent_request_approval, or put the action and your recommendation in a Codex worker report)"
+const MergeDelegatedText = "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node"
+const MergeAskText = "merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report)"
 
 // MergeText is the merge-authority rule in plain words.
 func (d MaturityDefaults) MergeText() string {
@@ -230,7 +230,7 @@ func (d MaturityDefaults) DeployText() string {
 	case DeployAsk:
 		return "ask before deploying"
 	case DeployOwner:
-		return "ask the owner before deploying (request written approval for the exact action with agent_request_approval, or put it and your recommendation in a Codex worker report)"
+		return "ask the owner before deploying (request written approval for the exact action with agent_owner_ask and kind approval, or put it and your recommendation in a Codex worker report)"
 	}
 	return "deploy as the brief says"
 }

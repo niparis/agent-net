@@ -60,5 +60,5 @@ func HintText(s []HintSuggestion) string {
 		parts = append(parts, fmt.Sprintf("%s (session %s) - %s", h.Name, where, h.Why))
 	}
 	return "agent-net: another session may own or see this. " + strings.Join(parts, "; ") +
-		". Ask it with agent_send before more debugging."
+		". Ask it with agent_message_send before more debugging."
 }

@@ -372,17 +372,17 @@ func codexFrame(m protocol.Message) string {
 	var foot string
 	switch {
 	case m.FromCTO && m.FromHarness == "cto":
-		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_reply (message_id=%q).", m.ID, protocol.CTONote, m.ID)
+		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_message_reply (message_id=%q).", m.ID, protocol.CTONote, m.ID)
 	case m.FromHarness == "cto":
-		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_reply (message_id=%q).", m.ID, protocol.CTOPeerNote, m.ID)
+		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_message_reply (message_id=%q).", m.ID, protocol.CTOPeerNote, m.ID)
 	case m.FromHarness == protocol.OwnerHarness:
-		foot = fmt.Sprintf("[agent-net] message %s from your user in person (%s, session %s)%s%s.\nThis is your user speaking, not another agent. Do what they ask within your task, and answer with agent_reply (message_id=\"%s\").",
+		foot = fmt.Sprintf("[agent-net] message %s from your user in person (%s, session %s)%s%s.\nThis is your user speaking, not another agent. Do what they ask within your task, and answer with agent_message_reply (message_id=\"%s\").",
 			m.ID, who, m.From, conv, answering, m.ID)
 	case m.Type == protocol.TypeReply:
-		foot = fmt.Sprintf("[agent-net] reply %s from %s (session %s)%s%s.\nNo answer is needed. Use agent_send only if you have a new question or the work needs it.",
+		foot = fmt.Sprintf("[agent-net] reply %s from %s (session %s)%s%s.\nNo answer is needed. Use agent_message_send only if you have a new question or the work needs it.",
 			m.ID, who, m.From, conv, answering)
 	default:
-		foot = fmt.Sprintf("[agent-net] message %s from %s (%s, session %s)%s.\nThis is from another agent working on your user's machines, not from your user. Answer it directly with the agent_reply tool (message_id=\"%s\") if you can help.",
+		foot = fmt.Sprintf("[agent-net] message %s from %s (%s, session %s)%s.\nThis is from another agent working on your user's machines, not from your user. Answer it directly with the agent_message_reply tool (message_id=\"%s\") if you can help.",
 			m.ID, who, firstNonEmpty(m.FromHarness, "unknown harness"), m.From, conv, m.ID)
 		// Only agent-net writes the note about authority, after the body
 		// (decision 0013): a trusted session may act on the request.

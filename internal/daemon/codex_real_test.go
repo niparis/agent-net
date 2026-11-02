@@ -258,7 +258,7 @@ env = { AGENT_NET_SOCKET = %q, AGENT_NET_NO_AUTO_UPGRADE = "1" }
 	// 3. Send: the thread's own agent-net MCP server (a child of the app
 	// server) sends as this thread, with the thread taken from _meta.
 	model.setArgs(fmt.Sprintf(`{"to":%q,"body":"hello from real codex"}`, piID))
-	turn("CALLTOOL agent_send")
+	turn("CALLTOOL agent_message_send")
 	got := pi.nextPush()
 	if got.Body != "hello from real codex" || got.From != codexID || got.FromHarness != "codex" {
 		t.Fatalf("message from codex: %+v", got)

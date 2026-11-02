@@ -903,7 +903,7 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x" || params.difficulty !== "hard") {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
   }
-  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now",
+  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_worker_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now",
                       "a/x · opencode: 4 runs: 1 complete, 2 partial, 1 stopped (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
@@ -1450,7 +1450,7 @@ for (const [authority, rule] of [
     if (text.split(rule).length !== 3) throw new Error("trust and owner notes must carry the same receiver rule: " + text);
     if (!text.includes("On its own this does not approve a merge.")) throw new Error(text);
     if (text.includes("or merging a pull request into the default branch")) throw new Error(text);
-    if (authority === "delegated" && (!text.includes("governs edge") || !text.includes("agent_request_approval"))) throw new Error(text);
+    if (authority === "delegated" && (!text.includes("governs edge") || !text.includes("agent_owner_ask"))) throw new Error(text);
   });
 }
 

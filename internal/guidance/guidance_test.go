@@ -36,7 +36,7 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 			"At the start of every session, before other work, call `agent_announce` with your current task in one short line.",
 			"Call it again whenever your task changes.",
 			"AGENTS.md automatically",
-			"When you stop to wait for my decision or answer, call `agent_ask_owner` with the question in one line",
+			"When you stop to wait for my decision or answer, call `agent_owner_ask` with the question in one line",
 		} {
 			if !strings.Contains(b, want) {
 				t.Errorf("%s block lacks %q", v, want)
@@ -57,8 +57,8 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 func TestGuidanceSaysAgentsCanReadCharters(t *testing.T) {
 	for _, v := range []string{Claude, Other, Combined} {
 		b := Block(v)
-		if !strings.Contains(b, "agent_graph") {
-			t.Errorf("%s block does not name agent_graph", v)
+		if !strings.Contains(b, "agent_graph_read") {
+			t.Errorf("%s block does not name agent_graph_read", v)
 		}
 		if !strings.Contains(b, "charter") {
 			t.Errorf("%s block does not mention a charter", v)
@@ -97,7 +97,7 @@ func TestApplyReplacesMarkedBlock(t *testing.T) {
 }
 
 func TestApplyMigratesLegacySection(t *testing.T) {
-	legacy := strings.TrimRight(strings.ReplaceAll(text, "{{reply}}", "with `agent_reply` and the message ID"), "\n") + "\n"
+	legacy := strings.TrimRight(strings.ReplaceAll(text, "{{reply}}", "with `agent_message_reply` and the message ID"), "\n") + "\n"
 	// Section at end of file.
 	in := "# Global\n\n- a\n\n" + legacy
 	out, changed := Apply(in, Other)

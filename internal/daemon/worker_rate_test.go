@@ -25,7 +25,7 @@ func TestWorkerRateAskEveryFifth(t *testing.T) {
 			Task: "FAKE:handback do the task"})
 		notices := w.waitNotice(t, i+1)
 		last := notices[len(notices)-1]
-		got := strings.Contains(last.Body, "with agent_rate: 1 to 5")
+		got := strings.Contains(last.Body, "with agent_worker_rate: 1 to 5")
 		if got != ask {
 			t.Fatalf("worker %d (%s): rating ask = %v, want %v:\n%s", i+1, res.SessionID, got, ask, last.Body)
 		}

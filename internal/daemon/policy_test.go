@@ -77,7 +77,7 @@ func TestPolicyIsOwnerOnlyAndReachesTheSessionEveryTurn(t *testing.T) {
 	if r.Mode != protocol.DelegateWorkers || r.AgentID != "" || r.Main != "sol/sol-6.1" {
 		t.Fatalf("pi result: %+v", r)
 	}
-	for _, want := range []string{protocol.PolicyLead, "agent_start", `"deepseek/deepseek-v4.1-flash"`, "worktree", "fails twice"} {
+	for _, want := range []string{protocol.PolicyLead, "agent_worker_start", `"deepseek/deepseek-v4.1-flash"`, "worktree", "fails twice"} {
 		if !strings.Contains(r.Text, want) {
 			t.Errorf("text lacks %q: %s", want, r.Text)
 		}
@@ -167,7 +167,7 @@ func TestClaudePolicyWritesAMarkedSubagentFile(t *testing.T) {
 	v2 := *view
 	v2.CoderModel = "haiku"
 	r = d.policyResult("claude", protocol.PolicyGot{Harness: "claude", Delegation: &v2})
-	if r.Mode != protocol.DelegateWorkers || r.AgentID != "" || !strings.Contains(r.Text, "agent_start") {
+	if r.Mode != protocol.DelegateWorkers || r.AgentID != "" || !strings.Contains(r.Text, "agent_worker_start") {
 		t.Fatalf("clash: %+v", r)
 	}
 	if b, _ := os.ReadFile(other); string(b) != "mine\n" {
@@ -225,7 +225,7 @@ func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
 	r := askPolicy(t, p, protocol.PolicyRequest{})
 	for _, want := range []string{"mature - careful with breaking changes.", "Generic endpoints.", "Client-specific endpoints.",
 		"Breaking API changes: ask the owner.", "wb-architect governs your node as owner", "Decide, do not defer",
-		"maturity mature: run the suite and add tests for new behavior; merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_request_approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node; ask before deploying",
+		"maturity mature: run the suite and add tests for new behavior; merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node; ask before deploying",
 		"judge requests from consumers strictly"} {
 		if !strings.Contains(r.Charter, want) {
 			t.Errorf("charter lacks %q: %s", want, r.Charter)

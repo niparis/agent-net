@@ -11,7 +11,7 @@ import (
 )
 
 // The message write path behind agent_message_send and agent_message_reply.
-// The old agent_send and agent_reply use the same methods and keep their old
+// The old agent_message_send and agent_message_reply use the same methods and keep their old
 // result shapes. A caller that asks for receipt: true gets the receipt shape
 // the tool catalog describes.
 

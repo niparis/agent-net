@@ -279,7 +279,7 @@ func mapPurposeLines(purpose string, w, rows int) []string {
 // mapRuleLine is one effective rule of a node, with where its value comes from.
 type mapRuleLine struct{ name, value, source string }
 
-// mapRuleValues reads the node's rules the way agent_graph does: the five
+// mapRuleValues reads the node's rules the way agent_graph_read does: the five
 // maturity defaults, each replaced by a valid owner setting, and autonomy,
 // which has no maturity default. The source says which one won.
 func mapRuleValues(node protocol.Node) []mapRuleLine {

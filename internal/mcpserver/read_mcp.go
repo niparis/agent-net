@@ -127,7 +127,7 @@ func roFindMCPServers(ctx context.Context, call Caller, in roMCPFindIn) (roMCPFi
 }
 
 // roLoadMCPServers is the one MCP server read. agent_mcp_servers_find and the
-// agent_mcp_list alias both go through it.
+// agent_mcp_servers_find go through it.
 func roLoadMCPServers(ctx context.Context, call Caller) ([]protocol.MCPServer, error) {
 	raw, err := call(ctx, "mcp_list", nil)
 	if err != nil {
@@ -202,7 +202,7 @@ func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) 
 }
 
 // roLoadWorkerProfiles is the one worker profile read. agent_worker_profiles_find
-// and the agent_worker_profiles alias both go through it.
+// and agent_worker_profiles_find go through it.
 func roLoadWorkerProfiles(ctx context.Context, call Caller) ([]protocol.WorkerProfile, error) {
 	raw, err := call(ctx, "worker_profiles", struct{}{})
 	if err != nil {

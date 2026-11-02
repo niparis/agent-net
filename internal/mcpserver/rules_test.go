@@ -50,7 +50,7 @@ func TestPluginsCarryTheSameNotesAndRules(t *testing.T) {
 	}
 }
 
-func TestToolDescriptionsCarryTheAskRuleAndExpertise(t *testing.T) {
+func TestToolDescriptionsCarryTheAnnounceRuleAndExpertise(t *testing.T) {
 	call := func(context.Context, string, any) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }
 	s := New(call, "test")
 	ct, st := mcp.NewInMemoryTransports()
@@ -76,14 +76,6 @@ func TestToolDescriptionsCarryTheAskRuleAndExpertise(t *testing.T) {
 			b, _ := json.Marshal(tl.InputSchema)
 			announceSchema = string(b)
 		}
-	}
-	for _, name := range []string{"agent_list", "agent_send"} {
-		if !strings.Contains(desc[name], AskPeerRule) {
-			t.Errorf("%s lacks the ask rule: %s", name, desc[name])
-		}
-	}
-	if !strings.Contains(desc["agent_send"], RelayRule) {
-		t.Errorf("agent_send lacks the relay rule: %s", desc["agent_send"])
 	}
 	if !strings.Contains(desc["agent_announce"], "expertise") || !strings.Contains(announceSchema, `"expertise"`) {
 		t.Errorf("agent_announce: %s %s", desc["agent_announce"], announceSchema)

@@ -10,7 +10,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// phraseWorker uses the same gateway chooser and launch path as agent_start.
+// phraseWorker uses the same gateway chooser and launch path as agent_worker_start.
 // The request has no model or harness and adds a mandatory read-only constraint.
 type phraseWorker struct{ g *Gateway }
 

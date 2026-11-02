@@ -16,7 +16,7 @@ import (
 const (
 	DelegateOff     = "off"     // do the work yourself, no subagents or workers
 	DelegateNative  = "native"  // delegate code changes to a native subagent of the harness
-	DelegateWorkers = "workers" // delegate code changes to a worker started with agent_start
+	DelegateWorkers = "workers" // delegate code changes to a worker started with agent_worker_start
 )
 
 // Permission levels of unattended workers (decision 0020). The owner sets one
@@ -285,7 +285,7 @@ func PolicyText(v DelegationView, harness, agentID string) string {
 			"You plan, write the brief, review its diff and run the tests. "+
 			"Do not edit code yourself unless the subagent fails twice.", agentID, coder)
 	case DelegateWorkers:
-		return PolicyLead + fmt.Sprintf("delegate all code changes to a worker. Start one with agent_start in this project with model %q "+
+		return PolicyLead + fmt.Sprintf("delegate all code changes to a worker. Start one with agent_worker_start in this project with model %q "+
 			"(it gets its own git worktree by default), give it a brief, and wait for its report. "+
 			"You plan, review its diff and run the tests. "+
 			"Do not edit code yourself unless the worker fails twice.", coder)

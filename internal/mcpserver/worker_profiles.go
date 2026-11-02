@@ -17,10 +17,6 @@ type profileRemoveIn struct {
 }
 
 func addWorkerProfileTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
-	mcp.AddTool(s, &mcp.Tool{Name: "agent_worker_profiles", Description: "List the network's registered worker profiles, with per-machine model resolution and closest alternatives. Workers cannot use this tool."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		out, err := run(ctx, protocol.OpWorkerProfiles, struct{}{})
-		return nil, out, err
-	})
 	mcp.AddTool(s, &mcp.Tool{Name: "agent_worker_profile_add", Description: "Register a worker harness and model when the owner asks. Reusing a profile name replaces its model or effort. The model must be listed by an installed harness; workers cannot use this tool."}, func(ctx context.Context, _ *mcp.CallToolRequest, in profileAddIn) (*mcp.CallToolResult, any, error) {
 		out, err := run(ctx, protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: in.Name, Harness: in.Harness, Model: in.Model, Effort: in.Effort})
 		return nil, out, err

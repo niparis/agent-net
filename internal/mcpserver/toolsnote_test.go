@@ -38,11 +38,11 @@ func TestStaleToolsNoteShowsOnce(t *testing.T) {
 		}
 		return false
 	}
-	first, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_list"})
+	first, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_sessions_find"})
 	if err != nil || !has(first) {
 		t.Fatalf("first result lacks the note: %v %+v", err, first)
 	}
-	second, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_list"})
+	second, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_sessions_find"})
 	if err != nil || has(second) {
 		t.Fatalf("second result must not repeat the note: %v %+v", err, second)
 	}

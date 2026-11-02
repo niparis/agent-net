@@ -46,7 +46,7 @@ func TestCancelledRequestIsNotInFlight(t *testing.T) {
 	t.Cleanup(func() { close(release) })
 	r.send(listen0 + "\n")
 	r.next()
-	r.send(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{` + metaNew + `,"name":"agent_list","arguments":{}}}` + "\n")
+	r.send(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{` + metaNew + `,"name":"agent_sessions_find","arguments":{}}}` + "\n")
 	<-started
 	r.conn.requestExec("/new/binary")
 	select {

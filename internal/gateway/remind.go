@@ -87,7 +87,7 @@ func (s *Store) remindPending() ([]protocol.Message, error) {
 		now := s.now()
 		m := protocol.Message{ID: protocol.NewID("m"), ConversationID: c.conv, ParentID: c.id,
 			From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: c.to, Type: protocol.TypeNotification,
-			Body:           fmt.Sprintf("[agent-net] reminder: %s is waiting for your answer to %s (sent %s ago). Answer with agent_reply, or say you cannot.", protocol.NeutralizeMarkers(html.EscapeString(protocol.CleanWaitingText(c.name))), c.id, now.Sub(time.Unix(0, c.at)).Truncate(time.Second)),
+			Body:           fmt.Sprintf("[agent-net] reminder: %s is waiting for your answer to %s (sent %s ago). Answer with agent_message_reply, or say you cannot.", protocol.NeutralizeMarkers(html.EscapeString(protocol.CleanWaitingText(c.name))), c.id, now.Sub(time.Unix(0, c.at)).Truncate(time.Second)),
 			IdempotencyKey: "reminder:" + c.id, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(), State: protocol.StateStored}
 		if _, err = tx.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
    VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {

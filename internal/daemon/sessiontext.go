@@ -122,7 +122,7 @@ func (lc *localConn) operatorGate(method string) error {
 func insideSessionAdvice(method string) string {
 	const reconnect = "ask your user to reconnect agent-net (in Claude Code: /mcp)."
 	if method == protocol.OpWorkerStart {
-		return "agents start workers with the agent_start tool, not this command. If you do not have agent_start, your agent-net tools are out of date: " + reconnect
+		return "agents start workers with the agent_worker_start tool, not this command. If you do not have agent_worker_start, your agent-net tools are out of date: " + reconnect
 	}
 	return "agents use the agent-net tools, not this command. If a tool you need is missing, your agent-net tools are out of date: " + reconnect
 }

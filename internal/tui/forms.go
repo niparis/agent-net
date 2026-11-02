@@ -221,7 +221,7 @@ func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // startDefect opens the one-line note for a defect found later on the selected
 // worker conversation. The owner files it through the owner path; the worker's
-// caller can do the same with agent_rate kind defect_found_later.
+// caller can do the same with agent_worker_rate kind defect_found_later.
 func (m Model) startDefect() (Model, tea.Cmd) {
 	if m.tab != messagesTab {
 		return m, nil

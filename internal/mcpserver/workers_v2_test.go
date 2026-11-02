@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
@@ -38,12 +39,13 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		{"agent_owner_ask", "propose_idea", map[string]any{"kind": "idea", "text": "feature", "recommendation": "yes"}},
 	}
 	for _, tc := range cases {
+		first := len(calls)
 		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
 		if err != nil || res.IsError {
 			t.Fatalf("%s: %v %+v", tc.name, err, res)
 		}
-		if calls[len(calls)-1].method != tc.method {
-			t.Errorf("%s called %s", tc.name, calls[len(calls)-1].method)
+		if len(calls) == first || calls[first].method != tc.method {
+			t.Errorf("%s called %v, want %s first", tc.name, fmt.Sprint(calls[first:]), tc.method)
 		}
 		output, _ := res.StructuredContent.(map[string]any)
 		if output == nil {
@@ -65,16 +67,16 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		}
 		switch tc.name {
 		case "agent_worker_start":
-			if calls[len(calls)-1].params["task"] != "do it" || calls[len(calls)-1].params["touches"].([]any)[0] != "ui" {
-				t.Errorf("worker_start args: %#v", calls[len(calls)-1].params)
+			if calls[first].params["task"] != "do it" || calls[first].params["touches"].([]any)[0] != "ui" {
+				t.Errorf("worker_start args: %#v", calls[first].params)
 			}
 		case "agent_worker_stop":
-			if calls[len(calls)-1].params["session"] != "s_w" {
-				t.Errorf("worker_stop args: %#v", calls[len(calls)-1].params)
+			if calls[first].params["session"] != "s_w" {
+				t.Errorf("worker_stop args: %#v", calls[first].params)
 			}
 		case "agent_worker_rate":
-			if calls[len(calls)-1].params["kind"] != "rating" || calls[len(calls)-1].params["score"] != float64(4) {
-				t.Errorf("rate args: %#v", calls[len(calls)-1].params)
+			if calls[first].params["kind"] != "rating" || calls[first].params["score"] != float64(4) {
+				t.Errorf("rate args: %#v", calls[first].params)
 			}
 		case "agent_owner_ask":
 			if tc.args["kind"] == "question" && (calls[len(calls)-1].params["kind"] != "question" || calls[len(calls)-1].params["text"] != "Merge?") {
@@ -150,6 +152,41 @@ func TestRedesignedOwnerKindsAndTextJSON(t *testing.T) {
 	}
 	if len(res.Content) == 0 || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"item_id":"i_1"`) {
 		t.Fatalf("missing JSON text: %+v", res.Content)
+	}
+}
+
+// agent_worker_start returns the worker record with the caller that started
+// it, as agent_workers_find shows that worker.
+func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
+	worker := protocol.AgentView{
+		SessionID: "s_w1", Hostname: "research", Harness: "opencode", Model: "deepseek-v4.1-flash",
+		Online: true, Profile: protocol.Profile{Name: "worker-one"},
+		Worker: &protocol.WorkerInfo{ID: "w_1", Owner: "s_me", Project: "shop", Task: "do it",
+			StartedAt: 1700000000, DifficultyUsed: "normal"},
+	}
+	list, _ := json.Marshal(protocol.AgentsResult{Agents: []protocol.AgentView{worker}})
+	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		switch method {
+		case "worker_start":
+			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","permissions":"sandboxed"}`), nil
+		case "list":
+			return list, nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
+		Arguments: map[string]any{"task": "do it", "touches": []string{"ui"}}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_start: %v %+v", err, res)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	got, _ := out["worker"].(map[string]any)
+	caller, _ := got["caller"].(map[string]any)
+	if caller["id"] != "s_me" || caller["name"] != "s_me" {
+		t.Fatalf("caller: %+v", caller)
+	}
+	if got["id"] != "s_w1" || got["project"] != "shop" || got["state"] != "running" {
+		t.Fatalf("worker: %+v", got)
 	}
 }
 

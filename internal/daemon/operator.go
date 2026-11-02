@@ -151,10 +151,10 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		// A rating comes from an agent session, never the command line.
 		var p protocol.RateRequest
 		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad agent_rate params")
+			return nil, true, errors.New("bad agent_worker_rate params")
 		}
 		if client == "cli" {
-			return nil, true, errors.New("agent_rate is for agent sessions, not the command line")
+			return nil, true, errors.New("agent_worker_rate is for agent sessions, not the command line")
 		}
 		sid, _, err := lc.callerSession(client, method)
 		if err != nil {
@@ -172,7 +172,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 
 	case protocol.OpWorkerDefect:
 		// The owner's own path for a defect found later. It never carries a
-		// score: the caller's agent_rate remains the agent-side rating and
+		// score: the caller's agent_worker_rate remains the agent-side rating and
 		// defect tool.
 		if client != "cli" {
 			return nil, true, errors.New("only the owner can report a defect found later")
@@ -227,7 +227,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 				callerProject = p.Project != ""
 			}
 			if p.Project == "" {
-				return nil, true, errors.New("no project: name one (agent_project_list), or start the worker from a session that runs in a project folder")
+				return nil, true, errors.New("no project: name one (agent_projects_find), or start the worker from a session that runs in a project folder")
 			}
 		}
 		out, err := d.workerStartCall(ctx, sid, p, callerProject, callerPath)
@@ -250,7 +250,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		isWorker := ls != nil && ls.info.Worker != nil
 		d.mu.Unlock()
 		if !isWorker {
-			return nil, true, errors.New("agent_handback is for workers started through agent-net; you are not one: answer with agent_reply")
+			return nil, true, errors.New("agent_handback is for workers started through agent-net; you are not one: answer with agent_message_reply")
 		}
 		out, err := d.handback(ctx, sid, p)
 		return out, true, err

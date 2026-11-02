@@ -9,52 +9,60 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestAgentToolsCarryCharter(t *testing.T) {
+// The redesigned session reads carry the same public charter fields the old
+// agent_list and agent_get did, so removing those aliases loses no charter.
+func TestAgentSessionsCarryCharter(t *testing.T) {
+	row := `{"id":"s_test","name":"s_test","kind":"agent","machine":"research","project":"housing",` +
+		`"harness":"claude","model":"standard","online":true,"status":"idle","task":"work",` +
+		`"last_seen":"2026-01-01T12:00:00Z","task_started":null,"purpose":"fallback",` +
+		`"charter":{"purpose":"fallback","purpose_fallback":true,"accepts":["bugs"],"refuses":["special"],"feature_requests":"ask"}}`
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		agent := `{"session_id":"s_test","charter":{"purpose":"fallback","purpose_fallback":true,"maturity":"mature","accepts":"bugs","refuses":"special","feature_requests":"ask"}}`
-		if method == "list" {
-			return json.RawMessage(`{"agents":[` + agent + `]}`), nil
+		switch method {
+		case "sessions_find":
+			return json.RawMessage(`{"items":[` + row + `],"total":1}`), nil
+		case "session_get":
+			return json.RawMessage(`{"session":` + row + `}`), nil
 		}
-		return json.RawMessage(`{"agent":` + agent + `}`), nil
+		return json.RawMessage(`{}`), nil
 	})
-	for _, name := range []string{"agent_list", "agent_get"} {
-		args := map[string]any{}
-		if name == "agent_get" {
-			args["session_id"] = "s_test"
-		}
-		r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
-		if err != nil {
-			t.Fatal(err)
+	for _, c := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"agent_sessions_find", map[string]any{"detail": "full"}},
+		{"agent_session_get", map[string]any{"session": "s_test"}},
+	} {
+		r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.name, Arguments: c.args})
+		if err != nil || r.IsError {
+			t.Fatalf("%s: %v %+v", c.name, err, r)
 		}
 		raw, _ := json.Marshal(r)
-		for _, want := range []string{"fallback", "purpose_fallback", "mature", "bugs", "special", "feature_requests"} {
+		for _, want := range []string{"fallback", "purpose_fallback", "bugs", "special", "feature_requests"} {
 			if !strings.Contains(string(raw), want) {
-				t.Fatalf("%s missing %s: %s", name, want, raw)
+				t.Fatalf("%s missing %s: %s", c.name, want, raw)
 			}
 		}
 	}
 }
 
-func TestAgentToolsCarryProjectDisplayName(t *testing.T) {
+// agent_projects_find keeps the display name and source the old project list
+// carried, so an agent can still tell a registered project from one merely seen.
+func TestAgentProjectsFindCarriesDisplayNameAndSource(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		a := `{"session_id":"s_test","repo":{"project":"agent-net"},"project_display_name":"Agent Network"}`
-		if method == "list" {
-			return json.RawMessage(`{"agents":[` + a + `]}`), nil
+		if method == "projects_find" {
+			return json.RawMessage(`{"items":[{"name":"housing","display_name":"Housing","machine":"research",` +
+				`"folder":"/work/housing","sessions_online":1,"sessions_total":2,"source":"both","remote":"https://example.com/r.git"}],"total":1}`), nil
 		}
-		return json.RawMessage(`{"agent":` + a + `}`), nil
+		return json.RawMessage(`{}`), nil
 	})
-	for _, name := range []string{"agent_list", "agent_get"} {
-		args := map[string]any{}
-		if name == "agent_get" {
-			args["session_id"] = "s_test"
-		}
-		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
-		if err != nil {
-			t.Fatal(err)
-		}
-		raw, _ := json.Marshal(res)
-		if !strings.Contains(string(raw), "agent-net") || !strings.Contains(string(raw), "Agent Network") {
-			t.Fatalf("%s: %s", name, raw)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_projects_find", Arguments: map[string]any{"name": "housing"}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_projects_find: %v %+v", err, res)
+	}
+	raw, _ := json.Marshal(res)
+	for _, want := range []string{"Housing", "both", "https://example.com/r.git"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("agent_projects_find missing %s: %s", want, raw)
 		}
 	}
 }

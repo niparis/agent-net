@@ -10,7 +10,7 @@ import (
 // finished worker (docs/design/difficulty-calibration.md, section 7b).
 //
 // agent-net asks now and then. The ask is one line in the worker's end notice,
-// and the caller answers with one agent_rate call. A rating never changes a
+// and the caller answers with one agent_worker_rate call. A rating never changes a
 // model choice in this part; it is stored for the analysis of section 7c.
 
 const (
@@ -27,7 +27,7 @@ const (
 	RateFirstTasks = 3
 	// RateNoteMax is the bytes kept from the caller's one-line note.
 	RateNoteMax = 200
-	// RateKindRating is agent_rate's default: a satisfaction score.
+	// RateKindRating is agent_worker_rate's default: a satisfaction score.
 	RateKindRating = "rating"
 	// RateKindDefectLater is a defect found after the hand-back (or after
 	// merge). Each report adds RateSeverityMin to RateSeverityMax points of
@@ -39,7 +39,7 @@ const (
 	RateSeverityMax = 4
 )
 
-// RateRequest is agent_rate: one caller's rating of one finished worker, or
+// RateRequest is agent_worker_rate: one caller's rating of one finished worker, or
 // one defect found later on that worker's task.
 type RateRequest struct {
 	// Worker is the session ID of the finished worker, as the end notice names
@@ -59,7 +59,7 @@ type RateRequest struct {
 }
 
 // DefectRequest is the owner's OpWorkerDefect: one defect found later on a
-// worker's task. The owner path never takes a score; the caller's agent_rate
+// worker's task. The owner path never takes a score; the caller's agent_worker_rate
 // path takes the same shape with kind defect_found_later.
 type DefectRequest struct {
 	Worker   string `json:"worker"`
@@ -74,7 +74,7 @@ type RateFrame struct {
 	Rater string `json:"rater_session"`
 }
 
-// RateResult answers agent_rate. Accepted is false when the worker was not
+// RateResult answers agent_worker_rate. Accepted is false when the worker was not
 // started by the caller, was already rated, or is unknown; Reason says why.
 type RateResult struct {
 	Accepted   bool   `json:"accepted"`
@@ -136,7 +136,7 @@ func FormatRateAsk(worker, model, difficulty string, run time.Duration) string {
 	if len(details) > 0 {
 		line += " (" + strings.Join(details, ", ") + ")"
 	}
-	return line + " with agent_rate: 1 to 5 for the result, and one line on why"
+	return line + " with agent_worker_rate: 1 to 5 for the result, and one line on why"
 }
 
 // RateOfferFrame is "rate.offer", daemon to gateway: one worker has finished

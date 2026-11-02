@@ -26,7 +26,7 @@ func TestHintTextAndAuthorityNote(t *testing.T) {
 		t.Error("text without suggestions")
 	}
 	got := HintText([]HintSuggestion{{SessionID: "s_1", Name: "cogforge", Hostname: "box", Why: `project name "cogforge"`}})
-	for _, want := range []string{"cogforge", "s_1", "box", "agent_send", "before more debugging"} {
+	for _, want := range []string{"cogforge", "s_1", "box", "agent_message_send", "before more debugging"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("%q missing %q", got, want)
 		}

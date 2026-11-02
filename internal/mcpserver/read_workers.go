@@ -6,11 +6,13 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 type roWorkersFindIn struct {
@@ -120,29 +122,7 @@ func roFindWorkers(ctx context.Context, call Caller, in roWorkersFindIn) (roWork
 		if in.Machine != "" && !strings.EqualFold(machine, in.Machine) && agent.NodeID != in.Machine {
 			continue
 		}
-		difficulty := agent.Worker.DifficultyUsed
-		if difficulty == "" {
-			difficulty = agent.Worker.DifficultyAsked
-		}
-		name := agent.Profile.Name
-		if name == "" {
-			name = agent.SessionID
-		}
-		row := roWorkerRow{
-			ID: agent.SessionID, Name: name, Task: agent.Worker.Task, Machine: machine,
-			Project: agent.Worker.Project, Harness: agent.Harness, Model: agent.Model,
-			Difficulty: difficulty,
-			Caller:     roSessionRef(agent.Worker.Owner, roName(names, agent.Worker.Owner, agent.Worker.Owner)),
-			State:      "ended",
-			RunTime:    roRunTime(agent.Worker.StartedAt, agent.Online),
-			key:        fmt.Sprintf("%020d|%s", agent.Worker.StartedAt, agent.SessionID),
-		}
-		if agent.Online {
-			row.State = "running"
-		}
-		if full {
-			row.Started = roUnixText(agent.Worker.StartedAt)
-		}
+		row, _ := roWorkerRowOf(agent, names, full)
 		rows = append(rows, row)
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].key > rows[j].key })
@@ -153,4 +133,77 @@ func roFindWorkers(ctx context.Context, call Caller, in roWorkersFindIn) (roWork
 		out.Note = roPageNote("workers")
 	}
 	return out, nil
+}
+
+// roWorkerRowOf builds one worker row from an agent record, the same way
+// agent_workers_find does. full adds the start time.
+func roWorkerRowOf(agent protocol.AgentView, names map[string]string, full bool) (roWorkerRow, bool) {
+	if agent.Worker == nil {
+		return roWorkerRow{}, false
+	}
+	machine := agent.Hostname
+	if machine == "" {
+		machine = agent.NodeID
+	}
+	difficulty := agent.Worker.DifficultyUsed
+	if difficulty == "" {
+		difficulty = agent.Worker.DifficultyAsked
+	}
+	name := agent.Profile.Name
+	if name == "" {
+		name = agent.SessionID
+	}
+	row := roWorkerRow{
+		ID: agent.SessionID, Name: name, Task: agent.Worker.Task, Machine: machine,
+		Project: agent.Worker.Project, Harness: agent.Harness, Model: agent.Model,
+		Difficulty: difficulty,
+		Caller:     roSessionRef(agent.Worker.Owner, roName(names, agent.Worker.Owner, agent.Worker.Owner)),
+		State:      "ended",
+		RunTime:    roRunTime(agent.Worker.StartedAt, agent.Online),
+		key:        fmt.Sprintf("%020d|%s", agent.Worker.StartedAt, agent.SessionID),
+	}
+	if agent.Online {
+		row.State = "running"
+	}
+	if full {
+		row.Started = roUnixText(agent.Worker.StartedAt)
+	}
+	return row, true
+}
+
+// roWorkerByID reads one worker the way agent_workers_find would show it.
+func roWorkerByID(ctx context.Context, call Caller, id string) (roWorkerRow, bool) {
+	if id == "" {
+		return roWorkerRow{}, false
+	}
+	agents, err := roAgentList(ctx, call)
+	if err != nil {
+		return roWorkerRow{}, false
+	}
+	names := roNames(agents, nil)
+	for _, agent := range agents {
+		if agent.SessionID != id {
+			continue
+		}
+		return roWorkerRowOf(agent, names, true)
+	}
+	return roWorkerRow{}, false
+}
+
+// workerRowMap turns a worker row into the catalog worker object.
+func workerRowMap(row roWorkerRow) map[string]any {
+	raw, _ := json.Marshal(row)
+	out := map[string]any{}
+	_ = json.Unmarshal(raw, &out)
+	return out
+}
+
+// callerRef names the session that is calling, for a worker result whose
+// record is not in the gateway list yet.
+func callerRef(ctx context.Context, call Caller) (roSessionRefType, bool) {
+	caller, err := roWhoAmI(ctx, call)
+	if err != nil {
+		return roSessionRefType{}, false
+	}
+	return roSessionRef(caller.SessionID, caller.Name), true
 }

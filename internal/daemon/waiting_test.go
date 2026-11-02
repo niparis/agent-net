@@ -179,7 +179,7 @@ func TestWorkerAskOwnerIsRefused(t *testing.T) {
 	lc := &localConn{d: d}
 	ls := &localSession{sessionID: "s_test"}
 	_, err := lc.waitingCall("opencode", ls, json.RawMessage(`{"kind":"question","text":"Merge?","explicit":true}`))
-	if err == nil || err.Error() != "you are a worker: put the question in your hand-back or ask your caller with agent_reply" {
+	if err == nil || err.Error() != "you are a worker: put the question in your hand-back or ask your caller with agent_message_reply" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

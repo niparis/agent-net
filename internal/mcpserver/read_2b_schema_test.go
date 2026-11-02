@@ -59,29 +59,6 @@ func TestReadToolsUseTheCatalogAndValidateTheirOutput(t *testing.T) {
 	}
 }
 
-// The new tools are added beside the old ones. The old names, descriptions and
-// handlers do not change in this task.
-func TestOldReadToolsStillWork(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
-	f := roReadFixture()
-	cs := connect(t, f.call)
-	for _, name := range []string{"agent_messages", "agent_message_status", "agent_graph", "agent_mcp_list", "agent_worker_profiles"} {
-		list, err := cs.ListTools(context.Background(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		found := false
-		for _, tool := range list.Tools {
-			if tool.Name == name {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("old tool %s disappeared", name)
-		}
-	}
-}
-
 func sortedStrings(in []string) []string {
 	out := append([]string(nil), in...)
 	sort.Strings(out)

@@ -153,7 +153,7 @@ func publicRules(n Node) []PublicRule {
 }
 
 // RulesFor returns a node's effective rules as public name/value pairs. It is
-// also what agent_get puts on a session's node.
+// also what agent_session_get puts on a session's node.
 func RulesFor(maturity string, settings map[string]string) []PublicRule {
 	d := NodeDefaults(maturity, settings)
 	return []PublicRule{

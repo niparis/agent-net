@@ -7,48 +7,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 )
-
-func TestWorkerStartAndNodesShowTrackAndPlaybook(t *testing.T) {
-	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		switch method {
-		case "worker_start":
-			return json.RawMessage(`{"status":"started","session_id":"s_w","harness":"opencode","model":"a/x","project":"p","hostname":"mac","permissions":"sandboxed","track":{"harness":"opencode","model":"a/x","runs":3,"complete":1,"partial":2,"median_run_seconds":60,"resumable":true},"playbooks":[{"subject_kind":"model","subject":"a/x","note":"ask for the diff"}]}`), nil
-		case "machines_find":
-			return json.RawMessage(`{"items":[{"id":"n_1","name":"mac","online":true,"version":"v1","harnesses":[{"name":"opencode","version":"1.0"}],"sessions_online":0,"workers_running":0,"last_seen":"2023-11-14T22:13:20Z"}],"total":1}`), nil
-		case "machine_get":
-			raw, _ := json.Marshal(params)
-			if strings.Contains(string(raw), "track_record") {
-				return json.RawMessage(`{"track_record":{"items":[{"harness":"opencode","model":"a/x","runs":14,"complete":13,"median_minutes":26}],"total":1}}`), nil
-			}
-			if strings.Contains(string(raw), "playbook") {
-				return json.RawMessage(`{"playbook":{"items":[{"subject":"a/x","note":"ask for the diff"}],"total":1}}`), nil
-			}
-			return json.RawMessage(`{}`), nil
-		}
-		return json.RawMessage(`{}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_start",
-		Arguments: map[string]any{"project": "p", "task": "t", "touches": []string{"ui"}}})
-	if err != nil || res.IsError || len(res.Content) == 0 {
-		t.Fatalf("agent_start: %v %+v", err, res)
-	}
-	text := res.Content[0].(*mcp.TextContent).Text
-	for _, want := range []string{"a/x · opencode: 3 runs: 1 complete, 2 partial (median 1 min) · resumes", "playbook [a/x]: ask for the diff"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("agent_start output lacks %q:\n%s", want, text)
-		}
-	}
-	nres, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_nodes"})
-	if err != nil || nres.IsError || len(nres.Content) == 0 {
-		t.Fatalf("agent_nodes: %v %+v", err, nres)
-	}
-	text = nres.Content[0].(*mcp.TextContent).Text
-	if !strings.Contains(text, "mac: a/x · opencode: 14 runs: 13 complete (median 26 min) · resumes") ||
-		!strings.Contains(text, "playbook [a/x]: ask for the diff") {
-		t.Errorf("agent_nodes output lacks the track or playbook line:\n%s", text)
-	}
-}
 
 func TestAgentLearnShowsTheResultAndTheDailyLimit(t *testing.T) {
 	accepted := true
@@ -79,11 +39,25 @@ func TestAgentLearnShowsTheResultAndTheDailyLimit(t *testing.T) {
 
 func TestWorkerToolsForwardToDaemon(t *testing.T) {
 	var calls []call
+	worker := protocol.AgentView{SessionID: "s_w1", Hostname: "mac", Harness: "opencode", Model: "a/b",
+		Online: true, Profile: protocol.Profile{Name: "worker-one"},
+		Worker: &protocol.WorkerInfo{ID: "w_1", Owner: "s_me", Project: "shop", Task: "do it", StartedAt: 1700000000}}
+	list, _ := json.Marshal(protocol.AgentsResult{Agents: []protocol.AgentView{worker}})
 	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		raw, _ := json.Marshal(params)
 		var m map[string]any
 		json.Unmarshal(raw, &m)
 		calls = append(calls, call{method, m})
+		switch method {
+		case "worker_start":
+			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"a/b","project":"shop","hostname":"mac"}`), nil
+		case "worker_stop":
+			return json.RawMessage(`{"session":"s_w1","stopped":true}`), nil
+		case "agent_rate":
+			return json.RawMessage(`{"accepted":true,"worker":"s_w1","score":4,"model":"a/b","difficulty":"hard"}`), nil
+		case "list":
+			return list, nil
+		}
 		return json.RawMessage(`{"ok":true,"accepted":true,"id":1,"remaining":2}`), nil
 	})
 	ctx := context.Background()
@@ -92,18 +66,18 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 		args         map[string]any
 		check        func(map[string]any) bool
 	}{
-		{"agent_start", "worker_start", map[string]any{"project": "shop", "task": "do it", "model": "a/b", "difficulty": "hard", "touches": []string{"db", "tests"}, "isolation": "worktree"},
+		{"agent_worker_start", "worker_start", map[string]any{"project": "shop", "task": "do it", "model": "a/b", "difficulty": "hard", "touches": []string{"db", "tests"}, "isolation": "worktree"},
 			func(p map[string]any) bool {
 				return len(p["touches"].([]any)) == 2 && p["project"] == "shop" && p["harness"] == "opencode" && p["model"] == "a/b" && p["difficulty"] == "hard" && p["isolation"] == "worktree" && p["task"] == "do it"
 			}},
-		{"agent_stop", "worker_stop", map[string]any{"session": "s_w"}, func(p map[string]any) bool { return p["session"] == "s_w" }},
+		{"agent_worker_stop", "worker_stop", map[string]any{"worker": "s_w1"}, func(p map[string]any) bool { return p["session"] == "s_w1" }},
 		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model_harness", "subject": "terra@pi",
 			"finding": "Hands back partial work.", "evidence": []any{"s_w1", "s_w2"}},
 			func(p map[string]any) bool {
 				return p["subject_kind"] == "model_harness" && p["subject"] == "terra@pi" &&
 					p["finding"] == "Hands back partial work." && len(p["evidence"].([]any)) == 2
 			}},
-		{"agent_rate", "agent_rate", map[string]any{"worker": "s_w1", "score": 4, "note": "the diff was right"},
+		{"agent_worker_rate", "agent_rate", map[string]any{"worker": "s_w1", "kind": "rating", "score": 4, "note": "the diff was right"},
 			func(p map[string]any) bool {
 				return p["worker"] == "s_w1" && p["score"] == float64(4) && p["note"] == "the diff was right"
 			}},
@@ -113,7 +87,14 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 		if err != nil || res.IsError {
 			t.Fatalf("%s: %v %+v", c.tool, err, res)
 		}
-		if len(calls) != n+1 || calls[n].method != c.method || !c.check(calls[n].params) {
+		found := false
+		for _, got := range calls[n:] {
+			if got.method == c.method && c.check(got.params) {
+				found = true
+				break
+			}
+		}
+		if !found {
 			t.Errorf("%s: %+v", c.tool, calls[n:])
 		}
 	}
@@ -121,7 +102,7 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 	// takes the caller from the connection.
 	tools, _ := cs.ListTools(ctx, nil)
 	for _, tl := range tools.Tools {
-		if !strings.HasPrefix(tl.Name, "agent_start") && tl.Name != "agent_handback" && tl.Name != "agent_stop" {
+		if !strings.HasPrefix(tl.Name, "agent_worker_start") && tl.Name != "agent_handback" && tl.Name != "agent_worker_stop" {
 			continue
 		}
 		b, _ := json.Marshal(tl.InputSchema)
@@ -144,7 +125,7 @@ func TestWorkerProfilesListToolReturnsRoster(t *testing.T) {
 		}
 		return json.RawMessage(`{}`), nil
 	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_profiles"})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_profiles_find"})
 	if err != nil || res.IsError || len(res.Content) == 0 || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "demo") {
 		t.Fatalf("profiles: %+v %v", res, err)
 	}
@@ -155,7 +136,7 @@ func TestStartRequiresTouches(t *testing.T) {
 		t.Fatal("start forwarded")
 		return nil, nil
 	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_start", Arguments: map[string]any{"task": "x"}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start", Arguments: map[string]any{"task": "x"}})
 	if err != nil || !res.IsError {
 		t.Fatalf("expected refusal: %+v %v", res, err)
 	}

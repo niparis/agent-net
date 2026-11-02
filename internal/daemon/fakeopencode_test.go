@@ -29,7 +29,7 @@ import (
 //   - an HTTP server with basic auth: GET /api/info, POST /api/session;
 //   - the agent-net plugin: once a session is created it says hello on the
 //     daemon socket as an opencode session, and answers every message it
-//     gets with a reply, like a model that uses agent_reply;
+//     gets with a reply, like a model that uses agent_message_reply;
 //   - a child process in its process group, to prove that the group is killed.
 //
 // It writes fake-opencode.json in its working folder (the project): the

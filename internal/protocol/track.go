@@ -10,7 +10,7 @@ import (
 // The model track record and the playbook (decision 0022, step 5b). The
 // gateway counts the runs its machines report, per harness and model, and the
 // owner can write a note about a model. Both are shown where a model is
-// chosen: in agent_nodes and in the agent_start result.
+// chosen: in agent_machines_find and in the agent_worker_start result.
 
 // TrackRecordDays is the read window of the track record and the calibration.
 // The gateway keeps worker runs for ever by default; this only limits which

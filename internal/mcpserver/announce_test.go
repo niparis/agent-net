@@ -64,17 +64,17 @@ func TestReminderUntilAnnounce(t *testing.T) {
 		tool string
 		args map[string]any
 	}{
-		{"agent_list", nil},
-		{"agent_get", map[string]any{"session_id": "s_1"}},
-		{"agent_nodes", nil},
-		{"agent_send", map[string]any{"to": "s_x", "body": "hi"}}, // an error result
+		{"agent_sessions_find", nil},
+		{"agent_session_get", map[string]any{"session": "s_1"}},
+		{"agent_machines_find", nil},
+		{"agent_message_send", map[string]any{"to": "s_x", "body": "hi"}}, // an error result
 	} {
 		res := call(c.tool, c.args)
 		if got := lastText(t, res); got != AnnounceReminder {
 			t.Errorf("%s before announce: last line %q, want the reminder", c.tool, got)
 		}
 	}
-	if res := call("agent_send", map[string]any{"to": "s_x", "body": "hi"}); !res.IsError {
+	if res := call("agent_message_send", map[string]any{"to": "s_x", "body": "hi"}); !res.IsError {
 		t.Fatalf("the send error should stay an error: %+v", res)
 	}
 
@@ -86,12 +86,12 @@ func TestReminderUntilAnnounce(t *testing.T) {
 	if res := call("agent_announce", map[string]any{"task": "fixing the login bug"}); res.IsError || hasReminder(res) {
 		t.Fatalf("good announce: %+v", res)
 	}
-	for _, tool := range []string{"agent_list", "agent_nodes", "agent_messages"} {
+	for _, tool := range []string{"agent_sessions_find", "agent_machines_find", "agent_messages_find"} {
 		if res := call(tool, nil); hasReminder(res) {
 			t.Errorf("%s after announce still has the reminder", tool)
 		}
 	}
-	if res := call("agent_send", map[string]any{"to": "s_x", "body": "hi"}); hasReminder(res) {
+	if res := call("agent_message_send", map[string]any{"to": "s_x", "body": "hi"}); hasReminder(res) {
 		t.Error("an error result after announce still has the reminder")
 	}
 }
@@ -106,7 +106,7 @@ func TestReminderIsPerServer(t *testing.T) {
 	if _, err := a.CallTool(ctx, &mcp.CallToolParams{Name: "agent_announce", Arguments: map[string]any{"task": "x"}}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := b.CallTool(ctx, &mcp.CallToolParams{Name: "agent_list"})
+	res, err := b.CallTool(ctx, &mcp.CallToolParams{Name: "agent_sessions_find"})
 	if err != nil || !hasReminder(res) {
 		t.Fatalf("second server: %v %+v", err, res)
 	}
@@ -231,7 +231,7 @@ func TestAskOwnerPassesQuestion(t *testing.T) {
 		}
 		return json.RawMessage(`{"ok":true}`), nil
 	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_ask_owner", Arguments: map[string]any{"question": "Merge?", "options": []string{"Yes", "No"}, "urgency": "high"}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "Merge?", "recommendation": "yes", "options": []string{"Yes", "No"}, "urgency": "high"}})
 	if err != nil || res.IsError || got.Kind != protocol.WaitingQuestion || got.Text != "Merge?" || len(got.Options) != 2 || got.Urgency != "high" || !got.Explicit {
 		t.Fatalf("ask: %v %+v %+v", err, res, got)
 	}

@@ -131,7 +131,7 @@ From source: `scripts/dist.sh`, then `agent-net setup --gateway`. The install li
 
 ## 4. Check it
 
-Start a Pi session on one machine and a Claude Code session on another. Ask one to use `agent_list`, then message the other. On either machine, `agent-net messages` should show the request as `replied` and the answer as `delivered`.
+Start a Pi session on one machine and a Claude Code session on another. Ask one to use `agent_sessions_find`, then message the other. On either machine, `agent-net messages` should show the request as `replied` and the answer as `delivered`.
 
 In the TUI, press `2`, `M` or `G` for Graph. Find an agent with `/`, then
 press Enter for its charter card. Esc returns to the Graph with the same node

@@ -104,7 +104,7 @@ func TestCodexCTOPeerNote(t *testing.T) {
 }
 
 func TestDeliverCodexReminder(t *testing.T) {
-	m := protocol.Message{ID: "m_note", From: "agent-net", FromHarness: "agent-net", Type: protocol.TypeNotification, Body: "[agent-net] reminder: alice is waiting for your answer to m_request (sent 3m0s ago). Answer with agent_reply, or say you cannot."}
+	m := protocol.Message{ID: "m_note", From: "agent-net", FromHarness: "agent-net", Type: protocol.TypeNotification, Body: "[agent-net] reminder: alice is waiting for your answer to m_request (sent 3m0s ago). Answer with agent_message_reply, or say you cannot."}
 	if got := codexFrame(m); got != m.Body {
 		t.Fatalf("reminder = %q", got)
 	}

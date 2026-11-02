@@ -26,7 +26,7 @@ func newListReq(id int) string {
 }
 
 func newCallReq(id int) string {
-	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{%s,"name":"agent_list","arguments":{}}}`, id, newMeta)
+	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{%s,"name":"agent_sessions_find","arguments":{}}}`, id, newMeta)
 }
 
 func waitExe(t *testing.T, pid int, want string) {
