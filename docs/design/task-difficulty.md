@@ -22,6 +22,19 @@ about a minute to every start without adding needed evidence.
 The default assessor scores the brief directly. The analyzer path remains
 available behind `DifficultyAnalyzer` and `agent-net dev assess --analyzer`.
 
+## Decision 2026-11-02: no `touches`
+
+`touches` is dropped entirely when the picker switches to the judge's label
+(build step 5). The level comes only from the six scores, the scoring function
+and the bottleneck rule. The rules that let `touches` change the level go: the
+one-level bump for `db` and `hot-path`, and the shortcut to `trivial` for
+`docs`/`tests` only. Blast radius is the Risk dimension, written in the brief's
+Evidence section and scored like the other five; a Risk of 5 forces at least
+`hard`. The brief checklists `touches` added (for example a migration note) are
+written by the orchestrator into the brief. During the switch-over the field is
+still accepted and ignored, so callers that send it do not fail, and the
+guidance stops mentioning it.
+
 ## Analyzer design, on ice
 
 The sections below record the earlier analyzer proposal. They are historical
@@ -130,9 +143,7 @@ one severe problem cannot disappear into the average.
 The weights and the cut points are starting values, to be tuned from results
 (section 8).
 
-`touches` no longer changes the label. It still asks for the checks it asks
-for today (for example a migration note), and the analyzer reads it as a hint
-for the risk evidence.
+`touches` is removed (owner decision 2026-11-02, see below).
 
 ## 7. Where it runs (analyzer design, on ice)
 
