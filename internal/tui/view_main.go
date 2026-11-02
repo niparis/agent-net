@@ -348,15 +348,25 @@ func (m Model) titleLine(w int) string {
 	// none, so the screen counts what it has. Offline sessions are mostly old
 	// ghosts, so the header leaves them out and says what the owner can act
 	// on: busy sessions, sessions that wait, and the worker queue.
+	// compact is the same status in fewer words, for a narrow terminal.
 	mid := fmt.Sprintf("%d sessions, %d online · %d busy", total, online, busy)
+	compact := fmt.Sprintf("%d online · %d busy", online, busy)
 	if c := m.usage.counts; c != nil {
 		mid = fmt.Sprintf("%d online · %d busy", c.Online, busy)
+		compact = mid
 	}
 	if n := m.waitingCount(); n > 0 {
 		mid += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
+		compact += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
 	}
 	if q := m.queuedWorkers(); workers > 0 || q > 0 {
 		mid += fmt.Sprintf(" · workers %d running, %d queued", workers, q)
+		if workers > 0 {
+			compact += " · " + plural(workers, "worker")
+		}
+		if q > 0 {
+			compact += fmt.Sprintf(" · %d queued", q)
+		}
 	}
 	if n := m.learnedNew(); n > 0 {
 		mid += fmt.Sprintf(", learned %d new", n)
@@ -404,26 +414,31 @@ func (m Model) titleLine(w int) string {
 			return clip(left+" "+short, w)
 		}
 	}
+	// Then drop the time, then say the same status in fewer words.
 	if used > w {
 		right = ""
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
 	}
+	if used > w && !m.mapOn && len(filters) == 0 {
+		mid = compact
+		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
+	}
+	// Last, drop whole parts from the end: a part is never cut in the middle.
 	if used > w {
 		room := w - ansi.StringWidth(left) - 3
-		if room > 0 {
-			plain := ansi.Strip(mid)
-			cut := strings.TrimSpace(ansi.Truncate(plain, room, ""))
-			if len(cut) < len(plain) && !strings.HasPrefix(plain[len(cut):], " ") {
-				if i := strings.LastIndex(cut, " "); i >= 0 {
-					cut = cut[:i]
-				} else {
-					cut = ""
-				}
+		plain := ansi.Strip(mid)
+		for room > 0 && ansi.StringWidth(plain) > room {
+			i := max(strings.LastIndex(plain, " · "), strings.LastIndex(plain, ", "))
+			if i < 0 {
+				plain = ""
+				break
 			}
-			mid = strings.TrimRight(strings.TrimSpace(cut), " ·,")
-		} else {
-			mid = ""
+			plain = plain[:i]
 		}
+		if room <= 0 {
+			plain = ""
+		}
+		mid = plain
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
 	}
 	if mid == "" {
