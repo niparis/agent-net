@@ -1,16 +1,16 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (1) │ 12 online · 1 busy
-Learned suggestions
-▸ ops        ops: add «deploys» to refuses? because ops refuses deploys                          now
-
-
-
-
-
-
-
-
-
-
+╭─Proposals · 1─────────────────────────────────────────────╭─ops (learned)────────────────────────╮
+│ ▸ ops (learned) add "deploys" to what it refuses          │ ops: add «deploys» to refuses?       │
+╰───────────────────────────────────────────────────────────│ because ops refuses deploys          │
+                                                            │                                      │
+                                                            │ learned on ops                       │
+                                                            │ just now                             │
+                                                            │                                      │
+                                                            │ a accept  r reject                   │
+                                                            │                                      │
+                                                            │                                      │
+                                                            │                                      │
+                                                            ╰──────────────────────────────────────╯
 
 
 
@@ -27,4 +27,4 @@ Learned suggestions
 │                                                                                                  │
 │ c: open the CTO                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-a accept  r reject  ? help  q quit
+a accept  r reject  ↑↓ select  ? help

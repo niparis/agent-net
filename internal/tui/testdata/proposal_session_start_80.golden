@@ -1,15 +1,15 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (1) 12 online
-CTO proposals
-▸ CTO proposal start garden @ build-vm · claude · worktree · Review the ga… 107…
-
-
-
-
-
-
-
-
-
+╭─Proposals · 1────────────────────────────────────────────────────────────────╮
+│ ▸ CTO          start a Claude session in garden, on build-vm            107… │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO proposal─────────────────────────────────────────────────────────────────╮
+│ This reflects the current work.                                              │
+│ start a Claude session in garden, on build-vm                                │
+│                                                                              │
+│ CTO · Mac · 1079 days ago                                                    │
+│                                                                              │
+│ enter details  a approve  r decline  A approve all                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
 
 
 
@@ -31,4 +31,4 @@ CTO proposals
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter details  a approve  r decline  A approve all  ? help  q quit
+enter details  a approve  r decline  A approve all  ↑↓ select  ? help
