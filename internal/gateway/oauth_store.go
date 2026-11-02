@@ -211,13 +211,8 @@ func oauthPendingQuota(tx *sql.Tx, clientID, source string, phone bool) error {
 	if err := tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND source=?`, source).Scan(&sourceCount); err != nil {
 		return err
 	}
-	if clientCount >= 3 || (!phone && sourceCount >= 3) {
+	if clientCount >= 3 || sourceCount >= 3 {
 		return errOAuthLimit
-	}
-	if phone && sourceCount >= 3 {
-		if _, err := tx.Exec(`DELETE FROM oauth_pending WHERE id=(SELECT id FROM oauth_pending WHERE status='pending' AND source=? ORDER BY created_at,rowid LIMIT 1)`, source); err != nil {
-			return err
-		}
 	}
 	if err := tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending'`).Scan(&count); err != nil {
 		return err

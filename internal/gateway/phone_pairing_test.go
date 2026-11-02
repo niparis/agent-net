@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -185,11 +186,18 @@ func TestPhonePendingSharesOAuthLimitAndExpires(t *testing.T) {
 			oldest = p
 		}
 	}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 3; i++ {
 		if _, err := s.newPhonePending("Phone", "same-source", c.t.Add(time.Second)); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if _, err := s.newPhonePending("Phone", "same-source", c.t.Add(time.Second)); !errors.Is(err, errOAuthLimit) {
+		t.Fatalf("fourth source request: %v", err)
+	}
+	if _, err := s.newPhonePending("Phone", "other-source", c.t.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
 	var count int
 	if err := s.db.QueryRow(`SELECT count(*) FROM oauth_pending WHERE source='same-source'`).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("source count %d: %v", count, err)
