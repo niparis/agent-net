@@ -37,46 +37,52 @@ its own token, never the owner.
 
 ## 4. How a connection works
 
+The owner's experience is the device-code login of Codex and Claude: a page
+shows a short code, and the owner types it where they are trusted. Here the
+trusted place is the TUI. The wire protocol stays the standard MCP flow
+(authorization code with PKCE), because the client chooses its flow and MCP
+clients do not use the device grant (RFC 8628).
+
 ```
-Owner (TUI)               agent-net gateway (via tunnel)        Grok (xAI cloud)
-  S > Outside bots > Add a bot
-  -> 10-minute pairing window, code K7F-29Q
-                            GET /mcp (no token) -> 401 + resource metadata  <-
-                            GET /.well-known/oauth-*                         <-
-                            POST /oauth/register (only inside the window)    <-
-  owner's browser ->        GET /oauth/authorize (PKCE)
-                            page: "Type the code shown in your agent-net TUI"
-  types K7F-29Q             TUI row: client, redirect host: a approve / r refuse
-                            page redirects back with a one-time code
-                            POST /oauth/token (code + PKCE) -> tokens        <-
-                            POST /mcp  Authorization: Bearer ...             <-
+Grok (xAI cloud)          agent-net gateway (via tunnel)        Owner
+     |  GET /mcp (no token) ->  401 + resource metadata
+     |  GET /.well-known/oauth-*
+     |  POST /oauth/register
+     |  owner's browser -> GET /oauth/authorize (PKCE)
+     |                         page: "Enter K7F-29Q in your agent-net TUI"
+     |                                                   S > Outside bots >
+     |                                                   Add a bot: K7F-29Q
+     |                                                   shows client + redirect
+     |                                                   host: a approve
+     |                         page sees the approval, redirects with a code
+     |  POST /oauth/token  (code + PKCE verifier) -> access + refresh token
+     |  POST /mcp  Authorization: Bearer ...  -> tools for role "bot"
 ```
 
-1. In the TUI the owner opens `S` > "Outside bots" > "Add a bot". This opens
-   a 10-minute pairing window and shows a pairing code, for example
-   `K7F-29Q`. Only one window is open at a time.
-2. The owner adds a custom connector in the bot's settings with the URL
+1. The owner adds a custom connector in the bot's settings with the URL
    `https://<public host>/mcp`.
-3. agent-net answers the first unauthenticated call with `401` and the
+2. agent-net answers the first unauthenticated call with `401` and the
    protected resource metadata, as the MCP authorization spec requires.
-4. The client registers itself (dynamic client registration). Outside a
-   pairing window registration is refused, and nothing is stored.
-5. The owner's browser opens agent-net's authorize page, which asks for the
-   pairing code. A wrong code is refused; 5 wrong codes close the window.
-6. With the right code, the TUI shows the request with the client name and
-   its redirect host. `a` approves and asks for a bot name (default: the
-   client name, for example `grok-bot`). `r` refuses. Either closes the
-   window.
-7. On approval the page redirects with a one-time code. The client trades it,
-   with its PKCE verifier, for a short-lived access token (1 hour) and a
-   refresh token (90 days, rotated on use).
-8. The bot calls `/mcp` with the access token.
+3. The client registers itself (dynamic client registration). Registration
+   alone grants nothing and shows nothing in the TUI.
+4. The owner's browser opens agent-net's authorize page. It shows a short
+   code, for example `K7F-29Q`, and "Enter this code in your agent-net TUI".
+   The page waits and polls for the answer.
+5. In the TUI the owner opens `S` > "Outside bots" > "Add a bot" and types
+   the code. The TUI then shows the client name and its redirect host. `a`
+   approves and asks for a bot name (default: the client name, for example
+   `grok-bot`). `r` refuses.
+6. The page sees the approval and redirects with a one-time authorization
+   code. The client trades it, with its PKCE verifier, for a short-lived
+   access token (1 hour) and a refresh token (90 days, rotated on use).
+7. The bot calls `/mcp` with the access token.
 
 The authorize page never asks for a password. Knowing the URL is not enough
-to connect: a connection needs the pairing code from the owner's TUI and the
-owner's key press. A stranger who finds the URL cannot put a request in front
-of the owner: outside a pairing window there is nothing to answer, and inside
-it they would need the code.
+to connect: a connection needs the owner to type, in the TUI, the code shown
+in their own browser. A stranger's attempt only shows a code on the
+stranger's screen. The TUI has no list of pending requests, so there is
+nothing to flood and nothing to approve by mistake. Pending requests are
+capped (20, each expiring after 10 minutes) and limited per address.
 
 ## 5. Why OAuth, and why this is not "Log in with Google"
 
@@ -153,7 +159,7 @@ and approve it in the TUI.
 - The settings menu (`S`) gets "Outside bots": the public URL, and the list
   of connected bots with their name, client, redirect host, connected since
   and last call.
-- "Add a bot" opens the pairing window (section 4).
+- "Add a bot" asks for the code shown in the browser (section 4).
 - `x` on a bot revokes it: its tokens stop working at once. Revoking the last
   bot turns Funnel off.
 - A fallback for clients that take a header: "New token" creates a fixed
@@ -169,10 +175,10 @@ and approve it in the TUI.
   PKCE challenge and the registered redirect URI.
 - Redirect URIs must be `https` and are shown to the owner before approval.
 - Spam and floods. A public endpoint will be scanned, so:
-  - registration and authorize work only inside a pairing window; outside it
-    they refuse at once and store nothing;
+  - pending authorize requests are capped (20, each expiring after 10
+    minutes) and never shown in the TUI until the owner types their code;
   - a call without a valid token is refused before any database read;
-  - an address that sends repeated bad tokens or wrong pairing codes is
+  - an address that sends repeated bad tokens or registrations is
     blocked for an hour;
   - limits per address on every public path, small request size limits and
     short timeouts;
