@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -185,6 +186,47 @@ func TestWorkerTouchesDoNotChangeLevel(t *testing.T) {
 				t.Fatalf("touches %v changed the record: %+v", touches, row)
 			}
 		})
+	}
+}
+
+func TestWorkerContinueKeepsJudgeLabelUnlessBriefChanges(t *testing.T) {
+	setupShadowJudge(t, difficultyScoresJSON, false)
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
+	w.register(t, newRepo(t, "shop"))
+
+	first := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback first"})
+	if a := storedAssessment(t, g, first.SessionID); a.Label != "hard" {
+		t.Fatalf("first label: %+v", a)
+	}
+	eventually(t, "the first worker ended and was reported", func() bool {
+		rows, _ := w.d.st.workers()
+		return w.d.workerCount() == 0 && len(rows) == 1 && rows[0].Reported && rows[0].Resumable
+	})
+	// A changed judge reply would give trivial. A continue without extra work
+	// must keep the old hard label; one with extra work must assess again.
+	reply := os.Getenv(envFakeOpenCodeReply)
+	if err := os.WriteFile(reply, []byte(shadowReply), 0600); err != nil {
+		t.Fatal(err)
+	}
+	startContinue := func(extra string) protocol.WorkerStartResult {
+		raw, err := w.cli.call("worker_start", protocol.WorkerStartRequest{Continue: first.SessionID, Task: extra})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var res protocol.WorkerStartResult
+		if err := json.Unmarshal(raw, &res); err != nil || res.SessionID == "" {
+			t.Fatalf("continue: %s %v", raw, err)
+		}
+		return res
+	}
+	kept := startContinue("")
+	if a := storedAssessment(t, g, kept.SessionID); a.Label != "hard" {
+		t.Fatalf("continue without new work reassessed the brief: %+v", a)
+	}
+	changed := startContinue("also update the docs")
+	if a := storedAssessment(t, g, changed.SessionID); a.Label != "trivial" {
+		t.Fatalf("continue with new work kept the old label: %+v", a)
 	}
 }
 
