@@ -50,3 +50,17 @@ func TestAppsPublicAndBotsScreens(t *testing.T) {
 		golden(t, fmt.Sprintf("connected_apps_public_error_%d", w), m.View())
 	}
 }
+
+func TestBotColumnsAndPublicAddresses(t *testing.T) {
+	m := botScreenModel(120)
+	view := m.View()
+	if !strings.Contains(view, "weather-bot        bot      -          -          online -") || !strings.Contains(view, "last call 14:04") {
+		t.Fatalf("bot columns:\n%s", view)
+	}
+	m.apps.public.On = true
+	m.apps.public.URL = "https://host.example.ts.net:8443"
+	line := strings.Join(m.appsView(120, 24), "\n")
+	if !strings.Contains(line, "phone https://host.example.ts.net:8443/   bots https://host.example.ts.net:8443/mcp") {
+		t.Fatal(line)
+	}
+}

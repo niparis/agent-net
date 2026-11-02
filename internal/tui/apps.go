@@ -266,7 +266,17 @@ func (m Model) appsView(w, rows int) []string {
 	out := []string{section("Connected apps", w)}
 	status := "off"
 	if f.public.On {
-		status = "on  " + f.public.URL + "/mcp"
+		phone := strings.TrimRight(f.public.URL, "/") + "/"
+		bots := strings.TrimRight(f.public.URL, "/") + "/mcp"
+		status = "on   phone " + phone + "   bots " + bots
+		if ansi.StringWidth("Reachable from the internet: "+status) > w-2 {
+			status = "on   " + phone + "   " + bots
+		}
+		if ansi.StringWidth("Reachable from the internet: "+status) > w-2 {
+			available := w - 2 - ansi.StringWidth("Reachable from the internet: on      ")
+			left := available / 2
+			status = "on   " + strings.TrimRight(cellDots(phone, left), " ") + "   " + strings.TrimRight(cellDots(bots, available-left), " ")
+		}
 	}
 	for _, line := range wrap("Reachable from the internet: "+status, w-2) {
 		out = append(out, "  "+line)

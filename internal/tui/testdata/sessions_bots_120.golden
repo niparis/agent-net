@@ -13,7 +13,7 @@
   ci-runner          pi       agent-net  gpt-6      idle   -        5%  300M
   scratch            pi       -          -          shell  -       <1%   80M
  Bots 1 session ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  weather-bot               bot     online   last call today 14:04
+  weather-bot        bot      -          -          online -                 last call 14:04
 
 
 

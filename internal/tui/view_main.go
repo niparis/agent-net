@@ -1205,7 +1205,29 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		if a.Online {
 			state = "online"
 		}
-		line := marker + fmt.Sprintf("%-24s  %-6s  %-7s  last call %s", sanitize(a.Profile.Name), "bot", state, m.appsDate(time.Unix(a.LastSeen, 0)))
+		var parts []string
+		for _, c := range cols {
+			v := ""
+			switch c.name {
+			case "NAME":
+				v = sanitize(a.Profile.Name)
+			case "AGENT":
+				v = "bot"
+			case "PROJECT", "MODEL", "TRUST", "POLICY":
+				v = "-"
+			case "STATUS":
+				v = state
+			case "TASK":
+				d := m.appsDate(time.Unix(a.LastSeen, 0))
+				v = "last call " + strings.TrimPrefix(d, "today ")
+			}
+			if c.name == "TASK" {
+				parts = append(parts, cellDots(v, c.width))
+			} else {
+				parts = append(parts, cell(v, c.width))
+			}
+		}
+		line := marker + strings.Join(parts, " ")
 		if selected {
 			line = selectedRow(clip(line, w))
 		}
