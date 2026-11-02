@@ -317,3 +317,63 @@ func TestIdenticalScannedSkillsShareIdentityAcrossMachines(t *testing.T) {
 		t.Fatalf("identical skills: %+v", items)
 	}
 }
+
+func TestToolsSkillMetadataNewestCopyAndMCP(t *testing.T) {
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().UTC()
+	for i, node := range []string{"node-a", "node-b"} {
+		obs := protocol.InventoryItem{Kind: protocol.InventorySkill, Name: "demo", Hash: "same", Harness: "pi", Scope: "user", Location: "/skills/demo", State: protocol.InventoryOK, Description: "new description", ScannedAt: now, Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 81}}}}
+		if i == 1 {
+			obs.Description = "old"
+			obs.ScannedAt = now.Add(-time.Hour)
+			obs.Manifest.Files[0].Size = 4
+		}
+		mcp := protocol.InventoryItem{Kind: protocol.InventoryMCP, Name: "server", Hash: "server", Harness: "pi", Scope: "user", Location: "/config", State: protocol.InventoryOK}
+		if err := s.SetInventory(node, protocol.InventoryReport{Machine: node, State: protocol.InventoryOK, Items: []protocol.InventoryItem{obs, mcp}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("%+v", items)
+	}
+	for _, item := range items {
+		data, err := json.Marshal(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if item.Kind == protocol.InventoryMCP {
+			for _, key := range []string{"description", "start_tokens", "full_tokens"} {
+				if _, ok := fields[key]; ok {
+					t.Fatalf("MCP has %s: %s", key, data)
+				}
+			}
+			continue
+		}
+		if item.Description != "new description" || item.StartTokens != 10 || item.FullTokens != 21 {
+			t.Fatalf("%s", data)
+		}
+		detail, err := s.ToolsItem(item.ID, func(string) bool { return true })
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(detail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"description":"new description"`) {
+			t.Fatalf("%s", raw)
+		}
+	}
+}
