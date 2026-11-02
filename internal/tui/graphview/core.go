@@ -52,11 +52,12 @@ type Output struct {
 }
 
 type Graph struct {
-	Nodes     []protocol.Node
-	Edges     []protocol.Edge
-	Positions map[string]Point
-	selected  int
-	messages  []Message
+	Nodes         []protocol.Node
+	Edges         []protocol.Edge
+	Positions     map[string]Point
+	selected      int
+	selectedOwner bool
+	messages      []Message
 }
 
 func New(view protocol.GraphView) *Graph {
@@ -87,6 +88,9 @@ func NewWithoutLayout(view protocol.GraphView) *Graph {
 	return g
 }
 func (g *Graph) Selected() string {
+	if g.selectedOwner {
+		return protocol.GraphVoiceOwner
+	}
 	if g.selected < 0 || g.selected >= len(g.Nodes) {
 		return ""
 	}
@@ -102,11 +106,17 @@ func (g *Graph) Fit(width, height int) Camera {
 		return Camera{Zoom: 1, FitZoom: 1}
 	}
 	minx, miny, maxx, maxy := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
-	for _, p := range g.Positions {
+	for name, p := range g.Positions {
+		if name == protocol.GraphVoiceOwner || name == protocol.CTONodeName {
+			continue
+		}
 		minx = math.Min(minx, p.X)
 		maxx = math.Max(maxx, p.X)
 		miny = math.Min(miny, p.Y)
 		maxy = math.Max(maxy, p.Y)
+	}
+	if math.IsInf(minx, 1) {
+		return Camera{Zoom: 1, FitZoom: 1}
 	}
 	zx := math.Max(1, float64(width)-4) / (2 * math.Max(0.001, maxx-minx))
 	zy := math.Max(1, float64(height)-4) / math.Max(0.001, maxy-miny)
@@ -120,14 +130,22 @@ func (g *Graph) Fit(width, height int) Camera {
 	return Camera{Center: Point{(minx + maxx) / 2, (miny + maxy) / 2}, Zoom: z, FitZoom: z, ScaleX: zx / z, ScaleY: zy / z}
 }
 func (g *Graph) layout() {
-	n := len(g.Nodes)
+	nodes := make([]protocol.Node, 0, len(g.Nodes))
+	for _, node := range g.Nodes {
+		if node.Name == protocol.CTONodeName || node.Name == protocol.GraphVoiceOwner || node.Kind == "cto" {
+			g.Positions[node.Name] = Point{}
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+	n := len(nodes)
 	if n == 0 {
 		return
 	}
 	r := rand.New(rand.NewSource(11))
 	p := make([]Point, n)
 	index := map[string]int{}
-	for i, node := range g.Nodes {
+	for i, node := range nodes {
 		index[node.Name] = i
 		p[i] = Point{(r.Float64()*2 - 1), r.Float64()*2 - 1}
 	}
@@ -172,7 +190,7 @@ func (g *Graph) layout() {
 		}
 		temp = math.Max(0.004, temp*0.988)
 	}
-	for i, node := range g.Nodes {
+	for i, node := range nodes {
 		g.Positions[node.Name] = p[i]
 	}
 }
@@ -188,6 +206,7 @@ func (g *Graph) Update(view protocol.GraphView) bool {
 	g.Positions = make(map[string]Point)
 	g.layout()
 	g.selected = 0
+	g.selectedOwner = selected == protocol.GraphVoiceOwner
 	for i, n := range g.Nodes {
 		if n.Name == selected {
 			g.selected = i

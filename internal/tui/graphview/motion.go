@@ -30,7 +30,7 @@ func cometPoint(c SceneComet, w, h float64) Point {
 	a := Point{c.From.X * w, c.From.Y * h}
 	b := Point{c.To.X * w, c.To.Y * h}
 	if c.HasEdge {
-		return quadPoint(a, bendControl(a, b, .11), b, c.Progress)
+		return quadPoint(a, bendControl(a, b, .18), b, c.Progress)
 	}
 	return Point{a.X + (b.X-a.X)*c.Progress, a.Y + (b.Y-a.Y)*c.Progress}
 }

@@ -45,7 +45,7 @@ var (
 	deploysColor    = color.NRGBA{0xf0, 0xb3, 0x5a, 0xff}
 	talkBright      = color.NRGBA{0xff, 0x8d, 0xce, 0xff}
 	talkDim         = color.NRGBA{0x80, 0x53, 0x6f, 0xff}
-	talkVoice       = color.NRGBA{0xff, 0xd3, 0x5a, 0xff}
+	talkVoice       = color.NRGBA{0xf0, 0xb3, 0x5a, 0xff}
 	pixelEdgeDimmed = 0.35
 )
 
@@ -68,8 +68,9 @@ func Rasterize(scene Scene, size Size, metrics PixelMetrics) *image.RGBA {
 		height = min(height, MaxPixelHeight)
 	}
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	c := &pixelCanvas{img: img, w: float64(width), h: float64(height), level: scene.Level, metrics: metrics}
+	c := &pixelCanvas{img: img, w: float64(width), h: float64(height), level: scene.Level, metrics: metrics, zoom: scene.ZoomRatio}
 	c.background()
+	c.grid(scene.GridOrigin)
 
 	selected := -1
 	for i := range scene.Nodes {
@@ -83,6 +84,17 @@ func Rasterize(scene Scene, size Size, metrics PixelMetrics) *image.RGBA {
 		neighbours[selected] = true
 		for _, e := range scene.Edges {
 			a, b := nodeIndexAt(scene.Nodes, e.From), nodeIndexAt(scene.Nodes, e.To)
+			if a == selected || b == selected {
+				if a >= 0 {
+					neighbours[a] = true
+				}
+				if b >= 0 {
+					neighbours[b] = true
+				}
+			}
+		}
+		for _, t := range scene.Talk {
+			a, b := nodeIndexAt(scene.Nodes, t.From), nodeIndexAt(scene.Nodes, t.To)
 			if a == selected || b == selected {
 				if a >= 0 {
 					neighbours[a] = true
@@ -109,7 +121,7 @@ func Rasterize(scene Scene, size Size, metrics PixelMetrics) *image.RGBA {
 		if i == selected {
 			continue
 		}
-		c.node(n, scene.Level, metrics, selected >= 0 && !neighbours[i])
+		c.node(n, scene.Level, metrics, selected >= 0 && !neighbours[i] && scene.ZoomRatio <= 1.6)
 	}
 	if selected >= 0 {
 		c.node(scene.Nodes[selected], scene.Level, metrics, false)
@@ -124,6 +136,22 @@ func Rasterize(scene Scene, size Size, metrics PixelMetrics) *image.RGBA {
 		c.ripple(ripple)
 	}
 	return img
+}
+
+// PixelHit returns the topmost node whose pixel disc covers the cell centre.
+func PixelHit(scene Scene, size Size, metrics PixelMetrics, cell Cell) string {
+	if metrics.CellWidth <= 0 || metrics.CellHeight <= 0 {
+		return ""
+	}
+	x, y := (float64(cell.X)+.5)*float64(metrics.CellWidth), (float64(cell.Y)+.5)*float64(metrics.CellHeight)
+	w, h := float64(size.Width*metrics.CellWidth), float64(size.Height*metrics.CellHeight)
+	for i := len(scene.Nodes) - 1; i >= 0; i-- {
+		n := scene.Nodes[i]
+		if math.Hypot(x-n.Position.X*w, y-n.Position.Y*h) <= nodeRadius(n, scene.ZoomRatio)+2 {
+			return n.Name
+		}
+	}
+	return ""
 }
 
 // HashImage returns a stable digest of the picture, used to avoid sending an
@@ -163,6 +191,7 @@ type pixelCanvas struct {
 	w, h    float64
 	level   string
 	metrics PixelMetrics
+	zoom    float64
 }
 
 func (c *pixelCanvas) background() {
@@ -173,7 +202,51 @@ func (c *pixelCanvas) background() {
 			d := math.Hypot(float64(x)+.5-cx, float64(y)+.5-cy)
 			t := 1 - math.Min(d/radius, 1)
 			t = t * t * (3 - 2*t)
-			c.img.Set(x, y, mix(pixelBackground, pixelCenter, t))
+			i := y*c.img.Stride + x*4
+			c.img.Pix[i] = uint8(float64(pixelBackground.R) + float64(pixelCenter.R-pixelBackground.R)*t)
+			c.img.Pix[i+1] = uint8(float64(pixelBackground.G) + float64(pixelCenter.G-pixelBackground.G)*t)
+			c.img.Pix[i+2] = uint8(float64(pixelBackground.B) + float64(pixelCenter.B-pixelBackground.B)*t)
+			c.img.Pix[i+3] = 255
+		}
+	}
+}
+
+// The grid is anchored to world zero and moves with the camera. Paint small
+// antialiased disks directly to avoid thousands of vector allocations.
+func (c *pixelCanvas) grid(origin Point) {
+	zoom := c.zoom
+	if zoom <= 0 {
+		zoom = 1
+	}
+	step := 28 * zoom
+	if step < 10 {
+		return
+	}
+	if origin == (Point{}) {
+		origin = Point{.5, .5}
+	}
+	ox, oy := c.px(origin)
+	startX, startY := math.Mod(ox, step), math.Mod(oy, step)
+	if startX < 0 {
+		startX += step
+	}
+	if startY < 0 {
+		startY += step
+	}
+	for cy := startY; cy < c.h; cy += step {
+		for cx := startX; cx < c.w; cx += step {
+			for y := int(math.Floor(cy - 1.7)); y <= int(math.Ceil(cy+1.7)); y++ {
+				for x := int(math.Floor(cx - 1.7)); x <= int(math.Ceil(cx+1.7)); x++ {
+					if x < 0 || y < 0 || x >= int(c.w) || y >= int(c.h) {
+						continue
+					}
+					coverage := math.Max(0, math.Min(1, 1.7-math.Hypot(float64(x)+.5-cx, float64(y)+.5-cy))) * .10
+					i := y*c.img.Stride + x*4
+					c.img.Pix[i] = uint8(float64(c.img.Pix[i])*(1-coverage) + float64(ringNone.R)*coverage)
+					c.img.Pix[i+1] = uint8(float64(c.img.Pix[i+1])*(1-coverage) + float64(ringNone.G)*coverage)
+					c.img.Pix[i+2] = uint8(float64(c.img.Pix[i+2])*(1-coverage) + float64(ringNone.B)*coverage)
+				}
+			}
 		}
 	}
 }
@@ -295,19 +368,15 @@ func nodeIndexAt(nodes []SceneNode, p Point) int {
 	return -1
 }
 
-func nodeRadius(level string, metrics PixelMetrics) float64 {
-	base := math.Min(float64(metrics.CellWidth), float64(metrics.CellHeight))
-	if base < 4 {
-		base = 4
+func nodeRadius(n SceneNode, zoom float64) float64 {
+	if n.Kind == "owner" || n.Kind == "cto" || n.Role == "cto" {
+		return 6
 	}
-	switch level {
-	case "clusters":
-		return base * .5
-	case "cards":
-		return base * 1.2
-	default:
-		return base * .85
+	if zoom <= 0 {
+		zoom = 1
 	}
+	scale := math.Max(.75, math.Min(1.6, math.Sqrt(zoom)))
+	return (9 + 4.5*math.Sqrt(float64(max(n.Card.Sessions, 0)))) * scale
 }
 
 func ringColor(n SceneNode) color.NRGBA {
@@ -335,7 +404,21 @@ func maturityLevel(value string) string {
 
 func (c *pixelCanvas) node(n SceneNode, level string, metrics PixelMetrics, dim bool) {
 	cx, cy := c.px(n.Position)
-	r := nodeRadius(level, metrics)
+	r := nodeRadius(n, c.zoom)
+	if n.Kind == "owner" || n.Kind == "cto" || n.Role == "cto" {
+		col := deploysColor
+		if n.Kind == "cto" || n.Role == "cto" {
+			col = architectColor
+		}
+		if dim {
+			col.A = 140
+		}
+		c.circle(cx, cy, r, col)
+		if n.Selected {
+			c.dashedCircle(cx, cy, r+4, 1, pixelAccent)
+		}
+		return
+	}
 	alpha := 1.0
 	if dim {
 		alpha = .55
@@ -367,24 +450,33 @@ func (c *pixelCanvas) node(n SceneNode, level string, metrics PixelMetrics, dim 
 	}
 	ring = dimCol(ring)
 	fill := func(dx, dy float64) color.NRGBA {
-		d := math.Hypot(dx, dy)
-		t := math.Min(d/math.Max(r, .001), 1)
+		d := math.Hypot(dx+r*.25, dy+r*.25)
+		t := math.Min(d/math.Max(r*1.2, .001), 1)
 		return dimCol(mix(nodeFillCenter, nodeFillEdge, t))
 	}
 	if n.Architect {
-		// A purple hexagon, with the dark fill kept inside it.
-		fill = func(dx, dy float64) color.NRGBA {
-			t := math.Min(math.Hypot(dx, dy)/math.Max(r, .001), 1)
-			return dimCol(mix(color.NRGBA{0x31, 0x2a, 0x45, 0xff}, color.NRGBA{0x17, 0x14, 0x20, 0xff}, t))
-		}
 		c.hexagonGradient(cx, cy, r+ringWidth, func(dx, dy float64) color.NRGBA { return ring })
 		c.hexagonGradient(cx, cy, r, fill)
 	} else {
 		c.circleGradient(cx, cy, r+ringWidth, func(dx, dy float64) color.NRGBA { return ring })
 		c.circleGradient(cx, cy, r, fill)
 	}
+	count := min(max(n.Card.Sessions, 0), 6)
+	for i := 0; i < count; i++ {
+		x, y := cx, cy
+		if count > 1 {
+			angle := -math.Pi/2 + 2*math.Pi*float64(i)/float64(count)
+			x += math.Cos(angle) * r * .42
+			y += math.Sin(angle) * r * .42
+		}
+		dot := color.NRGBA{0xd7, 0xdc, 0xe5, uint8(.55 * alpha * 255)}
+		if i < n.BusySessions {
+			dot = color.NRGBA{pixelBusy.R, pixelBusy.G, pixelBusy.B, uint8(alpha * 255)}
+		}
+		c.circle(x, y, 2.2, dot)
+	}
 	if n.Wildcard {
-		c.dashedCircle(cx, cy, r+9, 1.5, color.NRGBA{pixelAccent.R, pixelAccent.G, pixelAccent.B, uint8(.85 * alpha * 255)})
+		c.dashedCircle(cx, cy, r+12, 1, color.NRGBA{pixelAccent.R, pixelAccent.G, pixelAccent.B, uint8(.7 * alpha * 255)})
 	}
 }
 
@@ -401,14 +493,12 @@ func (c *pixelCanvas) glow(cx, cy, r, extra float64, col color.NRGBA) {
 
 func (c *pixelCanvas) dashedCircle(cx, cy, r, width float64, col color.NRGBA) {
 	circ := 2 * math.Pi * r
-	step := 5.0
-	on := 4.5
-	for d := 0.0; d < circ; d += step {
-		if math.Mod(d, step+3) > on {
+	for d := 0.0; d < circ; d += 1 {
+		if math.Mod(d, 8) >= 3 {
 			continue
 		}
 		a := d / r
-		c.circle(cx+math.Cos(a)*r, cy+math.Sin(a)*r, width, col)
+		c.circle(cx+math.Cos(a)*r, cy+math.Sin(a)*r, width/2, col)
 	}
 }
 
@@ -455,20 +545,20 @@ func (c *pixelCanvas) talk(t SceneTalk) {
 
 func (c *pixelCanvas) edge(e SceneEdge, nodes []SceneNode) {
 	col := edgeColor(e.Kind)
-	width := 2.0
+	width := 1.5
 	alpha := 1.0
 	if e.Selected {
-		width, alpha = 3.2, 1
+		width, alpha = 2.2, 1
 	} else if e.Dimmed {
 		alpha = pixelEdgeDimmed
 	}
 	ax, ay := c.px(e.From)
 	bx, by := c.px(e.To)
 	a, b := Point{ax, ay}, Point{bx, by}
-	ctrl := bendControl(a, b, .11)
+	ctrl := bendControl(a, b, .18)
 	points := sampleQuad(a, ctrl, b, 64)
 	if e.Kind == "deploys" {
-		c.stroke(points, width*3.2, col, alpha*.16, false)
+		c.stroke(points, 4.5, col, alpha*.35, false)
 	}
 	c.stroke(points, width, col, alpha, e.Dashed)
 	c.arrowhead(points, e, col, alpha, nodes, width)
@@ -498,14 +588,14 @@ func (c *pixelCanvas) stroke(points []Point, width float64, col color.NRGBA, alp
 	dist := math.Max(math.Hypot(dx, dy), 1e-9)
 	colourAt := func(x, y float64) color.NRGBA {
 		t := math.Min(math.Max(((x-a.X)*dx+(y-a.Y)*dy)/(dist*dist), 0), 1)
-		t = .2 + .8*t
+		t = .35 + .65*t
 		out := col
 		out.A = uint8(math.Min(255, alpha*float64(out.A)*t))
 		return out
 	}
 	runs := [][]Point{points}
 	if dashed {
-		runs = dashRuns(points, 8, 5)
+		runs = dashRuns(points, 6, 5)
 	}
 	for _, run := range runs {
 		if len(run) < 2 {
@@ -629,10 +719,10 @@ func (c *pixelCanvas) arrowhead(points []Point, e SceneEdge, col color.NRGBA, al
 	dx, dy = dx/l, dy/l
 	r := 0.0
 	if i := nodeIndexAt(nodes, e.To); i >= 0 {
-		r = nodeRadius(c.level, c.metrics)
+		r = nodeRadius(nodes[i], c.zoom)
 	}
 	tip := Point{end.X - dx*(r+1), end.Y - dy*(r+1)}
-	length := 7 + width*2
+	length := 9.0
 	half := length * .52
 	base := Point{tip.X - dx*length, tip.Y - dy*length}
 	px, py := -dy*half, dx*half
@@ -661,7 +751,7 @@ func bendControl(a, b Point, factor float64) Point {
 	if l == 0 {
 		return Point{(a.X + b.X) / 2, (a.Y + b.Y) / 2}
 	}
-	bend := math.Min(30, l*factor)
+	bend := math.Min(60, l*factor)
 	return Point{(a.X+b.X)/2 - dy/l*bend, (a.Y+b.Y)/2 + dx/l*bend}
 }
 

@@ -350,3 +350,63 @@ func TestGraphVoiceLegend(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphMockupMouseZoomAndPan(t *testing.T) {
+	m := graphModel(120, 34)
+	old := m.graphState.Camera
+	next, _ := m.Update(tea.MouseMsg{X: 20, Y: 5, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	m = next.(Model)
+	if m.graphState.Camera.Zoom <= old.Zoom || m.graphState.Camera.Center == old.Center {
+		t.Fatalf("wheel did not zoom at pointer: %+v", m.graphState.Camera)
+	}
+	old = m.graphState.Camera
+	next, _ = m.Update(tea.MouseMsg{X: 3, Y: 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = next.(Model)
+	next, _ = m.Update(tea.MouseMsg{X: 9, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	m = next.(Model)
+	if m.graphState.Camera.Center == old.Center {
+		t.Fatal("drag did not pan")
+	}
+}
+
+func TestGraphMockupDoubleClickAndTrafficKey(t *testing.T) {
+	m := graphModel(120, 34)
+	m.graphPixel = &graphPixelState{graphics: true, cellW: 8, cellH: 16}
+	m = renderGraphFrame(t, m)
+	w, h := m.graphSize()
+	scene := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
+	var target graphview.SceneNode
+	for _, n := range scene.Nodes {
+		if n.Name != m.graphState.Graph.Selected() && n.Position.X > .1 && n.Position.X < .9 && n.Position.Y > .1 && n.Position.Y < .9 {
+			target = n
+			break
+		}
+	}
+	if target.Name == "" {
+		t.Fatal("no target")
+	}
+	x, y := int(target.Position.X*float64(w))+2, int(target.Position.Y*float64(h))+1
+	for i := 0; i < 2; i++ {
+		next, _ := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		m = next.(Model)
+	}
+	if m.graphState.Graph.Selected() != target.Name || m.graphState.Camera.Zoom < m.graphState.Camera.FitZoom*2 {
+		t.Fatalf("double click: %s %+v", m.graphState.Graph.Selected(), m.graphState.Camera)
+	}
+	m = keys(m, "m")
+	if !m.graphState.ShowAllTalk {
+		t.Fatal("m did not show all traffic")
+	}
+	m = keys(m, "m")
+	if m.graphState.ShowAllTalk {
+		t.Fatal("m did not restore selection traffic")
+	}
+}
+
+func TestGraphMouseOffForSessionForm(t *testing.T) {
+	m := graphModel(120, 34)
+	m.mode = modeSessionForm
+	if m.graphMouseActive() {
+		t.Fatal("mouse capture stayed on while the session form replaced the graph")
+	}
+}

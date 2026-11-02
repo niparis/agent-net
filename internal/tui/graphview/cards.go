@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sort"
 	"strings"
 
 	"golang.org/x/image/vector"
@@ -173,15 +174,174 @@ func runeLen(s string) int { return len([]rune(s)) }
 
 // PixelLabels returns the cells that stay terminal text in pixel mode: the
 // normal node labels plus the zoom-in charter cards.
-func PixelLabels(scene Scene, size Size) map[Cell]LabelCell {
-	labels := (Braille{}).Render(scene, size).Labels
-	if labels == nil {
-		labels = map[Cell]LabelCell{}
+func PixelLabels(scene Scene, size Size, cellMetrics ...PixelMetrics) map[Cell]LabelCell {
+	labels, _ := pixelLabelsAndHits(scene, size, cellMetrics...)
+	return labels
+}
+
+// PixelLayout lays out the terminal text and its hit cells in the render command.
+func PixelLayout(scene Scene, size Size, metrics PixelMetrics) (map[Cell]LabelCell, map[Cell]string) {
+	return pixelLabelsAndHits(scene, size, metrics)
+}
+
+func pixelLabelsAndHits(scene Scene, size Size, cellMetrics ...PixelMetrics) (map[Cell]LabelCell, map[Cell]string) {
+	labels := map[Cell]LabelCell{}
+	hits := map[Cell]string{}
+	metrics := PixelMetrics{CellWidth: 8, CellHeight: 16}
+	if len(cellMetrics) > 0 && cellMetrics[0].CellWidth > 0 && cellMetrics[0].CellHeight > 0 {
+		metrics = cellMetrics[0]
+	}
+	if size.Width <= 0 || size.Height <= 0 {
+		return labels, hits
+	}
+	blocked := map[Cell]bool{}
+	for _, n := range scene.Nodes {
+		cx, cy := n.Position.X*float64(size.Width*metrics.CellWidth), n.Position.Y*float64(size.Height*metrics.CellHeight)
+		r := nodeRadius(n, scene.ZoomRatio) + 2
+		for y := max(0, int(math.Floor((cy-r)/float64(metrics.CellHeight)))); y <= min(size.Height-1, int(math.Floor((cy+r)/float64(metrics.CellHeight)))); y++ {
+			for x := max(0, int(math.Floor((cx-r)/float64(metrics.CellWidth)))); x <= min(size.Width-1, int(math.Floor((cx+r)/float64(metrics.CellWidth)))); x++ {
+				blocked[Cell{x, y}] = true
+			}
+		}
+	}
+	place := func(text, role, name string, candidates []Cell) {
+		runes := []rune(text)
+		if len(runes) == 0 || len(runes) > size.Width {
+			return
+		}
+		for _, c := range candidates {
+			if c.X < 0 || c.Y < 0 || c.X+len(runes) > size.Width || c.Y >= size.Height {
+				continue
+			}
+			free := true
+			for i := range runes {
+				p := Cell{c.X + i, c.Y}
+				if blocked[p] {
+					free = false
+					break
+				}
+				if _, ok := labels[p]; ok {
+					free = false
+					break
+				}
+			}
+			if !free {
+				continue
+			}
+			for i, r := range runes {
+				p := Cell{c.X + i, c.Y}
+				labels[p] = LabelCell{Rune: r, Role: role}
+				if name != "" {
+					hits[p] = name
+				}
+			}
+			return
+		}
+	}
+	nodes := append([]SceneNode(nil), scene.Nodes...)
+	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].Selected && !nodes[j].Selected })
+	for _, n := range nodes {
+		if !n.Wildcard {
+			continue
+		}
+		text := n.WildcardLabel
+		if text == "" {
+			text = "all projects depend"
+		}
+		cx, cy := n.Position.X*float64(size.Width*metrics.CellWidth), n.Position.Y*float64(size.Height*metrics.CellHeight)
+		r := nodeRadius(n, scene.ZoomRatio) + 12
+		x := max(0, min(size.Width-len([]rune(text)), int(cx/float64(metrics.CellWidth))-len([]rune(text))/2))
+		y := int(math.Floor((cy-r)/float64(metrics.CellHeight))) - 1
+		var candidates []Cell
+		for row := y; row >= 0; row-- {
+			candidates = append(candidates, Cell{x, row})
+		}
+		place(text, "label", "", candidates)
+	}
+	for _, n := range nodes {
+		if n.Position.X < 0 || n.Position.X >= 1 || n.Position.Y < 0 || n.Position.Y >= 1 {
+			continue
+		}
+		cx, cy := n.Position.X*float64(size.Width*metrics.CellWidth), n.Position.Y*float64(size.Height*metrics.CellHeight)
+		r := nodeRadius(n, scene.ZoomRatio) + 3
+		x, y := int(cx/float64(metrics.CellWidth)), int(cy/float64(metrics.CellHeight))
+		length := len([]rune(n.Label))
+		right := int(math.Ceil((cx + r) / float64(metrics.CellWidth)))
+		left := int(math.Floor((cx-r)/float64(metrics.CellWidth))) - length
+		top := int(math.Floor((cy-r)/float64(metrics.CellHeight))) - 1
+		bottom := int(math.Ceil((cy + r) / float64(metrics.CellHeight)))
+		candidates := []Cell{{right, y}, {left, y}, {x - length/2, top}, {x - length/2, bottom}}
+		if n.Selected {
+			for row := 0; row < size.Height; row++ {
+				for col := 0; col+length <= size.Width; col++ {
+					candidates = append(candidates, Cell{col, row})
+				}
+			}
+		}
+		role := "label"
+		if n.Selected {
+			role = "pixelSelectedLabel"
+		}
+		place(n.Label, role, n.Name, candidates)
+	}
+
+	w, h := float64(size.Width*metrics.CellWidth), float64(size.Height*metrics.CellHeight)
+	for _, edge := range scene.Edges {
+		if !edge.Selected && scene.ZoomRatio <= 1.35 {
+			continue
+		}
+		text := edge.Kind
+		if edge.Mode != "" {
+			text += " · " + edge.Mode
+		}
+		if edge.Rule != "" {
+			text += " · " + edge.Rule
+		}
+		runes := []rune(text)
+		if len(runes) > size.Width || size.Height <= 0 {
+			continue
+		}
+		a, b := Point{edge.From.X * w, edge.From.Y * h}, Point{edge.To.X * w, edge.To.Y * h}
+		p := quadPoint(a, bendControl(a, b, .18), b, .5)
+		if p.X < 0 || p.X >= w || p.Y < 0 || p.Y >= h {
+			continue
+		}
+		x := max(0, min(size.Width-len(runes), int(p.X/float64(metrics.CellWidth))-len(runes)/2))
+		y := int(p.Y / float64(metrics.CellHeight))
+		if y < 0 || y >= size.Height {
+			continue
+		}
+		row := -1
+		for _, offset := range []int{0, -1, 1, -2, 2} {
+			candidate := y + offset
+			if candidate < 0 || candidate >= size.Height {
+				continue
+			}
+			free := true
+			for i := range runes {
+				if _, ok := labels[Cell{x + i, candidate}]; ok || blocked[Cell{x + i, candidate}] {
+					free = false
+					break
+				}
+			}
+			if free {
+				row = candidate
+				break
+			}
+		}
+		if row < 0 {
+			continue
+		}
+		y = row
+		for i, r := range runes {
+			labels[Cell{x + i, y}] = LabelCell{Rune: r, Role: "label"}
+		}
 	}
 	for _, box := range sceneCards(scene, size) {
 		for y := box.Cell.Min.Y; y < box.Cell.Max.Y; y++ {
 			for x := box.Cell.Min.X; x < box.Cell.Max.X; x++ {
 				delete(labels, Cell{X: x, Y: y})
+				delete(hits, Cell{X: x, Y: y})
 			}
 		}
 		for i, line := range box.Lines {
@@ -198,7 +358,7 @@ func PixelLabels(scene Scene, size Size) map[Cell]LabelCell {
 			}
 		}
 	}
-	return labels
+	return labels, hits
 }
 
 func (c *pixelCanvas) cardBox(cell image.Rectangle, ring color.NRGBA) {

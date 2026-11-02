@@ -257,6 +257,7 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextGraph, ".", "next link", "next neighbour", -1), "select a linked neighbour"),
 	withHelp(bind(contextGraph, "n", "new session", "new", -1), "start a session in this project"),
 	withLocal(withHelp(bind(contextGraph, "enter", "open card", "card", -1), "open the selected agent card")),
+	withHelp(bind(contextGraph, "m", "show all traffic", "traffic", 1), "toggle all message and owner lines"),
 	bind(contextGraph, "R", "refresh", "refresh", -1),
 	bind(contextGraphFind, "esc", "clear or back", "clear or back", 1),
 	withLocal(withHelp(bind(contextGraphFind, "enter", "select match", "select", 1), "select the first match")),

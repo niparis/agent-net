@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-01
 **Status:** Accepted. Part 1 is the static picture; part 2 adds motion and
-detail in pixel mode only.
+detail; part 3 updates both views and adds mouse navigation.
 
 The Graph tab already splits its state, a Scene and a renderer, so the drawing
 can change without touching the graph logic. Braille works everywhere but is
@@ -55,6 +55,23 @@ them.
   the session count; the purpose follows in at most two lines. The box is drawn
   in the image; the text is ordinary terminal cells, laid out by `PixelLabels`
   beside the node and cleared of any label it covers.
+
+## Part 3: match the mockup
+
+Both renderers show relationship rules first. Message and owner lines are
+limited to the selected node until `m` shows all of them. Wildcard rules have
+a readable label; the pixel view also gives them a dashed ring. The owner and
+CTO are small markers at the left of the graph, outside the force layout and
+fit calculation. Pixel nodes use session counts, maturity colours and session
+dots; curved rule edges carry arrows and labels near the selected node or when
+zoomed in. A camera-anchored grid and a soft radial background add depth.
+Unrelated nodes fade while a node is selected, except at close zoom.
+
+Mouse reporting is enabled only while the graph itself has focus. The wheel
+zooms at the pointer, dragging empty space pans, a click selects and a double
+click centers and zooms. Leaving the graph disables mouse reporting so the
+terminal can select text on the other tabs. Rendering remains off the event
+loop and uses the same frame cap and caching as part 2.
 
 ## Frame budget
 

@@ -15,7 +15,8 @@ type State struct {
 	Talk                           []protocol.GraphTalkCount
 	Activity                       map[string]int
 	TalkReady                      bool
-	HideTalk                       bool
+	HideTalk                       bool // legacy explicit hide
+	ShowAllTalk                    bool
 	Camera                         Camera
 	Tween                          *CameraTween
 	Smooth                         bool
@@ -27,6 +28,13 @@ type State struct {
 type Action interface{ graphAction() }
 type ZoomIn struct{}
 type ZoomOut struct{}
+type ZoomAt struct {
+	X, Y     float64
+	Viewport Viewport
+	Factor   float64
+}
+type DragPan struct{ DX, DY float64 }
+type CenterNode struct{ Name string }
 type Pan struct{ DX, DY float64 }
 type Fit struct{ Viewport Viewport }
 type SelectNode struct{ Name string }
@@ -58,6 +66,9 @@ type FeedEvents struct {
 
 func (ZoomIn) graphAction()          {}
 func (ZoomOut) graphAction()         {}
+func (ZoomAt) graphAction()          {}
+func (DragPan) graphAction()         {}
+func (CenterNode) graphAction()      {}
 func (Pan) graphAction()             {}
 func (Fit) graphAction()             {}
 func (SelectNode) graphAction()      {}
@@ -111,6 +122,46 @@ func Update(s State, action Action) (State, Effect) {
 		from := s.ViewCamera()
 		s.Camera.Zoom = math.Max(s.Camera.Zoom/1.25, s.Camera.FitZoom*0.3)
 		s = s.ease(from, s.Camera)
+	case ZoomAt:
+		if s.Camera.Zoom > 0 && s.Camera.FitZoom > 0 && a.Factor > 0 {
+			from := s.ViewCamera()
+			s.Camera = from
+			old := s.Camera.Zoom
+			z := math.Max(s.Camera.FitZoom*.3, math.Min(s.Camera.FitZoom*8, old*a.Factor))
+			sx, sy := s.Camera.ScaleX, s.Camera.ScaleY
+			if sx == 0 {
+				sx = 1
+			}
+			if sy == 0 {
+				sy = 1
+			}
+			s.Camera.Center.X += (a.X - a.Viewport.Width/2) / (2 * sx) * (1/old - 1/z)
+			s.Camera.Center.Y += (a.Y - a.Viewport.Height/2) / sy * (1/old - 1/z)
+			s.Camera.Zoom = z
+			s = s.ease(from, s.Camera)
+		}
+	case DragPan:
+		if s.Camera.Zoom > 0 {
+			sx, sy := s.Camera.ScaleX, s.Camera.ScaleY
+			if sx == 0 {
+				sx = 1
+			}
+			if sy == 0 {
+				sy = 1
+			}
+			s.Camera.Center.X -= a.DX / (2 * s.Camera.Zoom * sx)
+			s.Camera.Center.Y -= a.DY / (s.Camera.Zoom * sy)
+			s.Tween = nil
+		}
+	case CenterNode:
+		if s.Graph != nil && a.Name != protocol.GraphVoiceOwner && a.Name != protocol.CTONodeName {
+			if p, ok := s.Graph.Positions[a.Name]; ok {
+				from := s.ViewCamera()
+				s.Camera.Center = p
+				s.Camera.Zoom = math.Min(s.Camera.FitZoom*8, math.Max(s.Camera.Zoom, s.Camera.FitZoom*2))
+				s = s.ease(from, s.Camera)
+			}
+		}
 	case Pan:
 		if s.Camera.Zoom != 0 {
 			from := s.ViewCamera()
@@ -126,6 +177,7 @@ func Update(s State, action Action) (State, Effect) {
 		}
 	case SelectNode:
 		if s.Graph != nil {
+			s.Graph.selectedOwner = a.Name == protocol.GraphVoiceOwner
 			for i, n := range s.Graph.Nodes {
 				if n.Name == a.Name {
 					s.Graph.selected = i
@@ -174,6 +226,7 @@ func Update(s State, action Action) (State, Effect) {
 			}
 			if best >= 0 {
 				name := scene.Nodes[best].Name
+				s.Graph.selectedOwner = name == protocol.GraphVoiceOwner
 				for i, n := range s.Graph.Nodes {
 					if n.Name == name {
 						s.Graph.selected = i
@@ -190,7 +243,7 @@ func Update(s State, action Action) (State, Effect) {
 		s = selectNeighbour(s, a.Viewport, -1)
 		s = s.easeToSelection()
 	case ToggleTalk:
-		s.HideTalk = !s.HideTalk
+		s.ShowAllTalk = !s.ShowAllTalk
 	case ToggleOrbit:
 		s.Orbit = !s.Orbit
 	case TogglePause:
@@ -393,7 +446,7 @@ func selectNeighbour(s State, viewport Viewport, direction int) State {
 		}
 	}
 	for _, e := range s.Talk {
-		if e.Count <= 0 {
+		if e.Count <= 0 && !e.Voice {
 			continue
 		}
 		if e.From == anchor {
@@ -448,6 +501,10 @@ func selectNeighbour(s State, viewport Viewport, direction int) State {
 		}
 	} else {
 		idx = (idx + direction + len(ns)) % len(ns)
+	}
+	s.Graph.selectedOwner = ns[idx].name == protocol.GraphVoiceOwner
+	if s.Graph.selectedOwner {
+		s.neighbourLast = protocol.GraphVoiceOwner
 	}
 	for i, n := range s.Graph.Nodes {
 		if n.Name == ns[idx].name {

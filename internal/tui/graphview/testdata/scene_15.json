@@ -2,6 +2,8 @@
   "Nodes": [
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "architect",
       "Label": "architect",
       "Kind": "architect",
@@ -31,6 +33,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 1,
+      "WildcardLabel": "",
       "Name": "project-01",
       "Label": "project-01",
       "Kind": "component",
@@ -60,6 +64,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-02",
       "Label": "project-02",
       "Kind": "component",
@@ -89,6 +95,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "all projects depend",
       "Name": "project-03",
       "Label": "project-03",
       "Kind": "component",
@@ -118,6 +126,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-04",
       "Label": "project-04",
       "Kind": "component",
@@ -147,6 +157,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-05",
       "Label": "project-05",
       "Kind": "component",
@@ -176,6 +188,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-06",
       "Label": "project-06",
       "Kind": "component",
@@ -205,6 +219,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-07",
       "Label": "project-07",
       "Kind": "component",
@@ -234,6 +250,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-08",
       "Label": "project-08",
       "Kind": "component",
@@ -263,6 +281,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-09",
       "Label": "project-09",
       "Kind": "component",
@@ -292,6 +312,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-10",
       "Label": "project-10",
       "Kind": "component",
@@ -321,6 +343,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-11",
       "Label": "project-11",
       "Kind": "component",
@@ -350,6 +374,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-12",
       "Label": "project-12",
       "Kind": "component",
@@ -379,6 +405,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-13",
       "Label": "project-13",
       "Kind": "component",
@@ -408,6 +436,8 @@
     },
     {
       "Activity": 1,
+      "BusySessions": 0,
+      "WildcardLabel": "",
       "Name": "project-14",
       "Label": "project-14",
       "Kind": "component",
@@ -451,6 +481,8 @@
         "Y": 0.7462223039630714
       },
       "Kind": "governs",
+      "Mode": "",
+      "Rule": "",
       "Dashed": true,
       "Selected": true,
       "Dimmed": false
@@ -469,6 +501,8 @@
         "Y": 0.6481782875287557
       },
       "Kind": "depends",
+      "Mode": "",
+      "Rule": "",
       "Dashed": false,
       "Selected": false,
       "Dimmed": true
@@ -487,6 +521,8 @@
         "Y": 0.5469358146490296
       },
       "Kind": "deploys",
+      "Mode": "",
+      "Rule": "",
       "Dashed": false,
       "Selected": false,
       "Dimmed": true
@@ -505,6 +541,8 @@
         "Y": 0.44881257847129147
       },
       "Kind": "depends",
+      "Mode": "",
+      "Rule": "",
       "Dashed": false,
       "Selected": false,
       "Dimmed": true
@@ -523,6 +561,8 @@
         "Y": 0.358292606396402
       },
       "Kind": "depends",
+      "Mode": "",
+      "Rule": "",
       "Dashed": false,
       "Selected": false,
       "Dimmed": true
@@ -676,5 +716,10 @@
       ],
       "Action": "help"
     }
-  ]
+  ],
+  "ZoomRatio": 1,
+  "GridOrigin": {
+    "X": 0.4979020627900352,
+    "Y": 0.4966860382809091
+  }
 }

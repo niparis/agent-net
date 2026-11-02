@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
@@ -96,4 +98,50 @@ func TestGraphPixelFramesAlternateIDsWithoutAGap(t *testing.T) {
 	if third := frame(); third.id != first.id {
 		t.Fatalf("third frame id %d, want the first id %d again", third.id, first.id)
 	}
+}
+
+func TestPixelLabelClickUsesDisplayedFrame(t *testing.T) {
+	m := graphModel(120, 34)
+	m.graphPixel.graphics = true
+	m.graphPixel.cellW, m.graphPixel.cellH = 8, 16
+	m = renderGraphFrame(t, m)
+	var cell graphview.Cell
+	target := ""
+	for p, name := range m.graphPixel.hits {
+		if name != m.graphState.Graph.Selected() {
+			cell, target = p, name
+			break
+		}
+	}
+	if target == "" {
+		t.Fatal("no selectable label in the rendered frame")
+	}
+	next, _ := m.Update(tea.MouseMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if got := next.(Model).graphState.Graph.Selected(); got != target {
+		t.Fatalf("selected %q from label, want %q", got, target)
+	}
+}
+
+func TestPixelEmptyCellDoesNotHitBrailleLabel(t *testing.T) {
+	m := graphModel(120, 34)
+	m.graphPixel.graphics = true
+	m.graphPixel.cellW, m.graphPixel.cellH = 8, 16
+	m = renderGraphFrame(t, m)
+	w, h := m.graphSize()
+	size := graphview.Size{Width: w, Height: h}
+	metrics := graphview.PixelMetrics{CellWidth: 8, CellHeight: 16}
+	scene := m.graphScene(m.graphState, size)
+	braille := (graphview.Braille{}).Render(scene, size)
+	selected := m.graphState.Graph.Selected()
+	for cell, name := range braille.Hits {
+		if name == selected || m.graphPixel.hits[cell] != "" || graphview.PixelHit(scene, size, metrics, cell) != "" {
+			continue
+		}
+		next, _ := m.Update(tea.MouseMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		if next.(Model).graphState.Graph.Selected() != selected {
+			t.Fatal("empty pixel cell selected an invisible Braille label")
+		}
+		return
+	}
+	t.Fatal("fixture has no invisible Braille label")
 }

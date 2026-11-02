@@ -104,8 +104,8 @@ func TestTalkSceneBucketsAndToggle(t *testing.T) {
 		t.Fatalf("talk: %+v", scene.Talk)
 	}
 	s, _ = Update(s, ToggleTalk{})
-	if len(BuildScene(s, Viewport{Width: 80, Height: 20}).Talk) != 0 {
-		t.Fatal("toggle did not hide talk")
+	if len(BuildScene(s, Viewport{Width: 80, Height: 20}).Talk) != 3 {
+		t.Fatal("toggle did not show all talk")
 	}
 }
 

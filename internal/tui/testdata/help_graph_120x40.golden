@@ -20,6 +20,7 @@ Keys ─────────────────────────
   , .                    select a linked neighbour
   n                      start a session in this project
   enter                  open the selected agent card
+  m                      toggle all message and owner lines
 
  Graph find
   enter                  select the first match
@@ -35,6 +36,5 @@ Keys ─────────────────────────
   , .                    select a previous or next learned change
   h                      hide or unhide this project
   H                      show hidden projects
-  ctrl+u/d, pgup/pgdn    scroll the card: charter, rules and learned changes
   more below
 up/down scroll  esc close help  q quit
