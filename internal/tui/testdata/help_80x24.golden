@@ -1,8 +1,6 @@
 Keys ───────────────────────────────────────────────────────────────────────────
 
  Sessions
-  proposal             enter details; a approve; r decline; A approve all after
-                       confirmation
   1-5                  switch between Sessions, Graph, Quotas, Messages and
                        Tools
   up/down, j/k         select a session
@@ -20,5 +18,7 @@ Keys ─────────────────────────
                        form)
   I                    integrations for all machines: 7 checkboxes (a form)
   c, C                 c opens the CTO; C focuses its box: enter opens the full
+                       CTO, ctrl+] returns, esc skips a tip; n new, u undo, w
+                       drive 30m, m title, harness and model; pgup/pgdn scroll
   more below
-up/down scroll up  esc close help  q quit
+up/down scroll  esc close help  q quit

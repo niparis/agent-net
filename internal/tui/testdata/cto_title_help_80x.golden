@@ -1,6 +1,4 @@
  Sessions
-  proposal             enter details; a approve; r decline; A approve all after
-                       confirmation
   1-5                  switch between Sessions, Graph, Quotas, Messages and
                        Tools
   up/down, j/k         select a session
@@ -30,6 +28,8 @@
                        details
   A                    active only: hide sessions idle for over an hour
   R                    refresh now
+  proposal             enter details; a approve; r decline; A approve all after
+                       confirmation
 
  Messages
   up/down              select a conversation

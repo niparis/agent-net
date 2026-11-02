@@ -191,7 +191,6 @@ func (m Model) helpContent(w int) []string {
 
 	rows := [][2]string{
 		{"Sessions", ""},
-		{"proposal", "enter details; a approve; r decline; A approve all after confirmation"},
 		{"1-5", "switch between Sessions, Graph, Quotas, Messages and Tools"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, home/end", "page, first, last"},
@@ -210,6 +209,7 @@ func (m Model) helpContent(w int) []string {
 		{"o, d", "show offline sessions; toggle the selected session details"},
 		{"A", "active only: hide sessions idle for over an hour"},
 		{"R", "refresh now"},
+		{"proposal", "enter details; a approve; r decline; A approve all after confirmation"},
 		{"", ""},
 		{"Messages", ""},
 		{"up/down", "select a conversation"},

@@ -334,5 +334,9 @@ func bindingHint(context keyContext, action actionID) hint {
 func bindingPairHint(context keyContext, first, second actionID) hint {
 	a, b := bindingHint(context, first), bindingHint(context, second)
 	a.key += "/" + b.key
+	// "scroll up" and "scroll down" share a line as "scroll".
+	if i := strings.LastIndex(a.label, " "); i > 0 && strings.HasPrefix(b.label, a.label[:i+1]) {
+		a.label = a.label[:i]
+	}
 	return a
 }
