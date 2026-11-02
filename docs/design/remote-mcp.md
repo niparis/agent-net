@@ -122,8 +122,10 @@ Grok (xAI cloud)          agent-net gateway (via tunnel)        Owner
    code. The TUI shows the client name, its redirect host and the kind
    (default `bot` for an MCP client). `a` approves and asks for a name
    (default: the client name, for example `grok-bot`). `r` refuses.
-6. The page redirects with a one-time authorization code. The client trades
-   it, with its PKCE verifier, for an access token (1 hour) and a refresh
+6. The page redirects with a one-time authorization code. A retry before the
+   exchange returns the same unexpired code. Once exchanged, the approval is
+   used and cannot issue another code or token family. The client trades the
+   code, with its PKCE verifier, for an access token (1 hour) and a refresh
    token (90 days, rotated on use).
 7. The bot calls `/mcp` with the access token.
 
@@ -141,8 +143,10 @@ token for a named bot, shown once.
 2. The owner types the code in the TUI under "Connected apps" > "Add". The
    kind defaults to `owner app`. `a` approves and asks for a name (default:
    the browser and device, for example `iPhone Safari`).
-3. The page receives a device token in a secure, `HttpOnly` cookie, renewed on
-   use (90 days without use expires it).
+3. The page receives a phone-purpose device token in a secure, `HttpOnly`
+   cookie, renewed on use (90 days without use expires it). OAuth tokens cannot
+   be used as phone cookies and phone tokens cannot be used as OAuth bearer
+   tokens. Phones paired before token purposes were added must pair again.
 
 This replaces `agent-net phone owner LOGIN` and the separate
 `tailscale serve` setup: the phone uses the same public listener.

@@ -77,6 +77,14 @@ type Info struct {
 	DNSName       string
 	FunnelAllowed bool
 	Ports         map[int]string
+	Routes        []Route
+}
+
+// Route describes a Serve or Funnel handler on a local port.
+type Route struct {
+	Port   int    `json:"port"`
+	Target string `json:"target"`
+	Path   string `json:"-"`
 }
 
 // Status reads the local node and the shared Serve/Funnel configuration.
@@ -131,6 +139,31 @@ func Status(ctx context.Context, r Runner) (Info, error) {
 	if err := cfg.ports(info.Ports); err != nil {
 		return info, fmt.Errorf("decode tailscale serve ports: %w", err)
 	}
+	if err := cfg.routes(&info.Routes); err != nil {
+		return info, fmt.Errorf("decode tailscale serve routes: %w", err)
+	}
+	for port, description := range info.Ports {
+		present := false
+		for _, route := range info.Routes {
+			if route.Port == port {
+				present = true
+				break
+			}
+		}
+		if !present {
+			info.Routes = append(info.Routes, Route{Port: port, Target: description})
+		}
+	}
+	sort.Slice(info.Routes, func(i, j int) bool {
+		a, b := info.Routes[i], info.Routes[j]
+		if a.Port != b.Port {
+			return a.Port < b.Port
+		}
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
+		return a.Target < b.Target
+	})
 	if !info.FunnelAllowed {
 		return info, &FunnelNotAllowedError{Link: funnelHelp}
 	}
@@ -189,6 +222,73 @@ func (c *serveConfig) ports(ports map[int]string) error {
 	for _, cfg := range c.Foreground {
 		if cfg != nil {
 			if err := cfg.ports(ports); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// routes includes individual Web handlers and reserves unrecognised TCP ports.
+func (c *serveConfig) routes(out *[]Route) error {
+	webPorts := map[int]bool{}
+	for key, raw := range c.Web {
+		_, p, err := net.SplitHostPort(key)
+		if err != nil {
+			return err
+		}
+		port, err := parsePort(p)
+		if err != nil {
+			return err
+		}
+		webPorts[port] = true
+		var web struct{ Handlers map[string]json.RawMessage }
+		if err := json.Unmarshal(raw, &web); err != nil {
+			return err
+		}
+		if len(web.Handlers) == 0 {
+			*out = append(*out, Route{Port: port, Target: string(raw)})
+			continue
+		}
+		for path, value := range web.Handlers {
+			var handler struct{ Proxy string }
+			if err := json.Unmarshal(value, &handler); err != nil {
+				return err
+			}
+			target := handler.Proxy
+			if target == "" {
+				target = string(value)
+			}
+			*out = append(*out, Route{Port: port, Target: target, Path: path})
+		}
+	}
+	for key, raw := range c.TCP {
+		port, err := parsePort(key)
+		if err != nil {
+			return err
+		}
+		if !webPorts[port] {
+			*out = append(*out, Route{Port: port, Target: string(raw)})
+		} else {
+			// A separate or unknown TCP handler makes ownership ambiguous.
+			var tcp map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &tcp); err != nil {
+				return err
+			}
+			var https bool
+			if value, ok := tcp["HTTPS"]; ok {
+				if err := json.Unmarshal(value, &https); err != nil {
+					return err
+				}
+			}
+			if !https || len(tcp) != 1 {
+				*out = append(*out, Route{Port: port, Target: "TCP " + string(raw)})
+			}
+		}
+	}
+	for _, sub := range c.Foreground {
+		if sub != nil {
+			if err := sub.routes(out); err != nil {
 				return err
 			}
 		}

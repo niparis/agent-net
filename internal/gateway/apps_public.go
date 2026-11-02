@@ -57,17 +57,11 @@ func (g *Gateway) restorePublic() error {
 	}
 	g.setPublicBase(g.public.URL)
 	if g.public.On {
-		if err := g.startPublicListener(); err != nil {
-			g.public.Error = err.Error()
-			return nil
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := g.enablePublic(ctx, "", true); err != nil {
 			g.public.Error = err.Error()
 		}
-	} else if g.opts.AppsListen != "" {
-		return g.startPublicListener()
 	}
 	return nil
 }
@@ -107,6 +101,18 @@ func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool)
 	if g.public.On && g.publicServer != nil && pasted == "" && !restore && g.public.Error == "" {
 		return nil
 	}
+	// Remove a previous managed route before selecting or restoring a port.
+	if _, err := funnel.Cleanup(ctx, g.publicRunner(), g.opts.DataDir); err != nil {
+		return err
+	}
+	// The command-line URL is the initial custom tunnel, not an on switch.
+	if pasted == "" && g.public.URL == "" && g.opts.PublicURL != "" {
+		u, err := url.Parse(strings.TrimSpace(g.opts.PublicURL))
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return reject("public URL must be an HTTPS origin")
+		}
+		pasted = strings.TrimRight(u.String(), "/")
+	}
 	port := 0
 	base := pasted
 	if pasted == "" && !(g.public.Port == 0 && g.public.URL != "") {
@@ -114,9 +120,12 @@ func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool)
 		if err != nil {
 			return err
 		}
-		if (restore || g.public.On) && g.public.Port != 0 {
-			port = g.public.Port
-		} else {
+		if restore && g.public.Port != 0 {
+			if _, used := info.Ports[g.public.Port]; !used {
+				port = g.public.Port
+			}
+		}
+		if port == 0 {
 			port, err = funnel.ChoosePort(info)
 			if err != nil {
 				return err
@@ -126,7 +135,6 @@ func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool)
 	} else if pasted == "" {
 		base = g.public.URL
 	}
-	// Publish the address before serving requests, including authentication metadata.
 	old := g.publicBase()
 	g.setPublicBase(base)
 	if err := g.startPublicListener(); err != nil {
@@ -134,8 +142,13 @@ func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool)
 		return err
 	}
 	if port != 0 {
-		target := g.publicAddr
-		if err := funnel.On(ctx, g.publicRunner(), port, "http://"+target); err != nil {
+		target := "http://" + g.publicAddr
+		if err := funnel.SaveRecord(g.opts.DataDir, funnel.Record{Port: port, Target: target}); err != nil {
+			g.stopPublicListener()
+			g.setPublicBase(old)
+			return err
+		}
+		if err := funnel.On(ctx, g.publicRunner(), port, target); err != nil {
 			g.stopPublicListener()
 			g.setPublicBase(old)
 			return err
@@ -145,15 +158,40 @@ func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool)
 	return g.savePublic()
 }
 func (g *Gateway) disablePublic(ctx context.Context) error {
-	if g.public.Port != 0 {
-		if err := funnel.Off(ctx, g.publicRunner(), g.public.Port); err != nil {
-			return err
-		}
-	}
+	// Make off durable and close the listener even if Funnel is unavailable.
 	g.stopPublicListener()
 	g.public.On = false
 	g.public.Error = ""
-	return g.savePublic()
+	saveErr := g.savePublic()
+	_, cleanErr := funnel.Cleanup(ctx, g.publicRunner(), g.opts.DataDir)
+	return errors.Join(saveErr, cleanErr)
+}
+
+// publicStatus supplements the persisted switch with the live host routes.
+type publicStatus struct {
+	protocol.AppsPublicStatus
+	OtherRoutes []funnel.Route `json:"other_routes"`
+}
+
+func (g *Gateway) publicStatus(ctx context.Context) publicStatus {
+	if !g.public.On {
+		if _, err := funnel.Cleanup(ctx, g.publicRunner(), g.opts.DataDir); err != nil {
+			g.public.Error = err.Error()
+		} else if g.public.Error != "" {
+			g.public.Error = ""
+			_ = g.savePublic()
+		}
+	}
+	info, _ := funnel.Status(ctx, g.publicRunner())
+	record, err := funnel.ReadRecord(g.opts.DataDir)
+	routes := []funnel.Route{}
+	for _, route := range info.Routes {
+		if err == nil && route.Port == record.Port && route.Path == "/" && route.Target == record.Target {
+			continue
+		}
+		routes = append(routes, route)
+	}
+	return publicStatus{AppsPublicStatus: g.public, OtherRoutes: routes}
 }
 func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (any, error) {
 	g.publicMu.Lock()
@@ -186,6 +224,9 @@ func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (a
 		g.public.Error = err.Error()
 	} else if op != "apps.public.status" {
 		g.public.Error = ""
+	}
+	if op == "apps.public.status" {
+		return g.publicStatus(ctx), err
 	}
 	return g.public, err
 }

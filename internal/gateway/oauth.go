@@ -150,7 +150,7 @@ func (g *Gateway) oauthRegister(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, 500, "server_error")
 		return
 	}
-	g.logLine("oauth_register", "client_id", safeAppLog(client.ClientID), "client_name", safeAppLog(client.ClientName), "redirect_uris", safeAppLog(strings.Join(client.RedirectURIs, ",")), "source", safeAppLog(r.RemoteAddr), "user_agent", safeAppLog(r.UserAgent()))
+	g.logLine("oauth_register", "client_id", safeAppLog(client.ClientID), "client_name", safeAppLog(client.ClientName), "redirect_uris", safeAppLog(strings.Join(client.RedirectURIs, ",")), "source", safeAppLog(ratelimit.ClientAddr(r)), "user_agent", safeAppLog(r.UserAgent()))
 	oauthJSONResponse(w, http.StatusCreated, client)
 }
 func oauthPKCE(verifier string) string {
@@ -186,7 +186,7 @@ var oauthPageTemplate = template.Must(template.New("oauth").Parse(`<!doctype htm
 <style>body{font:16px system-ui,sans-serif;color:#20242b;background:#f4f6f7;margin:0;padding:4rem 1rem}main{max-width:32rem;margin:auto;padding:2rem;background:white;border-radius:12px}strong{display:block;font-size:2.5rem;letter-spacing:.1em;margin:1.5rem 0}#message{color:#46515a}</style></head>
 <body><main><h1>Connect {{.ClientName}}</h1>{{if .Approved}}<p>Approved. Continuing sign-in.</p>{{else}}<p>Enter this code in your agent-net TUI: S, Connected apps, Add</p><strong id="user-code">{{.Code}}</strong>{{end}}<p id="message">Waiting for approval...</p></main>
 <script>const statusURL = "/oauth/authorize/status?id={{.ID}}";
-async function poll(){try{const response=await fetch(statusURL,{cache:"no-store"});if(!response.ok)throw new Error();const result=await response.json();if(result.status==="approved"&&result.redirect){window.location.assign(result.redirect);return}if(result.status==="refused"){document.getElementById("message").textContent="Refused";return}if(result.status==="expired"){document.getElementById("message").textContent="Expired, try again";return}}catch(e){}setTimeout(poll,2000)}poll();</script></body></html>`))
+async function poll(){try{const response=await fetch(statusURL,{cache:"no-store"});if(!response.ok)throw new Error();const result=await response.json();if(result.status==="approved"&&result.redirect){window.location.assign(result.redirect);return}if(result.status==="used"){document.getElementById("message").textContent="Already used, try again";return}if(result.status==="refused"){document.getElementById("message").textContent="Refused";return}if(result.status==="expired"){document.getElementById("message").textContent="Expired, try again";return}}catch(e){}setTimeout(poll,2000)}poll();</script></body></html>`))
 
 func (g *Gateway) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -208,7 +208,7 @@ func (g *Gateway) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not start sign-in", http.StatusInternalServerError)
 		return
 	}
-	g.logLine("oauth_authorize", "client_id", safeAppLog(p.ClientID), "redirect_uri", safeAppLog(p.RedirectURI), "resource", safeAppLog(p.Resource), "scope", safeAppLog(q.Get("scope")), "source", safeAppLog(r.RemoteAddr), "user_agent", safeAppLog(r.UserAgent()))
+	g.logLine("oauth_authorize", "client_id", safeAppLog(p.ClientID), "redirect_uri", safeAppLog(p.RedirectURI), "resource", safeAppLog(p.Resource), "scope", safeAppLog(q.Get("scope")), "source", safeAppLog(ratelimit.ClientAddr(r)), "user_agent", safeAppLog(r.UserAgent()))
 
 	oauthHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -278,7 +278,7 @@ func (g *Gateway) oauthToken(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, 400, "unsupported_grant_type")
 		return
 	}
-	g.logLine("oauth_token", "client_id", safeAppLog(clientID), "grant_type", safeAppLog(grant), "source", safeAppLog(r.RemoteAddr), "success", err == nil)
+	g.logLine("oauth_token", "client_id", safeAppLog(clientID), "grant_type", safeAppLog(grant), "source", safeAppLog(ratelimit.ClientAddr(r)), "success", err == nil)
 	if errors.Is(err, errOAuthInvalidGrant) {
 		g.limiter.Fail(ratelimit.ClientAddr(r))
 		oauthError(w, 400, "invalid_grant")

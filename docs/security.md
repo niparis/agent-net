@@ -793,7 +793,10 @@ approved as a bot cannot receive a phone token.
 
 A successful approval issues a random access token, stored hashed in the
 gateway database and in a Secure, HttpOnly, SameSite=Strict device cookie. Only
-an active owner app token opens the phone. Revoking the app immediately blocks
+an active phone-purpose owner app token opens the phone. OAuth tokens cannot
+be used as phone cookies, and phone tokens cannot be used as OAuth bearer
+tokens. Existing tokens default to OAuth purpose, so previously paired phones
+must pair again. Revoking the app immediately blocks
 new requests. The token and cookie expire 90 days after issue or renewal; use with less
 than 30 days left extends them to 90 days. Each phone action is logged
 with the app name. POST actions also require an Origin exactly matching the
@@ -1031,10 +1034,25 @@ hour and 200 total. Pending sign-ins expire after ten minutes and are limited
 to three per client, three per source, and 20 total. Oldest unapproved entries
 are evicted when a total pool is full. Access tokens are limited to 20 per app.
 Refresh tokens rotate; reuse of a consumed token revokes its token family.
-Consumed refresh hashes are kept for 90 days after use. Active address bans
+Each family may rotate at most 200 times in a 24-hour window starting at its
+first rotation. Exceeding the limit revokes the family and requires a new
+sign-in. The gateway retains up to 2,000 consumed refresh hashes per app,
+deleting the oldest first, and deletes any remaining hashes 90 days after use.
+A reused hash that has been removed can no longer trigger family revocation.
+Before an authorization code is exchanged, its plaintext is stored temporarily
+in the private gateway database so a lost polling response can be retried with
+the same code. It expires after two minutes, is cleared on exchange or cleanup,
+and requires the PKCE verifier. A successful exchange consumes the approval. Active address bans
 are stored separately from rate buckets, with at most 50,000 bans retained.
 
-The owner-only check for apps.* operations uses process ancestry. A detached
-process running as the owner's user can escape that check, the same limit as
-other owner actions. Every app approval is logged and appears in the owner's
-inbox so that such an approval is visible.
+## Known limits
+
+Owner decisions, 2026-11-02:
+
+- The owner-only check for apps.* and every owner action uses process ancestry.
+  Code running as the owner's user can escape it or read the gateway database.
+  Trust stops at the user account. Every approval is logged and writes a visible
+  owner notice.
+- The phone cookie is scoped to the host name, not the port. Other HTTPS
+  services on that host receive it. Anything able to add such a route already
+  runs as the owner. The TUI warns when other routes exist on the host.

@@ -21,6 +21,7 @@ import (
 	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -30,25 +31,26 @@ const GatewayPort = "7420"
 
 // Options configure Setup and Uninstall.
 type Options struct {
-	Join         string // join string; empty means keep the current credentials
-	Gateway      bool   // also install and start the gateway on this machine
-	NoService    bool   // do not write or start services
-	NoLaunch     bool   // refuse workers on this machine (saved in node.json)
-	Launch       bool   // accept workers again after --no-launch
-	Purge        bool   // uninstall only: also remove credentials and state
-	Data         string // gateway data dir
-	Dist         string // gateway dist dir
-	Port         string // gateway port (default 7420)
-	Exe          string // path of the agent-net binary; default: this binary
-	All          string // "" ask; AllYes or AllNo answer every integration without a prompt
-	PeerMessages string // "" leave to All/network; PeerMessagesAccept or PeerMessagesNo is a local answer
-	CodexTools   string // "" leave; CodexToolsApprove or CodexToolsNo is a local answer
-	HintHook     string // "" leave; HintHookYes or HintHookNo is a local answer
-	PolicyHook   string // "" leave; PolicyHookYes or PolicyHookNo is a local answer
-	NeedsHook    string // "" leave; NeedsHookYes or NeedsHookNo is a local answer
-	WorkersMod   string // "" leave; WorkersModYes or WorkersModNo is a local answer
-	QuotaOnly    bool   // run only the quota setup step
-	QuotaAXI     string // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
+	Join         string        // join string; empty means keep the current credentials
+	Gateway      bool          // also install and start the gateway on this machine
+	NoService    bool          // do not write or start services
+	NoLaunch     bool          // refuse workers on this machine (saved in node.json)
+	Launch       bool          // accept workers again after --no-launch
+	Purge        bool          // uninstall only: also remove credentials and state
+	Data         string        // gateway data dir
+	FunnelRunner funnel.Runner // optional Tailscale runner
+	Dist         string        // gateway dist dir
+	Port         string        // gateway port (default 7420)
+	Exe          string        // path of the agent-net binary; default: this binary
+	All          string        // "" ask; AllYes or AllNo answer every integration without a prompt
+	PeerMessages string        // "" leave to All/network; PeerMessagesAccept or PeerMessagesNo is a local answer
+	CodexTools   string        // "" leave; CodexToolsApprove or CodexToolsNo is a local answer
+	HintHook     string        // "" leave; HintHookYes or HintHookNo is a local answer
+	PolicyHook   string        // "" leave; PolicyHookYes or PolicyHookNo is a local answer
+	NeedsHook    string        // "" leave; NeedsHookYes or NeedsHookNo is a local answer
+	WorkersMod   string        // "" leave; WorkersModYes or WorkersModNo is a local answer
+	QuotaOnly    bool          // run only the quota setup step
+	QuotaAXI     string        // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
 	Out          io.Writer
 }
 

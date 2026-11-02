@@ -85,15 +85,15 @@ func issueAppToken(tx *sql.Tx, appID, kind string, now time.Time, ttl time.Durat
 	if err != nil {
 		return "", err
 	}
-	return issueFamilyToken(tx, appID, family, kind, now, ttl)
+	return issueFamilyToken(tx, appID, family, kind, "oauth", now, ttl)
 }
 
-func issueFamilyToken(tx *sql.Tx, appID, family, kind string, now time.Time, ttl time.Duration) (string, error) {
+func issueFamilyToken(tx *sql.Tx, appID, family, kind, purpose string, now time.Time, ttl time.Duration) (string, error) {
 	raw, err := newAppToken()
 	if err != nil {
 		return "", err
 	}
-	result, err := tx.Exec("INSERT INTO app_tokens (hash, app_id, type, expires_at, created_at, family_id) SELECT ?, id, ?, ?, ?, ? FROM apps WHERE id = ? AND revoked_at IS NULL", hashHex(raw), kind, now.Add(ttl).UnixNano(), now.UnixNano(), family, appID)
+	result, err := tx.Exec("INSERT INTO app_tokens (hash, app_id, type, expires_at, created_at, family_id, purpose) SELECT ?, id, ?, ?, ?, ?, ? FROM apps WHERE id = ? AND revoked_at IS NULL", hashHex(raw), kind, now.Add(ttl).UnixNano(), now.UnixNano(), family, purpose, appID)
 	if err != nil {
 		return "", err
 	}
@@ -137,8 +137,8 @@ func (s *Store) IssueToken(appID, kind string, ttl time.Duration) (string, error
 }
 
 // appForToken also records the use, in the same transaction as validation.
-func appForToken(tx *sql.Tx, raw, kind string, now time.Time) (App, error) {
-	app, err := scanApp(tx.QueryRow("SELECT "+appColumns+" FROM apps WHERE revoked_at IS NULL AND id = (SELECT app_id FROM app_tokens WHERE hash = ? AND type = ? AND expires_at > ? AND used_at IS NULL)", hashHex(raw), kind, now.UnixNano()))
+func appForToken(tx *sql.Tx, raw, kind, purpose string, now time.Time) (App, error) {
+	app, err := scanApp(tx.QueryRow("SELECT "+appColumns+" FROM apps WHERE revoked_at IS NULL AND id = (SELECT app_id FROM app_tokens WHERE hash = ? AND type = ? AND purpose = ? AND expires_at > ? AND used_at IS NULL)", hashHex(raw), kind, purpose, now.UnixNano()))
 	if err != nil {
 		return App{}, err
 	}
@@ -157,7 +157,7 @@ func (s *Store) AppForToken(raw, kind string, now time.Time) (App, error) {
 		return App{}, err
 	}
 	defer tx.Rollback()
-	app, err := appForToken(tx, raw, kind, now)
+	app, err := appForToken(tx, raw, kind, "oauth", now)
 	if err != nil {
 		return App{}, err
 	}
@@ -195,14 +195,41 @@ func (s *Store) RotateRefresh(raw string, now time.Time) (access, refresh string
 	if expires <= now.UnixNano() {
 		return "", "", sql.ErrNoRows
 	}
+	// A fixed 24-hour window starts at the first rotation for this family.
+	var started int64
+	var rotations int
+	err = tx.QueryRow(`SELECT window_started_at,rotations FROM app_refresh_budget WHERE family_id=?`, family).Scan(&started, &rotations)
+	if err != nil && err != sql.ErrNoRows {
+		return "", "", err
+	}
+	if err == sql.ErrNoRows || now.UnixNano()-started >= int64(24*time.Hour) {
+		started = now.UnixNano()
+		rotations = 0
+	}
+	if rotations >= 200 {
+		if _, err = tx.Exec(`DELETE FROM app_tokens WHERE family_id=? AND used_at IS NULL`, family); err != nil {
+			return "", "", err
+		}
+		if err = tx.Commit(); err != nil {
+			return "", "", err
+		}
+		s.logf("oauth.refresh_rotation_limit", "app", appID)
+		return "", "", sql.ErrNoRows
+	}
+	if _, err = tx.Exec(`INSERT INTO app_refresh_budget(family_id,window_started_at,rotations) VALUES(?,?,?) ON CONFLICT(family_id) DO UPDATE SET window_started_at=excluded.window_started_at,rotations=excluded.rotations`, family, started, rotations+1); err != nil {
+		return "", "", err
+	}
 	if _, err = tx.Exec(`UPDATE app_tokens SET used_at=? WHERE hash=?`, now.UnixNano(), hashHex(raw)); err != nil {
 		return "", "", err
 	}
-	access, err = issueFamilyToken(tx, appID, family, "access", now, time.Hour)
+	if _, err = tx.Exec(`DELETE FROM app_tokens WHERE hash IN (SELECT hash FROM app_tokens WHERE app_id=? AND type='refresh' AND used_at IS NOT NULL ORDER BY used_at DESC, rowid DESC LIMIT -1 OFFSET 2000)`, appID); err != nil {
+		return "", "", err
+	}
+	access, err = issueFamilyToken(tx, appID, family, "access", "oauth", now, time.Hour)
 	if err != nil {
 		return "", "", err
 	}
-	refresh, err = issueFamilyToken(tx, appID, family, "refresh", now, 90*24*time.Hour)
+	refresh, err = issueFamilyToken(tx, appID, family, "refresh", "oauth", now, 90*24*time.Hour)
 	if err != nil {
 		return "", "", err
 	}
@@ -253,6 +280,19 @@ func (s *Store) ListApps() ([]App, error) {
 
 // DeleteExpiredTokens removes expired tokens and refresh hashes used 90 days ago.
 func (s *Store) DeleteExpiredTokens(now time.Time) error {
-	_, err := s.db.Exec("DELETE FROM app_tokens WHERE (used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND used_at <= ?)", now.UnixNano(), now.Add(-90*24*time.Hour).UnixNano())
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec("DELETE FROM app_tokens WHERE (used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND used_at <= ?)", now.UnixNano(), now.Add(-90*24*time.Hour).UnixNano()); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM app_tokens WHERE rowid IN (SELECT rowid FROM (SELECT rowid, row_number() OVER (PARTITION BY app_id ORDER BY used_at DESC, rowid DESC) AS rank FROM app_tokens WHERE type='refresh' AND used_at IS NOT NULL) WHERE rank>2000)`); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM app_refresh_budget WHERE NOT EXISTS (SELECT 1 FROM app_tokens WHERE app_tokens.family_id=app_refresh_budget.family_id)`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

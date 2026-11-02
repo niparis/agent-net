@@ -248,14 +248,22 @@ func TestPhoneStatusRefusalAndOAuthIsolation(t *testing.T) {
 
 func TestPhoneRevocationStopsEventStream(t *testing.T) {
 	s, c := newTestStore(t)
-	app, err := s.CreateApp("phone", "owner_app", "phone", "phone", nil)
+	pending, err := s.newPhonePending("phone", "test", c.t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := s.IssueToken(app.ID, "access", phoneTokenTTL)
+	if err = s.ApprovePending(pending.ID, "owner_app", "phone", c.t); err != nil {
+		t.Fatal(err)
+	}
+	_, raw, err := s.redeemPhonePending(pending.ID, c.t)
 	if err != nil {
 		t.Fatal(err)
 	}
+	app, _, err := s.phoneAppForToken(raw, c.t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	g := &Gateway{store: s, limiter: ratelimit.New(ratelimit.Config{}, c.now), logger: log.New(io.Discard, "", 0)}
 	stopped := make(chan struct{})
 	server := httptest.NewServer(g.phoneAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

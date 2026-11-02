@@ -355,6 +355,15 @@ func (s *Store) oauthStatus(id string, now time.Time) (string, string, error) {
 	if p.Status != "approved" {
 		return p.Status, "", nil
 	}
+	// Older gateways could issue more than one code for a pending approval.
+	// Any successful exchange consumes the entire approval, including those codes.
+	var consumed int
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM oauth_codes WHERE pending_id=? AND used_at IS NOT NULL)`, id).Scan(&consumed); err != nil {
+		return "", "", err
+	}
+	if consumed != 0 {
+		return "used", "", nil
+	}
 	var active int
 	if err = tx.QueryRow("SELECT count(*) FROM apps WHERE id=? AND revoked_at IS NULL", p.AppID).Scan(&active); err != nil {
 		return "", "", err
@@ -362,18 +371,29 @@ func (s *Store) oauthStatus(id string, now time.Time) (string, string, error) {
 	if active == 0 {
 		return "refused", "", nil
 	}
-	code, err := oauthRandom(32)
-	if err != nil {
+	var code string
+	var codeExpires int64
+	var used sql.NullInt64
+	err = tx.QueryRow(`SELECT retry_code,expires_at,used_at FROM oauth_codes WHERE pending_id=? ORDER BY rowid DESC LIMIT 1`, id).Scan(&code, &codeExpires, &used)
+	if err == nil {
+		if used.Valid {
+			return "used", "", nil
+		}
+		if codeExpires <= now.UnixNano() || code == "" {
+			return "expired", "", nil
+		}
+	} else if errors.Is(err, sql.ErrNoRows) {
+		code, err = oauthRandom(32)
+		if err != nil {
+			return "", "", err
+		}
+		if _, err = tx.Exec(`INSERT INTO oauth_codes (hash,pending_id,app_id,client_id,redirect_uri,code_challenge,expires_at,retry_code) VALUES (?,?,?,?,?,?,?,?)`, hashHex(code), id, p.AppID, p.ClientID, p.RedirectURI, p.Challenge, now.Add(oauthCodeTTL).UnixNano(), code); err != nil {
+			return "", "", err
+		}
+	} else {
 		return "", "", err
 	}
-	// Keep only the newest unused code for this page. Used hashes stay so a
-	// replay can revoke the tokens. Poll retries never persist a plaintext code.
-	if _, err = tx.Exec("DELETE FROM oauth_codes WHERE pending_id=? AND used_at IS NULL", id); err != nil {
-		return "", "", err
-	}
-	if _, err = tx.Exec(`INSERT INTO oauth_codes (hash,pending_id,app_id,client_id,redirect_uri,code_challenge,expires_at) VALUES (?,?,?,?,?,?,?)`, hashHex(code), id, p.AppID, p.ClientID, p.RedirectURI, p.Challenge, now.Add(oauthCodeTTL).UnixNano()); err != nil {
-		return "", "", err
-	}
+
 	u, err := url.Parse(p.RedirectURI)
 	if err != nil {
 		return "", "", err
@@ -398,10 +418,10 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 		return "", "", err
 	}
 	defer tx.Rollback()
-	var appID, storedClient, storedRedirect, challenge string
+	var appID, storedClient, storedRedirect, challenge, pendingID string
 	var expires int64
 	var used sql.NullInt64
-	err = tx.QueryRow(`SELECT app_id,client_id,redirect_uri,code_challenge,expires_at,used_at FROM oauth_codes WHERE hash=?`, hashHex(code)).Scan(&appID, &storedClient, &storedRedirect, &challenge, &expires, &used)
+	err = tx.QueryRow(`SELECT app_id,client_id,redirect_uri,code_challenge,expires_at,used_at,pending_id FROM oauth_codes WHERE hash=?`, hashHex(code)).Scan(&appID, &storedClient, &storedRedirect, &challenge, &expires, &used, &pendingID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", errOAuthInvalidGrant
 	}
@@ -421,6 +441,13 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 		}
 		return "", "", errOAuthInvalidGrant
 	}
+	var consumed int
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM oauth_codes WHERE pending_id=? AND used_at IS NOT NULL)`, pendingID).Scan(&consumed); err != nil {
+		return "", "", err
+	}
+	if consumed != 0 {
+		return "", "", errOAuthInvalidGrant
+	}
 	if expires <= now.UnixNano() || !validOAuthVerifier(verifier) || oauthPKCE(verifier) != challenge {
 		return "", "", errOAuthInvalidGrant
 	}
@@ -432,7 +459,7 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 		return "", "", err
 	}
 	family := hashHex(code)
-	access, err := issueFamilyToken(tx, appID, family, "access", now, time.Hour)
+	access, err := issueFamilyToken(tx, appID, family, "access", "oauth", now, time.Hour)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", errOAuthInvalidGrant
 	}
@@ -441,12 +468,12 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 	}
 	var refresh string
 	if oauthContains(client.GrantTypes, "refresh_token") {
-		refresh, err = issueFamilyToken(tx, appID, family, "refresh", now, 90*24*time.Hour)
+		refresh, err = issueFamilyToken(tx, appID, family, "refresh", "oauth", now, 90*24*time.Hour)
 		if err != nil {
 			return "", "", err
 		}
 	}
-	if _, err = tx.Exec("UPDATE oauth_codes SET used_at=? WHERE hash=?", now.UnixNano(), hashHex(code)); err != nil {
+	if _, err = tx.Exec("UPDATE oauth_codes SET used_at=?, retry_code='' WHERE hash=?", now.UnixNano(), hashHex(code)); err != nil {
 		return "", "", err
 	}
 	if err = tx.Commit(); err != nil {
@@ -490,10 +517,15 @@ func (s *Store) CleanupOAuth(now time.Time) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Forget the retry plaintext on expiry, but retain its hash as a tombstone
+	// until the pending request expires so a poll cannot mint a replacement.
+	if _, err = tx.Exec(`UPDATE oauth_codes SET retry_code='' WHERE expires_at<=? AND used_at IS NULL`, now.UnixNano()); err != nil {
+		return err
+	}
 	for _, q := range []string{
 		`DELETE FROM oauth_pending WHERE expires_at<=?`,
 		`DELETE FROM oauth_registration_attempts WHERE created_at<=?`,
-		`DELETE FROM oauth_codes WHERE (used_at IS NULL AND expires_at<=?) OR (used_at IS NOT NULL AND used_at<=?)`,
+		`DELETE FROM oauth_codes WHERE (used_at IS NULL AND expires_at<=? AND NOT EXISTS (SELECT 1 FROM oauth_pending WHERE oauth_pending.id=oauth_codes.pending_id)) OR (used_at IS NOT NULL AND used_at<=?)`,
 		`DELETE FROM oauth_clients WHERE created_at<=? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`,
 	} {
 		var args []any

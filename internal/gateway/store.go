@@ -521,6 +521,16 @@ CREATE INDEX IF NOT EXISTS app_tokens_expiry ON app_tokens (expires_at);
 -- Token families and source limits for the public app listener.
 CREATE TABLE IF NOT EXISTS oauth_registration_attempts (source TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS oauth_registration_attempts_source ON oauth_registration_attempts (source,created_at);
+`, `
+-- App token purpose, OAuth retry code and refresh rotation budget.
+CREATE TABLE IF NOT EXISTS app_refresh_budget (
+ family_id TEXT PRIMARY KEY, window_started_at INTEGER NOT NULL, rotations INTEGER NOT NULL);
+`, `
+-- Bound consumed refresh history already present on upgrade.
+DELETE FROM app_tokens WHERE rowid IN (
+ SELECT rowid FROM (SELECT rowid, row_number() OVER
+  (PARTITION BY app_id ORDER BY used_at DESC, rowid DESC) AS rank
+  FROM app_tokens WHERE type='refresh' AND used_at IS NOT NULL) WHERE rank>2000);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -601,6 +611,24 @@ func (s *Store) migrate() error {
 			if _, err := tx.Exec(`UPDATE app_tokens SET family_id=app_id WHERE family_id=''; CREATE INDEX IF NOT EXISTS app_tokens_family ON app_tokens(family_id); CREATE INDEX IF NOT EXISTS oauth_clients_source ON oauth_clients(source,created_at); CREATE INDEX IF NOT EXISTS oauth_pending_source ON oauth_pending(source,status,created_at);`); err != nil {
 				tx.Rollback()
 				return err
+			}
+		}
+		if strings.Contains(migrations[i], "App token purpose, OAuth retry code") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"app_tokens", "purpose", `purpose TEXT NOT NULL DEFAULT 'oauth' CHECK (purpose IN ('oauth','phone'))`},
+				{"oauth_codes", "retry_code", `retry_code TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT count(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
 			}
 		}
 		result, err := tx.Exec(migrations[i])

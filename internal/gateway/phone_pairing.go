@@ -89,7 +89,11 @@ func (s *Store) redeemPhonePending(id string, now time.Time) (string, string, er
 	if err != nil {
 		return "", "", err
 	}
-	token, err := issueAppToken(tx, appID, "access", now, phoneTokenTTL)
+	family, err := oauthRandom(32)
+	if err != nil {
+		return "", "", err
+	}
+	token, err := issueFamilyToken(tx, appID, family, "access", "phone", now, phoneTokenTTL)
 	if err != nil {
 		return "", "", err
 	}

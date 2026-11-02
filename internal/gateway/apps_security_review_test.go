@@ -130,7 +130,7 @@ func TestAppsPublicHostValidation(t *testing.T) {
 	for _, tc := range []struct {
 		host, origin string
 		valid        bool
-	}{{"host.example", "https://host.example:8443", true}, {"host.example:8443", "", true}, {"wrong.example", "", false}, {"host.example", "https://wrong.example", false}} {
+	}{{"host.example", "https://host.example:8443", false}, {"host.example:8443", "", true}, {"wrong.example", "", false}, {"host.example", "https://wrong.example", false}} {
 		r, err := http.NewRequest("POST", server.URL+"/mcp", strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
@@ -356,7 +356,7 @@ func TestAppTokenFamilyMigrationUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.db.Exec(`DROP INDEX app_tokens_family; DROP INDEX oauth_clients_source; DROP INDEX oauth_pending_source; DROP TABLE oauth_registration_attempts; ALTER TABLE app_tokens DROP COLUMN family_id; ALTER TABLE app_tokens DROP COLUMN used_at; ALTER TABLE oauth_clients DROP COLUMN source; ALTER TABLE oauth_pending DROP COLUMN source; DELETE FROM schema_version WHERE version=(SELECT max(version) FROM schema_version)`)
+	_, err = s.db.Exec(`DROP INDEX app_tokens_family; DROP INDEX oauth_clients_source; DROP INDEX oauth_pending_source; DROP TABLE oauth_registration_attempts; ALTER TABLE app_tokens DROP COLUMN family_id; ALTER TABLE app_tokens DROP COLUMN used_at; ALTER TABLE oauth_clients DROP COLUMN source; ALTER TABLE oauth_pending DROP COLUMN source; DELETE FROM schema_version WHERE version >= (SELECT max(version)-2 FROM schema_version)`)
 	if err != nil {
 		t.Fatal(err)
 	}

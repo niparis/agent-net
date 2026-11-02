@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/guidance"
 	"github.com/niparis/agent-net/internal/quotaaxi"
 )
@@ -31,6 +33,29 @@ func Uninstall(o Options) error {
 			res, err := r.removeService(s)
 			r.step(s.Name+" service", res, err)
 		}
+	}
+	// Only remove a route whose current target still matches our record.
+	data := r.Data
+	if data == "" {
+		data = os.Getenv("AGENT_NET_GATEWAY_DATA")
+	}
+	if data == "" {
+		data = filepath.Join(home(), ".local", "state", "agent-net", "gateway")
+	}
+	runner := r.FunnelRunner
+	if runner == nil {
+		runner = funnel.ExecRunner{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	removed, routeErr := funnel.Cleanup(ctx, runner, data)
+	cancel()
+	switch {
+	case routeErr != nil:
+		r.step("Funnel route", "", routeErr)
+	case removed:
+		r.step("Funnel route", "ok (removed)", nil)
+	default:
+		r.step("Funnel route", "skipped (no owned route)", nil)
 	}
 	// Workers outlive the daemon on purpose (a restart keeps them), so with
 	// the service gone nobody else would stop them.

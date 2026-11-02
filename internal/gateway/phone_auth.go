@@ -34,11 +34,11 @@ func (s *Store) phoneAppForToken(raw string, now time.Time) (App, bool, error) {
 	}
 	defer tx.Rollback()
 	var expires int64
-	err = tx.QueryRow(`SELECT t.expires_at FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.expires_at>? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(raw), now.UnixNano()).Scan(&expires)
+	err = tx.QueryRow(`SELECT t.expires_at FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.purpose='phone' AND t.expires_at>? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(raw), now.UnixNano()).Scan(&expires)
 	if err != nil {
 		return App{}, false, err
 	}
-	app, err := appForToken(tx, raw, "access", now)
+	app, err := appForToken(tx, raw, "access", "phone", now)
 	if err != nil {
 		return App{}, false, err
 	}
@@ -114,7 +114,7 @@ func (g *Gateway) phoneAuth(next http.Handler) http.Handler {
 						return
 					case <-ticker.C:
 						var valid int
-						err := g.store.db.QueryRowContext(ctx, `SELECT 1 FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.expires_at>? AND a.id=? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(cookie.Value), g.store.now().UnixNano(), app.ID).Scan(&valid)
+						err := g.store.db.QueryRowContext(ctx, `SELECT 1 FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.purpose='phone' AND t.expires_at>? AND a.id=? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(cookie.Value), g.store.now().UnixNano(), app.ID).Scan(&valid)
 						if err != nil {
 							cancel()
 							return

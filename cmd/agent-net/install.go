@@ -117,8 +117,9 @@ func cmdUninstall(args []string) error {
 	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
 	purge := fs.Bool("purge", false, "also remove credentials and daemon state")
 	noService := fs.Bool("no-service", false, "do not touch services")
+	data := fs.String("data", defaultGatewayData(), "gateway data directory")
 	fs.Parse(args)
-	return setup.Uninstall(setup.Options{Purge: *purge, NoService: *noService})
+	return setup.Uninstall(setup.Options{Purge: *purge, NoService: *noService, Data: *data})
 }
 
 func cmdInvite(args []string) error {

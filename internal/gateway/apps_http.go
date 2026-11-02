@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -111,39 +110,38 @@ func closeAllAppSessions(store *Store) {
 	}
 }
 
-// validPublicHost accepts the configured host and, if supplied, its port.
+// validPublicHost compares the whole authority, including default ports.
 func validPublicHost(r *http.Request, base string) bool {
 	public, err := url.Parse(base)
-	if err != nil || public.Hostname() == "" {
+	if err != nil || public.User != nil || public.Hostname() == "" || (public.Scheme != "https" && public.Scheme != "http") {
 		return false
 	}
-	host := r.Host
-	port := ""
-	if h, p, e := net.SplitHostPort(host); e == nil {
-		host, port = h, p
-	} else if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-		host = strings.Trim(host, "[]")
-	} else if strings.Contains(host, ":") {
-		return false
-	}
-	if !strings.EqualFold(host, public.Hostname()) {
-		return false
-	}
-	expected := public.Port()
-	if expected == "" {
-		if public.Scheme == "https" {
-			expected = "443"
-		} else if public.Scheme == "http" {
-			expected = "80"
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			return p
 		}
+		if u.Scheme == "https" {
+			return "443"
+		}
+		return "80"
 	}
-	if port != "" && port != expected {
+	authority := func(host string) bool {
+		if strings.HasSuffix(host, ":") {
+			return false
+		}
+		u, err := url.Parse(public.Scheme + "://" + host)
+		return err == nil && u.User == nil && u.Host == host && u.Path == "" && u.RawQuery == "" && u.Fragment == "" && strings.EqualFold(u.Hostname(), public.Hostname()) && port(u) == port(public)
+	}
+	if !authority(r.Host) {
 		return false
 	}
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		u, e := url.Parse(origin)
-		if e != nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || !strings.EqualFold(u.Scheme, public.Scheme) || !strings.EqualFold(u.Host, public.Host) {
+	origins := r.Header.Values("Origin")
+	if len(origins) > 1 {
+		return false
+	}
+	if len(origins) == 1 && origins[0] != "" {
+		u, err := url.Parse(origins[0])
+		if err != nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || !strings.EqualFold(u.Scheme, public.Scheme) || !authority(u.Host) {
 			return false
 		}
 	}
@@ -276,14 +274,15 @@ func (g *Gateway) AppsHandler(phoneApps ...http.Handler) http.Handler {
 	g.registerOAuth(mux)
 	mux.HandleFunc("GET /phone/status", g.phoneStatus)
 	mux.Handle("/", g.phoneAuth(phoneApp))
-	limited := g.appsMiddleware(mux)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	hostChecked := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !validPublicHost(r, g.publicBase()) {
+			g.limiter.Fail(ratelimit.ClientAddr(r))
 			http.Error(w, "invalid host or origin", http.StatusMisdirectedRequest)
 			return
 		}
-		limited.ServeHTTP(w, r)
+		mux.ServeHTTP(w, r)
 	})
+	return g.appsMiddleware(hostChecked)
 }
 
 // appsMiddleware applies one class to every public request, including 404s.

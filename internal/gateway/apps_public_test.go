@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http/httptest"
 	"os/exec"
 	"strings"
@@ -13,6 +15,8 @@ import (
 type publicRunner struct {
 	calls   []string
 	missing bool
+	failOff bool
+	target  string
 }
 
 func (r *publicRunner) Run(_ context.Context, args ...string) (string, string, error) {
@@ -24,7 +28,18 @@ func (r *publicRunner) Run(_ context.Context, args ...string) (string, string, e
 		return `{"BackendState":"Running","Self":{"DNSName":"test.example.ts.net.","Capabilities":["funnel"]}}`, "", nil
 	}
 	if args[0] == "serve" {
-		return `{"TCP":{"443":{}}}`, "", nil
+		if r.target == "" {
+			return `{"TCP":{"443":{"HTTPS":true}},"Web":{"test.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7411"}}}}}`, "", nil
+		}
+		return fmt.Sprintf(`{"TCP":{"443":{"HTTPS":true}},"Web":{"test.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7411"}}},"test.example.ts.net:8443":{"Handlers":{"/":{"Proxy":%q}}}}}`, r.target), "", nil
+	}
+	if len(args) > 1 && args[len(args)-1] == "off" {
+		if r.failOff {
+			return "", "failed", errors.New("off failed")
+		}
+		r.target = ""
+	} else if len(args) > 0 && args[0] == "funnel" {
+		r.target = args[len(args)-1]
 	}
 	return "", "", nil
 }
@@ -86,7 +101,7 @@ func TestAppsPublicLifecycle(t *testing.T) {
 	if s := publicCall(t, g, "apps.public.status", nil); s["on"] != false || g.publicServer != nil {
 		t.Fatalf("last Funnel app: %v", s)
 	}
-	if strings.Count(strings.Join(runner.calls, "\n"), "funnel --https=8443 off") != 2 {
+	if strings.Count(strings.Join(runner.calls, "\n"), "funnel --https=8443 off") != 3 {
 		t.Fatal(runner.calls)
 	}
 }
