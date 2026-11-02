@@ -20,7 +20,7 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		var p map[string]any
 		_ = json.Unmarshal(raw, &p)
 		calls = append(calls, call{method, p})
-		return json.RawMessage(`{"accepted":true,"id":7,"status":"new","remaining":2,"item_id":"i_1","kind":"question","state":"open","recorded":true,"worker":"s_w","score":4,"severity":2,"delivered":true,"projects":[],"dry_run":true,"ok":true,"tools":[],"detail":"ok","profile":{"name":"n","project":"p","task":"t","expertise":"x","capabilities":[]}}`), nil
+		return json.RawMessage(`{"accepted":true,"id":7,"status":"new","remaining":2,"item_id":"i_1","kind":"question","state":"open","recorded":true,"worker":"s_w","score":4,"severity":2,"delivered":true,"projects":[],"dry_run":true,"ok":true,"tools":[],"detail":"ok","profile":{"name":"n","function":"f","project":"p","capabilities":[],"task":"t","expertise":"x"}}`), nil
 	})
 	ctx := context.Background()
 	cases := []struct {

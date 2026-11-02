@@ -13,7 +13,7 @@ import (
 // agent_list and agent_get did, so removing those aliases loses no charter.
 func TestAgentSessionsCarryCharter(t *testing.T) {
 	row := `{"id":"s_test","name":"s_test","kind":"agent","machine":"research","project":"housing",` +
-		`"harness":"claude","model":"standard","online":true,"status":"idle","task":"work",` +
+		`"harness":"claude","model":"standard","online":true,"status":"idle","task":"work","function":"housing work",` +
 		`"last_seen":"2026-01-01T12:00:00Z","task_started":null,"purpose":"fallback",` +
 		`"charter":{"purpose":"fallback","purpose_fallback":true,"accepts":["bugs"],"refuses":["special"],"feature_requests":"ask"}}`
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
@@ -37,7 +37,7 @@ func TestAgentSessionsCarryCharter(t *testing.T) {
 			t.Fatalf("%s: %v %+v", c.name, err, r)
 		}
 		raw, _ := json.Marshal(r)
-		for _, want := range []string{"fallback", "purpose_fallback", "bugs", "special", "feature_requests"} {
+		for _, want := range []string{"fallback", "purpose_fallback", "bugs", "special", "feature_requests", "housing work"} {
 			if !strings.Contains(string(raw), want) {
 				t.Fatalf("%s missing %s: %s", c.name, want, raw)
 			}

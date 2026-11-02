@@ -112,6 +112,41 @@ func TestReminderIsPerServer(t *testing.T) {
 	}
 }
 
+// The daemon's announce answer is a protocol.Profile: it always carries
+// "function" (from the project's AGENTS.md) and may leave out empty expertise.
+// The catalog output schema must accept that real shape.
+func TestAnnounceResultMatchesCatalogSchema(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		profile protocol.Profile
+	}{
+		{"with expertise", protocol.Profile{Name: "me", Function: "housing work", Project: "housing",
+			Capabilities: []string{"go"}, Task: "fix the bug", Expertise: "Go and the housing API"}},
+		{"without expertise", protocol.Profile{Name: "me", Function: "housing work", Project: "housing",
+			Capabilities: []string{}, Task: "fix the bug"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, _ := json.Marshal(tc.profile)
+			cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+				if method == "announce" {
+					return raw, nil
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_announce",
+				Arguments: map[string]any{"task": "fix the bug"}})
+			if err != nil || res.IsError {
+				t.Fatalf("agent_announce: %v %+v", err, res)
+			}
+			out, _ := res.StructuredContent.(map[string]any)
+			profile, _ := out["profile"].(map[string]any)
+			if profile["function"] != "housing work" {
+				t.Fatalf("profile.function = %v, want housing work", profile["function"])
+			}
+		})
+	}
+}
+
 // The waiting question is an optional announce parameter (decision 0016).
 // The daemon reads the short string form as an input question.
 func TestAnnouncePassesTheWaitingQuestion(t *testing.T) {

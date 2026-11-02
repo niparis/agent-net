@@ -143,11 +143,13 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if err != nil {
 			return nil, err
 		}
-		profile, ok := m["profile"]
-		if !ok || profile == nil {
-			profile = map[string]any{"name": "", "project": "", "task": "", "expertise": "", "capabilities": []string{}}
+		// The daemon answers a bare protocol.Profile. An older or wrapped
+		// answer may put it under "profile"; accept both shapes and keep only
+		// the profile fields the catalog output schema allows.
+		if p, ok := m["profile"].(map[string]any); ok && p != nil {
+			m = p
 		}
-		return map[string]any{"profile": profile}, nil
+		return map[string]any{"profile": profileOutput(m)}, nil
 	case "agent_owner_ask":
 		kind := str("kind")
 		m, err := ownerAskCall(ctx, run, kind, str("text"), str("recommendation"), stringSlice(a["options"]), str("urgency"))
@@ -222,6 +224,21 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		return map[string]any{"ok": m["ok"], "tools": m["tools"], "detail": m["detail"]}, nil
 	}
 	return nil, fmt.Errorf("unknown redesigned tool %q", name)
+}
+
+// profileOutput turns the daemon's protocol.Profile into the announce output
+// shape. It ignores unknown keys and always fills the fields the schema
+// requires, including function and an empty capabilities list.
+func profileOutput(m map[string]any) map[string]any {
+	raw, _ := json.Marshal(m)
+	var p protocol.Profile
+	_ = json.Unmarshal(raw, &p)
+	capabilities := p.Capabilities
+	if capabilities == nil {
+		capabilities = []string{}
+	}
+	return map[string]any{"name": p.Name, "function": p.Function, "project": p.Project,
+		"capabilities": capabilities, "task": p.Task, "expertise": p.Expertise}
 }
 
 // filledWorker returns the worker record the read tools would show. The
