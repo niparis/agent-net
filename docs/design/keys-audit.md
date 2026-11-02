@@ -375,5 +375,8 @@ from the binding table. These direct keys were cut:
   overlay under Graph.
 
 `helpContent` is now built from `keyBindings`. It lists Global keys first, then
-the current tab, then the other tabs in tab order, then In overlays. A global
-key is not repeated in a tab section. No key row is written by hand.
+the current tab, then the other tabs in tab order, then In overlays. Global keys
+are a fixed short list with one text per row. A tab section repeats a global key
+only when it does something different there, and direction pairs share one row
+(`pgup/pgdn`, `home/g, end`, `up/down, j/k`, `shift+arrows`, `, .`). No key row
+is written by hand.

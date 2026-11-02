@@ -55,7 +55,7 @@ func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 			t.Errorf("help line unreachable: %q", line)
 		}
 	}
-	for _, want := range []string{"more below", "more above", "delegation policy", "Messages", "select a conversation", "In overlays", "states", "open the selected message body"} {
+	for _, want := range []string{"more below", "more above", "delegation policy", "Messages", "select the previous or next message", "In overlays", "states", "open the selected message body"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("help did not show %q", want)
 		}
@@ -74,7 +74,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 		seen.WriteString(ansi.Strip(m.View()))
 		m = keys(m, "j")
 	}
-	for _, want := range []string{"Tools keys", "add an MCP server or a skill from a folder", "Tools Differences", "close help", "more below", "more above"} {
+	for _, want := range []string{"Tools keys", "add an MCP server or a skill from a folder", "Differences", "close help", "more below", "more above"} {
 		if !strings.Contains(seen.String(), want) {
 			t.Errorf("missing %q", want)
 		}
@@ -84,7 +84,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 func TestHelpShowsWaitingAndNotificationSettings(t *testing.T) {
 	m := keys(newModel(80, 24), "?")
 	content := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(80), "\n"))), " ")
-	for _, want := range []string{"desktop notifications: on (toggle)", "selected session in herdr (ctrl+] returns on fallback)"} {
+	for _, want := range []string{"desktop notifications: on (toggle)", "go into the selected thing"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("help lacks %q", want)
 		}

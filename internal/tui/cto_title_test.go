@@ -62,7 +62,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 		t.Errorf("conversation row is not the owner's title: %s", line)
 	}
 
-	help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
+	help := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(120), "\n"))), " ")
 	for _, want := range []string{"focus the Atlas box", "enter opens the full Atlas", "open the Atlas session"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help lacks %q:\n%s", want, help)

@@ -1,24 +1,24 @@
 Keys ───────────────────────────────────────────────────────────────────────────
   more above
-  R                    restart tips
-  N                    desktop notifications: on (toggle)
-  q                    quit
-  esc, ?               close help
-  down, j              scroll down
-  up, k                scroll up
-  pgdown               page down
-  pgup                 page up
-  home, g              first line
-  end, G               last line
- confirmations
-  enter, y, Y          yes
-  esc, n, N            no
- forms
-  enter                submit or next field
-  esc                  cancel
-  tab                  move to the next field
-  down                 next field
-  shift+tab, up        previous field
-  left                 change choice
-  more below
+  T                      toggle tips
+  R                      restart tips
+  N                      desktop notifications: on (toggle)
+  q                      quit
+  esc, ?                 close help
+  up/down, j/k           scroll
+  pgup/pgdn              page
+  home/g, end/G          first, last line
+
+ Confirmations
+  enter, y, Y            yes
+  esc, n, N              no
+
+ Forms
+  enter                  submit or next field
+  esc                    cancel
+  tab/down               move to the next field
+  shift+tab, up          previous field
+  left/right             change the choice
+  space                  toggle
+
 up/down scroll  esc close help  q quit

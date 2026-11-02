@@ -1,24 +1,24 @@
 Keys ───────────────────────────────────────────────────────────────────────────
 
  Global keys
-  1-5                  Sessions; Graph; Quotas; Messages; Tools
-  c                    open the CTO session
-  C                    focus the CTO box for its own keys: enter opens the full
-                       CTO, ctrl+] returns, esc skips a tip
-  tab                  move to the next field; back to Sessions
-  ?                    help
-  /                    filter; find a node; enter selects the first match and
-                       esc cancels
-  esc                  back; clear or back; Graph; clear
-  R                    refresh; rescan
-  q, ctrl+c            quit
-  enter                go into the selected session in herdr (ctrl+] returns on
-                       fallback), or run the selected row's action; detail; open
-                       the selected message body; open the selected agent card;
-                       select the first match; open Sessions filtered to this
-                       agent's project; open the difference plan; open the item
-                       details and actions
-  up/down, j/k         move the selection; select a conversation; select a
-                       subscription; move the selection between nodes; move
+  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the CTO session
+  C                      focus the CTO box
+  ?                      help
+  q, ctrl+c              quit
+
+ Graph
+  /                      find a node; enter selects the first match
+  +, =                   zoom in
+  -                      zoom out
+  shift+arrows           pan
+  , .                    select a linked neighbour
+  n                      start a session in this project
+  enter                  open the selected agent card
   more below
 up/down scroll  esc close help  q quit

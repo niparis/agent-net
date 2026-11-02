@@ -1,40 +1,40 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  Global keys
-  1-5                  Sessions; Graph; Quotas; Messages; Tools
-  c                    open the CTO session
-  C                    focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip
-  tab                  move to the next field; back to Sessions
-  ?                    help
-  /                    filter; find a node; enter selects the first match and esc cancels
-  esc                  back; clear or back; Graph; clear
-  R                    refresh; rescan
-  q, ctrl+c            quit
-  enter                go into the selected session in herdr (ctrl+] returns on fallback), or run the selected row's
-                       action; detail; open the selected message body; open the selected agent card; select the first
-                       match; open Sessions filtered to this agent's project; open the difference plan; open the item
-                       details and actions
-  up/down, j/k         move the selection; select a conversation; select a subscription; move the selection between
-                       nodes; move
-  left/right           select the previous message in the conversation; select the next message in the conversation;
-                       agent; move the selection between nodes; column
+  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the CTO session
+  C                      focus the CTO box
+  ?                      help
+  q, ctrl+c              quit
 
  Sessions
-  pgup                 page
-  pgdown               page
-  home, g              first row
-  end                  last row
-  m                    send a message to the session as yourself
-  n                    start a session in herdr: project, harness, model, folder and first message (a form)
-  x                    stop the selected worker or session
-  h                    hide or unhide the selected session
-  S                    session settings: request rule, delegation policy, integrations, machine name
-  v                    cycle the view: active only, all, all with offline, all with offline and hidden
-  d                    show or hide the selected session details
-  i                    open the inbox
- held request
-  a                    approve
-  r                    refuse
- learned suggestion
+  pgup/pgdn              page
+  home/g, end            first, last row
+  m                      send a message to the session as yourself
+  n                      start a session in herdr: project, harness, model, folder and first message (a form)
+  x                      stop the selected worker or session
+  h                      hide or unhide the selected session
+  S                      session settings: request rule, delegation policy, integrations, machine name
+  v                      cycle the view: active only, all, all with offline, all with offline and hidden
+  d                      show or hide the selected session details
+  i                      open the inbox
+
+ On a held request row
+  a                      approve
+  r                      refuse
+
+ On a learned suggestion row
+  a                      accept
+  r                      reject
+
+ On an outcome row
+  s                      let stand
+  O                      overrule
+
   more below
 up/down scroll  esc close help  q quit

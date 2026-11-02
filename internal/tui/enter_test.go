@@ -234,7 +234,7 @@ func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	v := m.View()
-	if !strings.Contains(v, "selected session in herdr (ctrl+] returns on fallback)") {
+	if !strings.Contains(v, "go into the selected thing") {
 		t.Errorf("help does not list enter:\n%s", v)
 	}
 	if strings.Contains(v, "alias for Enter") {

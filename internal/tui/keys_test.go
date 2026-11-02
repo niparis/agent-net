@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestKeyBindingsUnique(t *testing.T) {
@@ -47,10 +49,48 @@ func TestHelpListsEveryBinding(t *testing.T) {
 		if binding.action == actNotifications {
 			helpText = "desktop notifications"
 		}
-		if !strings.Contains(help, helpText) {
-			t.Errorf("help omits %q: %q", binding.context, helpText)
+		if strings.Contains(help, helpText) {
+			continue
+		}
+		if binding.action == actFirst || binding.action == actLast {
+			continue // the first and last rows share one line
+		}
+		global := false
+		for _, key := range binding.keys {
+			if stringIn(key, globalSameKeys) {
+				global = true
+				break
+			}
+		}
+		if global && !binding.local {
+			continue // the fixed Global row covers this meaning
+		}
+		t.Errorf("help omits %q: %q", binding.context, helpText)
+	}
+}
+
+func TestHelpGlobalRowsAreFixed(t *testing.T) {
+	m := newModel(120, 40)
+	var got []string
+	for _, line := range m.globalHelpLines(120) {
+		got = append(got, strings.Join(strings.Fields(ansi.Strip(line)), " "))
+	}
+	var want []string
+	for _, row := range globalHelpRows {
+		want = append(want, row.keys+" "+strings.ReplaceAll(row.help, "CTO", m.ctoTitle()))
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("Global rows:\n got %q\nwant %q", got, want)
+	}
+}
+
+func stringIn(s string, list []string) bool {
+	for _, item := range list {
+		if item == s {
+			return true
 		}
 	}
+	return false
 }
 
 // Every action in the table is handled by the package. Shared actions are the

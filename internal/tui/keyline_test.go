@@ -103,7 +103,7 @@ func TestGraphKeyLineIsShortAndHelpKeepsTheRest(t *testing.T) {
 	m := graphModel(120, 34)
 	m = keys(m, "?")
 	help := ansi.Strip(strings.Join(m.helpContent(120), " "))
-	for _, want := range []string{"shift+left", ",", ".", "open the selected agent card", "quit"} {
+	for _, want := range []string{"shift+arrows", ", .", "open the selected agent card", "quit"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("graph help does not list %q: %s", want, help)
 		}

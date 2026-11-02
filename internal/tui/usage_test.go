@@ -504,7 +504,7 @@ func TestKeyLineGivesUpTheLeastUsefulHints(t *testing.T) {
 func TestHelpOverlay(t *testing.T) {
 	m := keys(newModel(100, 40), "?")
 	v := strings.Join(strings.Fields(ansi.Strip(m.View()+strings.Join(m.helpContent(100), "\n"))), " ")
-	for _, want := range []string{"Keys", "selected session in herdr", "q, ctrl+c", "Legend"} {
+	for _, want := range []string{"Keys", "go into the selected thing", "q, ctrl+c", "Legend"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help lacks %q:\n%s", want, v)
 		}

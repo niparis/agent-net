@@ -192,7 +192,7 @@ func (m Model) helpContent(w int) []string {
 		out = append(out, " "+sBold.Render(section.title))
 		for _, context := range section.contexts {
 			if context != section.contexts[0] {
-				out = append(out, " "+sBold.Render(strings.ReplaceAll(string(context), "CTO", m.ctoTitle())))
+				out = append(out, "", " "+sBold.Render(m.helpSubsectionTitle(context)))
 			}
 			out = append(out, m.contextHelpLines(context, w, true)...)
 		}
@@ -206,8 +206,11 @@ func (m Model) helpContent(w int) []string {
 	}
 
 	out = append(out, "", " "+sBold.Render("In overlays"))
-	for _, context := range m.overlayContexts() {
-		out = append(out, " "+sBold.Render(strings.ReplaceAll(string(context), "CTO", m.ctoTitle())))
+	for i, context := range m.overlayContexts() {
+		if i > 0 {
+			out = append(out, "")
+		}
+		out = append(out, " "+sBold.Render(m.helpSubsectionTitle(context)))
 		out = append(out, m.contextHelpLines(context, w, false)...)
 		if context == contextSettingsMenu {
 			for _, entry := range settingsEntries() {
@@ -256,53 +259,62 @@ func (m Model) overlayContext(context keyContext) bool {
 	return false
 }
 
-// globalHelpKeys is the order the shared keys are listed in. The text for
-// each group comes from the bindings that use it.
-var globalHelpKeys = []struct {
-	label string
-	keys  []string
-}{
-	{"1-5", []string{"1", "2", "3", "4", "5"}},
-	{"c", []string{"c"}},
-	{"C", []string{"C"}},
-	{"tab", []string{"tab"}},
-	{"?", []string{"?"}},
-	{"/", []string{"/"}},
-	{"esc", []string{"esc"}},
-	{"R", []string{"R"}},
-	{"q, ctrl+c", []string{"q", "ctrl+c"}},
-	{"enter", []string{"enter"}},
-	{"up/down, j/k", []string{"up", "down", "j", "k"}},
-	{"left/right", []string{"left", "right"}},
-}
-
 func (m Model) globalHelpLines(w int) []string {
-	var out []string
-	for _, group := range globalHelpKeys {
-		var helps []string
-		for _, binding := range keyBindings {
-			if m.overlayContext(binding.context) {
-				continue
-			}
-			if !bindingUsesAnyKey(binding, group.keys) {
-				continue
-			}
-			helps = appendUnique(helps, m.bindingHelpText(binding))
-		}
-		// tab is only bound in the forms; the Global list still names it.
-		if len(helps) == 0 {
-			for _, binding := range keyBindings {
-				if bindingUsesAnyKey(binding, group.keys) {
-					helps = appendUnique(helps, m.bindingHelpText(binding))
-				}
-			}
-		}
-		if len(helps) == 0 {
-			continue
-		}
-		out = append(out, m.helpRow(group.label, strings.Join(helps, "; "), w)...)
+	out := make([]string, 0, len(globalHelpRows))
+	for _, row := range globalHelpRows {
+		out = append(out, m.helpRow(row.keys, strings.ReplaceAll(row.help, "CTO", m.ctoTitle()), w)...)
 	}
 	return out
+}
+
+func (m Model) helpSubsectionTitle(context keyContext) string {
+	switch context {
+	case contextHeld:
+		return "On a held request row"
+	case contextSuggestion:
+		return "On a learned suggestion row"
+	case contextOutcome:
+		return "On an outcome row"
+	case contextProposal:
+		return "On a " + m.ctoTitle() + " proposal row"
+	case contextCard:
+		return "Agent card"
+	case contextToolsDiff:
+		return "Differences"
+	case contextToolsAll:
+		return "All tools"
+	case contextToolsProject:
+		return "By project"
+	case contextToolsCompare:
+		return "Compare"
+	case contextBody:
+		return "Message body"
+	case contextInbox:
+		return "Inbox"
+	case contextSettingsMenu:
+		return "Settings menu"
+	case contextProposalDetail:
+		return "Proposal detail"
+	case contextProposalHistory:
+		return "Proposal history"
+	case contextToolsPlan:
+		return "Tools plan"
+	case contextToolsPicker:
+		return "Tools picker"
+	case contextToolsMenu:
+		return "Tools menu"
+	case contextToolsAdd:
+		return "Tools add"
+	case contextCTO:
+		return m.ctoTitle() + " box"
+	case contextHelp:
+		return "Help"
+	case contextConfirm:
+		return "Confirmations"
+	case contextForm:
+		return "Forms"
+	}
+	return strings.ReplaceAll(string(context), "CTO", m.ctoTitle())
 }
 
 func bindingUsesAnyKey(binding keyBinding, keys []string) bool {
@@ -319,15 +331,6 @@ func bindingUsesAnyKey(binding keyBinding, keys []string) bool {
 	return false
 }
 
-func appendUnique(list []string, value string) []string {
-	for _, item := range list {
-		if item == value {
-			return list
-		}
-	}
-	return append(list, value)
-}
-
 func (m Model) bindingHelpText(binding keyBinding) string {
 	help := binding.help
 	if help == "" {
@@ -336,23 +339,20 @@ func (m Model) bindingHelpText(binding keyBinding) string {
 	return strings.ReplaceAll(help, "CTO", m.ctoTitle())
 }
 
+type helpEntry struct {
+	keys   []string
+	help   string
+	action actionID
+}
+
 func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []string {
-	var out []string
+	var entries []helpEntry
 	for _, binding := range keyBindings {
 		if binding.context != context {
 			continue
 		}
-		if skipGlobal {
-			global := false
-			for _, group := range globalHelpKeys {
-				if bindingUsesAnyKey(binding, group.keys) {
-					global = true
-					break
-				}
-			}
-			if global {
-				continue
-			}
+		if skipGlobal && !binding.local && bindingUsesAnyKey(binding, globalSameKeys) {
+			continue
 		}
 		help := m.bindingHelpText(binding)
 		if context == contextHelp && binding.action == actNotifications {
@@ -362,22 +362,149 @@ func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []st
 			}
 			help = "desktop notifications: " + state + " (toggle)"
 		}
-		keys := strings.Join(binding.keys, ", ")
-		if ansi.StringWidth(keys) <= 20 {
-			out = append(out, m.helpRow(keys, help, w)...)
+		entries = append(entries, helpEntry{keys: append([]string(nil), binding.keys...), help: help, action: binding.action})
+	}
+	entries = mergeHelpEntries(entries)
+	var out []string
+	for _, entry := range entries {
+		keys := strings.Join(entry.keys, ", ")
+		if ansi.StringWidth(keys) <= helpKeyWidth {
+			out = append(out, m.helpRow(keys, entry.help, w)...)
 			continue
 		}
-		for _, key := range binding.keys {
-			out = append(out, m.helpRow(key, help, w)...)
+		for _, key := range entry.keys {
+			out = append(out, m.helpRow(key, entry.help, w)...)
 		}
 	}
 	return out
 }
 
+// mergeHelpEntries puts a direction pair on one row: pgup/pgdn, up/down,
+// left/right, shift+arrows, and first/last. A pair shares one help text.
+func mergeHelpEntries(in []helpEntry) []helpEntry {
+	out := make([]helpEntry, 0, len(in))
+	for i := 0; i < len(in); {
+		if i+1 < len(in) && in[i].action == actFirst && in[i+1].action == actLast {
+			out = append(out, mergeFirstLast(in[i], in[i+1]))
+			i += 2
+			continue
+		}
+		if i+1 < len(in) && sameHelp(in[i], in[i+1]) && allShift(in[i]) && allShift(in[i+1]) {
+			j := i + 1
+			for j+1 < len(in) && sameHelp(in[i], in[j+1]) && allShift(in[j+1]) {
+				j++
+			}
+			out = append(out, helpEntry{keys: []string{"shift+arrows"}, help: in[i].help, action: in[i].action})
+			i = j + 1
+			continue
+		}
+		if i+1 < len(in) && sameHelp(in[i], in[i+1]) && mergeablePair(in[i], in[i+1]) {
+			out = append(out, mergePair(in[i], in[i+1]))
+			i += 2
+			continue
+		}
+		out = append(out, in[i])
+		i++
+	}
+	return out
+}
+
+func sameHelp(a, b helpEntry) bool {
+	return a.help == b.help
+}
+
+func allShift(e helpEntry) bool {
+	if len(e.keys) == 0 {
+		return false
+	}
+	for _, key := range e.keys {
+		if !strings.HasPrefix(key, "shift+") {
+			return false
+		}
+	}
+	return true
+}
+
+func mergeablePair(a, b helpEntry) bool {
+	if len(a.keys) == 0 || len(b.keys) == 0 {
+		return false
+	}
+	if len(a.keys) != len(b.keys) {
+		return false
+	}
+	switch a.keys[0] {
+	case "up", "down", "left", "right", "j", "k", "pgup", "pgdown", "home", "end", "ctrl+u", "ctrl+d", ",", ".", "[", "]", "tab":
+		return true
+	}
+	return false
+}
+
+func mergeFirstLast(a, b helpEntry) helpEntry {
+	keys := strings.Join(a.keys, "/") + ", " + strings.Join(b.keys, "/")
+	help := a.help + ", " + b.help
+	first, last := a.help, b.help
+	if strings.HasPrefix(first, "first ") && strings.HasPrefix(last, "last ") {
+		help = "first, last " + strings.TrimPrefix(last, "last ")
+	}
+	return helpEntry{keys: []string{keys}, help: help, action: a.action}
+}
+
+func mergePair(a, b helpEntry) helpEntry {
+	if len(a.keys) == len(b.keys) && reversePair(a.keys[0], b.keys[0]) {
+		a, b = b, a
+	}
+	if len(a.keys) == 1 && len(b.keys) == 1 {
+		switch a.keys[0] {
+		case ",":
+			return helpEntry{keys: []string{", ."}, help: a.help, action: a.action}
+		case "[":
+			return helpEntry{keys: []string{"[ ]"}, help: a.help, action: a.action}
+		}
+		return helpEntry{keys: []string{pairKey(a.keys[0], b.keys[0])}, help: a.help, action: a.action}
+	}
+	head := pairKey(a.keys[0], b.keys[0])
+	tail := pairKey(a.keys[1], b.keys[1])
+	return helpEntry{keys: []string{head + ", " + tail}, help: a.help, action: a.action}
+}
+
+func reversePair(a, b string) bool {
+	switch a {
+	case "down":
+		return b == "up"
+	case "right":
+		return b == "left"
+	case "pgdown":
+		return b == "pgup"
+	case "ctrl+d":
+		return b == "ctrl+u"
+	}
+	return false
+}
+
+func pairKey(a, b string) string {
+	if strings.HasPrefix(a, "ctrl+") && strings.HasPrefix(b, "ctrl+") {
+		return a + "/" + strings.TrimPrefix(b, "ctrl+")
+	}
+	a, b = shortKey(a), shortKey(b)
+	if len(a) == 1 && len(b) == 1 && a > b {
+		a, b = b, a
+	}
+	return a + "/" + b
+}
+
+func shortKey(key string) string {
+	if key == "pgdown" {
+		return "pgdn"
+	}
+	return key
+}
+
+const helpKeyWidth = 22
+
 func (m Model) helpRow(keys, help string, w int) []string {
-	const indent = 23
+	const indent = 25
 	lines := wrap(help, max(w-indent, 8))
-	out := []string{"  " + sTitle.Render(cell(keys, 20)) + " " + lines[0]}
+	out := []string{"  " + sTitle.Render(cell(keys, helpKeyWidth)) + " " + lines[0]}
 	for _, line := range lines[1:] {
 		out = append(out, strings.Repeat(" ", indent)+line)
 	}

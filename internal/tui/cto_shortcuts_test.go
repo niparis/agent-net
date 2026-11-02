@@ -35,7 +35,7 @@ func TestCTOBackHintsAndKeys(t *testing.T) {
 				t.Errorf("focused CTO key bar: %s", bar)
 			}
 			help := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(size[0]), "\n"))), " ")
-			if !strings.Contains(help, "ctrl+] returns") || strings.Contains(help, "tab returns") {
+			if !strings.Contains(help, "back to Sessions") || strings.Contains(help, "tab returns") {
 				t.Errorf("CTO help does not describe the return key correctly: %s", help)
 			}
 			for _, key := range []tea.KeyType{tea.KeyCtrlCloseBracket, tea.KeyTab} {

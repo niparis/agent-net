@@ -255,7 +255,7 @@ func TestGraphHelpDescribesNavigation(t *testing.T) {
 	m := graphModel(120, 34)
 	m = keys(m, "?")
 	text := strings.Join(m.helpContent(120), " ")
-	for _, want := range []string{"shift+left", "shift+right", ",", ".", "open the selected agent card", "Legend"} {
+	for _, want := range []string{"shift+arrows", ", .", "open the selected agent card", "Legend"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help missing %q: %s", want, text)
 		}

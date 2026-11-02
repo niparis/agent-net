@@ -160,6 +160,46 @@ func TestHelpOpensAtGlobalKeys(t *testing.T) {
 	}
 }
 
+// Global rows are the fixed list, never labels joined from other contexts.
+func TestHelpHasNoJoinedContextLists(t *testing.T) {
+	text := strings.Join(strings.Fields(ansi.Strip(strings.Join(newModel(120, 40).helpContent(120), "\n"))), " ")
+	for _, bad := range []string{
+		"back; clear or back",
+		"filter; find a node; enter selects the first match and esc cancels",
+		"move the selection; select a conversation",
+		"field; back; next field",
+	} {
+		if strings.Contains(text, bad) {
+			t.Errorf("help still joins contexts: %q", bad)
+		}
+	}
+}
+
+// Sub-sections inside a tab start on their own line after a blank one.
+func TestHelpSubsectionsHaveBlankLines(t *testing.T) {
+	view := ansi.Strip(strings.Join(newModel(120, 60).helpContent(120), "\n"))
+	for _, heading := range []string{
+		"On a held request row", "On a learned suggestion row", "On an outcome row",
+		"On a CTO proposal row", "Agent card",
+	} {
+		if !strings.Contains(view, "\n\n "+heading+"\n") {
+			t.Errorf("help has no blank line before %q", heading)
+		}
+	}
+}
+
+// A direction pair shares one row, and a page row is not repeated.
+func TestHelpPairsAreMerged(t *testing.T) {
+	text := ansi.Strip(strings.Join(newModel(120, 60).helpContent(120), "\n"))
+	for _, want := range []string{
+		"pgup/pgdn", "home/g, end", "up/down, j/k", "shift+arrows", ", .", "[ ]",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("help lacks the merged pair %q", want)
+		}
+	}
+}
+
 // No hand-written key rows remain: every key row comes from the table.
 func TestHelpHasNoHandWrittenKeyRows(t *testing.T) {
 	src, err := os.ReadFile("help.go")

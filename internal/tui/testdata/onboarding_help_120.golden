@@ -1,40 +1,40 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   more above
-  enter                add
-  backspace, ctrl+h    delete
+  shift+tab, up          previous field
+  left/right             choose the machine
+  enter                  add
+  backspace, ctrl+h      delete
+
  CTO box
-  ctrl+], tab          back to Sessions
-  esc                  skip tip
-  enter                opens the full CTO
-  pgup, ctrl+u         scroll
-  pgdown, ctrl+d       scroll
-  m                    model
-  n                    new
-  u                    undo
-  w                    drive
- help
-  T                    toggle tips
-  R                    restart tips
-  N                    desktop notifications: on (toggle)
-  q                    quit
-  esc, ?               close help
-  down, j              scroll down
-  up, k                scroll up
-  pgdown               page down
-  pgup                 page up
-  home, g              first line
-  end, G               last line
- confirmations
-  enter, y, Y          yes
-  esc, n, N            no
- forms
-  enter                submit or next field
-  esc                  cancel
-  tab                  move to the next field
-  down                 next field
-  shift+tab, up        previous field
-  left                 change choice
-  right                change choice
-  space                toggle
+  ctrl+], tab            back to Sessions
+  esc                    skip tip
+  enter                  opens the full CTO
+  pgup/pgdn, ctrl+u/d    scroll
+  m                      model
+  n                      new
+  u                      undo
+  w                      drive
+
+ Help
+  T                      toggle tips
+  R                      restart tips
+  N                      desktop notifications: on (toggle)
+  q                      quit
+  esc, ?                 close help
+  up/down, j/k           scroll
+  pgup/pgdn              page
+  home/g, end/G          first, last line
+
+ Confirmations
+  enter, y, Y            yes
+  esc, n, N              no
+
+ Forms
+  enter                  submit or next field
+  esc                    cancel
+  tab/down               move to the next field
+  shift+tab, up          previous field
+  left/right             change the choice
+  space                  toggle
 
 up/down scroll  esc close help  q quit

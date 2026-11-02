@@ -1,82 +1,73 @@
  Global keys
-  1-5                  Sessions; Graph; Quotas; Messages; Tools
-  c                    open the Atlas session
-  C                    focus the Atlas box for its own keys: enter opens the
-                       full Atlas, ctrl+] returns, esc skips a tip
-  tab                  move to the next field; back to Sessions
-  ?                    help
-  /                    filter; find a node; enter selects the first match and
-                       esc cancels
-  esc                  back; clear or back; Graph; clear
-  R                    refresh; rescan
-  q, ctrl+c            quit
-  enter                go into the selected session in herdr (ctrl+] returns on
-                       fallback), or run the selected row's action; detail; open
-                       the selected message body; open the selected agent card;
-                       select the first match; open Sessions filtered to this
-                       agent's project; open the difference plan; open the item
-                       details and actions
-  up/down, j/k         move the selection; select a conversation; select a
-                       subscription; move the selection between nodes; move
-  left/right           select the previous message in the conversation; select
-                       the next message in the conversation; agent; move the
-                       selection between nodes; column
+  1-5                    switch tabs: Sessions, Graph, Quotas, Messages, Tools
+  enter                  go into the selected thing
+  arrows, j/k            move
+  esc                    back; first clears a filter you typed
+  /                      filter or search
+  R                      refresh
+  c                      open the Atlas session
+  C                      focus the Atlas box
+  ?                      help
+  q, ctrl+c              quit
 
  Sessions
-  pgup                 page
-  pgdown               page
-  home, g              first row
-  end                  last row
-  m                    send a message to the session as yourself
-  n                    start a session in herdr: project, harness, model, folder
-                       and first message (a form)
-  x                    stop the selected worker or session
-  h                    hide or unhide the selected session
-  S                    session settings: request rule, delegation policy,
-                       integrations, machine name
-  v                    cycle the view: active only, all, all with offline, all
-                       with offline and hidden
-  d                    show or hide the selected session details
-  i                    open the inbox
- held request
-  a                    approve
-  r                    refuse
- learned suggestion
-  a                    accept
-  r                    reject
- outcome
-  s                    let stand
-  O                    overrule
- Atlas proposal
-  a                    approve
-  r                    decline
-  A                    approve all
+  pgup/pgdn              page
+  home/g, end            first, last row
+  m                      send a message to the session as yourself
+  n                      start a session in herdr: project, harness, model,
+                         folder and first message (a form)
+  x                      stop the selected worker or session
+  h                      hide or unhide the selected session
+  S                      session settings: request rule, delegation policy,
+                         integrations, machine name
+  v                      cycle the view: active only, all, all with offline, all
+                         with offline and hidden
+  d                      show or hide the selected session details
+  i                      open the inbox
+
+ On a held request row
+  a                      approve
+  r                      refuse
+
+ On a learned suggestion row
+  a                      accept
+  r                      reject
+
+ On an outcome row
+  s                      let stand
+  O                      overrule
+
+ On a Atlas proposal row
+  enter                  open the proposal detail
+  a                      approve
+  r                      decline
+  A                      approve all
 
  Graph
-  +, =                 zoom in
-  -                    zoom out
-  shift+left           pan
-  shift+right          pan
-  shift+up             pan
-  shift+down           pan
-  ,                    previous neighbour
-  .                    next neighbour
-  n                    new
+  /                      find a node; enter selects the first match
+  +, =                   zoom in
+  -                      zoom out
+  shift+arrows           pan
+  , .                    select a linked neighbour
+  n                      start a session in this project
+  enter                  open the selected agent card
+
  Graph find
-  backspace, ctrl+h    delete
- agent card
-  n                    start a new session in this project (the same form,
-                       filled from here)
-  t                    tools
-  a                    autonomy
-  D                    name project
-  u                    undo the selected one (a learned change)
-  ,                    previous change
-  .                    next change
-  h                    hide
-  H                    show hidden
-  ctrl+d, pgdown       scroll the card: charter, rules and learned changes
-  ctrl+u, pgup         scroll the card: charter, rules and learned changes
+  enter                  select the first match
+  backspace, ctrl+h      delete
+
+ Agent card
+  enter                  open Sessions filtered to this agent's project
+  n                      start a new session in this project (the same form,
+                         filled from here)
+  t                      open Tools filtered to this node
+  a                      toggle autonomy off or wake
+  D                      name this project
+  u                      undo the selected one (a learned change)
+  , .                    select a previous or next learned change
+  h                      hide or unhide this project
+  H                      show hidden projects
+  ctrl+u/d, pgup/pgdn    scroll the card: charter, rules and learned changes
 
 Legend ─────────────────────────────────────────────────────────────────────────
   Edges
@@ -105,146 +96,143 @@ Legend ────────────────────────�
   feature_requests shown only when another agent looks this node up
 
  Quotas
-  p                    protect
-  s                    show unset
-  d                    details
+  left/right             cycle the Quality panel agent
+  p                      protect or unprotect this subscription
+  s                      show or hide subscriptions that are not set up
+  d                      show or hide the Quality panel detail
 
  Messages
-  pgup                 page
-  pgdown               page
-  home, g              first thread
-  end                  latest
-  f                    report a defect found later on the selected worker
-                       conversation
-  l                    filter
-  m                    send a message to the session as yourself
-  x                    stop the selected worker or session
-  t                    request rule
-  p                    policy
-  I                    integrations
-  N                    rename machine
-  d                    details
-  o                    offline
-  A                    active only
-  i                    inbox
+  left/right             select the previous or next message
+  pgup/pgdn              page
+  home/g, end            first thread, latest message
+  enter                  open the selected message body
+  f                      report a defect found later on the selected worker
+                         conversation
+  l                      filter
+  m                      send a message to the session as yourself
+  x                      stop the selected worker or session
+  d                      show or hide details
+  i                      open the inbox
   states               pending ... delivered ✓ replied ↩ failed ✗
 
  Tools
-  n                    add an MCP server or a skill from a folder
- Tools Differences
-  a                    accept
-  .                    accepted
-  [                    screen
-  ]                    screen
- Tools All tools
-  a                    on
-  u                    off
-  [                    screen
-  ]                    screen
- Tools By project
-  [                    screen
-  ]                    screen
-  v                    machine
- tools compare
-  n                    next
-  p                    previous
+  n                      add an MCP server or a skill from a folder
+  R                      rescan tool copies
+
+ Differences
+  a                      accept the difference as it is
+  enter                  open the difference plan
+  .                      show accepted copies
+  [ ]                    switch screens
+
+ All tools
+  enter                  open the item details and actions
+  a                      turn on the selected tool
+  u                      turn off the selected tool
+  left/right             move between columns
+  [ ]                    switch screens
+
+ By project
+  left/right             move between columns
+  [ ]                    switch screens
+  v                      select the next machine
+
+ Compare
+  n                      select the next file
+  p                      select the previous file
 
  In overlays
- message body
-  esc, enter           close
-  q                    quit
-  up, k                scroll
-  down, j              scroll
-  pgup                 page
-  pgdown               page
- inbox
-  esc                  back
-  up, k                select
-  down, j              select
-  enter                details
-  a                    approve
-  r                    refuse
-  t                    answer
- settings menu
-  esc                  close
-  up, k                move
-  down, j              move
-  enter                choose
-  request rule         cycle the request rule: normal, ask, auto
-  delegation policy    subagent or worker for code changes (a form)
-  integrations         integrations for all machines: 7 checkboxes (a form)
-  name this machine    every machine sees it; empty resets
- proposal detail
-  esc                  back
-  up, k                scroll
-  down, j              scroll
-  ?                    help
-  a                    approve
-  r                    decline
-  A                    approve all
- proposal history
-  esc                  back
-  ?                    help
-  up, k                select
-  down, j              select
-  enter                detail
- tools plan
-  enter, y, Y          apply
-  esc, n, N            cancel
-  up, k                scroll
-  down, j              scroll
-  d                    folders
- tools picker
-  esc                  cancel
-  up, k                select
-  down, j              select
-  space                tick
-  /                    filter
-  enter                apply
- tools menu
-  esc                  back
-  up, k                move
-  down, j              move
-  enter                choose
- tools add
-  esc                  cancel
-  tab, down            move to the next field
-  shift+tab, up        field
-  left                 machine
-  right                machine
-  enter                add
-  backspace, ctrl+h    delete
+ Message body
+  esc, enter             close
+  q                      quit
+  up/down, j/k           scroll
+  pgup/pgdn              page
+
+ Inbox
+  esc                    back
+  up/down, j/k           select
+  enter                  details
+  a                      approve
+  r                      refuse
+  t                      answer
+
+ Settings menu
+  esc                    close
+  up/down, j/k           move
+  enter                  choose
+  request rule           cycle the request rule: normal, ask, auto
+  delegation policy      subagent or worker for code changes (a form)
+  integrations           integrations for all machines: 7 checkboxes (a form)
+  name this machine      every machine sees it; empty resets
+
+ Proposal detail
+  esc                    back
+  up/down, j/k           scroll
+  ?                      help
+  a                      approve
+  r                      decline
+  A                      approve all
+
+ Proposal history
+  esc                    back
+  ?                      help
+  up/down, j/k           select
+  enter                  open the proposal detail
+
+ Tools plan
+  enter, y, Y            apply
+  esc, n, N              cancel
+  up/down, j/k           scroll
+  d                      use the exact folders
+
+ Tools picker
+  esc                    cancel
+  up/down, j/k           select
+  space                  tick
+  /                      filter
+  enter                  apply
+
+ Tools menu
+  esc                    back
+  up/down, j/k           move
+  enter                  choose
+
+ Tools add
+  esc                    cancel
+  tab, down              move to the next field
+  shift+tab, up          previous field
+  left/right             choose the machine
+  enter                  add
+  backspace, ctrl+h      delete
+
  Atlas box
-  ctrl+], tab          back to Sessions
-  esc                  skip tip
-  enter                opens the full Atlas
-  pgup, ctrl+u         scroll
-  pgdown, ctrl+d       scroll
-  m                    model
-  n                    new
-  u                    undo
-  w                    drive
- help
-  T                    toggle tips
-  R                    restart tips
-  N                    desktop notifications: on (toggle)
-  q                    quit
-  esc, ?               close help
-  down, j              scroll down
-  up, k                scroll up
-  pgdown               page down
-  pgup                 page up
-  home, g              first line
-  end, G               last line
- confirmations
-  enter, y, Y          yes
-  esc, n, N            no
- forms
-  enter                submit or next field
-  esc                  cancel
-  tab                  move to the next field
-  down                 next field
-  shift+tab, up        previous field
-  left                 change choice
-  right                change choice
-  space                toggle
+  ctrl+], tab            back to Sessions
+  esc                    skip tip
+  enter                  opens the full Atlas
+  pgup/pgdn, ctrl+u/d    scroll
+  m                      model
+  n                      new
+  u                      undo
+  w                      drive
+
+ Help
+  T                      toggle tips
+  R                      restart tips
+  N                      desktop notifications: on (toggle)
+  q                      quit
+  esc, ?                 close help
+  up/down, j/k           scroll
+  pgup/pgdn              page
+  home/g, end/G          first, last line
+
+ Confirmations
+  enter, y, Y            yes
+  esc, n, N              no
+
+ Forms
+  enter                  submit or next field
+  esc                    cancel
+  tab/down               move to the next field
+  shift+tab, up          previous field
+  left/right             change the choice
+  space                  toggle
