@@ -161,6 +161,13 @@ type Config struct {
 	NoLaunch bool
 	// Workers are the worker limits and timeouts. Zero fields take the defaults.
 	Workers WorkerSettings
+	// DifficultyHarness and DifficultyModel override the harness and model of
+	// the task-difficulty analyzer and judge. Empty means pick the lowest-max
+	// Codex profile of the worker roster (see difficulty.go).
+	DifficultyHarness string
+	DifficultyModel   string
+	// DifficultyTimeout bounds each one-shot difficulty run. Default 3 minutes.
+	DifficultyTimeout time.Duration
 	// ModelProviders is model_providers of node.json. It goes to the gateway
 	// with the harness inventory.
 	ModelProviders []string

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // DimensionRubric defines the evidence to report and the anchor scores.
@@ -207,6 +208,21 @@ func ParseScores(raw []byte) (Scores, []string, error) {
 }
 
 var dimensionNames = []string{"reasoning", "scope", "coupling", "uncertainty", "verification", "risk"}
+
+// Assessment is the analyzer profile plus the judge scores and the label they
+// produce. Notes explains a fallback to "normal" when the run could not finish.
+type Assessment struct {
+	Profile       Profile       `json:"profile"`
+	Scores        Scores        `json:"scores"`
+	Label         string        `json:"label"`
+	D             float64       `json:"d"`
+	Bottleneck    string        `json:"bottleneck,omitempty"`
+	Confidence    string        `json:"confidence,omitempty"`
+	Notes         string        `json:"notes,omitempty"`
+	AnalyzerModel string        `json:"analyzer_model,omitempty"`
+	JudgeModel    string        `json:"judge_model,omitempty"`
+	Elapsed       time.Duration `json:"elapsed"`
+}
 
 // The coefficients and cut points are centralized for future tuning.
 var scoreWeights = []float64{0.20, 0.10, 0.20, 0.15, 0.15, 0.20}

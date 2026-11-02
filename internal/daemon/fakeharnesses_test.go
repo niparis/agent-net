@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -42,6 +43,8 @@ const (
 	envFakeClaudeMCP     = "FAKE_CLAUDE_MCP"     // set for the fake `agent-net mcp` inside the session
 	envFakePi            = "FAKE_PI_BIN"
 	envFakeCodex         = "FAKE_CODEX_BIN"
+	envFakeCodexExec     = "FAKE_CODEX_EXEC_DIR" // canned one-shot replies
+	envFakeCodexExecHang = "FAKE_CODEX_EXEC_HANG"
 
 	// Variables that change what the fakes do.
 	envFakeClaudeSessions   = "FAKE_CLAUDE_SESSIONS"     // the folder of the session files
@@ -71,6 +74,8 @@ func runFakeHarness() bool {
 		fakePiModels()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "app-server":
 		fakeCodex()
+	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "exec":
+		fakeCodexExec()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 2 && os.Args[1] == "debug" && os.Args[2] == "models":
 		fakeCodexModels()
 	default:
@@ -607,6 +612,51 @@ type fakeCodexRecord struct {
 func fakeCodexModels() {
 	fmt.Print(`{"models":[{"slug":"gpt-fake","supported_reasoning_levels":[` +
 		`{"effort":"low","description":"Low"},{"effort":"medium","description":"Medium"},{"effort":"high","description":"High"}]}]}`)
+}
+
+// fakeCodexExec is `codex exec` for the difficulty tests. The brief names one
+// of the kinds (analyzer, analysis, judge) in an
+// AGENT_NET_DIFFICULTY_KIND marker. FAKE_CODEX_EXEC_DIR holds one JSON array
+// per kind; the fake takes the first reply and writes the rest back, so one
+// test can make a retry. FAKE_CODEX_EXEC_HANG keeps it running past a test's
+// time limit.
+func fakeCodexExec() {
+	cwd, _ := os.Getwd()
+	stdin, _ := io.ReadAll(os.Stdin)
+	text := string(stdin)
+	kind := ""
+	for _, k := range []string{"analyzer", "analysis", "judge"} {
+		if strings.Contains(text, "AGENT_NET_DIFFICULTY_KIND="+k) {
+			kind = k
+			break
+		}
+	}
+	dir := os.Getenv(envFakeCodexExec)
+	out := ""
+	if kind != "" && dir != "" {
+		name := filepath.Join(dir, kind+".json")
+		var list []string
+		if raw, err := os.ReadFile(name); err == nil && json.Unmarshal(raw, &list) == nil && len(list) > 0 {
+			out = list[0]
+			rest, _ := json.Marshal(list[1:])
+			os.WriteFile(name, rest, 0o644)
+		}
+	}
+	if dir != "" {
+		b, _ := json.Marshal(map[string]any{"args": os.Args[1:], "cwd": cwd, "stdin": text, "kind": kind})
+		if f, err := os.OpenFile(filepath.Join(dir, "calls.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+			f.Write(append(b, '\n'))
+			f.Close()
+		}
+	}
+	if os.Getenv(envFakeCodexExecHang) != "" || strings.HasPrefix(out, "HANG") {
+		time.Sleep(10 * time.Second)
+	}
+	if path := argValue(os.Args, "-o"); path != "" {
+		os.WriteFile(path, []byte(out), 0o644)
+	}
+	fmt.Print(out)
+	os.Exit(0)
 }
 
 // fakeCodex is `codex app-server --listen ws://...`: a WebSocket server with
