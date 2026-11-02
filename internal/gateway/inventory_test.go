@@ -46,7 +46,7 @@ func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
 	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{old}}); err != nil {
 		t.Fatal(err)
 	}
-	fresh := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "new", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK,
+	fresh := protocol.InventoryItem{Description: "Demo skill", Kind: "skill", Name: "demo", Hash: "new", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK,
 		Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10}}}}
 	broken := protocol.InventoryItem{Kind: "skill", Name: "linked", Hash: "", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/linked", State: protocol.InventoryError, Reason: "skill root is a symlink"}
 	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryError, Items: []protocol.InventoryItem{fresh, broken}}); err != nil {
@@ -67,6 +67,9 @@ func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
 	for _, item := range items {
 		if item.Name == "demo" && item.Hash == "new" {
 			found = true
+			if item.Description != "Demo skill" || item.StartTokens != 9 || item.FullTokens != 3 {
+				t.Fatalf("skill metadata: %+v", item)
+			}
 			if len(item.Locations) != 1 || item.Locations[0].Manifest == nil || len(item.Locations[0].Manifest.Files) != 1 {
 				t.Fatalf("fresh manifest lost: %+v", item.Locations)
 			}

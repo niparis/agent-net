@@ -18,7 +18,7 @@ const (
 )
 
 // InventoryReport is a machine's latest read-only observation. It must not
-// contain skill contents or secret values from configuration.
+// contain skill contents other than the bounded description, or secret values from configuration.
 type InventoryReport struct {
 	NodeID    string          `json:"node_id,omitempty"`
 	Machine   string          `json:"machine"`
@@ -42,6 +42,7 @@ type SkillManifest struct {
 
 // InventoryItem describes one observed skill, MCP server, or source error.
 type InventoryItem struct {
+	Description        string         `json:"description,omitempty"`
 	Harness            string         `json:"harness"`
 	Kind               string         `json:"kind"`
 	Scope              string         `json:"scope"`
@@ -97,10 +98,13 @@ type ToolLocation struct {
 	InventoryItem
 }
 type ToolItem struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-	Hash string `json:"hash"`
+	Description string `json:"description,omitempty"`
+	StartTokens int64  `json:"start_tokens,omitempty"`
+	FullTokens  int64  `json:"full_tokens,omitempty"`
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+	Hash        string `json:"hash"`
 	// VersionNo is the number of this content in the agent-net store: v1, v2
 	// and so on, counted per skill name in import order. Zero means the
 	// content is not in the store.
@@ -431,4 +435,19 @@ type ToolCopyChoice struct {
 	Chosen    ToolImport      `json:"chosen"`
 	Copies    []ToolSkillScan `json:"copies"`
 	Owner     string          `json:"owner,omitempty"`
+}
+
+// SkillTokenEstimates estimates tokens as characters divided by 4, rounded up.
+// The full estimate uses the manifest byte size as a character approximation.
+func SkillTokenEstimates(name, description string, manifest *SkillManifest) (start, full int64) {
+	start = (int64(len(name)+len(description)) + 23) / 4
+	if manifest != nil {
+		for _, file := range manifest.Files {
+			if file.Path == "SKILL.md" && file.Size > 0 {
+				full = (file.Size + 3) / 4
+				break
+			}
+		}
+	}
+	return
 }

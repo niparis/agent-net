@@ -202,6 +202,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	}
 	defer rows.Close()
 	all := map[string]*protocol.ToolItem{}
+	newest := map[string]time.Time{}
 	matched := map[string]bool{}
 	order := []string{}
 	variants := map[string]map[string]bool{}
@@ -240,6 +241,12 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		loc := protocol.ToolLocation{NodeID: node, Machine: host, InventoryItem: obs}
 		if project != "" && obs.Scope == protocol.InventoryProject {
 			loc.GraphNode = project
+		}
+		// Use the newest scanned copy of this content identity.
+		if kind == protocol.InventorySkill && (len(item.Locations) == 0 || obs.ScannedAt.After(newest[id])) {
+			newest[id] = obs.ScannedAt
+			item.Description = obs.Description
+			item.StartTokens, item.FullTokens = protocol.SkillTokenEstimates(name, obs.Description, obs.Manifest)
 		}
 		item.Locations = append(item.Locations, loc)
 		if obs.Scope == protocol.InventoryUser {
