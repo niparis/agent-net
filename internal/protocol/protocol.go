@@ -469,12 +469,12 @@ type NodeView struct {
 	// QualityPickModels is the picker's choice per level as a Models row
 	// name: family and effort, for example "terra high".
 	QualityPickModels map[string]string `json:"quality_pick_models,omitempty"`
-	NodeID             string            `json:"node_id"`
-	Hostname           string            `json:"hostname"`
-	OS                 string            `json:"os"`
-	Version            string            `json:"version"`
-	Online             bool              `json:"online"`
-	LastSeen           int64             `json:"last_seen"`
+	NodeID            string            `json:"node_id"`
+	Hostname          string            `json:"hostname"`
+	OS                string            `json:"os"`
+	Version           string            `json:"version"`
+	Online            bool              `json:"online"`
+	LastSeen          int64             `json:"last_seen"`
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`
