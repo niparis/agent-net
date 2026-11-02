@@ -94,7 +94,7 @@ func (g *Gateway) phoneAuth(next http.Handler) http.Handler {
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/action" {
 			g.logLine("phone.action", "app", app.Name, "app_id", app.ID, "source", ratelimit.ClientAddr(r))
-			base, err := url.Parse(g.opts.PublicURL)
+			base, err := url.Parse(g.publicBase())
 			origins := r.Header.Values("Origin")
 			if err != nil || base.Host == "" || (base.Scheme != "https" && base.Scheme != "http") || len(origins) != 1 || origins[0] != base.Scheme+"://"+base.Host {
 				http.Error(w, "forbidden", http.StatusForbidden)

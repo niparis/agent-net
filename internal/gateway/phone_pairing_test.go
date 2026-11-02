@@ -93,7 +93,7 @@ func TestPhonePairingAndAuthorization(t *testing.T) {
 	for _, tc := range []struct {
 		method, path, origin string
 		want                 int
-	}{{"POST", "/action", "", 403}, {"POST", "/action", "https://evil.example", 403}, {"POST", "/action", "http://gateway.example", 403}, {"POST", "/action", "https://gateway.example", 503}, {"GET", "/events", "", 401}, {"POST", "/action", "", 401}} {
+	}{{"POST", "/action", "", 403}, {"POST", "/action", "https://evil.example", 421}, {"POST", "/action", "http://gateway.example", 421}, {"POST", "/action", "https://gateway.example", 503}, {"GET", "/events", "", 401}, {"POST", "/action", "", 401}} {
 		ck := cookie
 		if tc.want == 401 {
 			ck = nil

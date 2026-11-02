@@ -433,3 +433,15 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Fatalf("allowed %d app requests, want 100", got)
 	}
 }
+
+func TestBanSurvivesAddressEviction(t *testing.T) {
+	l := New(Config{MaxAddresses: 1, FailureLimit: 1}, nil)
+	l.Fail("bad")
+	l.Allow("other", "mcp")
+	if !l.Banned("bad") {
+		t.Fatal("eviction erased active ban")
+	}
+	if ok, _ := l.Allow("bad", "mcp"); ok {
+		t.Fatal("evicted address allowed")
+	}
+}

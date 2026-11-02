@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/url"
 	"strings"
@@ -69,7 +70,7 @@ func oauthContains(items []string, value string) bool {
 	return false
 }
 
-func (s *Store) registerOAuthClient(c oauthClient, now time.Time) (oauthClient, error) {
+func (s *Store) registerOAuthClient(c oauthClient, now time.Time, source string) (oauthClient, error) {
 	var err error
 	c.ClientID, err = oauthRandom(32)
 	if err != nil {
@@ -93,22 +94,35 @@ func (s *Store) registerOAuthClient(c oauthClient, now time.Time) (oauthClient, 
 		return c, err
 	}
 	defer tx.Rollback()
-	// Keep registrations used by any approved app or a live request.
-	_, err = tx.Exec(`DELETE FROM oauth_clients WHERE created_at <= ?
- AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id = oauth_clients.client_id)
- AND NOT EXISTS (SELECT 1 FROM oauth_pending WHERE oauth_pending.client_id = oauth_clients.client_id AND expires_at > ?)`, now.Add(-7*24*time.Hour).UnixNano(), now.UnixNano())
-	if err != nil {
+	if _, err = tx.Exec(`DELETE FROM oauth_clients WHERE created_at <= ? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`, now.Add(-time.Hour).UnixNano()); err != nil {
 		return c, err
 	}
 	var count int
-	if err = tx.QueryRow("SELECT count(*) FROM oauth_clients").Scan(&count); err != nil {
+	if err = tx.QueryRow(`SELECT count(*) FROM oauth_registration_attempts WHERE source=? AND created_at>?`, source, now.Add(-time.Hour).UnixNano()).Scan(&count); err != nil {
+		return c, err
+	}
+	if count >= 5 {
+		return c, errOAuthLimit
+	}
+	if err = tx.QueryRow(`SELECT count(*) FROM oauth_clients WHERE NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`).Scan(&count); err != nil {
 		return c, err
 	}
 	if count >= oauthClientLimit {
-		return c, errOAuthLimit
+		if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE client_id=(SELECT client_id FROM oauth_clients WHERE NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id) ORDER BY created_at,rowid LIMIT 1)`); err != nil {
+			return c, err
+		}
+		if _, err = tx.Exec(`DELETE FROM oauth_clients WHERE client_id=(SELECT client_id FROM oauth_clients WHERE NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id) ORDER BY created_at,rowid LIMIT 1)`); err != nil {
+			return c, err
+		}
 	}
-	_, err = tx.Exec(`INSERT INTO oauth_clients (client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at) VALUES (?,?,?,?,?,?,?)`, c.ClientID, c.ClientName, string(uris), string(grants), string(responses), c.TokenEndpointAuthMethod, now.UnixNano())
+	_, err = tx.Exec(`INSERT INTO oauth_clients (client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at,source) VALUES (?,?,?,?,?,?,?,?)`, c.ClientID, c.ClientName, string(uris), string(grants), string(responses), c.TokenEndpointAuthMethod, now.UnixNano(), source)
 	if err != nil {
+		return c, err
+	}
+	if _, err = tx.Exec(`DELETE FROM oauth_registration_attempts WHERE created_at<=?`, now.Add(-time.Hour).UnixNano()); err != nil {
+		return c, err
+	}
+	if _, err = tx.Exec(`INSERT INTO oauth_registration_attempts (source,created_at) VALUES (?,?)`, source, now.UnixNano()); err != nil {
 		return c, err
 	}
 	return c, tx.Commit()
@@ -138,13 +152,16 @@ type oauthPendingRequest struct {
 	CreatedAt, ExpiresAt                                                                       time.Time
 }
 
-func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, browserHash, newBrowserHash string, now time.Time) (oauthPendingRequest, error) {
+func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, source string, now time.Time) (oauthPendingRequest, error) {
 	var p oauthPendingRequest
 	tx, err := s.db.Begin()
 	if err != nil {
 		return p, err
 	}
 	defer tx.Rollback()
+	if _, err = tx.Exec(`DELETE FROM oauth_clients WHERE created_at<=? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`, now.Add(-time.Hour).UnixNano()); err != nil {
+		return p, err
+	}
 	client, err := oauthReadClient(tx, clientID)
 	if err != nil {
 		return p, err
@@ -152,32 +169,28 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, 
 	if !oauthContains(client.RedirectURIs, redirect) || !oauthContains(client.GrantTypes, "authorization_code") || !oauthContains(client.ResponseTypes, "code") {
 		return p, errOAuthInvalidGrant
 	}
-	// Keep expired approved requests until their approval reuse window ends.
-	if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE expires_at <= ? AND
- (status != 'approved' OR approved_at <= ?)`, now.UnixNano(), now.Add(-oauthPendingTTL).UnixNano()); err != nil {
-		return p, err
-	}
-	if _, err = tx.Exec("DELETE FROM oauth_codes WHERE used_at IS NULL AND expires_at <= ?", now.UnixNano()); err != nil {
+	if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE expires_at<=?`, now.UnixNano()); err != nil {
 		return p, err
 	}
 	p = oauthPendingRequest{ClientID: clientID, ClientName: client.ClientName, RedirectURI: redirect, Challenge: challenge, State: state, Resource: resource, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(oauthPendingTTL)}
-	var approved, browserExpires int64
-	err = tx.QueryRow(`SELECT p.app_id,p.approved_at,p.browser_expires_at FROM oauth_pending p JOIN apps a ON a.id=p.app_id
- WHERE p.client_id=? AND p.redirect_uri=? AND p.status='approved' AND p.browser_hash=? AND p.browser_hash<>'' AND p.browser_expires_at>? AND p.approved_at>? AND p.approved_at<=? AND a.revoked_at IS NULL ORDER BY p.approved_at DESC LIMIT 1`, clientID, redirect, browserHash, now.UnixNano(), now.Add(-oauthPendingTTL).UnixNano(), now.UnixNano()).Scan(&p.AppID, &approved, &browserExpires)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	var count int
+	// Check each quota separately, so overlaps do not count twice.
+	var clientCount, sourceCount int
+	if err = tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND client_id=?`, clientID).Scan(&clientCount); err != nil {
 		return p, err
 	}
-	if err == nil {
-		p.Status = "approved"
-	} else {
-		browserHash = newBrowserHash
-		browserExpires = now.Add(oauthPendingTTL).UnixNano()
-		var count int
-		if err = tx.QueryRow("SELECT count(*) FROM oauth_pending WHERE status='pending' AND expires_at > ?", now.UnixNano()).Scan(&count); err != nil {
+	if err = tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending' AND source=?`, source).Scan(&sourceCount); err != nil {
+		return p, err
+	}
+	if clientCount >= 3 || sourceCount >= 3 {
+		return p, errOAuthLimit
+	}
+	if err = tx.QueryRow(`SELECT count(*) FROM oauth_pending WHERE status='pending'`).Scan(&count); err != nil {
+		return p, err
+	}
+	if count >= oauthPendingLimit {
+		if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE id=(SELECT id FROM oauth_pending WHERE status='pending' ORDER BY created_at,rowid LIMIT 1)`); err != nil {
 			return p, err
-		}
-		if count >= oauthPendingLimit {
-			return p, errOAuthLimit
 		}
 	}
 	p.ID, err = oauthRandom(16)
@@ -197,11 +210,7 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, 
 			break
 		}
 	}
-	var approvedAt any
-	if p.Status == "approved" {
-		approvedAt = approved
-	}
-	_, err = tx.Exec(`INSERT INTO oauth_pending (id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status,app_id,approved_at,browser_hash,browser_expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.UserCode, p.ClientID, p.RedirectURI, p.Challenge, p.State, p.Resource, p.CreatedAt.UnixNano(), p.ExpiresAt.UnixNano(), p.Status, p.AppID, approvedAt, browserHash, browserExpires)
+	_, err = tx.Exec(`INSERT INTO oauth_pending (id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status,source) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.UserCode, p.ClientID, p.RedirectURI, p.Challenge, p.State, p.Resource, p.CreatedAt.UnixNano(), p.ExpiresAt.UnixNano(), p.Status, source)
 	if err != nil {
 		return p, err
 	}
@@ -261,7 +270,7 @@ func (s *Store) PendingByUserCode(code, source string, now time.Time) (OAuthPend
 }
 
 // ApprovePending atomically creates an app and approves a live request.
-func (s *Store) ApprovePending(id, kind, name string, now time.Time) error {
+func (s *Store) ApprovePending(id, kind, name string, now time.Time, ownerSession ...string) error {
 	if kind != "bot" && kind != "owner_app" {
 		return reject("invalid app kind %q", kind)
 	}
@@ -270,8 +279,8 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time) error {
 		return err
 	}
 	defer tx.Rollback()
-	var clientID, clientName, uris string
-	err = tx.QueryRow(`SELECT c.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,c.redirect_uris FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.id=? AND p.status='pending' AND p.expires_at>?`, id, now.UnixNano()).Scan(&clientID, &clientName, &uris)
+	var clientID, clientName, uris, redirect string
+	err = tx.QueryRow(`SELECT c.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,c.redirect_uris,p.redirect_uri FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.id=? AND p.status='pending' AND p.expires_at>?`, id, now.UnixNano()).Scan(&clientID, &clientName, &uris, &redirect)
 	if err != nil {
 		return err
 	}
@@ -284,6 +293,16 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time) error {
 	}
 	if _, err = tx.Exec("UPDATE oauth_pending SET status='approved', app_id=?, approved_at=? WHERE id=?", appID, now.UnixNano(), id); err != nil {
 		return err
+	}
+	if len(ownerSession) > 0 && ownerSession[0] != "" {
+		u, err := url.Parse(redirect)
+		if err != nil {
+			return err
+		}
+		text := fmt.Sprintf("New app approved: %s (%s, %s, %s)", safeAppLog(name), kind, safeAppLog(clientName), safeAppLog(u.Hostname()))
+		if _, err = s.createInboxItem(tx, protocol.InboxItem{Kind: "check", SessionID: ownerSession[0], Node: "apps", Text: text, MessageID: "app-approval:" + id}); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -385,9 +404,8 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 		return "", "", errOAuthInvalidGrant
 	}
 	if used.Valid {
-		// Refresh rotation does not retain a token family ID. Revoke all this app's
-		// tokens so descendants of the stolen code cannot remain usable.
-		if _, err = tx.Exec("DELETE FROM app_tokens WHERE app_id=?", appID); err != nil {
+		// Revoke descendants of the replayed authorization code.
+		if _, err = tx.Exec("DELETE FROM app_tokens WHERE family_id=? AND used_at IS NULL", hashHex(code)); err != nil {
 			return "", "", err
 		}
 		if err = tx.Commit(); err != nil {
@@ -405,7 +423,8 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 	if err != nil {
 		return "", "", err
 	}
-	access, err := issueAppToken(tx, appID, "access", now, time.Hour)
+	family := hashHex(code)
+	access, err := issueFamilyToken(tx, appID, family, "access", now, time.Hour)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", errOAuthInvalidGrant
 	}
@@ -414,7 +433,7 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 	}
 	var refresh string
 	if oauthContains(client.GrantTypes, "refresh_token") {
-		refresh, err = issueAppToken(tx, appID, "refresh", now, 90*24*time.Hour)
+		refresh, err = issueFamilyToken(tx, appID, family, "refresh", now, 90*24*time.Hour)
 		if err != nil {
 			return "", "", err
 		}
@@ -429,7 +448,7 @@ func (s *Store) exchangeOAuthCode(code, clientID, redirect, verifier string, now
 }
 func (s *Store) refreshOAuth(raw, clientID string, now time.Time) (string, string, error) {
 	var stored string
-	err := s.db.QueryRow(`SELECT a.client_id FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='refresh' AND t.expires_at>? AND a.revoked_at IS NULL`, hashHex(raw), now.UnixNano()).Scan(&stored)
+	err := s.db.QueryRow(`SELECT a.client_id FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='refresh' AND (t.expires_at>? OR t.used_at IS NOT NULL) AND a.revoked_at IS NULL`, hashHex(raw), now.UnixNano()).Scan(&stored)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", errOAuthInvalidGrant
 	}
@@ -454,4 +473,33 @@ func (s *Store) refreshOAuth(raw, clientID string, now time.Time) (string, strin
 		return "", "", errOAuthInvalidGrant
 	}
 	return access, refresh, err
+}
+
+// CleanupOAuth removes expired public listener records.
+func (s *Store) CleanupOAuth(now time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM oauth_pending WHERE expires_at<=?`,
+		`DELETE FROM oauth_registration_attempts WHERE created_at<=?`,
+		`DELETE FROM oauth_codes WHERE (used_at IS NULL AND expires_at<=?) OR (used_at IS NOT NULL AND used_at<=?)`,
+		`DELETE FROM oauth_clients WHERE created_at<=? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`,
+	} {
+		var args []any
+		switch {
+		case strings.Contains(q, "oauth_codes"):
+			args = []any{now.UnixNano(), now.Add(-90 * 24 * time.Hour).UnixNano()}
+		case strings.Contains(q, "oauth_clients"), strings.Contains(q, "oauth_registration_attempts"):
+			args = []any{now.Add(-time.Hour).UnixNano()}
+		default:
+			args = []any{now.UnixNano()}
+		}
+		if _, err = tx.Exec(q, args...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

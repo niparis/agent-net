@@ -53,7 +53,9 @@ func TestAppsPublicLifecycle(t *testing.T) {
 		t.Fatalf("status: %v", on)
 	}
 	w := httptest.NewRecorder()
-	g.AppsHandler().ServeHTTP(w, httptest.NewRequest("GET", "/mcp", nil))
+	req := httptest.NewRequest("GET", "/mcp", nil)
+	req.Host = "test.example.ts.net:8443"
+	g.AppsHandler().ServeHTTP(w, req)
 	if !strings.Contains(w.Header().Get("WWW-Authenticate"), "https://test.example.ts.net:8443/") {
 		t.Fatal(w.Header())
 	}

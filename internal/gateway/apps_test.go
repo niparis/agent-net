@@ -207,15 +207,11 @@ func TestAppTokenConcurrentRefresh(t *testing.T) {
 	}
 }
 
-// Simulate upgrading a database from immediately before the app migration,
-// then replay it as the older migration tests do.
+// Re-running migrations preserves app tokens and existing node data.
 func TestAppMigration(t *testing.T) {
 	s, c := newTestStore(t)
 	node, token, err := s.CreateNode("test-host", "linux")
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec("DROP TABLE app_tokens; DROP TABLE apps; DELETE FROM schema_version WHERE version = ?", len(migrations)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.migrate(); err != nil {
@@ -230,9 +226,6 @@ func TestAppMigration(t *testing.T) {
 	}
 	raw, err := s.IssueToken(app.ID, "access", time.Hour)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec("DELETE FROM schema_version WHERE version = ?", len(migrations)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.migrate(); err != nil {

@@ -127,12 +127,9 @@ Grok (xAI cloud)          agent-net gateway (via tunnel)        Owner
    token (90 days, rotated on use).
 7. The bot calls `/mcp` with the access token.
 
-**If the sign-in times out before the owner types the code**, nothing is lost.
-The approval belongs to the registered client and its redirect URI, not to
-one page. For 10 minutes after approval, a new sign-in from the same client
-with the same redirect URI goes straight through without a new code. So a
-short sign-in timeout only means the owner presses "connect" once more.
-Reuse is bound to the owner's browser by a cookie, so knowing the client ID and redirect URI is not enough to reuse an approval.
+If sign-in times out, press connect again and approve the new code. Each
+sign-in needs a fresh approval: a link sent by an attacker could otherwise
+ride the owner's browser cookie.
 
 For a client that takes only a static key, "Add" can also create a bearer
 token for a named bot, shown once.
@@ -245,9 +242,9 @@ ngrok) to `127.0.0.1:7422` and pastes its public URL in the same entry.
   PKCE challenge and the registered redirect URI. Redirect URIs must be
   `https` and are shown to the owner before approval.
 - Spam and floods. A public endpoint will be scanned, so:
-  - pending connection requests are capped (20, each expiring after 10
-    minutes) and never shown in the TUI until the owner types their code;
-  - a call without a valid token is refused before any database read;
+  - pending connection requests are capped (20 total, three per client and
+    three per source, each expiring after 10 minutes) and never shown in the TUI until the owner types their code;
+  - malformed bearer tokens are refused before a database read;
   - an address that sends repeated bad tokens or registrations is blocked for
     an hour;
   - limits per address on every public path, small request size limits and
@@ -280,7 +277,7 @@ ngrok) to `127.0.0.1:7422` and pastes its public URL in the same entry.
 | 1b | `bot` role in the tool catalog | simple | low |
 | 1c | Messages for bots: hold until read, "model output" note on send | hard | message delivery |
 | 2 | Public listener and HTTP MCP: loopback, token check, tools run as the bot, connection log | hard | new path, core of the feature |
-| 3a | OAuth: discovery, registration, token and refresh, PKCE, approval reuse after a timed-out sign-in | normal, security-sensitive | public endpoints |
+| 3a | OAuth: discovery, registration, token and refresh, PKCE, a fresh approval for every sign-in | normal, security-sensitive | public endpoints |
 | 3b | Code pages: authorize page and phone pairing page, polling | normal | low |
 | 3c | Flood limits and per-app limits | normal | low |
 | 4a | TUI: "Connected apps" in `S`: switch, list, Add with code, kind, grants, revoke | normal | TUI |

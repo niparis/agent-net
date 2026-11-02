@@ -91,6 +91,7 @@ type Gateway struct {
 	conns      map[string]*nodeConn
 	timers     map[string]*time.Timer
 	closed     bool
+	appsDone   chan struct{}
 	rotationMu sync.Mutex
 }
 
@@ -218,7 +219,7 @@ func New(opts Options) (*Gateway, error) {
 		return nil, err
 	}
 	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
-		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
@@ -257,6 +258,9 @@ func (g *Gateway) Close() error {
 	g.stopPublicListener()
 	g.publicMu.Unlock()
 	g.mu.Lock()
+	if !g.closed && g.appsDone != nil {
+		close(g.appsDone)
+	}
 	g.closed = true
 	for _, t := range g.timers {
 		t.Stop()
@@ -270,6 +274,7 @@ func (g *Gateway) Close() error {
 		c.ws.Close(websocket.StatusGoingAway, "gateway closing")
 		c.cancel()
 	}
+	closeAllAppSessions(g.store)
 	// Give the read loops a moment to leave before the database goes away.
 	time.Sleep(50 * time.Millisecond)
 	return g.store.Close()
@@ -279,10 +284,22 @@ func (g *Gateway) Close() error {
 func (g *Gateway) RunExpiry(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
+	appsCleanup := time.NewTicker(10 * time.Minute)
+	defer appsCleanup.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-g.appsDone:
+			return
+		case <-appsCleanup.C:
+			now := g.store.now()
+			if err := g.store.DeleteExpiredTokens(now); err != nil {
+				g.logLine("error", "where", "app token cleanup", "err", err)
+			}
+			if err := g.store.CleanupOAuth(now); err != nil {
+				g.logLine("error", "where", "oauth cleanup", "err", err)
+			}
 		case <-t.C:
 			if err := g.store.samplePendingStalls(); err != nil {
 				g.logLine("error", "where", "pending sample", "err", err)
@@ -1452,7 +1469,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, reject("bad apps.approve")
 		}
-		return nil, st.ApprovePending(p.ID, p.Kind, p.Name, st.now())
+		var ownerSession string
+		if err := st.db.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness=? LIMIT 1`, nc.id, protocol.OwnerHarness).Scan(&ownerSession); err != nil {
+			return nil, fmt.Errorf("owner session required for app approval: %w", err)
+		}
+		if err := st.ApprovePending(p.ID, p.Kind, p.Name, st.now(), ownerSession); err != nil {
+			return nil, err
+		}
+		var text string
+		if err := st.db.QueryRow(`SELECT text FROM inbox_items WHERE message_id=?`, "app-approval:"+p.ID).Scan(&text); err == nil && g.logger != nil {
+			g.logLine("apps.approved", "notice", text)
+		}
+		return nil, nil
 
 	case "apps.refuse", "apps.revoke":
 		var p struct {

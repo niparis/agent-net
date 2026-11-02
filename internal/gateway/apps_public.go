@@ -91,7 +91,7 @@ func (g *Gateway) startPublicListener() error {
 	if g.opts.PhoneApp != nil {
 		phoneApp = append(phoneApp, g.opts.PhoneApp)
 	}
-	srv := &http.Server{Handler: g.AppsHandler(phoneApp...), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	srv := newAppsServer(g.AppsHandler(phoneApp...), appsReadTimeout)
 	g.publicServer = srv
 	g.publicAddr = ln.Addr().String()
 	go func() { _ = srv.Serve(ln) }()
@@ -212,4 +212,28 @@ func (g *Gateway) revokeApp(ctx context.Context, id string) error {
 		return err
 	}
 	return nil
+}
+
+// appsReadTimeout bounds reading a whole request, body included, so a client
+// that sends headers and then stalls cannot hold a connection.
+const appsReadTimeout = 30 * time.Second
+
+// appsMaxInFlight caps concurrent requests on the public listener; beyond it
+// requests get 503 at once instead of queueing.
+const appsMaxInFlight = 64
+
+// newAppsServer is the public listener's HTTP server: header and body read
+// deadlines, an idle timeout and a cap on requests in flight.
+func newAppsServer(h http.Handler, readTimeout time.Duration) *http.Server {
+	slots := make(chan struct{}, appsMaxInFlight)
+	limited := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+			h.ServeHTTP(w, r)
+		default:
+			http.Error(w, "too many requests", http.StatusServiceUnavailable)
+		}
+	})
+	return &http.Server{Handler: limited, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: readTimeout, IdleTimeout: 60 * time.Second}
 }
