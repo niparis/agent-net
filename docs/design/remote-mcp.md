@@ -39,9 +39,30 @@ Confirmed:
   internet, and for OAuth serve the standard MCP authorization discovery
   endpoints.
 
-Unknown, to be read from our logs in the first real test (task 6c): whether a
-port other than 443 works, whether it uses dynamic client registration, its
-redirect host, whether it sends `resource`, whether it refreshes tokens,
+Measured with a throwaway probe server behind Tailscale Funnel on port 8443
+(2026-11-02):
+
+- **Port 8443 works.** The connector reached the server through Funnel on 8443.
+- **Grok Bot's connector is Cursor's MCP client.** Its requests carry
+  `User-Agent: Cursor/1.0.0` and register with `client_name: "Cursor"`.
+- **It uses dynamic client registration (RFC 7591)** and rejects a
+  registration response that does not echo `redirect_uris` (and the other
+  registered fields) with the `client_id`.
+- **Its redirect URIs** are `https://www.cursor.com/agents/mcp/oauth/callback`
+  and `http://localhost:8787/callback`. So the TUI shows `www.cursor.com` as the
+  return host for Grok Bot, and redirect URIs must allow `https` plus `http`
+  on a loopback host (allowed by OAuth 2.1).
+- **It asks for** `token_endpoint_auth_method: none`, grant types
+  `authorization_code` and `refresh_token`, response type `code`.
+- **Scanners arrive at once.** Within a minute of Funnel going public, internet
+  scanners (leakix and others) probed about 40 paths (`/.env`, `/.git/config`,
+  `/graphql`, WordPress and Jira paths). The flood limits in section 10 are
+  needed from day one.
+- Funnel needs, once on Linux: `sudo tailscale set --operator=$USER`. A new
+  Funnel took a few minutes until both public relay addresses served it.
+
+Still unknown, to read from the connection log in the first real test (task
+6c): whether it sends `resource`, whether it refreshes tokens on its own,
 whether it keeps one MCP session, its source addresses, and how long its
 sign-in waits. Grok Bot advised not to depend on a long sign-in wait.
 
