@@ -107,10 +107,11 @@ func qualityCards(q protocol.QualityAnalysis, w, agent int, picks map[string]str
 
 func (m Model) qualityDetailsView(w, h int) []string {
 	q := m.snap.Calibration.Quality
-	var picks map[string]string
+	var picks, reasons map[string]string
 	for _, n := range m.snap.Nodes {
 		if n.NodeID != "" && n.NodeID == m.snap.NodeID {
 			picks = n.QualityPicks
+			reasons = n.QualityPickReasons
 			break
 		}
 	}
@@ -169,6 +170,9 @@ func (m Model) qualityDetailsView(w, h int) []string {
 					line = sDim.Render(line)
 				}
 				body = append(body, clip(line, w))
+			}
+			if picked != "" && reasons[name] != "" {
+				body = append(body, clip(fmt.Sprintf("▸ %s (%s)", f.Family, sanitize(reasons[name])), w))
 			}
 		}
 	}

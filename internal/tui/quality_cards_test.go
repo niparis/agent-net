@@ -49,9 +49,20 @@ func TestQualityNewScreenGoldens(t *testing.T) {
 		m := newModel(size[0], size[1])
 		m.tab = quotasTab
 		m.snap.Calibration.Quality = q
-		m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, Hostname: "workstation", QualityPicks: map[string]string{"normal": "sol", "hard": "terra"}}}
+		m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, Hostname: "workstation", QualityPicks: map[string]string{"normal": "sol", "hard": "terra"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
 		golden(t, fmt.Sprintf("quality_overview_%dx%d", size[0], size[1]), strings.Join(m.calibrationView(size[0]), "\n"))
 		m.qualityDetail = true
 		golden(t, fmt.Sprintf("quality_details_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestQualityDetailsShowsPickerPaceReason(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.snap.Calibration.Quality = protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "normal", Families: []protocol.QualityFamily{{Family: "luna", Tasks: 6}}}}}
+	m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, QualityPicks: map[string]string{"normal": "luna"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
+	view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 33), "\n"))
+	if !strings.Contains(view, "▸ luna (codex 5% ahead of pace)") {
+		t.Fatal(view)
 	}
 }

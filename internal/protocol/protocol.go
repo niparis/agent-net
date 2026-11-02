@@ -464,13 +464,14 @@ type (
 
 // NodeView is one node as the gateway lists it.
 type NodeView struct {
-	QualityPicks map[string]string `json:"quality_picks,omitempty"`
-	NodeID       string            `json:"node_id"`
-	Hostname     string            `json:"hostname"`
-	OS           string            `json:"os"`
-	Version      string            `json:"version"`
-	Online       bool              `json:"online"`
-	LastSeen     int64             `json:"last_seen"`
+	QualityPicks       map[string]string `json:"quality_picks,omitempty"`
+	QualityPickReasons map[string]string `json:"quality_pick_reasons,omitempty"`
+	NodeID             string            `json:"node_id"`
+	Hostname           string            `json:"hostname"`
+	OS                 string            `json:"os"`
+	Version            string            `json:"version"`
+	Online             bool              `json:"online"`
+	LastSeen           int64             `json:"last_seen"`
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`
