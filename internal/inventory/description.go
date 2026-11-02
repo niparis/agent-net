@@ -2,11 +2,12 @@ package inventory
 
 import (
 	"bytes"
-	"go.yaml.in/yaml/v3"
 	"io"
 	"os"
 	"strings"
 	"unicode"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func skillDescription(data []byte) string {
@@ -36,13 +37,11 @@ func skillDescription(data []byte) string {
 	s = strings.Join(strings.Fields(s), " ")
 	r := []rune(s)
 	if len(r) > 1024 {
-		r = r[:1024]
-		if i := strings.LastIndex(string(r), " "); i >= 0 {
-			s = string(r)
-			s = s[:i]
-		} else {
-			s = string(r)
+		end := 1024
+		for end > 0 && r[end] != ' ' {
+			end--
 		}
+		s = strings.TrimSpace(string(r[:end]))
 	}
 	return s
 }
