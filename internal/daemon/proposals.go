@@ -58,7 +58,7 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 
 // ProposalToolResult is the brief response intended for the CTO tool call.
 func ProposalToolResult(id string) string {
-	return "proposal " + id + " is in Needs you; the owner decides. You will get a note with the outcome."
+	return "proposal " + id + " is in the owner's Inbox (tab 7 of the TUI); the owner decides there. You will get a note with the outcome."
 }
 
 func (s *state) recordCTODelivery(sender string, at time.Time) error {

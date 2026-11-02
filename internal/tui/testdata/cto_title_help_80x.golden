@@ -62,7 +62,7 @@ Legend ────────────────────────�
   normal  delivered; B judges it
   auto    delivered with a trust note; B can act without asking you, still
           inside B's merge authority and refusals
-  ask     held in Needs you
+  ask     held in the Inbox
   never   refused
   a specific edge beats the all projects wildcard; an edge never grants deploy
   or merge permission by itself (deploy_rule and merge_authority do)

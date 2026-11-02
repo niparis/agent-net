@@ -281,7 +281,7 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 			name string
 			args json.RawMessage
 		}{method, b})
-		return json.RawMessage(`"proposal test-id is in Needs you; the owner decides"`), nil
+		return json.RawMessage(`"proposal test-id is in the owner's Inbox (tab 7 of the TUI); the owner decides there"`), nil
 	}, "test")
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {

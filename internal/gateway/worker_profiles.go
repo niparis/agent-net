@@ -159,15 +159,9 @@ func (s *Store) RemoveWorkerProfile(name string) error {
 // workerProfileAction verifies the requesting session and resolves new models
 // against the advertised lists before changing the network roster.
 func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerProfileFrame, validate ...bool) (any, error) {
-	agent, ok, err := g.store.Agent(p.Requester)
-	if err != nil {
-		return nil, err
-	}
-	if !ok || agent.NodeID != nodeID || agent.Worker != nil {
-		return nil, reject("worker profiles require a non-worker session on this machine")
-	}
-	switch action {
-	case "worker.profile.list":
+	// The roster is public, like charters: any caller may read it, the CTO
+	// included. Only changes check the requesting session.
+	if action == "worker.profile.list" {
 		profiles, err := g.store.WorkerProfiles()
 		if err != nil {
 			return nil, err
@@ -177,6 +171,15 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 			return nil, err
 		}
 		return withWorkerProfileAvailability(profiles, nodes), nil
+	}
+	agent, ok, err := g.store.Agent(p.Requester)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || agent.NodeID != nodeID || agent.Worker != nil {
+		return nil, reject("worker profiles require a non-worker session on this machine")
+	}
+	switch action {
 	case "worker.profile.remove":
 		if strings.TrimSpace(p.Name) == "" {
 			return nil, reject("worker profile name is required")

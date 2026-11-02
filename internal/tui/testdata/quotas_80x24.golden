@@ -10,9 +10,9 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
-│ opus            claude   opus-5-5:high     x     x     x     █100% █100%     │
 │ renamed         pi       gpt-6.1-zed       x     x     x     x     x         │
 │   model gone - ask the CTO to fix                                            │
+│ opus            claude   opus-5-5:high     x     x     x     █100% █100%     │
 │ sol             codex    gpt-6.1-sol       x     x     ·     ·     x         │
 │ terra           codex    gpt-6.1-terra     x     x     ·     ·     x         │
 │ terra pi        pi       gpt-6.1-terra     x     ·     ·     x     x         │

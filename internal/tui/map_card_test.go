@@ -163,7 +163,7 @@ func TestMapCardLegendLivesInHelp(t *testing.T) {
 		"Legend", "consumer uses provider", "advisor, arbiter or owner",
 		"deployer runs the app's deploys", "delivered; B judges it",
 		"delivered with a trust note", "inside B's merge authority and refusals",
-		"held in Needs you", "refused", "specific edge beats", "all projects",
+		"held in the Inbox", "refused", "specific edge beats", "all projects",
 		"never grants deploy or merge permission", "deploy_rule and merge_authority",
 		"only charter field with an enforced effect", "every turn",
 		"first 40 characters", "Tools tab", "another agent looks this node up",

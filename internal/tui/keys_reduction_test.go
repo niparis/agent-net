@@ -256,7 +256,7 @@ func TestHelpSaysCOpensAndCFocuses(t *testing.T) {
 func TestHelpCarriesTheAgentCardLegend(t *testing.T) {
 	m := keys(newModel(120, 40), "2", "?")
 	text := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
-	for _, want := range []string{"Legend", "consumer uses provider", "delivered; B judges it", "held in Needs you"} {
+	for _, want := range []string{"Legend", "consumer uses provider", "delivered; B judges it", "held in the Inbox"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help legend lacks %q", want)
 		}

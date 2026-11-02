@@ -241,7 +241,17 @@ func (m Model) quotaModels() []quotaModel {
 		}
 		rows = append(rows, row)
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
+	// Strongest first, by score; unscored models last; then by name.
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if a.scored != b.scored {
+			return a.scored
+		}
+		if a.scored && a.score.Score != b.score.Score {
+			return a.score.Score > b.score.Score
+		}
+		return a.name < b.name
+	})
 	return rows
 }
 

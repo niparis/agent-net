@@ -374,7 +374,7 @@ func mapLegendLines(w int) []string {
 	out = append(out, sBold.Render("  Request rule on an edge from A to B"))
 	out = append(out, mapLegendEntry("normal", 7, "delivered; B judges it", sDim, w)...)
 	out = append(out, mapLegendEntry("auto", 7, "delivered with a trust note; B can act without asking you, still inside B's merge authority and refusals", sBusy, w)...)
-	out = append(out, mapLegendEntry("ask", 7, "held in Needs you", sNeeds, w)...)
+	out = append(out, mapLegendEntry("ask", 7, "held in the Inbox", sNeeds, w)...)
 	out = append(out, mapLegendEntry("never", 7, "refused", sBad, w)...)
 	for _, l := range wrap("a specific edge beats the all projects wildcard; an edge never grants deploy or merge permission by itself (deploy_rule and merge_authority do)", max(w-2, 8)) {
 		out = append(out, "  "+l)
