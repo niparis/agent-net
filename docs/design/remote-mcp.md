@@ -109,17 +109,40 @@ per-bot grant. It is not part of this design.
 
 ## 7. Setup for a homelab user
 
-1. Choose a tunnel and point it at the loopback listener:
-   - Tailscale Funnel: `tailscale funnel --bg --set-path /mcp 127.0.0.1:7422`
-     (and the same for `/.well-known` and `/oauth`).
-   - Cloudflare Tunnel or ngrok, the same three paths.
-2. `agent-net setup` asks once: "Public URL for outside bots (empty: off)".
-   The listener only starts when a URL is set.
-3. Add the connector in the bot's settings with that URL, then approve it in
-   the TUI.
+agent-net does not require Tailscale, so there are two paths.
 
-The only thing a user must bring is the tunnel. agent-net cannot remove that
-step, because the bot's servers must reach the gateway.
+**With Tailscale on the gateway machine (default).** The TUI settings menu
+(`S`) has one switch, "Outside bots: on/off". Turning it on:
+
+1. starts the loopback listener;
+2. runs `tailscale funnel --bg --https=8443 http://127.0.0.1:7422`;
+3. reads the machine's DNS name from `tailscale status --json` and shows the
+   URL to paste in the bot: `https://<machine>.<tailnet>.ts.net:8443/mcp`.
+
+Port 8443, never 443: Funnel makes a whole port public, and the phone app is
+served on 443 by `tailscale serve`. Funnel only allows 443, 8443 and 10000.
+Turning the switch off, or uninstalling agent-net, runs
+`tailscale funnel --https=8443 off` (uninstall code and `docs/reference.md`
+change together).
+
+What agent-net cannot do, and shows the user instead:
+
+- Allowing Funnel for the tailnet is an admin setting (the `funnel` node
+  attribute and HTTPS certificates). The first attempt prints a link; the TUI
+  shows "Allow Funnel for this tailnet: open <link>, then try again".
+- On Linux the `tailscale` command needs root unless the user is its
+  operator. The TUI shows the one line to run once:
+  `sudo tailscale set --operator=$USER`.
+
+Funnel publishes a certificate for the machine name, so the name appears in
+public certificate logs. Nothing else is exposed.
+
+**Without Tailscale.** The user runs their own tunnel (Cloudflare Tunnel,
+ngrok) to `127.0.0.1:7422` for the paths `/mcp`, `/.well-known` and `/oauth`,
+and pastes the public URL in the same settings entry.
+
+Then, on both paths: add the connector in the bot's settings with that URL,
+and approve it in the TUI.
 
 ## 8. Managing bots in the TUI
 
@@ -165,6 +188,8 @@ step, because the bot's servers must reach the gateway.
    registration, authorize page, token and refresh, token storage and revoke.
 4. **TUI** (medium): the Needs you row for connection requests, the "Outside
    bots" entry in the settings menu, revoke, the fallback token.
-5. **Setup and docs** (small): the public URL question, tunnel examples in
-   `docs/setup.md`, `docs/security.md`, a decision record.
+5. **Funnel switch, setup and docs** (small to medium): the "Outside bots"
+   switch that runs Tailscale Funnel on 8443 and reads the URL, the fallback
+   URL field, Funnel off on uninstall, tunnel examples in `docs/setup.md`,
+   `docs/security.md`, a decision record.
 6. **End-to-end test** with a real Grok Bot connector through a tunnel.
