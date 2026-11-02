@@ -1,9 +1,8 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 sessions, 5 online · 1 busy     updated 14:05:00
- Differences   All tools   By project   [ ] switch screen
-╭─All tools · on or off per machine, or for chosen projects────────────────────────────────────────────────────────────╮
-│   NAME                                   FROM                  research PROJECTS              NOTE                   │
-│ ▸ ◆ conflict-mcp                         local homelab        [○]       homelab (local)                              │
-│   ◆ homelab-mcp                          local homelab         ○        homelab (local)                              │
+╭─Tools────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   NAME                            KIND   STATUS                                                                      │
+│   conflict-mcp                    MCP    local folder in homelab, not managed                                        │
+│   homelab-mcp                     MCP    local folder in homelab, not managed                                        │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -19,11 +18,12 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│ 1-2 of 2                                                                                                             │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─Details · conflict-mcp───────────────────────────────────────────────────────────────────────────────────────────────╮
-│ a copy in the homelab project folder that is not committed, found on: research. a imports it and turns it on where   │
-│ you choose; u turns it off.                                                                                          │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ 2 tools · ! needs attention · enter opens actions                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  left/right column  enter detail  a/u on/off  [/] screen  ? help  q quit
+j/k move  enter actions  / filter  n add  esc clear  ? help  q quit

@@ -192,7 +192,7 @@ func TestHelpSubsectionsHaveBlankLines(t *testing.T) {
 func TestHelpPairsAreMerged(t *testing.T) {
 	text := ansi.Strip(strings.Join(newModel(120, 60).helpContent(120), "\n"))
 	for _, want := range []string{
-		"pgup/pgdn", "home/g, end", "up/down, j/k", "shift+arrows", ", .", "[ ]",
+		"pgup/pgdn", "home/g, end", "up/down, j/k", "shift+arrows", ", .",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help lacks the merged pair %q", want)

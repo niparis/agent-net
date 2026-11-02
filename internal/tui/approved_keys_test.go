@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,11 +37,11 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"17_graph_links", []check{{contextGraph, ",", "previous link"}, {contextGraph, ".", "next link"}, {contextGraph, "[", ""}, {contextGraph, "]", ""}}},
 		{"18_card_scroll", []check{{contextCard, "ctrl+u", actPageUp}, {contextCard, "ctrl+d", actPageDown}, {contextCard, "[", ""}, {contextCard, "]", ""}}},
 		{"19_card_learned", []check{{contextCard, ",", "previous learned"}, {contextCard, ".", "next learned"}, {contextCard, "u", "undo learned"}, {contextCard, "U", ""}}},
-		{"20_tools_columns", []check{{contextToolsAll, "left", "previous column"}, {contextToolsAll, "right", "next column"}, {contextToolsAll, "[", "previous screen"}, {contextToolsAll, "]", "next screen"}}},
-		{"21_no_tools_hl", []check{{contextToolsAll, "h", ""}, {contextToolsAll, "l", ""}}},
-		{"22_tools_machine", []check{{contextToolsProject, "v", "next machine"}, {contextToolsProject, "m", ""}}},
-		{"23_accept_difference", []check{{contextToolsDiff, "a", "accept difference"}, {contextToolsDiff, "x", ""}}},
-		{"24_all_details", []check{{contextToolsAll, "enter", "item detail"}}},
+		{"20_tools_one_list", []check{{contextTools, "]", ""}, {contextTools, "[", ""}, {contextTools, "left", ""}, {contextTools, "right", ""}, {contextTools, "R", "rescan"}, {contextTools, "r", ""}}},
+		{"21_no_tools_hl", []check{{contextTools, "h", ""}, {contextTools, "l", ""}, {contextTools, "v", ""}, {contextTools, "m", ""}}},
+		{"22_no_tools_screens", []check{{contextTools, "1", ""}, {contextTools, "2", ""}, {contextTools, "tab", ""}}},
+		{"23_no_accept_key", []check{{contextTools, "a", ""}, {contextTools, "x", ""}, {contextTools, ".", ""}}},
+		{"24_list_details", []check{{contextTools, "enter", "open actions"}}},
 		{"25_picker_space", []check{{contextToolsPicker, " ", "tick"}, {contextToolsPicker, "x", ""}}},
 		{"26_help_close", []check{{contextHelp, "esc", actClose}, {contextHelp, "?", actClose}, {contextHelp, "enter", ""}, {contextHelp, "backspace", ""}}},
 		{"27_notifications", []check{{contextHelp, "N", ""}, {contextHelp, "n", ""}}},
@@ -137,26 +138,16 @@ func TestApprovedSessionsAndHeldKeys(t *testing.T) {
 }
 
 func TestApprovedToolsModes(t *testing.T) {
-	m, _ := toolsAtScreen(120, 34, toolsDiffs)
-	m = keys(m, "]")
-	if m.tl.screen != toolsAll {
-		t.Fatal("] did not switch to All tools")
+	m, _ := toolsAtScreen(120, 34)
+	m = keys(m, "]", "[", "right", "left")
+	if v := plain(m); !strings.Contains(v, "NAME") || !strings.Contains(v, "STATUS") {
+		t.Fatalf("Tools is not the one list:\n%s", v)
 	}
-	m = keys(m, "right")
-	if m.tl.screen != toolsAll || m.tl.col != 1 {
-		t.Fatal("right did not move the machine column")
+	if strings.Contains(plain(m), "Differences") || strings.Contains(plain(m), "By project") {
+		t.Fatalf("the old Tools screens are back:\n%s", plain(m))
 	}
 	m = keys(m, "enter")
 	if m.tl.modal == nil {
 		t.Fatal("enter did not open the selected item")
-	}
-	m = keys(m, "esc", "]")
-	if m.tl.screen != toolsProject {
-		t.Fatal("] did not switch to By project")
-	}
-	start := m.tl.machine
-	m = keys(m, "v")
-	if len(m.tl.cat.Machines) > 1 && m.tl.machine == start {
-		t.Fatal("v did not select the next machine")
 	}
 }

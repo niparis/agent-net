@@ -7,58 +7,18 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestToolsTurnOffOnAMachineCellIsLimitedToThatMachine(t *testing.T) {
-	m, src := toolsAtScreen(120, 34, 1)
-	m = rowByNameFrom(m, "research", "agent-net")
-	m.tl.col++ // the second machine column is research
-	m = resolveTools(m.openRowPlan(false))
-	if m.tl.modal == nil {
-		t.Fatalf("u must open a plan: %q", m.tl.toast)
-	}
-	if len(src.plans) != 1 || src.plans[0].Target.Scope != "uninstalled" || strings.Join(src.plans[0].Target.Machines, ",") != toolNodeR {
-		t.Fatalf("plans %+v", src.plans)
-	}
-	v := plain(m)
-	for _, want := range []string{"Turn off research on research", "only on research", "other machines are not changed"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("plan text lacks %q:\n%s", want, v)
-		}
-	}
-	if strings.Contains(v, "Nicolas-MBP:") {
-		t.Errorf("the plan lists the machine that was not chosen:\n%s", v)
-	}
-}
-
-func TestToolsTurnOnOnAMachineCellIsLimitedToThatMachine(t *testing.T) {
-	m, src := toolsAtScreen(120, 34, 1)
-	m = rowByNameFrom(m, "code-review", "agent-net")
-	m.tl.col = max(0, m.tl.col-1) // the first machine column is Nicolas-MBP, where code-review is another version
-	m = resolveTools(m.openRowPlan(true))
-	if m.tl.modal == nil {
-		t.Fatalf("a must open a plan: %q", m.tl.toast)
-	}
-	if len(src.plans) != 1 || src.plans[0].Target.Scope != "global" || strings.Join(src.plans[0].Target.Machines, ",") != toolNodeM {
-		t.Fatalf("plans %+v", src.plans)
-	}
-	v := plain(m)
-	if !strings.Contains(v, "only on Nicolas-MBP") || strings.Contains(v, "research: code-review") {
-		t.Errorf("plan text:\n%s", v)
-	}
-	m = pressKey(m, "enter")
-	if len(src.applied) != 1 {
-		t.Fatalf("applied %v", src.applied)
-	}
-}
-
+// With one machine there is nothing to limit, so the plan names no machine.
 func TestToolsWithOneMachineHasNoMachineScope(t *testing.T) {
 	m, src := newToolsModel(120, 34)
 	src.fakeSource.snap.Nodes = src.fakeSource.snap.Nodes[:1]
 	src.items = []protocol.ToolItem{toolManaged(toolSkill("solo", "sha256:1212121aaaa", toolLoc(toolNodeR, "research", "/home/n/.claude/skills/solo", "user", "", "claude")), "global")}
 	m = refresh(m, src)
 	m = openTools(m)
-	m = pressKey(m, "]")
-	m = rowByNameFrom(m, "solo", "agent-net")
-	m = resolveTools(m.openRowPlan(false))
+	m = toolFilter(m, "solo")
+	m = pressKey(m, "enter")
+	m = toolChoose(t, m, "Turn off for...")
+	m = toolPick(t, m, "Machine: research")
+	m = pressKey(m, "enter")
 	if len(src.plans) != 1 || len(src.plans[0].Target.Machines) != 0 {
 		t.Fatalf("plans %+v", src.plans)
 	}

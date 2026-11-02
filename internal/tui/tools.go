@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,14 +38,6 @@ type ToolsSource interface {
 	MCPCoverageUndo(ctx context.Context, planID string) (protocol.MCPCoverageResult, error)
 }
 
-const (
-	toolsDiffs   = 0
-	toolsAll     = 1
-	toolsProject = 2
-)
-
-var toolsScreenNames = []string{"Differences", "All tools", "By project"}
-
 type toolsMsg struct {
 	items    []protocol.ToolItem
 	accepted []string
@@ -65,18 +56,11 @@ type toolsState struct {
 	needs           []protocol.ToolNeed
 	cat             toolsdiff.Catalog
 
-	screen        int
-	row, col      int
-	scroll        int
-	showAccepted  bool
-	expandedDiffs map[string]bool
-	summaries     map[string]string
+	row, scroll int
+	summaries   map[string]string
 
-	search    string // filter of the All tools screen
-	projSel   string // the project of the By project screen
-	projFind  string // filter of the project list
-	machine   int    // the machine of the By project screen
-	searching bool   // the text box for search or projFind has the keys
+	search    string // the filter of the one list
+	searching bool   // the filter text box has the keys
 
 	toast   string
 	toastAt time.Time
@@ -107,7 +91,6 @@ func (m Model) activeToast() string {
 // startTools opens the tab and reads the tools.
 func (m Model) startTools() (tea.Model, tea.Cmd) {
 	m.tab, m.mapOn, m.focus = toolsTab, false, focusSessions
-	m.tl.screen = toolsAll
 	m.uiFilter = ""
 	if m.tl.loading {
 		return m, nil
@@ -157,14 +140,6 @@ func (m *Model) applyTools(r toolsMsg) {
 // rebuildTools computes the catalog again from the items and the machines.
 func (m *Model) rebuildTools() {
 	m.tl.cat = toolsdiff.Build(m.tl.items, toolsdiff.MachinesOf(m.snap.Nodes))
-	if m.tl.machine >= len(m.tl.cat.Machines) {
-		m.tl.machine = 0
-	}
-	if m.tl.projSel == "" || !hasStr(m.toolsProjects(), m.tl.projSel) {
-		if ps := m.toolsProjects(); len(ps) > 0 {
-			m.tl.projSel = ps[0]
-		}
-	}
 	m.toolsClamp()
 }
 
@@ -199,62 +174,15 @@ func (m Model) toolsProjects() []string {
 	return out
 }
 
-// shownProjects is the project list after the filter of screen 3.
-func (m Model) shownProjects() []string {
-	q := strings.ToLower(m.tl.projFind)
-	var out []string
-	for _, p := range m.toolsProjects() {
-		if q == "" || strings.Contains(strings.ToLower(p), q) {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// shownDiffs is the Differences list: accepted ones only when asked for.
+// shownDiffs is the differences that still need a choice, one per tool. It
+// feeds the fix actions; it is not a screen of its own.
 func (m Model) shownDiffs() []toolsdiff.Difference {
-	groups := map[string][]toolsdiff.Difference{}
-	var order []string
-	for _, d := range m.tl.cat.Diffs {
-		if m.tl.accepted[d.Key] && !m.tl.showAccepted {
-			continue
-		}
-		key := d.Key
-		if d.Name != "" && !m.tl.accepted[d.Key] && d.Kind != toolsdiff.KindUnmanaged {
-			if d.Kind == toolsdiff.KindTwoCopies && len(d.Machines) == 1 {
-				key = fmt.Sprintf("group:%s:%s:%d", d.Kind, d.Machines[0], len(d.Action.Copies))
-			} else {
-				key = "group:" + d.Kind + ":" + strings.Replace(d.Title, d.Name, "{name}", 1)
-			}
-		}
-		if _, ok := groups[key]; !ok {
-			order = append(order, key)
-		}
-		groups[key] = append(groups[key], d)
-	}
 	var out []toolsdiff.Difference
-	for _, key := range order {
-		group := groups[key]
-		if len(group) == 1 {
-			out = append(out, group[0])
+	for _, d := range m.tl.cat.Diffs {
+		if m.tl.accepted[d.Key] {
 			continue
 		}
-		d := group[0]
-		tail := strings.TrimPrefix(d.Title, d.Name+" ")
-		if d.Kind == toolsdiff.KindTwoCopies && len(d.Machines) == 1 {
-			d.Title = fmt.Sprintf("%d skills have %d different copies on %s", len(group), len(d.Action.Copies), d.Machines[0])
-		} else if strings.HasPrefix(tail, "has ") {
-			d.Title = fmt.Sprintf("%d skills have %s", len(group), strings.TrimPrefix(tail, "has "))
-		} else {
-			d.Title = fmt.Sprintf("%d items share a difference (%s)", len(group), d.Kind)
-		}
-		d.Key, d.Name = key, ""
-		d.Fix = "press enter to see each difference"
-		d.Action = toolsdiff.Action{Kind: toolsdiff.ActNone}
 		out = append(out, d)
-		if m.tl.expandedDiffs[key] {
-			out = append(out, group...)
-		}
 	}
 	return out
 }
@@ -290,33 +218,11 @@ func (m Model) shownRows() []toolsdiff.Row {
 	return filtered
 }
 
-func (m Model) toolsRowCount() int {
-	switch m.tl.screen {
-	case toolsDiffs:
-		return len(m.shownDiffs())
-	case toolsAll:
-		return len(m.shownRows())
-	}
-	return len(m.shownProjects())
-}
+func (m Model) toolsRowCount() int { return len(m.shownRows()) }
 
 func (m *Model) toolsClamp() {
 	n := m.toolsRowCount()
 	m.tl.row = min(max(m.tl.row, 0), max(n-1, 0))
-	m.tl.col = min(max(m.tl.col, 0), len(m.tl.cat.Machines))
-	if m.tl.screen == toolsProject {
-		ps := m.shownProjects()
-		if len(ps) > 0 && !hasStr(ps, m.tl.projSel) {
-			m.tl.projSel = ps[0]
-		}
-	}
-}
-
-func (m *Model) toolsSetScreen(s int) {
-	m.tl.screen = (s + len(toolsScreenNames)) % len(toolsScreenNames)
-	m.tl.row, m.tl.scroll = 0, 0
-	m.tl.searching = false
-	m.toolsClamp()
 }
 
 func (m Model) selectedRow() (toolsdiff.Row, bool) {
@@ -337,86 +243,24 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.toolsSearchKey(k)
 	}
 	m.tl.toast = ""
-	context := contextToolsDiff
-	switch m.tl.screen {
-	case toolsAll:
-		context = contextToolsAll
-	case toolsProject:
-		context = contextToolsProject
-	}
-	key := keyAction(context, k.String())
-	if key == "" {
-		key = keyAction(contextTools, k.String())
-	}
-	switch key {
+	switch keyAction(contextTools, k.String()) {
 	case actQuit:
 		m.quitting = true
 		return m, tea.Quit
 	case "help":
 		m.openHelp()
-	case "previous screen":
-		m.toolsSetScreen(m.tl.screen - 1)
-	case "next screen":
-		m.toolsSetScreen(m.tl.screen + 1)
 	case "rescan":
 		return m.toolsRescan()
 	case actDown:
-		if m.tl.screen == toolsProject {
-			m.toolsMoveProject(1)
-		} else {
-			m.tl.row++
-		}
+		m.tl.row++
 	case actUp:
-		if m.tl.screen == toolsProject {
-			m.toolsMoveProject(-1)
-		} else {
-			m.tl.row--
-		}
-	case "previous column":
-		m.tl.col--
-	case "next column":
-		m.tl.col++
-	case "next machine":
-		if n := len(m.tl.cat.Machines); n > 0 {
-			m.tl.machine = (m.tl.machine + 1) % n
-		}
+		m.tl.row--
 	case "filter":
 		m.tl.searching = true
-		if m.tl.screen == toolsDiffs {
-			m.toolsSetScreen(toolsAll)
-			m.tl.searching = true
-		}
 	case "clear filter":
-		m.tl.search, m.tl.projFind = "", ""
-	case "show accepted":
-		m.tl.showAccepted = !m.tl.showAccepted
-	case "accept difference":
-		return m.toolsAccept()
-	case "difference detail":
-		ds := m.shownDiffs()
-		if m.tl.row < len(ds) && ds[m.tl.row].Action.Kind == "" {
-			md := m.openModal(ds[m.tl.row].Title)
-			md.lines = []string{ds[m.tl.row].Fix}
-			md.foot = []string{"esc", "back"}
-			return m, nil
-		}
-		if m.tl.row < len(ds) && strings.HasPrefix(ds[m.tl.row].Key, "group:") {
-			key := ds[m.tl.row].Key
-			next := map[string]bool{}
-			for k, v := range m.tl.expandedDiffs {
-				next[k] = v
-			}
-			next[key] = !next[key]
-			m.tl.expandedDiffs = next
-			return m, nil
-		}
-		return m.openFix()
-	case "item detail":
+		m.tl.search = ""
+	case "open actions":
 		return m.openToolMenu()
-	case "turn on":
-		return m.openRowPlan(true)
-	case "turn off":
-		return m.openRowPlan(false)
 	case "add":
 		return m.openToolAdd()
 	}
@@ -424,25 +268,8 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) toolsMoveProject(d int) {
-	ps := m.shownProjects()
-	if len(ps) == 0 {
-		return
-	}
-	i := 0
-	for j, p := range ps {
-		if p == m.tl.projSel {
-			i = j
-		}
-	}
-	m.tl.projSel = ps[min(max(i+d, 0), len(ps)-1)]
-}
-
 func (m Model) toolsSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	target := &m.tl.search
-	if m.tl.screen == toolsProject {
-		target = &m.tl.projFind
-	}
 	switch k.Type {
 	case tea.KeyEsc:
 		if *target != "" {
@@ -484,71 +311,6 @@ func (m Model) toolsRescan() (tea.Model, tea.Cmd) {
 		}
 		return r
 	}
-}
-
-type toolsAcceptMsg struct {
-	key      string
-	accepted bool
-	err      error
-}
-
-// toolsAccept accepts (or takes back) the selected difference. The gateway
-// stores the mark, so it stays after a restart.
-func (m Model) toolsAccept() (tea.Model, tea.Cmd) {
-	ds := m.shownDiffs()
-	if m.tl.row >= len(ds) {
-		return m, nil
-	}
-	d := ds[m.tl.row]
-	if strings.HasPrefix(d.Key, "group:") {
-		m.toolsToast("press enter to see each difference")
-		return m, nil
-	}
-	if d.Info {
-		m.toolsToast("nothing to accept: " + d.Fix)
-		return m, nil
-	}
-	ts, ok := m.toolsSource()
-	if !ok {
-		return m, nil
-	}
-	on := !m.tl.accepted[d.Key]
-	acc := map[string]bool{}
-	for k, v := range m.tl.accepted {
-		acc[k] = v
-	}
-	if on {
-		acc[d.Key] = true
-		m.toolsToast("accepted: it stays as it is and leaves this list")
-	} else {
-		delete(acc, d.Key)
-		m.toolsToast("back on the list")
-	}
-	m.tl.accepted = acc
-	m.toolsClamp()
-	return m, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-		defer cancel()
-		return toolsAcceptMsg{key: d.Key, accepted: on, err: ts.ToolsAccept(ctx, d.Key, on)}
-	}
-}
-
-func (m *Model) onToolsAccept(r toolsAcceptMsg) {
-	if r.err == nil {
-		return
-	}
-	// The gateway did not store it: undo what the screen showed.
-	acc := map[string]bool{}
-	for k, v := range m.tl.accepted {
-		acc[k] = v
-	}
-	if r.accepted {
-		delete(acc, r.key)
-	} else {
-		acc[r.key] = true
-	}
-	m.tl.accepted = acc
-	m.toolsToast("could not store the mark: " + r.err.Error())
 }
 
 func nounCount(n int, one, many string) string {

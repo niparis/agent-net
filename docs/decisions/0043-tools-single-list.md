@@ -16,3 +16,6 @@ source and owner checks stay on the daemon and gateway.
 
 Each modal replaces the Tools content with one clean box. Its key bar follows
 the mode. The CTO box layout is unchanged by this decision.
+
+**Update:** v0.4.79 brought the three screens back by mistake. They were removed
+again, so the Tools tab is one list as above.

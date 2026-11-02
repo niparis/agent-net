@@ -55,7 +55,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 		seen.WriteString(ansi.Strip(m.View()))
 		m = keys(m, "j")
 	}
-	for _, want := range []string{"Tools keys", "add an MCP server or a skill from a folder", "Differences", "close help", "more below", "more above"} {
+	for _, want := range []string{"Tools keys", "add an MCP server or a skill from a folder", "open the actions for the selected tool", "close help", "more below", "more above"} {
 		if !strings.Contains(seen.String(), want) {
 			t.Errorf("missing %q", want)
 		}

@@ -1,5 +1,4 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions
- Differences   All tools   By project   [ ] switch screen   /design-taste-front…
 ╭─Turn on design-taste-frontend for...─────────────────────────────────────────╮
 │ 15 of 15 targets shown · 0 ticked                                            │
 │ ▸ [ ] Machine: Nicolas-MBP                                                   │
@@ -9,7 +8,8 @@
 │   [ ] Project: dotfiles                                                      │
 │   [ ] Project: flood-wargame                                                 │
 │   [ ] Project: homelab                                                       │
-│   and 8 more                                                                 │
+│   [ ] Project: homelab-portal                                                │
+│   and 7 more                                                                 │
 │                                                                              │
 │ j/k move  space tick  / filter  enter apply  esc cancel                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

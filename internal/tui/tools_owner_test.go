@@ -50,8 +50,8 @@ func TestToolsOwnerTasks(t *testing.T) {
 	t.Run("turn on for one project", func(t *testing.T) {
 		m, src := newToolsModel(120, 34)
 		m = openTools(m)
-		if !strings.Contains(plain(m), "PROJECTS") {
-			t.Fatal("Tools did not open the All tools grid")
+		if !strings.Contains(plain(m), "STATUS") {
+			t.Fatal("Tools did not open the one NAME KIND STATUS list")
 		}
 		m = toolFilter(m, "using-git-worktrees")
 		m = pressKey(m, "enter")

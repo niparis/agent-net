@@ -11,6 +11,7 @@ import (
 	udiff "github.com/aymanbagabas/go-udiff"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
@@ -112,27 +113,18 @@ func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.pickerKey(k)
 	}
 	action := keyAction(contextToolsPlan, key)
-	compareAction := keyAction(contextToolsCompare, key)
-	// A plan asks yes or no: Enter and y run it, Esc and n close it. In a
-	// compare view n and p still step between files.
+	// A plan asks yes or no: Enter and y run it, Esc and n close it.
 	if action == "apply" {
 		if _, ok := md.actions["enter"]; ok && !md.loading {
 			key = "enter"
 		}
 	}
-	if action == "cancel" && len(md.compareFiles) == 0 && !md.loading {
+	if action == "cancel" && !md.loading {
 		key = "esc"
 	}
 	switch {
 	case action == "cancel" && key == "esc" && md.back != nil:
 		m.tl.modal = md.back
-		return m, nil
-	case (compareAction == "next file" || compareAction == "previous file") && len(md.compareFiles) > 0:
-		step := 1
-		if compareAction == "previous file" {
-			step = -1
-		}
-		md.compareIndex = (md.compareIndex + step + len(md.compareFiles)) % len(md.compareFiles)
 		return m, nil
 	case (action == "cancel" && key == "esc") || (md.done && action == "apply"):
 		m.tl.modal = nil
@@ -186,62 +178,6 @@ type assignJob struct {
 }
 
 func (j assignJob) off() bool { return j.target.Scope == "uninstalled" }
-
-// openRowPlan is a or u on the selected cell of the All tools screen.
-func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
-	r, ok := m.selectedRow()
-	if !ok {
-		return m, nil
-	}
-	if _, ok := m.toolsSource(); !ok {
-		return m, nil
-	}
-	ms := m.tl.cat.Machines
-	col := m.tl.col
-	switch {
-	case r.Origin == toolsdiff.OriginRepo:
-		if on {
-			m.toolsToast("it is already on for " + r.Repo + " through the repo")
-			return m, nil
-		}
-		return m.openRepoRemove(r.Repo, r.Name, repoCopies(r))
-	case r.Kind == protocol.InventoryMCP && r.Origin == toolsdiff.OriginMachines:
-		if !on {
-			m.toolsToast("this server is set up by hand: send it through the gateway first (a), then remove the hand-made entry")
-			return m, nil
-		}
-		return m.openMCPImport(r.Name)
-	}
-	if col >= len(ms) {
-		return m.openProjectPicker(r, on)
-	}
-	cell := r.Cells[col]
-	if on && cell.State == toolsdiff.CellOn && r.Origin != toolsdiff.OriginMachines && r.Origin != toolsdiff.OriginLocal {
-		m.toolsToast(r.Name + " is already on for " + ms[col].Name)
-		return m, nil
-	}
-	if !on && cell.State == toolsdiff.CellOff {
-		m.toolsToast(r.Name + " is already off for " + ms[col].Name)
-		return m, nil
-	}
-	job, err := m.jobFor(r, m.machineTarget(on, ms[col]))
-	if err != "" {
-		m.toolsToast(err)
-		return m, nil
-	}
-	verb := "turn on"
-	title := "Turn on " + r.Name + " on " + ms[col].Name
-	if !on {
-		verb = "turn off"
-		title = "Turn off " + r.Name + " on " + ms[col].Name
-	}
-	note := ""
-	if len(job.target.Machines) > 0 {
-		job.where = ms[col].Name
-		note = "only on " + ms[col].Name + ": other machines are not changed"
-	}
-	return m.openAssign(title, verb, []assignJob{job}, []string{note})
-}
 
 // jobFor builds the job for a row. A skill that agent-net does not manage is
 // imported first.
@@ -624,7 +560,6 @@ type projPicker struct {
 	cur       int
 	remove    bool
 	row       toolsdiff.Row
-	current   []string // projects the tool is on for now
 }
 
 func (p *projPicker) shown() []string {
@@ -636,38 +571,6 @@ func (p *projPicker) shown() []string {
 		}
 	}
 	return out
-}
-
-func (m Model) openProjectPicker(r toolsdiff.Row, on bool) (tea.Model, tea.Cmd) {
-	if r.Kind == protocol.InventoryMCP && r.Origin == toolsdiff.OriginGateway {
-		m.toolsToast("MCP server scope can be changed with the CTO: ask it to plan the projects")
-		return m, nil
-	}
-	var cur []string
-	for _, p := range r.Projects {
-		cur = append(cur, p.Name)
-	}
-	p := &projPicker{all: m.toolsProjects(), sel: map[string]bool{}, remove: !on, row: r, current: cur}
-	if on {
-		for _, n := range cur {
-			p.sel[n] = true
-		}
-	} else if len(cur) == 0 {
-		m.toolsToast(r.Name + " is not on for any project")
-		return m, nil
-	}
-	if len(p.all) == 0 {
-		m.toolsToast("no projects yet: register a project first")
-		return m, nil
-	}
-	title := "Turn on " + r.Name + " for projects"
-	if !on {
-		title = "Turn off " + r.Name + " for projects"
-	}
-	md := m.openModal(title)
-	md.picker = p
-	pickerFoot(md, p)
-	return m, nil
 }
 
 func pickerFoot(md *toolsModal, p *projPicker) {
@@ -724,53 +627,9 @@ func (m Model) pickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		p.filtering = true
 		pickerFoot(md, p)
 	case "apply":
-		return m.pickerConfirm()
-	}
-	return m, nil
-}
-
-func (m Model) pickerConfirm() (tea.Model, tea.Cmd) {
-	if m.tl.modal.picker.targets {
 		return m.targetPickerConfirm()
 	}
-	md := m.tl.modal
-	p := md.picker
-	var chosen []string
-	if p.remove {
-		for _, n := range p.current {
-			if !p.sel[n] {
-				chosen = append(chosen, n)
-			}
-		}
-	} else {
-		for n, v := range p.sel {
-			if v {
-				chosen = append(chosen, n)
-			}
-		}
-	}
-	sort.Strings(chosen)
-	target := protocol.ToolAssignment{Scope: "projects", Projects: chosen}
-	if len(chosen) == 0 {
-		if !p.remove {
-			m.toolsToast("tick at least one project")
-			return m, nil
-		}
-		target = protocol.ToolAssignment{Scope: "uninstalled"}
-	}
-	job, err := m.jobFor(p.row, target)
-	if err != "" {
-		m.toolsToast(err)
-		m.tl.modal = nil
-		return m, nil
-	}
-	title := "Turn on " + p.row.Name + " for projects"
-	verb := "turn on"
-	if p.remove {
-		title, verb = "Turn off "+p.row.Name+" for projects", "turn off"
-	}
-	m.tl.modal = nil
-	return m.openAssign(title, verb, []assignJob{job}, []string{"each project gets it on every machine; copies are kept out of git"})
+	return m, nil
 }
 
 // ---- repo copies ----
@@ -1468,8 +1327,9 @@ func whenText(t, now time.Time) string {
 	return when + ", " + t.Format("2 Jan")
 }
 
-// renderChoose draws the compare plan from its chooseState. It runs again when
-// a detail or summary answer arrives, without losing the keys the owner can
+// renderChoose fills the compare modal from its chooseState. The box itself is
+// laid out in modalBox, which knows the terminal width. It runs again when a
+// detail or summary answer arrives, without losing the keys the owner can
 // press.
 func renderChoose(md *toolsModal) {
 	st := md.choose
@@ -1482,13 +1342,16 @@ func renderChoose(md *toolsModal) {
 	md.foot = nil
 	md.compareFiles = nil
 	md.actions = map[string]func(Model) (Model, tea.Cmd){}
-	switch st.summaryState {
-	case "loading":
-		md.lines = append(md.lines, "  summarising the difference...")
-	case "done":
-		md.lines = append(md.lines, skillSummaryLine(st.summary))
-	default:
-		md.lines = append(md.lines, "  summary unavailable: compare the files below")
+	md.title = compareTitle(act)
+	md.lines = compareBoxLines(st, act.Copies, 112)
+
+	if len(act.Copies) == 2 {
+		added, removed, changed, ok := toolsdiff.CompareFiles(act.Copies[0], act.Copies[1])
+		if ok {
+			files := append(append(append([]string(nil), changed...), added...), removed...)
+			sort.Strings(files)
+			md.compareFiles = files
+		}
 	}
 	for i, c := range act.Copies {
 		if i >= 6 {
@@ -1496,64 +1359,8 @@ func renderChoose(md *toolsModal) {
 		}
 		letter := string(rune('a' + i))
 		c := c
-		who := sanitize(c.Machine)
-		if len(act.Copies) == 2 && act.Copies[0].Machine == act.Copies[1].Machine && c.Harness != "" {
-			who += " (" + sanitize(c.Harness) + ")"
-		}
-		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+who)
-
-		origin := "origin unknown"
-		if strings.HasPrefix(c.Label, "v") {
-			origin = "matches agent-net store " + sanitize(c.Label) + "; origin unknown"
-		}
-		users := []string{}
-		for _, item := range st.items {
-			if item.Hash != c.Hash || item.Name != c.Name {
-				continue
-			}
-			for _, loc := range item.Locations {
-				who := sanitize(loc.Machine)
-				if loc.Harness != "" {
-					who += " / " + sanitize(loc.Harness)
-				}
-				if loc.Project != "" {
-					who += " / " + sanitize(loc.Project)
-				}
-				users = append(users, who)
-			}
-		}
-		if len(users) == 0 {
-			users = append(users, who)
-			if c.Harness != "" {
-				users[0] += " / " + sanitize(c.Harness)
-			}
-		}
-		changed := "last change unknown"
-		if c.Manifest != nil && !c.Manifest.Newest.IsZero() {
-			changed = "file modified " + c.Manifest.Newest.Format("2 Jan 2006") + "; editor unknown"
-		} else if c.Manifest == nil {
-			changed = st.sideLine(i, c)
-		}
-		md.lines = append(md.lines, "     "+origin+"; "+changed, "     used by "+strings.Join(users, ", "))
-		md.paths = append(md.paths, c.Machine+"  "+c.Location)
-		label := sanitize(c.Machine)
-		sameMachine, sameHarness := 0, 0
-		for j, other := range act.Copies {
-			if j != i && other.Machine == c.Machine {
-				sameMachine++
-				if other.Harness == c.Harness {
-					sameHarness++
-				}
-			}
-		}
-		if sameMachine > 0 {
-			if c.Harness != "" && sameHarness == 0 {
-				label = sanitize(c.Harness) + "'s copy"
-			} else {
-				label = fmt.Sprintf("copy %d", i+1)
-			}
-		}
-		md.foot = append(md.foot, letter, "keep "+label)
+		label := "keep " + letter
+		md.foot = append(md.foot, letter, label)
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {
 			m.tl.modal = nil
 			notes := comparisonNotes(act.Copies, c)
@@ -1568,41 +1375,250 @@ func renderChoose(md *toolsModal) {
 				target.Machines = []string{c.NodeID}
 				where = c.Machine
 			}
-			model, cmd := m.openAssign("Keep "+act.Name+" from "+c.Machine+" ("+c.Harness+")", "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, choice: choice, target: target, where: where}}, notes)
+			name := c.Harness
+			if name == "" {
+				name = c.Machine
+			}
+			model, cmd := m.openAssign("Keep "+act.Name+" from "+c.Machine+" ("+name+")", "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, choice: choice, target: target, where: where}}, notes)
 			return model.(Model), cmd
 		}
 	}
-	if len(act.Copies) == 2 {
-		both := act.Copies[0].Manifest != nil && act.Copies[1].Manifest != nil
-		if both {
-			comparison := chooseComparison(act.Copies[0], act.Copies[1])
-			if len(comparison) > 0 && (strings.Contains(comparison[len(comparison)-1], "winner") || strings.Contains(comparison[len(comparison)-1], "  keep ")) {
-				md.lines = append(md.lines, comparison[len(comparison)-1])
-				comparison = comparison[:len(comparison)-1]
-			}
-			md.lines = append(md.lines, comparison...)
-			_, _, changed, ok := toolsdiff.CompareFiles(act.Copies[0], act.Copies[1])
-			if ok && len(changed) > 0 {
-				md.compareFiles = changed
-				md.foot = append(md.foot, "n/p", "select file", "v", "view diff")
-				md.actions["v"] = func(m Model) (Model, tea.Cmd) { return m.openSkillDiff(act.Copies[0], act.Copies[1]) }
+	if len(md.compareFiles) > 0 {
+		md.foot = append(md.foot, "v", "full diff")
+		md.actions["v"] = func(m Model) (Model, tea.Cmd) { return m.openSkillDiff(act.Copies[0], act.Copies[1]) }
+	}
+	md.foot = append(md.foot, "esc", "back")
+}
+
+// compareTitle names the skill and where its copies are.
+func compareTitle(act toolsdiff.Action) string {
+	name := sanitize(act.Name)
+	if name == "" {
+		name = "this skill"
+	}
+	return name + ": 2 different copies on " + compareMachines(act.Copies)
+}
+
+func compareMachines(copies []toolsdiff.Copy) string {
+	var out []string
+	for _, c := range copies {
+		who := sanitize(c.Machine)
+		if who == "" {
+			who = "this machine"
+		}
+		if !hasStr(out, who) {
+			out = append(out, who)
+		}
+	}
+	if len(out) == 0 {
+		return "this machine"
+	}
+	return strings.Join(out, " and ")
+}
+
+// compareCopyName is the column heading for one copy.
+func compareCopyName(c toolsdiff.Copy, i int) string {
+	switch {
+	case c.Harness != "":
+		return c.Harness + "'s copy"
+	case c.Machine != "":
+		return c.Machine + "'s copy"
+	}
+	return "copy " + string(rune('a'+i))
+}
+
+// usedBy says how many harness setups use the same copy. One setup is named by
+// its harness rather than counted.
+func (st *chooseState) usedBy(c toolsdiff.Copy) string {
+	setups := 0
+	var harnesses []string
+	for _, item := range st.items {
+		if item.Hash != c.Hash || item.Name != c.Name {
+			continue
+		}
+		for _, loc := range item.Locations {
+			setups++
+			if loc.Harness != "" && !hasStr(harnesses, loc.Harness) {
+				harnesses = append(harnesses, loc.Harness)
 			}
 		}
 	}
-	destination := "  the one you keep goes into agent-net and to every machine"
-	if len(act.Copies) == 2 && act.Copies[0].NodeID != "" && act.Copies[0].NodeID == act.Copies[1].NodeID && len(st.online) > 1 {
-		destination = "  the one you keep goes into agent-net and to " + sanitize(act.Copies[0].Machine)
+	if setups == 0 {
+		if c.Harness != "" {
+			return c.Harness + " only"
+		}
+		return "one harness setup"
 	}
-	md.lines = append(md.lines, tsDim.Render(destination))
-	md.foot = append(md.foot, "d", "exact folders", "esc", "cancel")
+	if setups == 1 {
+		if len(harnesses) == 1 {
+			return harnesses[0] + " only"
+		}
+		return "one harness setup"
+	}
+	return fmt.Sprintf("%d harness setups", setups)
 }
 
-func skillSummaryLine(summary string) string {
-	lines := strings.Split(summary, "\n")
-	for i := range lines {
-		lines[i] = sanitize(lines[i])
+// changedText is the date of the newest file change, or why it is unknown.
+func (st *chooseState) changedText(i int, c toolsdiff.Copy) string {
+	if c.Manifest != nil && !c.Manifest.Newest.IsZero() {
+		return c.Manifest.Newest.Format("2 Jan")
 	}
-	return "  summary by model: " + strings.Join(lines, "\n")
+	if c.Manifest != nil {
+		return "unknown"
+	}
+	return st.sideLine(i, c)
+}
+
+// compareFiles keeps the file list short: whole names only, about 40 columns.
+func compareFiles(files []string) string {
+	const limit = 40
+	out := ""
+	for _, f := range files {
+		f = sanitize(f)
+		next := f
+		if out != "" {
+			next = out + ", " + f
+		}
+		if ansi.StringWidth(next) > limit {
+			if out == "" {
+				out = f
+			}
+			break
+		}
+		out = next
+	}
+	return out
+}
+
+// compareBoxLines lays the two copies side by side. Long values wrap inside
+// their column, so nothing overflows the box at 80 columns.
+func compareBoxLines(st *chooseState, copies []toolsdiff.Copy, inner int) []string {
+	if len(copies) != 2 || inner < 30 {
+		return compareOneByOneLines(st, copies)
+	}
+	const labelWidth = 9
+	colW := (inner - labelWidth - 4) / 2
+	if colW < 12 {
+		colW = 12
+	}
+	a, b := copies[0], copies[1]
+
+	type row struct {
+		label string
+		left  []string
+		right []string
+	}
+	var rows []row
+
+	changed := row{label: "changed", left: wrap(st.changedText(0, a), colW), right: wrap(st.changedText(1, b), colW)}
+	rows = append(rows, changed)
+	rows = append(rows, row{label: "used by", left: wrap(st.usedBy(a), colW), right: wrap(st.usedBy(b), colW)})
+
+	added, removed, changedFiles, ok := toolsdiff.CompareFiles(a, b)
+	var leftFiles, rightFiles []string
+	switch {
+	case !ok:
+		leftFiles = []string{"no file list"}
+		rightFiles = []string{"no file list"}
+	case len(added)+len(removed)+len(changedFiles) == 0:
+		leftFiles = []string{"same files"}
+		rightFiles = []string{"same files"}
+	default:
+		leftFiles = append(append([]string(nil), changedFiles...), removed...)
+		rightFiles = append(append([]string(nil), changedFiles...), added...)
+		sort.Strings(leftFiles)
+		sort.Strings(rightFiles)
+	}
+	rows = append(rows, row{label: "files", left: wrap(compareFiles(leftFiles), colW), right: wrap(compareFiles(rightFiles), colW)})
+
+	if st.summaryState == "loading" {
+		rows = append(rows, row{label: "in short", left: wrap("summarising the difference...", colW), right: []string{""}})
+	} else if st.summaryState == "done" && strings.TrimSpace(st.summary) != "" {
+		inA, inB := splitSummary(st.summary)
+		rows = append(rows, row{label: "in short", left: wrap(sanitize(inA), colW), right: wrap(sanitize(inB), colW)})
+	}
+
+	var out []string
+	headA := wrap("a  "+compareCopyName(a, 0), colW)
+	headB := wrap("b  "+compareCopyName(b, 1), colW)
+	for i := 0; i < max(len(headA), len(headB)); i++ {
+		l, r := "", ""
+		if i < len(headA) {
+			l = headA[i]
+		}
+		if i < len(headB) {
+			r = headB[i]
+		}
+		out = append(out, "  "+strings.Repeat(" ", labelWidth)+tsAccB.Render(padRight(l, colW))+"  "+tsAccB.Render(r))
+	}
+	for _, r := range rows {
+		n := max(len(r.left), len(r.right))
+		for i := 0; i < n; i++ {
+			label := ""
+			if i == 0 {
+				label = r.label
+			}
+			left := ""
+			if i < len(r.left) {
+				left = r.left[i]
+			}
+			right := ""
+			if i < len(r.right) {
+				right = r.right[i]
+			}
+			out = append(out, "  "+tsDim.Render(padRight(label, labelWidth))+padRight(left, colW)+"  "+right)
+		}
+	}
+	out = append(out, "")
+	for _, line := range wrap(compareDestination(copies), inner-2) {
+		out = append(out, "  "+line)
+	}
+	return out
+}
+
+// padRight pads to w columns and never cuts.
+func padRight(s string, w int) string {
+	if n := w - ansi.StringWidth(s); n > 0 {
+		return s + strings.Repeat(" ", n)
+	}
+	return s
+}
+
+// splitSummary divides the model's comparison into the two copies. Some
+// summaries describe only the difference; then the whole text sits on the left.
+func splitSummary(summary string) (string, string) {
+	summary = strings.TrimSpace(summary)
+	if at := strings.Index(summary, "; "); at >= 0 {
+		return strings.TrimSpace(summary[:at]), strings.TrimSpace(summary[at+2:])
+	}
+	return summary, ""
+}
+
+// compareDestination says where the kept copy goes and for how long the other
+// copy is kept. 30 days matches the daemon's backup retention.
+func compareDestination(copies []toolsdiff.Copy) string {
+	where := "on every machine"
+	if len(copies) == 2 && copies[0].NodeID != "" && copies[0].NodeID == copies[1].NodeID {
+		where = "on " + sanitize(copies[0].Machine)
+	}
+	return "The copy you keep goes to every harness " + where + ". The other is backed up for 30 days."
+}
+
+// compareOneByOneLines is the fallback for more than two copies, where a
+// side-by-side box has no room.
+func compareOneByOneLines(st *chooseState, copies []toolsdiff.Copy) []string {
+	var out []string
+	for i, c := range copies {
+		if i >= 6 {
+			break
+		}
+		letter := string(rune('a' + i))
+		out = append(out, tsAcc.Render(letter+"  ")+"keep the copy on "+sanitize(c.Machine)+" ("+compareCopyName(c, i)+")")
+		out = append(out, "     changed "+st.changedText(i, c)+"; used by "+st.usedBy(c))
+	}
+	out = append(out, "")
+	out = append(out, compareDestination(copies))
+	return out
 }
 
 type skillSummarizer interface {
@@ -1689,41 +1705,6 @@ func unifiedSkillDiff(a, b, before, after string) string {
 	write("-", before)
 	write("+", after)
 	return out.String()
-}
-
-// copySummary describes what was observed, without treating absent manifests as empty.
-func copySummary(c toolsdiff.Copy, copies []toolsdiff.Copy, now time.Time) string {
-	m := c.Manifest
-	if m == nil || m.TooLarge {
-		return ""
-	}
-	var size int64
-	for _, f := range m.Files {
-		size += f.Size
-	}
-	detail := fmt.Sprintf("%s, %d B", nounCount(len(m.Files), "file", "files"), size)
-	if !m.Newest.IsZero() {
-		age := now.Sub(m.Newest)
-		when := "just now"
-		if age >= 24*time.Hour {
-			when = nounCount(int(age.Hours()/24), "day", "days") + " ago"
-		} else if age >= time.Hour {
-			when = nounCount(int(age.Hours()), "hour", "hours") + " ago"
-		} else if age >= time.Minute {
-			when = nounCount(int(age.Minutes()), "minute", "minutes") + " ago"
-		}
-		detail += ", changed " + when + " (" + m.Newest.Format("2 Jan") + ")"
-		if len(copies) == 2 && copies[0].Manifest != nil && copies[1].Manifest != nil && !copies[0].Manifest.TooLarge && !copies[1].Manifest.TooLarge && !copies[0].Manifest.Newest.IsZero() && !copies[1].Manifest.Newest.IsZero() {
-			other := copies[0].Manifest.Newest
-			if m == copies[0].Manifest {
-				other = copies[1].Manifest.Newest
-			}
-			if m.Newest.After(other) {
-				detail += " (newer)"
-			}
-		}
-	}
-	return detail
 }
 
 // noDetailsLine names the machines and says why there is nothing to compare,
