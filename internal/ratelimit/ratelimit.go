@@ -340,20 +340,26 @@ func Middleware(l *Limiter, class string, next http.Handler) http.Handler {
 	})
 }
 
-// ClientAddr uses the first X-Forwarded-For entry only for a loopback peer,
-// where the listener expects its tunnel. Headers from other peers are ignored
-// because they can be spoofed. The trusted tunnel must replace or sanitize
-// X-Forwarded-For from external clients, not merely append to an untrusted
-// header. Without a usable forwarded entry, the remote host is returned.
+// ClientAddr uses the last entry of the last X-Forwarded-For header only for a
+// loopback peer. The tunnel appends the client address; earlier entries may be
+// supplied by the client and spoofed. Headers from other peers are ignored.
+// If the last entry is not an IP address, the remote host is returned.
 func ClientAddr(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
 	if ip, err := netip.ParseAddr(host); err == nil && ip.Unmap().IsLoopback() {
-		forwarded, _, _ := strings.Cut(r.Header.Get("X-Forwarded-For"), ",")
-		if forwarded = strings.TrimSpace(forwarded); forwarded != "" {
-			return forwarded
+		values := r.Header.Values("X-Forwarded-For")
+		if len(values) > 0 {
+			forwarded := values[len(values)-1]
+			if i := strings.LastIndexByte(forwarded, ','); i >= 0 {
+				forwarded = forwarded[i+1:]
+			}
+			forwarded = strings.TrimSpace(forwarded)
+			if _, err := netip.ParseAddr(forwarded); err == nil {
+				return forwarded
+			}
 		}
 	}
 	return host

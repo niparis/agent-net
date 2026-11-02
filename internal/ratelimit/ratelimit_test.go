@@ -318,21 +318,58 @@ func TestAppEvictionAndIdleExpiry(t *testing.T) {
 }
 
 func TestClientAddr(t *testing.T) {
-	for _, tc := range []struct{ remote, forwarded, want string }{
-		{"127.0.0.1:1234", "198.51.100.3, 192.0.2.4", "198.51.100.3"},
-		{"[::1]:1234", " 2001:db8::3 , 192.0.2.4", "2001:db8::3"},
-		{"198.51.100.7:1234", "192.0.2.4", "198.51.100.7"},
-		{"[2001:db8::7]:1234", "192.0.2.4", "2001:db8::7"},
-		{"127.0.0.1:1234", "", "127.0.0.1"},
-		{"127.0.0.1:1234", " , 192.0.2.4", "127.0.0.1"},
-		{"192.0.2.1", "198.51.100.1", "192.0.2.1"},
+	for _, tc := range []struct {
+		remote    string
+		forwarded []string
+		want      string
+	}{
+		{"127.0.0.1:1234", []string{"1.2.3.4, 9.9.9.9"}, "9.9.9.9"},
+		{"127.0.0.1:1234", []string{"1.2.3.4", "198.51.100.1, 9.9.9.9"}, "9.9.9.9"},
+		{"[::1]:1234", []string{"192.0.2.4,  2001:db8::3 "}, "2001:db8::3"},
+		{"127.0.0.1:1234", []string{"1.2.3.4, garbage"}, "127.0.0.1"},
+		{"127.0.0.1:1234", []string{"1.2.3.4, 9.9.9.9:1234"}, "127.0.0.1"},
+		{"127.0.0.1:1234", []string{"1.2.3.4", "garbage"}, "127.0.0.1"},
+		{"127.0.0.1:1234", []string{"1.2.3.4", ""}, "127.0.0.1"},
+		{"127.0.0.1:1234", []string{"1.2.3.4, "}, "127.0.0.1"},
+		{"127.0.0.1:1234", []string{" , 192.0.2.4"}, "192.0.2.4"},
+		{"198.51.100.7:1234", []string{"1.2.3.4, 9.9.9.9"}, "198.51.100.7"},
+		{"[2001:db8::7]:1234", []string{"1.2.3.4", "9.9.9.9"}, "2001:db8::7"},
+		{"127.0.0.1:1234", nil, "127.0.0.1"},
+		{"192.0.2.1", []string{"198.51.100.1"}, "192.0.2.1"},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
 		r.RemoteAddr = tc.remote
-		r.Header.Set("X-Forwarded-For", tc.forwarded)
-		if got := ClientAddr(r); got != tc.want {
-			t.Errorf("ClientAddr(%q, %q) = %q, want %q", tc.remote, tc.forwarded, got, tc.want)
+		for _, value := range tc.forwarded {
+			r.Header.Add("X-Forwarded-For", value)
 		}
+		if got := ClientAddr(r); got != tc.want {
+			t.Errorf("ClientAddr(%q, %v) = %q, want %q", tc.remote, tc.forwarded, got, tc.want)
+		}
+	}
+}
+
+func TestMiddlewareBansForwardedAddress(t *testing.T) {
+	clock := newClock()
+	l := New(Config{FailureLimit: 1}, clock.now)
+	l.Fail("9.9.9.9")
+	called := false
+	h := Middleware(l, "mcp", http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	for _, fake := range []string{"1.2.3.4", "192.0.2.1"} {
+		r := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+		r.RemoteAddr = "127.0.0.1:1234"
+		r.Header.Add("X-Forwarded-For", fake)
+		r.Header.Add("X-Forwarded-For", "9.9.9.9")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "3600" {
+			t.Errorf("spoofed address %q: %d, Retry-After %q", fake, w.Code, w.Header().Get("Retry-After"))
+		}
+	}
+	if called {
+		t.Fatal("banned client reached handler through spoofed addresses")
+	}
+	if len(l.addresses) != 1 {
+		t.Fatalf("spoofed addresses created state: %d", len(l.addresses))
 	}
 }
 
