@@ -76,7 +76,7 @@ func TestToolsEnterOpensPlanFirstAndEscCancels(t *testing.T) {
 		t.Fatal("the scope must open a plan")
 	}
 	v := plain(m)
-	for _, want := range []string{"Turn on code-review", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter/y apply", "d exact folders", "esc/n cancel"} {
+	for _, want := range []string{"Turn on code-review", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter apply", "d exact folders", "esc cancel"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("plan lacks %q:\n%s", want, v)
 		}
@@ -579,7 +579,7 @@ func TestCompareBoxAt80Columns(t *testing.T) {
 	m = pressKey(m, "enter")
 	m = toolChoose(t, m, "Compare the copies / Keep this one")
 	v := plain(m)
-	for _, item := range []string{"design-taste-frontend: 2 different copies on research", "changed", "used by", "files", "a keep a", "b keep b", "v full diff", "esc/n/N back"} {
+	for _, item := range []string{"design-taste-frontend: 2 different copies on research", "changed", "used by", "files", "a keep a", "b keep b", "v full diff", "esc back"} {
 		if !strings.Contains(v, item) {
 			t.Errorf("box lacks %q:\n%s", item, v)
 		}

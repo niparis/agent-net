@@ -171,12 +171,14 @@ func (m Model) machineTarget(on bool, machine toolsdiff.Machine) protocol.ToolAs
 
 // assignJob is one skill to change: import first when it is not in the store.
 type assignJob struct {
-	importOnly bool
-	choice     *protocol.ToolCopyChoice
-	name       string
-	item       string
-	imp        *toolsdiff.Copy
-	target     protocol.ToolAssignment
+	agentProject string
+	agentOn      bool
+	importOnly   bool
+	choice       *protocol.ToolCopyChoice
+	name         string
+	item         string
+	imp          *toolsdiff.Copy
+	target       protocol.ToolAssignment
 	// where names the machine the change is limited to, or "" for every machine.
 	where string
 }
@@ -290,6 +292,22 @@ func (m Model) openAssign(title, verb string, jobs []assignJob, notes []string) 
 }
 
 func jobLines(jobs []assignJob) []string {
+	if len(jobs) == 1 && jobs[0].agentProject != "" {
+		j := jobs[0]
+		line := "+ " + j.name + " on for " + j.agentProject
+		if !j.agentOn {
+			line = "- " + j.name + " off for " + j.agentProject
+			if n := len(j.target.Projects); n > 0 {
+				line += " (stays on for the " + nounCount(n, "other project", "other projects") + ")"
+			}
+		}
+		out := []string{line}
+		if j.imp != nil {
+			out = append(out, "  "+j.name+" is saved in the store before applying")
+		}
+		return append(out, tsDim.Render("  the gateway makes the exact plan for each one when you press enter"))
+	}
+
 	if len(jobs) == 1 && jobs[0].importOnly {
 		j := jobs[0]
 		return []string{"+ Save " + j.name + " from " + sanitize(j.imp.Machine) + " in the agent-net store; keep its installed copies as they are"}
@@ -317,7 +335,11 @@ func jobLines(jobs []assignJob) []string {
 		}
 	}
 	if imports > 0 {
-		out = append(out, tsGood.Render("+ ")+nounCount(imports, "skill", "skills")+" go into the agent-net store as new versions (the files stay where they are)")
+		verb, versions := "go", "new versions"
+		if imports == 1 {
+			verb, versions = "goes", "a new version"
+		}
+		out = append(out, tsGood.Render("+ ")+nounCount(imports, "skill", "skills")+" "+verb+" into the agent-net store as "+versions+" (the files stay where they are)")
 	}
 	off := jobs[0].off()
 	names := make([]string, 0, len(jobs))
@@ -347,12 +369,20 @@ func jobLines(jobs []assignJob) []string {
 func jobPaths(jobs []assignJob) []string {
 	var out []string
 	for _, j := range jobs {
+		if j.agentProject != "" {
+			out = append(out, j.name+" target projects: "+strings.Join(j.target.Projects, ", "))
+			if len(j.target.Machines) > 0 {
+				out = append(out, "  target machines: "+strings.Join(j.target.Machines, ", "))
+			}
+		}
 		if j.imp != nil {
 			out = append(out, j.imp.Machine+"  "+j.imp.Location)
 		}
 	}
 	if len(out) == 0 {
 		out = []string{"the folders are listed by the gateway's plan when you press enter"}
+	} else if len(jobs) > 0 && jobs[0].agentProject != "" {
+		out = append(out, "Destination folders are read from the gateway on confirmation.")
 	}
 	return out
 }
@@ -404,7 +434,14 @@ func planLines(plan protocol.ToolPlan, job assignJob) []string {
 		sign = tsErr.Render("- ")
 	}
 	var out []string
+	if job.agentProject != "" {
+		lines := jobLines([]assignJob{job})
+		out = append(out, lines[:len(lines)-1]...)
+	}
 	for _, k := range order {
+		if job.agentProject != "" {
+			continue
+		}
 		what := job.name
 		if k.project != "" {
 			what += " for " + k.project
@@ -573,7 +610,7 @@ func tidyResult(lines []string, max int) []string {
 	if len(lines) <= max {
 		return lines
 	}
-	return append(lines[:max:max], tsDim.Render(fmt.Sprintf("  and %d more lines", len(lines)-max)))
+	return append(lines[:max:max], tsDim.Render("  and "+nounCount(len(lines)-max, "more line", "more lines")))
 }
 
 // ---- project picker ----
@@ -1776,7 +1813,7 @@ func chooseComparison(a, b toolsdiff.Copy) []string {
 	for _, p := range removed {
 		parts = append(parts, sanitize(p)+" only on "+label(a))
 	}
-	lines := []string{fmt.Sprintf("  %s differ:", nounCount(len(parts), "file", "files"))}
+	lines := []string{fileDifferenceCount(len(parts))}
 	for _, part := range parts[:min(len(parts), 5)] {
 		lines = append(lines, "    "+part)
 	}
@@ -1830,4 +1867,12 @@ func comparisonNotes(copies []toolsdiff.Copy, chosen toolsdiff.Copy) []string {
 		}
 	}
 	return notes
+}
+
+func fileDifferenceCount(n int) string {
+	verb := "differ"
+	if n == 1 {
+		verb = "differs"
+	}
+	return "  " + nounCount(n, "file", "files") + " " + verb + ":"
 }

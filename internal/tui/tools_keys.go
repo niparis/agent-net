@@ -1,12 +1,11 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 )
 
 // Tools keeps every local binding visible instead of using the seven-hint
-// shortlist shared by the other tabs. Equal labels share one group of keys.
+// shortlist shared by the other tabs. Aliases remain in the help overlay.
 func toolsBindingParts(ctx keyContext, include func(keyBinding) bool) []string {
 	var parts []string
 	positions := map[string]int{}
@@ -14,13 +13,25 @@ func toolsBindingParts(ctx keyContext, include func(keyBinding) bool) []string {
 		if b.context != ctx || b.action == actQuit || include != nil && !include(b) {
 			continue
 		}
-		keys := strings.Join(b.keys, "/")
-		if i, ok := positions[b.label]; ok {
-			parts[i] += "/" + keys
+		keys := toolDisplayKey(b)
+		label := b.label
+		if b.action == "exact folders" {
+			label = "exact folders"
+		}
+		if b.action == "next field" {
+			label = "next field"
+		}
+		if b.action == "previous field" {
+			label = "previous field"
+		}
+		if i, ok := positions[label]; ok {
+			if (parts[i] == "←" && keys == "→") || (parts[i] == "→" && keys == "←") {
+				parts[i] = "←→"
+			}
 			continue
 		}
-		positions[b.label] = len(parts)
-		parts = append(parts, keys, b.label)
+		positions[label] = len(parts)
+		parts = append(parts, keys, label)
 	}
 	return parts
 }
@@ -68,7 +79,7 @@ func (m Model) toolsKeyLines(w int) []string {
 			// Use the current plan's verb (import, apply, close or back).
 			for i := 0; i+1 < len(parts); i += 2 {
 				for j := 0; j+1 < len(md.foot); j += 2 {
-					if strings.HasPrefix(parts[i], "enter/") && strings.HasPrefix(md.foot[j], "enter") || strings.HasPrefix(parts[i], "esc/") && strings.HasPrefix(md.foot[j], "esc") {
+					if parts[i] == "enter" && strings.HasPrefix(md.foot[j], "enter") || parts[i] == "esc" && strings.HasPrefix(md.foot[j], "esc") {
 						parts[i+1] = md.foot[j+1]
 					}
 				}
@@ -91,7 +102,7 @@ func (m Model) toolsKeyLines(w int) []string {
 		if m.tl.skillsFocus {
 			for i := 0; i+1 < len(parts); i += 2 {
 				if parts[i] == "enter" {
-					parts[i+1] = fmt.Sprintf("review and apply (%d)", len(m.tl.agentPending[m.agentProject()]))
+					parts[i+1] = "review (" + nounCount(len(m.tl.agentPending[m.agentProject()]), "change", "changes") + ")"
 				}
 			}
 		}
@@ -103,4 +114,23 @@ func (m Model) toolsKeyLines(w int) []string {
 		return []string{""}
 	}
 	return lines
+}
+
+func toolDisplayKey(b keyBinding) string {
+	switch b.action {
+	case actDown, actUp:
+		return "↑↓"
+	case "skills":
+		return "→"
+	case "agents":
+		return "←"
+	}
+	key := b.keys[0]
+	switch key {
+	case "left":
+		return "←"
+	case "right":
+		return "→"
+	}
+	return key
 }

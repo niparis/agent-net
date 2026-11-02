@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
-1 skills are installed outside agent-net. i imports them all (backups kept,
+1 skill is installed outside agent-net. i imports them all (backups kept,
   nothing is turned off)
 ╭─Agents───────────╮╭─homelab · on research · 2 on · ~280/session──────────────╮
 │   a2a-ocs      1 ││ [x] archify                           ~120               │
@@ -14,11 +14,11 @@
 │   tenebrae     2 ││                                                          │
 │   wbg-arch     1 ││                                                          │
 │   wbg-housi…   1 ││                                                          │
+│   wbg-world…   1 ││                                                          │
 │                  ││ skills per agent · tab: all tools                        │
 ╰──────────────────╯╰──────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-i import all  j/down/k/up move  tab all tools  / filter  ? help  esc back
-  right/enter skills
+i import all  ↑↓ move  tab all tools  / filter  ? help  esc back  → skills

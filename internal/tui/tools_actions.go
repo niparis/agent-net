@@ -195,14 +195,14 @@ func (m Model) toolListView(w, h int) []string {
 		title += " / " + sanitize(m.tl.search) + searchCursor(m.tl.searching)
 	}
 	rows := m.shownRows()
-	title += fmt.Sprintf(" · %d tools", len(rows))
+	title += " · " + nounCount(len(rows), "tool", "tools")
 	if len(m.toolScope().projects) > 0 {
 		p := m.toolScope().projects[0]
 		n, cost, _, machine := m.projectCost(p)
 		if machine == "" {
 			title = "-"
 		} else {
-			title = fmt.Sprintf("%s · %s tokens in every session on %s", nounCount(n, "skill", "skills"), formatTokens(cost), sanitize(machine))
+			title = fmt.Sprintf("%s · %s in every session on %s", nounCount(n, "skill", "skills"), tokenCountText(cost), sanitize(machine))
 		}
 	}
 	nameW := max(12, (w-14)*45/100)
@@ -260,7 +260,7 @@ func (m Model) toolListView(w, h int) []string {
 	for len(body) < room+1 {
 		body = append(body, "")
 	}
-	note := fmt.Sprintf("%d tools · ! needs attention · enter opens actions", len(rows))
+	note := nounCount(len(rows), "tool", "tools") + " · ! needs attention · enter opens actions"
 	if toast := m.activeToast(); toast != "" {
 		note = toast
 	}
@@ -898,5 +898,5 @@ func (m Model) nodeToolsLine(name string) string {
 			}
 		}
 	}
-	return fmt.Sprintf("Tools: %d skills, %d MCP servers · t open", skills, servers)
+	return "Tools: " + nounCount(skills, "skill", "skills") + ", " + nounCount(servers, "MCP server", "MCP servers") + " · t open"
 }

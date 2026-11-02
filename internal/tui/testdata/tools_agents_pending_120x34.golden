@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
-1 skills are installed outside agent-net. i imports them all (backups kept, nothing is turned off)
+1 skill is installed outside agent-net. i imports them all (backups kept, nothing is turned off)
 ╭─Agents───────────────╮╭─homelab · on research · 2 skills on · ~280 tokens per session────────────────────────────────╮
 │   a2a-ocs          1 ││ [x] archify → off                     ~120    change not applied yet                         │
 │   cogforge         1 ││ [x] estate-runbook                    ~160    in the homelab repo (always on)                │
@@ -22,6 +22,7 @@
 │                      ││                                                                                              │
 │                      ││                                                                                              │
 │                      ││                                                                                              │
+│                      ││                                                                                              │
 │                      ││ skills per agent · tab: all tools                                                            │
 ╰──────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -30,5 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-i import all  j/down/k/up move  tab all tools  / filter  ? help  esc back  left agents  space on/off
-  enter review and apply (2)
+i import all  ↑↓ move  tab all tools  / filter  ? help  esc back  ← agents  space on/off  enter review (2 changes)

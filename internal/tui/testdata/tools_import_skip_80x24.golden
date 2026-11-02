@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
-╭─Import all · 1 skills────────────────────────────────────────────────────────╮
+╭─Import all · 1 skill─────────────────────────────────────────────────────────╮
 │ + Save found-skill from laptop in the agent-net store; keep its installed    │
 │   copies as they are                                                         │
 │   Backups kept in the store. Nothing is turned off.                          │
@@ -7,7 +7,7 @@
 │   1 skill skipped: too large to manage.                                      │
 │   oversize-archify: too large to manage (11 MB, the limit is 2 MB)           │
 │                                                                              │
-│ enter/y import  d exact folders  esc/n cancel                                │
+│ enter import  d exact folders  esc cancel                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter/y/Y import  esc/n/N cancel  ? help  up/k/down/j scroll  d folders
+enter import  esc cancel  ? help  ↑↓ scroll  d exact folders

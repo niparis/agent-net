@@ -8,7 +8,7 @@
 │     create homelab-mcp: command homelab-mcp                                                                          │
 │   environment values stay references: ${NAME} is never copied                                                        │
 │                                                                                                                      │
-│ enter/y apply  d exact folders  esc/n cancel                                                                         │
+│ enter apply  d exact folders  esc cancel                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter/y/Y apply  esc/n/N cancel  ? help  up/k/down/j scroll  d folders
+enter apply  esc cancel  ? help  ↑↓ scroll  d exact folders

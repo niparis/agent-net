@@ -822,7 +822,9 @@ project: count each name once on the machine with the highest total, using
 the highest cost among its copies. Costs are tokens in every session.
 Use up/down in either column, right or Enter to enter skills, and left to
 return to agents. Space queues an on/off change. Enter in the skills column
-reviews all pending changes for that agent in one plan. Confirm to apply;
+reviews all pending changes for that agent in one plan. The review says
+which skills turn on or off for that agent, and how many other projects
+keep a skill that was global. `d` shows target details. Confirm to apply;
 cancel to keep editing. Esc with pending changes asks `Discard N changes? y/n`.
 Repo skills stay on in their repo and must be changed there. Turning on a
 skill found on a machine imports it first, after confirmation. Turning off
@@ -838,8 +840,10 @@ the skipped count, names, sizes and limit in its review. Missing manifests
 do not prove that a skill fits; the import service still checks the bundle.
 `/` filters skill names. Tab switches between this view and all tools,
 which keeps the action menu, comparison, filters and `n` to add a tool.
-Every Tools screen lists all its local keys in the key bar, wrapping to a
-second line when needed. The list includes `t` for costs and `R` for rescan;
+Every Tools screen lists its local actions with one display key per action.
+Aliases still work and are listed in `?` help. The key bar fits one line at
+120 columns and wraps to a second line when needed at 80 columns.
+The list includes `t` for costs and `R` for rescan;
 plans include `d` when exact folders are available.
 
 `agent-net tools` groups the latest observations by kind, name and content

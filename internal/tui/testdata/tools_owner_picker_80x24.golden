@@ -11,7 +11,7 @@
 │   [ ] Project: homelab-portal                                                │
 │   and 7 more                                                                 │
 │                                                                              │
-│ j/k move  space tick  / filter  enter apply  esc cancel                      │
+│ ↑↓ move  space tick  / filter  enter apply  esc cancel                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-esc cancel  ? help  up/k/down/j select  space tick  / filter  enter apply
+esc cancel  ? help  ↑↓ select  space tick  / filter  enter apply

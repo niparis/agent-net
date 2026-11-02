@@ -116,6 +116,7 @@ func (m Model) agentJobs(project string) ([]assignJob, string) {
 		if why != "" {
 			return nil, why
 		}
+		job.agentProject, job.agentOn = project, on
 		jobs = append(jobs, job)
 	}
 	return jobs, ""
@@ -253,7 +254,7 @@ func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toolsToast("Use space to change a skill, then enter to review.")
 			break
 		}
-		model, cmd := m.openAssign(fmt.Sprintf("Review %d changes for %s", len(jobs), project), "apply", jobs, nil)
+		model, cmd := m.openAssign("Review "+nounCount(len(jobs), "change", "changes")+" for "+project, "apply", jobs, nil)
 		next := model.(Model)
 		// Keep pending changes when the review is cancelled. Consume them only
 		// after confirmation starts the existing apply path.
@@ -281,11 +282,11 @@ func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) agentToolsView(w, h int) []string {
 	var banner []string
 	if n := m.outsideSkillsCount(); n > 0 {
-		banner = wrapStyled(fmt.Sprintf("%d skills are installed outside agent-net. i imports them all (backups kept, nothing is turned off)", n), w)
+		banner = wrapStyled(outsideSkillsBanner(n), w)
 		h -= len(banner)
 	}
 	if m.tl.agentDiscard {
-		banner = append(banner, fmt.Sprintf("Discard %d changes? y/n", len(m.tl.agentPending[m.agentProject()])))
+		banner = append(banner, "Discard "+nounCount(len(m.tl.agentPending[m.agentProject()]), "change", "changes")+"? y/n")
 		h--
 	} else if toast := m.activeToast(); toast != "" {
 		lines := wrapStyled(toast, w)
@@ -307,7 +308,7 @@ func (m Model) agentToolsView(w, h int) []string {
 	right := w - left
 	project := m.agentProject()
 	n, c, _, machine := m.projectCost(project)
-	title := fmt.Sprintf("%s · on %s · %d skills on · %s tokens per session", project, orStr(machine, "-"), n, formatTokens(c))
+	title := fmt.Sprintf("%s · on %s · %s on · %s per session", project, orStr(machine, "-"), nounCount(n, "skill", "skills"), tokenCountText(c))
 	if w < 100 {
 		title = fmt.Sprintf("%s · on %s · %d on · %s/session", project, orStr(machine, "-"), n, formatTokens(c))
 	}

@@ -236,8 +236,14 @@ func pickerLines(p *projPicker, width, rows int) []string {
 		}
 	}
 	noun := "projects"
+	if len(p.all) == 1 {
+		noun = "project"
+	}
 	if p.targets {
 		noun = "targets"
+		if len(p.all) == 1 {
+			noun = "target"
+		}
 	}
 	head := tsDim.Render(fmt.Sprintf("%d of %d %s shown · %d ticked", len(shown), len(p.all), noun, picked))
 	if p.remove {
@@ -299,5 +305,18 @@ func modalKeys(md *toolsModal) []string {
 	if md.loading {
 		return []string{"esc", "cancel"}
 	}
-	return md.foot
+	parts := append([]string(nil), md.foot...)
+	for i := 0; i+1 < len(parts); i += 2 {
+		switch parts[i] {
+		case "/":
+		// This is a literal key, not an alias separator.
+		case "j/k", "up/down":
+			parts[i] = "↑↓"
+		case "left/right":
+			parts[i] = "←→"
+		default:
+			parts[i] = strings.Split(parts[i], "/")[0]
+		}
+	}
+	return parts
 }

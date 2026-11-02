@@ -60,7 +60,7 @@ func TestToolsUnstoredToggleReviewsBeforeImport(t *testing.T) {
 	m = pressKey(m, "down")
 	m = pressKey(m, " ")
 	m = pressKey(m, "enter")
-	if m.tl.modal == nil || !strings.Contains(plain(m), "Review 1 changes") {
+	if m.tl.modal == nil || !strings.Contains(plain(m), "Review 1 change") {
 		t.Fatal("Enter must show a plan")
 	}
 	if len(s.imports) != 0 || len(s.plans) != 0 || len(s.applied) != 0 {

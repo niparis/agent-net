@@ -10,6 +10,14 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
+func tokenCountText(n int64) string {
+	noun := "tokens"
+	if n == 1 {
+		noun = "token"
+	}
+	return formatTokens(n) + " " + noun
+}
+
 func formatTokens(n int64) string {
 	if n >= 1000 {
 		return fmt.Sprintf("~%.1fk", float64(n)/1000)
@@ -79,7 +87,7 @@ func (m Model) toolDetailView(w, h int) []string {
 				desc = append(desc[:keep], marker...)
 			}
 			body = append(body, desc...)
-			add(formatTokens(r.Item.StartTokens) + " tokens in every session")
+			add(tokenCountText(r.Item.StartTokens) + " in every session")
 			add("+" + formatTokens(r.Item.FullTokens) + " when the skill is used")
 			add("on: " + m.toolBaseStatus(r))
 			if reason := m.toolAttentionReason(r); reason != "" {

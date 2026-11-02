@@ -5,7 +5,7 @@
 │   Backups kept in the store. Nothing is turned off.                                                                  │
 │   Every installed copy stays where it is, on for the same sessions.                                                  │
 │                                                                                                                      │
-│ enter/y import  d exact folders  esc/n cancel                                                                        │
+│ enter import  d exact folders  esc cancel                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter/y/Y import  esc/n/N cancel  ? help  up/k/down/j scroll  d folders
+enter import  esc cancel  ? help  ↑↓ scroll  d exact folders

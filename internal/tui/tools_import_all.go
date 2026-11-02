@@ -72,7 +72,7 @@ func (m Model) importAllSkills() (tea.Model, tea.Cmd) {
 		md.foot = []string{"esc", "back"}
 		return m, nil
 	}
-	return m.openAssign(fmt.Sprintf("Import all · %d skills", len(names)), "import", jobs, notes)
+	return m.openAssign("Import all · "+nounCount(len(names), "skill", "skills"), "import", jobs, notes)
 }
 
 func (m Model) outsideToolStatus(r toolsdiff.Row) string {
@@ -83,4 +83,12 @@ func (m Model) outsideToolStatus(r toolsdiff.Row) string {
 		}
 	}
 	return "installed on " + strings.Join(machines, ", ") + ", outside agent-net (on for every session there)"
+}
+
+func outsideSkillsBanner(n int) string {
+	verb := "are"
+	if n == 1 {
+		verb = "is"
+	}
+	return nounCount(n, "skill", "skills") + " " + verb + " installed outside agent-net. i imports them all (backups kept, nothing is turned off)"
 }

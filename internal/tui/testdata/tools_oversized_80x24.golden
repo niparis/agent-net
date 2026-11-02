@@ -20,5 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-i import all  j/down/k/up move  tab all tools  / filter  ? help  esc back
-  left agents  space on/off  enter review and apply (0)
+i import all  ↑↓ move  tab all tools  / filter  ? help  esc back  ← agents
+  space on/off  enter review (0 changes)

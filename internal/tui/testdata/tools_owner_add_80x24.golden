@@ -8,7 +8,7 @@
 │   Header sources (JSON):                                                     │
 │   Machine: Nicolas-MBP                                                       │
 │                                                                              │
-│ tab next field  up/down field  left/right machine  enter add  esc cancel     │
+│ tab next field  ↑↓ field  ←→ machine  enter add  esc cancel                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -20,5 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-esc cancel  tab/down/shift+tab/up field  left/right machine  enter add
-  backspace/ctrl+h delete  text type
+esc cancel  tab next field  shift+tab previous field  ←→ machine  enter add
+  backspace delete  text type

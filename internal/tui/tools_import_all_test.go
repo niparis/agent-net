@@ -12,7 +12,7 @@ import (
 
 func TestToolsImportAllKeepsInstallations(t *testing.T) {
 	m, s := agentToolsFixture(120, 34)
-	if !strings.Contains(plain(m), "1 skills are installed outside agent-net") {
+	if !strings.Contains(plain(m), "1 skill is installed outside agent-net") {
 		t.Fatal("missing import-all banner:\n" + plain(m))
 	}
 	m = pressKey(m, "i")
@@ -92,6 +92,9 @@ func TestToolsCompleteKeyBars(t *testing.T) {
 		check := func(name string, m Model, keys ...string) {
 			t.Helper()
 			lines := m.toolsKeyLines(width)
+			if width == 120 && len(lines) != 1 {
+				t.Errorf("%s must fit one line at 120 columns: %v", name, lines)
+			}
 			if len(lines) > 2 {
 				t.Errorf("%s needs %d key lines: %v", name, len(lines), lines)
 			}
@@ -111,21 +114,21 @@ func TestToolsCompleteKeyBars(t *testing.T) {
 			}
 		}
 		m := fresh()
-		check("agents", m, "i", "j/down/k/up", "right/enter", "tab", "/", "esc", "?")
+		check("agents", m, "i", "↑↓", "→", "tab", "/", "esc", "?")
 		m = pressKey(m, "right")
-		check("skills", m, "space", "enter", "left", "i", "?")
+		check("skills", m, "space", "enter", "←", "i", "?")
 		m = pressKey(m, "i")
-		check("plan", m, "enter/y/Y", "esc/n/N", "d", "up/k/down/j", "?")
+		check("plan", m, "enter", "esc", "d", "↑↓", "?")
 		m = pressKey(fresh(), "tab")
 		check("list", m, "t", "R", "n", "enter", "?")
 		m = pressKey(m, "enter")
-		check("menu", m, "enter", "esc", "up/k/down/j", "?")
+		check("menu", m, "enter", "esc", "↑↓", "?")
 		m = toolChoose(t, m, "Turn on for...")
 		check("picker", m, "space", "/", "enter", "esc", "?")
 		m = pressKey(fresh(), "tab")
 		m = pressKey(m, "n")
 		m = pressKey(m, "enter")
-		check("form", m, "tab/down/shift+tab/up", "left/right", "backspace/ctrl+h", "enter", "esc", "text")
+		check("form", m, "tab", "shift+tab", "←→", "backspace", "enter", "esc", "text")
 	}
 }
 

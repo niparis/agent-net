@@ -1,15 +1,15 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
 ╭─Review 2 changes for homelab─────────────────────────────────────────────────╮
-│ + archify for a2a-ocs, cogforge, dotfiles, flood-wargame, homelab-portal,    │
-│   infra-game, sovl-clone, strategies, tenebrae, wbg-arch, wbg-housing, wbg-  │
-│   worldview                                                                  │
-│ + 1 skill go into the agent-net store as new versions (the files stay        │
-│   where they are)                                                            │
-│ + found-skill for homelab                                                    │
+│ - archify off for homelab (stays on for the 12 other projects)               │
+│ + found-skill on for homelab                                                 │
+│   found-skill is saved in the store before applying                          │
 │   the gateway makes the exact plan for each one when you press enter         │
 │                                                                              │
-│ enter/y apply  d exact folders  esc/n cancel                                 │
+│ enter apply  d exact folders  esc cancel                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter/y/Y apply  esc/n/N cancel  ? help  up/k/down/j scroll  d folders
+enter apply  esc cancel  ? help  ↑↓ scroll  d exact folders
