@@ -501,6 +501,22 @@ CREATE TABLE IF NOT EXISTS oauth_codes (
 CREATE INDEX IF NOT EXISTS oauth_codes_pending ON oauth_codes (pending_id);
 CREATE TABLE IF NOT EXISTS oauth_code_misses (source TEXT NOT NULL, attempted_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS oauth_code_misses_source ON oauth_code_misses (source, attempted_at);
+`, `
+-- OAuth pending browser hash. Repeat app DDL for migration replay recovery.
+CREATE TABLE IF NOT EXISTS apps (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK (kind IN ('owner_app', 'bot')),
+ client_id TEXT NOT NULL, client_name TEXT NOT NULL,
+ redirect_uris TEXT NOT NULL DEFAULT '[]',
+ created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER,
+ grants TEXT NOT NULL DEFAULT '[]');
+CREATE UNIQUE INDEX IF NOT EXISTS apps_active_name ON apps (name) WHERE revoked_at IS NULL;
+CREATE TABLE IF NOT EXISTS app_tokens (
+ hash TEXT PRIMARY KEY, app_id TEXT NOT NULL REFERENCES apps(id),
+ type TEXT NOT NULL CHECK (type IN ('access', 'refresh')),
+ expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS app_tokens_app ON app_tokens (app_id);
+CREATE INDEX IF NOT EXISTS app_tokens_expiry ON app_tokens (expires_at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -564,6 +580,24 @@ func (s *Store) migrate() error {
 		}
 		// SQLite has no ADD COLUMN IF NOT EXISTS, and a test may replay a
 		// migration on a database that already has these columns.
+		if strings.Contains(migrations[i], "OAuth pending browser hash") {
+			for _, col := range []struct{ name, spec string }{
+				{"browser_hash", `browser_hash TEXT NOT NULL DEFAULT ''`},
+				{"browser_expires_at", `browser_expires_at INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('oauth_pending') WHERE name = ?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE oauth_pending ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+				}
+			}
+		}
 		if strings.Contains(migrations[i], "worker rework counters") {
 			for _, col := range []struct{ name, spec string }{
 				{"continue_count", `continue_count INTEGER NOT NULL DEFAULT 0`},

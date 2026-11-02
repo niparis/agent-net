@@ -132,6 +132,7 @@ The approval belongs to the registered client and its redirect URI, not to
 one page. For 10 minutes after approval, a new sign-in from the same client
 with the same redirect URI goes straight through without a new code. So a
 short sign-in timeout only means the owner presses "connect" once more.
+Reuse is bound to the owner's browser by a cookie, so knowing the client ID and redirect URI is not enough to reuse an approval.
 
 For a client that takes only a static key, "Add" can also create a bearer
 token for a named bot, shown once.

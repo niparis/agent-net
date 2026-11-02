@@ -12,8 +12,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 	"unicode"
 )
+
+const oauthBrowserCookieName = "__Secure-agent_net_oauth_browser"
 
 // registerOAuth attaches the public OAuth endpoints to the public listener.
 func (g *Gateway) registerOAuth(mux *http.ServeMux) {
@@ -186,7 +189,20 @@ func (g *Gateway) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid authorization request", http.StatusBadRequest)
 		return
 	}
-	p, err := g.store.newOAuthPending(q.Get("client_id"), q.Get("redirect_uri"), q.Get("code_challenge"), q.Get("state"), q.Get("resource"), g.store.now())
+	var browserHash string
+	if cookie, err := r.Cookie(oauthBrowserCookieName); err == nil {
+		value, decodeErr := base64.RawURLEncoding.DecodeString(cookie.Value)
+		if decodeErr == nil && len(value) == 32 && base64.RawURLEncoding.EncodeToString(value) == cookie.Value {
+			browserHash = hashHex(cookie.Value)
+		}
+	}
+	newBrowser, err := oauthRandom(32)
+	if err != nil {
+		http.Error(w, "Could not start sign-in", http.StatusInternalServerError)
+		return
+	}
+	now := g.store.now()
+	p, err := g.store.newOAuthPending(q.Get("client_id"), q.Get("redirect_uri"), q.Get("code_challenge"), q.Get("state"), q.Get("resource"), browserHash, hashHex(newBrowser), now)
 	if errors.Is(err, errOAuthLimit) {
 		http.Error(w, "Too many pending requests. Try again later.", http.StatusTooManyRequests)
 		return
@@ -200,6 +216,9 @@ func (g *Gateway) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.logLine("oauth_authorize", "client_id", p.ClientID, "redirect_uri", p.RedirectURI, "resource", p.Resource, "scope", q.Get("scope"), "source", r.RemoteAddr)
+	if p.Status == "pending" {
+		http.SetCookie(w, &http.Cookie{Name: oauthBrowserCookieName, Value: newBrowser, Path: "/oauth", MaxAge: int(oauthPendingTTL / time.Second), Expires: now.Add(oauthPendingTTL), Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	}
 	oauthHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")

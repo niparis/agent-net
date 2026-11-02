@@ -242,12 +242,14 @@ func TestOAuthPendingCapsExpiryReuseAndRefusal(t *testing.T) {
 	if _, err = s.PendingByUserCode(code, "source", c.t); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expired lookup %v", err)
 	}
-	code, id = oauthPage(t, oauthAuthorize(h, client, nil))
+	page := oauthAuthorize(h, client, nil)
+	code, id = oauthPage(t, page)
+	cookie := oauthBrowserCookie(t, page, c.t)
 	if err = s.ApprovePending(id, "bot", "retry bot", c.t); err != nil {
 		t.Fatal(err)
 	}
 	// A retry is already approved, and cannot be looked up as a pending code.
-	retry := oauthAuthorize(h, client, nil)
+	retry := oauthAuthorize(oauthWithCookie(h, cookie), client, nil)
 	match := oauthPageID.FindStringSubmatch(retry.Body.String())
 	if retry.Code != 200 || len(match) != 2 || strings.Contains(retry.Body.String(), `id="user-code"`) {
 		t.Fatalf("retry page: %d %s", retry.Code, retry.Body.String())
@@ -261,7 +263,7 @@ func TestOAuthPendingCapsExpiryReuseAndRefusal(t *testing.T) {
 		t.Fatalf("approved lookup %v", err)
 	}
 	c.t = c.t.Add(10 * time.Minute)
-	_, lateID := oauthPage(t, oauthAuthorize(h, client, nil))
+	_, lateID := oauthPage(t, oauthAuthorize(oauthWithCookie(h, cookie), client, nil))
 	if got := oauthStatus(t, h, lateID); got["status"] != "pending" {
 		t.Fatalf("reuse outlived window %v", got)
 	}
@@ -404,19 +406,21 @@ func TestOAuthRefreshClientBinding(t *testing.T) {
 func TestOAuthCompletedCleanup(t *testing.T) {
 	s, c, h := oauthFixture(t)
 	client := oauthRegister(t, h)
-	_, first := oauthPage(t, oauthAuthorize(h, client, nil))
+	page := oauthAuthorize(h, client, nil)
+	_, first := oauthPage(t, page)
+	cookie := oauthBrowserCookie(t, page, c.t)
 	c.t = c.t.Add(9 * time.Minute)
 	if err := s.ApprovePending(first, "bot", "late approval", c.t); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(2 * time.Minute)
-	// Although the original page expired, its recent approval still allows reuse.
-	retry := oauthAuthorize(h, client, nil)
+	c.t = c.t.Add(30 * time.Second)
+	// A recent approval can be reused from the same browser.
+	retry := oauthAuthorize(oauthWithCookie(h, cookie), client, nil)
 	match := oauthPageID.FindStringSubmatch(retry.Body.String())
 	if len(match) != 2 || strings.Contains(retry.Body.String(), `id="user-code"`) {
 		t.Fatalf("late approval reuse: %s", retry.Body.String())
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.t = c.t.Add(11 * time.Minute)
 	oauthPage(t, oauthAuthorize(h, client, nil))
 	var count int
 	if err := s.db.QueryRow("SELECT count(*) FROM oauth_pending WHERE id IN (?,?)", first, match[1]).Scan(&count); err != nil || count != 0 {

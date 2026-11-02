@@ -138,7 +138,7 @@ type oauthPendingRequest struct {
 	CreatedAt, ExpiresAt                                                                       time.Time
 }
 
-func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource string, now time.Time) (oauthPendingRequest, error) {
+func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, browserHash, newBrowserHash string, now time.Time) (oauthPendingRequest, error) {
 	var p oauthPendingRequest
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -161,15 +161,17 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource s
 		return p, err
 	}
 	p = oauthPendingRequest{ClientID: clientID, ClientName: client.ClientName, RedirectURI: redirect, Challenge: challenge, State: state, Resource: resource, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(oauthPendingTTL)}
-	var approved int64
-	err = tx.QueryRow(`SELECT p.app_id,p.approved_at FROM oauth_pending p JOIN apps a ON a.id=p.app_id
- WHERE p.client_id=? AND p.redirect_uri=? AND p.status='approved' AND p.approved_at>? AND p.approved_at<=? AND a.revoked_at IS NULL ORDER BY p.approved_at DESC LIMIT 1`, clientID, redirect, now.Add(-oauthPendingTTL).UnixNano(), now.UnixNano()).Scan(&p.AppID, &approved)
+	var approved, browserExpires int64
+	err = tx.QueryRow(`SELECT p.app_id,p.approved_at,p.browser_expires_at FROM oauth_pending p JOIN apps a ON a.id=p.app_id
+ WHERE p.client_id=? AND p.redirect_uri=? AND p.status='approved' AND p.browser_hash=? AND p.browser_hash<>'' AND p.browser_expires_at>? AND p.approved_at>? AND p.approved_at<=? AND a.revoked_at IS NULL ORDER BY p.approved_at DESC LIMIT 1`, clientID, redirect, browserHash, now.UnixNano(), now.Add(-oauthPendingTTL).UnixNano(), now.UnixNano()).Scan(&p.AppID, &approved, &browserExpires)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return p, err
 	}
 	if err == nil {
 		p.Status = "approved"
 	} else {
+		browserHash = newBrowserHash
+		browserExpires = now.Add(oauthPendingTTL).UnixNano()
 		var count int
 		if err = tx.QueryRow("SELECT count(*) FROM oauth_pending WHERE status='pending' AND expires_at > ?", now.UnixNano()).Scan(&count); err != nil {
 			return p, err
@@ -188,7 +190,7 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource s
 			return p, err
 		}
 		var exists int
-		if err = tx.QueryRow("SELECT count(*) FROM oauth_pending WHERE user_code=? AND status='pending'", p.UserCode).Scan(&exists); err != nil {
+		if err = tx.QueryRow("SELECT count(*) FROM oauth_pending WHERE user_code=? AND expires_at > ?", p.UserCode, now.UnixNano()).Scan(&exists); err != nil {
 			return p, err
 		}
 		if exists == 0 {
@@ -199,7 +201,7 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource s
 	if p.Status == "approved" {
 		approvedAt = approved
 	}
-	_, err = tx.Exec(`INSERT INTO oauth_pending (id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status,app_id,approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.UserCode, p.ClientID, p.RedirectURI, p.Challenge, p.State, p.Resource, p.CreatedAt.UnixNano(), p.ExpiresAt.UnixNano(), p.Status, p.AppID, approvedAt)
+	_, err = tx.Exec(`INSERT INTO oauth_pending (id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status,app_id,approved_at,browser_hash,browser_expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.UserCode, p.ClientID, p.RedirectURI, p.Challenge, p.State, p.Resource, p.CreatedAt.UnixNano(), p.ExpiresAt.UnixNano(), p.Status, p.AppID, approvedAt, browserHash, browserExpires)
 	if err != nil {
 		return p, err
 	}
