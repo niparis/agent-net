@@ -18,6 +18,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/ratelimit"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
@@ -251,7 +252,7 @@ func TestAppsConnectionLogDoesNotContainToken(t *testing.T) {
 	req, _ := http.NewRequest("GET", srv.URL+"/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Mcp-Session-Id", "session-test")
-	req.Header.Set("X-Forwarded-For", "192.0.2.10")
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 9.9.9.9")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +260,7 @@ func TestAppsConnectionLogDoesNotContainToken(t *testing.T) {
 	resp.Body.Close()
 	srv.Close()
 	line := logs.String()
-	for _, want := range []string{"event=apps.mcp", "app=" + app.ID, "method=GET", "session=session-test", "source=192.0.2.10"} {
+	for _, want := range []string{"event=apps.mcp", "app=" + app.ID, "method=GET", "session=session-test", "source=9.9.9.9"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("missing %q in %s", want, line)
 		}
@@ -301,7 +302,7 @@ func (t botTokenTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func botFixture(t *testing.T) (*Gateway, App, string, *clock) {
 	t.Helper()
 	s, c := newTestStore(t)
-	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), opts: Options{PublicURL: "https://apps.example.test"}, conns: map[string]*nodeConn{}}
+	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, c.now), store: s, logger: log.New(io.Discard, "", 0), opts: Options{PublicURL: "https://apps.example.test"}, conns: map[string]*nodeConn{}}
 	app, err := s.CreateApp("test bot", "bot", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -352,7 +353,7 @@ func TestAppsAuthenticationAndTools(t *testing.T) {
 	h := appsAuthenticate("https://apps.example.test", func(raw string, now time.Time) (App, error) {
 		lookups++
 		return g.store.AppForToken(raw, "access", now)
-	}, c.now, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	}, c.now, nil, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	for _, header := range []string{"", "Basic abc", "Bearer bad", "Bearer " + strings.Repeat("!", 43), "Bearer " + strings.Repeat("a", 42) + "="} {
 		r := httptest.NewRequest("POST", "/mcp", nil)
 		r.Header.Set("Authorization", header)
@@ -518,5 +519,71 @@ func TestBotMessagesAndSessions(t *testing.T) {
 	row, _, err = g.store.Agent(bot)
 	if err != nil || row.Online {
 		t.Fatalf("bot remains online %+v %v", row, err)
+	}
+}
+
+func TestAppsRateBanAndBody(t *testing.T) {
+	g, _, token, _ := botFixture(t)
+	h := g.AppsHandler()
+	request := func(addr, token, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/mcp", strings.NewReader(body))
+		r.RemoteAddr = addr + ":1234"
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	for i := 0; i < 10; i++ {
+		bad := "bad"
+		if i%2 == 1 {
+			bad = strings.Repeat("A", 43)
+		}
+		if w := request("192.0.2.1", bad, ""); w.Code != 401 {
+			t.Fatalf("failure %d: %d", i, w.Code)
+		}
+	}
+	if w := request("192.0.2.1", "bad", ""); w.Code != 429 {
+		t.Fatalf("11th: %d", w.Code)
+	}
+	if w := request("192.0.2.1", token, ""); w.Code != 429 {
+		t.Fatalf("banned valid token: %d", w.Code)
+	}
+	if w := request("192.0.2.2", "bad", ""); w.Code != 401 {
+		t.Fatalf("other address: %d", w.Code)
+	}
+	if w := request("192.0.2.2", token, strings.Repeat("x", (1<<20)+1)); w.Code != 413 {
+		t.Fatalf("large body: %d", w.Code)
+	}
+}
+
+func TestAppsBotRateLimits(t *testing.T) {
+	g, _, token, _ := botFixture(t)
+	srv := httptest.NewServer(g.AppsHandler())
+	defer srv.Close()
+	bot := botClient(t, srv.URL, token)
+	for i := 0; i < 61; i++ {
+		r, err := bot.CallTool(t.Context(), &mcp.CallToolParams{Name: "agent_sessions_find", Arguments: map[string]any{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 60 && (!r.IsError || !strings.Contains(r.Content[0].(*mcp.TextContent).Text, "Rate limit: try again in 60 seconds")) {
+			t.Fatalf("call limit: %+v", r)
+		}
+	}
+}
+
+func TestAppsBotMessageRateLimit(t *testing.T) {
+	g, _, token, _ := botFixture(t)
+	srv := httptest.NewServer(g.AppsHandler())
+	defer srv.Close()
+	bot := botClient(t, srv.URL, token)
+	for i := 0; i < 31; i++ {
+		r, err := bot.CallTool(t.Context(), &mcp.CallToolParams{Name: "agent_message_send", Arguments: map[string]any{"to": "missing", "body": "hello"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 30 && (!r.IsError || !strings.Contains(r.Content[0].(*mcp.TextContent).Text, "Rate limit: try again in 3600 seconds")) {
+			t.Fatalf("message limit: %+v", r)
+		}
 	}
 }

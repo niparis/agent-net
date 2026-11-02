@@ -1,16 +1,19 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/ratelimit"
 )
 
 type appLogKey struct{}
@@ -18,11 +21,14 @@ type appLogInfo struct{ id string }
 
 // appsAuthenticate checks syntax before the token lookup, and binds each MCP
 // session to the app ID using the SDK's session user check.
-func appsAuthenticate(base string, lookup func(string, time.Time) (App, error), now func() time.Time, next http.Handler) http.Handler {
+func appsAuthenticate(base string, lookup func(string, time.Time) (App, error), now func() time.Time, fail func(*http.Request), next http.Handler) http.Handler {
 	metadata := protectedResourceMetadataURL(base)
 	verified := auth.RequireBearerToken(func(_ context.Context, token string, r *http.Request) (*auth.TokenInfo, error) {
 		app, err := lookup(token, now())
 		if errors.Is(err, sql.ErrNoRows) {
+			if fail != nil {
+				fail(r)
+			}
 			return nil, auth.ErrInvalidToken
 		}
 		if err != nil {
@@ -41,6 +47,9 @@ func appsAuthenticate(base string, lookup func(string, time.Time) (App, error), 
 			valid = err == nil && len(decoded) == 32
 		}
 		if !valid {
+			if fail != nil {
+				fail(r)
+			}
 			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+metadata+`"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -56,7 +65,7 @@ func (g *Gateway) AppsHandler() http.Handler {
 	stream := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	h := appsAuthenticate(g.opts.PublicURL, func(raw string, now time.Time) (App, error) {
 		return g.store.AppForToken(raw, "access", now)
-	}, g.store.now, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	}, g.store.now, func(r *http.Request) { g.limiter.Fail(ratelimit.ClientAddr(r)) }, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		app := auth.TokenInfoFromContext(r.Context()).Extra["app"].(App)
 		if app.Kind != "bot" {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -72,14 +81,44 @@ func (g *Gateway) AppsHandler() http.Handler {
 		info := &appLogInfo{id: "unknown"}
 		r = r.WithContext(context.WithValue(r.Context(), appLogKey{}, info))
 		defer func() {
-			source := r.Header.Get("X-Forwarded-For")
-			if source == "" {
-				source = r.RemoteAddr
-			}
+			source := ratelimit.ClientAddr(r)
 			g.logLine("apps.mcp", "app", info.id, "method", r.Method, "session", r.Header.Get("Mcp-Session-Id"), "source", source)
 		}()
 		h.ServeHTTP(w, r)
 	}))
 	g.registerOAuth(mux)
-	return mux
+	return g.appsMiddleware(mux)
+}
+
+// appsMiddleware applies one class to every public request, including 404s.
+// MCP uses mcp, browser authorize/status use page, and all other paths use oauth.
+func (g *Gateway) appsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		class := "oauth"
+		if r.URL.Path == "/mcp" {
+			class = "mcp"
+		} else if r.URL.Path == "/oauth/authorize" || r.URL.Path == "/oauth/authorize/status" {
+			class = "page"
+		}
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/mcp" {
+				r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					var limit *http.MaxBytesError
+					if errors.As(err, &limit) {
+						http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+					} else {
+						http.Error(w, "bad request", http.StatusBadRequest)
+					}
+					return
+				}
+				r.Body = io.NopCloser(bytes.NewReader(body))
+			} else if strings.HasPrefix(r.URL.Path, "/oauth/") {
+				r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+			}
+			next.ServeHTTP(w, r)
+		})
+		ratelimit.Middleware(g.limiter, class, h).ServeHTTP(w, r)
+	})
 }

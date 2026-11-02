@@ -35,6 +35,20 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 		server.AddTool(&mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: entry.InputSchema,
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: entry.Hints.ReadOnly, IdempotentHint: entry.Hints.Idempotent, OpenWorldHint: &open}},
 			func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				info := auth.TokenInfoFromContext(ctx)
+				if info == nil || info.UserID == "" {
+					return botToolError(fmt.Errorf("missing app identity"))
+				}
+				for _, kind := range []string{"call", "message"} {
+					if kind == "message" && entry.Name != "agent_message_send" && entry.Name != "agent_message_reply" {
+						continue
+					}
+					if ok, retry := g.limiter.AllowApp(info.UserID, kind); !ok {
+						seconds := int64((retry-1)/time.Second) + 1
+						g.logLine("apps.rate_limit", "app", info.UserID, "kind", kind)
+						return botToolError(fmt.Errorf("Rate limit: try again in %d seconds", seconds))
+					}
+				}
 				var in map[string]any
 				if req.Params == nil || len(req.Params.Arguments) == 0 {
 					in = map[string]any{}
@@ -43,10 +57,6 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 				}
 				if err := resolved.Validate(in); err != nil {
 					return botToolError(err)
-				}
-				info := auth.TokenInfoFromContext(ctx)
-				if info == nil || info.UserID == "" {
-					return botToolError(fmt.Errorf("missing app identity"))
 				}
 				var sid string
 				if err := g.store.db.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness='bot' AND native_id=?`, info.UserID, info.UserID).Scan(&sid); err != nil {
