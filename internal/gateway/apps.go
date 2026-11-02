@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -257,6 +259,41 @@ func (s *Store) RevokeApp(id string) error {
 		return err
 	}
 	closeAppSessions(s, id)
+	return nil
+}
+
+// RenameApp changes an active app's display name and its synthetic bot session.
+func (s *Store) RenameApp(id, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("name cannot be empty")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec("UPDATE apps SET name=? WHERE id=? AND revoked_at IS NULL", name, id)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return errors.New("name in use")
+		}
+		return err
+	}
+	if n, e := result.RowsAffected(); e != nil {
+		return e
+	} else if n == 0 {
+		return sql.ErrNoRows
+	}
+	if _, err = tx.Exec("UPDATE sessions SET name=? WHERE harness='bot' AND native_id=?", name, id); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return errors.New("name in use")
+		}
+		return err
+	}
 	return nil
 }
 

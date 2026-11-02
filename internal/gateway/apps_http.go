@@ -44,6 +44,9 @@ type appSessionPool struct {
 	owners  map[string]string
 }
 
+const appSessionsPerApp = 10
+const appSessionsTotal = 200
+
 var appSessionPools = struct {
 	sync.Mutex
 	byStore map[*Store]*appSessionPool
@@ -245,7 +248,7 @@ func (g *Gateway) AppsHandler(phoneApps ...http.Handler) http.Handler {
 					count++
 				}
 			}
-			if count >= 4 || len(pool.owners) >= 200 {
+			if count >= appSessionsPerApp || len(pool.owners) >= appSessionsTotal {
 				http.Error(w, "MCP session limit reached", http.StatusTooManyRequests)
 				return
 			}

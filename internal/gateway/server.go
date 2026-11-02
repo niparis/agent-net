@@ -1494,6 +1494,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, g.revokeApp(ctx, p.ID)
 
+	case protocol.OpAppsRename:
+		var p struct {
+			ID   string `json:"app_id"`
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
+			return nil, reject("bad apps.rename")
+		}
+		return nil, st.RenameApp(p.ID, p.Name)
+
 	case "inbox.list":
 		items, err := st.ListInbox()
 		return map[string]any{"items": items}, err

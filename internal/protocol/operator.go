@@ -23,6 +23,7 @@ import (
 const (
 	OpProposalList   = "proposal_list"
 	OpProposalAnswer = "proposal_answer"
+	OpAppsRename     = "apps.rename"
 	// Data. These only read.
 	OpInfo          = "info"          // answers OperatorInfo
 	OpNodes         = "nodes"         // answers NodesInfo

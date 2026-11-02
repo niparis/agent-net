@@ -1024,7 +1024,7 @@ address. Tailscale Funnel replaces X-Forwarded-For. Other tunnels must be
 configured to overwrite this header, not append to a client-supplied value.
 The MCP endpoint checks the configured public host and any Origin header.
 It authenticates before reading a request body and limits body size, read time,
-concurrent requests, app calls, and MCP sessions. An app may hold four sessions;
+concurrent requests, app calls, and MCP sessions. An app may hold ten sessions;
 the listener permits 200 in total and closes idle sessions after ten minutes.
 Revoking an app closes its sessions.
 

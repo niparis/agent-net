@@ -106,18 +106,18 @@ func TestAppsSessionLimit(t *testing.T) {
 	g, _, token, _ := botFixture(t)
 	h := g.AppsHandler()
 	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 11; i++ {
 		r := httptest.NewRequest("POST", "http://apps.example.test/mcp", strings.NewReader(body))
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Accept", "application/json, text/event-stream")
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
-		if i < 4 && w.Code != 200 {
+		if i < 10 && w.Code != 200 {
 			t.Fatalf("initialize %d: %d %s", i, w.Code, w.Body.String())
 		}
-		if i == 4 && w.Code == 200 {
-			t.Fatal("fifth session accepted")
+		if i == 10 && w.Code == 200 {
+			t.Fatal("eleventh session accepted")
 		}
 	}
 }
