@@ -1,28 +1,28 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
 ╭─Tools · 40 tools───────────────────────────────────────────────╮╭─code-review────────────────────────────────────────╮
 │   NAME                    STATUS                      COST     ││ Description for code-review                        │
-│ ! code-review             v1 on Nicolas-MBP, v3 on…   ~300     ││ ~300 tokens in every session                       │
-│ ! design-taste-frontend   2 different copies on…      ~1.0k    ││ +~3.4k when the skill is used                      │
-│ ! imnplementing-clean-ar… found on 1 machine, not…    ~1.3k    ││ on: v1 on Nicolas-MBP, v3 on research              │
-│ ! web-design-guidelines   on for wbg-housing,…        ~700     ││ ! v1 on Nicolas-MBP, v3 on research                │
-│   clean-architecture-pyt… on everywhere               ~1.2k    ││ enter: make every machine use v3                   │
-│   deploy-test-server      in the sovl-clone repo      ~1.4k    ││ from: managed by agent-net v3                      │
-│   diagnosing-bugs         on everywhere; limited on…  ~500     ││                                                    │
-│   estate-runbook          in the homelab repo         ~1.5k    ││                                                    │
-│   found-skill-00          found on 2 machines, not…   ~1.7k    ││                                                    │
-│   found-skill-01          found on 2 machines, not…   ~1.8k    ││                                                    │
-│   found-skill-02          found on 2 machines, not…   ~1.9k    ││                                                    │
-│   found-skill-03          found on 2 machines, not…   ~2.0k    ││                                                    │
-│   found-skill-04          found on 1 machine, not…    ~2.1k    ││                                                    │
-│   found-skill-05          found on 1 machine, not…    ~2.2k    ││                                                    │
-│   found-skill-06          found on 1 machine, not…    ~2.3k    ││                                                    │
-│   found-skill-07          found on 1 machine, not…    ~2.4k    ││                                                    │
-│   found-skill-08          found on 1 machine, not…    ~2.5k    ││                                                    │
-│   found-skill-09          found on 1 machine, not…    ~2.6k    ││                                                    │
-│   found-skill-10          found on 1 machine, not…    ~2.7k    ││                                                    │
-│   found-skill-11          found on 1 machine, not…    ~2.8k    ││                                                    │
-│   found-skill-12          found on 1 machine, not…    ~2.9k    ││                                                    │
-│   found-skill-13          found on 1 machine, not…    ~3.0k    ││                                                    │
+│ ! code-review             v1 on Nicolas-MBP, v3 on…   ~130     ││ ~130 tokens in every session                       │
+│ ! design-taste-frontend   2 different copies on…      ~130     ││ +~3.4k when the skill is used                      │
+│ ! imnplementing-clean-ar… found on 1 machine, not…    ~235     ││ on: v1 on Nicolas-MBP, v3 on research              │
+│ ! web-design-guidelines   on for wbg-housing,…        ~270     ││ ! v1 on Nicolas-MBP, v3 on research                │
+│   clean-architecture-pyt… on everywhere               ~200     ││ enter: make every machine use v3                   │
+│   deploy-test-server      in the sovl-clone repo      ~270     ││ from: managed by agent-net v3                      │
+│   diagnosing-bugs         on everywhere; limited on…  ~200     ││                                                    │
+│   estate-runbook          in the homelab repo         ~60      ││                                                    │
+│   found-skill-00          found on 2 machines, not…   ~130     ││                                                    │
+│   found-skill-01          found on 2 machines, not…   ~165     ││                                                    │
+│   found-skill-02          found on 2 machines, not…   ~200     ││                                                    │
+│   found-skill-03          found on 2 machines, not…   ~235     ││                                                    │
+│   found-skill-04          found on 1 machine, not…    ~270     ││                                                    │
+│   found-skill-05          found on 1 machine, not…    ~60      ││                                                    │
+│   found-skill-06          found on 1 machine, not…    ~95      ││                                                    │
+│   found-skill-07          found on 1 machine, not…    ~130     ││                                                    │
+│   found-skill-08          found on 1 machine, not…    ~165     ││                                                    │
+│   found-skill-09          found on 1 machine, not…    ~200     ││                                                    │
+│   found-skill-10          found on 1 machine, not…    ~235     ││                                                    │
+│   found-skill-11          found on 1 machine, not…    ~270     ││                                                    │
+│   found-skill-12          found on 1 machine, not…    ~60      ││                                                    │
+│   found-skill-13          found on 1 machine, not…    ~95      ││                                                    │
 │ 40 tools · ! needs attention · enter opens actions             ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮

@@ -15,7 +15,7 @@ func costModel(w, h int) Model {
 	m = openTools(m)
 	for i := range m.tl.items {
 		m.tl.items[i].Description = "Description for " + m.tl.items[i].Name
-		m.tl.items[i].StartTokens = int64((i + 1) * 100)
+		m.tl.items[i].StartTokens = int64(60 + (i%7)*35) // realistic: a name and a short description
 		m.tl.items[i].FullTokens = 3400
 	}
 	m.rebuildTools()
@@ -70,11 +70,11 @@ func TestProjectCostIncludesOnlyAvailableProjectSkills(t *testing.T) {
 	m := costModel(120, 34)
 	m.tl.search = ""
 	n, total, biggest, _ := m.projectCost("homelab")
-	if n != 34 || total != 82900 || biggest != "found-skill-25" {
+	if n != 34 || total != 5610 || biggest != "found-skill-04" {
 		t.Fatalf("homelab: %d %d %s", n, total, biggest)
 	}
 	m = toolFilter(m, "project:homelab")
-	if !strings.Contains(plain(m), "34 skills · ~82.9k tokens in every session on research") {
+	if !strings.Contains(plain(m), "34 skills · ~5.6k tokens in every session on research") {
 		t.Fatal(plain(m))
 	}
 }
