@@ -1,8 +1,8 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
 you→: your prompt · orange: waiting for a reply · red: failed · purple: Atlas
-╭─Messages · conversations─────────────────────────────────────────────────────╮
+╭─Messages · filter all────────────────────────────────────────────────────────╮
 │ ▸ Atlas ↔ tenebrae-53 · Please check the deployment.      1 message · 1m ago │
-│ 0 system events · e to show · w hide workers                                 │
+│ 0 system events · l filter: all                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ ▸ 14:04 Atlas                                                                │

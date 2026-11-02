@@ -22,9 +22,9 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"03_escape_filter", []check{{contextSessions, "esc", "back"}, {contextGraphFind, "esc", "clear or back"}, {contextToolsPicker, "esc", "cancel"}}},
 		{"04_shared_graph_help", []check{{contextGraph, "?", "help"}}},
 		{"05_no_session_e", []check{{contextSessions, "e", ""}}},
-		{"06_active_A", []check{{contextSessions, "A", "active only"}, {contextSessions, "a", ""}}},
+		{"06_view_v", []check{{contextSessions, "v", "cycle view"}, {contextSessions, "A", ""}, {contextSessions, "a", ""}}},
 		{"07_held_answer", []check{{contextHeld, "a", "approve"}, {contextHeld, "r", "refuse"}, {contextHeld, "A", ""}, {contextHeld, "R", ""}}},
-		{"08_outcome_overrule", []check{{contextOutcome, "O", "overrule"}, {contextOutcome, "o", ""}, {contextSessions, "o", "offline"}}},
+		{"08_outcome_overrule", []check{{contextOutcome, "O", "overrule"}, {contextOutcome, "o", ""}, {contextSessions, "o", ""}}},
 		{"09_proposal_decline", []check{{contextProposal, "r", "decline"}, {contextProposalDetail, "r", "decline"}, {contextProposal, "x", ""}}},
 		{"10_message_enter", []check{{contextMessages, "enter", "message body"}}},
 		{"11_message_end", []check{{contextMessages, "end", actLast}}},
@@ -116,13 +116,13 @@ func TestApprovedOverlayCloseKeys(t *testing.T) {
 
 func TestApprovedSessionsAndHeldKeys(t *testing.T) {
 	m := newModel(120, 34)
-	m = keys(m, "A")
+	m = keys(m, "v", "v", "v")
 	if !m.activeOnly {
-		t.Fatal("A did not toggle active only")
+		t.Fatal("v did not reach active only")
 	}
-	m = keys(m, "a")
-	if !m.activeOnly {
-		t.Fatal("a still toggles active only")
+	m = keys(m, "v")
+	if m.activeOnly {
+		t.Fatal("v did not leave active only")
 	}
 	src := &heldTestSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
 	src.snap.Held = []protocol.Message{{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"}}

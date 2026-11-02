@@ -48,29 +48,6 @@ func TestKeyLineContentPerTab(t *testing.T) {
 	}
 }
 
-// Every key that left a key line is still listed in the help overlay, so
-// nothing becomes hidden from the owner.
-func TestKeysRemovedFromKeyLineStayInHelp(t *testing.T) {
-	for _, tc := range []struct {
-		name, key string
-		removed   []string
-	}{
-		{"Sessions", "1", []string{"1-5", "s", "x", "h", "H", "t", "p", "N", "L", "o", "A", "d", "R", "/"}},
-		{"Messages", "4", []string{"w", "e", "l"}},
-		{"Quotas", "3", []string{"1-5", "left/right", "d"}},
-		{"Graph", "2", []string{"D", ", .", "u", "h", "H", "c"}},
-		{"Tools", "5", []string{".", "R", "c"}},
-	} {
-		m := keys(newModel(120, 34), tc.key)
-		help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
-		for _, key := range tc.removed {
-			if !strings.Contains(help, key) {
-				t.Errorf("%s help does not list %q:\n%s", tc.name, key, help)
-			}
-		}
-	}
-}
-
 // A selected row may replace a less relevant hint with the action that
 // matters right then, and the line still keeps seven hints at most.
 func TestSessionKeyLineShowsTheRelevantRowAction(t *testing.T) {
@@ -115,7 +92,7 @@ func TestSessionKeyLineShowsTheRelevantRowAction(t *testing.T) {
 }
 
 func TestGraphKeyLineIsShortAndHelpKeepsTheRest(t *testing.T) {
-	line := ansi.Strip(graphHintLine(120, false))
+	line := ansi.Strip(graphHintLine(120))
 	if hints := strings.Split(strings.TrimSpace(line), "  "); len(hints) > 7 {
 		t.Errorf("graph key line: %d hints: %q", len(hints), line)
 	}
@@ -126,7 +103,7 @@ func TestGraphKeyLineIsShortAndHelpKeepsTheRest(t *testing.T) {
 	m := graphModel(120, 34)
 	m = keys(m, "?")
 	help := ansi.Strip(strings.Join(m.helpContent(120), " "))
-	for _, want := range []string{"shift+arrows", ", .", "space", "orbit", "quit"} {
+	for _, want := range []string{"shift+left", ",", ".", "open the selected agent card", "quit"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("graph help does not list %q: %s", want, help)
 		}

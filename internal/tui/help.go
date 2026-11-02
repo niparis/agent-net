@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The key line and the help overlay. The model (model.go) supplies the state;
@@ -41,8 +39,10 @@ func (m Model) hints() []hint {
 		return []hint{bindingHint(contextProposalDetail, "approve"), bindingHint(contextProposalDetail, "decline"), bindingHint(contextProposalDetail, "approve all"), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
 	case m.help:
 		return []hint{bindingPairHint(contextHelp, actUp, actDown), bindingHint(contextHelp, actClose), bindingHint(contextHelp, actQuit)}
+	case m.settingsMenuOn:
+		return []hint{bindingPairHint(contextSettingsMenu, actUp, actDown), bindingHint(contextSettingsMenu, "choose"), bindingHint(contextSettingsMenu, actClose)}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools"), bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "legend"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit)}
+		return []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools"), bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit)}
 	case m.open != nil:
 		return []hint{bindingPairHint(contextBody, actUp, actDown), bindingHint(contextBody, actClose), bindingHint(contextBody, actQuit)}
 	case m.focus == focusCTO:
@@ -124,9 +124,6 @@ func (m Model) helpLine(w int) string {
 		}
 		return sDim.Render(clip("up/down field  left/right harness  tab field  enter save  esc cancel", w))
 	}
-	if m.learned {
-		return sDim.Render(clip("L or esc: back to the sessions", w))
-	}
 	switch m.mode {
 	case modeCompose:
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
@@ -182,160 +179,215 @@ func (m Model) helpLine(w int) string {
 	return clip(keyHints(parts...), w)
 }
 
-// helpContent builds all help lines so none are lost on a small screen.
+// helpContent builds the overlay from keyBindings. The sections follow the
+// tabs: Global keys, the current tab, the other tabs in tab order, and the
+// overlays last. No key row is written by hand.
 func (m Model) helpContent(w int) []string {
-	state := "on"
-	if m.snap.NotificationsDisabled {
-		state = "off"
+	var out []string
+	out = append(out, " "+sBold.Render("Global keys"))
+	out = append(out, m.globalHelpLines(w)...)
+
+	for _, section := range m.helpTabSections() {
+		out = append(out, "")
+		out = append(out, " "+sBold.Render(section.title))
+		for _, context := range section.contexts {
+			if context != section.contexts[0] {
+				out = append(out, " "+sBold.Render(strings.ReplaceAll(string(context), "CTO", m.ctoTitle())))
+			}
+			out = append(out, m.contextHelpLines(context, w, true)...)
+		}
+		if section.title == "Messages" {
+			out = append(out, "  "+sTitle.Render(cell("states", 20))+" pending ... delivered ✓ replied ↩ failed ✗")
+		}
+		if section.title == "Graph" {
+			out = append(out, "")
+			out = append(out, mapLegendLines(w)...)
+		}
 	}
 
-	rows := [][2]string{
-		{"Sessions", ""},
-		{"1-5", "switch between Sessions, Graph, Quotas, Messages and Tools"},
-		{"up/down, j/k", "select a session"},
-		{"pgup/pgdn, home/end", "page, first, last"},
-		{"enter", "open session in herdr (ctrl+] returns on fallback)"},
-		{"m", "send a message to the session as yourself"},
-		{"n", "start a session in herdr: project, harness, model, folder and first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
-		{"x", "stop the selected worker or session"},
-		{"h, H", "hide or unhide the session; show hidden sessions (dim)"},
-		{"t", "cycle request rule: normal, ask, auto"},
-		{"p", "delegation policy: subagent or worker for code changes (a form)"},
-		{"I", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},
-		{"c, C", "c opens the " + m.ctoTitle() + "; C focuses its box: enter opens the full " + m.ctoTitle() + ", ctrl+] returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
-		{"N", "name the machine of the session (every machine sees it; empty resets)"},
-		{"L", "what the network learned: playbook notes and their support"},
-		{"/", "filter (words match name, project, branch, model, ...)"},
-		{"o, d", "show offline sessions; toggle the selected session details"},
-		{"A", "active only: hide sessions idle for over an hour"},
-		{"R", "refresh now"},
-		{"proposal", "enter details; a approve; r decline; A approve all after confirmation"},
-		{"", ""},
-		{"Messages", ""},
-		{"up/down", "select a conversation"},
-		{"left/right", "select a message in the conversation"},
-		{"enter", "open the selected message body"},
-		{"end", "select the latest message"},
-		{"f", "on a worker conversation: report a defect found later"},
-		{"w", "show or hide worker threads"},
-		{"e, l", "show system events; cycle the event filter"},
-		{"R", "refresh now"},
-		{"states", "pending ... delivered ✓ replied ↩ failed ✗"},
-		{"", ""},
-		{"Quotas", ""},
-		{"up/down, j/k", "select a subscription and scroll the panels"},
-		{"p", "protect or unprotect the selected subscription"},
-		{"s", "show or hide subscriptions that are not set up"},
-		{"left/right", "cycle the Quality panel agent: all agents, then each caller"},
-		{"d", "show or hide the Quality panel detail (fixes and continues)"},
-		{"R", "refresh the readings"},
-		{"", ""},
-		{"Graph", ""},
-		{"2", "open the Graph tab"},
-		{"arrows", "select a node; shift+arrows pan"},
-		{", .", "select a linked neighbour"},
-		{"/", "find a node; Enter selects the first match; Esc cancels"},
-		{"+ -, 0", "zoom; fit the graph"},
-		{"o, space", "orbit; pause traffic"},
-		{"t", "open Tools filtered to the selected graph node"},
-		{"enter", "open the selected agent card"},
-		{"Agent card", ""},
-		{"enter", "open Sessions filtered to this agent's project"},
-		{"n", "start a new session in this project (the same form, filled from here)"},
-		{"esc", "return to Graph with the same node selected"},
-		{"D", "name project (empty clears)"},
-		{"a", "toggle autonomy off or wake"},
-		{"h, H", "hide or unhide the selected project; show hidden projects"},
-		{", ., u", "select a learned change; undo the selected one"},
-		{"!", "legend: what the edge kinds, request rules and charter fields mean"},
-		{"ctrl+u/d", "scroll the card: legend, charter, rules and learned changes; pgup/pgdn also work"},
-		{"c", "focus the " + m.ctoTitle() + " box"},
-		{"R", "refresh"},
-		{"", ""},
-		{"Tools", ""},
-		{"[ ]", "switch between Differences, All tools and By project"},
-		{"j/k, up/down", "move through the selected Tools screen"},
-		{"left/right", "move between columns"},
-		{"enter", "open the selected difference plan or the selected tool's details and actions"},
-		{"a, u", "accept a difference or turn a tool on; turn a tool off"},
-		{"v", "next machine on By project"},
-		{"/", "combine text, project:NAME, node:NAME and machine:NAME filters"},
-		{"n", "add an MCP server or a skill from a folder"},
-		{"esc", "back, or clear the list filter"},
-		{"", ""},
-		{"Everywhere", ""},
-		{"N", "desktop notifications: " + state + " (toggle)"},
-		{"T", "turn onboarding tips off or on"},
-		{"R", "restart onboarding from the first step"},
-		{"?", "this help"},
-		{"q, ctrl+c", "quit"},
-		{"", ""},
-		{"Reading the screen", ""},
-		{"CPU", "machine: all cores. session: one core. (x%): 5 min avg"},
-		{"red numbers", "a heavy tree: over 20 processes, 200% CPU or 4G"},
-		{"shared", "one process many sessions share; its figures are on the machine line"},
-		{"dim row", "offline, or idle for more than an hour"},
-		{"?", "a figure that is missing or older than 45 seconds"},
-		{"└", "a reply, under the message it answers"},
-		{"\"...\"", "the first line of the body, when this machine is in the conversation"},
-	}
-	if m.tab == toolsTab && !m.mapOn {
-		rows = [][2]string{
-			{"[ ]", "switch between Differences, All tools and By project"},
-			{"j/k, up/down", "move through tools, differences or projects; scroll a read view or comparison"},
-			{"left/right", "move between columns"},
-			{"enter", "open the selected difference plan or the selected tool's details and actions"},
-			{"a", "accept a difference on Differences; turn on a tool on All tools"},
-			{"u", "turn off the selected tool on All tools"},
-			{"v", "select the next machine on By project"},
-			{"/", "filter: text project:NAME node:NAME machine:NAME (combine them)"},
-			{"n", "add an MCP server or a skill from a folder"},
-			{"R", "rescan tool copies"},
-			{"space", "tick a machine or project in the picker"},
-			{"a/b/...", "in compare only: keep the labelled copy"},
-			{"n and p, v", "in compare only: select a file, view its diff"},
-			{"tab", "in add form: next field; arrows choose machine"},
-			{"esc", "back or cancel; clear a nonempty filter first"},
-			{"c, C", "c opens the " + m.ctoTitle() + "; C focuses its box"},
-			{"q", "quit from the list"},
-			{"esc or ?", "close help"},
-		}
-	}
-	rows = append(rows, [2]string{"", ""}, [2]string{"Bindings", ""})
-	for _, context := range allKeyContexts {
-		rows = append(rows, [2]string{strings.ReplaceAll(string(context), "CTO", m.ctoTitle()), ""})
-		for _, binding := range keyBindings {
-			if binding.context != context {
-				continue
-			}
-			label := strings.ReplaceAll(binding.label, "CTO", m.ctoTitle())
-			keys := strings.Join(binding.keys, ", ")
-			if ansi.StringWidth(keys) <= 20 {
-				rows = append(rows, [2]string{keys, label})
-				continue
-			}
-			for _, key := range binding.keys {
-				rows = append(rows, [2]string{key, label})
-			}
-		}
-	}
-	var out []string
-	const indent = 23
-	for _, r := range rows {
-		switch {
-		case r[0] == "" && r[1] == "":
-			out = append(out, "")
-		case r[1] == "":
-			out = append(out, " "+sBold.Render(r[0]))
-		default:
-			lines := wrap(r[1], max(w-indent, 8))
-			out = append(out, "  "+sTitle.Render(cell(r[0], 20))+" "+lines[0])
-			for _, line := range lines[1:] {
-				out = append(out, strings.Repeat(" ", indent)+line)
+	out = append(out, "", " "+sBold.Render("In overlays"))
+	for _, context := range m.overlayContexts() {
+		out = append(out, " "+sBold.Render(strings.ReplaceAll(string(context), "CTO", m.ctoTitle())))
+		out = append(out, m.contextHelpLines(context, w, false)...)
+		if context == contextSettingsMenu {
+			for _, entry := range settingsEntries() {
+				out = append(out, m.helpRow(entry.label, entry.help, w)...)
 			}
 		}
 	}
 	return out
+}
+
+type helpSection struct {
+	title    string
+	contexts []keyContext
+}
+
+// helpTabSections puts the current tab first, then the others in tab order.
+func (m Model) helpTabSections() []helpSection {
+	sections := []helpSection{
+		{"Sessions", []keyContext{contextSessions, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
+		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
+		{"Quotas", []keyContext{contextQuotas}},
+		{"Messages", []keyContext{contextMessages}},
+		{"Tools", []keyContext{contextTools, contextToolsDiff, contextToolsAll, contextToolsProject, contextToolsCompare}},
+	}
+	tab := min(max(m.tab, 0), len(sections)-1)
+	ordered := []helpSection{sections[tab]}
+	ordered = append(ordered, sections[:tab]...)
+	ordered = append(ordered, sections[tab+1:]...)
+	return ordered
+}
+
+func (m Model) overlayContexts() []keyContext {
+	return []keyContext{
+		contextBody, contextInbox, contextSettingsMenu, contextProposalDetail, contextProposalHistory,
+		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd,
+		contextCTO, contextHelp, contextConfirm, contextForm,
+	}
+}
+
+func (m Model) overlayContext(context keyContext) bool {
+	for _, c := range m.overlayContexts() {
+		if c == context {
+			return true
+		}
+	}
+	return false
+}
+
+// globalHelpKeys is the order the shared keys are listed in. The text for
+// each group comes from the bindings that use it.
+var globalHelpKeys = []struct {
+	label string
+	keys  []string
+}{
+	{"1-5", []string{"1", "2", "3", "4", "5"}},
+	{"c", []string{"c"}},
+	{"C", []string{"C"}},
+	{"tab", []string{"tab"}},
+	{"?", []string{"?"}},
+	{"/", []string{"/"}},
+	{"esc", []string{"esc"}},
+	{"R", []string{"R"}},
+	{"q, ctrl+c", []string{"q", "ctrl+c"}},
+	{"enter", []string{"enter"}},
+	{"up/down, j/k", []string{"up", "down", "j", "k"}},
+	{"left/right", []string{"left", "right"}},
+}
+
+func (m Model) globalHelpLines(w int) []string {
+	var out []string
+	for _, group := range globalHelpKeys {
+		var helps []string
+		for _, binding := range keyBindings {
+			if m.overlayContext(binding.context) {
+				continue
+			}
+			if !bindingUsesAnyKey(binding, group.keys) {
+				continue
+			}
+			helps = appendUnique(helps, m.bindingHelpText(binding))
+		}
+		// tab is only bound in the forms; the Global list still names it.
+		if len(helps) == 0 {
+			for _, binding := range keyBindings {
+				if bindingUsesAnyKey(binding, group.keys) {
+					helps = appendUnique(helps, m.bindingHelpText(binding))
+				}
+			}
+		}
+		if len(helps) == 0 {
+			continue
+		}
+		out = append(out, m.helpRow(group.label, strings.Join(helps, "; "), w)...)
+	}
+	return out
+}
+
+func bindingUsesAnyKey(binding keyBinding, keys []string) bool {
+	for _, key := range keys {
+		if key == " " {
+			key = "space"
+		}
+		for _, k := range binding.keys {
+			if k == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func appendUnique(list []string, value string) []string {
+	for _, item := range list {
+		if item == value {
+			return list
+		}
+	}
+	return append(list, value)
+}
+
+func (m Model) bindingHelpText(binding keyBinding) string {
+	help := binding.help
+	if help == "" {
+		help = binding.label
+	}
+	return strings.ReplaceAll(help, "CTO", m.ctoTitle())
+}
+
+func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []string {
+	var out []string
+	for _, binding := range keyBindings {
+		if binding.context != context {
+			continue
+		}
+		if skipGlobal {
+			global := false
+			for _, group := range globalHelpKeys {
+				if bindingUsesAnyKey(binding, group.keys) {
+					global = true
+					break
+				}
+			}
+			if global {
+				continue
+			}
+		}
+		help := m.bindingHelpText(binding)
+		if context == contextHelp && binding.action == actNotifications {
+			state := "on"
+			if m.snap.NotificationsDisabled {
+				state = "off"
+			}
+			help = "desktop notifications: " + state + " (toggle)"
+		}
+		keys := strings.Join(binding.keys, ", ")
+		if ansi.StringWidth(keys) <= 20 {
+			out = append(out, m.helpRow(keys, help, w)...)
+			continue
+		}
+		for _, key := range binding.keys {
+			out = append(out, m.helpRow(key, help, w)...)
+		}
+	}
+	return out
+}
+
+func (m Model) helpRow(keys, help string, w int) []string {
+	const indent = 23
+	lines := wrap(help, max(w-indent, 8))
+	out := []string{"  " + sTitle.Render(cell(keys, 20)) + " " + lines[0]}
+	for _, line := range lines[1:] {
+		out = append(out, strings.Repeat(" ", indent)+line)
+	}
+	return out
+}
+
+// openHelp shows the overlay at its first line.
+func (m *Model) openHelp() {
+	m.help = true
+	m.helpScroll = 0
 }
 
 // helpView keeps the heading and reserves rows for scroll indicators.

@@ -63,7 +63,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 	}
 
 	help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
-	for _, want := range []string{"focus the Atlas box", "enter opens the full Atlas", "c, C"} {
+	for _, want := range []string{"focus the Atlas box", "enter opens the full Atlas", "open the Atlas session"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help lacks %q:\n%s", want, help)
 		}

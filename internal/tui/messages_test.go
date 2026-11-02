@@ -225,13 +225,13 @@ func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
 			t.Errorf("worker summary is missing %q: %q", want, line)
 		}
 	}
-	m = keys(m, "w")
+	m = keys(m, "l")
 	if got := m.messageConversations(); len(got) != 1 || got[0].worker {
-		t.Fatalf("w should hide worker threads, got %+v", got)
+		t.Fatalf("l should hide worker threads, got %+v", got)
 	}
-	m = keys(m, "w")
+	m = keys(m, "l", "l")
 	if got := m.messageConversations(); len(got) != 3 {
-		t.Fatalf("w should show worker threads again, got %+v", got)
+		t.Fatalf("the third l should show worker threads again, got %+v", got)
 	}
 }
 
@@ -306,15 +306,15 @@ func TestMessageSystemEventsToggle(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "node.connected", Hostname: "build", Time: t0}}})
 	v := ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
-	if !strings.Contains(v, "1 system event · e to show") || strings.Contains(v, "build connected") {
+	if !strings.Contains(v, "1 system event · l filter: all") || strings.Contains(v, "build connected") {
 		t.Fatal(v)
 	}
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 2, Kind: "node.connected", Hostname: "test", Time: t0}}})
 	v = ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
-	if !strings.Contains(v, "2 system events · e to show") {
+	if !strings.Contains(v, "2 system events · l filter: all") {
 		t.Fatal(v)
 	}
-	m = keys(m, "e")
+	m = keys(m, "l", "l")
 	v = ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
 	if !strings.Contains(v, "build connected") {
 		t.Fatal(v)
@@ -397,7 +397,7 @@ func TestConversationScreens(t *testing.T) {
 			t.Fatal(v)
 		}
 		golden(t, fmt.Sprintf("messages_conversations_%dx%d", size[0], size[1]), v)
-		m = keys(m, "e")
+		m = keys(m, "l", "l")
 		golden(t, fmt.Sprintf("messages_events_%dx%d", size[0], size[1]), m.View())
 	}
 }
@@ -408,7 +408,7 @@ func TestConversationFeedIncludesSessionDisconnect(t *testing.T) {
 	m.focus = focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "session.disconnected", SessionID: "s_0000000000000001", Time: t0}}})
-	m = keys(m, "e")
+	m = keys(m, "l", "l")
 	v := ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
 	if !strings.Contains(v, "tenebrae-53 disconnected") {
 		t.Fatal(v)

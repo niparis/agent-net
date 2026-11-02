@@ -255,7 +255,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	key := keyAction(contextGraph, k.String())
 	if key == "help" {
-		m.help = true
+		m.openHelp()
 		return m, nil
 	}
 	if key == actQuit {
@@ -295,21 +295,12 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		action = graphview.Pan{DY: -2}
 	case "pan down":
 		action = graphview.Pan{DY: 2}
-	case "fit":
-		w, h := m.graphSize()
-		action = graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "previous link":
 		w, h := m.graphSize()
 		action = graphview.SelectPrev{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "next link":
 		w, h := m.graphSize()
 		action = graphview.SelectNext{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
-	case "node tools":
-		return m.startNodeTools(m.graphState.Graph.Selected())
-	case "orbit":
-		action = graphview.ToggleOrbit{}
-	case "pause":
-		action = graphview.TogglePause{}
 	case "new session":
 		name := m.graphState.Graph.Selected()
 		if node, ok := m.mapNode(name); ok && node.Kind == "component" {
@@ -371,7 +362,7 @@ func (m Model) graphView(w, h int) []string {
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
 	out = append(out, sDim.Render(graphLegend(w)))
 	out = append(out, graphStatusLine(w, scene))
-	out = append(out, sDim.Render(graphHintLine(w, scene.Paused)))
+	out = append(out, sDim.Render(graphHintLine(w)))
 	return out
 }
 
@@ -449,18 +440,14 @@ func (m Model) graphTalkCmd() tea.Cmd {
 }
 
 // graphHintLine drops whole table hints, starting with the least important.
-func graphHintLine(w int, paused bool) string {
+func graphHintLine(w int) string {
 	direction := bindingPairHint(contextGraph, "select left", "select right")
 	direction.label, direction.prio = "select", 1
 	zoom := bindingPairHint(contextGraph, "zoom in", "zoom out")
 	zoom.label, zoom.prio = "zoom", 1
-	fit, orbit := bindingHint(contextGraph, "fit"), bindingHint(contextGraph, "orbit")
-	tools, card := bindingHint(contextGraph, "node tools"), bindingHint(contextGraph, "open card")
-	fit.prio, orbit.prio, tools.prio, card.prio = 2, 2, 1, 2
-	hs := []hint{direction, zoom, fit, orbit, tools, card, bindingHint(contextGraph, "help")}
-	if paused {
-		hs = []hint{{"paused", "·", 0}, direction, zoom, fit, tools, card, bindingHint(contextGraph, "help")}
-	}
+	card := bindingHint(contextGraph, "open card")
+	card.prio = 2
+	hs := []hint{direction, zoom, card, bindingHint(contextGraph, "help")}
 	text := func() string {
 		parts := make([]string, 0, len(hs))
 		for _, h := range hs {

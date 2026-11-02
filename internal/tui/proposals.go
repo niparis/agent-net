@@ -217,7 +217,7 @@ func (m Model) proposalDetailKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case actDown:
 		m.proposalDetail.scroll++
 	case "help":
-		m.help = true
+		m.openHelp()
 	case "approve all":
 		m.openProposalConfirm()
 	case "approve", "decline":
@@ -253,7 +253,7 @@ func (m Model) proposalHistoryKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "back":
 		m.proposalHistory = false
 	case "help":
-		m.help = true
+		m.openHelp()
 	case actUp:
 		m.proposalHistoryIndex = max(0, m.proposalHistoryIndex-1)
 	case actDown:

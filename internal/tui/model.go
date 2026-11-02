@@ -132,17 +132,16 @@ type Model struct {
 	hiddenNodes               map[string]bool
 	showHiddenSessions        bool
 	showHiddenNodes           bool
-	// events says how much of the quiet session and worker news the feed
-	// shows (l).
-	events    feedEvents
-	filter    string
-	uiFilter  string
-	filtering bool
-	input     textinput.Model
-	focus     focus
-	feedCur   int // index in the feed items when the feed has focus
-	open      *openMsg
-	quitting  bool
+	settingsMenuOn            bool
+	settingsMenu              int
+	filter                    string
+	uiFilter                  string
+	filtering                 bool
+	input                     textinput.Model
+	focus                     focus
+	feedCur                   int // index in the feed items when the feed has focus
+	open                      *openMsg
+	quitting                  bool
 
 	// Actions (forms.go).
 	mode           inputMode
@@ -189,11 +188,10 @@ type Model struct {
 	mp    mapState
 	// tl is the Tools tab (tools.go).
 	tl toolsState
-	// help shows the key overlay; learned shows the playbook notes; expand
-	// gives the detail pane the room of the message feed.
+	// help shows the key overlay; expand gives the detail pane the room of
+	// the message feed.
 	help       bool
 	helpScroll int
-	learned    bool
 	expand     bool
 }
 
@@ -1047,6 +1045,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.inboxOn {
 		return m.inboxKey(k)
 	}
+	if m.settingsMenuOn {
+		return m.settingsMenuKey(k)
+	}
 	if m.help {
 		switch keyAction(contextHelp, k.String()) {
 		case actTips:
@@ -1091,16 +1092,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		room := max(max(m.height, 10)-4, 1)
 		m.helpScroll = min(max(m.helpScroll, 0), max(len(m.helpContent(max(m.width, 40)))-room, 0))
-		return m, nil
-	}
-	if m.learned {
-		switch keyAction(contextLearned, k.String()) {
-		case actQuit:
-			m.quitting = true
-			return m, tea.Quit
-		case actClose:
-			m.learned = false
-		}
 		return m, nil
 	}
 	if m.focus == focusCTO && m.cto != nil {
@@ -1258,7 +1249,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.quotaSelected = max(0, m.quotaSelected-1)
 			m.quotaScroll = max(0, m.quotaScroll-1)
 		case "help":
-			m.help = true
+			m.openHelp()
 		case "refresh":
 			if !m.fetching {
 				m.fetching = true
@@ -1363,36 +1354,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.tab == sessionsTab {
 			return m.startSessionForm()
 		}
-	case "system events":
-		if m.tab == messagesTab {
-			m.messageShowEvents = !m.messageShowEvents
-			return m, nil
-		}
 	case "defect":
 		if m.tab == messagesTab {
 			return m.startDefect()
 		}
-	case "worker threads":
+	case "cycle message filter":
 		if m.tab == messagesTab {
-			m.hideWorkerThreads = !m.hideWorkerThreads
-			if m.convLoaded {
-				m.rebuildConversations()
-				m.convSel = min(m.convSel, max(len(m.convs)-1, 0))
-				return m, nil
-			}
-			rows := m.messageConversations()
-			selected := false
-			for _, row := range rows {
-				for _, i := range row.items {
-					if i == m.feedCur {
-						selected = true
-					}
-				}
-			}
-			if !selected && len(rows) > 0 {
-				m.feedCur = rows[0].items[0]
-			}
-			return m, nil
+			return m.cycleMessageFilter()
 		}
 	case "stop worker":
 		return m.startConfirm()
@@ -1400,11 +1368,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.tab == sessionsTab && m.focus == focusSessions {
 			return m.toggleHiddenSession()
 		}
-	case "show hidden":
-		if m.tab == sessionsTab && m.focus == focusSessions {
-			m.showHiddenSessions = !m.showHiddenSessions
-			m.ensureSelection()
-			m.fixScroll()
+	case "session settings":
+		if m.tab == sessionsTab {
+			m.openSettingsMenu()
 		}
 	case "request rule":
 		return m.startTrust()
@@ -1414,10 +1380,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startIntegrations()
 	case "rename machine":
 		return m.startRename()
-	case "learned notes":
-		m.learned = true
 	case "help":
-		m.help = true
+		m.openHelp()
 	case "details":
 		m.expand = !m.expand
 		m.fixScroll()
@@ -1446,9 +1410,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeOnly = !m.activeOnly
 		m.ensureSelection()
 		m.fixScroll()
-	case "event filter":
-		m.events = (m.events + 1) % 3
-		m.feedClamp()
+	case "cycle view":
+		m.cycleSessionView()
+		m.ensureSelection()
+		m.fixScroll()
 	case "message body", "open session":
 		if m.focus == focusFeed {
 			if it := m.selectedConversationItem(); it != nil && it.isMessage() {
@@ -1952,7 +1917,7 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	m.inboxOn, m.help, m.learned, m.mapOn = false, false, false, false
+	m.inboxOn, m.help, m.mapOn, m.settingsMenuOn = false, false, false, false
 	m.open = nil
 	m.mode = modeNormal
 	m.filtering = false
@@ -2042,5 +2007,5 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) graphMouseActive() bool {
-	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.learned
+	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.settingsMenuOn
 }

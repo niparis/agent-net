@@ -1,10 +1,10 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages · conversations─────────────────────────────────────────────────────╮
+╭─Messages · filter all────────────────────────────────────────────────────────╮
 │ ▸ tenebrae-53 → worker: Polish the sessions panel and ma… 2 messages · ended │
 │   tenebrae-53 → worker: Review the deploy                  1 message · ended │
 │   strategies ↔ web · A conversation whose sides are sti… 1 message · 30m ago │
-│ 0 system events · e to show · w hide workers                                 │
+│ 0 system events · l filter: all                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │   13:55 tenebrae-53                                                          │

@@ -36,13 +36,19 @@ func TestKeyBindingsUnique(t *testing.T) {
 }
 
 func TestHelpListsEveryBinding(t *testing.T) {
-	help := strings.Join(newModel(120, 34).helpContent(120), "\n")
+	m := newModel(120, 34)
+	help := strings.Join(strings.Fields(strings.Join(m.helpContent(120), " ")), " ")
 	for _, binding := range keyBindings {
-		if !strings.Contains(help, strings.ReplaceAll(string(binding.context), "CTO", "CTO")) {
-			t.Errorf("help omits context %q", binding.context)
+		helpText := binding.help
+		if helpText == "" {
+			helpText = binding.label
 		}
-		if !strings.Contains(help, binding.label) {
-			t.Errorf("help omits %q: %q", binding.context, binding.label)
+		helpText = strings.ReplaceAll(helpText, "CTO", m.ctoTitle())
+		if binding.action == actNotifications {
+			helpText = "desktop notifications"
+		}
+		if !strings.Contains(help, helpText) {
+			t.Errorf("help omits %q: %q", binding.context, helpText)
 		}
 	}
 }

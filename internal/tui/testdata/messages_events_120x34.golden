@@ -1,16 +1,10 @@
-1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages · conversations───────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
-│   tenebrae-53 ↔ strategies · The deploy is… 1 message · 6m ago ││   13:56 tenebrae-53                                │
-│ ▸ tenebrae-53 → worker: Polish the sessions… 4 messages · done ││ Review the change                                  │
-│   14:00 build disconnected                                     ││ Check the tests.                                   │
-│   13:55 build connected                                        ││   13:58 worker 8                                   │
-│                                                                ││ ✓ done · 1h5m · 15 files                           │
-│                                                                ││   14:02 tenebrae-53                                │
-│                                                                ││ Polish the sessions panel                          │
-│                                                                ││ Run the checks.                                    │
-│                                                                ││ ▸ 14:04 worker 8                                   │
-│                                                                ││ ✓ done · 12m · 3 files                             │
+╭─Messages · filter with system events───────────────────────────╮╭─Conversation───────────────────────────────────────╮
+│ ▸ tenebrae-53 ↔ strategies · The deploy is… 1 message · 6m ago ││ ▸ 13:59 tenebrae-53                                │
+│   tenebrae-53 → worker: Polish the sessions… 4 messages · done ││ The deploy is ready.                               │
+│   14:00 build disconnected                                     ││                                                    │
+│   13:55 build connected                                        ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
@@ -23,7 +17,13 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
-│ 2 system events · e to hide · w hide workers                   ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│ 2 system events · l filter: with system events                 ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  enter body  f defect  c CTO  ? help  q quit
+up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit

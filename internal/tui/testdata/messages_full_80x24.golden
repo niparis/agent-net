@@ -1,13 +1,13 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages · conversations─────────────────────────────────────────────────────╮
+╭─Messages · filter all────────────────────────────────────────────────────────╮
 │ ▸ tenebrae-53 ↔ strategies · Stored conversation 00: keep t… 1 message · now │
 │   tenebrae-53 ↔ strategies · Stored conversation 01: ke… 2 messages · 7m ago │
 │   you → worker: Polish the sessions panel and make the… 3 messages · running │
 │   tenebrae-53 ↔ strategies · Stored conversation 03: k… 4 messages · 21m ago │
 │   tenebrae-53 ↔ strategies · Stored conversation 04: k… 5 messages · 28m ago │
 │   tenebrae-53 ↔ strategies · Stored conversation 05: ke… 1 message · 35m ago │
-│ 0 system events · e to show · w hide workers                                 │
+│ 0 system events · l filter: all                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │   14:03 tenebrae-53                                                          │

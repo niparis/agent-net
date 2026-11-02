@@ -1,40 +1,40 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   more above
- Everywhere
+  enter                add
+  backspace, ctrl+h    delete
+ CTO box
+  ctrl+], tab          back to Sessions
+  esc                  skip tip
+  enter                opens the full CTO
+  pgup, ctrl+u         scroll
+  pgdown, ctrl+d       scroll
+  m                    model
+  n                    new
+  u                    undo
+  w                    drive
+ help
+  T                    toggle tips
+  R                    restart tips
   N                    desktop notifications: on (toggle)
-  T                    turn onboarding tips off or on
-  R                    restart onboarding from the first step
-  ?                    this help
-  q, ctrl+c            quit
-
- Reading the screen
-  CPU                  machine: all cores. session: one core. (x%): 5 min avg
-  red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
-  shared               one process many sessions share; its figures are on the machine line
-  dim row              offline, or idle for more than an hour
-  ?                    a figure that is missing or older than 45 seconds
-  └                    a reply, under the message it answers
-  "..."                the first line of the body, when this machine is in the conversation
-
- Bindings
- global
-  1                    Sessions
-  2                    Graph
-  3                    Quotas
-  4                    Messages
-  5                    Tools
-  c                    open CTO
-  C                    focus CTO box
-  ctrl+c               quit
- Sessions
   q                    quit
-  up, k                select
-  down, j              select
-  pgup                 page
-  pgdown               page
-  home, g              first row
-  end                  last row
-  enter                open
-  m                    msg
-  more below
+  esc, ?               close help
+  down, j              scroll down
+  up, k                scroll up
+  pgdown               page down
+  pgup                 page up
+  home, g              first line
+  end, G               last line
+ confirmations
+  enter, y, Y          yes
+  esc, n, N            no
+ forms
+  enter                submit or next field
+  esc                  cancel
+  tab                  move to the next field
+  down                 next field
+  shift+tab, up        previous field
+  left                 change choice
+  right                change choice
+  space                toggle
+
 up/down scroll  esc close help  q quit

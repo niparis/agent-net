@@ -57,22 +57,12 @@ func TestGraphTabKeys(t *testing.T) {
 	if m.graphState.Camera.Zoom <= old.Zoom || m.graphState.Camera.Center.X >= old.Center.X {
 		t.Fatal("zoom or pan failed")
 	}
-	m = keys(m, "0")
-	if m.graphState.Camera.Zoom != old.Zoom {
-		t.Fatal("fit failed")
-	}
-	m = keys(m, "t")
-	if m.tab != toolsTab || m.tl.search != "node:"+chosen {
-		t.Fatal("t did not open node Tools")
-	}
-	m = keys(m, "2")
-	m = keys(m, "o")
-	if !m.graphState.Orbit {
-		t.Fatal("orbit failed")
-	}
-	m = keys(m, " ")
-	if !m.graphState.Paused {
-		t.Fatal("pause failed")
+	// Fit happens when the graph loads; 0 is no longer a key.
+	zoomed := m.graphState.Camera.Zoom
+	tools := m.tl.search
+	m = keys(m, "0", "t", "o", " ")
+	if m.graphState.Camera.Zoom != zoomed || m.tab != graphTab || m.tl.search != tools || m.graphState.Orbit || m.graphState.Paused {
+		t.Fatal("a removed graph key still changed the graph")
 	}
 	m = keys(m, "enter")
 	if !m.mapOn || m.mp.selected != chosen {
@@ -82,7 +72,7 @@ func TestGraphTabKeys(t *testing.T) {
 	next, cmd := n.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
 	n = next.(Model)
 	if n.tab != graphTab || cmd == nil {
-		t.Fatal("4 did not open graph")
+		t.Fatal("2 did not open graph")
 	}
 }
 func TestGraphGoldens(t *testing.T) {
@@ -195,36 +185,26 @@ func TestGraphTalkSnapshotReplaysOnlyNewerFeed(t *testing.T) {
 }
 
 func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
-	for _, paused := range []bool{false, true} {
-		m := graphModel(80, 24)
-		m.graphState.Paused = paused
-		lines := m.graphView(80, 16)
-		line := ansi.Strip(lines[len(lines)-1])
-		if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "t tools") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
-			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
-		}
-		if strings.Contains(line, "space pause") || !strings.Contains(line, "left/right select") {
-			t.Fatalf("paused=%v: incorrect hint line %q", paused, line)
-		}
-		if paused && (!strings.Contains(line, "paused ·") || strings.Contains(line, "o orbit")) {
-			t.Fatalf("paused=%v: wrong paused line %q", paused, line)
-		}
-		if !paused && !strings.Contains(line, "o orbit") {
-			t.Fatalf("running line has no orbit hint %q", line)
-		}
+	m := graphModel(80, 24)
+	lines := m.graphView(80, 16)
+	line := ansi.Strip(lines[len(lines)-1])
+	if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "enter card") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
+		t.Fatalf("invalid hint line %q", line)
+	}
+	if !strings.Contains(line, "left/right select") || strings.Contains(line, "space pause") || strings.Contains(line, "o orbit") || strings.Contains(line, "t tools") {
+		t.Fatalf("incorrect hint line %q", line)
 	}
 }
-
 func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 	for _, tc := range []struct {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"left/right select", "+/- zoom", "0 fit", "o orbit", "t tools", "enter card", "? help"}, []string{"space pause"}},
-		{60, []string{"left/right select", "+/- zoom", "0 fit", "t tools", "? help"}, []string{"enter card", "o orbit"}},
-		{40, []string{"left/right select", "+/- zoom", "? help"}, []string{"t tools", "0 fit", "o orbit", "enter card"}},
+		{80, []string{"left/right select", "+/- zoom", "enter card", "? help"}, []string{"0 fit", "o orbit", "t tools", "space pause"}},
+		{60, []string{"left/right select", "+/- zoom", "enter card", "? help"}, []string{"0 fit", "o orbit", "t tools"}},
+		{40, []string{"left/right select", "+/- zoom", "? help"}, []string{"enter card", "0 fit", "o orbit", "t tools"}},
 	} {
-		line := graphHintLine(tc.width, false)
+		line := graphHintLine(tc.width)
 		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? help") {
 			t.Fatalf("width %d: %q", tc.width, line)
 		}
@@ -240,7 +220,6 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		}
 	}
 }
-
 func TestGraphStatusLineNamesSelectedNode(t *testing.T) {
 	m := graphModel(120, 34)
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-01"})
@@ -276,13 +255,17 @@ func TestGraphHelpDescribesNavigation(t *testing.T) {
 	m := graphModel(120, 34)
 	m = keys(m, "?")
 	text := strings.Join(m.helpContent(120), " ")
-	for _, want := range []string{"arrows", "shift+arrows", ", ."} {
+	for _, want := range []string{"shift+left", "shift+right", ",", ".", "open the selected agent card", "Legend"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help missing %q: %s", want, text)
 		}
 	}
+	for _, gone := range []string{"o orbit", "space pause", "t tools"} {
+		if strings.Contains(text, gone) {
+			t.Errorf("help still lists %q", gone)
+		}
+	}
 }
-
 func TestGraphMouseSelectsLabelAndIgnoresEmpty(t *testing.T) {
 	m := graphModel(120, 34)
 	w, h := m.graphSize()

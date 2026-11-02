@@ -392,14 +392,11 @@ func mapLegendLines(w int) []string {
 	return out
 }
 
-// mapCardBody is the scrollable part of the card: the optional legend, the
-// charter, the learned changes and the effective rules, each in its own
-// section.
+// mapCardBody is the scrollable part of the card: the charter, the learned
+// changes and the effective rules, each in its own section. The legend lives
+// in the help overlay.
 func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	var out []string
-	if m.mp.legend {
-		out = append(out, mapLegendLines(w)...)
-	}
 	out = append(out, section("Charter", w))
 	charter := mapCharterBlock(node.Charter, w)
 	if len(charter) == 0 {
@@ -414,7 +411,7 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 
 // mapFocusView draws the selected node as a card: name, maturity, the start of
 // the purpose and the sessions; its edges; and a scrolling body with the
-// charter, the rules, the learned changes and the optional legend. The recent
+// charter, the rules and the learned changes. The recent
 // changes stay on the last row.
 func (m Model) mapFocusView(w, h int) []string {
 	var head []string

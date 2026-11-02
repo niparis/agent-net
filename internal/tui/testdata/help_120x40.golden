@@ -1,40 +1,40 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+ Global keys
+  1-5                  Sessions; Graph; Quotas; Messages; Tools
+  c                    open the CTO session
+  C                    focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip
+  tab                  move to the next field; back to Sessions
+  ?                    help
+  /                    filter; find a node; enter selects the first match and esc cancels
+  esc                  back; clear or back; Graph; clear
+  R                    refresh; rescan
+  q, ctrl+c            quit
+  enter                go into the selected session in herdr (ctrl+] returns on fallback), or run the selected row's
+                       action; detail; open the selected message body; open the selected agent card; select the first
+                       match; open Sessions filtered to this agent's project; open the difference plan; open the item
+                       details and actions
+  up/down, j/k         move the selection; select a conversation; select a subscription; move the selection between
+                       nodes; move
+  left/right           select the previous message in the conversation; select the next message in the conversation;
+                       agent; move the selection between nodes; column
+
  Sessions
-  1-5                  switch between Sessions, Graph, Quotas, Messages and Tools
-  up/down, j/k         select a session
-  pgup/pgdn, home/end  page, first, last
-  enter                open session in herdr (ctrl+] returns on fallback)
+  pgup                 page
+  pgdown               page
+  home, g              first row
+  end                  last row
   m                    send a message to the session as yourself
-  n                    start a session in herdr: project, harness, model, folder and first message (a form). Empty first
-                       message starts it and enters it; text starts it in the background and sends it.
+  n                    start a session in herdr: project, harness, model, folder and first message (a form)
   x                    stop the selected worker or session
-  h, H                 hide or unhide the session; show hidden sessions (dim)
-  t                    cycle request rule: normal, ask, auto
-  p                    delegation policy: subagent or worker for code changes (a form)
-  I                    integrations for all machines: 7 checkboxes (a form)
-  c, C                 c opens the CTO; C focuses its box: enter opens the full CTO, ctrl+] returns, esc skips a tip; n
-                       new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll
-  N                    name the machine of the session (every machine sees it; empty resets)
-  L                    what the network learned: playbook notes and their support
-  /                    filter (words match name, project, branch, model, ...)
-  o, d                 show offline sessions; toggle the selected session details
-  A                    active only: hide sessions idle for over an hour
-  R                    refresh now
-  proposal             enter details; a approve; r decline; A approve all after confirmation
-
- Messages
-  up/down              select a conversation
-  left/right           select a message in the conversation
-  enter                open the selected message body
-  end                  select the latest message
-  f                    on a worker conversation: report a defect found later
-  w                    show or hide worker threads
-  e, l                 show system events; cycle the event filter
-  R                    refresh now
-  states               pending ... delivered ✓ replied ↩ failed ✗
-
- Quotas
-  up/down, j/k         select a subscription and scroll the panels
+  h                    hide or unhide the selected session
+  S                    session settings: request rule, delegation policy, integrations, machine name
+  v                    cycle the view: active only, all, all with offline, all with offline and hidden
+  d                    show or hide the selected session details
+  i                    open the inbox
+ held request
+  a                    approve
+  r                    refuse
+ learned suggestion
   more below
 up/down scroll  esc close help  q quit

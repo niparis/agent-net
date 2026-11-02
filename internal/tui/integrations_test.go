@@ -9,8 +9,6 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func keyI() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("I")} }
-
 func spaceKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")} }
 
 func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
@@ -18,9 +16,10 @@ func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
 	src.intg = protocol.Integrations{HintHook: true}
 	src.intgSet = true
 
-	m, cmd := press(m, keyI())
+	m = keys(m, "S", "down", "down")
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeIntegrations || cmd == nil {
-		t.Fatalf("I must open the form and read the answers, mode %v", m.mode)
+		t.Fatalf("the settings menu must open the form and read the answers, mode %v", m.mode)
 	}
 	m = send(m, cmd())
 	screen := strings.Join(lines(m.View()), "\n")
@@ -61,7 +60,8 @@ func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
 
 func TestIntegrationsFormEscCancels(t *testing.T) {
 	m, src := workerModel(120, 40)
-	m, cmd := press(m, keyI())
+	m = keys(m, "S", "down", "down")
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = send(m, cmd())
 	m, _ = press(m, spaceKey())
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEsc})

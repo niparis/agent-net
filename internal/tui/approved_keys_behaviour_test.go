@@ -113,8 +113,9 @@ func TestApproved08OutcomeOIsNotOverrule(t *testing.T) {
 	if cmd != nil || src.action != "" {
 		t.Fatalf("o still overrules: action %q", src.action)
 	}
+	next = keys(next, "v")
 	if !next.showOffline {
-		t.Fatal("o no longer shows offline sessions")
+		t.Fatal("v no longer shows offline sessions")
 	}
 }
 

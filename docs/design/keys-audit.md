@@ -354,4 +354,26 @@ is in decision 0038 and the CTO box is in decision
 does nothing there.
 
 The focused CTO box reserves `w` for the graph window (decision 0040). This key
-was free there; the Messages worker-thread filter keeps its existing `w`.
+was free there; the Messages worker-thread filter moved to the `l` cycle in
+section 5.
+
+## 5. Keys cut on the owner's request
+
+On 2026-11-02 the owner approved a smaller map and a help screen generated
+from the binding table. These direct keys were cut:
+
+- Sessions: `t`, `p`, `I` and `N` now live in one `S` settings menu. `L` was
+  removed; learned notes stay on the Graph agent card. `o`, `A` and `H` were
+  replaced by one `v` view cycle: active only, all, all with offline, all with
+  offline and hidden.
+- Messages: `w` and `e` were replaced by one `l` filter cycle: all, without
+  worker threads, with system events. The old event-type cycle was dropped
+  because it did not fit that cycle.
+- Graph: `o` (orbit), Space (pause), `t` (Tools filtered to the node) and `0`
+  (fit) were removed. The graph fits itself when the tab opens.
+- Agent card: `!` (legend) was removed. The legend text now sits in the help
+  overlay under Graph.
+
+`helpContent` is now built from `keyBindings`. It lists Global keys first, then
+the current tab, then the other tabs in tab order, then In overlays. A global
+key is not repeated in a tab section. No key row is written by hand.
