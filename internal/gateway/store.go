@@ -465,6 +465,42 @@ CREATE TABLE IF NOT EXISTS app_tokens (
  expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS app_tokens_app ON app_tokens (app_id);
 CREATE INDEX IF NOT EXISTS app_tokens_expiry ON app_tokens (expires_at);
+`, `
+-- OAuth clients and approvals. Repeating the app DDL also makes this
+-- migration safe to replay when recovering an incomplete app migration.
+CREATE TABLE IF NOT EXISTS apps (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK (kind IN ('owner_app', 'bot')),
+ client_id TEXT NOT NULL, client_name TEXT NOT NULL,
+ redirect_uris TEXT NOT NULL DEFAULT '[]',
+ created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER,
+ grants TEXT NOT NULL DEFAULT '[]');
+CREATE UNIQUE INDEX IF NOT EXISTS apps_active_name ON apps (name) WHERE revoked_at IS NULL;
+CREATE TABLE IF NOT EXISTS app_tokens (
+ hash TEXT PRIMARY KEY, app_id TEXT NOT NULL REFERENCES apps(id),
+ type TEXT NOT NULL CHECK (type IN ('access', 'refresh')),
+ expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS app_tokens_app ON app_tokens (app_id);
+CREATE INDEX IF NOT EXISTS app_tokens_expiry ON app_tokens (expires_at);
+CREATE TABLE IF NOT EXISTS oauth_clients (
+ client_id TEXT PRIMARY KEY, client_name TEXT NOT NULL, redirect_uris TEXT NOT NULL,
+ grant_types TEXT NOT NULL, response_types TEXT NOT NULL,
+ token_endpoint_auth_method TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS oauth_pending (
+ id TEXT PRIMARY KEY, user_code TEXT NOT NULL, client_id TEXT NOT NULL,
+ redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL, state TEXT NOT NULL,
+ resource TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+ status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'refused')),
+ app_id TEXT NOT NULL DEFAULT '', approved_at INTEGER);
+CREATE UNIQUE INDEX IF NOT EXISTS oauth_pending_user_code ON oauth_pending (user_code) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS oauth_pending_reuse ON oauth_pending (client_id, redirect_uri, approved_at);
+CREATE TABLE IF NOT EXISTS oauth_codes (
+ hash TEXT PRIMARY KEY, pending_id TEXT NOT NULL, app_id TEXT NOT NULL,
+ client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL,
+ expires_at INTEGER NOT NULL, used_at INTEGER);
+CREATE INDEX IF NOT EXISTS oauth_codes_pending ON oauth_codes (pending_id);
+CREATE TABLE IF NOT EXISTS oauth_code_misses (source TEXT NOT NULL, attempted_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS oauth_code_misses_source ON oauth_code_misses (source, attempted_at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

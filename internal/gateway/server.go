@@ -25,6 +25,8 @@ import (
 
 type Options struct {
 	DataDir string
+	// PublicURL is the externally reachable base URL for connected apps.
+	PublicURL string
 	// DistDir holds the agent-net-{os}-{arch} binaries that /install serves.
 	DistDir string
 	// SANs are extra host names or IPs for the server certificate.
