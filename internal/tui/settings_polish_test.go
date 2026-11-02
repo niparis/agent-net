@@ -32,28 +32,30 @@ func TestSettingsTunnelRowAvailability(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		status appsPublicStatus
-		want   bool
+		want   string
 	}{
-		{"unknown", appsPublicStatus{}, false},
-		{"funnel on", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true, Port: 8443, URL: "https://node.example.ts.net:8443"}}, false},
-		{"funnel off", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{Port: 8443, URL: "https://node.example.ts.net:8443"}}, false},
-		{"not installed", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{Error: funnel.ErrNotInstalled.Error()}}, true},
-		{"not running", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{Error: funnel.ErrNotRunning.Error()}}, true},
-		{"manual", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true, URL: "https://my-tunnel.example"}}, true},
-		{"stopped funnel", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{Port: 8443, URL: "https://node.example.ts.net:8443", Error: funnel.ErrNotRunning.Error()}}, true},
+		{"off", appsPublicStatus{}, "Use your own tunnel URL"},
+		{"funnel on", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true, Port: 8443, URL: "https://node.example.ts.net:8443"}}, ""},
+		{"funnel off", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{Port: 8443, URL: "https://node.example.ts.net:8443"}}, "Use your own tunnel URL"},
+		{"not installed", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{Error: funnel.ErrNotInstalled.Error()}}, "Use your own tunnel URL"},
+		{"not running", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{Error: funnel.ErrNotRunning.Error()}}, "Use your own tunnel URL"},
+		{"manual on", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true, URL: "https://my-tunnel.example"}}, "Tunnel URL: https://my-tunnel.example"},
+		{"manual off", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{URL: "https://my-tunnel.example"}}, "Use your own tunnel URL"},
+		{"funnel on with error", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true, Port: 8443, URL: "https://node.example.ts.net:8443", Error: funnel.ErrNotRunning.Error()}}, ""},
+		{"on with no URL", appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true}}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newModel(120, 34)
 			m.tab = settingsTab
 			m.apps.public = tc.status
-			found := false
+			got := ""
 			for _, item := range m.settingsItems() {
 				if item.kind == "url" {
-					found = true
+					got = item.text
 				}
 			}
-			if found != tc.want {
-				t.Errorf("URL row present %t, want %t", found, tc.want)
+			if got != tc.want {
+				t.Errorf("URL row %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -143,12 +145,12 @@ func TestSettingsKeepsSelectedRowWhenTunnelAvailabilityChanges(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = settingsTab
 	m = selectSettingsKind(m, "add")
-	m = send(m, appsResult{op: "apps.public.status", raw: json.RawMessage(`{"error":"Tailscale is not running. Start it, then try again."}`)})
-	if got := m.settingsItems()[m.settingsRow].kind; got != "add" {
-		t.Fatalf("after URL row appeared: selected %q", got)
-	}
 	m = send(m, appsResult{op: "apps.public.status", raw: json.RawMessage(`{"on":true,"port":8443,"url":"https://node.example.ts.net:8443"}`)})
 	if got := m.settingsItems()[m.settingsRow].kind; got != "add" {
 		t.Fatalf("after URL row disappeared: selected %q", got)
+	}
+	m = send(m, appsResult{op: "apps.public.status", raw: json.RawMessage(`{"on":false,"port":8443,"url":"https://node.example.ts.net:8443"}`)})
+	if got := m.settingsItems()[m.settingsRow].kind; got != "add" {
+		t.Fatalf("after URL row appeared: selected %q", got)
 	}
 }

@@ -207,6 +207,8 @@ func TestSettingsGoldens(t *testing.T) {
 		m.apps.public.OtherRoutes = json.RawMessage(`[10000]`)
 		m.apps.apps = []connectedApp{{ID: "a1", Name: "phone", Kind: "owner_app", ClientName: "Safari"}, {ID: "a2", Name: "helper", Kind: "bot", ClientName: "Cursor"}}
 		golden(t, fmt.Sprintf("settings_%dx%d", w, h), m.View())
+		m.apps.public = appsPublicStatus{}
+		golden(t, fmt.Sprintf("settings_off_%dx%d", w, h), m.View())
 		s := newModel(w, h)
 		s, _ = press(s, tea.KeyMsg{Type: tea.KeyRight})
 		golden(t, fmt.Sprintf("sessions_cells_%dx%d", w, h), s.View())

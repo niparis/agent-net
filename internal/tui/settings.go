@@ -12,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -59,13 +58,11 @@ func (m Model) settingsItems() []settingsItem {
 			state += "   phone " + base + "/   bots " + base + "/mcp"
 		}
 	}
-	tunnelURL := m.apps.public.URL
-	if tunnelURL == "" {
-		tunnelURL = "not set"
-	}
 	items := []settingsItem{{0, "public", 0, "Internet access: " + state}}
-	if m.apps.public.Port == 0 && m.apps.public.URL != "" || strings.Contains(m.apps.public.Error, funnel.ErrNotInstalled.Error()) || strings.Contains(m.apps.public.Error, funnel.ErrNotRunning.Error()) {
-		items = append(items, settingsItem{0, "url", 0, "Tunnel URL: " + tunnelURL})
+	if !m.apps.public.On {
+		items = append(items, settingsItem{0, "url", 0, "Use your own tunnel URL"})
+	} else if m.apps.public.Port == 0 && m.apps.public.URL != "" {
+		items = append(items, settingsItem{0, "url", 0, "Tunnel URL: " + m.apps.public.URL})
 	}
 	items = append(items, settingsItem{0, "add", 0, "Add an app"})
 	for i, a := range m.apps.apps {
