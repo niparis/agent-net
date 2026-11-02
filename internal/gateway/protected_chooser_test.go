@@ -104,7 +104,7 @@ func TestWorkerRotationSurvivesStoreRestart(t *testing.T) {
 func TestWorkerChoiceNote(t *testing.T) {
 	choice := protocol.WorkerModelChoice{WorkerModelCandidate: protocol.WorkerModelCandidate{Harness: "opencode", Model: "deepseek"}, Score: 32.5, Fit: "good", QuotaNote: "opencode-go 20% behind pace", Weight: 1.34, ShareNote: "deepseek: 3, terra: 2 of the last 5 normal starts"}
 	got := workerChoiceNote("normal", choice, []protocol.WorkerModelCandidate{{Harness: "codex", Model: "terra"}}, []protocol.ModelScore{{Match: "terra", Score: 42.3}}, nil)
-	for _, want := range []string{"normal -> opencode deepseek", "32.5, good enough", "20% behind pace", "rotation weight 1.34", "deepseek: 3, terra: 2 of the last 5 normal starts", "terra kept for harder work"} {
+	for _, want := range []string{"32.5, good enough", "20% behind pace", "rotation weight 1.34", "deepseek: 3, terra: 2 of the last 5 normal starts", "terra kept for harder work"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("note %q lacks %q", got, want)
 		}

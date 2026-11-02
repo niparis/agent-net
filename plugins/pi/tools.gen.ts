@@ -908,7 +908,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start a worker session with a complete brief, or continue one. Only when the owner asked for a worker. touches is required: db, hot-path, ui, docs, tests, config or other.",
+    "description": "Start a worker session with a complete brief, or continue one. Only when the owner asked for a worker. The difficulty judge chooses the level; difficulty and touches are accepted for older callers but ignored.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -926,7 +926,7 @@ export const TOOL_CATALOG = [
             "hard",
             "very_complex"
           ],
-          "description": "Task difficulty for worker selection.",
+          "description": "Deprecated and ignored: the level comes from the difficulty judge.",
           "default": "normal"
         },
         "touches": {
@@ -943,7 +943,7 @@ export const TOOL_CATALOG = [
               "other"
             ]
           },
-          "description": "Areas affected by the work."
+          "description": "Deprecated and ignored: the level comes from the difficulty judge."
         },
         "project": {
           "type": "string",

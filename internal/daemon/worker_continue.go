@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -54,7 +55,6 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		TaskID: first(p.TaskID, first(r.TaskID, r.SessionID)), ContinuationPartial: r.DoneStatus != "" && r.DonePartial}
 	if len(p.Touches) > 0 {
 		l.Touches = p.Touches
-		l.DifficultyUsed, _ = protocol.WorkerEffectiveDifficulty(l.DifficultyAsked, l.Touches)
 	}
 	where := ""
 	switch {
@@ -100,10 +100,25 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		task += "\n\nAlso: " + p.Task
 	}
 	l.Task, l.RecordTask = task, record
+	// A continue keeps the judge label of the run it continues, unless the
+	// caller adds work to the brief. Then the new brief is assessed once,
+	// here, before the start is queued.
+	if p.Task == "" && p.Assessment != nil {
+		kept := *p.Assessment
+		kept.RunID = protocol.NewID("k")
+		kept.SessionID = ""
+		kept.StartedAt = time.Now().UnixNano()
+		kept.AssessedAt = time.Now().Unix()
+		kept.PickerLabel = protocol.WorkerLevel(&kept)
+		l.Assessment = &kept
+	} else {
+		l.Assessment = d.assessWorkerStart(ctx, path, task)
+	}
+	l.DifficultyAsked, l.DifficultyUsed = protocol.WorkerLevel(l.Assessment), protocol.WorkerLevel(l.Assessment)
 	out, err := d.startWorker(ctx, l)
 	if err != nil {
 		return none, err
 	}
 	out.Task = task
-	return protocol.WorkerContinued{WorkerLaunched: out, Project: r.Project, Path: path, Harness: harness, Model: model, Title: l.Title}, nil
+	return protocol.WorkerContinued{WorkerLaunched: out, Project: r.Project, Path: path, Harness: harness, Model: model, Title: l.Title, Assessment: l.Assessment}, nil
 }

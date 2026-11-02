@@ -165,7 +165,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := proposalSnapshot(t, st)
-		_, err := g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{Owner: own, WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "claude", Difficulty: "trivial", Touches: []string{"other"}}}, true)
+		_, err := g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{Owner: own, Level: "trivial", WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "claude"}}, true)
 		if err != nil {
 			t.Fatal(err)
 		}

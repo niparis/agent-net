@@ -20,7 +20,7 @@ func TestPhraseWorkerProtectedAndReadOnly(t *testing.T) {
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "gpt-fake", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "codex", Model: "gpt-fake"})
 	w.cli.mustCall(protocol.OpProtectedProvidersSet, protocol.ProtectedProviders{Providers: []string{"openai"}, Reason: "reserved"})
-	frame := protocol.WorkerStartFrame{Owner: w.ownerID(), RequireReadOnly: true, WorkerStartRequest: protocol.WorkerStartRequest{Touches: []string{"other"}, Project: "shop", Difficulty: "trivial", Isolation: protocol.IsolationNone, Task: "phrase these words"}}
+	frame := protocol.WorkerStartFrame{Owner: w.ownerID(), RequireReadOnly: true, WorkerStartRequest: protocol.WorkerStartRequest{Touches: []string{"other"}, Project: "shop", Isolation: protocol.IsolationNone, Task: "phrase these words"}, Level: "trivial"}
 	if _, err := w.d.call(context.Background(), "worker.start", frame); err == nil {
 		t.Fatal("protected provider was used")
 	}
@@ -102,7 +102,7 @@ func TestPhraseWorkerRespectsNoNetworkPolicy(t *testing.T) {
 	score := 23.3
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "gpt-fake", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "codex", Model: "gpt-fake"})
-	frame := protocol.WorkerStartFrame{Owner: w.ownerID(), RequireReadOnly: true, WorkerStartRequest: protocol.WorkerStartRequest{Touches: []string{"other"}, Project: "shop", Difficulty: "trivial", Isolation: protocol.IsolationNone, Task: "phrase these words"}}
+	frame := protocol.WorkerStartFrame{Owner: w.ownerID(), RequireReadOnly: true, WorkerStartRequest: protocol.WorkerStartRequest{Touches: []string{"other"}, Project: "shop", Isolation: protocol.IsolationNone, Task: "phrase these words"}, Level: "trivial"}
 	if _, err := w.d.call(context.Background(), "worker.start", frame); err == nil {
 		t.Fatal("background worker widened a no-network policy")
 	}

@@ -166,9 +166,6 @@ func (w *workerNode) start(req protocol.WorkerStartRequest) (protocol.WorkerStar
 
 // startDefault supplies a neutral area to legacy test cases.
 func (w *workerNode) startDefault(req protocol.WorkerStartRequest) (protocol.WorkerStartResult, error) {
-	if len(req.Touches) == 0 && req.Continue == "" {
-		req.Touches = []string{"other"}
-	}
 	raw, err := w.cli.call("worker_start", req)
 	var res protocol.WorkerStartResult
 	if err == nil {

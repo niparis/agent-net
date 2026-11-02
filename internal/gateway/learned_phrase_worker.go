@@ -56,7 +56,7 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 	}
 	req.Project = project.Path
 	req.Machine = project.NodeID
-	started, err := w.g.workerStart(ctx, nc, protocol.WorkerStartFrame{WorkerStartRequest: req, Owner: owner.SessionID, RequireReadOnly: true})
+	started, err := w.g.workerStart(ctx, nc, protocol.WorkerStartFrame{WorkerStartRequest: req, Owner: owner.SessionID, RequireReadOnly: true, Level: "trivial"})
 	if err != nil {
 		return "", err
 	}

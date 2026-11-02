@@ -10,15 +10,16 @@ import (
 )
 
 func TestWorkerAutomaticDifficulty(t *testing.T) {
+	setupShadowJudge(t, difficultyScoresJSON, false)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
+	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	score := 51.0
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m1"})
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Task: "x"})
 	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "hard ->") {
 		t.Fatalf("choice: %+v, %v", res, err)
 	}
@@ -109,11 +110,11 @@ func TestWorkerAutomaticChoosesHarness(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	score := 51.0
+	score := 42.3
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m1"})
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Difficulty: "hard", Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Task: "x"})
 	if err != nil || res.Model != "fake/m1" || res.Harness != "opencode" {
 		t.Fatalf("choice: %+v, %v", res, err)
 	}
@@ -140,7 +141,7 @@ func TestWorkerAutomaticPrefersRecentSuccess(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
-	score := 51.0
+	score := 42.3
 	for _, m := range []string{"fake/m1", "fake/m2"} {
 		w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: m, Score: &score})
 	}
@@ -151,7 +152,7 @@ func TestWorkerAutomaticPrefersRecentSuccess(t *testing.T) {
 	if err := g.gw.Store().RecordModelSuccess(w.node.d.NodeID(), "opencode", "fake/m2"); err != nil {
 		t.Fatal(err)
 	}
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Task: "x"})
 	if err != nil || res.Model != "fake/m2" {
 		t.Fatalf("choice: %+v %v", res, err)
 	}
@@ -197,13 +198,13 @@ func TestWorkerAutomaticUsesOnlyRegisteredProfiles(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
-	score := 51.0
+	score := 42.3
 	for _, m := range []string{"fake/m1", "fake/m2"} {
 		w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: m, Score: &score})
 	}
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m2"})
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Task: "x"})
 	if err != nil || res.Model != "fake/m2" {
 		t.Fatalf("unregistered model selected: %+v %v", res, err)
 	}
@@ -214,11 +215,11 @@ func TestWorkerRegisteredOpenCodeEffort(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	score := 51.0
+	score := 42.3
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m1", Effort: "high"})
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Task: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,47 +255,6 @@ func TestWorkerExplicitProtectedProviderNote(t *testing.T) {
 	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "x"})
 	if err != nil || !strings.Contains(res.ModelNote, "protected provider (fake)") {
 		t.Fatalf("explicit: %+v %v", res, err)
-	}
-}
-
-func TestWorkerTouchesDifficulty(t *testing.T) {
-	for _, tc := range []struct {
-		name            string
-		touches         []string
-		wantModel, note string
-	}{
-		{"db", []string{"db"}, "fake/m2", "touches db: chose as hard"},
-		{"ui", []string{"ui"}, "fake/m1", ""},
-		{"other", []string{"other"}, "fake/m1", ""},
-		{"docs", []string{"docs"}, "fake/m1", "touches docs/tests only: chose as simple"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			g := startGateway(t, t.TempDir(), "")
-			w := startWorkerNode(t, g, shortSet, nil)
-			w.register(t, newRepo(t, "shop"))
-			low, high := 32.5, 42.3
-			w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &low})
-			w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m2", Score: &high})
-			w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
-			for _, m := range []string{"fake/m1", "fake/m2"} {
-				w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: m})
-			}
-			res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Difficulty: "normal", Touches: tc.touches, Task: "x"})
-			if err != nil || res.Model != tc.wantModel || (tc.note != "" && !strings.Contains(res.ModelNote, tc.note)) || (tc.note == "" && strings.Contains(res.ModelNote, "touches")) {
-				t.Fatalf("choice: %+v, %v", res, err)
-			}
-			row := reworkRow(t, w, res.SessionID)
-			used := "normal"
-			if tc.name == "db" {
-				used = "hard"
-			} else if tc.name == "docs" {
-				used = "simple"
-			}
-			if row.DifficultyAsked != "normal" || row.DifficultyUsed != used || row.Touches != strings.Join(tc.touches, ",") {
-				t.Fatalf("worker record: %+v", row)
-			}
-
-		})
 	}
 }
 

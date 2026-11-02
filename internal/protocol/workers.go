@@ -116,6 +116,10 @@ type WorkerContinue struct {
 	// Harness and Model are empty to keep the old worker's.
 	Harness string `json:"harness,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// Assessment is the old run's judge result, kept when the brief does not
+	// change. The machine that starts the new worker records it with a new
+	// run ID, or assesses the changed brief itself.
+	Assessment *WorkerAssessment `json:"assessment,omitempty"`
 	// Task is the extra text of the caller, added after the old first task.
 	Task string `json:"task,omitempty"`
 	// Title replaces the old worker's title when it is set.
@@ -135,6 +139,8 @@ type WorkerContinued struct {
 	// chosen harness and model (decision 0022).
 	Track     *TrackRecord   `json:"track,omitempty"`
 	Playbooks []PlaybookNote `json:"playbooks,omitempty"`
+	// Assessment is the judge result this run was started with.
+	Assessment *WorkerAssessment `json:"assessment,omitempty"`
 }
 
 // ContinueIntro starts the task of a worker that continues an ended one.
@@ -261,6 +267,14 @@ type (
 		// set with CallerProject. The gateway matches it exactly on the
 		// caller's machine before it falls back to the name.
 		CallerPath string `json:"caller_path,omitempty"`
+		// Assessment is the difficulty judge's result for this brief, made
+		// before the gateway chooses a model. Its label is the level. The
+		// machine that starts the worker stores it with the new session.
+		Assessment *WorkerAssessment `json:"assessment,omitempty"`
+		// Level is an internal caller's fixed level, used when there is no
+		// assessment (for example the read-only phrasing worker). A caller's
+		// Difficulty field is ignored.
+		Level string `json:"level,omitempty"`
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {
@@ -335,10 +349,15 @@ type (
 		TaskID              string `json:"task_id,omitempty"`
 		ContinuationPartial bool   `json:"continuation_partial,omitempty"`
 		// DifficultyAsked and DifficultyUsed are kept on the worker record for
-		// the difficulty calibration (empty from an older gateway).
+		// the difficulty calibration. Both are the difficulty judge's label
+		// (or normal on a fallback). Touches is recorded but never changes
+		// the level.
 		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
 		DifficultyUsed  string   `json:"difficulty_used,omitempty"`
 		Touches         []string `json:"touches,omitempty"`
+		// Assessment is the judge result made before the start. The machine
+		// that starts the worker stores it with the new session.
+		Assessment *WorkerAssessment `json:"assessment,omitempty"`
 		// AutoContinue turns the daemon's own continues for a worker that
 		// stopped early on or off (default on).
 		AutoContinue *bool `json:"auto_continue,omitempty"`
@@ -820,6 +839,3 @@ func noticeChecklist(worktree string, learned bool) string {
 	}
 	return line
 }
-
-// WorkerTouchesError explains the required worker start areas.
-const WorkerTouchesError = `touches is required: choose db, hot-path, ui, docs, tests, config or other; for example {"touches":["ui"]}`

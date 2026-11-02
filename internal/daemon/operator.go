@@ -315,8 +315,17 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if err != nil {
 		return nil, err
 	}
-	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
 	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto}
+	if p.Continue == "" {
+		// The judge runs here, before the gateway picks a machine or a model.
+		// Its label is the level. The caller's difficulty is ignored, and a
+		// failed judge never blocks the start.
+		frame.Assessment = d.assessWorkerStart(ctx, d.judgeDir(callerPath, p.Project), p.Task)
+		frame.Level = protocol.WorkerLevel(frame.Assessment)
+		// An older gateway still reads Difficulty; give it the judge's label.
+		frame.Difficulty = frame.Level
+	}
+	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
 	var data json.RawMessage
 	if cto {
 		data, err = d.ctoAttributedCall(cctx, "worker.start", frame)

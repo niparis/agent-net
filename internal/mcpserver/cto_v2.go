@@ -108,7 +108,7 @@ func actionExample(tool string) string {
 	case "session_change":
 		return `{"action":"session_start","project":"example"}`
 	case "worker_change":
-		return `{"action":"start","project":"example","task":"Describe the work","touches":["docs"]}`
+		return `{"action":"start","project":"example","task":"Describe the work"}`
 	case "answer":
 		return `{"kind":"held","message_id":"message-id","action":"a"}`
 	case "tools_change":

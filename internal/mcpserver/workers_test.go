@@ -131,13 +131,22 @@ func TestWorkerProfilesListToolReturnsRoster(t *testing.T) {
 	}
 }
 
-func TestStartRequiresTouches(t *testing.T) {
-	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
-		t.Fatal("start forwarded")
-		return nil, nil
+func TestStartWithoutTouches(t *testing.T) {
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "worker_start" {
+			p := params.(protocol.WorkerStartRequest)
+			if len(p.Touches) != 0 {
+				t.Fatalf("touches was sent: %+v", p)
+			}
+			return json.RawMessage(`{"status":"starting","session_id":"s_w","harness":"opencode","model":"a/x","project":"p"}`), nil
+		}
+		if method == "list" {
+			return json.RawMessage(`{"agents":[]}`), nil
+		}
+		return json.RawMessage(`{}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start", Arguments: map[string]any{"task": "x"}})
-	if err != nil || !res.IsError {
-		t.Fatalf("expected refusal: %+v %v", res, err)
+	if err != nil || res.IsError {
+		t.Fatalf("start without touches: %+v %v", res, err)
 	}
 }

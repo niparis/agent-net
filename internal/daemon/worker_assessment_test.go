@@ -31,91 +31,47 @@ func setupShadowJudge(t *testing.T, reply string, gate bool) (string, string) {
 
 const shadowReply = `{"reasoning":2,"scope":1,"coupling":1,"uncertainty":1,"verification":1,"risk":1,"confidence":"high","reasons":{"reasoning":"logic","scope":"local","coupling":"isolated","uncertainty":"known","verification":"test","risk":"safe"}}`
 
-func TestWorkerShadowAssessmentAsyncAndStored(t *testing.T) {
-	marker, gate := setupShadowJudge(t, shadowReply, true)
+func TestWorkerJudgeRunsBeforeStartAndIsStored(t *testing.T) {
+	marker, _ := setupShadowJudge(t, shadowReply, false)
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "Evidence: local", Difficulty: "normal"})
-	eventually(t, "judge starts while worker start already returned", func() bool { _, err := os.Stat(marker); return err == nil })
-	a, ok, err := g.gw.Store().Agent(res.SessionID)
-	if err != nil || !ok || a.Worker.Assessment != nil {
-		t.Fatalf("assessment completed before gate: %+v %v", a, err)
+	w.register(t, newRepo(t, "shop"))
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "Evidence: local"})
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("the judge did not run before the start returned")
 	}
-	if err := os.WriteFile(gate, nil, 0600); err != nil {
-		t.Fatal(err)
+	a := storedAssessment(t, g, res.SessionID)
+	if a.Reasoning != 2 || a.Scope != 1 || a.Coupling != 1 || a.Uncertainty != 1 || a.Verification != 1 || a.Risk != 1 || a.D < 1.199 || a.D > 1.201 || a.Label != "trivial" || a.PickerLabel != "trivial" || a.RulesVersion != "2026-11-02.1" || a.JudgeHarness != "opencode" || a.JudgeModel == "" || len(a.Reasons) != 6 || a.Confidence != "high" || a.AssessedAt == 0 {
+		t.Fatalf("assessment: %+v", a)
 	}
-	eventually(t, "assessment stored", func() bool {
-		a, ok, err = g.gw.Store().Agent(res.SessionID)
-		return err == nil && ok && a.Worker.Assessment != nil
-	})
-	got := a.Worker.Assessment
-	if got.Reasoning != 2 || got.Scope != 1 || got.Coupling != 1 || got.Uncertainty != 1 || got.Verification != 1 || got.Risk != 1 || got.D < 1.199 || got.D > 1.201 || got.Label != "trivial" || got.PickerLabel != "normal" || got.RulesVersion != "2026-11-02.1" || got.JudgeHarness != "opencode" || got.JudgeModel == "" || len(got.Reasons) != 6 || got.Confidence != "high" || got.AssessedAt == 0 {
-		t.Fatalf("assessment: %+v", got)
-	}
-	eventually(t, "non-final assessment notice", func() bool {
-		for _, m := range w.messagesOf(t, w.ownerID()) {
-			if m.From == res.SessionID && strings.Contains(m.Body, "status: difficulty") && strings.Contains(m.Body, "R2 S1 C1 U1 V1 K1 · D 1.20 · trivial (picker used: normal)") && m.Type == protocol.TypeNotification {
-				return true
-			}
+	for _, m := range w.messagesOf(t, w.ownerID()) {
+		if m.From == res.SessionID && strings.Contains(m.Body, "status: difficulty") {
+			t.Fatalf("a separate difficulty notice was sent: %s", m.Body)
 		}
-		return false
-	})
+	}
 	if len(w.workers(t)) != 1 {
-		t.Fatal("notice ended the worker")
+		t.Fatal("the assessment ended the worker")
 	}
 }
 
-func TestWorkerShadowAssessmentFailure(t *testing.T) {
+func TestWorkerJudgeFailureIsStoredAndNotANotice(t *testing.T) {
 	setupShadowJudge(t, "not json", false)
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
+	w.register(t, newRepo(t, "shop"))
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "test"})
-	eventually(t, "failure stored", func() bool {
-		a, ok, err := g.gw.Store().Agent(res.SessionID)
-		return err == nil && ok && a.Worker.Assessment != nil && strings.Contains(a.Worker.Assessment.Error, "parse")
-	})
-	eventually(t, "failure notice", func() bool {
-		for _, m := range w.messagesOf(t, w.ownerID()) {
-			if strings.Contains(m.Body, "difficulty: no assessment (") {
-				return true
-			}
+	a := storedAssessment(t, g, res.SessionID)
+	if a.Label != "normal" || a.PickerLabel != "normal" || !strings.Contains(a.Error, "parse") {
+		t.Fatalf("assessment: %+v", a)
+	}
+	for _, m := range w.messagesOf(t, w.ownerID()) {
+		if strings.Contains(m.Body, "status: difficulty") {
+			t.Fatalf("a separate difficulty notice was sent: %s", m.Body)
 		}
-		return false
-	})
+	}
 }
 
-func TestWorkerShadowQueuedStartsOnlyWhenDequeued(t *testing.T) {
-	marker, _ := setupShadowJudge(t, shadowReply, false)
-	g := startGateway(t, t.TempDir(), "")
-	fl := &fakeLoad{l: cpuBusy()}
-	w := startWorkerNode(t, g, queueSet, withDifficulty(withLoad(fl)))
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
-	res := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "queued"})
-	if res.Status != "queued" {
-		t.Fatalf("not queued: %+v", res)
-	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Fatal("judge ran while queued")
-	}
-	fl.set(roomyLoad())
-	eventually(t, "judge runs after dequeuing", func() bool { _, err := os.Stat(marker); return err == nil })
-	eventually(t, "queued assessment stored", func() bool {
-		for _, a := range w.agents(t, true) {
-			if a.Worker != nil && a.Worker.Assessment != nil && a.Worker.Assessment.Label == "trivial" {
-				return true
-			}
-		}
-		return false
-	})
-}
-
-func TestWorkerShadowResumedRunGetsNewAssessment(t *testing.T) {
+func TestWorkerResumedRunGetsNewAssessment(t *testing.T) {
 	setupShadowJudge(t, shadowReply, false)
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
@@ -143,7 +99,7 @@ func TestWorkerShadowResumedRunGetsNewAssessment(t *testing.T) {
 	})
 }
 
-func TestWorkerShadowAssessmentQueueSurvivesRestart(t *testing.T) {
+func TestWorkerAssessmentQueueSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	st, err := openState(dir)
 	if err != nil {
@@ -165,10 +121,10 @@ func TestWorkerShadowAssessmentQueueSurvivesRestart(t *testing.T) {
 	}
 }
 
-func TestWorkerShadowAssessmentQueueFlush(t *testing.T) {
+func TestWorkerAssessmentQueueFlush(t *testing.T) {
 	_, gate := setupShadowJudge(t, shadowReply, true)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
+	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "test"})
@@ -187,15 +143,5 @@ func TestWorkerShadowAssessmentQueueFlush(t *testing.T) {
 	}
 	if err := os.WriteFile(gate, nil, 0600); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// withDifficulty turns the difficulty judge back on for a test daemon.
-func withDifficulty(next func(*Config)) func(*Config) {
-	return func(c *Config) {
-		c.testNoDifficulty = false
-		if next != nil {
-			next(c)
-		}
 	}
 }

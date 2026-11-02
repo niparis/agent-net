@@ -151,3 +151,30 @@ func TestJudgeOpenCodeUsesPrivateServerAndDisabledSocket(t *testing.T) {
 		t.Errorf("judge socket: %q exists=%v", rec.Socket, rec.SocketExists)
 	}
 }
+
+func TestJudgeOpenCodeDeletesOnlyItsOwnSessions(t *testing.T) {
+	dir := t.TempDir()
+	reply := filepath.Join(dir, "reply.json")
+	if err := os.WriteFile(reply, []byte(`{"reasoning":1,"scope":1,"coupling":1,"uncertainty":1,"verification":1,"risk":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sessions := filepath.Join(dir, "sessions.json")
+	if err := os.WriteFile(sessions, []byte(`[{"id":"ses_judge","directory":"{dir}"},{"id":"ses_owner","directory":"/home/someone/project"}]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	deleted := filepath.Join(dir, "deleted")
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	t.Setenv("FAKE_OPENCODE_SESSIONS", sessions)
+	t.Setenv("FAKE_OPENCODE_DELETED", deleted)
+	if _, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(deleted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "ses_judge" {
+		t.Fatalf("deleted sessions: %q", got)
+	}
+}

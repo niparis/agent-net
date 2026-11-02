@@ -80,6 +80,8 @@ func runFakeHarness() bool {
 		fakeCodexExec()
 	case os.Getenv(envFakeOpenCode) != "" && len(os.Args) > 2 && os.Args[1] == "run":
 		fakeOpenCodeRun()
+	case os.Getenv(envFakeOpenCode) != "" && len(os.Args) > 2 && os.Args[1] == "session":
+		fakeOpenCodeSession()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 2 && os.Args[1] == "debug" && os.Args[2] == "models":
 		fakeCodexModels()
 	default:
@@ -123,6 +125,32 @@ func fakeOpenCodeRun() {
 		}
 	}
 	fmt.Print("\x1b[0m\n")
+	os.Exit(0)
+}
+
+// fakeOpenCodeSession lists the sessions in FAKE_OPENCODE_SESSIONS (a JSON
+// file, with "{dir}" standing for the current folder) and appends each
+// deleted ID to FAKE_OPENCODE_DELETED.
+func fakeOpenCodeSession() {
+	switch os.Args[2] {
+	case "list":
+		raw := []byte("[]")
+		if path := os.Getenv("FAKE_OPENCODE_SESSIONS"); path != "" {
+			if b, err := os.ReadFile(path); err == nil {
+				wd, _ := os.Getwd()
+				raw = []byte(strings.ReplaceAll(string(b), "{dir}", wd))
+			}
+		}
+		fmt.Println(string(raw))
+	case "delete":
+		if path := os.Getenv("FAKE_OPENCODE_DELETED"); path != "" && len(os.Args) > 3 {
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			if err == nil {
+				fmt.Fprintln(f, os.Args[3])
+				f.Close()
+			}
+		}
+	}
 	os.Exit(0)
 }
 

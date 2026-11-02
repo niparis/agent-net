@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -14,7 +15,7 @@ CREATE TABLE IF NOT EXISTS worker_queue (
 	seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, owner TEXT NOT NULL,
 	owner_name TEXT NOT NULL DEFAULT '',
 	project TEXT NOT NULL, path TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '',
-	task TEXT NOT NULL, isolation TEXT NOT NULL DEFAULT '', queued_at INTEGER NOT NULL);
+	task TEXT NOT NULL, isolation TEXT NOT NULL DEFAULT '', queued_at INTEGER NOT NULL, assessment TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS worker_costs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT, harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '',
 	ended_at INTEGER NOT NULL, avg_cpu REAL NOT NULL, peak_cpu REAL NOT NULL, avg_rss REAL NOT NULL, peak_rss REAL NOT NULL)`
@@ -35,20 +36,29 @@ type queuedStart struct {
 	TaskID                          string
 	ContinuationPartial             bool
 	FromCTO                         bool
+	// Assessment is the judge result made when the start was requested. It
+	// keeps the level through the queue.
+	Assessment *protocol.WorkerAssessment
 	// AutoContinue is the start's automatic-continue setting.
 	AutoContinue bool
 	QueuedAt     time.Time
 }
 
 func (s *state) addQueued(q queuedStart) error {
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial))
+	assessment := ""
+	if q.Assessment != nil {
+		if raw, err := json.Marshal(q.Assessment); err == nil {
+			assessment = string(raw)
+		}
+	}
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment)
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +68,19 @@ func (s *state) queue() ([]queuedStart, error) {
 		var q queuedStart
 		var at int64
 		var autoContinue int
-		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial); err != nil {
+		var assessment string
+		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)
 		q.AutoContinue = autoContinue == 1
+		if assessment != "" {
+			var a protocol.WorkerAssessment
+			if err := json.Unmarshal([]byte(assessment), &a); err != nil {
+				return nil, err
+			}
+			q.Assessment = &a
+		}
 		out = append(out, q)
 	}
 	return out, rows.Err()

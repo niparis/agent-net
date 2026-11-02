@@ -270,10 +270,13 @@ func TestStartCommandReportsStarting(t *testing.T) {
 	}
 }
 
-func TestStartRequiresTouches(t *testing.T) {
-	err := runStart(context.Background(), &fakeOp{}, &bytes.Buffer{}, []string{"--project", "shop", "work"})
-	if err == nil || !strings.Contains(err.Error(), `{"touches":["ui"]}`) {
-		t.Fatalf("missing actionable refusal: %v", err)
+func TestStartWithoutTouches(t *testing.T) {
+	f := &fakeOp{}
+	if err := runStart(context.Background(), f, &bytes.Buffer{}, []string{"--project", "shop", "work"}); err != nil {
+		t.Fatalf("start without touches: %v", err)
+	}
+	if f.start.Project != "shop" || f.start.Task != "work" || len(f.start.Touches) != 0 {
+		t.Fatalf("request: %+v", f.start)
 	}
 }
 

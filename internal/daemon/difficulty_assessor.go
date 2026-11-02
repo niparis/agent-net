@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -343,13 +344,17 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	// A standalone server exits with the judge instead of leaving a session in
-	// OpenCode's shared service. The nonexistent socket also prevents the
-	// agent-net plugin from registering that private session or exposing tools.
+	env := workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock")})
+	// Even a standalone run saves its session in OpenCode's shared store, where
+	// it shows as an idle session. Delete it once the judge is done.
+	defer deleteOpenCodeSessions(bin, dir, env)
+	// A standalone server exits with the judge instead of leaving a session
+	// running in OpenCode's shared service. The nonexistent socket also prevents
+	// the agent-net plugin from registering that private session or exposing tools.
 	args := []string{"run", "--standalone", "-m", model, prompt}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
-	cmd.Env = workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock")})
+	cmd.Env = env
 	stdout, stderr := &capWriter{limit: 1 << 20}, &capWriter{limit: 4096}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -373,6 +378,41 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 		return "", errors.New("returned no message")
 	}
 	return text, nil
+}
+
+// deleteOpenCodeSessions deletes the sessions OpenCode saved for dir. Only
+// sessions whose folder is exactly dir are touched, so the owner's own
+// sessions are never listed for deletion. Failures are ignored: a leftover
+// session is untidy, not harmful.
+func deleteOpenCodeSessions(bin, dir string, env []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	list := exec.CommandContext(ctx, bin, "session", "list", "--format", "json")
+	list.Dir, list.Env = dir, env
+	out, err := list.Output()
+	if err != nil {
+		return
+	}
+	var sessions []struct {
+		ID        string `json:"id"`
+		Directory string `json:"directory"`
+	}
+	if json.Unmarshal(out, &sessions) != nil {
+		return
+	}
+	// macOS temp folders sit behind a symlink (/var to /private/var).
+	want := map[string]bool{filepath.Clean(dir): true}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		want[real] = true
+	}
+	for _, s := range sessions {
+		if s.ID == "" || !want[filepath.Clean(s.Directory)] {
+			continue
+		}
+		del := exec.CommandContext(ctx, bin, "session", "delete", s.ID)
+		del.Dir, del.Env = dir, env
+		_ = del.Run()
+	}
 }
 
 // runCodexExec is `codex exec` in a read-only sandbox. The final message goes

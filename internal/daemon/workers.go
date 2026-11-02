@@ -690,7 +690,7 @@ func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch,
 	d.wmu.Lock()
 	sid, wt, br := w.sessionID, w.worktree, w.branch
 	d.wmu.Unlock()
-	d.startWorkerAssessment(w, l.Path, l.Task)
+	d.recordWorkerAssessment(w, l.Assessment)
 	d.Logf("worker.started worker=%s session=%s project=%s path=%s harness=%s model=%s owner=%s pid=%d worktree=%s branch=%s",
 		w.id, sid, w.project, w.path, w.harness, w.model, w.owner, w.pid, wt, br)
 	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br, ProjectRules: rules}, nil
