@@ -1,6 +1,6 @@
 # Approve CTO proposals in the CTO chat
 
-**Date:** 2026-11-02. **Status:** plan, for the owner's review. Nothing built.
+**Date:** 2026-11-02. **Status:** built in v0.4.93 (decision 0047), with the simplest version the owner asked for: no timer of our own, and both the direct dialog and the newer multi round-trip request.
 
 ## 1. Goal
 
