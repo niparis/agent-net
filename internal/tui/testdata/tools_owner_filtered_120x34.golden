@@ -1,30 +1,30 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
-╭─Tools / node:homelab machine:research────────────────────────────────────────────────────────────────────────────────╮
-│   NAME                            KIND   STATUS                                                                      │
-│ ! code-review                     skill  on for homelab · v1 on Nicolas-MBP, v3 on research                          │
-│ ! design-taste-frontend           skill  2 different copies on research                                              │
-│ ! imnplementing-clean-architectu… skill  off for homelab · looks like a copy of clean-architecture-python            │
-│   clean-architecture-python       skill  on for homelab                                                              │
-│   diagnosing-bugs                 skill  on for homelab                                                              │
-│   found-skill-00                  skill  off for homelab                                                             │
-│   found-skill-01                  skill  off for homelab                                                             │
-│   found-skill-02                  skill  off for homelab                                                             │
-│   found-skill-03                  skill  off for homelab                                                             │
-│   found-skill-04                  skill  off for homelab                                                             │
-│   found-skill-05                  skill  off for homelab                                                             │
-│   found-skill-06                  skill  off for homelab                                                             │
-│   found-skill-07                  skill  off for homelab                                                             │
-│   found-skill-08                  skill  off for homelab                                                             │
-│   found-skill-09                  skill  off for homelab                                                             │
-│   found-skill-10                  skill  off for homelab                                                             │
-│   found-skill-11                  skill  off for homelab                                                             │
-│   found-skill-12                  skill  off for homelab                                                             │
-│   found-skill-13                  skill  off for homelab                                                             │
-│   found-skill-14                  skill  off for homelab                                                             │
-│   found-skill-15                  skill  off for homelab                                                             │
-│   found-skill-16                  skill  off for homelab                                                             │
-│ 35 tools · ! needs attention · enter opens actions                                                                   │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─7 skills · ~0 tokens in every session──────────────────────────╮╭─code-review────────────────────────────────────────╮
+│   NAME                    STATUS                      COST     ││ ~0 tokens in every session                         │
+│ ! code-review             on for homelab              ~0       ││ +~0 when the skill is used                         │
+│ ! design-taste-frontend   2 different copies on…      ~0       ││ on: on for homelab                                 │
+│ ! imnplementing-clean-ar… off for homelab             ~0       ││ ! v1 on Nicolas-MBP, v3 on research                │
+│   clean-architecture-pyt… on for homelab              ~0       ││ enter: make every machine use v3                   │
+│   diagnosing-bugs         on for homelab              ~0       ││ from: managed by agent-net v3                      │
+│   found-skill-00          off for homelab             ~0       ││                                                    │
+│   found-skill-01          off for homelab             ~0       ││                                                    │
+│   found-skill-02          off for homelab             ~0       ││                                                    │
+│   found-skill-03          off for homelab             ~0       ││                                                    │
+│   found-skill-04          off for homelab             ~0       ││                                                    │
+│   found-skill-05          off for homelab             ~0       ││                                                    │
+│   found-skill-06          off for homelab             ~0       ││                                                    │
+│   found-skill-07          off for homelab             ~0       ││                                                    │
+│   found-skill-08          off for homelab             ~0       ││                                                    │
+│   found-skill-09          off for homelab             ~0       ││                                                    │
+│   found-skill-10          off for homelab             ~0       ││                                                    │
+│   found-skill-11          off for homelab             ~0       ││                                                    │
+│   found-skill-12          off for homelab             ~0       ││                                                    │
+│   found-skill-13          off for homelab             ~0       ││                                                    │
+│   found-skill-14          off for homelab             ~0       ││                                                    │
+│   found-skill-15          off for homelab             ~0       ││                                                    │
+│   found-skill-16          off for homelab             ~0       ││                                                    │
+│ 35 tools · ! needs attention · enter opens actions             ││                                                    │
+╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

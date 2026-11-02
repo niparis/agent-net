@@ -138,14 +138,7 @@ func (m Model) toolBaseStatus(r toolsdiff.Row) string {
 	}
 	if len(m.toolScope().projects) > 0 {
 		for _, scope := range m.toolScope().projects {
-			on := false
-			if r.Item.Desired != nil {
-				a := r.Item.Desired.Assignment
-				on = a.Scope == "global" || (a.Scope == "projects" && hasStr(a.Projects, scope))
-			}
-			for _, p := range r.Projects {
-				on = on || p.Name == scope
-			}
+			on := toolOnProject(r, scope)
 			if !on {
 				return "off for " + scope
 			}
@@ -201,13 +194,19 @@ func (m Model) toolListView(w, h int) []string {
 	if m.tl.search != "" || m.tl.searching {
 		title += " / " + sanitize(m.tl.search) + searchCursor(m.tl.searching)
 	}
-	nameW := 32
-	statusW := max(12, w-nameW-13)
-	body := []string{"  " + cell("NAME", nameW) + cell("KIND", 7) + "STATUS"}
+	rows := m.shownRows()
+	title += fmt.Sprintf(" · %d tools", len(rows))
+	if len(m.toolScope().projects) > 0 {
+		p := m.toolScope().projects[0]
+		n, cost, _ := m.projectCost(p)
+		title = fmt.Sprintf("%s · %s tokens in every session", nounCount(n, "skill", "skills"), formatTokens(cost))
+	}
+	nameW := max(12, (w-14)*45/100)
+	statusW := max(8, w-nameW-15)
+	body := []string{"  " + cell("NAME", nameW) + " " + cell("STATUS", statusW) + "COST"}
 	if !m.tl.loaded {
 		body = append(body, orStr(m.tl.err, "reading the tools..."))
 	}
-	rows := m.shownRows()
 	room := max(h-4, 1)
 	// Wrap status at word boundaries, keeping all columns aligned. Never cut a
 	// status in the middle of a word, even at 80 columns.
@@ -217,16 +216,12 @@ func (m Model) toolListView(w, h int) []string {
 		if m.toolAttention(r) {
 			flag = "! "
 		}
-		kind := "skill"
+		name, cost := r.Name, formatTokens(r.Item.StartTokens)
 		if r.Kind == protocol.InventoryMCP {
-			kind = "MCP"
+			name, cost = "◆ "+name, "-"
 		}
-		status := wrap(sanitize(m.toolStatus(r)), statusW)
-		line := flag + cell(r.Name, nameW-1) + " " + cell(kind, 7) + status[0]
-		entry := []string{line}
-		for _, s := range status[1:] {
-			entry = append(entry, strings.Repeat(" ", nameW+9)+s)
-		}
+		status := shortenWords(sanitize(m.toolBaseStatus(r)), statusW)
+		entry := []string{flag + cell(name, nameW) + " " + cell(status, statusW) + cost}
 		if i == m.tl.row {
 			for j := range entry {
 				entry[j] = selectedRow(padStyled(entry[j], w-4))

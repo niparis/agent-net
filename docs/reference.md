@@ -308,10 +308,13 @@ polls once per second and shows recorded CTO tool calls, including reads and
 failures, plus graph diffs; a graph change refreshes the Graph.
 
 Press `5` to open Tools. It is one list of every skill and MCP server: one row
-per tool, with its name, kind and a status in plain words. Rows that need
+per tool, with its name, status and estimated startup token cost. MCP servers
+are marked with a diamond. The selected row has a detail panel with its
+description, estimated costs and source. Rows that need
 attention come first with a `!` and the reason, such as a version that differs
 between machines or two different copies on one machine. `R` rescans tool
-copies. There are no other Tools screens, so `[` and `]` do nothing here.
+copies. Press `t` to see skill costs per project, sorted by cost; Enter opens
+the selected project and Esc returns. `[` and `]` do nothing here.
 
 Use `j`/`k` or up/down to select, Enter to open the selected tool's actions,
 `/` to filter, `n` to add, Esc to clear a nonempty filter, `?` for help and `q`
@@ -320,7 +323,8 @@ to quit. Digits keep their global tab meanings.
 The filter combines words with `project:NAME`, `node:NAME` and `machine:NAME`.
 A graph node is its network project, across registered checkouts. With a
 project or node filter, statuses describe that scope, including tools available
-to turn on. Turn on/Turn off uses the scope directly. Otherwise a picker lists
+to turn on. The title counts the skills on for the project and their estimated
+tokens in every session. Token counts are estimates. Turn on/Turn off uses the scope directly. Otherwise a picker lists
 machines and projects: space ticks, `/` filters, Enter applies the selection, and Esc
 cancels. Enter with nothing ticked explains that a target is required.
 
@@ -1471,7 +1475,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Quotas | `p` protects or unprotects; `s` shows unset subscriptions; `R` refreshes. Enter is unused. |
 | Graph | Arrows select; Shift+arrows pan; `,` and `.` select linked nodes; Enter opens the card; `/` finds a node. The graph fits itself when the tab opens. `o`, Space, `t` and `0` do nothing. |
 | Agent card | Ctrl+U and Ctrl+D scroll. `,` and `.` select learned changes; `u` undoes the selected change. `!` does nothing; the legend is in the help overlay under Graph. `[` and `]` do not scroll. |
-| Tools | The tab is one list. Enter opens the selected tool's actions; `/` filters, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
+| Tools | The tab is one list. Enter opens the selected tool's actions; `/` filters, `t` shows skill cost per project, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
 | Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. |
 | Help | Esc and `?` close. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: Global keys first, the current tab next, the other tabs in tab order, then In overlays. |
 | Confirmations | Enter or `y` says yes; Esc or `n` says no. Every question footer shows all four keys. |
