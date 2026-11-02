@@ -141,10 +141,9 @@ func ParseProfile(raw []byte) (Profile, error) {
 		return Profile{}, fmt.Errorf("confidence must be low, medium, or high")
 	}
 	for field, entries := range map[string][]string{
-		"reasoning.evidence":    p.Reasoning.Evidence,
-		"coupling.evidence":     p.Coupling.Evidence,
-		"uncertainty.inspected": p.Uncertainty.Inspected,
-		"risk.evidence":         p.Risk.Evidence,
+		"reasoning.evidence": p.Reasoning.Evidence,
+		"coupling.evidence":  p.Coupling.Evidence,
+		"risk.evidence":      p.Risk.Evidence,
 	} {
 		for i, entry := range entries {
 			if strings.HasPrefix(entry, "inspected:") {
@@ -154,6 +153,13 @@ func ParseProfile(raw []byte) (Profile, error) {
 			} else if !evidenceLocation.MatchString(entry) {
 				return Profile{}, fmt.Errorf("%s[%d] must be path:line, path:start-end, or inspected: description", field, i)
 			}
+		}
+	}
+	// The inspected list names what the analyzer looked at: files, folders or
+	// searches, with or without lines. Any non-empty entry is fine.
+	for i, entry := range p.Uncertainty.Inspected {
+		if strings.TrimSpace(entry) == "" {
+			return Profile{}, fmt.Errorf("uncertainty.inspected[%d] is empty", i)
 		}
 	}
 	return p, nil

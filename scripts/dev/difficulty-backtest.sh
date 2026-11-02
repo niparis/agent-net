@@ -24,6 +24,7 @@ label with the difficulty the worker was started at.
                        cheapest Codex profile of the worker roster)
   --timeout SECONDS    time limit for one task, default 180
   --limit N            assess only the first N tasks
+  --shard I/N          assess only task numbers I, I+N, I+2N ... (I from 0), to run N copies in parallel
   --gateway-db PATH    gateway database (default: $AGENT_NET_GATEWAY_DATA/gateway.db)
   --daemon-db PATH     local daemon database (default: $AGENT_NET_STATE_DIR/daemon.db)
   --binary PATH        agent-net binary (default: $AGENT_NET_BIN, else agent-net on PATH)
@@ -41,6 +42,7 @@ csv=""
 model=""
 timeout_s=180
 limit=""
+shard="0/1"
 gateway_db=""
 daemon_db=""
 binary="${AGENT_NET_BIN:-agent-net}"
@@ -55,6 +57,7 @@ while [ $# -gt 0 ]; do
 	--model) model="${2:-}"; shift 2 ;;
 	--timeout) timeout_s="${2:-}"; shift 2 ;;
 	--limit) limit="${2:-}"; shift 2 ;;
+	--shard) shard="${2:-}"; shift 2 ;;
 	--gateway-db) gateway_db="${2:-}"; shift 2 ;;
 	--daemon-db) daemon_db="${2:-}"; shift 2 ;;
 	--binary) binary="${2:-}"; shift 2 ;;
@@ -112,7 +115,7 @@ skipped="$work/skipped.txt"
 # Read the runs and join the local worker records (full task text) with the
 # gateway records (outcome, rating and late defects). One row per task: a
 # continued worker folds into the root task's session ID.
-python3 - "$gateway_db" "$daemon_db" "$since_epoch" "$until_epoch" "$records" "$skipped" "$limit" <<'PY'
+python3 - "$gateway_db" "$daemon_db" "$since_epoch" "$until_epoch" "$records" "$skipped" "$limit" "$shard" <<'PY'
 import base64
 import json
 import sqlite3
@@ -263,6 +266,8 @@ for group in groups:
 
 if limit > 0:
     rows = rows[:limit]
+shard_i, shard_n = (int(x) for x in sys.argv[8].split("/"))
+rows = [r for i, r in enumerate(rows) if i % shard_n == shard_i]
 
 with open(records_path, "w", encoding="utf-8") as out:
     for row in rows:

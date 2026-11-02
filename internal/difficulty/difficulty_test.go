@@ -91,3 +91,10 @@ func TestLabel(t *testing.T) {
 }
 
 func labelForD(d float64) string { return labelNames[labelIndex(d)] }
+
+func TestParseProfileAcceptsFreeFormInspected(t *testing.T) {
+	raw := `{"reasoning":{"closest_pattern":"copy","new_logic":"none","evidence":["internal/a.go:2-4"]},"scope":{"components":["a"],"distinct_changes":["one"],"repeated_changes":[]},"coupling":{"contracts":[],"invariants":[],"evidence":["inspected: no shared contract"]},"uncertainty":{"open_questions":[],"inspected":["internal/tui/keys.go","searched for apps.rename"]},"verification":{"tests":["unit"],"needed_checks":[],"gaps":[]},"risk":{"failures":[],"reversibility":"easy","evidence":["docs/a.md:3"]},"confidence":"high"}`
+	if _, err := ParseProfile([]byte(raw)); err != nil {
+		t.Fatalf("free-form inspected entries refused: %v", err)
+	}
+}
