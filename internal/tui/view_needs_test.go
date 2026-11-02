@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,56 @@ import (
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+type appNoticeDismissSource struct {
+	*fakeSource
+	method string
+	params map[string]string
+}
+
+func (s *appNoticeDismissSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	s.method = method
+	s.params, _ = params.(map[string]string)
+	return json.RawMessage(`{}`), nil
+}
+
+func connectedAppNoticeModel(w, h int) Model {
+	m := newModel(w, h)
+	m.inboxItems = []protocol.InboxItem{{
+		ID: "i_app", Kind: "check", SessionID: "s_owner", Node: "apps",
+		Text:   "Connected: cursor (bot, Cursor, www.cursor.com). If this was not you, revoke it in Settings.",
+		Status: "open", CreatedAt: t0,
+	}}
+	m.selected, m.selIdx, m.selNeeds, m.focus = "app-notice:i_app", 0, true, focusSessions
+	return m
+}
+
+func TestConnectedAppNoticeNeedsGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		golden(t, fmt.Sprintf("view_needs_app_notice_%d", size[0]), connectedAppNoticeModel(size[0], size[1]).View())
+	}
+}
+
+func TestConnectedAppNoticeDismissedWithX(t *testing.T) {
+	src := &appNoticeDismissSource{fakeSource: &fakeSource{snap: fakeSnapshot(), events: fakeEvents()}}
+	m := connectedAppNoticeModel(80, 24)
+	m.src = src
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "x dismiss") || strings.Contains(view, "permission:") || strings.Contains(view, "you (on") {
+		t.Fatalf("app notice looks like a permission request or has no dismiss hint:\n%s", view)
+	}
+	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if cmd == nil {
+		t.Fatal("x did not dismiss the app notice")
+	}
+	next = send(next, cmd())
+	if src.method != "inbox_answer" || src.params["id"] != "i_app" || src.params["answer"] != "seen" {
+		t.Fatalf("dismiss call: %s %+v", src.method, src.params)
+	}
+	if len(next.needsRows()) != 0 || next.inboxItems[0].Status != "answered" {
+		t.Fatalf("notice remains open: rows=%+v inbox=%+v", next.needsRows(), next.inboxItems)
+	}
+}
 
 // waiting asks the fake session a stays waiting since the given time.
 func waiting(a *protocol.AgentView, since time.Duration, kind, text string) {

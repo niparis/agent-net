@@ -205,7 +205,7 @@ func TestAppsApprovalNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "New app approved: my bot (bot, Cursor, client.example)"
+	want := "Connected: my bot (bot, Cursor, client.example). If this was not you, revoke it in Settings."
 	if len(items) != 1 || items[0].Text != want || !strings.Contains(logs.String(), want) {
 		t.Fatalf("notice %v logs %s", fmt.Sprint(items), logs.String())
 	}
