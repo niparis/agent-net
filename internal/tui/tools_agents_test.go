@@ -20,6 +20,7 @@ func agentToolsFixture(w, h int) (Model, *fakeTools) {
 	}
 	for i := range s.items {
 		s.items[i].StartTokens = int64(120 + i*40)
+		s.items[i].Description = "Read the project layout and explain its architecture before planning a change. Use the repository conventions and keep the result easy to review."
 	}
 	m = pressKey(m, "5")
 	for i, p := range m.toolsProjects() {
@@ -33,7 +34,7 @@ func agentToolsFixture(w, h int) (Model, *fakeTools) {
 func TestToolsAgentsView(t *testing.T) {
 	m, _ := agentToolsFixture(120, 34)
 	text := plain(m)
-	for _, want := range []string{"Agents", "skills per agent", "[x] archify", "[x] estate-runbook", "[ ] found-skill", "[ ] react-best-practices", "always on", "outside agent-net"} {
+	for _, want := range []string{"Projects", "Skills per project", "[x] archify", "[x] estate-runbook", "[ ] found-skill", "[ ] react-best-practices", "always on", "outside agent-net"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q:\n%s", want, text)
 		}
@@ -52,29 +53,19 @@ func TestToolsAgentsPendingPlan(t *testing.T) {
 	m, s := agentToolsFixture(120, 34)
 	m = pressKey(m, "right")
 	m = pressKey(m, " ")
-	if !strings.Contains(plain(m), "→ off") || len(s.applied) != 0 {
-		t.Fatal("toggle must remain pending")
+	if m.tl.modal == nil || len(s.toggles) != 1 || len(s.applied) != 0 {
+		t.Fatal("toggle must preview before apply")
 	}
+	m = pressKey(m, "esc")
 	m = pressKey(m, "down")
 	m = pressKey(m, " ")
-	if len(m.tl.agentPending["homelab"]) != 1 || !strings.Contains(plain(m), "always on") {
+	if len(m.tl.agentPending["homelab"]) != 1 || !strings.Contains(m.activeToast(), "always on") {
 		t.Fatal("repo skill was toggled")
 	}
 	m = pressKey(m, "down")
 	m = pressKey(m, " ")
-	jobs, why := m.agentJobs("homelab")
-	if why != "" || len(jobs) != 2 {
-		t.Fatalf("jobs %+v: %s", jobs, why)
-	}
-	if jobs[0].name != "archify" || hasStr(jobs[0].target.Projects, "homelab") || !hasStr(jobs[0].target.Projects, "tenebrae") {
-		t.Fatalf("global off: %+v", jobs[0])
-	}
-	if jobs[1].imp == nil || strings.Join(jobs[1].target.Projects, ",") != "homelab" {
-		t.Fatalf("import on: %+v", jobs[1])
-	}
-	m = pressKey(m, "enter")
-	if m.tl.modal == nil || !strings.Contains(plain(m), "Review 2 changes") || len(s.applied) != 0 || len(s.imports) != 0 {
-		t.Fatal("enter must review one batch before changes")
+	if !strings.Contains(plain(m), "Review 2 changes") || len(s.applied) != 0 {
+		t.Fatal(plain(m))
 	}
 	m = pressKey(m, "esc")
 	m = pressKey(m, "esc")
@@ -97,10 +88,14 @@ func TestToolsAgentsGoldens(t *testing.T) {
 		m, _ := agentToolsFixture(size[0], size[1])
 		golden(t, fmt.Sprintf("tools_agents_%dx%d", size[0], size[1]), m.View())
 		m = pressKey(m, "right")
+		golden(t, fmt.Sprintf("tools_agents_skill_%dx%d", size[0], size[1]), m.View())
+		m = pressKey(m, "right")
 		m = pressKey(m, " ")
+		m = pressKey(m, "esc")
 		m = pressKey(m, "down")
 		m = pressKey(m, "down")
 		m = pressKey(m, " ")
+		m = pressKey(m, "esc")
 		golden(t, fmt.Sprintf("tools_agents_pending_%dx%d", size[0], size[1]), m.View())
 		for _, line := range strings.Split(plain(m), "\n") {
 			if ansi.StringWidth(line) > size[0] {
@@ -122,17 +117,12 @@ func TestToolsAgentsAssignmentsAndFilter(t *testing.T) {
 		t.Fatal("name filter did not select one skill")
 	}
 	m = pressKey(m, " ")
-	jobs, why := m.agentJobs("homelab")
-	if why != "" || len(jobs) != 1 || strings.Join(jobs[0].target.Projects, ",") != "homelab,tenebrae" {
-		t.Fatalf("must retain other agents: %+v %s", jobs, why)
-	}
-	m = pressKey(m, "enter")
-	if len(s.plans) != 1 || len(s.applied) != 0 {
-		t.Fatal("single change must plan without applying")
+	if len(s.toggles) != 1 || s.toggles[0].Project != "homelab" || !s.toggles[0].On || len(s.plans) != 0 || len(s.applied) != 0 {
+		t.Fatal("must use project toggle for preview")
 	}
 	m = pressKey(m, "enter")
 	if len(s.applied) != 1 || len(m.tl.agentPending["homelab"]) != 0 {
-		t.Fatal("confirmation did not apply and consume pending change")
+		t.Fatal("confirmation did not consume pending change")
 	}
 }
 
@@ -140,16 +130,19 @@ func TestToolsAgentsBatchAppliesMatchingTargets(t *testing.T) {
 	m, s := agentToolsFixture(120, 34)
 	m = pressKey(m, "right")
 	m = pressKey(m, " ")
+	m = pressKey(m, "esc")
 	m = pressKey(m, "down")
 	m = pressKey(m, "down")
 	m = pressKey(m, " ")
-	m = pressKey(m, "enter")
-	m = pressKey(m, "enter")
-	if len(s.plans) != 2 || len(s.applied) != 2 || len(s.imports) != 1 {
-		t.Fatalf("plans %v applied %v imports %v", s.plans, s.applied, s.imports)
+	if len(s.applied) != 0 || len(s.imports) != 0 || len(s.toggles) != 3 {
+		t.Fatal("batch must preview each skill without importing")
 	}
-	if hasStr(s.plans[0].Target.Projects, "homelab") || strings.Join(s.plans[1].Target.Projects, ",") != "homelab" {
-		t.Fatalf("wrong targets: %+v", s.plans)
+	m = pressKey(m, "enter")
+	if len(s.applied) != 2 || s.applied[0] != "toggle_2" || s.applied[1] != "toggle_3" || len(s.plans) != 0 {
+		t.Fatalf("toggles %v applied %v", s.toggles, s.applied)
+	}
+	if s.toggles[1].On || !s.toggles[2].On || s.toggles[1].Project != "homelab" || s.toggles[2].Project != "homelab" {
+		t.Fatal(s.toggles)
 	}
 }
 
@@ -161,7 +154,7 @@ func TestToolsAgentsProjectStateAndCosts(t *testing.T) {
 		}
 	}
 	text := plain(m)
-	for _, want := range []string{"[x] react-best-practices", "on for this agent", "2 skills on", "~360"} {
+	for _, want := range []string{"[x] react-best-practices", "this project only", "2 skills on", "~360"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q: %s", want, text)
 		}

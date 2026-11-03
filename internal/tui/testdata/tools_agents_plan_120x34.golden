@@ -1,15 +1,15 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
+[ Skills per project ]    All tools
 ╭─Review 2 changes for homelab─────────────────────────────────────────────────────────────────────────────────────────╮
-│ - archify off for homelab (stays on for the 12 other projects)                                                       │
-│ + found-skill on for homelab                                                                                         │
-│   found-skill is saved in the store before applying                                                                  │
-│   the gateway makes the exact plan for each one when you press enter                                                 │
+│ Switch off archify in homelab.                                                                                       │
+│ archify moves from every project to 12 projects                                                                      │
+│ Copies to 1 project on research.                                                                                     │
+│ Switch on found-skill in homelab.                                                                                    │
+│ found-skill moves from 0 projects to 1 project                                                                       │
+│ Copies to 1 project on research.                                                                                     │
 │                                                                                                                      │
 │ enter apply  d exact folders  esc cancel                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
-
 
 
 

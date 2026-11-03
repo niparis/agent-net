@@ -1,9 +1,9 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
+  Skills per project    [ All tools ]
 ╭─Tools · 2 tools──────────────────────────────────────────────────────────────╮
 │   NAME                          STATUS                              COST     │
 │   ◆ conflict-mcp                outside agent-net                   -        │
 │   ◆ homelab-mcp                 outside agent-net                   -        │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │ 2 tools · ! needs attention · enter opens actions                            │
@@ -20,5 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-tab skills per agent  ? help  ↑↓ move  / filter  t costs  esc clear  n add
+tab switches  q quit  ? help  ↑↓ move  / filter  t costs  esc clear  n add
   enter actions  R rescan

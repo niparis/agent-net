@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
@@ -74,49 +75,7 @@ func (m Model) agentJobs(project string) ([]assignJob, string) {
 		if why := m.skillLockReason(r); why != "" {
 			return nil, r.Name + ": " + why
 		}
-		target := protocol.ToolAssignment{Scope: "projects"}
-		if r.Item.Desired != nil {
-			target = r.Item.Desired.Assignment
-			target.Projects = append([]string(nil), target.Projects...)
-			target.Machines = append([]string(nil), target.Machines...)
-		}
-		// An imported user copy still loads in every session on its original
-		// machines. Turning it off for one agent must keep the other projects.
-		if r.Item.Desired == nil && !on && r.Origin == toolsdiff.OriginMachines {
-			target.Scope = "global"
-			for _, v := range r.Variants {
-				for _, loc := range v.Locations {
-					if loc.Scope == protocol.InventoryUser && loc.NodeID != "" && !hasStr(target.Machines, loc.NodeID) {
-						target.Machines = append(target.Machines, loc.NodeID)
-					}
-				}
-			}
-			sort.Strings(target.Machines)
-		}
-		if target.Scope == "global" {
-			target.Scope = "projects"
-			target.Projects = m.toolsProjects()
-		}
-		var ps []string
-		for _, p := range target.Projects {
-			if p != project {
-				ps = append(ps, p)
-			}
-		}
-		if on {
-			ps = append(ps, project)
-		}
-		sort.Strings(ps)
-		target.Scope = "projects"
-		target.Projects = ps
-		if len(ps) == 0 {
-			target.Scope = "uninstalled"
-		}
-		job, why := m.jobFor(r, target)
-		if why != "" {
-			return nil, why
-		}
-		job.agentProject, job.agentOn = project, on
+		job := assignJob{name: r.Name, item: m.agentItemID(r), agentProject: project, agentOn: on}
 		jobs = append(jobs, job)
 	}
 	return jobs, ""
@@ -244,37 +203,14 @@ func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.tl.agentPending[project][r.Name] = !on
 		}
+		if len(m.tl.agentPending[project]) > 0 {
+			return m.reviewAgentChanges(project)
+		}
 	case "review":
-		jobs, why := m.agentJobs(project)
-		if why != "" {
-			m.toolsToast(why)
-			break
+		if len(m.tl.agentPending[project]) == 0 {
+			return m.agentToolsKey(tea.KeyMsg{Type: tea.KeySpace})
 		}
-		if len(jobs) == 0 {
-			m.toolsToast("Use space to change a skill, then enter to review.")
-			break
-		}
-		model, cmd := m.openAssign("Review "+nounCount(len(jobs), "change", "changes")+" for "+project, "apply", jobs, nil)
-		next := model.(Model)
-		// Keep pending changes when the review is cancelled. Consume them only
-		// after confirmation starts the existing apply path.
-		if apply, ok := next.tl.modal.actions["enter"]; ok {
-			next.tl.modal.actions["enter"] = func(m Model) (Model, tea.Cmd) { delete(m.tl.agentPending, project); return apply(m) }
-		} else if cmd != nil {
-			original := cmd
-			cmd = func() tea.Msg {
-				msg := original().(toolsModalMsg)
-				update := msg.update
-				msg.update = func(md *toolsModal) {
-					update(md)
-					if apply, ok := md.actions["enter"]; ok {
-						md.actions["enter"] = func(m Model) (Model, tea.Cmd) { delete(m.tl.agentPending, project); return apply(m) }
-					}
-				}
-				return msg
-			}
-		}
-		return next, cmd
+		return m.reviewAgentChanges(project)
 	}
 	return m, nil
 }
@@ -293,26 +229,30 @@ func (m Model) agentToolsView(w, h int) []string {
 		banner = append(banner, lines...)
 		h -= len(lines)
 	}
+	info := m.agentInfoView(w)
+	h = max(3, h-len(info))
 	left := min(25, max(20, w/5))
 	right := w - left
 	project := m.agentProject()
-	n, c, _, machine := m.projectCost(project)
-	title := fmt.Sprintf("%s · on %s · %s on · %s per session", project, orStr(machine, "-"), nounCount(n, "skill", "skills"), tokenCountText(c))
-	if w < 100 {
-		title = fmt.Sprintf("%s · on %s · %d on · %s/session", project, orStr(machine, "-"), n, formatTokens(c))
-	}
+	title := "Skills · " + project
 	a, b := []string{}, []string{}
-	room := max(1, h-3)
+	room := max(1, h-2)
 	ps := m.toolsProjects()
 	start := max(0, m.tl.agentRow-room+1)
 	for i := start; i < min(len(ps), start+room); i++ {
 		count, _, _, _ := m.projectCost(ps[i])
 		lead := "  "
 		if i == m.tl.agentRow {
-			lead = "▸ "
+			lead = tsAcc.Render("▸") + " "
+			if m.tl.skillsFocus {
+				lead = "▸ "
+			}
 		}
 		line := lead + cell(clip(sanitize(ps[i]), left-10), left-9) + fmt.Sprintf("%3d", count)
-		if i == m.tl.agentRow && !m.tl.skillsFocus {
+		if i == m.tl.agentRow {
+			if m.tl.skillsFocus {
+				line = sDim.Render(line)
+			}
 			line = selectedRow(padStyled(line, left-4))
 		}
 		a = append(a, line)
@@ -328,17 +268,17 @@ func (m Model) agentToolsView(w, h int) []string {
 		}
 		state := ""
 		if on {
-			state = "on for this agent"
+			state = "this project only"
 		}
 		if r.Item.Desired != nil && r.Item.Desired.Assignment.Scope == "global" {
-			state = "on for every project"
+			state = "every project"
 		}
 		outside := r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal
 		if outside {
-			state = m.outsideToolStatus(r)
+			state = "every project · " + strings.Join(m.outsideMachines(r), ", ")
 		}
 		if repo != "" {
-			state = "in the " + repo + " repo (always on)"
+			state = "repo (always on)"
 		}
 		if why := m.skillLockReason(r); why != "" {
 			check = "×   "
@@ -353,27 +293,17 @@ func (m Model) agentToolsView(w, h int) []string {
 			}
 			state = "change not applied yet"
 		}
-		cost := r.Item.StartTokens
-		for _, it := range m.tl.items {
-			if it.Kind == protocol.InventorySkill && it.Name == r.Name && it.StartTokens > cost {
-				cost = it.StartTokens
-			}
-		}
+		cost := m.agentSkillCost(r)
 		nameW := min(34, right-17)
-		line := check + cell(clip(sanitize(name), nameW), nameW) + cell(formatTokens(cost), 7)
+		marker := "  "
+		if i == m.tl.skillRow && m.tl.skillsFocus {
+			marker = tsAcc.Render("▸") + " "
+		}
+		nameW -= 2
+		line := marker + check + cell(clip(sanitize(name), nameW), nameW) + cell(formatTokens(cost), 7)
 		if w >= 100 {
 			stateW := max(0, right-4-nameW-12)
-			// The row says where the skill is: off here usually means it is
-			// installed only on another machine.
-			if outside && strings.HasPrefix(state, "installed on ") && len(state) > stateW {
-				where := strings.Join(m.outsideMachines(r), ", ")
-				if on {
-					state = "outside agent-net · " + where
-				} else {
-					state = "only on " + where + " · outside agent-net"
-				}
-			}
-			line += " " + clip(sanitize(state), stateW)
+			line += " " + sDim.Render(clip(sanitize(state), stateW))
 		}
 		if i == m.tl.skillRow && m.tl.skillsFocus {
 			line = selectedRow(padStyled(line, right-4))
@@ -393,17 +323,18 @@ func (m Model) agentToolsView(w, h int) []string {
 	for len(b) < h-2 {
 		b = append(b, "")
 	}
-	heading := "Agents"
+	heading := "Projects"
 	if m.tl.agentFilter != "" || m.tl.agentSearching {
 		heading += " / " + m.tl.agentFilter + searchCursor(m.tl.agentSearching)
 	}
-	b[len(b)-1] = "skills per agent · tab: all tools"
-	ap, bp := panel(heading, a, left, roleAccent), panel(title, b, right, roleAccent)
+	leftColor, rightColor := lipgloss.TerminalColor(roleAccent), lipgloss.TerminalColor(roleFaint)
+	if m.tl.skillsFocus {
+		leftColor, rightColor = rightColor, leftColor
+	}
+	ap, bp := panelWithBorder(heading, a, left, leftColor, leftColor), panelWithBorder(title, b, right, rightColor, rightColor)
 	out := make([]string, len(ap))
 	for i := range ap {
 		out[i] = ap[i] + bp[i]
 	}
-	// The view label stays visible even when a narrow title must be clipped.
-
-	return append(banner, out...)
+	return append(append(banner, out...), info...)
 }
