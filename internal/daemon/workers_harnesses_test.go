@@ -598,6 +598,9 @@ func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
 		a := w.agentOf(t, res.SessionID)
 		return a != nil && a.Online && a.Worker != nil && a.Worker.Owner == owner
 	})
+	// A send before the new daemon's link is up is queued in its outbox and
+	// carries no message yet.
+	eventually(t, "the restarted daemon is connected", func() bool { return w.node.d.Connected() })
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "still there?"}), &sent)
 	w.replyTo(t, owner, sent.Message.ID)
