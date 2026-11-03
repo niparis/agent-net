@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -113,36 +112,13 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				}
 			}
 			for _, checkout := range checkouts {
-				if len(node.Harnesses) == 0 {
-					targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Project: checkout.Name, Checkout: checkout.Path, Action: "copy", State: "conflict", Conflict: "installed harnesses are unknown"})
-					continue
+				roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
+				if checkout.Path == "" {
+					roots = append(roots, struct{ root, harness string }{".gemini/config/skills", "antigravity"})
 				}
-				harnesses := make([]string, 0, len(node.Harnesses))
-				for _, h := range node.Harnesses {
-					harnesses = append(harnesses, h.Name)
-				}
-				for _, h := range node.Harnesses {
-					probeHarness := h.Name
-					projectConflict := false
-					if checkout.Path != "" {
-						root, conflict := inventory.ProjectSkillRoot(h.Name, harnesses)
-						projectConflict = conflict
-						switch root {
-						case ".agents/skills":
-							probeHarness = "codex"
-						case ".claude/skills":
-							probeHarness = "claude"
-						case ".opencode/skills":
-							probeHarness = "opencode"
-						case ".pi/skills":
-							probeHarness = "pi"
-						}
-					}
-					t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Harness: h.Name, Project: checkout.Name, Checkout: checkout.Path, Source: source, Action: "copy", State: "pending"}
-					if projectConflict {
-						t.State = "conflict"
-						t.Conflict = "installed harnesses have overlapping skill roots"
-					} else if kind != protocol.InventorySkill {
+				for _, h := range roots {
+					t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Source: source, Action: "copy", State: "pending"}
+					if kind != protocol.InventorySkill {
 						t.Action = "manual"
 						t.State = "conflict"
 						t.Conflict = "MCP projection is not supported"
@@ -150,7 +126,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 						t.State = "offline"
 						t.Conflict = "machine offline; destination cannot be inspected"
 					} else {
-						raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: probeHarness, Checkout: checkout.Path}, 10*time.Second)
+						raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Checkout: checkout.Path}, 10*time.Second)
 						if e != nil {
 							t.State = "conflict"
 							t.Conflict = "destination inspection unavailable"
@@ -160,6 +136,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 								t.State = "conflict"
 								t.Conflict = "invalid destination inspection"
 							} else {
+								if r.Skip {
+									continue
+								}
 								t.Destination = r.Destination
 								t.Fingerprint = r.Fingerprint
 								t.Conflict = r.Conflict
@@ -205,7 +184,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 			if !remove {
 				continue
 			}
-			t := protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, Action: "remove", State: "conflict", Conflict: "unmanaged source requires guarded removal"}
+			t := protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, OwnedOnly: true, Action: "remove", State: "conflict", Conflict: "unmanaged source requires guarded removal"}
 			if kind != protocol.InventorySkill {
 				t.Action = "manual"
 				t.Conflict = "native MCP removal is not supported"

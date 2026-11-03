@@ -14,7 +14,7 @@ func TestProjectRootsAvoidCompatibilityDuplicates(t *testing.T) {
 		{"pi", []string{"codex", "opencode", "pi"}, ".agents/skills", false},
 		{"claude", []string{"claude", "opencode"}, ".claude/skills", false},
 		{"opencode", []string{"claude", "opencode"}, ".claude/skills", false},
-		{"opencode", []string{"claude", "codex", "opencode"}, "", true},
+		{"opencode", []string{"claude", "codex", "opencode"}, ".agents/skills", false},
 	}
 	for _, c := range cases {
 		root, conflict := ProjectSkillRoot(c.h, c.installed)

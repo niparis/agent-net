@@ -213,6 +213,8 @@ type ToolRevision struct {
 }
 
 type ToolPlanTarget struct {
+	OwnedOnly   bool   `json:"owned_only,omitempty"`
+	Root        string `json:"root,omitempty"`
 	NodeID      string `json:"node_id"`
 	Machine     string `json:"machine"`
 	Harness     string `json:"harness"`
@@ -315,6 +317,7 @@ type ToolSkillDetails struct {
 }
 
 type ToolPlanProbe struct {
+	Root          string `json:"root,omitempty"`
 	Name          string `json:"name"`
 	Harness       string `json:"harness"`
 	Checkout      string `json:"checkout,omitempty"`
@@ -326,6 +329,7 @@ type ToolPlanProbe struct {
 	Branch        string `json:"branch,omitempty"`
 }
 type ToolPlanProbeResult struct {
+	Skip        bool     `json:"skip,omitempty"`
 	Destination string   `json:"destination,omitempty"`
 	Conflict    string   `json:"conflict,omitempty"`
 	Fingerprint string   `json:"fingerprint,omitempty"`

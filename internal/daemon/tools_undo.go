@@ -21,6 +21,12 @@ func (d *Daemon) undoCopyDestination(t protocol.ToolTarget, targets []protocol.T
 	}
 	if t.Target.Checkout == "" {
 		rel := globalSkillRel(t.Target.Harness)
+		if t.Target.Root != "" {
+			rel = t.Target.Root
+			if rel != ".claude/skills" && rel != ".agents/skills" && rel != ".gemini/config/skills" {
+				return "", "", "unsupported skill root"
+			}
+		}
 		if rel == "" || !filepath.IsAbs(d.cfg.InventoryHome) {
 			return "", "", "unsupported harness"
 		}

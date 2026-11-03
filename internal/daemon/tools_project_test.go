@@ -243,7 +243,7 @@ func TestProjectTargetsReconcileThroughGateway(t *testing.T) {
 	}
 	gitIn(t, checkout, "init", "-q", "-b", "main")
 	detect := func(context.Context) []protocol.HarnessInfo {
-		return []protocol.HarnessInfo{{Name: "codex"}, {Name: "opencode"}, {Name: "pi"}}
+		return []protocol.HarnessInfo{{Name: "claude"}, {Name: "codex"}, {Name: "opencode"}, {Name: "pi"}}
 	}
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: detect, cfg: func(c *Config) { c.InventoryHome = home }})
@@ -274,10 +274,17 @@ func TestProjectTargetsReconcileThroughGateway(t *testing.T) {
 	if err := json.Unmarshal(raw, &plan); err != nil {
 		t.Fatal(err)
 	}
+	roots := map[string]bool{}
 	for _, target := range plan.Targets {
-		if target.Action == "copy" && target.Checkout == checkout && target.Destination != filepath.Join(checkout, ".agents/skills/demo") {
-			t.Fatalf("not deduped: %+v", target)
+		if target.Action == "copy" && target.Checkout == checkout {
+			if target.Conflict != "" || target.Destination != filepath.Join(checkout, target.Root, "demo") {
+				t.Fatalf("invalid target: %+v", target)
+			}
+			roots[target.Root] = true
 		}
+	}
+	if len(roots) != 2 || !roots[".claude/skills"] || !roots[".agents/skills"] {
+		t.Fatalf("roots: %v", roots)
 	}
 	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: plan.ID})
 	eventually(t, "project copied", func() bool {
@@ -299,7 +306,7 @@ func TestProjectTargetsReconcileThroughGateway(t *testing.T) {
 				applied++
 			}
 		}
-		return applied >= 3
+		return applied >= 2
 	})
 	for _, rel := range []string{".opencode/skills/demo", ".pi/skills/demo"} {
 		if _, err := os.Stat(filepath.Join(checkout, rel)); !os.IsNotExist(err) {
@@ -320,15 +327,15 @@ func TestProjectTargetsRefuseShadowingCompatibilityRoot(t *testing.T) {
 		t.Fatal("accepted shadowing source")
 	}
 }
-func TestProjectTargetsRefuseImpossibleCompatibilityOverlap(t *testing.T) {
+func TestProjectTargetsAllowCompatibilityOverlap(t *testing.T) {
 	checkout := t.TempDir()
 	revision := protocol.ToolRevision{Item: "item", Assignment: protocol.ToolAssignment{Scope: "projects"}}
 	var targets []protocol.ToolTarget
 	for _, h := range []string{"claude", "codex", "opencode"} {
 		targets = append(targets, protocol.ToolTarget{Name: "demo", Revision: revision, Target: protocol.ToolPlanTarget{Checkout: checkout, Harness: h, Action: "copy"}})
 	}
-	if got := projectTargets(targets)["item\x00"+checkout]; got == "" {
-		t.Fatal("accepted incompatible visibility")
+	if got := projectTargets(targets)["item\x00"+checkout]; got != "" {
+		t.Fatalf("unexpected conflict: %s", got)
 	}
 }
 

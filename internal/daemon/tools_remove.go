@@ -118,6 +118,15 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if t.Target.Checkout == "" && observed.Scope == protocol.InventoryProject {
 		return fail("conflict", "source project differs from plan")
 	}
+	if t.Target.OwnedOnly {
+		owned, err := d.projectSkillOwned(source, t.Revision.Item)
+		if err != nil {
+			return fail("failed", "cannot read manifest")
+		}
+		if !owned {
+			return fail("conflict", "not installed by agent-net")
+		}
+	}
 	if err = filepath.WalkDir(anchored, func(_ string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err

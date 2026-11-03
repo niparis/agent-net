@@ -225,7 +225,7 @@ func TestToolApplyRejectsChangedDestination(t *testing.T) {
 	}
 	dest := ""
 	for _, target := range plan.Targets {
-		if target.Harness == "opencode" && target.Action == "copy" {
+		if target.Root == ".agents/skills" && target.Action == "copy" {
 			dest = target.Destination
 			break
 		}
@@ -327,5 +327,22 @@ func TestToolApplyRejectsUnscannedShadow(t *testing.T) {
 	}
 	if _, err = cli.call("tools_apply", protocol.ToolPlanID{ID: plan.ID}); err == nil || !strings.Contains(err.Error(), "plan out of date") {
 		t.Fatalf("unscanned shadow accepted: %v", err)
+	}
+}
+
+func TestToolProjectFolderTargetsAndShadow(t *testing.T) {
+	checkout := t.TempDir()
+	targets := []protocol.ToolTarget{}
+	for _, h := range []string{"claude", "codex"} {
+		targets = append(targets, protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "skill:demo", Assignment: protocol.ToolAssignment{Scope: "projects"}}, Target: protocol.ToolPlanTarget{Harness: h, Checkout: checkout, Action: "copy"}})
+	}
+	if got := projectTargets(targets); len(got) != 0 {
+		t.Fatalf("planned folders conflict: %v", got)
+	}
+	if err := os.MkdirAll(filepath.Join(checkout, ".opencode/skills/demo"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if got := projectTargets(targets); len(got) == 0 {
+		t.Fatal("foreign OpenCode source was not detected")
 	}
 }

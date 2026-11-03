@@ -63,6 +63,8 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		} else {
 			root = ".opencode/skills"
 		}
+	case "antigravity":
+		root = ".gemini/config/skills"
 	case "pi":
 		if p.Checkout == "" {
 			root = ".pi/agent/skills"
@@ -71,6 +73,30 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		}
 	default:
 		return bad("unsupported harness")
+	}
+	if p.Root != "" {
+		root = p.Root
+		if root != ".claude/skills" && root != ".agents/skills" && !(p.Checkout == "" && root == ".gemini/config/skills") {
+			return bad("unsupported skill root")
+		}
+		if root == ".gemini/config/skills" {
+			info, err := os.Lstat(filepath.Join(base, ".gemini"))
+			if os.IsNotExist(err) {
+				return protocol.ToolPlanProbeResult{Skip: true}
+			}
+			if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return bad("destination root unavailable")
+			}
+		}
+		foreign := []string{".codex/skills", ".config/opencode/skills", ".pi/agent/skills"}
+		if p.Checkout != "" {
+			foreign = []string{".codex/skills", ".opencode/skills", ".pi/skills", ".agent/skills"}
+		}
+		for _, other := range foreign {
+			if _, err := os.Lstat(filepath.Join(base, other, p.Name)); err == nil || !os.IsNotExist(err) {
+				return bad("another skill source may shadow the planned path")
+			}
+		}
 	}
 	dest := filepath.Join(base, root, p.Name)
 	out := protocol.ToolPlanProbeResult{Destination: dest}

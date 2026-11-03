@@ -516,7 +516,13 @@ func Scan(o Options) protocol.InventoryReport {
 	for _, p := range o.Projects {
 		base := filepath.Clean(p.Path)
 		for _, x := range [][2]string{{"antigravity", ".agent/skills"}, {"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}, {"pi", ".agents/skills"}} {
+			start := len(report.Items)
 			skills(x[0], protocol.InventoryProject, p.Name, base, base, filepath.Join(base, x[1]))
+			if x[1] == ".agent/skills" {
+				for i := start; i < len(report.Items); i++ {
+					report.Items[i].Source = protocol.InventorySystem
+				}
+			}
 		}
 		config("claude", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".mcp.json"), "mcpServers", false)
 		config("claude", protocol.InventoryProject, p.Name, base, home, filepath.Join(home, ".claude.json"), "project-local", false)

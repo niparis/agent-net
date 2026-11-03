@@ -137,7 +137,7 @@ func TestGlobalSkillReconcilesThroughGateway(t *testing.T) {
 		if json.Unmarshal(raw, &detail) != nil {
 			return false
 		}
-		return detail.Item.Applied == "applied" && len(detail.Item.Results) == 4
+		return detail.Item.Applied == "applied" && len(detail.Item.Results) == 2
 	})
 }
 

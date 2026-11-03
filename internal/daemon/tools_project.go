@@ -89,6 +89,12 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 	default:
 		return fail("manual", "unsupported harness")
 	}
+	if t.Target.Root != "" {
+		if t.Target.Root != ".claude/skills" && t.Target.Root != ".agents/skills" {
+			return fail("conflict", "unsupported skill root")
+		}
+		root = t.Target.Root
+	}
 	if t.Target.Destination != "" {
 		if filepath.Base(t.Target.Destination) != t.Name {
 			return fail("conflict", "planned destination differs")
@@ -401,37 +407,26 @@ func projectTargets(targets []protocol.ToolTarget) map[string]string {
 	for key, g := range groups {
 		for _, t := range g.targets {
 			root, conflict := inventory.ProjectSkillRoot(t.Target.Harness, g.harnesses)
+			if t.Target.Root != "" {
+				root = t.Target.Root
+				conflict = root != ".claude/skills" && root != ".agents/skills"
+			}
 			if conflict {
-				conflicts[key] = "installed harnesses have overlapping skill roots"
+				conflicts[key] = "unsupported skill root"
 				break
 			}
-			dest := filepath.Join(g.checkout, root, g.name)
-			if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != dest {
+			if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != filepath.Join(g.checkout, root, g.name) {
 				conflicts[key] = "planned destination differs"
 				break
 			}
-			var visible []string
-			switch t.Target.Harness {
-			case "claude":
-				visible = []string{".claude/skills"}
-			case "codex":
-				visible = []string{".agents/skills"}
-			case "opencode":
-				visible = []string{".opencode/skills", ".claude/skills", ".agents/skills"}
-			case "pi":
-				visible = []string{".pi/skills", ".agents/skills"}
-			}
-			for _, other := range visible {
-				if other == root {
-					continue
-				}
-				_, err := os.Lstat(filepath.Join(g.checkout, other, g.name))
-				if err == nil || !os.IsNotExist(err) {
-					conflicts[key] = "another skill source may shadow the planned path"
-					break
-				}
-			}
-			if conflicts[key] != "" {
+		}
+		if conflicts[key] != "" {
+			continue
+		}
+		// The two managed roots are intentionally both visible to OpenCode.
+		for _, other := range []string{".codex/skills", ".opencode/skills", ".pi/skills", ".agent/skills"} {
+			if _, err := os.Lstat(filepath.Join(g.checkout, other, g.name)); err == nil || !os.IsNotExist(err) {
+				conflicts[key] = "another skill source may shadow the planned path"
 				break
 			}
 		}

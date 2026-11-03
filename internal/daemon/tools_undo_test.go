@@ -186,7 +186,7 @@ func TestToolUndoThroughGatewayRemovesInstalledCopy(t *testing.T) {
 	eventually(t, "install results reported", func() bool {
 		raw, err := cli.call("tools_item", map[string]any{"id": item.ID})
 		var detail protocol.ToolDetail
-		return err == nil && json.Unmarshal(raw, &detail) == nil && detail.Item.Applied == "applied" && len(detail.Item.Results) == 4
+		return err == nil && json.Unmarshal(raw, &detail) == nil && detail.Item.Applied == "applied" && len(detail.Item.Results) == 2
 	})
 	raw = cli.mustCall("tools_undo", protocol.ToolUndoRequest{Item: item.ID})
 	var r protocol.ToolRevision
@@ -199,5 +199,79 @@ func TestToolUndoThroughGatewayRemovesInstalledCopy(t *testing.T) {
 	})
 	if _, err := os.Lstat(filepath.Join(source, "SKILL.md")); err != nil {
 		t.Fatalf("original skill must stay: %v", err)
+	}
+}
+
+func TestToolFolderCopiesAndUndo(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q")
+	for _, entry := range []struct{ harness, root string }{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}} {
+		target.Target.Harness, target.Target.Root = entry.harness, entry.root
+		target.Target.Destination = filepath.Join(checkout, entry.root, target.Name)
+		if r := d.copyProjectSkill(target, bundle); r.State != "applied" {
+			t.Fatalf("copy %s: %+v", entry.root, r)
+		}
+		b, err := os.ReadFile(filepath.Join(checkout, ".git/info/exclude"))
+		if err != nil || !strings.Contains(string(b), "/"+entry.root+"/demo/") {
+			t.Fatalf("exclude %s: %s %v", entry.root, b, err)
+		}
+	}
+	for _, entry := range []struct{ harness, root string }{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}} {
+		target.Target.Harness, target.Target.Root = entry.harness, entry.root
+		target.Target.Destination = filepath.Join(checkout, entry.root, target.Name)
+		if r := d.undoCopySkill(undoTargetOf(target, "undo_copy"), nil); r.State != "applied" {
+			t.Fatalf("undo %s: %+v", entry.root, r)
+		}
+		if _, err := os.Stat(target.Target.Destination); !os.IsNotExist(err) {
+			t.Fatalf("copy remains: %v", err)
+		}
+	}
+}
+
+func TestToolGlobalFolderCopiesAndGemini(t *testing.T) {
+	d, old, _, _ := installedCopy(t)
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := inventory.PackSkill(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := protocol.ToolPlanProbe{Name: "demo", Harness: "antigravity", Root: ".gemini/config/skills"}
+	if r := d.probeToolDestination(probe); !r.Skip {
+		t.Fatalf("missing gemini: %+v", r)
+	}
+	if err := os.Mkdir(filepath.Join(d.cfg.InventoryHome, ".gemini"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.probeToolDestination(probe); r.Skip || r.Conflict != "" {
+		t.Fatalf("gemini: %+v", r)
+	}
+	for _, entry := range []struct{ harness, root string }{{"codex", ".agents/skills"}, {"antigravity", ".gemini/config/skills"}} {
+		target := old
+		target.Target.Action = "copy"
+		target.Target.Harness, target.Target.Root = entry.harness, entry.root
+		if r := d.copyGlobalSkill(target, bundle); r.State != "applied" {
+			t.Fatalf("copy %s: %+v", entry.root, r)
+		}
+		if _, err := os.Stat(filepath.Join(d.cfg.InventoryHome, entry.root, "demo/SKILL.md")); err != nil {
+			t.Fatal(err)
+		}
+		if r := d.undoCopySkill(undoTargetOf(target, "undo_copy"), nil); r.State != "applied" {
+			t.Fatalf("undo %s: %+v", entry.root, r)
+		}
+	}
+}
+
+func TestToolRemovalLeavesUnownedSkill(t *testing.T) {
+	d, target, _, source, _ := removeFixture(t)
+	target.Target.OwnedOnly = true
+	if r := d.removeSkill(target); r.State != "conflict" {
+		t.Fatalf("unowned source: %+v", r)
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatal(err)
 	}
 }

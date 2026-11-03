@@ -87,8 +87,30 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 	}
 	root := d.cfg.InventoryHome
 	rel := globalSkillRel(t.Target.Harness)
+	if t.Target.Root != "" {
+		rel = t.Target.Root
+		if rel != ".claude/skills" && rel != ".agents/skills" && rel != ".gemini/config/skills" {
+			return fail("conflict", "unsupported skill root")
+		}
+		if rel == ".gemini/config/skills" {
+			info, err := os.Lstat(filepath.Join(root, ".gemini"))
+			if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return fail("conflict", "destination root unavailable")
+			}
+		}
+	}
 	if rel == "" {
 		return fail("manual", "unsupported harness")
+	}
+	if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != filepath.Join(root, rel, t.Name) {
+		return fail("conflict", "planned destination differs")
+	}
+	if t.Target.Root != "" {
+		for _, other := range []string{".codex/skills", ".config/opencode/skills", ".pi/agent/skills"} {
+			if _, err := os.Lstat(filepath.Join(root, other, t.Name)); err == nil || !os.IsNotExist(err) {
+				return fail("conflict", "another skill source may shadow the planned path")
+			}
+		}
 	}
 	return d.copySkillAt(t, bundle, root, rel)
 }
@@ -298,6 +320,9 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 								}
 							}
 							root, _ := inventory.ProjectSkillRoot(t.Target.Harness, names)
+							if t.Target.Root != "" {
+								root = t.Target.Root
+							}
 							t.Target.Destination = filepath.Join(t.Target.Checkout, root, t.Name)
 						}
 						result = d.copyProjectSkill(t, b.Data)

@@ -1174,11 +1174,13 @@ interval. A plan that would remove the last assigned copy of an unimported
 skill is refused; import it first. For global skills the daemon fetches the stored version, verifies its hash
 and installs a missing destination using a temporary directory beside it and an
 atomic no-replace rename. A different existing destination is a conflict.
-For project assignments it also copies into registered Git checkouts. The plan
-uses shared compatibility roots where harnesses can read the same copy. A
-combination that would expose the name twice, or an existing shadowing source,
-is a conflict. Non-Git checkouts stay pending until the owner chooses an ignore
-mechanism. Removals move the verified source to the daemon's local backup
+Global assignments place copies in `~/.claude/skills` and `~/.agents/skills`,
+and in `~/.gemini/config/skills` when `~/.gemini` already exists. Project
+assignments place copies in `.claude/skills` and `.agents/skills` in each
+registered Git checkout. OpenCode reads both and loads the skill once. A
+same-named skill in another source that can shadow these copies is a conflict.
+The scanner also observes project `.agent/skills` without managing it. Non-Git checkouts stay pending until the owner chooses an ignore
+mechanism. Removals move an agent-net-owned verified source to the daemon's local backup
 directory before removing it from the skill location.
 It compares the source hash with the planned version and reports a conflict if
 the content changed. Backups retain the original path under a timestamped

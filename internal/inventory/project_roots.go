@@ -1,7 +1,6 @@
 package inventory
 
-// ProjectSkillRoot chooses one native or shared compatibility directory for
-// each harness. A conflict means the installed harnesses would see two copies.
+// ProjectSkillRoot recovers the legacy per-harness path for old journal entries.
 func ProjectSkillRoot(harness string, installed []string) (string, bool) {
 	has := func(name string) bool {
 		for _, v := range installed {
@@ -10,9 +9,6 @@ func ProjectSkillRoot(harness string, installed []string) (string, bool) {
 			}
 		}
 		return false
-	}
-	if has("opencode") && has("claude") && (has("codex") || has("pi")) {
-		return "", true
 	}
 	switch harness {
 	case "claude":
