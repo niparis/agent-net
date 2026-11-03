@@ -173,7 +173,7 @@ func (s *Store) toolSnapshot(tx *sql.Tx, item string) (string, error) {
 		}
 	}
 	for _, query := range []string{
-		`SELECT id,hostname,os,version,harnesses FROM nodes ORDER BY id`,
+		`SELECT id,hostname,os FROM nodes ORDER BY id`,
 		`SELECT node_id,path,name,remote,default_branch FROM projects ORDER BY node_id,path`,
 		`SELECT node_id,report FROM inventory_reports ORDER BY node_id`,
 		`SELECT id,kind,name,hash FROM tool_identities ORDER BY id`,
