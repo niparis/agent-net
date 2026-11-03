@@ -219,6 +219,11 @@ func catalogResult(name string, value any) (*mcp.CallToolResult, error) {
 	if err := resolved.Validate(normalized); err != nil {
 		return toolError(fmt.Errorf("%s output does not match the catalog schema: %v", name, err))
 	}
+	// Keep arbitrary JSON setting values exact on the wire, including integers
+	// larger than float64 can represent. Validation used the decoded copy.
+	if name == "agent_settings_read" {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}, StructuredContent: json.RawMessage(encoded)}, nil
+	}
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: string(encoded)}},
 		StructuredContent: normalized,

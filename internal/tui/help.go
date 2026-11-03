@@ -215,6 +215,12 @@ func (m Model) helpLine(w int) string {
 		return clip(m.defectSeverity.View()+sDim.Render("   enter asks to confirm, esc cancels"), w)
 	case modeProjectRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
+	case modeSettingUndo:
+		return clip(sBold.Render(fmt.Sprintf("Undo all changes in revision %d? Enter confirms, esc cancels.", m.settingUndoRevision)), w)
+	case modeSettingRepo:
+		return clip(m.rename.View()+sDim.Render("   enter selects, empty selects network, esc cancels"), w)
+	case modeSettingValue:
+		return clip(m.rename.View()+sDim.Render("   enter saves JSON, esc cancels"), w)
 	case modeTimeZone:
 		return clip(m.rename.View()+sDim.Render("   enter saves, auto follows your machine, esc cancels"), w)
 	case modeRename:

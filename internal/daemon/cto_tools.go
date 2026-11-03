@@ -112,6 +112,9 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "settings_change" {
+		return d.routeCTOSettings(ctx, raw)
+	}
 	if isCTOGraphTool(name) {
 		return d.routeCTOGraph(ctx, name, raw)
 	}
@@ -142,6 +145,26 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "settings_values_write":
+		var q protocol.SettingsWrite
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return nil, err
+		}
+		q.By = proposalActor(ctx)
+		if q.By == "" {
+			return nil, errors.New("settings write requires a CTO actor")
+		}
+		return d.call(ctx, "settings.write", q)
+	case "settings_values_undo":
+		var q protocol.SettingsUndo
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return nil, err
+		}
+		q.By = proposalActor(ctx)
+		if q.By == "" {
+			return nil, errors.New("settings undo requires a CTO actor")
+		}
+		return d.call(ctx, "settings.undo", q)
 	case "proposal_ask":
 		var p struct {
 			ID string `json:"id"`

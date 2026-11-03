@@ -111,11 +111,27 @@ func (m Model) settingsItems() []settingsItem {
 	if m.onboarding.Disabled {
 		tips = "off"
 	}
-	return append(items,
+	items = append(items,
 		settingsItem{3, "timezone", 0, m.timeZoneLine()},
 		settingsItem{4, "notifications", 0, "Desktop notifications: " + notifications},
 		settingsItem{5, "tips", 0, "Tips: " + tips},
 		settingsItem{5, "restart", 0, "Restart tips"})
+	scope := "network"
+	if m.settingRepo != "" {
+		scope = "repo " + m.settingRepo
+	}
+	items = append(items, settingsItem{6, "setting-repo", 0, "Show settings for: " + scope})
+	if len(m.settingValues) == 0 {
+		items = append(items, settingsItem{6, "settings-empty", 0, "Settings unavailable or loading"})
+	}
+	for i, v := range m.settingValues {
+		label := v.Key + ": " + sanitize(string(v.Value)) + " (" + settingSource(v) + ")"
+		if !v.Live {
+			label += " [not live yet]"
+		}
+		items = append(items, settingsItem{6, "setting-value", i, label})
+	}
+	return items
 }
 
 func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -142,7 +158,7 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if keyAction(contextSettings, k.String()) == "previous section" {
 			step = -1
 		}
-		section := (item.section + step + 6) % 6
+		section := (item.section + step + 7) % 7
 		for i, row := range items {
 			if row.section == section {
 				m.settingsRow = i
@@ -164,6 +180,16 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "public", "url", "add", "revoke":
 		action := keyAction(contextSettings, k.String())
+		if action == "url" && item.kind == "setting-value" {
+			row := m.settingValues[item.index]
+			if len(row.History) == 0 {
+				m.fail("No settings history to undo.")
+				return m, nil
+			}
+			m.settingUndoRevision = row.History[0].Revision
+			m.mode = modeSettingUndo
+			return m, nil
+		}
 		if action == "revoke" && item.kind == "machine" {
 			n := m.machineRows()[item.index]
 			m.mode = modeConfirm
@@ -182,6 +208,18 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "open", "toggle":
 		open := keyAction(contextSettings, k.String()) == "open"
 		switch item.kind {
+		case "setting-repo":
+			if open {
+				m.mode = modeSettingRepo
+				m.rename = textinput.New()
+				m.rename.Prompt = "repo (empty for network)> "
+				m.rename.SetValue(m.settingRepo)
+				return m, m.rename.Focus()
+			}
+		case "setting-value":
+			if open {
+				return m.startSettingValueEdit(item.index)
+			}
 		case "public":
 			return m.settingsAppsKey(keyRunesForSettings("p"))
 		case "url":
@@ -382,12 +420,13 @@ func (m Model) settingsView(w, h int) []string {
 	case modeApps:
 		return append(out, m.appsView(w, max(h-1, 1))...)
 	}
-	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips"}
-	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips."}
+	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips", "Working rules and guidance"}
+	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Change network values and review their history."}
 	items := m.settingsItems()
 	selected := min(max(m.settingsRow, 0), len(items)-1)
 	var body []string
 	selectedLine := 0
+	selectedEnd := 0
 	section := -1
 	for i, item := range items {
 		if item.section != section {
@@ -423,6 +462,20 @@ func (m Model) settingsView(w, h int) []string {
 			line = selectedRow(clip("▸ "+item.text, w))
 		}
 		body = append(body, clip(line, w))
+		if item.kind == "setting-value" && i == selected {
+			v := m.settingValues[item.index]
+			body = append(body, sDim.Render(clip("    "+v.Description, w)))
+			if len(v.History) == 0 {
+				body = append(body, sDim.Render("    No changes yet"))
+			}
+			for _, history := range v.History {
+				body = append(body, sDim.Render(clip(fmt.Sprintf("    #%d %s %s %s: %s -> %s (%s)", history.Revision, history.Actor, history.Level, history.Scope, settingHistoryValue(history.Old), settingHistoryValue(history.New), sanitize(history.Reason)), w)))
+			}
+		}
+
+		if i == selected {
+			selectedEnd = len(body) - 1
+		}
 		if item.kind == "app" && m.apps.stage == "rename" && item.index == m.apps.index {
 			in := m.apps.input
 			in.Prompt = ""
@@ -440,8 +493,8 @@ func (m Model) settingsView(w, h int) []string {
 	}
 	room := max(h-1, 1)
 	start := 0
-	if selectedLine >= room {
-		start = selectedLine - room + 1
+	if selectedEnd >= room {
+		start = min(selectedLine, selectedEnd-room+1)
 	}
 	if start > 0 && start+room > len(body) {
 		start = max(len(body)-room, 0)
@@ -454,4 +507,160 @@ func (m Model) settingsView(w, h int) []string {
 		out[i] = ansi.Truncate(out[i], w, "")
 	}
 	return out
+}
+
+type settingValuesMsg struct {
+	rows   []protocol.SettingView
+	notice string
+	err    error
+}
+
+func settingHistoryValue(v json.RawMessage) string {
+	if v == nil {
+		return "inherited"
+	}
+	return sanitize(string(v))
+}
+func settingSource(v protocol.SettingView) string {
+	if v.Source == "network" {
+		if strings.HasPrefix(v.Actor, "owner") {
+			return "set by you"
+		}
+		if strings.HasPrefix(strings.ToLower(v.Actor), "cto") {
+			return "CTO"
+		}
+	}
+	return v.Source
+}
+func (m Model) loadSettingValues() tea.Cmd {
+	src, ok := m.src.(inboxCaller)
+	return func() tea.Msg {
+		if !ok {
+			return settingValuesMsg{err: fmt.Errorf("unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		raw, err := src.Call(ctx, "settings_owner_read", protocol.SettingsReadRequest{Repo: m.settingRepo})
+		if err != nil {
+			return settingValuesMsg{err: err}
+		}
+		var rows []protocol.SettingView
+		err = json.Unmarshal(raw, &rows)
+		return settingValuesMsg{rows: rows, err: err}
+	}
+}
+func (m Model) startSettingValueEdit(i int) (Model, tea.Cmd) {
+	if _, ok := m.src.(inboxCaller); !ok {
+		m.fail("Settings unavailable.")
+		return m, nil
+	}
+	m.settingEdit = i
+	m.mode = modeSettingValue
+	m.rename = textinput.New()
+	m.rename.Prompt = "JSON value> "
+	m.rename.CharLimit = 0
+	m.rename.SetValue(string(m.settingValues[i].Value))
+	m.rename.CursorEnd()
+	return m, m.rename.Focus()
+}
+func (m Model) settingValueKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
+		m.mode = modeNormal
+		return m, nil
+	case "submit":
+		value := json.RawMessage(strings.TrimSpace(m.rename.Value()))
+		if !json.Valid(value) || string(value) == "null" {
+			m.fail("Enter a JSON value.")
+			return m, nil
+		}
+		row := m.settingValues[m.settingEdit]
+		src, ok := m.src.(inboxCaller)
+		if !ok {
+			m.fail("Settings unavailable.")
+			return m, nil
+		}
+		m.mode = modeNormal
+		level, scope := "network", "network"
+		if m.settingRepo != "" {
+			for _, l := range row.Levels {
+				if l == "repo" {
+					level, scope = "repo", m.settingRepo
+					break
+				}
+			}
+		}
+		q := protocol.SettingsWrite{Changes: []protocol.SettingsChange{{Key: row.Key, Level: level, Scope: scope, Value: value, Expect: row.Explicit}}, Reason: "Changed in Settings"}
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+			defer cancel()
+			raw, err := src.Call(ctx, "settings_write", q)
+			if err != nil {
+				return settingValuesMsg{err: err}
+			}
+			var result protocol.SettingsResult
+			if err = json.Unmarshal(raw, &result); err != nil {
+				return settingValuesMsg{err: err}
+			}
+			notice := fmt.Sprintf("Saved %s (revision %d).", row.Key, result.Revision)
+			for _, move := range result.Moved {
+				notice += fmt.Sprintf(" Repo %s: %s -> %s.", move.Scope, move.Old, move.New)
+			}
+			return settingValuesMsg{notice: notice}
+		}
+	}
+	var cmd tea.Cmd
+	m.rename, cmd = m.rename.Update(k)
+	return m, cmd
+}
+
+func (m Model) settingRepoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
+		m.mode = modeNormal
+		return m, nil
+	case "submit":
+		m.settingRepo = strings.TrimSpace(m.rename.Value())
+		m.settingValues = nil
+		m.mode = modeNormal
+		return m, m.loadSettingValues()
+	}
+	var cmd tea.Cmd
+	m.rename, cmd = m.rename.Update(k)
+	return m, cmd
+}
+
+func (m Model) settingUndoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
+		m.mode = modeNormal
+		return m, nil
+	case "submit":
+		src, ok := m.src.(inboxCaller)
+		if !ok {
+			m.mode = modeNormal
+			m.fail("Settings unavailable.")
+			return m, nil
+		}
+		rev := m.settingUndoRevision
+		m.mode = modeNormal
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+			defer cancel()
+			raw, err := src.Call(ctx, "settings_undo", protocol.SettingsUndo{Revision: rev})
+			if err != nil {
+				return settingValuesMsg{err: err}
+			}
+			var result protocol.SettingsResult
+			if err = json.Unmarshal(raw, &result); err != nil {
+				return settingValuesMsg{err: err}
+			}
+			notice := fmt.Sprintf("Undid revision %d as revision %d.", rev, result.Revision)
+			for _, move := range result.Moved {
+				notice += fmt.Sprintf(" Repo %s: %s -> %s.", move.Scope, move.Old, move.New)
+			}
+			return settingValuesMsg{notice: notice}
+		}
+	}
+	return m, nil
 }

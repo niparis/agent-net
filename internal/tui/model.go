@@ -144,6 +144,10 @@ type Model struct {
 	showHiddenSessions        bool
 	showHiddenNodes           bool
 	settingsRow               int
+	settingValues             []protocol.SettingView
+	settingEdit               int
+	settingRepo               string
+	settingUndoRevision       int64
 	sessionCell               int
 	filter                    string
 	uiFilter                  string
@@ -858,6 +862,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case policySavedMsg:
 		return m.onPolicySaved(msg)
 
+	case settingValuesMsg:
+		if msg.err != nil {
+			m.fail("Settings: " + explain(msg.err))
+			return m, nil
+		}
+		if msg.rows != nil {
+			m.settingValues = msg.rows
+		}
+		if msg.notice != "" {
+			m.say(msg.notice)
+			return m, m.loadSettingValues()
+		}
+		return m, nil
 	case appsResult:
 		var selected settingsItem
 		if m.tab == settingsTab {
@@ -865,6 +882,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selected = items[min(max(m.settingsRow, 0), len(items)-1)]
 		}
 		next, cmd := m.onAppsResult(msg)
+		if next.tab == settingsTab && msg.op == "apps.list" {
+			cmd = tea.Batch(cmd, next.loadSettingValues())
+		}
 		if next.tab == settingsTab {
 			items := next.settingsItems()
 			next.settingsRow = min(next.settingsRow, len(items)-1)
@@ -1076,6 +1096,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.projectRenameKey(k)
 	case modeTimeZone:
 		return m.timeZoneKey(k)
+	case modeSettingValue:
+		return m.settingValueKey(k)
+	case modeSettingRepo:
+		return m.settingRepoKey(k)
+	case modeSettingUndo:
+		return m.settingUndoKey(k)
 	case modeIntegrations:
 		return m.integrationsKey(k)
 	case modeApps:

@@ -8,22 +8,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
-type SettingsChange struct {
-	Key, Level, Scope, Item string
-	Value, Expect           json.RawMessage
-	Delete                  bool
-}
-type SettingsMove struct {
-	Key, Scope string
-	Old, New   json.RawMessage
-	Rewritten  bool
-}
+type SettingsChange = protocol.SettingsChange
+type SettingsMove = protocol.SettingsMove
 type SettingsResult struct {
-	Revision int64
-	Moved    []SettingsMove
+	Revision int64          `json:"revision"`
+	Moved    []SettingsMove `json:"moved"`
 	changed  bool
 }
 type settingAddress struct{ key, level, scope, item string }
@@ -165,7 +158,11 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			}
 		}
 		if !bytes.Equal(old, expect) {
-			return result, reject("setting %s at %s %s changed (current %s)", c.Key, c.Level, c.Scope, string(old))
+			currentValue := string(old)
+			if old == nil {
+				currentValue = "not set"
+			}
+			return result, reject("setting %s at %s %s changed (current %s)", c.Key, c.Level, c.Scope, currentValue)
 		}
 		if c.Delete {
 			if c.Value != nil {
@@ -395,4 +392,38 @@ func (s *Store) UndoSettings(revision int64, actor string) (SettingsResult, erro
 		s.settingsNotify()
 	}
 	return result, nil
+}
+
+// SettingsHistory returns public history, optionally restricted to a key or revision.
+func (s *Store) SettingsHistory(key string, revision int64, owner bool) ([]protocol.SettingsHistory, error) {
+	rows, err := s.db.Query(`SELECT revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,undo_of,at FROM setting_history WHERE (?='' OR key=?) AND (?=0 OR revision=?) ORDER BY revision DESC,seq DESC`, key, key, revision, revision)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.SettingsHistory{}
+	recipe := settings.Standard()
+	for rows.Next() {
+		var h protocol.SettingsHistory
+		var old, newval sql.NullString
+		var undo sql.NullInt64
+		if err := rows.Scan(&h.Revision, &h.Seq, &h.Key, &h.Level, &h.Scope, &h.Item, &old, &newval, &h.Actor, &h.Reason, &h.Cause, &undo, &h.At); err != nil {
+			return nil, err
+		}
+		def, ok := recipe.Definition(h.Key)
+		if !ok || (!owner && def.Visibility == "owner") {
+			continue
+		}
+		if old.Valid {
+			h.Old = json.RawMessage(old.String)
+		}
+		if newval.Valid {
+			h.New = json.RawMessage(newval.String)
+		}
+		if undo.Valid {
+			h.UndoOf = &undo.Int64
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
 }

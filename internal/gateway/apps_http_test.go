@@ -420,7 +420,7 @@ func TestAppsAuthenticationAndTools(t *testing.T) {
 		want = append(want, v.Name)
 	}
 	sort.Strings(got)
-	if len(got) != 10 || !reflect.DeepEqual(got, want) {
+	if len(got) != len(want) || !reflect.DeepEqual(got, want) {
 		t.Fatalf("tools = %v want %v", got, want)
 	}
 	for _, field := range []string{"to_set", "as_owner"} {

@@ -115,3 +115,149 @@ func TestSettingsSnapshotLinkIgnoresUnknownFrames(t *testing.T) {
 	ws.CloseNow()
 	<-l.dead
 }
+
+func TestSettingsGuidanceRefreshOnChange(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	calls := 0
+	d := &Daemon{st: st, cfg: Config{RefreshAgentFiles: func(_ func(string, ...any), s settings.Snapshot) { calls++ }}}
+	frames := []string{
+		`{"revision":1,"values":[],"maturity":{}}`,
+		`{"revision":2,"values":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"maturity":{}}`,
+		`{"revision":3,"values":[{"key":"guidance.peer_help_direct","level":"network","scope":"network","value":"Answer {{reply}}."}],"maturity":{}}`,
+		`{"revision":4,"values":[{"key":"guidance.peer_help_direct","level":"network","scope":"network","value":"Answer {{reply}}."}],"maturity":{}}`,
+	}
+	for _, f := range frames {
+		if err := d.acceptSettingsSnapshot([]byte(f), false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("refresh calls = %d, want 1", calls)
+	}
+}
+
+func TestSettingsCTOApprovalAndRead(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	advice := json.RawMessage(`{"area":"values_write","changes":[{"key":"guidance.peer_help_direct","level":"network","scope":"network","value":"Answer {{reply}}."}],"reason":"test"}`)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", advice); err != nil {
+		t.Fatalf("advice: %v", err)
+	}
+	rule := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"test"}`)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", rule); err != nil {
+		t.Fatalf("proposal: %v", err)
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals: %v %v", items, err)
+	}
+	var snap settings.Snapshot
+	snap, err = g.gw.Store().SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _ := snap.Resolve("workers.auto_continue", settings.Where{})
+	if string(e.Value) != "true" {
+		t.Fatalf("changed before approval: %s", e.Value)
+	}
+	if err := n.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ = g.gw.Store().SettingsSnapshot()
+	e, _ = snap.Resolve("workers.auto_continue", settings.Where{})
+	if string(e.Value) != "false" {
+		t.Fatalf("after approval: %s", e.Value)
+	}
+	out, err := n.d.readCTOTool(ctx, "settings", json.RawMessage(`{"area":"values","key":"workers.auto_continue"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(out)
+	if !strings.Contains(string(b), `"source"`) {
+		t.Fatalf("missing source: %s", b)
+	}
+}
+
+func TestSettingsOwnerGateAndUndo(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	agentNode := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
+	agent, _ := helloPi(t, agentNode, "settings-reader", "/work/fixture", true)
+	write := map[string]any{"changes": []any{map[string]any{"key": "workers.auto_continue", "level": "network", "scope": "network", "value": false}}, "by": "cto", "reason": "owner test"}
+	if _, err := agent.call("settings_write", write); err == nil {
+		t.Fatal("ordinary agent wrote rule")
+	}
+	cli.mustCall("settings_write", write)
+	hist, err := g.gw.Store().SettingsHistory("", 0, true)
+	if err != nil || len(hist) != 1 || hist[0].Actor != "owner" {
+		t.Fatalf("owner history %+v %v", hist, err)
+	}
+	ctx := context.Background()
+	if _, err = n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"values_undo","revision":1}`)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("undo proposal %+v %v", items, err)
+	}
+	s, _ := g.gw.Store().SettingsSnapshot()
+	e, _ := s.Resolve("workers.auto_continue", settings.Where{})
+	if string(e.Value) != "false" {
+		t.Fatal("undo applied without approval")
+	}
+	if err = n.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = g.gw.Store().SettingsSnapshot()
+	e, _ = s.Resolve("workers.auto_continue", settings.Where{})
+	if string(e.Value) != "true" {
+		t.Fatal("undo not applied")
+	}
+	advice := json.RawMessage(`{"area":"values_write","changes":[{"key":"guidance.peer_help_direct","level":"network","scope":"network","value":"Answer {{reply}}."}],"reason":"advice"}`)
+	if _, err = n.d.runCTOToolRaw(ctx, "settings_change", advice); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"values_undo","revision":3}`)); err != nil {
+		t.Fatalf("advice undo: %v", err)
+	}
+	hist, err = g.gw.Store().SettingsHistory("guidance.peer_help_direct", 0, true)
+	if err != nil || len(hist) != 2 || hist[0].Actor != "cto" || hist[0].Cause != "undo" {
+		t.Fatalf("advice undo history %+v %v", hist, err)
+	}
+	// An owner may also undo an advice revision.
+	cli.mustCall("settings_undo", map[string]any{"revision": 4})
+}
+
+func TestSettingsProposalConflictAndOwnerWindow(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	cli := cliClient(t, n)
+	n.d.ctoGraph.mu.Lock()
+	n.d.ctoGraph.until = time.Now().Add(time.Hour)
+	n.d.ctoGraph.mu.Unlock()
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"rule"}`)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposal %+v %v", items, err)
+	}
+	cli.mustCall("settings_write", map[string]any{"changes": []any{map[string]any{"key": "workers.auto_continue", "level": "network", "scope": "network", "value": true}}, "reason": "intervening"})
+	err = n.d.proposalRunner().decide(ctx, items[0].ID, true)
+	if err == nil || !strings.Contains(err.Error(), "current true") {
+		t.Fatalf("expected conflict: %v", err)
+	}
+	s, _ := g.gw.Store().SettingsSnapshot()
+	e, _ := s.Resolve("workers.auto_continue", settings.Where{})
+	if string(e.Value) != "true" {
+		t.Fatal("stale proposal changed setting")
+	}
+}

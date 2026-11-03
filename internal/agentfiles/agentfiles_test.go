@@ -459,3 +459,21 @@ func TestGuidanceNetworkSnapshot(t *testing.T) {
 		t.Fatal("antigravity missing network guidance")
 	}
 }
+
+func TestGuidanceSnapshotRewritesManagedBlocks(t *testing.T) {
+	h := fakeHome(t)
+	path := filepath.Join(h, ".claude", "CLAUDE.md")
+	write(t, path, "before\n")
+	syncGuidanceFiles(settings.Snapshot{})
+	original := read(t, path)
+	snap := settings.Snapshot{Values: []settings.Value{{Key: "guidance.peer_help_direct", Level: "network", Scope: "network", Value: json.RawMessage(`"Always answer {{reply}}."`)}}}
+	syncGuidanceFiles(snap)
+	changed := read(t, path)
+	if !strings.Contains(changed, "Always answer") || !strings.HasPrefix(changed, "before\n") {
+		t.Fatalf("changed guidance: %s", changed)
+	}
+	syncGuidanceFiles(settings.Snapshot{})
+	if got := read(t, path); got != original {
+		t.Fatal("defaults no longer byte identical")
+	}
+}

@@ -315,7 +315,7 @@ type Header struct {
 
 // EncodeRequest builds a flat frame: the params' fields sit next to type and id.
 func EncodeRequest(typ, id string, params any) ([]byte, error) {
-	m := map[string]any{}
+	m := map[string]json.RawMessage{}
 	if params != nil {
 		raw, err := json.Marshal(params)
 		if err != nil {
@@ -332,8 +332,8 @@ func EncodeRequest(typ, id string, params any) ([]byte, error) {
 			return nil, fmt.Errorf("request %s: parameter %q clashes with the frame field", typ, k)
 		}
 	}
-	m["type"] = typ
-	m["id"] = id
+	m["type"], _ = json.Marshal(typ)
+	m["id"], _ = json.Marshal(id)
 	return json.Marshal(m)
 }
 

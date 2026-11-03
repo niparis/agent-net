@@ -1,0 +1,1 @@
+{"input":{"type":"object","properties":{"key":{"type":"string","description":"Key."},"repo":{"type":"string","description":"Repo."}},"additionalProperties":false},"output":{"type":"object","properties":{"settings":{"type":"array","items":{"type":"object","additionalProperties":true}}},"required":["settings"],"additionalProperties":false}}

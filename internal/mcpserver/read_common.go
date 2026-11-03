@@ -110,6 +110,7 @@ func addReadTools(s *mcp.Server, call Caller) {
 	addMessageReadTools(s, call)
 	addWorkerReadTools(s, call)
 	addGraphReadTool(s, call)
+	addSettingsReadTool(s, call)
 	addMCPReadTools(s, call)
 }
 

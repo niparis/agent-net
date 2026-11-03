@@ -23,7 +23,7 @@ const (
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:     "overview sessions session proposals feed graph machines workers tools settings projects messages cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_mcp_servers_find agent_worker_profiles_find",
+		ctoRead:     "overview sessions session proposals feed graph machines workers tools settings projects messages cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find",
 		ctoTalk:     "message ask_owner learn ui cto_ui_show proposal_ask agent_message_send agent_message_reply agent_owner_ask agent_learn",
 		ctoProposal: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new",
 	} {
@@ -65,6 +65,7 @@ var ctoChangeActions = map[string]map[string]string{
 	},
 	"mcp_change": {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable"},
 	"settings_change": {
+		"values_write": "settings_values_write", "values_undo": "settings_values_undo",
 		"worker_profile_add": "worker_profile_add", "worker_profile_remove": "worker_profile_remove",
 		"worker_providers": "worker_providers_set", "protected_providers": "protected_providers_set",
 		"score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings",
@@ -83,7 +84,7 @@ var ctoActions = map[string]map[string][]string{
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"tools_change":    {"action": {"toggle", "new_projects", "plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},
 	"mcp_change":      {"action": {"add", "remove", "test", "enable"}},
-	"settings_change": {"area": {"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
+	"settings_change": {"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},
 }
 
@@ -226,7 +227,7 @@ func routeCTOTool(ctx context.Context, name string, raw json.RawMessage, propose
 		if err := json.Unmarshal(value, &reason); err != nil {
 			return nil, errors.New("reason must be a string")
 		}
-		if concrete != "protected_providers_set" {
+		if concrete != "protected_providers_set" && concrete != "settings_values_write" {
 			delete(fields, "reason")
 		}
 	}

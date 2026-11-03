@@ -82,6 +82,20 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 	}
 	str := func(key string) string { var s string; _ = json.Unmarshal(fields[key], &s); return s }
 	switch call.Tool {
+	case "settings_values_write":
+		var q protocol.SettingsWrite
+		if err := json.Unmarshal(call.Args, &q); err != nil {
+			return err
+		}
+		_, err := validateSettingsWrite(q)
+		return err
+	case "settings_values_undo":
+		var q protocol.SettingsUndo
+		if err := json.Unmarshal(call.Args, &q); err != nil {
+			return err
+		}
+		_, err := d.settingsRevisionHasRule(ctx, q.Revision)
+		return err
 	case "notification_settings":
 		if _, ok := fields["disabled"]; !ok {
 			return errors.New("notification_settings needs disabled")

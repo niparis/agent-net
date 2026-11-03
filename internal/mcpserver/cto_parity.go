@@ -83,6 +83,8 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("mcp_enable", "Enable or disable server.", map[string]ctoField{"name": s("Server name."), "enabled": b("Enable.")})
 	add("mcp_call", "Call an MCP tool.", map[string]ctoField{"server": s("Server name."), "tool": s("Tool."), "arguments": obj("Arguments.")})
 
+	add("settings_values_write", "Write setting values.", map[string]ctoField{"changes": settingsChangesField(), "reason": s("Reason.")})
+	add("settings_values_undo", "Undo a settings revision.", map[string]ctoField{"revision": n("Revision.")})
 	add("integrations_set", "Set integrations.", map[string]ctoField{"peer_messages": b("Messages."), "codex_tools": b("Codex."), "hint_hook": b("Hints."), "policy_hook": b("Policy."), "needs_hook": b("Needs you."), "workers_mod": b("Workers."), "quota_axi": b("Quotas.")})
 	add("notification_settings", "Propose notifications.", map[string]ctoField{"disabled": b("Off if true.")})
 	add("cto_settings", "Propose settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction.")})

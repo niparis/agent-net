@@ -236,7 +236,7 @@ var keyBindings = []keyBinding{
 	withLocal(withHelp(bind(contextSettings, "enter", "open", "open", 1), "open the selected setting: integrations, name this machine, or restart tips")),
 	withHelp(bind(contextSettings, "space", "toggle", "toggle", 1), "toggle internet access, desktop notifications or tips"),
 	withHelp(bind(contextSettings, "p", "public", "internet", 1), "switch internet access in Connected apps"),
-	withHelp(bind(contextSettings, "u", "url", "URL", 1), "set the tunnel URL in Connected apps"),
+	withHelp(bind(contextSettings, "u", "url", "URL", 1), "set the tunnel URL, or undo the selected setting revision"),
 	withHelp(bind(contextSettings, "a", "add", "add", 1), "add a connected app"),
 	withHelp(bind(contextSettings, "x", "revoke", "revoke", 1), "remove the selected machine or revoke the selected app"),
 	withHelp(bind(contextSettings, "r", "rotate token", "rotate token", 1), "rotate the selected online machine token"),

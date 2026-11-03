@@ -720,11 +720,11 @@ export const TOOL_CATALOG = [
       "properties": {
         "machine": {
           "type": "string",
-          "description": "Machine name or ID."
+          "description": "Machine."
         },
         "project": {
           "type": "string",
-          "description": "Project name."
+          "description": "Project."
         },
         "harness": {
           "type": "string",
@@ -734,11 +734,11 @@ export const TOOL_CATALOG = [
             "opencode",
             "pi"
           ],
-          "description": "Harness name."
+          "description": "Harness."
         },
         "model": {
           "type": "string",
-          "description": "Model ID or substring as specified."
+          "description": "Model."
         },
         "kind": {
           "type": "array",
@@ -751,7 +751,7 @@ export const TOOL_CATALOG = [
               "bot"
             ]
           },
-          "description": "Select the kind or action.",
+          "description": "Kind.",
           "default": [
             "agent",
             "worker"
@@ -764,12 +764,12 @@ export const TOOL_CATALOG = [
             "offline",
             "any"
           ],
-          "description": "Filter by online state.",
+          "description": "Online state.",
           "default": "online"
         },
         "text": {
           "type": "string",
-          "description": "Text or substring to match."
+          "description": "Text filter."
         },
         "match_any": {
           "type": "array",
@@ -793,7 +793,7 @@ export const TOOL_CATALOG = [
             "required": [],
             "additionalProperties": false
           },
-          "description": "Alternatives; match at least one object, with fields inside each object combined."
+          "description": "Match any alternative."
         },
         "detail": {
           "type": "string",
@@ -801,7 +801,7 @@ export const TOOL_CATALOG = [
             "concise",
             "full"
           ],
-          "description": "Choose concise rows or full details.",
+          "description": "Concise or full.",
           "default": "concise"
         },
         "limit": {
@@ -809,11 +809,11 @@ export const TOOL_CATALOG = [
           "minimum": 1,
           "maximum": 100,
           "default": 25,
-          "description": "Maximum rows in this page, from 1 to 100."
+          "description": "Page size 1-100."
         },
         "cursor": {
           "type": "string",
-          "description": "Cursor from the previous page."
+          "description": "Next cursor."
         }
       },
       "required": [],
@@ -824,6 +824,29 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "sessions_find"
+  },
+  {
+    "name": "agent_settings_read",
+    "description": "Read settings, values, sources and history by key or repo.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Key."
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repo."
+        }
+      },
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "settings_read"
   },
   {
     "name": "agent_worker_profiles_find",

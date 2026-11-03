@@ -18,6 +18,32 @@ with `{node_id}`. The CTO uses `settings_change` with `area: machine_remove` or
 `area: machine_rotate` and `node_id`. These create proposals for the owner's
 approval in Inbox. Agent sessions cannot invoke the owner methods directly.
 
+## Working rules and guidance
+
+Settings tab 6 has a Working rules and guidance section. Choose network or a
+repo, select a setting and press Enter to edit its value as JSON. The row shows
+the effective value and source. The selected row shows its history. Press `u`
+to undo the latest displayed revision and confirm; this undoes the entire batch.
+A tighter network rule moves less strict stored repo values. The result names
+repos whose effective values changed. Empty text and empty sets are values;
+deleting an override makes it inherit again.
+
+Agents, workers and the CTO can read public settings with `agent_settings_read`.
+It accepts an optional `key` and `repo` and returns definitions, effective
+values, sources, explicit values and history. The CTO can also use `settings`
+with `area: values`. Personal preferences marked owner-only are not exposed.
+History records old and new values, actor, reason, revision and undo, and is
+kept indefinitely. Use `settings_change` with `area: values_write`, `changes`
+and `reason`, or `area: values_undo` and a `revision`. Each change gives `key`,
+`level`, `scope`, and either a JSON `value` or `delete: true`. Give `expect` as
+the currently stored value, or omit it if none is stored. A conflict reports the
+current value and leaves the whole batch unchanged. Advice changes and advice
+undo by the CTO apply immediately. Rules require an owner proposal, even in the
+graph owner window. The owner uses the TUI or owner-gated `settings_write` and
+`settings_undo` operator calls. A snapshot updates managed guidance files on
+each machine. Definitions marked not live are visible but do not yet control the
+old behavior; later build steps switch their readers and writers.
+
 ## CTO settings and conversation
 
 Minor CTO graph changes apply immediately with actor `CTO (minor)`: charter
@@ -71,8 +97,9 @@ proposal. Reads still run immediately. Talk (`message`, `ask_owner`, `learn`,
 `ui`, `proposal_ask`) also runs immediately. `message` takes action `send` or `reply`; with
 `as_owner: true` it becomes a proposal. `graph_change` is proposal class: the
 daemon applies its minor actions at once and its major actions during the
-owner window. `settings_change` is always a proposal. It never returns owner
-settings to the CTO.
+owner window. `settings_change` applies settings-layer advice at once; rule
+changes and other owner-only settings remain proposals. Personal owner settings
+stay private.
 
 CTO reads use the same daemon dispatcher as ordinary agent tools, with a
 registered CTO session as caller rather than the owner. Static charter guidance,
@@ -257,7 +284,7 @@ when needed.
 | `machines` | `agent_machines_find`; `machine` selects a machine, and `harness` lists its models. |
 | `workers` | Workers from `agent_sessions_find`; `id` reads a worker profile via `agent_session_get`. |
 | `tools` | Shared MCP server rows from `agent_mcp_servers_find`; `view` is `mcp`. |
-| `settings` | Public worker profiles via `agent_worker_profiles_find`; `area` is `worker_profiles`. |
+| `settings` | Public values and history with `area: values`, or public worker profiles with `area: worker_profiles`. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
 The parity and canary tests cover the views. Session reads omit waiting-question
@@ -285,7 +312,7 @@ are proposals. The CTO has one action tool per area:
 | `tools_change` | `action: plan`, `apply`, `undo`, `import` or `native_remove` |
 | `mcp_change` | `action: add`, `remove`, `test` or `enable` |
 | `mcp_call` | one call on a shared MCP server |
-| `settings_change` | `area: worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite` or `onboarding` |
+| `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite` or `onboarding` |
 | `project_change` | `action: add`, `remove` or `display` |
 | `cto_new` | a new conversation for the active harness |
 

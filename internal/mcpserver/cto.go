@@ -47,6 +47,10 @@ var ctoCharterAttrs = func() []string {
 
 var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 
+func settingsChangesField() ctoField {
+	return ctoField{typ: "array", desc: "Setting changes with key, level, scope, value or delete, and expect.", items: map[string]any{"type": "object", "additionalProperties": false, "required": []string{"key", "level", "scope"}, "properties": map[string]any{"key": map[string]any{"type": "string"}, "level": map[string]any{"type": "string"}, "scope": map[string]any{"type": "string"}, "value": map[string]any{}, "delete": map[string]any{"type": "boolean"}, "expect": map[string]any{}}}}
+}
+
 var ctoNodeSettings = []string{"tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule", "autonomy"}
 
 // ctoRoutingField is the field that selects the concrete operation of a merged
@@ -69,7 +73,7 @@ var ctoRoutingField = map[string]string{
 var ctoTools = map[string]ctoToolDef{
 	"workers":   {desc: "List workers or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"tools":     {desc: "List shared MCP servers.", fields: map[string]ctoField{"view": {typ: "string", enum: []string{"mcp"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"settings":  {desc: "List public worker profiles.", fields: map[string]ctoField{"area": {typ: "string", enum: []string{"worker_profiles"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"settings":  {desc: "Read public settings, values, sources and history, or worker profiles.", fields: map[string]ctoField{"key": {typ: "string"}, "repo": {typ: "string"}, "area": {typ: "string", enum: []string{"worker_profiles", "values"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"graph":     {desc: "Read the public graph: charters, maturity, rules, edges; one node's full charter and rules; view guide.", fields: map[string]ctoField{"view": {typ: "string"}, "node": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"machines":  {desc: "List machines or a harness's models.", fields: map[string]ctoField{"machine": {typ: "string"}, "harness": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"proposals": {desc: "List own proposals or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
@@ -177,7 +181,9 @@ var ctoTools = map[string]ctoToolDef{
 	"settings_change": {
 		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite or onboarding.",
 		fields: map[string]ctoField{
-			"area":                {typ: "string", enum: []string{"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
+			"changes":             settingsChangesField(),
+			"revision":            {typ: "integer", desc: "Revision to undo."},
+			"area":                {typ: "string", enum: []string{"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
 			"name":                {typ: "string", desc: "Profile or machine name; empty clears."},
 			"harness":             {typ: "string", desc: "Harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":               {typ: "string", desc: "Model ID or name."},

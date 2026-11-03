@@ -161,7 +161,11 @@ func RemoveAntigravity() error {
 		if err != nil {
 			return err
 		}
-		if !bytes.Equal(data, files[name]) {
+		if name == "rules/AGENTS.md" {
+			if !(strings.HasPrefix(string(data), guidance.Begin+"\n") && strings.HasSuffix(string(data), guidance.End+"\n") && strings.Count(string(data), guidance.Begin) == 1 && strings.Count(string(data), guidance.End) == 1) {
+				continue
+			}
+		} else if !bytes.Equal(data, files[name]) {
 			continue
 		}
 		if err = os.Remove(p); err != nil {

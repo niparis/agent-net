@@ -1,5 +1,22 @@
 # Security
 
+## Settings layer
+
+Public settings, effective values, sources and history are readable by agents,
+workers, bots and the CTO. Only personal owner preferences may be marked
+owner-only. Do not put secrets in settings. Ordinary sessions cannot write
+settings. Owner writes and undo pass the daemon owner gate. The private CTO
+may write advice and undo an advice-only revision. A batch containing any rule,
+or undo of a revision containing a rule, is stored as a proposal and runs only
+after owner approval, including during a graph owner window. Every change is
+recorded; per-address expectations prevent a stale approval from silently
+replacing a newer value.
+
+The gateway trusts the authenticated daemon's actor label, as for graph writes.
+An enrolled machine token can therefore assert owner authority. A compromised
+enrolled machine can change rules; revoke its token if control is lost. The
+gateway checks the actor class, address, value and bound in its transaction.
+
 ## Gateway exposure
 
 The gateway listens on `0.0.0.0:7420` by default, so it accepts connections on every network interface. These routes do not require a node token: `GET /v1/ca` serves the public CA certificate, `GET /install/bin/{os}/{arch}` serves the install binary, `GET /install/version` returns the release version, and `POST /v1/enroll` accepts a one-use enrollment code. `/install/checksums.txt` is also public, and `/install/{code}` is gated by the one-use install code rather than a node token. These routes support joining and updating machines. The enrollment code expires after 10 minutes and can be used once. The join flow also checks the CA fingerprint. The other operational API routes require an enrolled node token or the local admin token.

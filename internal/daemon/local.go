@@ -896,6 +896,12 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		return d.call(ctx, "query.projects", p)
 
+	case "settings_read":
+		var q protocol.SettingsReadRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad settings_read params")
+		}
+		return d.readSettings(ctx, q, false)
 	case "agent_graph":
 		var p protocol.PublicGraphQuery
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {

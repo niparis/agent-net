@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"strings"
 	"testing"
 
@@ -50,5 +51,63 @@ func TestCTOSessionNeverOfferedAgentOnlyTools(t *testing.T) {
 	}
 	if len(cto.Tools) == 0 {
 		t.Fatal("CTO has no tools")
+	}
+}
+
+func TestSettingsReadOfferedToAgentsAndCTO(t *testing.T) {
+	ctx := context.Background()
+	for _, session := range []*mcp.ClientSession{connect(t, func(context.Context, string, any) (json.RawMessage, error) { return json.RawMessage(`[]`), nil }), ctoTestSession(t)} {
+		list, err := session.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, tool := range list.Tools {
+			if tool.Name == "agent_settings_read" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("settings read missing")
+		}
+	}
+}
+
+func TestCTOSettingsChangeSchemaAcceptsBatchAndUndo(t *testing.T) {
+	for _, raw := range []string{`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"test"}`, `{"area":"values_undo","revision":1}`} {
+		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(raw)); err != nil {
+			t.Fatal(err)
+		}
+		var input map[string]any
+		_ = json.Unmarshal([]byte(raw), &input)
+		result, err := ctoTestSession(t).CallTool(context.Background(), &mcp.CallToolParams{Name: "settings_change", Arguments: input})
+		if err != nil || result.IsError {
+			t.Fatalf("call %s: %+v %v", raw, result, err)
+		}
+	}
+}
+
+func TestCTOSettingsReadKeepsLargeInteger(t *testing.T) {
+	ctx := context.Background()
+	a, b := mcp.NewInMemoryTransports()
+	s := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		return json.RawMessage(`{"settings":[{"key":"example","value":9007199254740993}]}`), nil
+	}, "test")
+	ss, err := s.Connect(ctx, a, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, b, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_settings_read", Arguments: map[string]any{"key": "example"}})
+	if err != nil || result.IsError {
+		t.Fatalf("result: %+v %v", result, err)
+	}
+	if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "9007199254740993") {
+		t.Fatalf("precision lost: %+v", result.Content)
 	}
 }

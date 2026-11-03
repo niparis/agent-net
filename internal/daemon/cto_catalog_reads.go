@@ -34,6 +34,16 @@ func (d *Daemon) readCTOCatalogTool(ctx context.Context, name string, raw json.R
 		return d.ctoCatalogMessagesFind(ctx, raw)
 	case "agent_message_get":
 		return d.ctoCatalogMessageGet(ctx, raw)
+	case "agent_settings_read":
+		var q protocol.SettingsReadRequest
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad settings arguments")
+		}
+		rows, err := d.readSettings(ctx, q, false)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"settings": rows}, nil
 	case "agent_graph_read":
 		return d.ctoCatalogGraphRead(ctx, raw)
 	case "agent_mcp_servers_find":

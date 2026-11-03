@@ -12,12 +12,12 @@ import (
 // Each view is derived from ordinary dispatch with the CTO session, or from
 // the CTO's own proposal store and static guidance.
 var ctoReadSources = map[string]string{
-	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "cto_proposals_find": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
+	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "cto_proposals_find": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "settings_read,worker_profiles",
 	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
 	"agent_messages_find": "messages", "agent_message_get": "messages,message_status",
-	"agent_graph_read": "agent_graph", "agent_mcp_servers_find": "mcp_list",
+	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
 	"agent_worker_profiles_find": "worker_profiles",
 }
 
@@ -31,7 +31,7 @@ func (d *Daemon) ctoReadConn() *localConn {
 
 func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	switch name {
-	case "agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_mcp_servers_find", "agent_worker_profiles_find":
+	case "agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find":
 		return d.readCTOCatalogTool(ctx, name, raw)
 	case "workers":
 		var q struct {
@@ -97,11 +97,16 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 	case "settings":
 		var q struct {
 			Area   string `json:"area"`
+			Key    string `json:"key"`
+			Repo   string `json:"repo"`
 			Limit  int    `json:"limit"`
 			Offset int    `json:"offset"`
 		}
 		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
 			return nil, errors.New("bad settings arguments")
+		}
+		if q.Area == "values" {
+			return d.readSettings(ctx, protocol.SettingsReadRequest{Key: q.Key, Repo: q.Repo}, false)
 		}
 		if q.Area != "worker_profiles" {
 			return nil, errors.New("settings area unavailable to ordinary sessions")

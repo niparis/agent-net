@@ -2,6 +2,7 @@ package agentfiles
 
 import (
 	"encoding/json"
+	"github.com/niparis/agent-net/internal/guidance"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,5 +105,26 @@ func TestAntigravityPreservesForeignFiles(t *testing.T) {
 	b, err := os.ReadFile(foreign)
 	if err != nil || string(b) != "personal" {
 		t.Fatalf("foreign file: %q %v", b, err)
+	}
+}
+
+func TestAntigravityUninstallChangedGuidance(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("HOME", h)
+	if err := os.Mkdir(filepath.Join(h, ".gemini"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if r := SyncAntigravity("/tmp/agent-net"); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	path := filepath.Join(AntigravityPluginDir(), "rules", "AGENTS.md")
+	if err := os.WriteFile(path, []byte(guidance.Begin+"\nchanged\n"+guidance.End+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveAntigravity(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("managed file remains: %v", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/coder/websocket"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,7 +136,7 @@ func TestSettingsSnapshotSyncLink(t *testing.T) {
 	if first.Revision != 0 {
 		t.Fatal(first.Revision)
 	}
-	_, err = g.store.WriteSettings([]SettingsChange{{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: settingValue("false")}}, "owner", "test")
+	_, err = g.handle(ctx, &nodeConn{}, "settings.write", []byte(`{"changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"test","by":"owner"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,5 +365,97 @@ func TestSettingsSnapshotConsistentTransaction(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSettingsWriteUndoFrames(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	nc := &nodeConn{}
+	write := `{"changes":[{"key":"guidance.peer_help_direct","level":"network","scope":"network","value":"Please reply {{reply}}."}],"reason":"test","by":"cto"}`
+	result, err := g.handle(context.Background(), nc, "settings.write", []byte(write))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	b, _ := json.Marshal(result)
+	if !json.Valid(b) || !jsonContains(b, `"revision":1`) {
+		t.Fatalf("write result: %s", b)
+	}
+	_, err = g.handle(context.Background(), nc, "settings.write", []byte(write))
+	if err == nil || !strings.Contains(err.Error(), "current") {
+		t.Fatalf("stale write: %v", err)
+	}
+	if _, err = g.handle(context.Background(), nc, "settings.undo", []byte(`{"revision":1,"by":"cto"}`)); err != nil {
+		t.Fatalf("undo: %v", err)
+	}
+}
+
+func jsonContains(b []byte, want string) bool { return strings.Contains(string(b), want) }
+
+func TestSettingsFramesAtomicActorAndMoves(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	ctx := context.Background()
+	child := `{"changes":[{"key":"delivery.merge_authority","level":"repo","scope":"alpha","value":"full"}],"by":"owner"}`
+	if _, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(child)); err != nil {
+		t.Fatal(err)
+	}
+	cto := `{"changes":[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"delegated"}],"by":"cto"}`
+	if _, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(cto)); err == nil {
+		t.Fatal("CTO wrote a rule")
+	}
+	owner := strings.Replace(cto, `"cto"`, `"owner"`, 1)
+	got, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(owner))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(got)
+	if !strings.Contains(string(raw), `"scope":"alpha"`) || !strings.Contains(string(raw), `"rewritten":true`) {
+		t.Fatalf("moves: %s", raw)
+	}
+	bad := `{"changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false},{"key":"delivery.merge_authority","level":"network","scope":"network","value":"ask","expect":"full"}],"by":"owner"}`
+	if _, err = g.handle(ctx, &nodeConn{}, "settings.write", []byte(bad)); err == nil || !strings.Contains(err.Error(), `current "delegated"`) {
+		t.Fatalf("conflict: %v", err)
+	}
+	snap, _ := s.SettingsSnapshot()
+	if snap.Revision != 2 {
+		t.Fatalf("partial batch: %+v", snap)
+	}
+	e, _ := snap.Resolve("workers.auto_continue", settings.Where{})
+	if string(e.Value) != "true" {
+		t.Fatal("partial batch applied")
+	}
+	if _, err = g.handle(ctx, &nodeConn{}, "settings.undo", []byte(`{"revision":2,"by":"cto"}`)); err == nil {
+		t.Fatal("CTO undid rule")
+	}
+	if _, err = g.handle(ctx, &nodeConn{}, "settings.undo", []byte(`{"revision":2,"by":"owner"}`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSettingsBotReadPublicValues(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	_, err := s.WriteSettings([]SettingsChange{{Key: "guidance.peer_help_direct", Level: "network", Scope: "network", Value: settingValue(`"Answer {{reply}}."`)}}, "cto", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := g.botToolCall(context.Background(), "s_bot", "agent_settings_read", map[string]any{"key": "guidance.peer_help_direct"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(out)
+	for _, want := range []string{`"source":"network"`, `"actor":"cto"`, `"reason":"test"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("missing %s: %s", want, raw)
+		}
+	}
+}
+
+func TestSettingsConflictNamesUnsetValue(t *testing.T) {
+	s, _ := newTestStore(t)
+	_, err := s.WriteSettings([]SettingsChange{{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: settingValue("false"), Expect: settingValue("true")}}, "owner", "test")
+	if err == nil || !strings.Contains(err.Error(), "current not set") {
+		t.Fatalf("conflict: %v", err)
 	}
 }

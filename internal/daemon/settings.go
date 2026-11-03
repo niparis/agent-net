@@ -1,11 +1,15 @@
 package daemon
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
@@ -97,6 +101,133 @@ func (d *Daemon) acceptSettingsSnapshot(raw []byte, first bool) error {
 	if err != nil {
 		return err
 	}
+	old := d.SettingsSnapshot()
 	d.settingsSnapshot.Store(&snap)
+	if d.cfg.RefreshAgentFiles != nil && guidanceChanged(old, snap) {
+		d.cfg.RefreshAgentFiles(d.Logf, snap.Clone())
+	}
 	return nil
+}
+
+func guidanceChanged(old, next settings.Snapshot) bool {
+	for _, def := range settings.Standard().Definitions {
+		if !strings.HasPrefix(def.Key, "guidance.") || !def.Live {
+			continue
+		}
+		a, errA := old.Resolve(def.Key, settings.Where{})
+		b, errB := next.Resolve(def.Key, settings.Where{})
+		if errA != nil || errB != nil || !bytes.Equal(a.Value, b.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Daemon) readSettings(ctx context.Context, q protocol.SettingsReadRequest, owner bool) ([]protocol.SettingView, error) {
+	if latest, e := d.call(ctx, "settings.snapshot", nil); e == nil {
+		if e = d.acceptSettingsSnapshot(latest, false); e != nil {
+			return nil, e
+		}
+	}
+	raw, err := d.call(ctx, "settings.history", map[string]any{"key": q.Key, "owner": owner})
+	if err != nil {
+		return nil, err
+	}
+	var history []protocol.SettingsHistory
+	if err := json.Unmarshal(raw, &history); err != nil {
+		return nil, err
+	}
+	return settings.Views(d.SettingsSnapshot(), history, q, owner)
+}
+
+func (d *Daemon) settingsRevisionHasRule(ctx context.Context, rev int64) (bool, error) {
+	if rev <= 0 {
+		return false, fmt.Errorf("revision required")
+	}
+	raw, err := d.call(ctx, "settings.history", map[string]any{"revision": rev, "owner": true})
+	if err != nil {
+		return false, err
+	}
+	var history []protocol.SettingsHistory
+	if err = json.Unmarshal(raw, &history); err != nil {
+		return false, err
+	}
+	if len(history) == 0 {
+		return false, fmt.Errorf("no settings history for revision %d", rev)
+	}
+	hasRule := false
+	recipe := settings.Standard()
+	for _, h := range history {
+		def, ok := recipe.Definition(h.Key)
+		if !ok || def.Visibility == "owner" {
+			return false, fmt.Errorf("owner preference is unavailable to CTO")
+		}
+		hasRule = hasRule || def.Kind != "advice"
+	}
+	return hasRule, nil
+}
+
+func validateSettingsWrite(q protocol.SettingsWrite) (bool, error) {
+	if len(q.Changes) == 0 {
+		return false, fmt.Errorf("changes required")
+	}
+	rule := false
+	for _, c := range q.Changes {
+		def, ok := settings.Standard().Definition(c.Key)
+		if !ok {
+			return false, fmt.Errorf("unknown setting %s", c.Key)
+		}
+		if def.Visibility == "owner" {
+			return false, fmt.Errorf("owner preference is unavailable to CTO")
+		}
+		if def.Kind == "rule" {
+			rule = true
+		}
+		if c.Expect != nil {
+			if _, err := def.Codec(c.Expect); err != nil {
+				return false, err
+			}
+		}
+		if c.Delete {
+			if c.Value != nil {
+				return false, fmt.Errorf("delete with value")
+			}
+		} else if _, err := def.Codec(c.Value); err != nil {
+			return false, err
+		}
+	}
+	return rule, nil
+}
+
+func (d *Daemon) routeCTOSettings(ctx context.Context, raw json.RawMessage) (any, error) {
+	var q struct {
+		Area     string                    `json:"area"`
+		Changes  []protocol.SettingsChange `json:"changes"`
+		Revision int64                     `json:"revision"`
+		Reason   string                    `json:"reason"`
+	}
+	if err := json.Unmarshal(raw, &q); err != nil {
+		return nil, err
+	}
+	var rule bool
+	var err error
+	switch q.Area {
+	case "values_write":
+		rule, err = validateSettingsWrite(protocol.SettingsWrite{Changes: q.Changes, Reason: q.Reason})
+	case "values_undo":
+		rule, err = d.settingsRevisionHasRule(ctx, q.Revision)
+	default:
+		return routeCTOTool(ctx, "settings_change", raw, d.Propose, d.executeCTOTool)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if rule {
+		return routeCTOTool(ctx, "settings_change", raw, d.Propose, d.executeCTOTool)
+	}
+	concrete, args, _, err := ctoConcreteCall("settings_change", raw)
+	if err != nil {
+		return nil, err
+	}
+	return d.executeCTOTool(context.WithValue(ctx, proposalActorKey{}, "cto"), concrete, args)
 }

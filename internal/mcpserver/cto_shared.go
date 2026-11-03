@@ -47,6 +47,10 @@ func addCTOSharedTools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				return toolError(err)
 			}
 			var value any
+			if name == "agent_settings_read" {
+				value = json.RawMessage(raw)
+				return catalogResult(name, value)
+			}
 			if err := json.Unmarshal(raw, &value); err != nil {
 				return toolError(fmt.Errorf("%s: unreadable daemon answer: %w", name, err))
 			}

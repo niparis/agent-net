@@ -14,12 +14,12 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "cto_proposals_find": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
+	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "cto_proposals_find": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "settings_read,worker_profiles",
 	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
 	"agent_messages_find": "messages", "agent_message_get": "messages,message_status",
-	"agent_graph_read": "agent_graph", "agent_mcp_servers_find": "mcp_list",
+	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
 	"agent_worker_profiles_find": "worker_profiles",
 }
 

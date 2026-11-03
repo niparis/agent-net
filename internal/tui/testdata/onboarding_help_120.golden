@@ -3,7 +3,7 @@ Keys · all screens ────────────────────
   enter                  open the selected setting: integrations, name this machine, or restart tips
   space                  toggle internet access, desktop notifications or tips
   p                      switch internet access in Connected apps
-  u                      set the tunnel URL in Connected apps
+  u                      set the tunnel URL, or undo the selected setting revision
   a                      add a connected app
   x                      remove the selected machine or revoke the selected app
   r                      rotate the selected online machine token

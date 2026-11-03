@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
 
@@ -172,14 +174,14 @@ func TestSettingsActionsUseExistingOperations(t *testing.T) {
 func TestSettingsSectionNavigationAndHelp(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = settingsTab
-	for _, want := range []string{"integrations", "machine", "timezone", "notifications", "tips", "public"} {
+	for _, want := range []string{"integrations", "machine", "timezone", "notifications", "tips", "setting-repo", "public"} {
 		m, _ = press(m, tea.KeyMsg{Type: tea.KeyTab})
 		if got := m.settingsItems()[m.settingsRow].kind; got != want {
 			t.Fatalf("tab: got %s want %s", got, want)
 		}
 	}
 	m, _ = press(m, keyRunes("["))
-	if got := m.settingsItems()[m.settingsRow].kind; got != "tips" {
+	if got := m.settingsItems()[m.settingsRow].kind; got != "setting-repo" {
 		t.Fatalf("previous section: %s", got)
 	}
 	m.help = true
@@ -217,5 +219,101 @@ func TestSettingsGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("sessions_cells_%dx%d", w, h), s.View())
 		s.activeOnly = true
 		golden(t, fmt.Sprintf("sessions_active_%dx%d", w, h), s.View())
+	}
+}
+
+func TestSettingsValuesRenderAndSave(t *testing.T) {
+	src := &settingsValuesTestSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	m := New(src)
+	m.tab = settingsTab
+	m.width = 120
+	m.height = 50
+	m.settingValues = []protocol.SettingView{{Key: "workers.auto_continue", Value: json.RawMessage(`true`), Source: "network", Actor: "owner", History: []protocol.SettingsHistory{{Revision: 1, Actor: "owner", Reason: "test"}}}}
+	view := ansi.Strip(strings.Join(m.settingsView(120, 50), "\n"))
+	for _, want := range []string{"workers.auto_continue", "true", "set by you"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q: %s", want, view)
+		}
+	}
+	for i, item := range m.settingsItems() {
+		if item.kind == "setting-value" {
+			m.settingsRow = i
+			break
+		}
+	}
+	m2, _ := m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = m2.(Model)
+	view = ansi.Strip(strings.Join(m.settingsView(120, 50), "\n"))
+	if !strings.Contains(view, "test") {
+		t.Fatal("history missing")
+	}
+	m.rename.SetValue("false")
+	next, cmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = next
+	if cmd == nil {
+		t.Fatal("no save")
+	}
+	_ = cmd()
+	if src.write.Changes[0].Key != "workers.auto_continue" || string(src.write.Changes[0].Value) != "false" {
+		t.Fatalf("write: %+v", src.write)
+	}
+}
+
+type settingsValuesTestSource struct {
+	*fakeSource
+	write protocol.SettingsWrite
+	undo  protocol.SettingsUndo
+}
+
+func (s *settingsValuesTestSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	if method == "settings_undo" {
+		s.undo = params.(protocol.SettingsUndo)
+		return json.RawMessage(`{"revision":8}`), nil
+	}
+	if method == "settings_write" {
+		s.write = params.(protocol.SettingsWrite)
+		return json.RawMessage(`{"revision":2}`), nil
+	}
+	return json.RawMessage(`[]`), nil
+}
+
+func TestSettingsRepoEditUsesRepoAddress(t *testing.T) {
+	src := &settingsValuesTestSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	m := New(src)
+	m.settingRepo = "alpha"
+	m.settingValues = []protocol.SettingView{{Key: "delivery.merge_authority", Levels: []string{"network", "repo"}, Value: json.RawMessage(`"full"`), Source: "repo alpha", Explicit: json.RawMessage(`"full"`)}}
+	m, _ = m.startSettingValueEdit(0)
+	m.rename.SetValue(`"ask"`)
+	_, cmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = cmd()
+	change := src.write.Changes[0]
+	if change.Level != "repo" || change.Scope != "alpha" || string(change.Expect) != `"full"` {
+		t.Fatalf("repo write %+v", change)
+	}
+}
+
+func TestSettingsUndoSelectedRevision(t *testing.T) {
+	src := &settingsValuesTestSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	m := New(src)
+	m.tab = settingsTab
+	m.settingValues = []protocol.SettingView{{Key: "workers.auto_continue", Value: json.RawMessage(`false`), History: []protocol.SettingsHistory{{Revision: 7, Actor: "owner"}}}}
+	for i, item := range m.settingsItems() {
+		if item.kind == "setting-value" {
+			m.settingsRow = i
+			break
+		}
+	}
+	next, _ := m.settingsKey(keyRunesForSettings("u"))
+	m = next.(Model)
+	if m.mode != modeSettingUndo {
+		t.Fatal("undo confirmation missing")
+	}
+	_, cmd := m.settingUndoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("undo not sent")
+	}
+	_ = cmd()
+	if src.undo.Revision != 7 {
+		t.Fatalf("undo %+v", src.undo)
 	}
 }

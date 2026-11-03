@@ -150,7 +150,7 @@ func TestAppsEndToEnd(t *testing.T) {
 	}
 	defer bot.Close()
 	tools, err := bot.ListTools(t.Context(), nil)
-	if err != nil || len(tools.Tools) != 10 {
+	if err != nil || len(tools.Tools) != 11 {
 		t.Fatalf("tools %+v %v", tools, err)
 	}
 	var names []string
@@ -158,7 +158,7 @@ func TestAppsEndToEnd(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	wantTools := []string{"agent_graph_read", "agent_machine_get", "agent_machines_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_projects_find", "agent_session_get", "agent_sessions_find"}
+	wantTools := []string{"agent_graph_read", "agent_machine_get", "agent_machines_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read"}
 	if !reflect.DeepEqual(names, wantTools) {
 		t.Fatalf("bot tools: %v", names)
 	}

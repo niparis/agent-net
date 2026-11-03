@@ -1366,6 +1366,30 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad graph.undo")
 		}
 		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, graphActor(raw))
+	case "settings.snapshot":
+		return st.SettingsSnapshot()
+	case "settings.write":
+		p, err := decode[protocol.SettingsWrite](raw)
+		if err != nil || len(p.Changes) == 0 {
+			return nil, reject("bad settings.write")
+		}
+		return st.WriteSettings(p.Changes, graphActor(raw), p.Reason)
+	case "settings.undo":
+		p, err := decode[protocol.SettingsUndo](raw)
+		if err != nil || p.Revision <= 0 {
+			return nil, reject("bad settings.undo")
+		}
+		return st.UndoSettings(p.Revision, graphActor(raw))
+	case "settings.history":
+		p, err := decode[struct {
+			Key      string `json:"key"`
+			Revision int64  `json:"revision"`
+			Owner    bool   `json:"owner"`
+		}](raw)
+		if err != nil || p.Revision < 0 {
+			return nil, reject("bad settings.history")
+		}
+		return st.SettingsHistory(p.Key, p.Revision, p.Owner)
 	case "node.settings.get":
 		p, err := decode[protocol.NodeSettingsGetRequest](raw)
 		if err != nil || p.Node == "" {

@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
@@ -125,6 +126,24 @@ func (g *Gateway) botToolCall(ctx context.Context, sid, name string, in map[stri
 		}
 		p.Caller = sid
 		return g.store.FindProjects(p)
+	case "agent_settings_read":
+		var q protocol.SettingsReadRequest
+		if err := botDecode(in, &q); err != nil {
+			return nil, err
+		}
+		snap, err := g.store.SettingsSnapshot()
+		if err != nil {
+			return nil, err
+		}
+		history, err := g.store.SettingsHistory(q.Key, 0, false)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := settings.Views(snap, history, q, false)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"settings": rows}, nil
 	case "agent_graph_read":
 		return g.botGraph(sid, in)
 	case "agent_messages_find":
