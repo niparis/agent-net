@@ -604,3 +604,37 @@ func TestToolSnapshotIgnoresOtherSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestToolKnownProjectsRequireRepository(t *testing.T) {
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	node, _, err := s.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, session := range []protocol.SessionInfo{
+		{Harness: "claude", NativeID: "home", Cwd: "/home/example"},
+		{Harness: "claude", NativeID: "plain", Cwd: "/work/plain"},
+		{Harness: "claude", NativeID: "repo", Cwd: "/work/repository/backend", Repo: protocol.RepoInfo{Root: "/work/repository"}},
+		{Harness: "claude", NativeID: "named", Cwd: "/work/checkout/backend", Repo: protocol.RepoInfo{Root: "/work/checkout", Project: "named"}},
+	} {
+		if _, err := s.UpsertSession(node, session); err != nil {
+			t.Fatalf("session %d: %v", i, err)
+		}
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	names, err := s.knownToolProjectsTx(tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(names, ",") != "named,repository" {
+		t.Fatalf("known projects: %v", names)
+	}
+}

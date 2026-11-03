@@ -17,7 +17,7 @@ import (
 
 // projectKnownTx reports whether the gateway knows a project name: registered,
 // or seen in a stored session whose folder is a project (decision 0048). A
-// folder is a seen project when it is not temporary and the session did not
+// Git working tree is a seen project when it is not temporary and the session did not
 // opt out of the network.
 func (s *Store) projectKnownTx(tx *sql.Tx, name string) (bool, error) {
 	var exists int
@@ -27,7 +27,7 @@ func (s *Store) projectKnownTx(tx *sql.Tx, name string) (bool, error) {
 	if exists != 0 {
 		return true, nil
 	}
-	rows, err := tx.Query(`SELECT cwd, repo_root, repo_project, no_project FROM sessions WHERE harness != 'owner' AND (repo_project=? OR repo_project='')`, name)
+	rows, err := tx.Query(`SELECT cwd, repo_root, repo_project, no_project FROM sessions WHERE harness != 'owner' AND repo_root<>'' AND (repo_project=? OR repo_project='')`, name)
 	if err != nil {
 		return false, err
 	}
@@ -40,9 +40,6 @@ func (s *Store) projectKnownTx(tx *sql.Tx, name string) (bool, error) {
 			return false, err
 		}
 		path := root
-		if path == "" {
-			path = cwd
-		}
 		if path == "" || noProject != 0 || temppath.Under(path, roots) {
 			continue
 		}

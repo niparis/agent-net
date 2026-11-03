@@ -12,7 +12,7 @@ import (
 
 // Enumerate candidates, then apply exactly the assignment target predicate.
 func (s *Store) knownToolProjectsTx(tx *sql.Tx) ([]string, error) {
-	rows, err := tx.Query(`SELECT name FROM projects UNION SELECT CASE WHEN repo_project<>'' THEN repo_project ELSE '' END FROM sessions UNION SELECT cwd FROM sessions WHERE repo_project='' UNION SELECT repo_root FROM sessions WHERE repo_project=''`)
+	rows, err := tx.Query(`SELECT name FROM projects UNION SELECT repo_project FROM sessions WHERE repo_root<>'' AND repo_project<>'' UNION SELECT repo_root FROM sessions WHERE repo_root<>'' AND repo_project=''`)
 	if err != nil {
 		return nil, err
 	}
