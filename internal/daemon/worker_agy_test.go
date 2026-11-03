@@ -120,7 +120,8 @@ func TestAgyProcess(t *testing.T) {
 			if err := cmd.Run(); err != nil {
 				os.Exit(3)
 			}
-			cmd = exec.Command("git", "commit", "-q", "-m", "worker commit")
+			// CI has no global git identity; give the fake its own.
+			cmd = exec.Command("git", "-c", "user.name=fake agy", "-c", "user.email=fake@localhost", "commit", "-q", "-m", "worker commit")
 			cmd.Dir = cwd
 			if err := cmd.Run(); err != nil {
 				os.Exit(3)
