@@ -18,6 +18,9 @@ func launchAgentsDir() string {
 // installService writes the service file and (re)starts the service so a new
 // binary is picked up. It never runs sudo.
 func (r *runner) installService(s Service) (string, error) {
+	if r.installServiceFn != nil {
+		return r.installServiceFn(s)
+	}
 	switch runtime.GOOS {
 	case "linux":
 		return r.installSystemd(s)

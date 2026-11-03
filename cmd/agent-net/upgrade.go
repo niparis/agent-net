@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"syscall"
 	"text/tabwriter"
@@ -68,8 +69,16 @@ func cmdNodes(ctx context.Context, args []string) error {
 	if err := json.Unmarshal(raw, &info); err != nil {
 		return err
 	}
-	fmt.Printf("gateway  %s\n\n", orUnknown(info.GatewayVersion))
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	return printNodes(os.Stdout, info, *wide)
+}
+
+func printNodes(w io.Writer, info protocol.NodesInfo, wide bool) error {
+	fmt.Fprintf(w, "gateway  %s\n", orUnknown(info.GatewayVersion))
+	for _, warn := range info.GatewayWarnings {
+		fmt.Fprintf(w, "warning: %s\n", warn)
+	}
+	fmt.Fprintln(w)
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "HOST\tNODE\tVERSION\tONLINE\tWORKERS\tHARNESSES")
 	for _, n := range info.Nodes {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%v\t%s\t%s\n", n.Hostname, n.NodeID, orUnknown(n.Version), n.Online, launchSummary(n), harnessSummary(n))
@@ -77,8 +86,8 @@ func cmdNodes(ctx context.Context, args []string) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
-	if *wide {
-		printHarnessDetails(os.Stdout, info.Nodes)
+	if wide {
+		printHarnessDetails(w, info.Nodes)
 	}
 	return nil
 }

@@ -614,6 +614,8 @@ type NodesInfo struct {
 	// Calibration is the read-only difficulty table: per caller and
 	// difficulty, the recent rework median and what the loop would do.
 	Calibration Calibration `json:"calibration,omitempty"`
+	// GatewayWarnings lists health, exposure and operational warnings from the gateway.
+	GatewayWarnings []string `json:"gateway_warnings,omitempty"`
 }
 
 // Upgrade outcomes per node.

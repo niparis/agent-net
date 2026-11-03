@@ -94,6 +94,10 @@ type Gateway struct {
 	closed     bool
 	appsDone   chan struct{}
 	rotationMu sync.Mutex
+
+	enrollLimit      *enrollLimiter
+	exposureWarnings []string
+	exposureMu       sync.RWMutex
 }
 
 type nodeConn struct {
@@ -220,7 +224,8 @@ func New(opts Options) (*Gateway, error) {
 		return nil, err
 	}
 	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
-		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{},
+		enrollLimit: newEnrollLimiter(opts.Now)}
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
@@ -407,6 +412,14 @@ func (g *Gateway) Handler() http.Handler {
 }
 
 func (g *Gateway) handleEnroll(w http.ResponseWriter, r *http.Request) {
+	remote := ratelimit.ClientAddr(r)
+	if allowed, shouldLog := g.enrollLimit.Allow(remote); !allowed {
+		if shouldLog {
+			g.logLine("enroll.rate_limited", "source", remote)
+		}
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
 	var req struct {
 		Code     string `json:"code"`
 		Hostname string `json:"hostname"`

@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -83,6 +84,10 @@ type runner struct {
 	// apply it and turn an item off as well as on. When it is nil, the steps
 	// keep their old ask-once behavior.
 	want *protocol.Integrations
+
+	tailscaleIP      func() string
+	gatewayListen    string
+	installServiceFn func(s Service) (string, error)
 }
 
 func newRunner(o Options) (*runner, error) {
@@ -187,16 +192,55 @@ func Setup(ctx context.Context, o Options) error {
 
 // ---- gateway ----
 
+func (r *runner) getTailscaleIP() string {
+	if r.tailscaleIP != nil {
+		return r.tailscaleIP()
+	}
+	return TailscaleIP()
+}
+
+func (r *runner) askTailscaleListen(tsIP string) bool {
+	if r.All == AllYes {
+		return true
+	}
+	if r.All == AllNo {
+		return false
+	}
+	if !r.interactive {
+		return false
+	}
+	tty, err := openTTY()
+	if err != nil {
+		return false
+	}
+	defer tty.Close()
+	fmt.Fprintf(r.Out, "Tailscale is available on this machine (%s).\n", tsIP)
+	fmt.Fprintf(r.Out, "Listen on Tailscale address instead of all interfaces? [Y/n] ")
+	rd := bufio.NewReader(tty)
+	line, _ := rd.ReadString('\n')
+	raw := strings.TrimSpace(strings.ToLower(line))
+	return raw == "" || raw == "y" || raw == "yes"
+}
+
 func (r *runner) setupGateway(ctx context.Context) {
 	data := r.Data
 	dist := r.Dist
 	if dist == "" {
 		dist = DefaultDist()
 	}
+	listenHost := "0.0.0.0"
+	if r.freshGateway && !r.joining {
+		if ts := r.getTailscaleIP(); ts != "" {
+			if r.askTailscaleListen(ts) {
+				listenHost = ts
+				r.gatewayListen = ts
+			}
+		}
+	}
 	if r.NoService {
 		r.step("gateway service", "skipped (no service)", nil)
 	} else {
-		args := []string{"gateway", "--listen", "0.0.0.0:" + r.port(), "--dist", dist}
+		args := []string{"gateway", "--listen", net.JoinHostPort(listenHost, r.port()), "--dist", dist}
 		if data != "" {
 			args = append(args, "--data", data)
 		}
@@ -270,8 +314,12 @@ func (r *runner) join(ctx context.Context) error {
 	}
 	r.joining = joinStr != ""
 	if joinStr == "" {
+		host := "localhost"
+		if r.gatewayListen != "" {
+			host = r.gatewayListen
+		}
 		if !r.NoService {
-			if err := waitForPort("localhost:"+r.port(), 10*time.Second); err != nil {
+			if err := waitForPort(net.JoinHostPort(host, r.port()), 10*time.Second); err != nil {
 				return err
 			}
 		}
@@ -284,7 +332,7 @@ func (r *runner) join(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		joinStr = fmt.Sprintf("https://localhost:%s#%s#%s", r.port(), code, fp)
+		joinStr = fmt.Sprintf("https://%s:%s#%s#%s", host, r.port(), code, fp)
 	}
 	_, _, perr := daemon.LoadNode(daemon.ConfigDir())
 	nc, err := daemon.Join(ctx, joinStr, daemon.ConfigDir())

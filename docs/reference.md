@@ -529,7 +529,7 @@ notifications.
 | Port | Used by |
 |---|---|
 | TCP 7422 | Example apps HTTP listener, bound only to 127.0.0.1 when enabled. The port is configurable. |
-| TCP 7420 | The gateway. HTTPS and WebSocket, on `0.0.0.0` by default. Every daemon connects to it. Open it to your other machines and to nothing else. |
+| TCP 7420 | The gateway. HTTPS and WebSocket, on `0.0.0.0` by default. Every daemon connects to it. Open it to your other machines and to nothing else. If reachable on a public routable address, the gateway logs a warning and surfaces it in `agent-net nodes` and the TUI status line. Enrollment (`/v1/enroll`) is rate limited to 10 attempts per 10 minutes per IP and 60 per 10 minutes globally (answers 429). |
 
 The daemon and the agents talk over Unix sockets, not network ports.
 
@@ -632,7 +632,7 @@ The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUS
 
 | Command | Flag | Default |
 |---|---|---|
-| `gateway` | `--listen ADDR` | `0.0.0.0:7420` |
+| `gateway` | `--listen ADDR` | `0.0.0.0:7420`. If reachable on a public routable address, the gateway logs a warning at start and hourly, and surfaces it in `agent-net nodes` and the TUI status line. |
 | | `--apps-listen ADDR` | Override the managed connected apps listener address, normally `127.0.0.1:7422`. Binds to loopback only. It serves the phone app at `/` and the bot MCP endpoint at `/mcp`. |
 | | `--apps-public-url URL` | empty. Public HTTPS base URL of the apps listener, used for authorization discovery and phone action origin checks. Normally set by the "Reachable from the internet" switch. |
 | | `--data DIR` | `~/.local/state/agent-net/gateway` |
@@ -647,7 +647,7 @@ The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUS
 | `setup` | `--join STRING` | none. A join string from `invite` or `enroll`. |
 | | `--no-launch` | off. This machine refuses workers. Saved as `no_launch` in `node.json`. It stays until `--launch`. |
 | | `--launch` | off. Accept workers again. |
-| | `--gateway` | off. Also install and start the gateway here. |
+| | `--gateway` | off. Also install and start the gateway here. On a fresh setup with Tailscale present, setup offers to bind to the Tailscale address instead. Existing setups keep theirs. |
 | | `--no-service` | off |
 | | `--all` | off. Answer the one integrations question with all seven on, without asking. |
 | | `--none` | off. Answer it with all seven off, without asking. |
