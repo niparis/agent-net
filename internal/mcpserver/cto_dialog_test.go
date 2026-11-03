@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -222,4 +223,113 @@ func TestCTODialogRetryTokens(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCTOProposalAskDialog(t *testing.T) {
+	for _, version := range []string{"2025-11-25", "2026-07-28"} {
+		t.Run("approve_"+version, func(t *testing.T) {
+			ctx := context.Background()
+			st, ct := mcp.NewInMemoryTransports()
+			askedID := ""
+			answered := false
+			storedMessage := "Approve this proposal?\nTool: mcp_change\nAction: add\nArguments:\n  name: demo\nReason: needed"
+			srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+				if method == "cto_dialog_answer" {
+					answered = true
+					answer := params.(map[string]any)
+					if answer["id"] != "p_15" || answer["approve"] != true {
+						t.Errorf("wrong answer: %v", answer)
+					}
+					return json.RawMessage(`"p_15 approved and applied"`), nil
+				}
+				if method != "proposal_ask" {
+					t.Fatalf("unexpected method %q", method)
+				}
+				raw, _ := params.(json.RawMessage)
+				var q struct {
+					ID string `json:"id"`
+				}
+				if err := json.Unmarshal(raw, &q); err != nil {
+					t.Fatal(err)
+				}
+				askedID = q.ID
+				b, _ := json.Marshal(map[string]any{
+					"kind":        "proposal",
+					"proposal_id": "p_15",
+					"message":     storedMessage,
+					"text":        "proposal p_15 is in the owner's Inbox (tab 7 of the TUI); the owner decides there. You will get a note with the outcome.",
+				})
+				return b, nil
+			}, "test")
+			ss, err := srv.Connect(ctx, st, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ss.Close()
+			elicited := ""
+			cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, &mcp.ClientOptions{
+				ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+					elicited = req.Params.Message
+					return &mcp.ElicitResult{Action: "accept"}, nil
+				},
+			}).Connect(ctx, ct, &mcp.ClientSessionOptions{ProtocolVersion: version})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cs.Close()
+			result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "proposal_ask", Arguments: map[string]any{"id": "p_15"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.IsError || !answered || askedID != "p_15" || elicited != storedMessage {
+				t.Fatalf("result=%+v answered=%v askedID=%q elicited=%q", result, answered, askedID, elicited)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			if !strings.Contains(text, "Approved by the owner in the dialog.") || !strings.Contains(text, "p_15 approved and applied") {
+				t.Fatalf("unexpected dialog text: %q", text)
+			}
+		})
+	}
+
+	t.Run("closed_or_invalid_id", func(t *testing.T) {
+		ctx := context.Background()
+		st, ct := mcp.NewInMemoryTransports()
+		elicited := false
+		daemonCalls := 0
+		srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+			daemonCalls++
+			return nil, errors.New("proposal p_15 is applied, not open")
+		}, "test")
+		ss, err := srv.Connect(ctx, st, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ss.Close()
+		cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, &mcp.ClientOptions{
+			ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+				elicited = true
+				return &mcp.ElicitResult{Action: "accept"}, nil
+			},
+		}).Connect(ctx, ct, &mcp.ClientSessionOptions{ProtocolVersion: "2026-07-28"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cs.Close()
+		for _, bad := range []map[string]any{{}, {"id": "   "}} {
+			res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "proposal_ask", Arguments: bad})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !res.IsError || daemonCalls != 0 || elicited {
+				t.Fatalf("bad args %v: res=%+v calls=%d elicited=%v", bad, res, daemonCalls, elicited)
+			}
+		}
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "proposal_ask", Arguments: map[string]any{"id": "p_15"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.IsError || elicited || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "not open") {
+			t.Fatalf("closed proposal: res=%+v elicited=%v", res, elicited)
+		}
+	})
 }

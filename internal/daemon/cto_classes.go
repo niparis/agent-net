@@ -24,7 +24,7 @@ var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
 		ctoRead:     "overview sessions session proposals feed graph machines workers tools settings projects messages cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_mcp_servers_find agent_worker_profiles_find",
-		ctoTalk:     "message ask_owner learn ui cto_ui_show agent_message_send agent_message_reply agent_owner_ask agent_learn",
+		ctoTalk:     "message ask_owner learn ui cto_ui_show proposal_ask agent_message_send agent_message_reply agent_owner_ask agent_learn",
 		ctoProposal: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new",
 	} {
 		for _, name := range strings.Fields(names) {

@@ -107,6 +107,7 @@ func TestCTOV2OutputsMatchCatalogSchemas(t *testing.T) {
 		"graph_change":       map[string]any{"action": "node_add", "name": "x"},
 		"session_change":     map[string]any{"action": "rename"},
 		"worker_change":      map[string]any{"action": "stop"},
+		"proposal_ask":       map[string]any{"id": "p_15"},
 		"cto_ui_show":        map[string]any{"tab": "graph"},
 		"cto_proposals_find": map[string]any{},
 	}
@@ -299,7 +300,7 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 		{"mcp_change", `{"action":"add","server":{"name":"s","transport":"stdio","command":"/bin/true"}}`}, {"mcp_change", `{"action":"remove","name":"s"}`}, {"mcp_change", `{"action":"test","name":"s"}`}, {"mcp_change", `{"action":"enable","name":"s","enabled":true}`},
 		{"settings_change", `{"area":"worker_profile_add","name":"p","harness":"anything","model":"m"}`}, {"settings_change", `{"area":"worker_profile_remove","name":"p"}`}, {"settings_change", `{"area":"worker_providers","providers":["p"]}`}, {"settings_change", `{"area":"protected_providers","protected_providers":["p"]}`}, {"settings_change", `{"area":"score","model":"m","score":50}`}, {"settings_change", `{"area":"integrations","peer_messages":true}`}, {"settings_change", `{"area":"notifications","disabled":true}`}, {"settings_change", `{"area":"cto","title":"CTO"}`}, {"settings_change", `{"area":"playbook","note":"hello"}`}, {"settings_change", `{"area":"machine_name","name":"desk"}`}, {"settings_change", `{"area":"invite"}`}, {"settings_change", `{"area":"onboarding"}`},
 		{"project_change", `{"action":"add","paths":["/tmp/project"]}`}, {"project_change", `{"action":"remove","name":"p"}`}, {"project_change", `{"action":"display","project":"p","name":"P"}`}, {"project_change", `{"action":"create","path":"~/project"}`},
-		{"mcp_call", `{"server":"s","tool":"list","arguments":{}}`}, {"cto_new", `{}`},
+		{"mcp_call", `{"server":"s","tool":"list","arguments":{}}`}, {"proposal_ask", `{"id":"p_15"}`}, {"cto_new", `{}`},
 	}
 	for _, tc := range cases {
 		var args map[string]any

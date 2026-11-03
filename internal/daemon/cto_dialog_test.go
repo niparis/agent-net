@@ -90,3 +90,86 @@ func TestCTODialogApprovalAppliesProposal(t *testing.T) {
 		t.Fatalf("history: %+v %v", history, err)
 	}
 }
+
+func TestCTOProposalAsk(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
+	ctx := context.Background()
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
+	n.d.cto.pid.Store(int64(os.Getpid()))
+	defer n.d.cto.pid.Store(0)
+
+	outsider := &localConn{d: n.d, client: "cli", peerPID: os.Getpid()}
+	if _, err := outsider.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"proposal_ask","arguments":{"id":"p_1"}}`)); err == nil {
+		t.Fatal("non CTO caller accepted")
+	}
+
+	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
+	for _, bad := range []string{
+		`{"name":"proposal_ask","arguments":{}}`,
+		`{"name":"proposal_ask","arguments":{"id":"   "}}`,
+		`{"name":"proposal_ask","arguments":{"id":"p_99999"}}`,
+	} {
+		if _, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(bad)); err == nil {
+			t.Fatalf("accepted bad proposal_ask %s", bad)
+		}
+	}
+
+	created, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"waiting purpose"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstPayload, ok := created.(map[string]any)
+	if !ok || firstPayload["kind"] != "proposal" {
+		t.Fatalf("created payload: %v", created)
+	}
+	id, _ := firstPayload["proposal_id"].(string)
+	if id == "" {
+		t.Fatalf("missing proposal id: %v", firstPayload)
+	}
+
+	reopened, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"proposal_ask","arguments":{"id":"`+id+`"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, ok := reopened.(map[string]any)
+	if !ok || payload["kind"] != "proposal" || payload["proposal_id"] != id || payload["text"] != ProposalToolResult(id) {
+		t.Fatalf("reopened payload: %v", reopened)
+	}
+	message, msgOK := payload["message"].(string)
+	if !msgOK || message != firstPayload["message"] || !strings.Contains(message, "  node: dialog-node") || !strings.Contains(message, "  value: waiting purpose") || !strings.Contains(message, "Reason: ") {
+		t.Fatalf("reopened message mismatch: got %q want %v", message, firstPayload["message"])
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposal_ask created duplicate proposals: %+v %v", items, err)
+	}
+
+	raw, _ := json.Marshal(map[string]any{"id": id, "approve": true})
+	if _, err := cto.dispatch(ctx, "cto_dialog_answer", raw); err != nil {
+		t.Fatal(err)
+	}
+	var history []protocol.CharterChange
+	if err := json.Unmarshal(cli.mustCall("charter_history", map[string]string{"node": "dialog-node"}), &history); err != nil || len(history) != 2 || history[0].By != "owner (CTO proposal "+id+")" {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+
+	if _, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"proposal_ask","arguments":{"id":"`+id+`"}}`)); err == nil || !strings.Contains(err.Error(), "not open") {
+		t.Fatalf("applied proposal reopened: %v", err)
+	}
+
+	second, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"declined purpose"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2 := second.(map[string]any)["proposal_id"].(string)
+	declineRaw, _ := json.Marshal(map[string]any{"id": id2, "approve": false})
+	if _, err := cto.dispatch(ctx, "cto_dialog_answer", declineRaw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"proposal_ask","arguments":{"id":"`+id2+`"}}`)); err == nil || !strings.Contains(err.Error(), "not open") {
+		t.Fatalf("declined proposal reopened: %v", err)
+	}
+}

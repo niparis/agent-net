@@ -46,6 +46,9 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	}
 	for _, item := range items {
 		if item.ID == id {
+			if item.Status != "open" {
+				return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
+			}
 			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
 		}
 	}
@@ -139,6 +142,33 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "proposal_ask":
+		var p struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad proposal_ask arguments")
+		}
+		p.ID = strings.TrimSpace(p.ID)
+		if p.ID == "" {
+			return nil, errors.New("proposal_ask needs id")
+		}
+		items, err := d.proposalRunner().list()
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if item.ID == p.ID {
+				if item.Status != "open" {
+					return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
+				}
+				if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
+					*dest = item.ID
+				}
+				return ProposalToolResult(item.ID), nil
+			}
+		}
+		return nil, fmt.Errorf("unknown proposal %s", p.ID)
 	case "agent_message_send":
 		var p map[string]any
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {

@@ -171,8 +171,9 @@ var ctoTools = map[string]ctoToolDef{
 			"on":      {typ: "string", desc: "Host; local default."},
 		},
 	},
-	"mcp_call": {desc: "Call a tool on a shared MCP server.", fields: map[string]ctoField{"server": {typ: "string", desc: "Server name."}, "tool": {typ: "string", desc: "Tool."}, "arguments": {typ: "object", desc: "Arguments."}}},
-	"cto_new":  {desc: "Start a new conversation for the active harness."},
+	"mcp_call":     {desc: "Call a tool on a shared MCP server.", fields: map[string]ctoField{"server": {typ: "string", desc: "Server name."}, "tool": {typ: "string", desc: "Tool."}, "arguments": {typ: "object", desc: "Arguments."}}},
+	"proposal_ask": {desc: "Open the approval dialog for a waiting proposal.", fields: map[string]ctoField{"id": {typ: "string", desc: "Open proposal ID."}}},
+	"cto_new":      {desc: "Start a new conversation for the active harness."},
 	"settings_change": {
 		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite or onboarding.",
 		fields: map[string]ctoField{

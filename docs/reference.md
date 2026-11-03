@@ -56,7 +56,7 @@ typed in the CTO chat never counts. Use the dialog or `A` in the Inbox tab for p
 in the CTO box for the graph window.
 
 Each proposal tool accepts an optional `reason`. The daemon validates the exact
-call before storing it. If the CTO harness supports form elicitation, it can show a dialog with the stored tool, action, arguments and reason. Accept approves and decline refuses the proposal. Cancel, an error, or no dialog leaves it open in the Inbox. For MCP protocol 2026-07-28 and newer, the harness returns the answer in a follow-up tool call; older versions use a direct elicitation request. The CTO sees a short result. Typing instructions in the CTO conversation does not approve a proposal.
+call before storing it. If the CTO harness supports form elicitation, it can show a dialog with the stored tool, action, arguments and reason. Accept approves and decline refuses the proposal. Cancel, an error, or no dialog leaves it open in the Inbox. For an open proposal that is already waiting, `proposal_ask` with `id` reopens the same dialog from the stored proposal; a closed or unknown ID is refused. For MCP protocol 2026-07-28 and newer, the harness returns the answer in a follow-up tool call; older versions use a direct elicitation request. The CTO sees a short result. Typing instructions in the CTO conversation does not approve a proposal.
 
 `proposal_list` lists proposals across online machines, or on one machine when
 passed `node_id`. `proposal_answer` takes `node_id`, `proposal_id` and an action:
@@ -68,7 +68,7 @@ outcome note at its next idle moment, without the call's result data.
 
 The class table in the daemon fixes every tool and action as read, talk or
 proposal. Reads still run immediately. Talk (`message`, `ask_owner`, `learn`,
-`ui`) also runs immediately. `message` takes action `send` or `reply`; with
+`ui`, `proposal_ask`) also runs immediately. `message` takes action `send` or `reply`; with
 `as_owner: true` it becomes a proposal. `graph_change` is proposal class: the
 daemon applies its minor actions at once and its major actions during the
 owner window. `settings_change` is always a proposal. It never returns owner
@@ -240,7 +240,7 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. The Inbox tab shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The CTO has 26 tools: 12 reads, 4 talk tools and 10 proposal tools. It starts
+The CTO has 27 tools: 12 reads, 5 talk tools and 10 proposal tools. It starts
 with `overview`, which counts online sessions, machines, running workers and its
 own open proposals. List views return `items`, `total` and, when another page
 exists, `next`. Pass `next` as `offset` to read the next page. The default page
@@ -277,6 +277,7 @@ are proposals. The CTO has one action tool per area:
 | `ask_owner` | a question with optional `options`, a recommendation and urgency, into the Inbox |
 | `learn` | one finding, under the daily limit |
 | `ui` | `action: show` with `tab`, `select`, `filter` and `why`, or `action: notice` with `text` |
+| `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set` or `undo` |
 | `session_change` | `action: rename`, `trust` or `policy` |
 | `worker_change` | `action: start` or `stop` |
@@ -290,7 +291,7 @@ are proposals. The CTO has one action tool per area:
 
 Minor graph changes apply at once. Major graph changes become proposals unless
 the owner opened the window with `w`. All non-graph changes are proposals, even
-during the window. `message`, `ask_owner`, `learn` and `ui` are talk.
+during the window. `message`, `ask_owner`, `learn`, `ui` and `proposal_ask` are talk.
 Every proposal tool takes an optional `reason`. The daemon validates the stored
 call and keeps the concrete implementation, its authority checks and its audit
 records, so a rename does not change what a call is allowed to do.
