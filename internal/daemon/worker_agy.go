@@ -324,7 +324,7 @@ func (agyLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, boo
 		return failure, false
 	}
 	if d.gone(w) && (exitErr != nil || !completed) {
-		return cleanFailure("Antigravity exited without a successful result: " + d.workerLogTail(w)), false
+		return cleanFailure("Antigravity exited without a successful result: " + d.agyLogTail(w)), false
 	}
 	return "", false
 }
@@ -522,4 +522,33 @@ func (d *Daemon) agyWorkerConversation(native string) bool {
 		}
 	}
 	return false
+}
+
+// agyLogTail is the end of the worker log without agy's stream-json events.
+// The log holds both streams; the events would push the error text, which
+// agy writes to stderr last, out of the failure note.
+func (d *Daemon) agyLogTail(w *worker) string {
+	d.wmu.Lock()
+	logPath := w.logPath
+	d.wmu.Unlock()
+	raw, err := os.ReadFile(logPath)
+	if logPath == "" || err != nil {
+		return ""
+	}
+	var kept []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		var event struct {
+			Event string `json:"event"`
+		}
+		if line == "" || json.Unmarshal([]byte(line), &event) == nil && event.Event != "" {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	s := strings.Join(kept, " ")
+	if len(s) > 400 {
+		s = "..." + s[len(s)-400:]
+	}
+	return strings.Join(strings.Fields(s), " ")
 }
