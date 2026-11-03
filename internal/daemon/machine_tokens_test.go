@@ -111,6 +111,10 @@ func TestMachineActionsOwnNode(t *testing.T) {
 	n.d.mu.Unlock()
 	cli.mustCall("machine_rotate", map[string]string{"node_id": n.cfg.NodeID})
 	eventually(t, "own rotation reconnect", func() bool { n.d.mu.Lock(); defer n.d.mu.Unlock(); return n.d.lk != nil && n.d.lk != before })
-	cli.mustCall("machine_remove", map[string]string{"node_id": n.cfg.NodeID})
-	eventually(t, "own removal disconnect", func() bool { return !n.d.Connected() })
+	if _, err := cli.call("machine_remove", map[string]string{"node_id": n.cfg.NodeID}); err == nil || !strings.Contains(err.Error(), "cannot remove itself") {
+		t.Fatalf("own removal: %v", err)
+	}
+	if !n.d.Connected() {
+		t.Fatal("refused own removal disconnected the machine")
+	}
 }
