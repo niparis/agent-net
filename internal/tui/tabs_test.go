@@ -779,7 +779,7 @@ func TestQuotaUnconfiguredFold(t *testing.T) {
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "inactive", Error: "credential_unavailable"}, {Provider: "active", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 5}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if !strings.Contains(v, "1 providers not set up · s to show") || strings.Contains(v, "inactive") {
+	if !strings.Contains(v, "1 provider not set up · s to show") || strings.Contains(v, "inactive") {
 		t.Fatal(v)
 	}
 	m = keys(m, "s")
@@ -979,7 +979,7 @@ func TestQuotaReadingPreventsProviderFromFoldingAsNotSetUp(t *testing.T) {
 		{Provider: "cursor", Plan: "api", Error: "credential_unavailable"},
 	}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "providers not set up") || !strings.Contains(v, "cursor") || !strings.Contains(v, "Mac: no credential found") || strings.Contains(v, "credential_unavailable") {
+	if strings.Contains(v, "not set up ·") || !strings.Contains(v, "cursor") || !strings.Contains(v, "Mac: no credential found") || strings.Contains(v, "credential_unavailable") {
 		t.Fatal(v)
 	}
 	m = keys(m, "s")
