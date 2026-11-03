@@ -1284,6 +1284,10 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 	var skippedProfiles []string
 	resolutionNotes := map[string]string{}
 	for _, h := range node.Harnesses {
+		if h.SignedIn == "no" {
+			skippedProfiles = append(skippedProfiles, fmt.Sprintf("%s skipped on %s: not signed in", h.Name, node.Hostname))
+			continue
+		}
 		if !protocol.WorkerHarnessSupported(h.Name) || harness != "" && harness != h.Name {
 			continue
 		}

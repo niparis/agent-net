@@ -501,9 +501,11 @@ type NodeView struct {
 
 // HarnessInfo is one agent harness found on a machine.
 type HarnessInfo struct {
-	Name    string `json:"name"` // claude | opencode | pi | codex
-	Path    string `json:"path"`
-	Version string `json:"version"`
+	SignedIn string `json:"signed_in,omitempty"` // "yes", "no", or empty (unknown).
+	SignIn   string `json:"sign_in,omitempty"`
+	Name     string `json:"name"` // claude | opencode | pi | codex
+	Path     string `json:"path"`
+	Version  string `json:"version"`
 	// Models lists the models the harness can use: "provider/model" where the
 	// harness has a provider, plain ids for Codex and Claude's aliases. It is
 	// empty when the harness did not report a list.
