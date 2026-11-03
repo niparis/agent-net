@@ -323,6 +323,22 @@ func (s *state) markDelivered(id string) error {
 	return err
 }
 
+// deliveredMargin is how long a delivered row outlives its message. The row
+// is only a duplicate check, but keeping it past the message expiry means a
+// message that is still alive can never be accepted twice.
+const deliveredMargin = 7 * 24 * time.Hour
+
+// pruneDelivered deletes duplicate-check rows older than the message expiry
+// plus deliveredMargin. It returns how many rows went.
+func (s *state) pruneDelivered(now time.Time) (int64, error) {
+	cutoff := now.Add(-(protocol.DefaultTTL + deliveredMargin)).Unix()
+	res, err := s.db.Exec(`DELETE FROM delivered WHERE at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *state) enqueue(payload []byte) error {
 	_, err := s.db.Exec(`INSERT INTO outbox (payload) VALUES (?)`, string(payload))
 	return err

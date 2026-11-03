@@ -23,6 +23,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/daemon/claude"
 	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/logrotate"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/phone"
@@ -209,6 +210,23 @@ func defaultGatewayData() string {
 	return filepath.Join(home, ".local", "state", "agent-net", "gateway")
 }
 
+// serviceLog is where a service writes its log lines. On macOS launchd points
+// stdout and stderr at ~/Library/Logs/agent-net-<name>.log and never rotates
+// that file, so the process writes through a writer that renames the file by
+// size. A terminal or a pipe (Linux journald, a manual run, tests) is left
+// alone.
+func serviceLog(name string) io.Writer {
+	path := logrotate.ServicePath(name)
+	if path == "" || !logrotate.IsFile(os.Stderr, path) {
+		return os.Stderr
+	}
+	w, err := logrotate.Open(path, logrotate.MaxBytes, logrotate.Keep)
+	if err != nil {
+		return os.Stderr
+	}
+	return w
+}
+
 func cmdGateway(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "backup" {
 		return cmdGatewayBackup(ctx, args[1:])
@@ -239,7 +257,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 		}
 	}
 	// Every log line carries its own ts=, so the logger adds nothing.
-	logger := log.New(os.Stderr, "", 0)
+	logger := log.New(serviceLog("gateway"), "", 0)
 	// The phone app is served by the gateway-managed apps listener.
 	op := operator.New(daemon.SocketPath())
 	defer op.Close()
@@ -342,7 +360,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		return err
 	}
 	host := daemon.Hostname(nc.Hostname)
-	logger := log.New(os.Stderr, "daemon: ", log.LstdFlags)
+	logger := log.New(serviceLog("daemon"), "daemon: ", log.LstdFlags)
 	inventoryHome, err := os.UserHomeDir()
 	if err != nil {
 		return err

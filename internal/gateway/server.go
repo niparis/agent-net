@@ -366,6 +366,15 @@ func (g *Gateway) RunRetention(ctx context.Context) {
 		if _, err := g.store.Prune(g.opts.Retention); err != nil {
 			g.logLine("error", "where", "retention", "err", err)
 		}
+		// A vacuum rewrites gateway.db. It runs at most once a week and only
+		// when deleted rows left more than a fifth of the file free. It never
+		// deletes messages.
+		before, after, ran, err := g.store.MaybeVacuum(g.store.now())
+		if err != nil {
+			g.logLine("error", "where", "vacuum", "err", err)
+		} else if ran {
+			g.logLine("db.vacuum", "before", before, "after", after)
+		}
 		select {
 		case <-ctx.Done():
 			return
