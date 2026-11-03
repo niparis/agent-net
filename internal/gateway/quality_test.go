@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -418,5 +419,99 @@ func TestQualityUnratedProfileHasNoInventedScore(t *testing.T) {
 	got := s.QualityAnalysis()
 	if got.Status != "not enough ratings" || len(got.Profiles) != 1 || got.Profiles[0].Quality != 0 {
 		t.Fatalf("empty prediction: %+v", got)
+	}
+}
+
+// Equal star ratings leave the picker to distinguish the tasks by rework.
+func TestQualityChooserReworkAndPreview(t *testing.T) {
+	for _, ratings := range []int{0, 2, 6} {
+		t.Run(fmt.Sprintf("ratings_%d", ratings), func(t *testing.T) {
+			s, _ := newTestStore(t)
+			node, _, err := s.CreateNode("test", "linux")
+			if err != nil {
+				t.Fatal(err)
+			}
+			caller := ratingCaller(t, s, node, "caller", "gpt-6.1-sol")
+			for i, model := range []string{"clean", "rework"} {
+				if err := s.AddWorkerProfile(protocol.WorkerProfile{Name: model, Harness: "opencode", Model: model, Effort: "high"}); err != nil {
+					t.Fatal(err)
+				}
+				for j := 0; j < 3; j++ {
+					wid := ratingWorker(t, s, node, caller, model+":high", "normal")
+					if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: wid, Harness: "opencode", Model: model + ":high", Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller, Difficulty: "normal", Fix: i, Continue: i}); err != nil {
+						t.Fatal(err)
+					}
+					if j < ratings/2 {
+						if _, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 4}, Rater: caller}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if i == 1 {
+						if _, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Kind: protocol.RateKindDefectLater, Severity: 2}, Rater: caller}); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			candidates := []protocol.WorkerModelCandidate{{Model: "clean:high", Harness: "opencode"}, {Model: "rework", DefaultEffort: "high", Harness: "opencode"}}
+			before := append([]protocol.WorkerModelCandidate(nil), candidates...)
+			if err := s.applyQualityWeights(candidates, "normal"); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(before, candidates) {
+				t.Fatalf("disabled weighting changed candidates: %+v", candidates)
+			}
+			if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('quality_weighting','{"enabled":true}',0)`); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.refreshQuality(); err != nil {
+				t.Fatal(err)
+			}
+			analysis := s.QualityAnalysis()
+			if analysis.Ratings != ratings {
+				t.Fatalf("ratings = %d, want %d", analysis.Ratings, ratings)
+			}
+			if want := protocol.ReworkWeight(3, 1) / 2; analysis.ReworkAverage != want {
+				t.Fatalf("rework average = %g, want %g including late defects", analysis.ReworkAverage, want)
+			}
+			for _, level := range protocol.DifficultyLevels {
+				if err := s.applyQualityWeights(candidates, level); err != nil {
+					t.Fatal(err)
+				}
+				if candidates[0].QualityWeight <= candidates[1].QualityWeight {
+					t.Errorf("%s: more rework should lower weight: %+v", level, candidates)
+				}
+				for _, row := range analysis.Profiles {
+					i := 0
+					if row.Name == "rework" {
+						i = 1
+					}
+					if got, want := row.Weights[level], candidates[i].QualityWeight; got != want {
+						t.Errorf("%s/%s: preview = %g, picker = %g", row.Name, level, got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestQualityReworkRotationWeight(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		prediction, average float64
+		want                float64
+	}{
+		{"inverse", 4, 3, .75},
+		{"upper bound", 1, 3, 1.5},
+		{"lower bound", 10, 3, .5},
+		{"zero prediction", 0, 3, 1},
+		{"negative prediction", -1, 3, 1},
+		{"no rework", 0, 0, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := reworkRotationWeight(tt.prediction, tt.average); got != tt.want {
+				t.Fatalf("weight = %g, want %g", got, tt.want)
+			}
+		})
 	}
 }

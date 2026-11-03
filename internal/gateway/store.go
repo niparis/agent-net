@@ -36,6 +36,7 @@ type Store struct {
 	qualityMu         sync.Mutex
 	quality           protocol.QualityAnalysis
 	qualityFit        qualityFit
+	reworkFit         qualityFit
 	qualityStrong     map[string]int
 	reminderMu        sync.Mutex
 	reminderOffline   map[string]bool
