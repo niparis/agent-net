@@ -19,8 +19,8 @@ import (
 // -p= must be empty and LAST: otherwise agy consumes the next flag as a prompt.
 // These one-run settings were checked on agy 1.4.12: accept-edits permits
 // workspace edits, command(*) permits shell tools, and --sandbox makes home
-// read-only while the workspace and /tmp remain writable. Nothing is saved to
-// the user's settings. Auto mode is not available on every account.
+// hidden or read-only while the workspace, /tmp and added toolchains remain
+// writable. Nothing is saved to the user's settings. Auto mode is not available on every account.
 type agyLauncher struct{}
 
 const agyWorkerSettings = `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`
@@ -118,6 +118,12 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	if permissions == protocol.WorkersReadOnly {
 		mode, settings = "plan", agyReadOnlySettings
 	}
+	env := d.workerGitEnv(w, os.Environ(), map[string]string{"AGENT_NET_WORKER": w.id, "AGENT_NET_SOCKET": d.cfg.SocketPath,
+		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session")})
+	toolchains := d.workerToolchainDirs(ctx, w.path, env)
+	d.wmu.Lock()
+	w.toolchainDirs = toolchains
+	d.wmu.Unlock()
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if model != "" {
 		name, effort := protocol.SplitModelLevel(model)
@@ -127,12 +133,13 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 		}
 	}
 	args = append(args, "--mode", mode, "--sandbox", "--settings", settings)
+	for _, path := range toolchains {
+		args = append(args, "--add-dir", path)
+	}
 	if native != "" {
 		args = append(args, "--conversation", native)
 	}
 	args = append(args, "-p=")
-	env := d.workerGitEnv(w, os.Environ(), map[string]string{"AGENT_NET_WORKER": w.id, "AGENT_NET_SOCKET": d.cfg.SocketPath,
-		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session")})
 	if err := d.spawnWorkerIO(w, bin, args, env, rd, c); err != nil {
 		wr.Close()
 		return err
@@ -409,7 +416,7 @@ func (d *Daemon) deliverAgy(ctx context.Context, w *worker, m protocol.Message) 
 	d.resetIdleNotice(w)
 	// Set busy before writing: a fast result must be the last status change.
 	d.setAgyStatus(w, "busy")
-	text := codexWorkerText(m)
+	text := d.workerToolchainPermissions(w, codexWorkerText(m))
 	line, _ := json.Marshal(map[string]any{"event": "user", "message": map[string]string{"content": text}})
 	err := c.send(append(line, '\n'))
 	if err != nil {
