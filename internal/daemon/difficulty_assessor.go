@@ -432,7 +432,6 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(dir)
 	// OpenCode files the session under $PWD when it is set, not under the
 	// process folder; an inherited PWD would put the judge's session in the
 	// caller's folder, where the cleanup below does not look.
@@ -442,8 +441,15 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 		IgnoreEnv:          "1",
 	})
 	// Even a standalone run saves its session in OpenCode's shared store, where
-	// it shows as an idle session. Delete it once the judge is done.
-	defer deleteOpenCodeSessions(ctx, bin, dir, env)
+	// it shows as an idle session. Delete it once the judge is done, in the
+	// background: a retry judge must not wait for this cleanup, which runs in
+	// dir, so dir goes after it.
+	defer func() {
+		go func() {
+			deleteOpenCodeSessions(ctx, bin, dir, env)
+			os.RemoveAll(dir)
+		}()
+	}()
 	// A standalone server exits with the judge instead of leaving a session
 	// running in OpenCode's shared service. The nonexistent socket also prevents
 	// the agent-net plugin from registering that private session or exposing tools.

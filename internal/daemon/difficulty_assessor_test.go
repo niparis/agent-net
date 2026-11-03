@@ -178,10 +178,12 @@ func TestJudgeOpenCodeDeletesOnlyItsOwnSessions(t *testing.T) {
 	if _, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task"); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(deleted)
-	if err != nil {
-		t.Fatal(err)
-	}
+	var raw []byte
+	eventually(t, "the judge's sessions deleted", func() bool {
+		var err error
+		raw, err = os.ReadFile(deleted)
+		return err == nil && len(raw) > 0
+	})
 	if got := strings.TrimSpace(string(raw)); got != "ses_judge" {
 		t.Fatalf("deleted sessions: %q", got)
 	}
@@ -270,10 +272,13 @@ func TestJudgeOpenCodeCleanupRunsAfterTimeout(t *testing.T) {
 		testJudgeFirstTimeout: 100 * time.Millisecond,
 	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
 
-	raw, err := os.ReadFile(deleted)
-	if err != nil {
-		t.Fatalf("sessions were not deleted after timeout: %v", err)
-	}
+	// The cleanup runs in the background so a retry judge does not wait.
+	var raw []byte
+	eventually(t, "sessions deleted after timeout", func() bool {
+		var err error
+		raw, err = os.ReadFile(deleted)
+		return err == nil && len(raw) > 0
+	})
 	if got := strings.TrimSpace(string(raw)); got != "ses_judge_timeout" {
 		t.Fatalf("deleted sessions: %q, want ses_judge_timeout", got)
 	}
