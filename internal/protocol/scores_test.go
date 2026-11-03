@@ -87,6 +87,8 @@ func TestScoreEffort(t *testing.T) {
 		ok    bool
 	}{
 		{"gpt-6.1-terra:high", 42.3, true}, {"gpt-6.1-terra:low", 29.2, true}, {"gpt-6.1-terra", 38.1, true}, {"gpt-6.1-terra:ultra", 0, false}, {"kimi-k3.1-pro", 46, true},
+		// agy names the effort after a dash.
+		{"gemini-4-argon-high", 50.4, true}, {"claude-opus-5-5-high", 51.7, true}, {"gemini-3.8-flash-low", 22.3, true},
 	} {
 		t.Run(tt.model, func(t *testing.T) {
 			got, ok := LookupModelScore(tt.model, nil)

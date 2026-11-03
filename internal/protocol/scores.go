@@ -84,12 +84,28 @@ func LookupModelScore(model string, overrides []ModelScore) (ModelScore, bool) {
 	return LookupModelScoreWithDefaultEffort(model, "", overrides)
 }
 
+// dashScoreLevels are the efforts agy writes after a dash, as in
+// "gemini-4-argon-high". Words that can end a model name, such as "max" or
+// "ultra", are left out.
+var dashScoreLevels = map[string]bool{"minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
+
+// splitScoreLevel is SplitModelLevel that also reads agy's dash suffix.
+func splitScoreLevel(model string) (base, level string) {
+	if base, level = SplitModelLevel(model); level != "" {
+		return base, level
+	}
+	if i := strings.LastIndexByte(model, '-'); i > 0 && dashScoreLevels[strings.ToLower(model[i+1:])] {
+		return model[:i], model[i+1:]
+	}
+	return model, ""
+}
+
 // LookupModelScoreWithDefaultEffort uses the harness default when no effort is named.
 func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []ModelScore) (ModelScore, bool) {
 	lookup := func(scores []ModelScore) (ModelScore, bool) {
 		best := -1
 		var result ModelScore
-		base, level := SplitModelLevel(model)
+		base, level := splitScoreLevel(model)
 		part := model
 		if i := strings.LastIndexByte(part, '/'); i >= 0 {
 			part = part[i+1:]
