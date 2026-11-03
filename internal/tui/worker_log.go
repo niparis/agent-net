@@ -67,7 +67,7 @@ func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool) string {
 		lead = "▸ "
 	}
 	// The model includes the harness's effort suffix already.
-	prefix := time.Unix(r.StartedAt, 0).UTC().Format("01-02 15:04") + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), min(25, max(w/4, 6))) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  "
+	prefix := time.Unix(r.StartedAt, 0).UTC().Format("01-02 15:04") + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), min(25, max(w/4, 6))) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
 	status := r.Status
 	room := max(w-2-len(status)-1, 0)
 	line := lead + cell(sanitize(prefix+firstNonEmpty(r.Title, "-")), room) + " " + workerStatusStyle(status).Render(status)
@@ -95,6 +95,11 @@ func (m Model) workersLogView(w, h int) []string {
 		addTitle := "Title: " + firstNonEmpty(r.Title, "-")
 		add := func(s string) { detail = append(detail, wrap(sanitize(s), inner)...) }
 		add(addTitle)
+		caller := firstNonEmpty(r.Caller, "-")
+		if r.CallerHost != "" {
+			caller += " (" + r.CallerHost + ")"
+		}
+		add("Caller: " + caller)
 		add("Model: " + firstNonEmpty(r.Model, "-"))
 		add("Machine: " + firstNonEmpty(r.Hostname, firstNonEmpty(r.NodeID, "-")) + "   Project: " + firstNonEmpty(r.Project, "-") + "   Harness: " + firstNonEmpty(r.Harness, "-"))
 		add(fmt.Sprintf("Run time: %s", (time.Duration(r.RunSeconds) * time.Second).String()))

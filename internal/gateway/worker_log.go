@@ -18,14 +18,20 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 	}
 	// worker_runs.started_at is Unix seconds. An assessment's started_at is
 	// Unix nanoseconds; the join below converts explicitly.
-	rows, err := s.db.Query(`SELECT r.session_id,r.node_id,COALESCE(n.hostname,''),COALESCE(NULLIF(s.repo_project,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.project'),''),r.harness,r.model,COALESCE(NULLIF(s.worker_title,''),s.title,''),COALESCE(NULLIF(r.difficulty_used,''),r.difficulty),r.outcome,r.started_at,r.run_seconds,r.ended_at FROM worker_runs r LEFT JOIN sessions s ON s.id=r.session_id LEFT JOIN nodes n ON n.id=r.node_id ORDER BY r.started_at DESC,r.id DESC LIMIT ?`, limit)
+	rows, err := s.db.Query(`SELECT r.session_id,r.node_id,COALESCE(n.hostname,''),COALESCE(NULLIF(s.repo_project,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.project'),''),r.harness,r.model,COALESCE(NULLIF(s.worker_title,''),s.title,''),COALESCE(NULLIF(r.difficulty_used,''),r.difficulty),r.outcome,r.started_at,r.run_seconds,r.ended_at,COALESCE(NULLIF(r.caller_session_id,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.owner'),'') FROM worker_runs r LEFT JOIN sessions s ON s.id=r.session_id LEFT JOIN nodes n ON n.id=r.node_id ORDER BY r.started_at DESC,r.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
 	out := []protocol.WorkerLogEntry{}
+	type runRow struct {
+		entry    protocol.WorkerLogEntry
+		callerID string
+	}
+	var runs []runRow
 	for rows.Next() {
 		var r protocol.WorkerLogEntry
-		if err = rows.Scan(&r.SessionID, &r.NodeID, &r.Hostname, &r.Project, &r.Harness, &r.Model, &r.Title, &r.Difficulty, &r.Status, &r.StartedAt, &r.RunSeconds, &r.EndedAt); err != nil {
+		var callerID string
+		if err = rows.Scan(&r.SessionID, &r.NodeID, &r.Hostname, &r.Project, &r.Harness, &r.Model, &r.Title, &r.Difficulty, &r.Status, &r.StartedAt, &r.RunSeconds, &r.EndedAt, &callerID); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -37,12 +43,19 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 		case protocol.OutcomeTimedOut:
 			r.Status = "timed out"
 		}
-		out = append(out, r)
+		runs = append(runs, runRow{entry: r, callerID: callerID})
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return nil, err
+	}
+	for _, run := range runs {
+		r := run.entry
+		if r.Caller, r.CallerHost, err = s.workerCaller(run.callerID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	agents, err := s.Agents(protocol.QueryAgents{IncludeOwners: true})
 	if err != nil {
@@ -64,7 +77,11 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 		if ended {
 			continue
 		}
-		out = append(out, protocol.WorkerLogEntry{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname, Project: w.Project, Harness: a.Harness, Model: a.Model, Title: protocol.WorkerTitle(w.Title, w.Task, "-"), Difficulty: w.DifficultyUsed, Status: "running", StartedAt: w.StartedAt, RunSeconds: max(s.now().Unix()-w.StartedAt, 0), Assessment: w.Assessment})
+		caller, callerHost, err := s.workerCaller(w.Owner)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, protocol.WorkerLogEntry{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname, Project: w.Project, Harness: a.Harness, Model: a.Model, Title: protocol.WorkerTitle(w.Title, w.Task, "-"), Difficulty: w.DifficultyUsed, Status: "running", StartedAt: w.StartedAt, RunSeconds: max(s.now().Unix()-w.StartedAt, 0), Assessment: w.Assessment, Caller: caller, CallerHost: callerHost})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	if len(out) > limit {
@@ -118,4 +135,29 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 		}
 	}
 	return out, nil
+}
+
+// workerCaller resolves the caller session of a run to the name and machine
+// the owner sees. The owner's pseudo-session and the CTO keep their short
+// names; a missing or deleted session reads empty.
+func (s *Store) workerCaller(id string) (name, host string, err error) {
+	if id == "" {
+		return "", "", nil
+	}
+	var harness, sessionName, hostname string
+	err = s.db.QueryRow(`SELECT s.harness, COALESCE(NULLIF(p.name,''), NULLIF(s.name,''), NULLIF(s.title,''), s.id), COALESCE(n.hostname,'')
+		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id LEFT JOIN nodes n ON n.id=s.node_id WHERE s.id=?`, id).Scan(&harness, &sessionName, &hostname)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	switch {
+	case protocol.IsOwner(harness):
+		sessionName = "owner"
+	case harness == "cto":
+		sessionName = "CTO"
+	}
+	return sessionName, hostname, nil
 }

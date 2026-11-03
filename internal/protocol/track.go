@@ -54,11 +54,13 @@ type WorkerRun struct {
 	// Caller is the session that started the worker, and Difficulty is the
 	// level it asked for. The gateway keeps them on the run so the
 	// difficulty calibration still has them after the worker session is
-	// cleaned.
-	Caller         string   `json:"caller,omitempty"`
-	Difficulty     string   `json:"difficulty,omitempty"`
-	DifficultyUsed string   `json:"difficulty_used,omitempty"`
-	Touches        []string `json:"touches,omitempty"`
+	// cleaned. CallerSessionID is the caller's session ID, kept so the owner
+	// view can show the caller's name and machine after that session is gone.
+	Caller          string   `json:"caller,omitempty"`
+	CallerSessionID string   `json:"caller_session_id,omitempty"`
+	Difficulty      string   `json:"difficulty,omitempty"`
+	DifficultyUsed  string   `json:"difficulty_used,omitempty"`
+	Touches         []string `json:"touches,omitempty"`
 }
 
 // TrackRecord is what the gateway learned about one harness and model.

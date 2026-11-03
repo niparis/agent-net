@@ -126,3 +126,78 @@ func TestWorkerLogPickerNoteForChosenStart(t *testing.T) {
 		t.Fatalf("assessment rows: %d %v", count, err)
 	}
 }
+
+func TestWorkerLogCaller(t *testing.T) {
+	s, _ := newTestStore(t)
+	workerNode, _, _ := s.CreateNode("worker-machine", "linux")
+	callerNode, _, _ := s.CreateNode("caller-machine", "linux")
+	ownerNode, _, _ := s.CreateNode("owner-machine", "linux")
+	caller, err := s.UpsertSession(callerNode, protocol.SessionInfo{Harness: "claude", NativeID: "caller", Name: "Agent One"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := s.UpsertSession(ownerNode, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Name: "Nicolas"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cto, _, err := s.upsertSession(s.db, ownerNode, protocol.SessionInfo{Harness: "cto", NativeID: "cto", Name: "CTO"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A running worker reads its caller from the worker record.
+	liveStart := int64(1793733000)
+	if _, err = s.UpsertSession(workerNode, protocol.SessionInfo{Harness: "codex", NativeID: "live", Worker: &protocol.WorkerInfo{ID: "w_live", Owner: caller, StartedAt: liveStart, Title: "Live run"}}); err != nil {
+		t.Fatal(err)
+	}
+	// An ended run keeps the caller even without a session row.
+	addRun := func(start int64, callerID, callerName string) {
+		t.Helper()
+		run := protocol.WorkerRun{NodeID: workerNode, SessionID: "s_ended_" + callerName, Harness: "codex", Model: "fake", Outcome: protocol.OutcomeComplete,
+			StartedAt: start, EndedAt: start + 20, RunSeconds: 20, Caller: callerName, CallerSessionID: callerID}
+		if err := s.RecordWorkerRun(run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addRun(1793732000, caller, "Agent One")
+	addRun(1793731900, owner, "Nicolas")
+	addRun(1793731800, cto, "CTO")
+	addRun(1793731600, "", "")
+	// A run recorded before the caller column fell back to the worker record
+	// of its session while that session still exists.
+	oldStart := int64(1793731700)
+	oldWorker, err := s.UpsertSession(workerNode, protocol.SessionInfo{Harness: "codex", NativeID: "old", Worker: &protocol.WorkerInfo{ID: "w_old", Owner: caller, StartedAt: oldStart, Title: "Old run"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO worker_runs(node_id,session_id,harness,model,outcome,started_at,ended_at,run_seconds) VALUES(?,?,?,?,?,?,?,?)`, workerNode, oldWorker, "codex", "fake", "complete", oldStart, oldStart+20, 20); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.WorkerLog(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byStart := map[int64]protocol.WorkerLogEntry{}
+	for _, r := range rows {
+		byStart[r.StartedAt] = r
+	}
+	for _, want := range []struct {
+		start  int64
+		caller string
+		host   string
+	}{
+		{1793733000, "Agent One", "caller-machine"},
+		{1793732000, "Agent One", "caller-machine"},
+		{1793731900, "owner", "owner-machine"},
+		{1793731800, "CTO", "owner-machine"},
+		{1793731700, "Agent One", "caller-machine"},
+		{1793731600, "", ""},
+	} {
+		got, ok := byStart[want.start]
+		if !ok {
+			t.Fatalf("no run at %d: %+v", want.start, rows)
+		}
+		if got.Caller != want.caller || got.CallerHost != want.host {
+			t.Errorf("run %d: caller %q host %q, want %q %q", want.start, got.Caller, got.CallerHost, want.caller, want.host)
+		}
+	}
+}
