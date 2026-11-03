@@ -1281,15 +1281,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		due := now.Sub(w.ownerChecked) >= set.Tick*4
 		d.wmu.Unlock()
-		if msg, provider := d.modelFailure(ctx, w); msg != "" {
-			d.wmu.Lock()
-			w.failure = msg
-			d.wmu.Unlock()
-			reason := protocol.StopRunFailed
-			if provider {
-				reason = protocol.StopModelFails
-			}
-			d.endWorker(w, reason)
+		if d.endFailedWorker(ctx, w) {
 			continue
 		}
 		// Refresh the context and token figures while the worker runs. A
@@ -1306,7 +1298,11 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		d.checkIdleNotice(ctx, w, now, set.IdleNotice, stats)
 		switch {
 		case d.gone(w) && !(harness == "agy" && agyTurnFinished(d, w)):
-			d.endWorker(w, protocol.StopExited)
+			// The process may have ended after the failure check above. Ask
+			// again, so the harness's own error is not lost to the generic note.
+			if !d.endFailedWorker(ctx, w) {
+				d.endWorker(w, protocol.StopExited)
+			}
 		case age >= set.MaxAge:
 			d.endWorker(w, protocol.StopMaxAge)
 		case idleLimit >= 0 && idle >= idleLimit:
@@ -1327,6 +1323,24 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// endFailedWorker ends a worker whose harness reports a failed run, and says
+// whether it did.
+func (d *Daemon) endFailedWorker(ctx context.Context, w *worker) bool {
+	msg, provider := d.modelFailure(ctx, w)
+	if msg == "" {
+		return false
+	}
+	d.wmu.Lock()
+	w.failure = msg
+	d.wmu.Unlock()
+	reason := protocol.StopRunFailed
+	if provider {
+		reason = protocol.StopModelFails
+	}
+	d.endWorker(w, reason)
+	return true
 }
 
 // modelFailure asks the harness whether the worker's model call failed. A
