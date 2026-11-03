@@ -35,7 +35,7 @@ func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
 
 func TestKeyLineContentPerTab(t *testing.T) {
 	for _, tc := range []struct{ name, key, want string }{
-		{"Sessions", "1", "up/down select  enter open  m msg  n new  left/right cell  ? help  q quit"},
+		{"Sessions", "1", "up/down select  enter open (ctrl+] back)  m msg  n new  left/right cell  ? help  q quit"},
 		{"Messages", "4", "up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  d quality details  c CTO  ? help  q quit"},
 		{"Graph", "2", "1-7 tabs  c CTO  ? help  q quit"},

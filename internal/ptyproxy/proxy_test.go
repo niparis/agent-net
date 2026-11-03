@@ -8,10 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/x/term"
+	"github.com/creack/pty"
 )
 
 func TestProxy(t *testing.T) {
@@ -365,5 +368,186 @@ func TestTmuxAttachCtrlPlusReturnsAndKeepsSession(t *testing.T) {
 	}
 	if out, err := command("-L", name, "has-session").CombinedOutput(); err != nil {
 		t.Fatalf("the attach client ended the tmux session: %v\n%s", err, out)
+	}
+}
+
+// TestBarChild is the fake session of the bar tests. It reports its own PTY
+// size whenever it changes. With PTY_PROXY_BAR_CHILD=clear it clears the
+// screen once, as a full-screen child does, and the bar must come back.
+func TestBarChild(t *testing.T) {
+	mode := os.Getenv("PTY_PROXY_BAR_CHILD")
+	if mode == "" {
+		t.Skip("only runs as the child of the bar tests")
+	}
+	if mode == "clear" {
+		_, _ = os.Stdout.WriteString("\x1b[2J")
+	}
+	last := ""
+	for {
+		cols, rows, err := term.GetSize(os.Stdout.Fd())
+		if err != nil {
+			os.Exit(1)
+		}
+		now := fmt.Sprintf("size:%dx%d\n", cols, rows)
+		if now != last {
+			_, _ = os.Stdout.WriteString(now)
+			last = now
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// lockedOutput collects what the proxy writes to the real terminal.
+type lockedOutput struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (o *lockedOutput) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.b.Write(p)
+}
+
+func (o *lockedOutput) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.b.String()
+}
+
+func (o *lockedOutput) count(want string) int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return strings.Count(o.b.String(), want)
+}
+
+func waitForOutput(t *testing.T, out *lockedOutput, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(out.String(), want) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("no %q in the terminal output %q", want, out.String())
+}
+
+func waitForCount(t *testing.T, out *lockedOutput, want string, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if out.count(want) >= n {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("%q appears %d times, want %d, in %q", want, out.count(want), n, out.String())
+}
+
+type barRun struct {
+	master *os.File
+	out    *lockedOutput
+	done   chan error
+}
+
+// startBarProxy runs a proxy on a real PTY of rows by cols. Never touches the
+// terminal of the person running the tests.
+func startBarProxy(t *testing.T, rows, cols int, name, mode string) *barRun {
+	t.Helper()
+	master, tty, err := pty.Open()
+	if err != nil {
+		t.Skipf("no pty: %v", err)
+	}
+	if err := pty.Setsize(master, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestBarChild$")
+	cmd.Env = append(os.Environ(), "PTY_PROXY_BAR_CHILD="+mode, "GORACE=atexit_sleep_ms=0")
+	p := New(cmd)
+	p.Name = name
+	p.SetStdin(tty)
+	p.SetStdout(tty)
+	r := &barRun{master: master, out: &lockedOutput{}, done: make(chan error, 1)}
+	go func() { r.done <- p.Run() }()
+	go func() { _, _ = io.Copy(r.out, master) }()
+	t.Cleanup(func() {
+		_ = master.Close()
+		_ = tty.Close()
+	})
+	return r
+}
+
+func (r *barRun) resize(t *testing.T, rows, cols int) {
+	t.Helper()
+	if err := pty.Setsize(r.master, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGWINCH); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (r *barRun) escape(t *testing.T) {
+	t.Helper()
+	if _, err := r.master.Write([]byte{0x1d}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-r.done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("proxy did not return from ctrl+]")
+	}
+}
+
+// The child gets one row less than the real terminal, at start and after a
+// resize, and the bar sits on the row the child cannot reach.
+func TestBarReservesTheBottomRow(t *testing.T) {
+	r := startBarProxy(t, 30, 100, "session", "size")
+	waitForOutput(t, r.out, "size:100x29")
+	waitForOutput(t, r.out, "\x1b[30;1H\x1b[2m"+barText("session"))
+
+	r.resize(t, 24, 90)
+	waitForOutput(t, r.out, "size:90x23")
+	waitForOutput(t, r.out, "\x1b[24;1H\x1b[2m"+barText("session"))
+
+	r.escape(t)
+	waitForOutput(t, r.out, "\x1b[24;1H\x1b[2K")
+}
+
+// A clear-screen from the child wipes the last row, so the bar is drawn again
+// after the child has repainted.
+func TestBarComesBackAfterAClearScreen(t *testing.T) {
+	r := startBarProxy(t, 30, 100, "session", "clear")
+	drawn := "\x1b[30;1H\x1b[2m" + barText("session")
+	waitForCount(t, r.out, drawn, 2)
+	r.escape(t)
+}
+
+// AGENT_NET_NO_BAR=1 leaves the plain terminal alone: the child keeps every
+// row and no bar is ever drawn.
+func TestBarOffWithEnv(t *testing.T) {
+	t.Setenv("AGENT_NET_NO_BAR", "1")
+	r := startBarProxy(t, 20, 80, "session", "size")
+	waitForOutput(t, r.out, "size:80x20")
+	r.escape(t)
+	if got := r.out.String(); strings.Contains(got, "agent-net · ctrl+] back") || strings.Contains(got, "\x1b[2K") {
+		t.Fatalf("bar drawn with AGENT_NET_NO_BAR=1: %q", got)
+	}
+}
+
+func TestClearsScreen(t *testing.T) {
+	for _, seq := range []string{"\x1b[2J", "\x1b[3J", "\x1b[J", "\x1b[?1049h", "\x1b[?1049l", "\x1bc"} {
+		if !clearsScreen([]byte("before" + seq + "after")) {
+			t.Errorf("%q not detected", seq)
+		}
+	}
+	for _, seq := range []string{"\x1b[H", "\x1b[K", "plain text", "\x1b[1;1H"} {
+		if clearsScreen([]byte(seq)) {
+			t.Errorf("%q wrongly detected as a clear", seq)
+		}
 	}
 }

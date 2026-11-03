@@ -129,7 +129,7 @@ var keyBindings = []keyBinding{
 	bind(contextSessions, "pgdown", actPageDown, "page", -1),
 	bind(contextSessions, "home|g", actFirst, "first row", -1),
 	bind(contextSessions, "end", actLast, "last row", -1),
-	withLocal(withHelp(bind(contextSessions, "enter", "open session", "open", 1), "go into the selected session on NAME, or open the delegation policy on DELEGATE")),
+	withLocal(withHelp(bind(contextSessions, "enter", "open session", "open (ctrl+] back)", 1), "go into the selected session on NAME, or open the delegation policy on DELEGATE")),
 	withHelp(bind(contextSessions, "m", "compose", "msg", 1), "send a message to the session as yourself"),
 	withHelp(bind(contextSessions, "n", "new session", "new", 1), "start a session in herdr: project, harness, model, folder and first message (a form)"),
 	withHelp(bind(contextSessions, "x", "stop worker", "stop", -1), "stop the selected worker or session"),
