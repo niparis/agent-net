@@ -865,6 +865,8 @@ The provider mapping is fixed. It is the table used by model choice and admissio
 
 A provider without a row (for example `elevenlabs`) has no model provider in agent-net. A model id with no provider part is mapped through its harness, which is why the Claude Code and Codex harnesses are named above.
 
+A worker model may be a registered profile name, ignoring case. It uses the profile's harness, model and effort. Without a harness, an explicit model prefers a signed-in harness over one whose sign-in state is unknown and skips harnesses known to be signed out. The result's `model_note` names the choice. A worker that fails with HTTP 401, HTTP 403 or "not logged in" blocks that harness and provider on that machine until a later worker succeeds on the same provider.
+
 A model provider that is not a subscription and has no usable quota reading is pay-per-use. This includes OpenRouter and OpenCode Zen (`opencode/`). An explicit worker model never resolves to one from a loose or bare name; write the full provider id, for example `opencode/gpt-6.1-sol`, and the start result says `uses pay-per-use provider (opencode)`. The same rule decides the worker provider defaults (decision [0026](decisions/0026-worker-difficulty-and-scores.md)).
 
 ## Tools inventory

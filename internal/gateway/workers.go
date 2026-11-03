@@ -93,11 +93,6 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if owner != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		if p.Reason == protocol.StopModelFails && p.Model != "" {
-			if err := g.store.RecordModelFailure(nc.id, p.Harness, p.Model); err != nil {
-				return nil, err
-			}
-		}
 		// The run feeds the model track record (decision 0022). An older
 		// machine sends no start, model or hand-back status: the session row
 		// has what it stored, and a hand-back without a status counts complete.
@@ -110,6 +105,11 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		if p.Model == "" {
 			p.Model = storedModel
+		}
+		if p.Reason == protocol.StopModelFails && p.Model != "" {
+			if err := g.store.RecordModelFailure(nc.id, p.Harness, p.Model, p.Failure); err != nil {
+				return nil, err
+			}
 		}
 		if p.StartedAt == 0 {
 			p.StartedAt = started
@@ -464,7 +464,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, err
 	}
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
-	var automaticNote string
+	var automaticNote, harnessNote string
 	if automatic {
 		difficulty := difficultyUsed
 		providers, err := g.store.workerProviders()
@@ -534,6 +534,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, err
 			}
 			p.Harness = harness
+			state := "sign-in unknown"
+			for _, h := range node.Harnesses {
+				if h.Name == harness && h.SignedIn == "yes" {
+					state = "signed in"
+				}
+			}
+			harnessNote = fmt.Sprintf("selected %s on %s (%s)", harness, node.Hostname, state)
 		}
 	}
 	var hi *protocol.HarnessInfo
@@ -559,7 +566,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if err != nil {
 			return none, err
 		}
-		modelNote = appendModelNote(lead, resolveNote)
+		modelNote = appendModelNote(appendModelNote(lead, harnessNote), resolveNote)
 	}
 	if !automatic {
 		scores, err := g.store.scores()
@@ -679,6 +686,24 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 
 // resolveWorkerModel applies the machine's model inventory and ranking to an explicit name.
 func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.HarnessInfo, harness, model, modelNote string) (string, string, error) {
+	profiles, err := g.store.WorkerProfiles()
+	if err != nil {
+		return "", "", err
+	}
+	for _, profile := range profiles {
+		if !strings.EqualFold(profile.Name, model) {
+			continue
+		}
+		if profile.Harness != harness {
+			return "", "", reject("worker profile %q requires %s, not %s", profile.Name, profile.Harness, harness)
+		}
+		model = profile.Model
+		if profile.Effort != "" {
+			model += ":" + profile.Effort
+		}
+		modelNote = appendModelNote(modelNote, fmt.Sprintf("worker profile %q: %s %s", profile.Name, harness, model))
+		break
+	}
 	quotas := g.nodeQuotas(node.NodeID)
 	if model != "" && len(hi.Models) > 0 {
 		usage, err := g.store.ModelUsage(node.NodeID, harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
@@ -687,10 +712,6 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 		}
 		asked := model
 		profileModel, profileEffort := protocol.SplitModelLevel(asked)
-		profiles, err := g.store.WorkerProfiles()
-		if err != nil {
-			return "", "", err
-		}
 		for _, profile := range profiles {
 			if profile.Harness != harness || profile.Model != profileModel {
 				continue
@@ -701,7 +722,7 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 			}
 			if resolved != "" {
 				if resolved != profile.Model {
-					modelNote = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
+					modelNote = appendModelNote(modelNote, fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname))
 				}
 				asked = resolved
 				if profileEffort != "" {
@@ -736,7 +757,7 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 		}
 		resolved := res.Model
 		if resolved != asked || len(res.Demoted) > 0 {
-			modelNote = asked + " -> " + resolved
+			modelNote = appendModelNote(modelNote, asked+" -> "+resolved)
 		}
 		if res.QuotaNote != "" {
 			if modelNote == "" {
@@ -770,16 +791,28 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, requireReadOnly bool) (string, error) {
 	type candidate struct {
 		harness      string
+		signedIn     bool
 		subscription bool
 		exact        bool
 		order        int
+	}
+	profiles, err := g.store.WorkerProfiles()
+	if err != nil {
+		return "", err
+	}
+	profileHarness := ""
+	for _, p := range profiles {
+		if strings.EqualFold(p.Name, model) {
+			profileHarness = p.Harness
+			break
+		}
 	}
 	quotas := g.nodeQuotas(node.NodeID)
 	var cands []candidate
 	var payErr, opencodeErr, firstErr error
 	for i := range node.Harnesses {
 		h := &node.Harnesses[i]
-		if !protocol.WorkerHarnessSupported(h.Name) || len(h.Models) == 0 {
+		if !protocol.WorkerHarnessSupported(h.Name) || len(h.Models) == 0 || h.SignedIn == "no" || profileHarness != "" && profileHarness != h.Name {
 			continue
 		}
 		if requireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
@@ -799,8 +832,16 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 			}
 			continue
 		}
+		blocked, err := g.store.ModelAuthBlocked(node.NodeID, h.Name, resolved)
+		if err != nil {
+			return "", err
+		}
+		if blocked {
+			continue
+		}
 		cands = append(cands, candidate{
 			harness:      h.Name,
+			signedIn:     h.SignedIn == "yes",
 			subscription: protocol.SubscriptionProvider(h.Name, resolved, quotas),
 			exact:        protocol.ModelIDWrittenInFull(model, resolved),
 			order:        i,
@@ -818,6 +859,9 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 		return "", reject("no harness on %s lists %q", node.Hostname, model)
 	}
 	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].signedIn != cands[j].signedIn {
+			return cands[i].signedIn
+		}
 		if cands[i].subscription != cands[j].subscription {
 			return cands[i].subscription
 		}
@@ -1315,6 +1359,14 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 					message += "; closest: " + strings.Join(closest, ", ")
 				}
 				skippedProfiles = append(skippedProfiles, message)
+				continue
+			}
+			blocked, err := g.store.ModelAuthBlocked(node.NodeID, h.Name, resolved)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if blocked {
+				skippedProfiles = append(skippedProfiles, fmt.Sprintf("%s skipped on %s: provider authentication failed", profile.Name, node.Hostname))
 				continue
 			}
 			if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {

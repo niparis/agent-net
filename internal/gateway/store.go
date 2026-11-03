@@ -564,6 +564,8 @@ CREATE TRIGGER IF NOT EXISTS removed_node_session_insert BEFORE INSERT ON sessio
 CREATE TRIGGER IF NOT EXISTS removed_node_session_online BEFORE UPDATE OF online ON sessions
  WHEN NEW.online=1 AND EXISTS(SELECT 1 FROM nodes WHERE id=NEW.node_id AND removed=1)
  BEGIN SELECT RAISE(ABORT,'machine was removed from the network'); END;
+`, `
+SELECT 1 /* model auth failure column */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -619,6 +621,19 @@ func (s *Store) migrate() error {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
+		}
+		if strings.Contains(migrations[i], "model auth failure column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('model_failures') WHERE name='auth_at'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE model_failures ADD COLUMN auth_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
 		}
 		// Add the public app columns only when absent. Old migration tests replay
 		// later migrations on an already migrated database.

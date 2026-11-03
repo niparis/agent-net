@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS workers (
 	// not have these columns.
 	for _, col := range []struct{ name, spec string }{
 		{"task_text", `task_text TEXT NOT NULL DEFAULT ''`},
+		{"failure", `failure TEXT NOT NULL DEFAULT ''`},
 		{"title", `title TEXT NOT NULL DEFAULT ''`},
 		{"resumable", `resumable INTEGER NOT NULL DEFAULT 0`},
 		{"reported", `reported INTEGER NOT NULL DEFAULT 0`},

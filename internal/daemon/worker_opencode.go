@@ -489,7 +489,7 @@ func openCodeProviderFailure(typ, message string) bool {
 	if providerStatus.MatchString(s) {
 		return true
 	}
-	for _, marker := range []string{"insufficient", "billing", "funds", "payment required", "unauthorized", "forbidden", "invalid api key", "invalid_api_key", "authentication", "quota", "rate limit", "rate_limit", "too many requests", "no route", "no-route", "model unavailable", "model not available", "model not found", "model_not_found", "provider.auth", "provider.quota", "provider.rate"} {
+	for _, marker := range []string{"not logged in", "insufficient", "billing", "funds", "payment required", "unauthorized", "forbidden", "invalid api key", "invalid_api_key", "authentication", "quota", "rate limit", "rate_limit", "too many requests", "no route", "no-route", "model unavailable", "model not available", "model not found", "model_not_found", "provider.auth", "provider.quota", "provider.rate"} {
 		if strings.Contains(s, marker) {
 			return true
 		}

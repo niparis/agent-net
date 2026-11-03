@@ -426,6 +426,8 @@ type (
 		Project   string `json:"project"`
 		Harness   string `json:"harness"`
 		Reason    string `json:"reason"`
+		// Failure is the cleaned model-call error, used to remember provider auth failures.
+		Failure string `json:"failure,omitempty"`
 		// Model is the model the worker ran, as the gateway resolved it. The
 		// gateway uses it with Reason model_failed to rank the model last for a
 		// while (ModelFailureDays), and with Status done to rank it first
@@ -851,4 +853,19 @@ func noticeChecklist(worktree string, learned bool) string {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}
 	return line
+}
+
+// ModelAuthFailure recognizes provider sign-in failures, separately from billing
+// and rate limits. Numeric codes must be complete tokens.
+func ModelAuthFailure(detail string) bool {
+	detail = strings.ToLower(detail)
+	if strings.Contains(detail, "not logged in") {
+		return true
+	}
+	for _, token := range strings.FieldsFunc(detail, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		if token == "401" || token == "403" {
+			return true
+		}
+	}
+	return false
 }
