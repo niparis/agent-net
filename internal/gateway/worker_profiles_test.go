@@ -99,3 +99,12 @@ func TestWorkerProfileRoster(t *testing.T) {
 		t.Fatalf("after removal %+v %v", profiles, err)
 	}
 }
+
+func TestWorkerProfileAvailabilitySignedOut(t *testing.T) {
+	profiles := []protocol.WorkerProfile{{Name: "sol", Harness: "codex", Model: "gpt-6.1-sol"}}
+	nodes := []protocol.NodeView{{Hostname: "host", Online: true, Harnesses: []protocol.HarnessInfo{{Name: "codex", SignedIn: "no", Models: []string{"gpt-6.1-sol"}}}}}
+	got := withWorkerProfileAvailability(profiles, nodes)[0]
+	if got.Available == nil || *got.Available || len(got.MachineAvailability) != 1 || got.MachineAvailability[0].Available {
+		t.Fatalf("signed-out profile: %+v", got)
+	}
+}

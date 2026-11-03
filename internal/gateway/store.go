@@ -550,6 +550,8 @@ CREATE TABLE IF NOT EXISTS tool_project_settings (item TEXT PRIMARY KEY, new_pro
 CREATE TABLE IF NOT EXISTS tool_project_seen (item TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY(item,project));
 `, `
 CREATE INDEX IF NOT EXISTS deliveries_message_state ON deliveries(message_id, state, id);
+`, `
+SELECT 1 /* model auth failure column */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -605,6 +607,19 @@ func (s *Store) migrate() error {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
+		}
+		if strings.Contains(migrations[i], "model auth failure column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('model_failures') WHERE name='auth_at'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE model_failures ADD COLUMN auth_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
 		}
 		// Add the public app columns only when absent. Old migration tests replay
 		// later migrations on an already migrated database.

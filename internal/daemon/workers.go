@@ -485,7 +485,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 		AutoContinue: w.autoContinue, AutoContinueCount: w.autoContinueCount, AutoContinueRun: w.autoContinueRun,
 		PendingHandback: w.pendingHandback, PendingPartial: w.pendingPartial,
 		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed, Touches: w.touches,
-		TaskID: w.taskID, MidrunCount: w.midrunCount, MidrunRun: w.midrunRun, NoticeSinceRequest: w.noticeSinceRequest, MidrunSeen: w.midrunSeen}
+		TaskID: w.taskID, MidrunCount: w.midrunCount, MidrunRun: w.midrunRun, NoticeSinceRequest: w.noticeSinceRequest, MidrunSeen: w.midrunSeen, Failure: w.failure}
 }
 
 // ---- starting ----
@@ -980,7 +980,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			complete = &c
 		}
 		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{SessionID: r.SessionID, WorkerID: r.ID,
-			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model,
+			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model, Failure: r.Failure,
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
 			AutoContinue: r.AutoContinueCount, AutoContinueRun: r.AutoContinueRun,

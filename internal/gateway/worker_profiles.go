@@ -59,7 +59,7 @@ func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []pr
 				}
 				resolved, ambiguous := protocol.ResolveWorkerProfileModel(out[i].Model, harness.Models)
 				status := protocol.WorkerProfileMachineAvailability{Machine: machine}
-				if resolved != "" {
+				if resolved != "" && harness.SignedIn != "no" {
 					status.Available = true
 					available = true
 					if resolved != out[i].Model {
@@ -171,11 +171,11 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 		if err != nil {
 			return nil, err
 		}
-		nodes, err := g.store.Nodes()
+		info, err := g.NodesInfo()
 		if err != nil {
 			return nil, err
 		}
-		return withWorkerProfileAvailability(profiles, nodes), nil
+		return withWorkerProfileAvailability(profiles, info.Nodes), nil
 	}
 	agent, ok, err := g.store.Agent(p.Requester)
 	if err != nil {

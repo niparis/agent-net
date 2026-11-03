@@ -31,6 +31,7 @@ func TestOpenCodeProviderFailure(t *testing.T) {
 	}{
 		{"provider.upstream", "Insufficient account funds", true},
 		{"error", "HTTP 401 invalid API key", true},
+		{"error", "not logged in", true},
 		{"error", "rate limit exceeded", true},
 		{"error", "no route for model", true},
 		{"effect/sql/SqlError", "Failed to execute statement", false},

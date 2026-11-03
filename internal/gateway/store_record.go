@@ -524,13 +524,19 @@ func (s *Store) ModelUsage(nodeID, harness string, window time.Duration) (map[st
 // RecordModelFailure notes that a worker on a node failed on a model call
 // (provider, billing or auth error). ResolveModel ranks the model last for
 // protocol.ModelFailureHours.
-func (s *Store) RecordModelFailure(nodeID, harness, model string) error {
+func (s *Store) RecordModelFailure(nodeID, harness, model string, failure ...string) error {
 	if model == "" {
 		return nil
 	}
-	_, err := s.db.Exec(`INSERT INTO model_failures (node_id, harness, model, at) VALUES (?, ?, ?, ?)
-		ON CONFLICT (node_id, harness, model) DO UPDATE SET at = excluded.at`,
-		nodeID, harness, model, s.now().UnixNano())
+	var authAt int64
+	for _, detail := range failure {
+		if protocol.ModelAuthFailure(detail) {
+			authAt = s.now().UnixNano()
+		}
+	}
+	_, err := s.db.Exec(`INSERT INTO model_failures (node_id, harness, model, at, auth_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (node_id, harness, model) DO UPDATE SET at = excluded.at, auth_at = MAX(model_failures.auth_at, excluded.auth_at)`,
+		nodeID, harness, model, s.now().UnixNano(), authAt)
 	return err
 }
 
@@ -598,4 +604,36 @@ func failedSet(m map[string]time.Time) map[string]bool {
 		out[k] = true
 	}
 	return out
+}
+
+// ModelAuthBlocked keeps provider auth failures separate from temporary model
+// ranking failures. Only a later success on that harness and provider clears one.
+func (s *Store) ModelAuthBlocked(nodeID, harness, model string) (bool, error) {
+	provider := protocol.ProfileProvider(harness, model)
+	rows, err := s.db.Query(`SELECT model, auth_at, 0 FROM model_failures WHERE node_id=? AND harness=? AND auth_at>0
+ UNION ALL SELECT model, at, 1 FROM model_successes WHERE node_id=? AND harness=?`, nodeID, harness, nodeID, harness)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	var failed, succeeded int64
+	for rows.Next() {
+		var m string
+		var at int64
+		var success int
+		if err := rows.Scan(&m, &at, &success); err != nil {
+			return false, err
+		}
+		if protocol.ProfileProvider(harness, m) != provider {
+			continue
+		}
+		if success == 1 {
+			if at > succeeded {
+				succeeded = at
+			}
+		} else if at > failed {
+			failed = at
+		}
+	}
+	return failed > 0 && failed >= succeeded, rows.Err()
 }
