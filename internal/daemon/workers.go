@@ -139,6 +139,7 @@ type worker struct {
 	turnActive                        bool
 	turnHandbackIdle                  bool
 	turnAwaitingStart                 bool
+	turnMessageID                     string // dequeued turn, retained until its start is observed
 	turnQueue                         []protocol.Message
 	idleNoticeSince                   time.Time
 	idleNoticeSent, idleNoticePending bool
