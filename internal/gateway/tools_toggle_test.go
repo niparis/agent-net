@@ -1,11 +1,14 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/inventory"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -216,10 +219,31 @@ func TestToolToggleUnmanagedImportAndRefusal(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			g, n, _ := toggleFixture(t)
 			body := "# Demo\nA fixture skill.\n"
-			if mode == "secret" {
-				body += "\nsk-" + strings.Repeat("x", 24)
-			}
 			id, bundle := toggleBundle(t, g, n, body)
+			if mode == "secret" {
+				dir := t.TempDir()
+				if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(filepath.Join(dir, "references"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "references", "setup.md"), []byte("sk-"+strings.Repeat("x", 24)), 0600); err != nil {
+					t.Fatal(err)
+				}
+				hash, err := inventory.SkillHash(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				bundle, err = inventory.PackSkill(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
+					t.Fatal(err)
+				}
+				id = `["skill","demo","` + hash + `"]`
+			}
 			var refused error
 			if mode == "too large" {
 				refused = errors.New("skill exceeds the 2 MB import limit")
@@ -245,7 +269,7 @@ func TestToolToggleUnmanagedImportAndRefusal(t *testing.T) {
 				if mode == "too large" && !strings.Contains(err.Error(), "import limit") {
 					t.Fatal(err)
 				}
-				if mode == "secret" && !strings.Contains(err.Error(), "secret") {
+				if mode == "secret" && (!strings.Contains(err.Error(), "demo: not switched") || !strings.Contains(err.Error(), "references/setup.md") || !strings.Contains(err.Error(), "then try again")) {
 					t.Fatal(err)
 				}
 				return
@@ -423,5 +447,145 @@ func TestToolSnapshotSameItemChangesAndReconnect(t *testing.T) {
 				t.Fatalf("expected stale plan: %v", err)
 			}
 		})
+	}
+}
+
+func TestToolPlanProbeBatchAndFallback(t *testing.T) {
+	for _, old := range []bool{false, true} {
+		t.Run(fmt.Sprint(old), func(t *testing.T) {
+			g, n, _ := toggleFixture(t)
+			// The fake node delays each answer, and handles individual requests concurrently.
+			probeBatchTestNode(t, g, n, old)
+			probes := make([]protocol.ToolPlanProbe, 40)
+			for i := range probes {
+				probes[i] = protocol.ToolPlanProbe{Name: fmt.Sprint(i)}
+			}
+			start := time.Now()
+			results := g.probeToolBatch(t.Context(), g.conn(n), probes)
+			limit := 2 * time.Second
+			if old {
+				limit = 4 * time.Second
+			}
+			if elapsed := time.Since(start); elapsed >= limit {
+				t.Errorf("probe took %s", elapsed)
+			}
+			for i, r := range results {
+				if r.err != nil || r.result.Destination != probes[i].Name {
+					t.Fatalf("probe %d: %+v", i, r)
+				}
+			}
+		})
+	}
+}
+
+func probeBatchTestNode(t *testing.T, g *Gateway, n string, old bool) {
+	t.Helper()
+	accepted := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err == nil {
+			accepted <- c
+		}
+	}))
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithCancel(t.Context())
+	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := <-accepted
+	nc := &nodeConn{id: n, ws: ws, dead: make(chan struct{}), cancel: cancel}
+	g.mu.Lock()
+	g.conns[n] = nc
+	g.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			_, raw, e := client.Read(ctx)
+			if e != nil {
+				return
+			}
+			var h protocol.Header
+			_ = json.Unmarshal(raw, &h)
+			go func(raw []byte, h protocol.Header) {
+				time.Sleep(200 * time.Millisecond)
+				var data any
+				if h.Type == "node.tool_plan_probes" {
+					if old {
+						return
+					}
+					var p protocol.ToolPlanProbes
+					_ = json.Unmarshal(raw, &p)
+					results := make([]protocol.ToolPlanProbeResult, len(p.Probes))
+					for i, v := range p.Probes {
+						results[i].Destination = filepath.Join(v.Checkout, v.Root, v.Name)
+					}
+					data = results
+				} else {
+					var p protocol.ToolPlanProbe
+					_ = json.Unmarshal(raw, &p)
+					data = protocol.ToolPlanProbeResult{Destination: filepath.Join(p.Checkout, p.Root, p.Name)}
+				}
+				b, _ := protocol.EncodeResult(h.ID, data, nil)
+				var reply protocol.Header
+				_ = json.Unmarshal(b, &reply)
+				nc.answer(reply)
+			}(raw, h)
+		}
+	}()
+	t.Cleanup(func() {
+		g.mu.Lock()
+		delete(g.conns, n)
+		g.mu.Unlock()
+		cancel()
+		client.CloseNow()
+		ws.CloseNow()
+		<-done
+	})
+}
+
+func TestToolTogglePlanApplyLogs(t *testing.T) {
+	g, _, id := toggleFixture(t)
+	var logs bytes.Buffer
+	g.logger = log.New(&logs, "", 0)
+	_, _ = g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one"}, "invalid")
+	_, _ = g.planTool(t.Context(), protocol.ToolPlanRequest{Item: id, Project: "one"}, "invalid")
+	_, _ = g.applyTool(t.Context(), "missing", "invalid")
+	t.Logf("sample logs: %s", logs.String())
+	for _, want := range []string{"event=tools.toggle", "event=tools.plan", "event=tools.apply", "skill=demo", "project=one", "targets=0", "skipped=0", "duration=", "result="} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q in %s", want, logs.String())
+		}
+	}
+}
+
+func TestToolPlanBatchFortyDestinations(t *testing.T) {
+	g, n, id := toggleFixture(t)
+	for i := 0; i < 20; i++ {
+		if _, err := g.store.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, n, fmt.Sprintf("/repo/check-%02d", i), "bulk"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probeBatchTestNode(t, g, n, false)
+	start := time.Now()
+	targets, err := g.toolTargets(t.Context(), id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"bulk"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed >= 2*time.Second {
+		t.Errorf("plan took %s", elapsed)
+	}
+	count := 0
+	for _, target := range targets {
+		if target.Action == "copy" {
+			count++
+			if target.Destination != filepath.Join(target.Checkout, target.Root, "demo") {
+				t.Errorf("wrong destination for %s: %s", target.Checkout, target.Destination)
+			}
+		}
+	}
+	if count != 40 {
+		t.Fatalf("copies %d, targets %+v", count, targets)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolAssignment, failed map[string]bool) ([]protocol.ToolPlanTarget, error) {
@@ -84,6 +85,84 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		}
 		return false
 	}
+	// Collect all checks before the rendering pass so each node gets one request.
+	probeLists := map[string][]protocol.ToolPlanProbe{}
+	addProbe := func(node string, p protocol.ToolPlanProbe) { probeLists[node] = append(probeLists[node], p) }
+	if kind == protocol.InventorySkill {
+		for _, node := range nodes {
+			if g.conn(node.NodeID) == nil || (a.Scope != "global" && a.Scope != "projects") {
+				continue
+			}
+			checkouts := []protocol.ProjectView{}
+			if a.Scope == "global" {
+				checkouts = append(checkouts, protocol.ProjectView{})
+			} else {
+				for _, p := range projects {
+					if p.NodeID == node.NodeID && selected(p.Name) {
+						if p.Worktrees == nil {
+							p.Worktrees = []string{}
+						}
+						checkouts = append(checkouts, p)
+						for _, wt := range p.Worktrees {
+							v := p
+							v.Path = wt
+							checkouts = append(checkouts, v)
+						}
+					}
+				}
+			}
+			for _, checkout := range checkouts {
+				roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
+				if checkout.Path == "" {
+					roots = append(roots, struct{ root, harness string }{".gemini/config/skills", "antigravity"})
+				}
+				for _, h := range roots {
+					addProbe(node.NodeID, protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Worktrees: checkout.Worktrees})
+				}
+			}
+		}
+		for _, report := range reports {
+			if !a.OnMachine(report.NodeID) || g.conn(report.NodeID) == nil {
+				continue
+			}
+			for _, obs := range report.Items {
+				remove := a.Scope == "uninstalled" || (a.Scope == "projects" && (obs.Scope != protocol.InventoryProject || !selected(obs.Project))) || (a.Scope == "global" && obs.Scope == protocol.InventoryProject)
+				if obs.Kind == kind && obs.Name == name && obs.Hash == hash && remove && obs.Source != protocol.InventoryPlugin && obs.Source != protocol.InventoryPackage && obs.Source != protocol.InventorySystem && !obs.Tracked {
+					addProbe(report.NodeID, protocol.ToolPlanProbe{Name: name, Harness: obs.Harness, Source: obs.Location, Hash: hash})
+				}
+			}
+		}
+	}
+	type probeKey struct{ node, request string }
+	key := func(node string, p protocol.ToolPlanProbe) probeKey {
+		b, _ := json.Marshal(p)
+		return probeKey{node, string(b)}
+	}
+	answers := map[probeKey]toolProbeReply{}
+	var probeMu sync.Mutex
+	var probeWG sync.WaitGroup
+	for node, probes := range probeLists {
+		probeWG.Add(1)
+		go func(node string, probes []protocol.ToolPlanProbe) {
+			defer probeWG.Done()
+			host := g.conn(node)
+			if host == nil {
+				probeMu.Lock()
+				for _, p := range probes {
+					answers[key(node, p)] = toolProbeReply{err: errNodeGone}
+				}
+				probeMu.Unlock()
+				return
+			}
+			replies := g.probeToolBatch(ctx, host, probes)
+			probeMu.Lock()
+			defer probeMu.Unlock()
+			for i, p := range probes {
+				answers[key(node, p)] = replies[i]
+			}
+		}(node, probes)
+	}
+	probeWG.Wait()
 	for _, node := range nodes {
 		host := g.conn(node.NodeID)
 		before := len(targets)
@@ -130,16 +209,20 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 						t.State = "offline"
 						t.Conflict = "machine offline; destination cannot be inspected"
 					} else {
-						raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Worktrees: checkout.Worktrees}, 10*time.Second)
+						reply, ok := answers[key(node.NodeID, protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Worktrees: checkout.Worktrees})]
+						e := reply.err
+						if !ok {
+							e = errNodeGone
+						}
 						if e != nil {
 							t.State = "conflict"
 							t.Conflict = "destination inspection unavailable"
 						} else {
-							var r protocol.ToolPlanProbeResult
-							if json.Unmarshal(raw, &r) != nil {
-								t.State = "conflict"
-								t.Conflict = "invalid destination inspection"
-							} else {
+							r := reply.result
+							if r.Conflict == "" && !r.Skip && checkout.Path != "" && filepath.Clean(r.Destination) != filepath.Join(checkout.Path, h.root, name) {
+								r.Conflict = "invalid destination inspection"
+							}
+							{
 								if r.Skip {
 									continue
 								}
@@ -206,14 +289,16 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				t.State = "offline"
 				t.Conflict = "machine offline; source cannot be inspected"
 			} else {
-				raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: obs.Harness, Source: obs.Location, Hash: hash}, 10*time.Second)
+				reply, ok := answers[key(report.NodeID, protocol.ToolPlanProbe{Name: name, Harness: obs.Harness, Source: obs.Location, Hash: hash})]
+				e := reply.err
+				if !ok {
+					e = errNodeGone
+				}
 				if e != nil {
 					t.State, t.Conflict = "conflict", "source inspection unavailable"
 				} else {
-					var r protocol.ToolPlanProbeResult
-					if json.Unmarshal(raw, &r) != nil {
-						t.State, t.Conflict = "conflict", "invalid source inspection"
-					} else if r.Conflict != "" {
+					r := reply.result
+					if r.Conflict != "" {
 						t.State, t.Conflict = "conflict", r.Conflict
 					}
 				}
@@ -228,6 +313,14 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	return targets, nil
 }
 func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, actor string) (out protocol.ToolPlan, err error) {
+	start := time.Now()
+	defer func() {
+		project := p.Project
+		if project == "" {
+			project = strings.Join(p.Target.Projects, ",")
+		}
+		g.logToolOperation("tools.plan", p.Item, project, len(out.Targets), len(out.Skipped), start, err)
+	}()
 	defer func() {
 		if err != nil && !validatingProposal(ctx) && validChangeActor(actor) {
 			if e := g.store.recordRefusedToolPlan(p.Item, actor); e != nil {
@@ -363,6 +456,12 @@ func firstRepoProject(targets []protocol.ToolPlanTarget) string {
 }
 
 func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol.ToolApplyResult, err error) {
+	start := time.Now()
+	var logPlan protocol.ToolPlan
+	skippedCount := 0
+	defer func() {
+		g.logToolOperation("tools.apply", logPlan.Item, strings.Join(logPlan.Assignment.Projects, ","), len(logPlan.Targets), skippedCount, start, err)
+	}()
 	var r protocol.ToolRevision
 	checked := false
 	defer func() {
@@ -384,6 +483,7 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	if json.Unmarshal([]byte(raw), &p) != nil {
 		return out, errors.New("invalid plan")
 	}
+	logPlan = p
 	current, e := g.store.ToolSnapshot(p.Item)
 	if e != nil {
 		return out, e
@@ -410,7 +510,9 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 			}
 		}
 	}
-	targets, _ = splitToolSkips(targets)
+	var skipped []protocol.ToolPlanSkip
+	targets, skipped = splitToolSkips(targets)
+	skippedCount = len(skipped)
 	if !reflect.DeepEqual(targets, p.Targets) {
 		return out, errors.New("plan out of date")
 	}
@@ -605,4 +707,62 @@ func splitToolSkips(targets []protocol.ToolPlanTarget) ([]protocol.ToolPlanTarge
 		}
 	}
 	return kept, skips
+}
+
+type toolProbeReply struct {
+	result protocol.ToolPlanProbeResult
+	err    error
+}
+
+// probeToolBatch preserves request order and bounds legacy-node concurrency.
+func (g *Gateway) probeToolBatch(ctx context.Context, host *nodeConn, probes []protocol.ToolPlanProbe) []toolProbeReply {
+	out := make([]toolProbeReply, len(probes))
+	if len(probes) == 0 {
+		return out
+	}
+	raw, err := host.request(ctx, "node.tool_plan_probes", protocol.ToolPlanProbes{Probes: probes}, 750*time.Millisecond)
+	if err == nil {
+		var results []protocol.ToolPlanProbeResult
+		if json.Unmarshal(raw, &results) == nil && len(results) == len(probes) {
+			for i := range results {
+				out[i].result = results[i]
+			}
+			return out
+		}
+	}
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, p := range probes {
+		wg.Add(1)
+		go func(i int, p protocol.ToolPlanProbe) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				out[i].err = ctx.Err()
+				return
+			}
+			defer func() { <-sem }()
+			raw, e := host.request(ctx, "node.tool_plan_probe", p, 10*time.Second)
+			if e == nil {
+				e = json.Unmarshal(raw, &out[i].result)
+			}
+			out[i].err = e
+		}(i, p)
+	}
+	wg.Wait()
+	return out
+}
+
+// logToolOperation records metadata and redacts secret-shaped text from errors.
+func (g *Gateway) logToolOperation(event, item, project string, targets, skipped int, start time.Time, err error) {
+	var name string
+	if item != "" {
+		_ = g.store.db.QueryRow(`SELECT name FROM tool_identities WHERE id=?`, item).Scan(&name)
+	}
+	result := "ok"
+	if err != nil {
+		result = redact.Secrets(err.Error())
+	}
+	g.logLine(event, "skill", redact.Secrets(name), "project", redact.Secrets(project), "targets", targets, "skipped", skipped, "duration", time.Since(start), "result", result)
 }

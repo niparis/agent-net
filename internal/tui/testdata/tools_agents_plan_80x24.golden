@@ -1,12 +1,12 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
 [ Skills per project ]    All tools
 ╭─Review 2 changes for homelab─────────────────────────────────────────────────╮
-│ Switch off archify in homelab.                                               │
-│ archify moves from every project to 12 projects                              │
-│ Copies to 1 project on research.                                             │
-│ Switch on found-skill in homelab.                                            │
-│ found-skill moves from 0 projects to 1 project                               │
-│ Copies to 1 project on research.                                             │
+│ archify: Switch off archify in homelab.                                      │
+│ archify: archify moves from every project to 12 projects                     │
+│ archify: Copies to 1 project on research.                                    │
+│ found-skill: Switch on found-skill in homelab.                               │
+│ found-skill: found-skill moves from 0 projects to 1 project                  │
+│ found-skill: Copies to 1 project on research.                                │
 │                                                                              │
 │ enter apply  d exact folders  esc cancel                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯

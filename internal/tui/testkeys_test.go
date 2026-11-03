@@ -16,6 +16,9 @@ func exec(m Model, cmd tea.Cmd) Model {
 			m = exec(m, c)
 		}
 	case nil:
+	case toolsModalMsg:
+		next, follow := m.Update(msg)
+		m = exec(next.(Model), follow)
 	default:
 		m = send(m, msg)
 	}

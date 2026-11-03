@@ -490,3 +490,8 @@ type ToolProjectState struct {
 	NewProjects bool            `json:"new_projects"`
 	Machines    []string        `json:"machines"`
 }
+
+// ToolPlanProbes groups destination checks for one node, in request order.
+type ToolPlanProbes struct {
+	Probes []ToolPlanProbe `json:"probes"`
+}

@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
 	"sort"
 	"strings"
+	"time"
 )
 
 func planCanApply(plan protocol.ToolPlan) bool {
@@ -176,6 +178,9 @@ func (m Model) agentAssignment(r toolsdiff.Row) protocol.ToolAssignment {
 // skill does not invalidate a plan for another skill.
 func (m Model) reviewAgentChanges(project string) (tea.Model, tea.Cmd) {
 	jobs, why := m.agentJobs(project)
+	if why == "" && len(jobs) == 0 {
+		why = "No changes to review"
+	}
 	if why != "" {
 		m.toolsToast(why)
 		return m, nil
@@ -186,56 +191,75 @@ func (m Model) reviewAgentChanges(project string) (tea.Model, tea.Cmd) {
 	md.planFoot("apply")
 	id := md.id
 	rows := m.agentSkillsUnfiltered()
-	return m, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*Timeout)
-		defer cancel()
-		var plans []protocol.ToolPlan
-		names := map[string]string{}
-		reasons := map[string][]string{project: nil}
-		var lines, paths []string
-		for _, j := range jobs {
+	base, stop := context.WithCancel(context.Background())
+	md.cancel = stop
+	var plans []protocol.ToolPlan
+	names := map[string]string{}
+	reasons := map[string][]string{project: nil}
+	var lines, paths []string
+	var step func(int) tea.Cmd
+	step = func(i int) tea.Cmd {
+		j := jobs[i]
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(base, 2*time.Minute)
 			plan, err := ts.ToolsToggle(ctx, protocol.ToolToggleRequest{Item: j.item, Project: project, On: j.agentOn})
+			cancel()
 			if err != nil {
-				lines = append(lines, "Nothing changed: "+sanitize(err.Error()))
-				continue
-			}
-			for _, skip := range plan.Skipped {
-				reason := sanitize(skip.Machine + ": " + skip.Reason)
-				if !hasStr(reasons[skip.Project], reason) {
-					reasons[skip.Project] = append(reasons[skip.Project], reason)
+				message := sanitize(err.Error())
+				if !strings.HasPrefix(message, j.name+":") {
+					message = j.name + ": nothing changed: " + message
+				}
+				lines = append(lines, message)
+			} else {
+				for _, skip := range plan.Skipped {
+					reason := sanitize(skip.Machine + ": " + skip.Reason)
+					if !hasStr(reasons[skip.Project], reason) {
+						reasons[skip.Project] = append(reasons[skip.Project], reason)
+					}
+				}
+				var current protocol.ToolAssignment
+				for _, r := range rows {
+					if r.Name == j.name {
+						current = m.agentAssignment(r)
+						break
+					}
+				}
+				for _, line := range togglePlanLines(plan, current, j.name, project, j.agentOn) {
+					lines = append(lines, j.name+": "+line)
+				}
+				paths = append(paths, planPaths(plan)...)
+				if planCanApply(plan) {
+					plans = append(plans, plan)
+					names[plan.ID] = j.name
 				}
 			}
-			var current protocol.ToolAssignment
-			for _, r := range rows {
-				if r.Name == j.name {
-					current = m.agentAssignment(r)
-					break
+			if i+1 < len(jobs) {
+				return toolsModalMsg{id: id, next: step(i + 1), update: func(md *toolsModal) {
+					md.lines = append(append([]string{}, lines...), fmt.Sprintf("planning %d of %d: %s", i+2, len(jobs), jobs[i+1].name))
+				}}
+			}
+			return toolsModalMsg{id: id, projectReasons: reasons, update: func(md *toolsModal) {
+				stop()
+				md.cancel = nil
+				md.loading = false
+				md.lines = lines
+				md.paths = paths
+				if len(plans) == 0 {
+					md.title = "Nothing changed"
+					md.foot = []string{"esc", "close"}
+					return
 				}
-			}
-			lines = append(lines, togglePlanLines(plan, current, j.name, project, j.agentOn)...)
-			paths = append(paths, planPaths(plan)...)
-			if planCanApply(plan) {
-				plans = append(plans, plan)
-				names[plan.ID] = j.name
-			}
+				md.actions["enter"] = func(m Model) (Model, tea.Cmd) {
+					for _, name := range names {
+						delete(m.tl.agentPending[project], name)
+					}
+					return m.applyAgentPlans(plans)
+				}
+			}}
 		}
-		return toolsModalMsg{id: id, projectReasons: reasons, update: func(md *toolsModal) {
-			md.loading = false
-			md.lines = lines
-			md.paths = paths
-			if len(plans) == 0 {
-				md.title = "Nothing changed"
-				md.foot = []string{"esc", "close"}
-				return
-			}
-			md.actions["enter"] = func(m Model) (Model, tea.Cmd) {
-				for _, name := range names {
-					delete(m.tl.agentPending[project], name)
-				}
-				return m.applyAgentPlans(plans)
-			}
-		}}
 	}
+	md.lines = []string{fmt.Sprintf("planning 1 of %d: %s", len(jobs), jobs[0].name)}
+	return m, step(0)
 }
 
 func (m Model) applyAgentPlans(plans []protocol.ToolPlan) (Model, tea.Cmd) {
@@ -247,22 +271,8 @@ func (m Model) applyAgentPlans(plans []protocol.ToolPlan) (Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), time10min)
 		defer cancel()
 		applied := 0
-		var lines, reasons []string
+		var lines []string
 		for _, plan := range plans {
-			res, err := ts.ToolsApply(ctx, plan.ID)
-			if err != nil {
-				reason := sanitize(err.Error())
-				reasons = append(reasons, reason)
-				lines = append(lines, "Nothing changed: "+reason)
-				continue
-			}
-			for _, t := range res.Targets {
-				if t.State == "ok" || t.State == "applied" {
-					applied++
-				} else {
-					reasons = append(reasons, orStr(t.Reason, t.State))
-				}
-			}
 			name := plan.Item
 			for _, it := range m.tl.items {
 				if it.ID == plan.Item {
@@ -270,7 +280,29 @@ func (m Model) applyAgentPlans(plans []protocol.ToolPlan) (Model, tea.Cmd) {
 					break
 				}
 			}
-			lines = append(lines, outcomeLines(name, res)...)
+			res, err := ts.ToolsApply(ctx, plan.ID)
+			if err != nil {
+				reason := sanitize(err.Error())
+				lines = append(lines, name+": Nothing changed: "+reason)
+				continue
+			}
+			count := 0
+			var reasons []string
+			for _, t := range res.Targets {
+				if t.State == "ok" || t.State == "applied" {
+					applied++
+					count++
+				} else {
+					reasons = append(reasons, orStr(t.Reason, t.State))
+				}
+			}
+			if count == 0 {
+				lines = append(lines, name+": Nothing changed: "+orStr(strings.Join(reasons, "; "), "no target was changed"))
+				continue
+			}
+			for _, line := range outcomeLines(name, res) {
+				lines = append(lines, name+": "+line)
+			}
 		}
 		return toolsModalMsg{id: id, reload: applied > 0, update: func(md *toolsModal) {
 			md.loading = false
@@ -279,7 +311,10 @@ func (m Model) applyAgentPlans(plans []protocol.ToolPlan) (Model, tea.Cmd) {
 			md.foot = []string{"enter", "close"}
 			if applied == 0 {
 				md.title = "Nothing changed"
-				md.lines = []string{"Nothing changed: " + orStr(strings.Join(reasons, "; "), "no target was changed")}
+				md.lines = lines
+				if len(md.lines) == 0 {
+					md.lines = []string{"Nothing changed: no target was changed"}
+				}
 				return
 			}
 			md.title = "Applied: " + nounCount(applied, "target", "targets")

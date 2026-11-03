@@ -805,11 +805,18 @@ func TestToolKnownProjectsManySessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	insert, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 3000; i++ {
 		name := fmt.Sprintf("project-%04d", i)
-		if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: name, Cwd: "/work/" + name, Repo: protocol.RepoInfo{Root: "/work/" + name}}); err != nil {
+		if _, err := insert.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,cwd,repo_root,last_seen) VALUES(?,?,?,?,?,?,0)`, name, node, "claude", name, "/work/"+name, "/work/"+name); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err = insert.Commit(); err != nil {
+		t.Fatal(err)
 	}
 	tx, err := s.db.Begin()
 	if err != nil {

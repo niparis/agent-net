@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/temppath"
@@ -242,7 +243,11 @@ func (s *Store) toolToggleAssignment(p protocol.ToolToggleRequest, validate bool
 	return protocol.ToolAssignment{}, errors.New("skill item not found")
 }
 
-func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, actor string) (protocol.ToolPlan, error) {
+func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, actor string) (out protocol.ToolPlan, err error) {
+	start := time.Now()
+	defer func() {
+		g.logToolOperation("tools.toggle", p.Item, p.Project, len(out.Targets), len(out.Skipped), start, err)
+	}()
 	if !validChangeActor(actor) {
 		return protocol.ToolPlan{}, errors.New("owner authority required")
 	}

@@ -203,11 +203,19 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 			return e
 		}
 		if redact.Secrets(string(b)) != string(b) {
-			return errors.New("skill contains a recognised secret")
+			rel, err := filepath.Rel(dir, path)
+			if err != nil {
+				return err
+			}
+			return reject("%s: not switched: a file looks like it holds a secret (%s). agent-net does not copy skills with secrets. Remove the secret from the skill, then try again.", redact.Secrets(name), redact.Secrets(filepath.ToSlash(rel)))
 		}
 		return nil
 	})
 	if err != nil {
+		var refusal Rejection
+		if errors.As(err, &refusal) {
+			return v, err
+		}
 		return v, reject("cannot import skill: %v", err)
 	}
 	got, err := inventory.SkillHash(dir)

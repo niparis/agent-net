@@ -137,6 +137,9 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 		case "node.tool_skill_scan":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onToolSkillScan(ctx, l, h, raw) }()
+		case "node.tool_plan_probes":
+			d.wg.Add(1)
+			go func() { defer d.wg.Done(); d.onToolPlanProbes(ctx, l, h, raw) }()
 		case "node.tool_plan_probe":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onToolPlanProbe(ctx, l, h, raw) }()
