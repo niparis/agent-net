@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -322,6 +323,13 @@ func EncodeRequest(typ, id string, params any) ([]byte, error) {
 		}
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return nil, err
+		}
+	}
+	// The frame's own id and type would silently replace a parameter of the
+	// same name (an Inbox answer once lost its item id this way).
+	for _, k := range []string{"id", "type"} {
+		if _, ok := m[k]; ok {
+			return nil, fmt.Errorf("request %s: parameter %q clashes with the frame field", typ, k)
 		}
 	}
 	m["type"] = typ
