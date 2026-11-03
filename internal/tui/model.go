@@ -44,6 +44,9 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
+	workerLogDetail                     int
+	workersLog                          bool
+	workerLogRow                        int
 	proposals                           []protocol.CTOProposal
 	proposalDetail                      *proposalDetail
 	proposalConfirm                     bool
@@ -1254,6 +1257,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.settingsKey(k)
 	}
 	if m.tab == quotasTab {
+		if keyAction(contextQuotas, k.String()) == "workers log" {
+			m.workersLog = !m.workersLog
+			return m, nil
+		}
+		if m.workersLog {
+			return m.workersLogKey(k)
+		}
 		key := keyAction(contextQuotas, k.String())
 		switch key {
 		case "protect":
@@ -1308,6 +1318,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tab == inboxTab {
 		return m.inboxTabKey(k)
 	}
+
 	context := contextSessions
 	if m.tab == messagesTab {
 		context = contextMessages

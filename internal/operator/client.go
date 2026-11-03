@@ -130,6 +130,7 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		err      error
 	}
 	calls := []request{
+		{method: protocol.OpWorkerLog, params: protocol.WorkerLogQuery{Limit: 200}},
 		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
 		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet},
@@ -164,6 +165,8 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		var err = c.err
 		if err == nil {
 			switch c.method {
+			case protocol.OpWorkerLog:
+				err = json.Unmarshal(c.raw, &snap.WorkerLog)
 			case protocol.OpAgents:
 				var v protocol.AgentsResult
 				err = json.Unmarshal(c.raw, &v)

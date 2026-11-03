@@ -1,4 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
+[ Quotas ]    Workers log
 ╭─Subscriptions · quota-axi 0.1.66 · yours (/opt/homebrew/bin) · read on Mac …─╮
 │ no provider protected · select a subscription and press p                    │
 │ PROVIDER    PLAN MAC     WINDOW LEFT                 PACE      RESETS        │
@@ -9,7 +10,6 @@
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 

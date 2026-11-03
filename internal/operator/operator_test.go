@@ -192,6 +192,12 @@ func TestSnapshotIncludesOwnersAndWorkers(t *testing.T) {
 			return map[string]any{}, ""
 		case protocol.OpInfo:
 			return protocol.OperatorInfo{Connected: true, NodeID: "n_1", Hostname: "mac", OwnerSession: "s_o", Launch: true, Version: "v1"}, ""
+		case protocol.OpWorkerLog:
+			var q protocol.WorkerLogQuery
+			if err := json.Unmarshal(params, &q); err != nil || q.Limit != 200 {
+				t.Errorf("worker log query: %s", params)
+			}
+			return []protocol.WorkerLogEntry{{Title: "Stored run", Status: "done"}}, ""
 		case protocol.OpNodes:
 			return protocol.NodesInfo{}, ""
 		case protocol.OpAgents:
@@ -209,7 +215,7 @@ func TestSnapshotIncludesOwnersAndWorkers(t *testing.T) {
 	c := New(path)
 	defer c.Close()
 	snap, err := c.Snapshot(context.Background())
-	if err != nil || snap.OwnerSession != "s_o" || snap.Hostname != "mac" || !snap.Launch || len(snap.Workers()) != 1 {
+	if err != nil || snap.OwnerSession != "s_o" || snap.Hostname != "mac" || !snap.Launch || len(snap.Workers()) != 1 || len(snap.WorkerLog) != 1 || snap.WorkerLog[0].Title != "Stored run" {
 		t.Fatalf("snapshot: %+v %v", snap, err)
 	}
 }
@@ -221,7 +227,7 @@ func TestSnapshotSlowBestEffort(t *testing.T) {
 		switch method {
 		case protocol.OpInfo:
 			return protocol.OperatorInfo{Connected: true}, ""
-		case protocol.OpWorkerProfiles, protocol.OpScoresGet, "learned_list":
+		case protocol.OpWorkerLog, protocol.OpWorkerProfiles, protocol.OpScoresGet, "learned_list":
 			return []any{}, ""
 		case protocol.OpNodes:
 			<-release

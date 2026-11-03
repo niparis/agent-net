@@ -81,10 +81,16 @@ Legend ────────────────────────�
   feature_requests shown only when another agent looks this node up
 
  Quotas
+  tab                    Quotas / Workers log
   left/right             cycle the Quality panel agent
   p                      protect or unprotect this subscription
   s                      show or hide subscriptions that are not set up
   d                      open Quality details
+
+ Workers log
+  tab                    Quotas
+  pgup                   ten runs up
+  pgdown                 ten runs down
 
  Messages
   left/right             select the previous or next message

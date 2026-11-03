@@ -1,4 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
+[ Quotas ]    Workers log
 ╭─Subscriptions · read on Mac · read 0s ago────────────────────────────────────╮
 │ protected: anthropic · saved for your orchestrator                           │
 │ workers may use this provider freely                                         │
@@ -10,7 +11,6 @@
 │ 🔒 sonnet       claude   sonnet-4          x     x     x     x     x         │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 

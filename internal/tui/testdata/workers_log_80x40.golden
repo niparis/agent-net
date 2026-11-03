@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
+  Quotas    [ Workers log ]
+╭─Workers log──────────────────────────────────────────────────────────────────╮
+│ ▸ 11-14 22:13  test-model:high      normal     Review worker histor… running │
+│   11-14 22:11  test-model:high      normal     Review worker history a… done │
+│   11-14 22:10  test-model:high      normal     Review worker histor… blocked │
+│   11-14 22:08  test-model:high      normal     Review worker history… failed │
+│   11-14 22:06  test-model:high      normal     Review worker hist… timed out │
+│   11-14 22:05  test-model:high      normal     Review worker histor… stopped │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Difficulty details───────────────────────────────────────────────────────────╮
+│ Title: Review worker history and difficulty scores                           │
+│ Model: test-model:high                                                       │
+│ Machine: test-machine   Project: demo   Harness: codex                       │
+│ Run time: 2m0s                                                               │
+│ R3 S2 C2 U1 V2 K1 · D 2.10 · normal                                          │
+│ Judge: fake/judge                                                            │
+│ Reasoning: Join stored runs and current sessions.                            │
+│ Scope: One read method and one sub-tab.                                      │
+│ Coupling: Operator gate and TUI refresh.                                     │
+│ Uncertainty: Known table schema.                                             │
+│ Verification: Gateway and TUI tests.                                         │
+│ Risk: Read only history.                                                     │
+│ Picker: codex test-model:high (34.5, good enough; eligible for this task and │
+│ available on the chosen machine)                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+tab Quotas  ↑↓ select run  ←→ details  ? help  q quit

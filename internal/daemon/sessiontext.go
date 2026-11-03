@@ -33,6 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
+	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true,
 	"tools_keep_copy": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
@@ -554,6 +555,12 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "held.answer", p)
 	case "usage":
 		res, err = d.localUsage(ctx)
+	case protocol.OpWorkerLog:
+		var p protocol.WorkerLogQuery
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad worker log request")
+		}
+		res, err = d.call(ctx, "query.worker_log", p)
 	case protocol.OpConversations:
 		var p protocol.QueryConversations
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
