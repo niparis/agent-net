@@ -1,7 +1,7 @@
 # Hardening plan: delivery, files, security, docs
 
 **Date:** 2026-11-03
-**Status:** Plan for the owner's approval, nothing built
+**Status:** W1 to W6 approved by the owner on 2026-11-03 and started; W7 on the roadmap only, optional when built
 **Source:**
 - the external reverse-engineering report of commit 989e42bd (15 findings);
 - the gap found the same day: no way to move a file between machines or agents.
@@ -30,12 +30,11 @@ One worker.
 - **The offline mark:** the gateway marks a machine offline as soon as its link closes, not after a 30 s wait plus TCP timeouts.
 - **Verification:** a real test with the Mac asleep. Its row goes offline within about a minute and comes back on wake, without a restart.
 
-### W3. Retention and logs
+### W3. Housekeeping and logs
 
-One worker.
+One worker. The owner's decision: messages are kept as long as possible; nothing deletes message bodies.
 
-- **Message bodies:** deleted after N days (default 90, a setting; 0 keeps them forever), like events today. Delivery rows and metadata stay.
-- **The daemon's `delivered` table:** pruned on the same schedule.
+- **The daemon's `delivered` table** (duplicate check only): rows older than the message expiry (24 h) plus a margin are pruned.
 - **A weekly `VACUUM`** of gateway.db, when its free pages exceed 20%.
 - **macOS logs:** rotated by size (10 MB, 5 files kept), done by the daemon itself, since launchd does not rotate.
 
@@ -94,9 +93,7 @@ A spike first, then four build steps.
   - `agent_file_send(to, paths, note)` for sessions.
   - A `files` list on `agent_handback` for workers, which cannot send messages.
   - All five harness integrations, the MCP schemas, the guidance text.
-- **T5. Owner flows:**
-  - "Send file" in the TUI, from any machine.
-  - The CTO can fetch a file from one of the owner's machines on the owner's request, as a proposal the owner approves, limited to folders the owner names (for example ~/Downloads).
+- **T5. Owner flow:** "Send file" in the TUI, from any machine to any session. (A CTO-initiated fetch from the owner's machines was dropped.)
 
 **Verification:** a real Mac to research transfer of the report.html case, through each path, in both directions.
 
@@ -105,24 +102,21 @@ A spike first, then four build steps.
 Four independent items; they can run in parallel.
 
 1. **Revoke and rotate machine tokens.** The owner removes a machine or rotates its token from the TUI (Graph or Settings) or through a CTO proposal. A removed machine's link is closed at once and its sessions marked offline.
-2. **The gateway's listening address:**
-   - setup defaults to the Tailscale address when Tailscale is present, else the LAN address, never 0.0.0.0 by default (an existing setup keeps its value);
-   - a warning at gateway start when it is reachable on a public address;
-   - rate limits on enrollment.
+2. **The gateway's listening address:** nothing that works today changes.
+   - A loud warning at gateway start (log, TUI, `nodes`) when it is reachable on a public address.
+   - Rate limits on enrollment.
+   - A new install on a machine with Tailscale offers the Tailscale address.
 3. **Signed releases:**
-   - checksums signed in the release workflow, with a key held only in GitHub Actions secrets;
+   - checksums signed (ed25519) in the release workflow, with a key held only in GitHub Actions secrets: chosen over keyless signing because verification stays a few lines of standard Go, offline, with no extra library or trust data to keep current;
    - the public key embedded in the binary and in install.sh;
    - `upgrade` and the installer refuse an unsigned or mismatching release;
    - install.sh served from the tagged release, not from main;
    - a setup option to turn auto-upgrade off.
-4. **Scheduled backups:**
-   - the gateway runs `gateway backup` daily, keeping 7, into a folder the owner sets (default in the gateway data folder);
-   - each daemon backs up daemon.db and node.json alongside;
-   - the TUI Settings tab shows the last backup and its check result.
+Scheduled backups were dropped: the owner keeps backups outside agent-net. The manual `gateway backup` command stays.
 
-### W7. A sandbox for every worker
+### W7. A sandbox for every worker (roadmap only)
 
-Design first, then build.
+Not started. On the README roadmap. When built it is optional, switched on per project.
 
 - **D. Design note:**
   - Linux options: bubblewrap, Landlock;
@@ -147,10 +141,10 @@ Before each release:
 - the touched packages are tested after merging (the lesson of 2026-11-03);
 - each item that changes behaviour is checked on the live network by the orchestrator.
 
-## Questions for the owner
+## Decisions (2026-11-03)
 
-1. **Message retention:** 90 days by default?
-2. **Gateway listening address:** default to the Tailscale address when present?
-3. **Release signing:** a key in GitHub Actions secrets (simple), or keyless signing tied to the GitHub workflow (no key to keep)?
-4. **Backups:** where should the daily backups go: the gateway machine only, or also another machine (for example the NAS)?
-5. **The CTO fetching files from the owner's machines:** acceptable with approval each time, or should only the owner start a fetch?
+- Message bodies are kept as long as possible; no retention deletion.
+- The gateway's listening address does not change for existing setups; a public-exposure warning and enrollment limits are added.
+- Releases are signed with an ed25519 key held in GitHub Actions secrets.
+- Backups stay outside agent-net.
+- No CTO-initiated file fetch; the owner sends files from the TUI.

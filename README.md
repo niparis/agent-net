@@ -201,7 +201,8 @@ agent-net uses MCP to give agents their tools. It is not an implementation of A2
 ## Roadmap
 
 - **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
-- **Approve CTO proposals in the CTO chat**, through a dialog of the CTO's own harness (an MCP elicitation, answered by the person, not the model), so the TUI is optional.
+- **An optional sandbox for every worker.** Today only Codex workers (and Antigravity with its own flag) are sandboxed. An OS-level wrapper (bubblewrap or Landlock on Linux, sandbox-exec on macOS) for every worker launcher, switched on per project. Plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
+- **A modular agent-net:** sessions and work items as the foundation, modules you can switch, and the way of working as editable data. Plan: [docs/design/modularity.md](docs/design/modularity.md).
 - **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
 - **The phone app.**
 - MCP resources, prompts and OAuth logins in the registry.
