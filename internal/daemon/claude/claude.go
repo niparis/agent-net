@@ -342,7 +342,7 @@ func (a *Adapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, i
 	defer conn.Close()
 	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write(append(line, '\n')); err != nil {
-		return daemon.Result{Delivered: true, Detail: "unconfirmed"}
+		return daemon.Result{Uncertain: true, Detail: "write failed after connecting; the message may have arrived: " + err.Error()}
 	}
 	return daemon.Result{Delivered: true}
 }
@@ -390,7 +390,7 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 	defer conn.Close()
 	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write(append(line, '\n')); err != nil {
-		return daemon.Result{Delivered: true, Detail: "unconfirmed"}
+		return daemon.Result{Uncertain: true, Detail: "write failed after connecting; the message may have arrived: " + err.Error()}
 	}
 	return daemon.Result{Delivered: true}
 }

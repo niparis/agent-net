@@ -182,7 +182,8 @@ func TestDeliveryNormalEndsDeliveredAndDuplicateStaysDuplicate(t *testing.T) {
 		t.Fatalf("message written %d times, want 1", n)
 	}
 	eventually(t, "duplicate reported", func() bool {
-		return len(r.g.logs.lines("msg.delivered", m.ID, "duplicate")) == 1
+		_, detail := r.gatewayState(m.ID)
+		return detail == "duplicate"
 	})
 	if s, _ := r.gatewayState(m.ID); s != protocol.StateDelivered {
 		t.Fatalf("sender sees %q after the duplicate, want delivered", s)
@@ -302,5 +303,76 @@ func TestDeliveryRecordNeverLeavesDelivered(t *testing.T) {
 	}
 	if !st.isDelivered("m_1") {
 		t.Fatal("a delivered record was changed")
+	}
+}
+
+func TestDeliveryCannotWriteWithoutDurableIntent(t *testing.T) {
+	r := newDeliveryRig(t, &fakeAdapter{})
+	m := r.store(t, "storage-failure")
+	if _, err := r.recv.d.st.db.Exec(`CREATE TRIGGER reject_delivery BEFORE INSERT ON delivered BEGIN SELECT RAISE(FAIL, 'disk failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	r.recv.d.onDeliver(context.Background(), m)
+	if n := len(r.fb.delivered()); n != 0 {
+		t.Fatalf("harness saw %d writes without a durable record", n)
+	}
+	if s, detail := r.gatewayState(m.ID); s != protocol.StateFailed || !strings.Contains(detail, "cannot record delivery intent") {
+		t.Fatalf("sender sees %q %q", s, detail)
+	}
+}
+
+func TestDeliveryQueuedWorkerWaitsForHarnessConfirmation(t *testing.T) {
+	r := newDeliveryRig(t, &fakeAdapter{})
+	m := r.store(t, "queued-worker")
+	w := &worker{id: "w_test", harness: "opencode", sessionID: r.to, owner: r.sender, turnActive: true}
+	r.recv.d.wmu.Lock()
+	r.recv.d.workers[w.id] = w
+	r.recv.d.wmu.Unlock()
+	defer func() {
+		r.recv.d.wmu.Lock()
+		delete(r.recv.d.workers, w.id)
+		r.recv.d.wmu.Unlock()
+	}()
+	for range 2 {
+		r.recv.d.onDeliver(context.Background(), m)
+	}
+	if s, _ := r.gatewayState(m.ID); s != protocol.StateDispatched {
+		t.Fatalf("queued message state = %q, want dispatched", s)
+	}
+	if r.recv.d.st.isDelivered(m.ID) || len(r.fb.delivered()) != 0 {
+		t.Fatal("in-memory queue counted as harness delivery")
+	}
+	r.recv.d.wmu.Lock()
+	n := len(w.turnQueue)
+	w.turnQueue = nil
+	r.recv.d.wmu.Unlock()
+	if n != 1 {
+		t.Fatalf("duplicate push queued %d copies, want 1", n)
+	}
+	r.recv.d.deliverQueuedWorkerTurn(m)
+	if s, _ := r.gatewayState(m.ID); s != protocol.StateDelivered || !r.recv.d.st.isDelivered(m.ID) {
+		t.Fatalf("confirmed queued message state = %q", s)
+	}
+	if n := len(r.fb.delivered()); n != 1 {
+		t.Fatalf("harness saw %d writes, want 1", n)
+	}
+}
+
+func TestDeliveryConfirmationStorageFailureKeepsIntent(t *testing.T) {
+	r := newDeliveryRig(t, &fakeAdapter{})
+	m := r.store(t, "confirmation-storage-failure")
+	if _, err := r.recv.d.st.db.Exec(`CREATE TRIGGER reject_confirmation BEFORE UPDATE ON delivered WHEN NEW.state = 'delivered' BEGIN SELECT RAISE(FAIL, 'disk failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	r.recv.d.onDeliver(context.Background(), m)
+	if s, detail := r.gatewayState(m.ID); s != protocol.StateFailed || !strings.Contains(detail, "may have arrived") {
+		t.Fatalf("sender sees %q %q", s, detail)
+	}
+	if s := recordState(r.recv.d, m.ID); s != deliveryInjecting {
+		t.Fatalf("record = %q, want injecting", s)
+	}
+	r.recv.d.onDeliver(context.Background(), m)
+	if n := len(r.fb.delivered()); n != 1 {
+		t.Fatalf("harness saw %d writes, want 1", n)
 	}
 }

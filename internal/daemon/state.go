@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -107,7 +108,10 @@ CREATE TABLE IF NOT EXISTS workers (
 	// from an older version has only delivered messages in it, so the
 	// default keeps those rows delivered.
 	var hasDeliveryState int
-	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivered') WHERE name = 'state'`).Scan(&hasDeliveryState)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivered') WHERE name = 'state'`).Scan(&hasDeliveryState); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if hasDeliveryState == 0 {
 		if _, err := db.Exec(`ALTER TABLE delivered ADD COLUMN state TEXT NOT NULL DEFAULT 'delivered'`); err != nil {
 			db.Close()
@@ -358,11 +362,21 @@ func (s *state) isDelivered(id string) bool {
 
 // deliveryState returns the delivery record of a message, if there is one.
 func (s *state) deliveryState(id string) (string, bool) {
+	st, ok, _ := s.readDeliveryState(id)
+	return st, ok
+}
+
+func (s *state) readDeliveryState(id string) (string, bool, error) {
+	return s.readDeliveryStateCtx(context.Background(), id)
+}
+
+func (s *state) readDeliveryStateCtx(ctx context.Context, id string) (string, bool, error) {
 	var st string
-	if err := s.db.QueryRow(`SELECT state FROM delivered WHERE message_id = ?`, id).Scan(&st); err != nil {
-		return "", false
+	err := s.db.QueryRowContext(ctx, `SELECT state FROM delivered WHERE message_id = ?`, id).Scan(&st)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
 	}
-	return st, true
+	return st, err == nil, err
 }
 
 // setDeliveryState writes the record of a message. A delivered record is

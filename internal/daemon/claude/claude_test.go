@@ -316,8 +316,11 @@ func TestDeliverWriteErrorAfterConnectingIsNotDelivered(t *testing.T) {
 	}()
 	body := fmt.Sprintf(`{"pid":%d,"sessionId":"sess-1","status":"idle","messagingSocketPath":%q}`, os.Getpid(), closing)
 	os.WriteFile(filepath.Join(r.sessions, fmt.Sprintf("%d.json", os.Getpid())), []byte(body), 0o600)
-	eventually(t, "closing socket seen", func() bool { return len(r.host.current()) == 1 && r.host.current()[0].Status == "idle" })
-	time.Sleep(60 * time.Millisecond)
+	eventually(t, "closing socket seen", func() bool {
+		r.a.mu.Lock()
+		defer r.a.mu.Unlock()
+		return r.a.byNative["sess-1"].sock == closing
+	})
 	big := msg
 	big.Body = strings.Repeat("x", 4<<20)
 	res := r.a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "sess-1"}, big)

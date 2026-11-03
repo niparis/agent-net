@@ -144,32 +144,23 @@ func (lc *localConn) pushWithConfirmation(ctx context.Context, m protocol.Messag
 		lc.mu.Unlock()
 	}()
 	if err := lc.writeJSON(map[string]any{"method": "deliver", "params": map[string]any{"message": m}}); err != nil {
-		return Result{Detail: "plugin connection lost: " + err.Error()}
+		return Result{Uncertain: true, Detail: "write failed after connecting; the message may have arrived: " + err.Error()}
 	}
 	select {
 	case a := <-ch:
 		if a.ok {
 			if required && a.detail != "pi worker turn started" {
-				return Result{Detail: "Pi extension did not confirm the worker turn; update the extension"}
+				return Result{Uncertain: true, Detail: "Pi extension did not confirm the worker turn; the message may have arrived; update the extension"}
 			}
 			return Result{Delivered: true, Detail: a.detail}
 		}
 		return Result{Detail: "plugin refused: " + a.detail}
 	case <-time.After(timeout):
-		if required {
-			return Result{Detail: "plugin did not confirm the worker turn"}
-		}
-		return Result{Delivered: true, Detail: "unconfirmed"}
+		return Result{Uncertain: true, Detail: "plugin did not confirm delivery; the message may have arrived"}
 	case <-lc.closed:
-		if required {
-			return Result{Detail: "plugin connection closed before confirmation"}
-		}
-		return Result{Delivered: true, Detail: "unconfirmed"}
+		return Result{Uncertain: true, Detail: "plugin connection closed before confirmation; the message may have arrived"}
 	case <-ctx.Done():
-		if required {
-			return Result{Detail: "delivery canceled before confirmation"}
-		}
-		return Result{Delivered: true, Detail: "unconfirmed"}
+		return Result{Uncertain: true, Detail: "delivery canceled before confirmation; the message may have arrived"}
 	}
 }
 
@@ -180,6 +171,11 @@ type request struct {
 }
 
 func (lc *localConn) respond(id json.RawMessage, result any, err error) {
+	// Hook delivery is confirmed by the response write, not its construction.
+	hookReply, _ := result.(*agyHookReply)
+	if hookReply != nil {
+		result = hookReply.value
+	}
 	m := map[string]any{}
 	if len(id) > 0 {
 		m["id"] = id
@@ -192,7 +188,10 @@ func (lc *localConn) respond(id json.RawMessage, result any, err error) {
 		}
 		m["result"] = result
 	}
-	lc.writeJSON(m)
+	writeErr := lc.writeJSON(m)
+	if hookReply != nil {
+		hookReply.confirm(writeErr)
+	}
 }
 
 func (lc *localConn) run(ctx context.Context) {
@@ -715,7 +714,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		lc.mu.Lock()
 		pid := lc.peerPID
 		lc.mu.Unlock()
-		return d.antigravityHook(raw, pid)
+		return d.prepareAntigravityHook(raw, pid)
 	}
 	if method == protocol.MethodHint {
 		return lc.hintCall(ctx, client, ls, raw)
