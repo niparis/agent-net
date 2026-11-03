@@ -45,11 +45,8 @@ func (m Model) quotasView(w, h int) []string {
 			singleMachine = firstNonEmpty(n.Hostname, id)
 		}
 		if n.Usage.QuotaError != "" {
-			errors = append(errors, sanitize(firstNonEmpty(n.Hostname, id))+": "+sanitize(n.Usage.QuotaError))
+			errors = append(errors, sanitize(firstNonEmpty(n.Hostname, id))+": "+quotaErrorLabel(n.Usage.QuotaError))
 		}
-	}
-	if len(rows) > 0 {
-		subscription = append(subscription, sBold.Render("PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS"))
 	}
 	if len(rows) == 0 && len(errors) == 0 {
 		empty := "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota)."
@@ -68,13 +65,24 @@ func (m Model) quotasView(w, h int) []string {
 	var configured, unset, unused []quotaRow
 	relevant := m.quotaRelevantProviders()
 	providersWithQuota := map[string]bool{}
+	providerMachinesWithQuota := map[string]map[string]bool{}
 	for _, r := range rows {
 		if len(r.provider.Windows) > 0 {
-			providersWithQuota[strings.ToLower(r.provider.Provider)] = true
+			provider := strings.ToLower(r.provider.Provider)
+			providersWithQuota[provider] = true
+			if r.machine != "" {
+				if providerMachinesWithQuota[provider] == nil {
+					providerMachinesWithQuota[provider] = map[string]bool{}
+				}
+				providerMachinesWithQuota[provider][r.machine] = true
+			}
 		}
 	}
 	for _, r := range rows {
 		provider := strings.ToLower(r.provider.Provider)
+		if len(r.provider.Windows) == 0 && providersWithQuota[provider] && (r.machine == "" || !providerMachinesWithQuota[provider][r.machine]) {
+			continue
+		}
 		if quotaNotSetUp(r.provider) && !r.provider.NeedsAttention && !providersWithQuota[provider] {
 			unset = append(unset, r)
 		} else if !relevant[provider] && !r.provider.NeedsAttention {
@@ -89,6 +97,11 @@ func (m Model) quotasView(w, h int) []string {
 	if m.quotaShowUnset {
 		configured = append(configured, unset...)
 		configured = append(configured, unused...)
+	}
+	providerWidth, planWidth, windowWidth := quotaColumnWidths(configured, m, w)
+	if len(rows) > 0 {
+		header := cell("PROVIDER", providerWidth) + " " + cell("PLAN", planWidth) + " " + cell("WINDOW", windowWidth) + " LEFT                 PACE      RESETS"
+		subscription = append(subscription, sBold.Render(header))
 	}
 	for rowIndex, r := range configured {
 		if r.at > newest {
@@ -113,6 +126,9 @@ func (m Model) quotasView(w, h int) []string {
 				name = "-"
 			}
 			pace := strings.ReplaceAll(window.Pace, "_", " ")
+			if window.Pace == protocol.QuotaPaceBehind || window.Pace == protocol.QuotaPaceOnPace {
+				pace = "on pace"
+			}
 			if pace == "" || pace == "unknown" {
 				pace = "-"
 			}
@@ -170,11 +186,11 @@ func (m Model) quotasView(w, h int) []string {
 					provider = "  " + provider
 				}
 			}
-			providerCell := cell(provider, 11)
+			providerCell := cell(provider, providerWidth)
 			if rowIndex == m.quotaSelected && i == 0 {
 				providerCell = sSel.Render(providerCell)
 			}
-			line := fmt.Sprintf("%s %s %s %s %s %s", providerCell, cell(plan, 9), cell(name, 14), remaining, pace, reset)
+			line := fmt.Sprintf("%s %s %s %s %s %s", providerCell, cell(plan, planWidth), cell(name, windowWidth), remaining, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}
@@ -190,7 +206,7 @@ func (m Model) quotasView(w, h int) []string {
 		if p.NeedsAttention {
 			notes = append(notes, "needs you once: run agent-net setup --quota")
 		} else if p.Error != "" {
-			notes = append(notes, sanitize(p.Error))
+			notes = append(notes, quotaErrorLabel(p.Error))
 		}
 		if len(notes) > 0 {
 			for _, line := range wrap("("+strings.Join(notes, "; ")+")", w-6) {
@@ -338,6 +354,57 @@ func quotaNotSetUp(p protocol.QuotaProvider) bool {
 	}
 	reason := strings.ToLower(strings.ReplaceAll(p.Error, "_", " "))
 	return strings.Contains(reason, "credential unavailable") || strings.Contains(reason, "sign-in required") || strings.Contains(reason, "sign in required") || strings.Contains(reason, "not running") || strings.Contains(reason, "cli unavailable")
+}
+
+func quotaErrorLabel(err string) string {
+	switch {
+	case strings.HasSuffix(err, "_credential_unavailable"):
+		return "no credential found"
+	case strings.HasSuffix(err, "_cli_unavailable"):
+		return "CLI not installed"
+	case strings.HasSuffix(err, "_sign_in_required"):
+		return "sign-in required"
+	default:
+		return sanitize(err)
+	}
+}
+
+func quotaColumnWidths(rows []quotaRow, m Model, w int) (int, int, int) {
+	provider, plan, window := len("PROVIDER"), len("PLAN"), len("WINDOW")
+	for i, r := range rows {
+		name := sanitize(r.provider.Provider)
+		if m.quotaProviderProtected(r.provider.Provider) {
+			name = "🔒 " + name
+		}
+		if i == m.quotaSelected {
+			name = "> " + name
+		} else {
+			name = "  " + name
+		}
+		provider = max(provider, lipgloss.Width(name))
+		plan = max(plan, lipgloss.Width(sanitize(r.provider.Plan)))
+		for _, q := range r.provider.Windows {
+			window = max(window, lipgloss.Width(sanitize(protocol.QuotaWindowName(q))))
+		}
+		if len(r.provider.Windows) == 0 {
+			window = max(window, 1)
+		}
+	}
+	// Reserve room for the bar, pace, reset text, and column separators.
+	budget := max(w-4-47, 12)
+	for provider+plan+window > budget {
+		switch {
+		case window > 8:
+			window--
+		case plan > 5:
+			plan--
+		case provider > 7:
+			provider--
+		default:
+			return max(provider, 1), max(plan, 1), max(window, 1)
+		}
+	}
+	return provider, plan, window
 }
 
 func quotaBar(frac float64, n int, color lipgloss.TerminalColor) string {

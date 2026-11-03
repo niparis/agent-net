@@ -1,8 +1,8 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
 ╭─Subscriptions · quota-axi 0.1.66 · yours (/opt/homebrew/bin) · read on Mac …─╮
 │ no provider protected · select a subscription and press p                    │
-│ PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS   │
-│ > opencode…           -              -                    -         -        │
+│ PROVIDER      PLAN WINDOW LEFT                 PACE      RESETS              │
+│ > opencode-go      -      -                    -         -                   │
 │   (needs you once: run agent-net setup --quota)                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────╮

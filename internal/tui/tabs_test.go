@@ -109,15 +109,15 @@ func TestQuotaViewGoldens(t *testing.T) {
 				t.Fatalf("wide line: %q", line)
 			}
 		}
+		paceColumn := -1
 		for _, line := range lines(ansi.Strip(view)) {
-			for _, value := range []string{"behind", "ahead", "exhausted"} {
+			for _, value := range []string{"on pace", "ahead"} {
 				if i := strings.Index(line, value); i >= 0 {
 					col := ansi.StringWidth(line[:i])
-					if value == "exhausted" {
-						col = ansi.StringWidth(line[:i+len(value)]) + 1
-					}
-					if col != 60 {
-						t.Errorf("pace starts at column %d in %q", col, line)
+					if paceColumn < 0 {
+						paceColumn = col
+					} else if col != paceColumn {
+						t.Errorf("pace columns differ: %d and %d in %q", paceColumn, col, line)
 					}
 				}
 			}
@@ -807,6 +807,40 @@ func TestQuotaReadingSourceLabels(t *testing.T) {
 	}
 }
 
+func TestQuotaDisplayDedupesEmptyProvidersAndFitsColumns(t *testing.T) {
+	m := newModel(140, 34)
+	m.tab = quotasTab
+	m.quotaShowUnset = true
+	m.usage.raw.Hostname = "research"
+	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Plan: "individual premium", Windows: []protocol.QuotaWindow{{Label: "premium interactions"}}}, {Provider: "cursor", Error: "Cursor sign-in required"}}}
+	m.usage.raw.Gateway.Nodes = []protocol.UsageNode{{NodeID: "mbp", Hostname: "Nicolas-MBP", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Add(-time.Second).Unix(), Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Plan: "unused"}, {Provider: "cursor", Plan: "live", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "deepseek", Error: "deepseek_credential_unavailable"}, {Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week", Pace: protocol.QuotaPaceBehind}}}}}}}}
+	v := ansi.Strip(strings.Join(m.quotasView(140, 34), "\n"))
+	if strings.Count(v, "opencode-go") != 1 || !strings.Contains(v, "premium interactions") || !strings.Contains(v, "individual premium") {
+		t.Fatalf("provider rows or long columns: %s", v)
+	}
+	if !strings.Contains(v, "no credential found") || strings.Contains(v, "credential_unavailable") || !strings.Contains(v, "on pace") || strings.Contains(v, "behind") {
+		t.Fatalf("error or pace label: %s", v)
+	}
+	narrow := ansi.Strip(strings.Join(m.quotasView(80, 34), "\n"))
+	if !strings.Contains(narrow, "…") || strings.Contains(narrow, "premium interactions") {
+		t.Fatalf("narrow columns should truncate: %s", narrow)
+	}
+}
+
+func TestQuotaErrorLabels(t *testing.T) {
+	for input, want := range map[string]string{
+		"deepseek_credential_unavailable": "no credential found",
+		"bl_cli_unavailable":              "CLI not installed",
+		"commandcode_sign_in_required":    "sign-in required",
+		"Grok sign-in required":           "Grok sign-in required",
+		"Antigravity/agy is not running":  "Antigravity/agy is not running",
+	} {
+		if got := quotaErrorLabel(input); got != want {
+			t.Errorf("quotaErrorLabel(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestQuotaEmptyTrack(t *testing.T) {
 	m := newModel(120, 34)
 	m.quotaShowUnset = true
@@ -829,7 +863,7 @@ func TestQuotaLongWindowNames(t *testing.T) {
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{Label: "Fable week"}, {Label: "completions"}, {Label: "premium interactions"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(80, 40), "\n"))
-	for _, name := range []string{"Fable week", "completions", "premium inter…"} {
+	for _, name := range []string{"Fable week", "completions", "premium interact…"} {
 		if !strings.Contains(v, name) {
 			t.Errorf("missing %q: %s", name, v)
 		}
@@ -992,7 +1026,7 @@ func TestQuotaFailedReadingHasNoBar(t *testing.T) {
 		view := ansi.Strip(m.View())
 		for _, line := range lines(view) {
 			if strings.Contains(line, "opencode-go") && !strings.Contains(line, "provider_auth_rejected") {
-				if strings.Contains(line, "100%") || strings.ContainsAny(line, "█─") || !strings.Contains(line, "-              -") {
+				if strings.Contains(line, "%") || strings.Contains(line, "█") {
 					t.Fatalf("failed reading has a quota: %s", line)
 				}
 			}

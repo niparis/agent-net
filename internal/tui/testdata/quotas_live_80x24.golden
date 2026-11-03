@@ -1,11 +1,11 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
 ╭─Subscriptions · read on research · read 40s ago──────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
-│ PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS   │
-│ > claude    max       session        █████████─  88%      -         -        │
-│                       week           ████──────  40%      -         -        │
-│                       Fable week     ██████████  95%      -         -        │
-│   codex     prolite   week           █─────────   8%      -         -        │
+│ PROVIDER PLAN    WINDOW     LEFT                 PACE      RESETS            │
+│ > claude max     session    █████████─  88%      -         -                 │
+│                  week       ████──────  40%      -         -                 │
+│                  Fable week ██████████  95%      -         -                 │
+│   codex  prolite week       █─────────   8%      -         -                 │
 │ 17 providers not set up · s to show                                          │
 │ 2 more subscriptions (not used by your agents) · s to show                   │
 │ laptop: exit status 2                                                        │

@@ -1,8 +1,8 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online · 1 busy                updated 14:05:00
 ╭─Subscriptions · read on Mac · read 0s ago────────────────────────────────────────────────────────────────────────────╮
 │ protected: anthropic · saved for your orchestrator                                                                   │
-│ PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS                                           │
-│ > 🔒 claude max       week           ███████───  70%      -         -                                                │
+│ PROVIDER    PLAN WINDOW LEFT                 PACE      RESETS                                                        │
+│ > 🔒 claude max  week   ███████───  70%      -         -                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 🔒 protected · 1 registered · 0 running · scores: Artificial Analysis──────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │

@@ -2,8 +2,8 @@
 ╭─Subscriptions · read on Mac · read 0s ago────────────────────────────────────╮
 │ protected: anthropic · saved for your orchestrator                           │
 │ workers may use this provider freely                                         │
-│ PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS   │
-│ > 🔒 claude max       week           ███████───  70%      -         -        │
+│ PROVIDER    PLAN WINDOW LEFT                 PACE      RESETS                │
+│ > 🔒 claude max  week   ███████───  70%      -         -                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 🔒 protected · 1 registered · 0 running · scores: Artificial Anal…─╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
