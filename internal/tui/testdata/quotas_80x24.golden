@@ -3,11 +3,11 @@
 │ no provider protected · select a subscription and press p                    │
 │ PROVIDER PLAN     WINDOW LEFT                 PACE      RESETS               │
 │ > claude max      5h     █████─────  50%      on pace   -                    │
-│   (read on Mac; stale reading)                                               │
+│   (live on Mac · Mac: stale reading · other: not reported)                   │
 │   codex  pro      week   █─────────   8%      ahead     in 2h00              │
-│   (read on Mac)                                                              │
+│   (live on Mac · other: no live windows)                                     │
 │   cursor business month  ────────── exhausted -         -                    │
-│   (not used by your agents; read on Mac)                                     │
+│   (live on Mac · other: not reported · not used by your agents)              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │

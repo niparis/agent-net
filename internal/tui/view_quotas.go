@@ -33,7 +33,7 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sBold.Render(line))
 		}
 	}
-	rows := m.quotaRows()
+	rows := m.quotaDisplayRows()
 	nodes, ids := m.quotaNodes()
 	var errors []string
 	reporting := 0
@@ -64,25 +64,8 @@ func (m Model) quotasView(w, h int) []string {
 	var newest int64
 	var configured, liveUnused, unset, unused []quotaRow
 	relevant := m.quotaRelevantProviders()
-	providersWithQuota := map[string]bool{}
-	providerMachinesWithQuota := map[string]map[string]bool{}
-	for _, r := range rows {
-		if len(r.provider.Windows) > 0 {
-			provider := strings.ToLower(r.provider.Provider)
-			providersWithQuota[provider] = true
-			if r.machine != "" {
-				if providerMachinesWithQuota[provider] == nil {
-					providerMachinesWithQuota[provider] = map[string]bool{}
-				}
-				providerMachinesWithQuota[provider][r.machine] = true
-			}
-		}
-	}
 	for _, r := range rows {
 		provider := strings.ToLower(r.provider.Provider)
-		if len(r.provider.Windows) == 0 && providersWithQuota[provider] && (r.machine == "" || !providerMachinesWithQuota[provider][r.machine]) {
-			continue
-		}
 		if len(r.provider.Windows) > 0 {
 			if relevant[provider] {
 				configured = append(configured, r)
@@ -202,22 +185,23 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, clip(line, w-4))
 		}
 		var notes []string
+		notes = append(notes, r.machineNotes...)
 		if len(p.Windows) > 0 && !relevant[strings.ToLower(p.Provider)] {
 			notes = append(notes, "not used by your agents")
 		}
-		if r.machine != "" && reporting > 1 {
+		if len(r.machineNotes) == 0 && r.machine != "" && reporting > 1 {
 			notes = append(notes, "read on "+sanitize(r.machine))
 		}
-		if p.Stale {
+		if p.Stale && len(r.machineNotes) == 0 {
 			notes = append(notes, "stale reading")
 		}
-		if p.NeedsAttention {
+		if p.NeedsAttention && len(p.Windows) > 0 && len(r.machineNotes) == 0 {
 			notes = append(notes, "needs you once: run agent-net setup --quota")
-		} else if p.Error != "" {
+		} else if p.Error != "" && len(p.Windows) > 0 && len(r.machineNotes) == 0 {
 			notes = append(notes, quotaErrorLabel(p.Error))
 		}
 		if len(notes) > 0 {
-			for _, line := range wrap("("+strings.Join(notes, "; ")+")", w-6) {
+			for _, line := range wrap("("+strings.Join(notes, " · ")+")", w-6) {
 				subscription = append(subscription, sDim.Render("  "+line))
 			}
 		}
@@ -366,11 +350,11 @@ func quotaNotSetUp(p protocol.QuotaProvider) bool {
 
 func quotaErrorLabel(err string) string {
 	switch {
-	case strings.HasSuffix(err, "_credential_unavailable"):
+	case strings.HasSuffix(err, "credential_unavailable"):
 		return "no credential found"
-	case strings.HasSuffix(err, "_cli_unavailable"):
+	case strings.HasSuffix(err, "cli_unavailable"):
 		return "CLI not installed"
-	case strings.HasSuffix(err, "_sign_in_required"):
+	case strings.HasSuffix(err, "sign_in_required"):
 		return "sign-in required"
 	default:
 		return sanitize(err)

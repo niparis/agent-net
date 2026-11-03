@@ -5,13 +5,15 @@
 │ > claude  max     session              █████████─  88%      -         -                                              │
 │                   week                 ████──────  40%      -         -                                              │
 │                   Fable week           ██████████  95%      -         -                                              │
+│   (live on research)                                                                                                 │
 │   codex   prolite week                 █─────────   8%      -         -                                              │
+│   (live on research)                                                                                                 │
 │   copilot         chat                 ██████████ 100%      -         -                                              │
 │                   completions          ██████████ 100%      -         -                                              │
 │                   premium interactions ────────── exhausted -         -                                              │
-│   (not used by your agents)                                                                                          │
+│   (live on research · not used by your agents)                                                                       │
 │   other           month                █████████─  85%      -         -                                              │
-│   (not used by your agents)                                                                                          │
+│   (live on research · not used by your agents)                                                                       │
 │ 17 providers not set up · s to show                                                                                  │
 │ laptop: exit status 2                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -20,8 +22,6 @@
 │ terra              codex    gpt-6.1-terra:high        42.3/high    x     x     ·     ·     x      unused             │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
 
 
 

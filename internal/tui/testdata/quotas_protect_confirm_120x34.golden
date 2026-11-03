@@ -4,13 +4,13 @@
 │ workers use others first; this provider only when nothing else fits                                                  │
 │ PROVIDER PLAN WINDOW LEFT                 PACE      RESETS                                                           │
 │ > claude max  week   ███████───  70%      -         -                                                                │
+│   (live on Mac)                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │
 │ sonnet             claude   sonnet-4                  -            x     x     x     x     x      unused             │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
