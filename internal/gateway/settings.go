@@ -154,7 +154,12 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		if c.Expect != nil {
 			expect, err = d.Codec(c.Expect)
 			if err != nil {
-				return result, reject("invalid expected value: %v", err)
+				// A broken legacy value can still be compared and repaired,
+				// but only by a writer that saw its exact stored bytes.
+				if !json.Valid(c.Expect) || !bytes.Equal(old, c.Expect) {
+					return result, reject("invalid expected value: %v", err)
+				}
+				expect = c.Expect
 			}
 		}
 		if !bytes.Equal(old, expect) {
@@ -196,7 +201,7 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			continue
 		}
 		d, _ := recipe.Definition(c.Key)
-		if d.Kind != "rule" {
+		if d.Kind != "rule" || staged[settingAddress{c.Key, "network", "network", ""}] == nil {
 			continue
 		}
 		a := address(c)
@@ -222,7 +227,10 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		if e != nil {
 			return result, e
 		}
-		if bytes.Equal(comb, oldNet.Value) {
+		netAddress := settingAddress{key, "network", "network", ""}
+		// A removed network override releases the bound. A newly explicit
+		// value establishes a bound even when it equals the recipe default.
+		if staged[netAddress] == nil || (current[netAddress] != nil && bytes.Equal(comb, oldNet.Value)) {
 			continue
 		}
 		repos := map[string]bool{}

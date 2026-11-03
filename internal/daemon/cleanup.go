@@ -10,18 +10,22 @@ import (
 
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
-// The first cleanup runs soon after start. The daemon restarts on every
-// upgrade, so a cleanup that waited for the first 30-minute tick could be
-// postponed for days.
-var (
-	cleanupFirstDelay = time.Minute
-	cleanupEvery      = 30 * time.Minute
-)
-
+// Cleanup uses the network schedule, read at daemon startup.
 func (d *Daemon) cleanupLoop(ctx context.Context) {
-	runEvery(ctx, cleanupFirstDelay, cleanupEvery, func() { d.cleanupProjects(ctx) })
+	timer := time.NewTimer(d.SettingsSnapshot().Duration("delivery.cleanup_first_delay", settings.Where{}))
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			d.cleanupProjects(ctx)
+			timer.Reset(d.SettingsSnapshot().Duration("delivery.cleanup_interval", settings.Where{}))
+		}
+	}
 }
 
 // runEvery calls fn after first, then every interval, until ctx ends.
@@ -85,7 +89,7 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.
 	if w.EndedAt.IsZero() {
 		return nil
 	}
-	if !strings.HasPrefix(w.ID, "w_") || filepath.Base(w.ID) != w.ID || w.Branch != protocol.WorktreeBranch(w.ID) || filepath.Clean(w.Path) != filepath.Join(d.worktreesDir(), w.ID) {
+	if !strings.HasPrefix(w.ID, "w_") || filepath.Base(w.ID) != w.ID || (w.Branch != protocol.WorktreeBranchWithSettings(w.ID, d.SettingsSnapshot()) && w.Branch != protocol.WorktreeBranch(w.ID)) || filepath.Clean(w.Path) != filepath.Join(d.worktreesDir(), w.ID) {
 		return nil
 	}
 	d.resumeMu.Lock()
@@ -279,15 +283,15 @@ func (d *Daemon) observeLegacyWorktrees(ctx context.Context, project string, now
 	var path, branch string
 	record := func() error {
 		id := filepath.Base(path)
-		if !strings.HasPrefix(id, "w_") || path != filepath.Join(d.worktreesDir(), id) || branch != "refs/heads/"+protocol.WorktreeBranch(id) || active[id] || d.startingBases[protocol.WorktreeBranch(id)] > 0 {
+		if !strings.HasPrefix(id, "w_") || path != filepath.Join(d.worktreesDir(), id) || branch != "refs/heads/"+protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot()) || active[id] || d.startingBases[protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot())] > 0 {
 			return nil
 		}
 		for _, q := range queued {
-			if q.Base == protocol.WorktreeBranch(id) || filepath.Clean(q.Path) == path {
+			if q.Base == protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot()) || filepath.Clean(q.Path) == path {
 				return nil
 			}
 		}
-		_, err := d.st.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at,harness) VALUES(?,?,?,?,?,?) ON CONFLICT(worker_id) DO NOTHING`, id, project, path, protocol.WorktreeBranch(id), now.UnixNano(), harnesses[id])
+		_, err := d.st.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at,harness) VALUES(?,?,?,?,?,?) ON CONFLICT(worker_id) DO NOTHING`, id, project, path, protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot()), now.UnixNano(), harnesses[id])
 		return err
 	}
 	for _, line := range strings.Split(data, "\x00") {

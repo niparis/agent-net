@@ -204,7 +204,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 	}
 	charter := d.charterBrief(ctx, p.Project)
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithCharter(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions)})
+		Body: protocol.WorkerTaskBodyWithSettings(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions, d.SettingsSnapshot())})
 	return err
 }
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Worker commit identity (owner request). Every commit a worker makes in its
@@ -16,12 +18,6 @@ import (
 // the model does not have to add the lines and the caller's later merges in
 // their own checkout stay untouched.
 const (
-	trailerWorker     = "Agent-Net-Worker"
-	trailerModel      = "Agent-Net-Model"
-	trailerHarness    = "Agent-Net-Harness"
-	trailerDifficulty = "Agent-Net-Difficulty"
-	trailerCaller     = "Agent-Net-Caller"
-
 	envTrailerWorker     = "AGENT_NET_TRAILER_WORKER"
 	envTrailerModel      = "AGENT_NET_TRAILER_MODEL"
 	envTrailerHarness    = "AGENT_NET_TRAILER_HARNESS"
@@ -49,11 +45,11 @@ worker="${AGENT_NET_TRAILER_WORKER:-}"
 if [ -z "$worker" ] && [ -n "${AGENT_NET_TRAILER_SESSION_FILE:-}" ] && [ -f "$AGENT_NET_TRAILER_SESSION_FILE" ]; then
 	worker="$(cat "$AGENT_NET_TRAILER_SESSION_FILE")"
 fi
-add Agent-Net-Worker "$worker"
-add Agent-Net-Model "$AGENT_NET_TRAILER_MODEL"
-add Agent-Net-Harness "$AGENT_NET_TRAILER_HARNESS"
-add Agent-Net-Difficulty "$AGENT_NET_TRAILER_DIFFICULTY"
-add Agent-Net-Caller "$AGENT_NET_TRAILER_CALLER"
+add "$AGENT_NET_TRAILER_NAME_WORKER" "$worker"
+add "$AGENT_NET_TRAILER_NAME_MODEL" "$AGENT_NET_TRAILER_MODEL"
+add "$AGENT_NET_TRAILER_NAME_HARNESS" "$AGENT_NET_TRAILER_HARNESS"
+add "$AGENT_NET_TRAILER_NAME_DIFFICULTY" "$AGENT_NET_TRAILER_DIFFICULTY"
+add "$AGENT_NET_TRAILER_NAME_CALLER" "$AGENT_NET_TRAILER_CALLER"
 
 hooks="${AGENT_NET_TRAILER_PROJECT_HOOKS:-}"
 if [ -n "$hooks" ] && [ -x "$hooks/prepare-commit-msg" ] && [ "$hooks/prepare-commit-msg" != "$0" ]; then
@@ -153,10 +149,21 @@ func (d *Daemon) workerCommitEnv(w *worker) map[string]string {
 		d.Logf("worker %s: commit hooks: %v", id, err)
 		return nil
 	}
+	snap := d.SettingsSnapshot()
+	trailerNames := map[string]string{
+		"AGENT_NET_TRAILER_NAME_WORKER":     snap.String("delivery.trailer_worker", settings.Where{}),
+		"AGENT_NET_TRAILER_NAME_MODEL":      snap.String("delivery.trailer_model", settings.Where{}),
+		"AGENT_NET_TRAILER_NAME_HARNESS":    snap.String("delivery.trailer_harness", settings.Where{}),
+		"AGENT_NET_TRAILER_NAME_DIFFICULTY": snap.String("delivery.trailer_difficulty", settings.Where{}),
+		"AGENT_NET_TRAILER_NAME_CALLER":     snap.String("delivery.trailer_caller", settings.Where{}),
+	}
 	env := map[string]string{
 		"GIT_CONFIG_COUNT":   "1",
 		"GIT_CONFIG_KEY_0":   "core.hooksPath",
 		"GIT_CONFIG_VALUE_0": hooks,
+	}
+	for key, value := range trailerNames {
+		env[key] = value
 	}
 	sessionFile := filepath.Join(hooks, "worker-session")
 	if err := os.WriteFile(sessionFile, []byte(identity.session), 0o600); err != nil {

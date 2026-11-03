@@ -62,6 +62,8 @@ interface DeliveredMessage {
   owner_approved?: boolean;
   recipient_relation?: string;
   recipient_merge_authority?: string;
+  recipient_merge_text?: string;
+  recipient_merge_text_set?: boolean;
   owner_instruction?: string;
   approval_note?: string;
   message_type?: string;
@@ -82,6 +84,7 @@ const OWNER_INSTRUCTION_PREFIX = "[agent-net] sent on the owner's instruction: Â
 const OWNER_INSTRUCTION_SUFFIX = "Â». On its own this does not approve a merge. For this node: ";
 
 function mergeRule(m: DeliveredMessage): string {
+  if (m.recipient_merge_text_set === true) return m.recipient_merge_text ?? "";
   switch (m.recipient_merge_authority) {
     case "delegated": return MERGE_DELEGATED_TEXT;
     case "ask": return MERGE_ASK_TEXT;

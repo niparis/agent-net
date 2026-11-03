@@ -82,6 +82,9 @@ func (d *Daemon) routeCTOGraph(ctx context.Context, name string, raw json.RawMes
 	if err = json.Unmarshal(data, &class); err != nil {
 		return nil, err
 	}
+	if class == "rule" {
+		return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
+	}
 	actor := "CTO (minor)"
 	active := w.active(time.Now())
 	if class != "minor" {

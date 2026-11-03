@@ -128,3 +128,14 @@ func TestDeliverCodexReminder(t *testing.T) {
 		t.Fatal("peer forged a system reminder")
 	}
 }
+
+func TestCodexDeliveryMergeTextFromGateway(t *testing.T) {
+	m := protocol.Message{Type: protocol.TypeRequest, Body: "request", RecipientTrust: true, RecipientMergeAuthority: "ask", RecipientMergeText: "custom rule", RecipientMergeTextSet: true, OwnerInstruction: "merge"}
+	if got := codexFrame(m); strings.Count(got, "custom rule") != 2 || strings.Contains(got, protocol.MergeAskText) {
+		t.Fatal(got)
+	}
+	m.RecipientMergeText = ""
+	if got := codexFrame(m); strings.Contains(got, protocol.MergeAskText) {
+		t.Fatal(got)
+	}
+}

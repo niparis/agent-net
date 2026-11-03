@@ -64,6 +64,12 @@ var standard = func() *Recipe {
 	return r
 }()
 
+func DefinitionFor(key string) (Definition, bool) {
+	d, ok := standard.Definition(key)
+	d.Values = append([]string(nil), d.Values...)
+	return d, ok
+}
+
 func Standard() *Recipe {
 	r, err := Load(standardYAML)
 	if err != nil {
@@ -359,6 +365,12 @@ func (d Definition) Codec(raw json.RawMessage) (json.RawMessage, error) {
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return nil, err
 		}
+		if d.Key == "delivery.worker_branch_prefix" && (!regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*/$`).MatchString(s) || strings.Contains(s, "..") || strings.Contains(s, "//") || strings.Contains(s, "/.") || strings.Contains(s, ".lock/")) {
+			return nil, fmt.Errorf("invalid worker branch prefix")
+		}
+		if strings.HasPrefix(d.Key, "delivery.trailer_") && !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`).MatchString(s) {
+			return nil, fmt.Errorf("invalid trailer name")
+		}
 		if d.Type == "enum" && !contains(d.Values, s) {
 			return nil, fmt.Errorf("unknown enum value %q", s)
 		}
@@ -583,13 +595,14 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 		return Effective{}, err
 	}
 	e := Effective{Value: v, Source: "network default", Revision: s.Revision}
+	networkSet := false
 	apply := func(raw json.RawMessage, source string) {
 		candidate, err := d.Codec(raw)
 		if err != nil {
 			log.Printf("settings: ignoring invalid %s at %s: %v", key, source, err)
 			return
 		}
-		if d.Kind == "rule" {
+		if d.Kind == "rule" && (networkSet || source == "session" || source == "run") {
 			bound, err := d.StricterValue(e.Value, candidate)
 			if err == nil {
 				if !bytes.Equal(bound, candidate) {
@@ -617,6 +630,7 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 		if vv, err := d.Codec(v); err == nil {
 			e.Value = vv
 			e.Source = "network"
+			networkSet = true
 		} else {
 			log.Printf("settings: ignoring invalid %s at network: %v", key, err)
 		}
@@ -626,7 +640,11 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 		if v != nil {
 			apply(v, "repo "+w.Repo)
 		} else if m := strings.TrimSpace(s.Maturity[w.Repo]); m != "" {
-			m, _, _ = strings.Cut(m, " - ")
+			level, explanation, hasExplanation := strings.Cut(m, " - ")
+			m = level
+			if hasExplanation && strings.TrimSpace(explanation) == "" {
+				m = ""
+			}
 			if n, ok := d.ByMaturity[m]; ok {
 				if v, err := d.yamlValue(&n); err == nil {
 					apply(v, "repo "+w.Repo+", maturity "+m)

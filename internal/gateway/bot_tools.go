@@ -13,7 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/settings"
+	"github.com/niparis/agent-net/internal/settingsview"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
@@ -139,7 +139,7 @@ func (g *Gateway) botToolCall(ctx context.Context, sid, name string, in map[stri
 		if err != nil {
 			return nil, err
 		}
-		rows, err := settings.Views(snap, history, q, false)
+		rows, err := settingsview.Views(snap, history, q, false)
 		if err != nil {
 			return nil, err
 		}

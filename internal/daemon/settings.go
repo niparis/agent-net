@@ -11,6 +11,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
+	"github.com/niparis/agent-net/internal/settingsview"
 )
 
 // SettingsSnapshot returns a detached view. Call once per unit of work.
@@ -137,7 +138,7 @@ func (d *Daemon) readSettings(ctx context.Context, q protocol.SettingsReadReques
 	if err := json.Unmarshal(raw, &history); err != nil {
 		return nil, err
 	}
-	return settings.Views(d.SettingsSnapshot(), history, q, owner)
+	return settingsview.Views(d.SettingsSnapshot(), history, q, owner)
 }
 
 func (d *Daemon) settingsRevisionHasRule(ctx context.Context, rev int64) (bool, error) {

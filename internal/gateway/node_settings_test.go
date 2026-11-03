@@ -70,7 +70,7 @@ func TestNodeSettingsUndoAndNodeRemoval(t *testing.T) {
 	if err := s.SetNodeSetting("shop", protocol.SettingDeployRule, protocol.DeployOwner, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.db.Query(`SELECT id FROM graph_history WHERE type='setting' AND node='shop' ORDER BY id DESC LIMIT 1`)
+	rows, err := s.db.Query(`SELECT revision FROM setting_history WHERE key='delivery.deploy_rule' AND scope='shop' ORDER BY revision DESC LIMIT 1`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestNodeSettingsUndoAndNodeRemoval(t *testing.T) {
 	if id == 0 {
 		t.Fatal("no setting history")
 	}
-	if err := s.GraphUndo(id, "owner"); err != nil {
+	if _, err := s.UndoSettings(id, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if res, _ := s.NodeSettings("shop"); len(res.Overrides) != 0 {

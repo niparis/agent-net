@@ -1,20 +1,21 @@
-package settings
+package settingsview
 
 import (
 	"fmt"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Views resolves settings and attaches their complete history for a reader.
-func Views(snapshot Snapshot, history []protocol.SettingsHistory, q protocol.SettingsReadRequest, owner bool) ([]protocol.SettingView, error) {
+func Views(snapshot settings.Snapshot, history []protocol.SettingsHistory, q protocol.SettingsReadRequest, owner bool) ([]protocol.SettingView, error) {
 	snap := snapshot
 	out := []protocol.SettingView{}
-	for _, def := range Standard().Definitions {
+	for _, def := range settings.Standard().Definitions {
 		if (q.Key != "" && q.Key != def.Key) || (!owner && def.Visibility == "owner") {
 			continue
 		}
-		e, err := snap.Resolve(def.Key, Where{Repo: q.Repo})
+		e, err := snap.Resolve(def.Key, settings.Where{Repo: q.Repo})
 		if err != nil {
 			return nil, err
 		}

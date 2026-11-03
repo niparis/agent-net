@@ -47,6 +47,22 @@ func TestDeliveryBaselineFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The owner chose the network answer for an uncharted repo. Keep the
+	// original observation in the baseline while checking the approved change.
+	var actual, baseline map[string]json.RawMessage
+	if err := json.Unmarshal(got, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(want, &baseline); err != nil {
+		t.Fatal(err)
+	}
+	var uncharted MergeApproval
+	if err := json.Unmarshal(actual["no-node"], &uncharted); err != nil || uncharted.Authority != MergeFull || uncharted.Required {
+		t.Fatalf("uncharted: %+v %v", uncharted, err)
+	}
+	actual["no-node"] = baseline["no-node"]
+	got, _ = json.MarshalIndent(actual, "", "  ")
+	got = append(got, '\n')
 	if !bytes.Equal(got, want) {
 		t.Fatal("delivery output differs from baseline fixture")
 	}

@@ -261,3 +261,30 @@ func TestSettingsProposalConflictAndOwnerWindow(t *testing.T) {
 		t.Fatal("stale proposal changed setting")
 	}
 }
+
+func TestSettingsDeliveryRuleCTOProposesOwnerApplies(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"ask"}],"reason":"approval"}`)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	proposals, err := n.d.proposalRunner().list()
+	if err != nil || len(proposals) != 1 {
+		t.Fatalf("proposals: %+v %v", proposals, err)
+	}
+	snap, _ := g.gw.Store().SettingsSnapshot()
+	e, _ := snap.Resolve("delivery.merge_authority", settings.Where{})
+	if string(e.Value) != `"full"` {
+		t.Fatalf("changed without owner: %s", e.Value)
+	}
+	if err = n.d.proposalRunner().decide(ctx, proposals[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ = g.gw.Store().SettingsSnapshot()
+	e, _ = snap.Resolve("delivery.merge_authority", settings.Where{})
+	if string(e.Value) != `"ask"` {
+		t.Fatalf("owner approval did not apply: %s", e.Value)
+	}
+}

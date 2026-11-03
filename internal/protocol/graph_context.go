@@ -3,6 +3,8 @@ package protocol
 import (
 	"fmt"
 	"strings"
+
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Charter context (decision 0022). A session speaks for the node of its
@@ -23,8 +25,9 @@ func charterSet(c Charter) bool {
 
 // CharterBrief is the whole charter, for a worker's brief. Empty when the node
 // has no charter.
-func CharterBrief(n Node) string {
-	if !charterSet(n.Charter) && NodeDefaults(n.Charter.Maturity, n.Settings).RulesText() == "" {
+func CharterBrief(n Node) string { return CharterBriefWithSettings(n, settings.Snapshot{}) }
+func CharterBriefWithSettings(n Node, snap settings.Snapshot) string {
+	if !charterSet(n.Charter) && NodeDefaultsWithSettings(n.Charter.Maturity, n.Settings, snap, n.Name).RulesText() == "" {
 		return ""
 	}
 	var b strings.Builder
@@ -43,7 +46,7 @@ func CharterBrief(n Node) string {
 			fmt.Fprintf(&b, "%s: %s\n", a.name, a.value)
 		}
 	}
-	d := NodeDefaults(n.Charter.Maturity, n.Settings)
+	d := NodeDefaultsWithSettings(n.Charter.Maturity, n.Settings, snap, n.Name)
 	if rules := d.RulesText(); rules != "" {
 		b.WriteString(rules + "\n")
 		b.WriteString(d.ConsumerText() + "\n")
@@ -64,15 +67,18 @@ func nodeNamed(g Graph, name string) *Node {
 // NodeContext is the short text a session of the node gets every turn. It is
 // empty when the node is unknown or has no charter.
 func NodeContext(g Graph, name string) string {
+	return NodeContextWithSettings(g, name, settings.Snapshot{})
+}
+func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) string {
 	node := nodeNamed(g, name)
 	if node == nil {
 		return ""
 	}
-	if !charterSet(node.Charter) && NodeDefaults(node.Charter.Maturity, node.Settings).RulesText() == "" {
+	if !charterSet(node.Charter) && NodeDefaultsWithSettings(node.Charter.Maturity, node.Settings, snap, node.Name).RulesText() == "" {
 		needsDeployApproval := false
 		for _, edge := range g.Edges {
 			if edge.Kind == "deploys" && edge.From == name {
-				if target := nodeNamed(g, edge.To); target != nil && NodeDefaults(target.Charter.Maturity, target.Settings).DeployRule == DeployOwner {
+				if target := nodeNamed(g, edge.To); target != nil && NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name).DeployRule == DeployOwner {
 					needsDeployApproval = true
 					break
 				}
@@ -94,7 +100,7 @@ func NodeContext(g Graph, name string) string {
 			fmt.Fprintf(&b, "%s: %s\n", a.name, a.value)
 		}
 	}
-	d := NodeDefaults(node.Charter.Maturity, node.Settings)
+	d := NodeDefaultsWithSettings(node.Charter.Maturity, node.Settings, snap, node.Name)
 	if rules := d.RulesText(); rules != "" {
 		b.WriteString(rules + "\n")
 		b.WriteString(d.ConsumerText() + "\n")
@@ -114,7 +120,7 @@ func NodeContext(g Graph, name string) string {
 		case e.Kind == "deploys" && e.From == name:
 			// A deployer applies the target's rule, not its own (0022).
 			if target := nodeNamed(g, e.To); target != nil {
-				td := NodeDefaults(target.Charter.Maturity, target.Settings)
+				td := NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name)
 				if rules := td.RulesText(); rules != "" {
 					fmt.Fprintf(&b, "You deploy %s; its %s.\n", target.Name, rules)
 				} else {
@@ -156,6 +162,9 @@ func RelationText(g Graph, from, to string) string {
 // WorkerDeployApprovalRules carries the target's written deploy rule into a
 // worker brief, including for a deployer with no charter of its own.
 func WorkerDeployApprovalRules(g Graph, name string) string {
+	return WorkerDeployApprovalRulesWithSettings(g, name, settings.Snapshot{})
+}
+func WorkerDeployApprovalRulesWithSettings(g Graph, name string, snap settings.Snapshot) string {
 	var lines []string
 	for _, edge := range g.Edges {
 		if edge.Kind != "deploys" || edge.From != name {
@@ -165,7 +174,7 @@ func WorkerDeployApprovalRules(g Graph, name string) string {
 		if target == nil {
 			continue
 		}
-		defaults := NodeDefaults(target.Charter.Maturity, target.Settings)
+		defaults := NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name)
 		if defaults.DeployRule == DeployOwner {
 			lines = append(lines, fmt.Sprintf("You deploy %s: %s.", target.Name, defaults.DeployText()))
 		}

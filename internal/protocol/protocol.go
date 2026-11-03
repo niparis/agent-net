@@ -83,6 +83,8 @@ type Message struct {
 	// RecipientMergeAuthority is the receiver's effective node setting, computed
 	// by the gateway on delivery. A sender cannot supply it in MsgSend.
 	RecipientMergeAuthority string `json:"recipient_merge_authority,omitempty"`
+	RecipientMergeText      string `json:"recipient_merge_text,omitempty"`
+	RecipientMergeTextSet   bool   `json:"recipient_merge_text_set,omitempty"`
 	// RecipientRelation is filled by the gateway when it hands a request to
 	// the recipient's daemon: the graph relation from the sender's node to the
 	// recipient's node (decision 0022). It is agent-net's own text, after the

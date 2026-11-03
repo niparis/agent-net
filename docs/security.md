@@ -130,8 +130,15 @@ against the node's maturity (`tests_before_merge`, `merge_authority`,
 `worker_sandbox`, `judge_consumers`, `deploy_rule`, `autonomy`) and the delegation policies
 the owner set for the node's project on each machine (`delegate`,
 `coder_model`, `main_model`, `workers`). `agent_session_get` puts the same rules on the
-session's node, so a session can check its own rules directly. Only changes
-are owner-gated (`node_settings_set` and `session_policy`). What stays hidden
+session's node, so a session can check its own rules directly. Delivery rules,
+including merge authority and its displayed text, are settings-layer rules.
+The owner can change them; the CTO must propose changes for owner approval.
+A repo with no graph node uses the network merge authority. The gateway supplies
+the receiver's merge text with each delivered message, overriding any sender
+value. The delegated approval modes are inserted into the rule text, so a
+changed mode is not paired with the old list in that text. An older daemon or
+extension ignores the new text field and uses its built-in wording until it is
+upgraded. Only changes are owner-gated (`node_settings_set` and `session_policy`). What stays hidden
 is not a rule: secrets and tokens, machine paths and locations, the
 learned-change history with its evidence excerpts, and the owner's
 hidden-items preferences. What stays hidden, and why:

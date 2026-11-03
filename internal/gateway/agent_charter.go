@@ -1,6 +1,9 @@
 package gateway
 
-import "github.com/niparis/agent-net/internal/protocol"
+import (
+	"encoding/json"
+	"github.com/niparis/agent-net/internal/protocol"
+)
 
 // applyAgentCharters adds only the public charter fields to agent views.
 func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) error {
@@ -36,7 +39,7 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 	rows.Close()
 	settingsByNode := map[string]map[string]string{}
 	if !short {
-		rows, err := s.db.Query(`SELECT node,setting,value FROM graph_node_settings`)
+		rows, err := s.db.Query(`SELECT node,setting,value FROM graph_node_settings WHERE setting='worker_sandbox'`)
 		if err != nil {
 			return err
 		}
@@ -56,6 +59,34 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 			return err
 		}
 		rows.Close()
+	}
+	if !short {
+		snap, err := s.SettingsSnapshot()
+		if err != nil {
+			return err
+		}
+		for _, v := range snap.Values {
+			if v.Level != "repo" || v.Item != "" {
+				continue
+			}
+			for old, key := range deliveryNodeKeys {
+				if v.Key != key {
+					continue
+				}
+				var value string
+				if json.Unmarshal(v.Value, &value) != nil || protocol.ValidateNodeSetting(old, value) != nil {
+					continue
+				}
+				if settingsByNode[v.Scope] == nil {
+					settingsByNode[v.Scope] = map[string]string{}
+				}
+				settingsByNode[v.Scope][old] = value
+			}
+		}
+		for _, a := range agents {
+			project := a.Repo.Project
+			settingsByNode[project] = nodeEffectiveSettings(snap, project, byNode[project].Maturity, settingsByNode[project])
+		}
 	}
 	cut := func(s string) string {
 		r := []rune(s)

@@ -44,6 +44,26 @@ graph owner window. The owner uses the TUI or owner-gated `settings_write` and
 each machine. Definitions marked not live are visible but do not yet control the
 old behavior; later build steps switch their readers and writers.
 
+Delivery values live in the embedded recipe and gateway settings tables. The
+moved node settings are `delivery.tests_before_merge`,
+`delivery.merge_authority`, `delivery.deploy_rule`, `charter.judge_consumers`
+and `charter.autonomy_mode`. The older node settings methods are adapters to
+the same values. The owner can change them in Settings or with `settings_write`;
+the CTO must propose changes to these rules. A repo with no graph node uses the
+network merge authority. Text and worker delivery settings appear under
+`delivery.*` in Settings. The delegated merge text uses the configured
+`delivery.delegated_approver_modes`. Branch prefix changes apply to new workers;
+a resumed worker keeps its recorded branch. Cleanup may leave worktrees made
+with an older custom prefix for the owner to inspect. The worker sandbox and
+project policies stay where they are until the worker settings step. Older daemons and extensions use their
+built-in merge text until upgraded, even when the authority value has synced.
+
+On first upgrade, the gateway copies old node setting rows into settings in one
+transaction and records their cutover. The old rows stay as a backup. An older
+binary reads that backup after a downgrade, so changes made after the cutover
+are absent. Changes made to old rows while downgraded are not copied on a later
+upgrade. There is no downgrade tool.
+
 ## CTO settings and conversation
 
 Minor CTO graph changes apply immediately with actor `CTO (minor)`: charter
@@ -518,7 +538,7 @@ The daemon shares concurrent identical owner reads for `workers`, `usage`, `usag
 
 ## Graph operator methods (foundation)
 
-The gateway stores explicit nodes, charter attributes, node settings, edges and their history in `graph_nodes`, `graph_charter`, `graph_node_settings`, `graph_edges` and `graph_history`. Git working trees reported by sessions and registered projects also appear as implicit component nodes, except roots in temporary folders or the home folder itself. Registrations are checked for Git by the reporting daemon. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
+The gateway stores explicit nodes, charter attributes, edges and graph history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. The worker sandbox remains in `graph_node_settings`. The other node settings use the settings layer and its history. Git working trees reported by sessions and registered projects also appear as implicit component nodes, except roots in temporary folders or the home folder itself. Registrations are checked for Git by the reporting daemon. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
 
 The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `node settings <name> [setting value...]`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `accepts`, `refuses`, `feature_requests`, `consumers`, `escalate`, `needs` and `notes`. Edge kinds are `depends` (consumer to provider), `governs` (architect to component, with mode `advisor`, `arbiter` or `owner`) and `deploys` (deployer to each app it deploys).
 
@@ -530,7 +550,7 @@ Agent list and get include the public charter fields purpose, maturity, accepts,
 - `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
 - `node_settings_get {node}` returns the node's maturity, its overrides, the defaults its maturity gives, the effective values and `autonomy`.
 - `node_settings_set {node, setting, value}` sets or clears one override. Settings are `tests_before_merge` (`optional`, `suite`, `suite-new-tests`, `suite-new-tests-review`), `merge_authority` (`full`, `delegated`, `ask`), `worker_sandbox` (`sandboxed`, `no-network`, `read-only`), `judge_consumers` (`free`, `charter`, `strict`, `escalate`), `deploy_rule` (`brief`, `ask`, `owner`) and `autonomy` (`off`, `wake`). An empty value clears the override; autonomy is off when unset. The method is behind the owner gate and refuses agent sessions. The effective values, the autonomy and the delegation policies are readable by every agent through `agent_graph_read` and `agent_session_get`; only the change is owner-gated.
-- `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter, settings or edges.
+- `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter, settings or edges. Old graph history for a moved node setting cannot be undone through graph undo; use settings history for later changes.
 
 History limits default to 1000 and are capped at 1000. Edge history has `old` and `new` edge objects, omitted when absent. Gateway frames use the same names with dots instead of underscores; `graph.undo` uses `history_id` because `id` identifies the frame itself; `node_settings_get` and `node_settings_set` use `node.settings.get` and `node.settings.set`.
 
@@ -583,8 +603,8 @@ After `session.sync`, and after a settings revision changes, the gateway sends
 `settings.sync` to connected daemons. The frame carries the revision, recipe
 hash, stored values and repo maturity facts. A daemon saves the last valid
 snapshot in `daemon.db`; older daemons ignore the frame. Before the first
-snapshot, the embedded recipe supplies defaults. No product readers use these
-settings yet.
+snapshot, the embedded recipe supplies defaults. Guidance and delivery readers use
+this snapshot.
 
 Each daemon and the gateway send a WebSocket ping every 20 seconds. Incoming
 messages, pings and pongs show that the link is alive. After 45 seconds without
@@ -601,7 +621,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
 | Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivery records (for duplicates and interrupted writes), the outbox for sends made while the gateway is away, the `settings_snapshot` table (the last validated settings snapshot for offline use), and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. A delivery record is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its private data and state folders and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. Kept after hand-back for resume, otherwise deleted when the worker ends. OpenCode configuration remains shared. At each start OpenCode credentials are exported and imported through memory into the private database (mode 0600); OAuth token refresh in the copy may affect the original login. |
-| Worker worktrees | `~/.local/state/agent-net/daemon/worktrees/<worker id>/` | The default in a git repository (not with `--isolation none`). Eligible for the worker cleanup described below as soon as the worker ends. The branch is `agent-net/<worker id>` in the project. |
+| Worker worktrees | `~/.local/state/agent-net/daemon/worktrees/<worker id>/` | The default in a git repository (not with `--isolation none`). Eligible for the worker cleanup described below as soon as the worker ends. The default branch name is `agent-net/<worker id>` in the project; `delivery.worker_branch_prefix` sets the prefix. |
 | Owner session worktrees | Next to the project, `<project>.worktrees/<branch>/`, for example `~/code/agent-net.worktrees/agent-net/agent-net-1/` | A New session start with Folder `new worktree`. The branch is what the Branch line says, by default `agent-net/<project>-<n>` with the lowest free number. The worktree and its branch are yours: agent-net never removes them, and worker cleanup never touches them. |
 | Repo skill removal worktrees | `~/.local/state/agent-net/daemon/repo-removals/<id>/` | Temporary worktrees used to make an owner-approved skill removal branch. Removed after the commit; the `agent-net/remove-<skill>` branch remains in the project's Git repository. |
 | Daemon socket | `$XDG_RUNTIME_DIR/agent-net/daemon.sock`, else `/tmp/agent-net-<uid>/daemon.sock` | Directory 0700, socket 0600. macOS has no `XDG_RUNTIME_DIR`, so it uses the `/tmp` path. |

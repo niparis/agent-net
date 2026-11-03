@@ -128,18 +128,38 @@ func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
 
 // MergeAuthorityForSession resolves the receiving node's effective setting.
 func (s *Store) MergeAuthorityForSession(session string) (string, error) {
+	authority, _, err := s.MergeRuleForSession(session)
+	return authority, err
+}
+
+// MergeRuleForSession resolves authority and its text from one snapshot.
+func (s *Store) MergeRuleForSession(session string) (string, string, error) {
 	a, ok, err := s.Agent(session)
 	if err != nil || !ok {
-		return protocol.MergeAsk, err
+		return protocol.MergeAsk, "", err
 	}
+	project := projectOfSession(a)
 	graph, err := s.Graph()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
+	found := false
 	for _, n := range graph.Nodes {
-		if n.Name == projectOfSession(a) {
-			return protocol.NodeDefaults(n.Charter.Maturity, n.Settings).MergeAuthority, nil
+		if n.Name == project {
+			found = true
+			break
 		}
 	}
-	return protocol.DefaultsForMaturity("").MergeAuthority, nil
+	if !found {
+		project = ""
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return "", "", err
+	}
+	authority, err := deliveryValue(snap, "delivery.merge_authority", project)
+	if err != nil {
+		return "", "", err
+	}
+	return authority, protocol.MergeTextWithSettings(authority, snap), nil
 }

@@ -156,3 +156,14 @@ func TestDeliverClaudeReminder(t *testing.T) {
 		t.Fatalf("reminder = %s", got)
 	}
 }
+
+func TestClaudeDeliveryMergeTextFromGateway(t *testing.T) {
+	m := protocol.Message{Type: protocol.TypeRequest, Body: "request", RecipientTrust: true, RecipientMergeAuthority: "ask", RecipientMergeText: "custom rule", RecipientMergeTextSet: true, OwnerInstruction: "merge"}
+	if got := frameContent(t, m); strings.Count(got, "custom rule") != 2 || strings.Contains(got, protocol.MergeAskText) {
+		t.Fatal(got)
+	}
+	m.RecipientMergeText = ""
+	if got := frameContent(t, m); strings.Contains(got, protocol.MergeAskText) {
+		t.Fatal(got)
+	}
+}

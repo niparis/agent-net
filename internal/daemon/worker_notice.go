@@ -17,6 +17,7 @@ import (
 	"github.com/niparis/agent-net/internal/loginpath"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Worker hand-back, completion notices and worktrees (decision 0002, W10, W11
@@ -153,9 +154,12 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
 	}
-	branch := protocol.WorktreeBranch(w.id)
+	branch := protocol.WorktreeBranchWithSettings(w.id, d.SettingsSnapshot())
 	d.wmu.Lock()
 	previousBase := w.base
+	if w.branch != "" {
+		branch = w.branch
+	}
 	d.wmu.Unlock()
 	// A resumed worker's branch stays after its worktree folder is removed (a
 	// disk cleanup). Make the worktree on that branch instead of failing on
@@ -257,6 +261,9 @@ func first(a, b string) string {
 // author when there is one, and "agent-net" when not. It tells whether a
 // commit was made.
 func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
+	if !d.SettingsSnapshot().Bool("delivery.save_unfinished", settings.Where{}) {
+		return false
+	}
 	return d.saveWorkerChanges(w, unfinishedSubject(w.id, reason), reason, true)
 }
 
@@ -485,7 +492,7 @@ func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.Work
 	if len(report) > 48*1024 {
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
-	raw, err := d.sendWorkerNoticeBody(ctx, w, d.workerToolchainPermissions(w, protocol.FormatWorkerNotice(n, report)), to, replyTo, noticeKey)
+	raw, err := d.sendWorkerNoticeBody(ctx, w, d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot())), to, replyTo, noticeKey)
 	if err == nil {
 		switch n.Status {
 		case protocol.StatusDone, protocol.StatusFailed, protocol.StatusTimedOut, "partial", "idle without hand-back":

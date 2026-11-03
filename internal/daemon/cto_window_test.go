@@ -167,7 +167,6 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 		{"charter_set", `{"node":"first","attr":"refuses","value":"deployments"}`},
 		{"charter_set", `{"node":"first","attr":"escalate","value":"owner"}`},
 		{"charter_set", `{"node":"first","attr":"maturity","value":"mature"}`},
-		{"settings_set", `{"node":"first","setting":"deploy_rule","value":"brief"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"auto"}`},
 		{"edge_set", `{"from":"first","to":"component","kind":"governs","mode":"owner"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"deploys"}`},
@@ -287,5 +286,23 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 				t.Fatalf("non graph %s ran=%v proposed=%v err=%v", name, ran, proposed, err)
 			}
 		})
+	}
+}
+
+func TestCTOGraphWindowStillProposesMovedNodeRule(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]string{"name": "alpha"})
+	n.d.ctoGraph.mu.Lock()
+	n.d.ctoGraph.toggle(time.Now())
+	n.d.ctoGraph.mu.Unlock()
+	got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("settings_set", `{"node":"alpha","setting":"merge_authority","value":"ask"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
+		t.Fatalf("rule bypassed proposal: %v", got)
 	}
 }

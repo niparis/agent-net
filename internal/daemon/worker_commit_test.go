@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // commitTestDaemon is a daemon with private state, enough for the worktree and
@@ -39,7 +41,15 @@ func commitTestWorker(t *testing.T, d *Daemon) (*worker, string) {
 // gitTestEnv is a git environment without the owner's global or system config.
 // extra comes last, so it wins over an inherited value.
 func gitTestEnv(extra map[string]string) []string {
-	env := append(os.Environ(),
+	var clean []string
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if key == "GIT_CONFIG_COUNT" || strings.HasPrefix(key, "GIT_CONFIG_KEY_") || strings.HasPrefix(key, "GIT_CONFIG_VALUE_") || strings.HasPrefix(key, "AGENT_NET_TRAILER_") {
+			continue
+		}
+		clean = append(clean, entry)
+	}
+	env := append(clean,
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
@@ -273,5 +283,29 @@ func TestAgyCommitNoWorktreeOrChanges(t *testing.T) {
 	}
 	if after := gitOutT(t, dir, "rev-parse", "HEAD"); before != after {
 		t.Fatal("HEAD changed")
+	}
+}
+
+func TestWorkerResumeKeepsBranchAfterPrefixChange(t *testing.T) {
+	d := commitTestDaemon(t)
+	w, dir := commitTestWorker(t, d)
+	oldBranch := w.branch
+	if err := os.WriteFile(filepath.Join(dir, "saved.txt"), []byte("saved"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	fakeHarnessCommit(t, dir, d.workerCommitEnv(w), "save work")
+	gitWithEnv(t, w.mainPath, nil, "worktree", "remove", dir)
+	snap := settings.Snapshot{Values: []settings.Value{{Key: "delivery.worker_branch_prefix", Level: "network", Scope: "network", Value: json.RawMessage(`"new-workers/"`)}}}
+	d.settingsSnapshot.Store(&snap)
+	w.path = w.mainPath
+	w.worktree = ""
+	if err := d.createWorktree(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	if w.branch != oldBranch {
+		t.Fatalf("resumed on %q, want %q", w.branch, oldBranch)
+	}
+	if data, err := os.ReadFile(filepath.Join(w.worktree, "saved.txt")); err != nil || string(data) != "saved" {
+		t.Fatalf("lost saved work: %q %v", data, err)
 	}
 }

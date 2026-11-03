@@ -92,19 +92,11 @@ func agentNode(a protocol.AgentView) string {
 // stored value is off.
 func (s *Store) agentAutonomy(a protocol.AgentView) (string, error) {
 	node := agentNode(a)
-	if node == "" {
-		return protocol.AutonomyOff, nil
-	}
-	var value string
-	err := s.db.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`,
-		node, protocol.SettingAutonomy).Scan(&value)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.AutonomyOff, nil
-	}
+	snap, err := s.SettingsSnapshot()
 	if err != nil {
 		return protocol.AutonomyOff, err
 	}
-	return protocol.NodeAutonomy(map[string]string{protocol.SettingAutonomy: value}), nil
+	return deliveryValue(snap, "charter.autonomy_mode", node)
 }
 
 func wakeBody(line string) string {

@@ -95,7 +95,7 @@ func (s *Store) nodeWorkerSandbox(project string) (string, error) {
 		return "", err
 	}
 	settings := map[string]string{}
-	rows, err := s.db.Query(`SELECT setting,value FROM graph_node_settings WHERE node = ?`, project)
+	rows, err := s.db.Query(`SELECT setting,value FROM graph_node_settings WHERE node = ? AND setting = 'worker_sandbox'`, project)
 	if err != nil {
 		return "", err
 	}

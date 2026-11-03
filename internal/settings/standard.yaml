@@ -19,7 +19,266 @@ settings:
     levels: [network, repo]
     default: full
     by_maturity: {mature: delegated, critical: ask}
-    live: false
+    live: true
+  - key: delivery.tests_before_merge
+    rows: [127]
+    description: Tests required before a merge.
+    kind: rule
+    type: enum
+    values: [optional, suite, suite-new-tests, suite-new-tests-review]
+    levels: [network, repo]
+    default: suite
+    by_maturity: {early: optional, mature: suite-new-tests, critical: suite-new-tests-review}
+    live: true
+  - key: charter.judge_consumers
+    rows: [45]
+    description: How the node judges consumer requests.
+    kind: rule
+    type: enum
+    values: [free, charter, strict, escalate]
+    levels: [network, repo]
+    default: charter
+    by_maturity: {early: free, mature: strict, critical: escalate}
+    live: true
+  - key: delivery.deploy_rule
+    rows: [132]
+    description: Who approves a deployment.
+    kind: rule
+    type: enum
+    values: [brief, ask, owner]
+    levels: [network, repo]
+    default: brief
+    by_maturity: {mature: ask, critical: owner}
+    live: true
+  - key: charter.autonomy_mode
+    rows: [46]
+    description: Whether an idle agent may be woken to continue.
+    kind: rule
+    type: enum
+    values: [wake, off]
+    levels: [network, repo]
+    default: "off"
+    live: true
+  - key: delivery.test_text_optional
+    rows: [127]
+    description: Tests optional text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "tests optional"
+    live: true
+  - key: delivery.test_text_suite
+    rows: [127]
+    description: Suite test text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "run the suite"
+    live: true
+  - key: delivery.test_text_suite_new_tests
+    rows: [127]
+    description: Suite and new tests text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "run the suite and add tests for new behavior"
+    live: true
+  - key: delivery.test_text_suite_new_tests_review
+    rows: [127]
+    description: Suite and review text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "run the suite, add tests for new behavior and get a review"
+    live: true
+  - key: delivery.merge_text_full
+    rows: [128]
+    description: Full merge authority text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "merge and push to the default branch"
+    live: true
+  - key: delivery.merge_text_delegated
+    rows: [128]
+    description: Delegated merge authority text.
+    kind: rule
+    type: text
+    levels: [network]
+    slots: [modes]
+    default: "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode {{modes}} over this node"
+    live: true
+  - key: delivery.merge_text_ask
+    rows: [128]
+    description: Owner merge approval text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report)"
+    live: true
+  - key: delivery.deploy_text_brief
+    rows: [132]
+    description: Brief deployment text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "deploy as the brief says"
+    live: true
+  - key: delivery.deploy_text_ask
+    rows: [132]
+    description: Deployment approval text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "ask before deploying"
+    live: true
+  - key: delivery.deploy_text_owner
+    rows: [132]
+    description: Owner deployment approval text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "ask the owner before deploying (request written approval for the exact action with agent_owner_ask and kind approval, or put it and your recommendation in a Codex worker report)"
+    live: true
+  - key: charter.consumer_text_free
+    rows: [45]
+    description: Free consumer request text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "accept requests from consumers freely"
+    live: true
+  - key: charter.consumer_text_charter
+    rows: [45]
+    description: Charter consumer request text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "judge requests from consumers by the charter"
+    live: true
+  - key: charter.consumer_text_strict
+    rows: [45]
+    description: Strict consumer request text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "judge requests from consumers strictly"
+    live: true
+  - key: charter.consumer_text_escalate
+    rows: [45]
+    description: Escalated consumer request text.
+    kind: rule
+    type: text
+    levels: [network]
+    default: "escalate changes requested by consumers to the owner"
+    live: true
+  - key: delivery.worker_branch_prep
+    rows: [134]
+    description: Worker branch preparation instruction.
+    kind: advice
+    type: text
+    levels: [network]
+    default: " Commit your work there if the task asks for it."
+    live: true
+  - key: delivery.worker_agy_commit_instruction
+    rows: [134]
+    description: Worker commit instruction for Antigravity.
+    kind: advice
+    type: text
+    levels: [network]
+    default: "\n- The daemon commits your work when you hand back, so do not run git commit."
+    live: true
+  - key: delivery.caller_review_and_merge
+    rows: [131]
+    description: Caller review checklist.
+    kind: advice
+    type: text
+    levels: [network]
+    slots: [where]
+    default: "[agent-net checklist] Before you tell your user it is done: read {{where}}, run the project's tests there, then report what you checked. Merge only if your user asked."
+    live: true
+  - key: delivery.worker_branch_prefix
+    rows: [133]
+    description: Worker worktree branch prefix.
+    kind: rule
+    type: string
+    levels: [network]
+    default: "agent-net/"
+    live: true
+  - key: delivery.cleanup_first_delay
+    rows: [137]
+    description: Delay before the first cleanup.
+    kind: rule
+    type: duration
+    min: "1s"
+    levels: [network]
+    default: "1m"
+    live: true
+  - key: delivery.cleanup_interval
+    rows: [137]
+    description: Interval between cleanups.
+    kind: rule
+    type: duration
+    min: "1s"
+    levels: [network]
+    default: "30m"
+    live: true
+  - key: delivery.save_unfinished
+    rows: [135]
+    description: Save unfinished worker changes.
+    kind: rule
+    type: bool
+    levels: [network]
+    default: true
+    live: true
+  - key: delivery.delegated_approver_modes
+    rows: [130]
+    description: Governance modes that may approve delegated merges.
+    kind: rule
+    type: set
+    levels: [network]
+    default: [owner, arbiter]
+    live: true
+  - key: delivery.trailer_worker
+    rows: [135]
+    description: Git trailer name for the worker worker.
+    kind: rule
+    type: string
+    levels: [network]
+    default: Agent-Net-Worker
+    live: true
+  - key: delivery.trailer_model
+    rows: [135]
+    description: Git trailer name for the worker model.
+    kind: rule
+    type: string
+    levels: [network]
+    default: Agent-Net-Model
+    live: true
+  - key: delivery.trailer_harness
+    rows: [135]
+    description: Git trailer name for the worker harness.
+    kind: rule
+    type: string
+    levels: [network]
+    default: Agent-Net-Harness
+    live: true
+  - key: delivery.trailer_difficulty
+    rows: [135]
+    description: Git trailer name for the worker difficulty.
+    kind: rule
+    type: string
+    levels: [network]
+    default: Agent-Net-Difficulty
+    live: true
+  - key: delivery.trailer_caller
+    rows: [135]
+    description: Git trailer name for the worker caller.
+    kind: rule
+    type: string
+    levels: [network]
+    default: Agent-Net-Caller
+    live: true
   - key: workers.auto_continue
     rows: [64]
     description: Whether an early worker stop is continued automatically.
@@ -212,7 +471,7 @@ ledger:
   - {row: 42, keys: [charter.scope_and_escalation]}
   - {row: 43, code: "maturity stays a charter fact"}
   - {row: 44, keys: [delivery.tests_before_merge, delivery.merge_authority, workers.sandbox_level, charter.judge_consumers, delivery.deploy_rule], step: 6}
-  - {row: 45, keys: [charter.judge_consumers], step: 6}
+  - {row: 45, keys: [charter.judge_consumers, charter.consumer_text_free, charter.consumer_text_charter, charter.consumer_text_strict, charter.consumer_text_escalate], step: 6}
   - {row: 46, keys: [charter.autonomy_mode], step: 6}
   - {row: 47, keys: [charter.size_budgets]}
   - {row: 48, keys: [charter.context_template]}
@@ -294,17 +553,17 @@ ledger:
   - {row: 124, keys: [skills.worktree_copy_policy]}
   - {row: 125, keys: [skills.backup_retention]}
   - {row: 126, keys: [skills.mcp_server_attachment]}
-  - {row: 127, keys: [delivery.tests_before_merge], step: 6}
-  - {row: 128, keys: [delivery.merge_authority], step: 6}
-  - {row: 129, keys: [delivery.uncharted_merge_policy], step: 6}
+  - {row: 127, keys: [delivery.tests_before_merge, delivery.test_text_optional, delivery.test_text_suite, delivery.test_text_suite_new_tests, delivery.test_text_suite_new_tests_review], step: 6}
+  - {row: 128, keys: [delivery.merge_authority, delivery.merge_text_full, delivery.merge_text_delegated, delivery.merge_text_ask], step: 6}
+  - {row: 129, keys: [delivery.merge_authority], step: 6}
   - {row: 130, keys: [delivery.delegated_approver_modes], step: 6}
   - {row: 131, keys: [delivery.caller_review_and_merge], step: 6}
-  - {row: 132, keys: [delivery.deploy_rule], step: 6}
+  - {row: 132, keys: [delivery.deploy_rule, delivery.deploy_text_brief, delivery.deploy_text_ask, delivery.deploy_text_owner], step: 6}
   - {row: 133, keys: [delivery.worker_branch_prefix], step: 6}
-  - {row: 134, keys: [delivery.worker_branch_prep], step: 6}
-  - {row: 135, keys: [delivery.worker_commit_and_trailers], step: 6}
+  - {row: 134, keys: [delivery.worker_branch_prep, delivery.worker_agy_commit_instruction], step: 6}
+  - {row: 135, keys: [delivery.save_unfinished, delivery.trailer_worker, delivery.trailer_model, delivery.trailer_harness, delivery.trailer_difficulty, delivery.trailer_caller], step: 6}
   - {row: 136, code: "worker rules stay in the repository"}
-  - {row: 137, keys: [delivery.worktree_cleanup_policy], step: 6}
+  - {row: 137, keys: [delivery.cleanup_first_delay, delivery.cleanup_interval], step: 6}
   - {row: 138, keys: [notices.untrusted_peer_framing]}
   - {row: 139, keys: [notices.trusted_request_framing]}
   - {row: 140, keys: [notices.owner_prompt_excerpt]}

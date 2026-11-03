@@ -617,10 +617,11 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		}
 	}
 	worktree, branch := "", ""
+	snap := d.SettingsSnapshot()
 	if l.Isolation == protocol.IsolationWorktree {
-		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
+		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranchWithSettings(w.id, snap)
 	}
-	if len(protocol.WorkerTaskBodyWithRules(l.Harness, l.Task, worktree, branch, rules)) > protocol.MaxBodyBytes {
+	if len(protocol.WorkerTaskBodyWithSettings(l.Harness, l.Task, worktree, branch, rules, "", "", snap)) > protocol.MaxBodyBytes {
 		return refuse("the task and project rules exceed the message limit")
 	}
 	w.lastActive = w.startedAt

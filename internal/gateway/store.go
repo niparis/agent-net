@@ -631,6 +631,8 @@ CREATE TRIGGER IF NOT EXISTS setting_history_no_update BEFORE UPDATE ON setting_
 BEGIN SELECT RAISE(ABORT, 'setting history is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS setting_history_no_delete BEFORE DELETE ON setting_history
 BEGIN SELECT RAISE(ABORT, 'setting history is append-only'); END;
+`, `
+SELECT 1 /* delivery settings cutover */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1013,6 +1015,12 @@ func (s *Store) migrate() error {
 		}
 		if strings.Contains(migrations[i], "CTO legacy route upgrade") {
 			if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_legacy_route_start','',?) ON CONFLICT(key) DO NOTHING`, s.now().UnixNano()); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "delivery settings cutover") {
+			if err := s.cutoverDeliveryTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}

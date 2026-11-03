@@ -12,8 +12,8 @@ import (
 // transaction, so a newly critical node cannot race a minor change.
 func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) {
 	var q struct {
-		Node, Name, Attr, Value, From, To, Kind, Mode, Rule string
-		ID                                                  int64
+		Node, Name, Attr, Value, From, To, Kind, Mode, Rule, Setting string
+		ID                                                           int64
 	}
 	if err := json.Unmarshal(raw, &q); err != nil {
 		return "", err
@@ -34,6 +34,13 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 	case "node_add":
 		typ, node, value = "node", q.Name, "architect"
 	case "node_remove":
+		var count int
+		if err = tx.QueryRow(`SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?`, q.Name).Scan(&count); err != nil {
+			return "", err
+		}
+		if count > 0 {
+			return "rule", nil
+		}
 		typ, node, old, value = "node", q.Name, "architect", ""
 	case "edge_set", "edge_remove":
 		typ, node, attr = "edge", q.From, q.Kind
@@ -56,6 +63,9 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 			value = ""
 		}
 	case "node_settings_set":
+		if _, moved := deliveryNodeKeys[q.Setting]; moved {
+			return "rule", nil
+		}
 		return "major", nil
 	case "graph_undo":
 		query := `SELECT type,node,attr,new_value,old_value FROM graph_history WHERE id=?`

@@ -56,6 +56,7 @@ func TestDeliveryUsesReceiverMergeAuthority(t *testing.T) {
 			}
 			msg.OwnerInstruction = "ask receiver to merge example/repo#12"
 			msg.RecipientMergeAuthority = "forged sender value"
+			msg.RecipientMergeText = "forged merge text"
 			g.sendDeliver(ctx, node, msg)
 			_, raw, err := client.Read(ctx)
 			if err != nil {
@@ -79,6 +80,9 @@ func TestDeliveryUsesReceiverMergeAuthority(t *testing.T) {
 				protocol.OwnerInstructionNote(m.OwnerInstruction, m.RecipientMergeAuthority), guidance.Block(guidance.Other),
 			}, "\n")
 			rule := (protocol.MaturityDefaults{MergeAuthority: authority}).MergeText()
+			if !m.RecipientMergeTextSet || m.RecipientMergeText != rule {
+				t.Fatalf("sender supplied merge text: %q", m.RecipientMergeText)
+			}
 			if strings.Count(text, rule) != 3 {
 				t.Fatalf("receiver must see one rule in all notes: %s", text)
 			}
@@ -88,6 +92,27 @@ func TestDeliveryUsesReceiverMergeAuthority(t *testing.T) {
 				}
 			}
 		})
+	}
+	_, err = s.WriteSettings([]SettingsChange{{Key: "delivery.merge_text_ask", Level: "network", Scope: "network", Value: json.RawMessage(`"custom written approval"`)}}, "owner", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, _, err := send(s, ids["sender"], ids["receiver"], "custom", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg.RecipientMergeText = "forged"
+	g.sendDeliver(ctx, node, msg)
+	_, raw, err := client.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frame protocol.MsgDeliver
+	if err = json.Unmarshal(raw, &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.Message.RecipientMergeText != "custom written approval" {
+		t.Fatalf("custom merge text: %q", frame.Message.RecipientMergeText)
 	}
 	// Clearing an override restores maturity, rather than the sender's full authority.
 	if err := s.SetNodeSetting("receiver", protocol.SettingMergeAuthority, "", "owner"); err != nil {

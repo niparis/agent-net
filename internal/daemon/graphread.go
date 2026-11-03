@@ -82,7 +82,7 @@ func (d *Daemon) charterContext(ctx context.Context, project string) string {
 	if !ok {
 		return ""
 	}
-	return protocol.NodeContext(g, project)
+	return protocol.NodeContextWithSettings(g, project, d.SettingsSnapshot())
 }
 
 // charterBrief is the charter section of a worker's brief. Empty when the
@@ -95,9 +95,9 @@ func (d *Daemon) charterBrief(ctx context.Context, project string) string {
 	var charter string
 	for _, n := range g.Nodes {
 		if n.Name == project {
-			charter = protocol.CharterBrief(n)
+			charter = protocol.CharterBriefWithSettings(n, d.SettingsSnapshot())
 			break
 		}
 	}
-	return strings.TrimSpace(charter + "\n" + protocol.WorkerDeployApprovalRules(g, project) + "\n" + protocol.NeighborCharters(g, project))
+	return strings.TrimSpace(charter + "\n" + protocol.WorkerDeployApprovalRulesWithSettings(g, project, d.SettingsSnapshot()) + "\n" + protocol.NeighborCharters(g, project))
 }

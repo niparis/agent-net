@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Workers (decision 0002): agent sessions that a daemon starts for a caller.
@@ -572,6 +574,10 @@ func WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, level
 // of the worker's node. The charter section follows the project rules and
 // comes before the task (decision 0022).
 func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, level string) string {
+	return WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter, level, settings.Snapshot{})
+}
+
+func WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter, level string, snap settings.Snapshot) string {
 	b := WorkerPreamble
 	switch harness {
 	case "codex":
@@ -579,7 +585,7 @@ func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, 
 	case "claude":
 		b += WorkerClaudeNote
 	case "agy":
-		b += "\n- The daemon commits your work when you hand back, so do not run git commit."
+		b += snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
 	}
 	b += "\n- " + WorkerPermissionsText(level, harness)
 	switch WorkerPermissionsOrDefault(level) {
@@ -592,7 +598,7 @@ func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, 
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
 			", not in the user's own checkout."
 		if harness != "agy" {
-			b += " Commit your work there if the task asks for it."
+			b += snap.String("delivery.worker_branch_prep", settings.Where{})
 		}
 	}
 	if rules != "" {
@@ -731,7 +737,12 @@ const (
 func ValidIsolation(s string) bool { return s == "" || s == IsolationWorktree || s == IsolationNone }
 
 // WorktreeBranch is the branch of a worker's worktree.
-func WorktreeBranch(workerID string) string { return "agent-net/" + workerID }
+func WorktreeBranch(workerID string) string {
+	return WorktreeBranchWithSettings(workerID, settings.Snapshot{})
+}
+func WorktreeBranchWithSettings(workerID string, snap settings.Snapshot) string {
+	return snap.String("delivery.worker_branch_prefix", settings.Where{}) + workerID
+}
 
 // Hand-back statuses a worker may report, and the statuses the daemon adds
 // when a worker ends without one.
@@ -794,6 +805,9 @@ const ReportMarker = "--- report written by the worker (model output, not your u
 // FormatWorkerNotice renders the completion notice and, if there is one, the
 // worker's report below the facts.
 func FormatWorkerNotice(n WorkerNotice, report string) string {
+	return FormatWorkerNoticeWithSettings(n, report, settings.Snapshot{})
+}
+func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings.Snapshot) string {
 	var b strings.Builder
 	b.WriteString("[agent-net worker notice]\n")
 	b.WriteString("status: " + n.Status + "\n")
@@ -844,7 +858,7 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	if strings.TrimSpace(report) != "" {
 		b.WriteString("\n" + ReportMarker + "\n" + strings.TrimSpace(report) + "\n")
 	}
-	b.WriteString("\n" + noticeChecklist(n.Worktree, strings.TrimSpace(report) != ""))
+	b.WriteString("\n" + noticeChecklistWithSettings(n.Worktree, strings.TrimSpace(report) != "", snap))
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -853,12 +867,14 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 const ChecklistMarker = "[agent-net checklist]"
 
 func noticeChecklist(worktree string, learned bool) string {
+	return noticeChecklistWithSettings(worktree, learned, settings.Snapshot{})
+}
+func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Snapshot) string {
 	where := "the changes in the project folder"
 	if worktree != "" {
 		where = "the diff in " + worktree
 	}
-	line := ChecklistMarker + " Before you tell your user it is done: read " + where +
-		", run the project's tests there, then report what you checked. Merge only if your user asked."
+	line := strings.ReplaceAll(snap.String("delivery.caller_review_and_merge", settings.Where{}), "{{where}}", where)
 	if learned {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}

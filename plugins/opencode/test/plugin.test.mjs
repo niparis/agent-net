@@ -1463,6 +1463,16 @@ await test("owner instruction follows the body", async () => {
   if (!text.includes("sent on the owner's instruction: «ask alice»")) throw new Error(text);
 });
 
+await test("receiver supplied merge text", async () => {
+  const text = await deliveredText({ ...peerMsg, recipient_peer_trust: true, recipient_merge_authority: "ask", recipient_merge_text: "custom approval rule", recipient_merge_text_set: true, owner_instruction: "merge" });
+  if (text.split("custom approval rule").length !== 3 || text.includes("merge always needs the owner's written approval")) throw new Error(text);
+});
+
+await test("empty receiver merge text stays empty", async () => {
+  const text = await deliveredText({ ...peerMsg, recipient_peer_trust: true, recipient_merge_authority: "ask", recipient_merge_text_set: true, owner_instruction: "merge" });
+  if (text.includes("merge always needs the owner's written approval") || text.split("For this node: .").length !== 3) throw new Error(text);
+});
+
 for (const [authority, rule] of [
   ["full", "merge and push to the default branch"],
   ["delegated", "merge needs the owner's or a delegate's approval for the exact merge"],

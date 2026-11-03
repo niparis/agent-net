@@ -1,7 +1,10 @@
 package protocol
 
 import (
+	"encoding/json"
 	"fmt"
+
+	"github.com/niparis/agent-net/internal/settings"
 	"strings"
 	"time"
 )
@@ -61,6 +64,7 @@ const (
 
 // MaturityDefaults is the set of controls a maturity level selects.
 type MaturityDefaults struct {
+	recipe           *settings.Snapshot
 	Level            string `json:"level,omitempty"`
 	TestsBeforeMerge string `json:"tests_before_merge"`
 	MergeAuthority   string `json:"merge_authority"`
@@ -100,45 +104,62 @@ type NodeSettingsSetRequest struct {
 // defaults with an empty Level: nothing says otherwise, so the conservative
 // middle applies. Only a set maturity is written into a node's text.
 func DefaultsForMaturity(value string) MaturityDefaults {
-	level, _, _ := ParseMaturity(strings.TrimSpace(value))
-	switch level {
-	case MaturityEarly:
-		return MaturityDefaults{Level: MaturityEarly, TestsBeforeMerge: TestsOptional, MergeAuthority: MergeFull,
-			WorkerSandbox: WorkersSandboxed, JudgeConsumers: JudgeFree, DeployRule: DeployBrief}
-	case MaturityMature:
-		return MaturityDefaults{Level: MaturityMature, TestsBeforeMerge: TestsSuiteNewTests, MergeAuthority: MergeDelegated,
-			WorkerSandbox: WorkersSandboxed, JudgeConsumers: JudgeStrict, DeployRule: DeployAsk}
-	case MaturityCritical:
-		return MaturityDefaults{Level: MaturityCritical, TestsBeforeMerge: TestsSuiteNewTestsReview, MergeAuthority: MergeAsk,
-			WorkerSandbox: WorkersNoNetwork, JudgeConsumers: JudgeEscalate, DeployRule: DeployOwner}
-	}
-	return MaturityDefaults{Level: level, TestsBeforeMerge: TestsSuite, MergeAuthority: MergeFull,
-		WorkerSandbox: WorkersSandboxed, JudgeConsumers: JudgeCharter, DeployRule: DeployBrief}
+	return nodeDefaults(value, nil, settings.Snapshot{}, "repo", false)
 }
 
-// NodeDefaults applies a node's overrides to its maturity defaults. A setting
-// or value that is not valid is ignored, so old or hand-written data cannot
-// widen a control by accident.
-func NodeDefaults(maturity string, settings map[string]string) MaturityDefaults {
-	d := DefaultsForMaturity(maturity)
-	for setting, value := range settings {
-		if ValidateNodeSetting(setting, value) != nil {
+// NodeDefaults resolves the recipe defaults and applies legacy node overrides.
+func NodeDefaults(maturity string, overrides map[string]string) MaturityDefaults {
+	return nodeDefaults(maturity, overrides, settings.Snapshot{}, "repo", false)
+}
+
+// NodeDefaultsWithSettings resolves the current snapshot for one node.
+func NodeDefaultsWithSettings(maturity string, overrides map[string]string, snap settings.Snapshot, repo string) MaturityDefaults {
+	return nodeDefaults(maturity, overrides, snap, repo, true)
+}
+
+func nodeDefaults(maturity string, overrides map[string]string, snap settings.Snapshot, repo string, carry bool) MaturityDefaults {
+	level, _, _ := ParseMaturity(strings.TrimSpace(maturity))
+	if repo == "" {
+		repo = "repo"
+	}
+	snap = snap.Clone()
+	if snap.Maturity == nil {
+		snap.Maturity = map[string]string{}
+	}
+	snap.Maturity[repo] = level
+	keys := map[string]string{SettingTestsBeforeMerge: "delivery.tests_before_merge", SettingMergeAuthority: "delivery.merge_authority", SettingJudgeConsumers: "charter.judge_consumers", SettingDeployRule: "delivery.deploy_rule"}
+	for old, key := range keys {
+		v := overrides[old]
+		if v == "" || ValidateNodeSetting(old, v) != nil {
 			continue
 		}
-		switch setting {
-		case SettingTestsBeforeMerge:
-			d.TestsBeforeMerge = value
-		case SettingMergeAuthority:
-			d.MergeAuthority = value
-		case SettingWorkerSandbox:
-			d.WorkerSandbox = value
-		case SettingJudgeConsumers:
-			d.JudgeConsumers = value
-		case SettingDeployRule:
-			d.DeployRule = value
+		// The graph remains the fallback for an older gateway. Once a settings
+		// snapshot exists, it is authoritative over the cached graph.
+		if carry && snap.Recipe != "" {
+			continue
 		}
+		b, _ := json.Marshal(v)
+		snap.Values = append(snap.Values, settings.Value{Key: key, Level: "repo", Scope: repo, Value: b})
+	}
+	where := settings.Where{Repo: repo}
+	d := MaturityDefaults{Level: level, TestsBeforeMerge: snap.String("delivery.tests_before_merge", where), MergeAuthority: snap.String("delivery.merge_authority", where), JudgeConsumers: snap.String("charter.judge_consumers", where), DeployRule: snap.String("delivery.deploy_rule", where), WorkerSandbox: WorkersSandboxed}
+	if level == MaturityCritical {
+		d.WorkerSandbox = WorkersNoNetwork
+	}
+	if v := overrides[SettingWorkerSandbox]; v != "" && ValidateNodeSetting(SettingWorkerSandbox, v) == nil {
+		d.WorkerSandbox = v
+	}
+	if carry {
+		d.recipe = &snap
 	}
 	return d
+}
+
+func (d MaturityDefaults) settingText(key string) string {
+	if d.recipe != nil {
+		return d.recipe.String(key, settings.Where{})
+	}
+	return (settings.Snapshot{}).String(key, settings.Where{})
 }
 
 // Apply is NodeDefaults for a value that already has its level parsed.
@@ -167,20 +188,13 @@ func NodeAutonomy(settings map[string]string) string {
 // it clears the override.
 func ValidateNodeSetting(setting, value string) error {
 	var allowed []string
-	switch setting {
-	case SettingTestsBeforeMerge:
-		allowed = []string{TestsOptional, TestsSuite, TestsSuiteNewTests, TestsSuiteNewTestsReview}
-	case SettingMergeAuthority:
-		allowed = []string{MergeFull, MergeDelegated, MergeAsk}
-	case SettingWorkerSandbox:
+	keys := map[string]string{SettingTestsBeforeMerge: "delivery.tests_before_merge", SettingMergeAuthority: "delivery.merge_authority", SettingJudgeConsumers: "charter.judge_consumers", SettingDeployRule: "delivery.deploy_rule", SettingAutonomy: "charter.autonomy_mode"}
+	if setting == SettingWorkerSandbox {
 		allowed = []string{WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly}
-	case SettingJudgeConsumers:
-		allowed = []string{JudgeFree, JudgeCharter, JudgeStrict, JudgeEscalate}
-	case SettingDeployRule:
-		allowed = []string{DeployBrief, DeployAsk, DeployOwner}
-	case SettingAutonomy:
-		allowed = []string{AutonomyOff, AutonomyWake}
-	default:
+	} else if key, ok := keys[setting]; ok {
+		d, _ := settings.DefinitionFor(key)
+		allowed = d.Values
+	} else {
 		return fmt.Errorf("unknown node setting")
 	}
 	if value == "" {
@@ -196,56 +210,76 @@ func ValidateNodeSetting(setting, value string) error {
 
 // TestText is the tests-before-merge rule in plain words.
 func (d MaturityDefaults) TestText() string {
-	switch d.TestsBeforeMerge {
-	case TestsOptional:
-		return "tests optional"
-	case TestsSuiteNewTests:
-		return "run the suite and add tests for new behavior"
-	case TestsSuiteNewTestsReview:
-		return "run the suite, add tests for new behavior and get a review"
+	testRule := d.TestsBeforeMerge
+	switch testRule {
+	case TestsOptional, TestsSuiteNewTests, TestsSuiteNewTestsReview:
+	default:
+		testRule = TestsSuite
 	}
-	return "run the suite"
+	suffix := strings.ReplaceAll(testRule, "-", "_")
+	return d.settingText("delivery.test_text_" + suffix)
 }
 
-// Merge rules are shared by charter context and delivery notes. Keep the TS
-// copies equal (the protocol tests compare them).
-const MergeFullText = "merge and push to the default branch"
-const MergeDelegatedText = "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node"
-const MergeAskText = "merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report)"
+// These exported values are retained for older callers; the recipe owns them.
+var (
+	MergeFullText      = (settings.Snapshot{}).String("delivery.merge_text_full", settings.Where{})
+	MergeDelegatedText = (MaturityDefaults{MergeAuthority: MergeDelegated}).MergeText()
+	MergeAskText       = (settings.Snapshot{}).String("delivery.merge_text_ask", settings.Where{})
+)
 
-// MergeText is the merge-authority rule in plain words.
+func MergeTextWithSettings(authority string, snap settings.Snapshot) string {
+	return (MaturityDefaults{MergeAuthority: authority, recipe: &snap}).MergeText()
+}
+
+func (d MaturityDefaults) approverModes() []string {
+	snap := settings.Snapshot{}
+	if d.recipe != nil {
+		snap = *d.recipe
+	}
+	modes := snap.Strings("delivery.delegated_approver_modes", settings.Where{})
+	ordered := make([]string, 0, len(modes))
+	for _, preferred := range []string{"owner", "arbiter"} {
+		for _, mode := range modes {
+			if mode == preferred {
+				ordered = append(ordered, mode)
+			}
+		}
+	}
+	for _, mode := range modes {
+		if mode != "owner" && mode != "arbiter" {
+			ordered = append(ordered, mode)
+		}
+	}
+	return ordered
+}
+func (d MaturityDefaults) approverModesText() string {
+	modes := d.approverModes()
+	if len(modes) == 0 {
+		return "none"
+	}
+	return strings.Join(modes, " or ")
+}
 func (d MaturityDefaults) MergeText() string {
-	switch d.MergeAuthority {
-	case MergeDelegated:
-		return MergeDelegatedText
-	case MergeAsk:
-		return MergeAskText
+	authority := d.MergeAuthority
+	if authority != MergeDelegated && authority != MergeAsk {
+		authority = MergeFull
 	}
-	return MergeFullText
+	text := d.settingText("delivery.merge_text_" + authority)
+	return strings.ReplaceAll(text, "{{modes}}", d.approverModesText())
 }
-
-// DeployText is the deploy rule in plain words.
 func (d MaturityDefaults) DeployText() string {
-	switch d.DeployRule {
-	case DeployAsk:
-		return "ask before deploying"
-	case DeployOwner:
-		return "ask the owner before deploying (request written approval for the exact action with agent_owner_ask and kind approval, or put it and your recommendation in a Codex worker report)"
+	rule := d.DeployRule
+	if rule != DeployAsk && rule != DeployOwner {
+		rule = DeployBrief
 	}
-	return "deploy as the brief says"
+	return d.settingText("delivery.deploy_text_" + rule)
 }
-
-// ConsumerText is how strictly the node judges requests from its consumers.
 func (d MaturityDefaults) ConsumerText() string {
-	switch d.JudgeConsumers {
-	case JudgeFree:
-		return "accept requests from consumers freely"
-	case JudgeStrict:
-		return "judge requests from consumers strictly"
-	case JudgeEscalate:
-		return "escalate changes requested by consumers to the owner"
+	rule := d.JudgeConsumers
+	if rule != JudgeFree && rule != JudgeStrict && rule != JudgeEscalate {
+		rule = JudgeCharter
 	}
-	return "judge requests from consumers by the charter"
+	return d.settingText("charter.consumer_text_" + rule)
 }
 
 // RulesText is the short sentence a session of the node gets every turn and a
@@ -275,6 +309,9 @@ type MergeApproval struct {
 // and overrides. The delegates of a delegated node are the architects with an
 // owner or arbiter edge over it.
 func MergeApprovalFor(g Graph, node string) MergeApproval {
+	return MergeApprovalForWithSettings(g, node, settings.Snapshot{})
+}
+func MergeApprovalForWithSettings(g Graph, node string, snap settings.Snapshot) MergeApproval {
 	var n *Node
 	for i := range g.Nodes {
 		if g.Nodes[i].Name == node {
@@ -282,17 +319,27 @@ func MergeApprovalFor(g Graph, node string) MergeApproval {
 			break
 		}
 	}
+	var d MaturityDefaults
 	if n == nil {
-		return MergeApproval{Text: "no node in the graph: ask the owner before merging"}
+		d = NodeDefaultsWithSettings("", nil, snap, "")
+		d.MergeAuthority = snap.String("delivery.merge_authority", settings.Where{})
+	} else {
+		d = NodeDefaultsWithSettings(n.Charter.Maturity, n.Settings, snap, node)
 	}
-	d := NodeDefaults(n.Charter.Maturity, n.Settings)
 	out := MergeApproval{Authority: d.MergeAuthority}
 	switch d.MergeAuthority {
 	case MergeDelegated:
 		out.Required = true
 		out.Approvers = []string{"the owner"}
+		modes := d.approverModes()
 		for _, e := range g.Edges {
-			if e.Kind == "governs" && e.To == node && (e.Mode == "owner" || e.Mode == "arbiter") {
+			allowed := false
+			for _, mode := range modes {
+				if e.Mode == mode {
+					allowed = true
+				}
+			}
+			if e.Kind == "governs" && e.To == node && allowed {
 				out.Approvers = append(out.Approvers, e.From)
 			}
 		}
@@ -300,7 +347,7 @@ func MergeApprovalFor(g Graph, node string) MergeApproval {
 		if len(out.Approvers) > 1 {
 			out.Text += " (delegates: " + strings.Join(out.Approvers[1:], ", ") + ")"
 		} else {
-			out.Text += " (an architect with mode owner or arbiter over the node)"
+			out.Text += " (an architect with mode " + d.approverModesText() + " over the node)"
 		}
 	case MergeAsk:
 		out.Required = true

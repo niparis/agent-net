@@ -1917,12 +1917,14 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	// The relation from the sender's node to the recipient's node is graph
 	// data, computed here and never set by a sender (decision 0022).
 	m.RecipientRelation = g.relationForDelivery(m)
-	authority, err := g.store.MergeAuthorityForSession(m.To)
+	authority, rule, err := g.store.MergeRuleForSession(m.To)
 	if err != nil {
 		g.logLine("error", "where", "recipient merge authority", "err", err)
 		return
 	}
 	m.RecipientMergeAuthority = authority
+	m.RecipientMergeText = rule
+	m.RecipientMergeTextSet = true
 	frame, err := protocol.EncodeRequest("msg.deliver", protocol.NewID("d"), protocol.MsgDeliver{Message: m})
 	if err != nil {
 		return

@@ -23,7 +23,7 @@ func TestCTOGraphClass(t *testing.T) {
 		{"node_add", `{"name":"advisor"}`, "minor"},
 		{"node_remove", `{"name":"ops"}`, "major"},
 		{"node_settings_set", `{"node":"app","setting":"requests","value":"auto"}`, "major"},
-		{"node_settings_set", `{"node":"app","setting":"autonomy","value":"wake"}`, "major"},
+		{"node_settings_set", `{"node":"app","setting":"autonomy","value":"wake"}`, "rule"},
 		{"edge_set", `{"from":"app","to":"ops","kind":"depends"}`, "minor"},
 		{"edge_remove", `{"from":"app","to":"ops","kind":"depends"}`, "minor"},
 		{"edge_set", `{"from":"app","to":"ops","kind":"governs","mode":"owner"}`, "major"},

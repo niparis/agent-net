@@ -139,7 +139,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 		return err
 	}
 	// Node settings go with the node too.
-	rows, err = tx.Query(`SELECT setting,value FROM graph_node_settings WHERE node=?`, name)
+	rows, err = tx.Query(`SELECT setting,value FROM graph_node_settings WHERE node=? AND setting='worker_sandbox'`, name)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,11 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 			return err
 		}
 	}
-	if _, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=?`, name); err != nil {
+	if _, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=? AND setting='worker_sandbox'`, name); err != nil {
+		return err
+	}
+	settingsChanged, err := s.removeRepoSettingsTx(tx, name, actor)
+	if err != nil {
 		return err
 	}
 	if _, err = tx.Exec(`DELETE FROM graph_nodes WHERE name=?`, name); err != nil {
@@ -175,8 +179,10 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	for _, a := range attributes {
 		if a[0] == "maturity" {
 			maturityChanged = true
-			if err = bumpSettingsRevision(tx); err != nil {
-				return err
+			if !settingsChanged {
+				if err = bumpSettingsRevision(tx); err != nil {
+					return err
+				}
 			}
 			break
 		}
@@ -187,7 +193,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	if maturityChanged {
+	if maturityChanged || settingsChanged {
 		s.settingsNotify()
 	}
 	return nil
@@ -277,6 +283,36 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 	if _, err = graphKind(tx, node); err != nil {
 		return err
 	}
+	if key, moved := deliveryNodeKeys[setting]; moved {
+		var prior sql.NullString
+		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, key, node).Scan(&prior)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		change := SettingsChange{Key: key, Level: "repo", Scope: node}
+		if prior.Valid {
+			change.Expect = json.RawMessage(prior.String)
+		}
+		if value == "" {
+			change.Delete = true
+		} else {
+			change.Value, _ = json.Marshal(value)
+		}
+		result, err := s.writeSettingsTx(tx, []SettingsChange{change}, actor, "node settings adapter", "write", nil)
+		if err != nil {
+			return err
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+		if result.changed {
+			s.settingsNotify()
+		}
+		return nil
+	}
 	var old string
 	err = tx.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`, node, setting).Scan(&old)
 	if err != nil && err != sql.ErrNoRows {
@@ -322,8 +358,13 @@ func (s *Store) NodeSettings(node string) (protocol.NodeSettingsResult, error) {
 	if !found {
 		return out, reject("unknown node %q", node)
 	}
-	if n.Settings != nil {
-		out.Overrides = n.Settings
+	explicit, err := s.nodeExplicitSettings(node)
+	if err != nil {
+		return out, err
+	}
+	out.Overrides = explicit
+	if sandbox := n.Settings[protocol.SettingWorkerSandbox]; sandbox != "" {
+		out.Overrides[protocol.SettingWorkerSandbox] = sandbox
 	}
 	out.Maturity = n.Charter.Maturity
 	out.Defaults = protocol.DefaultsForMaturity(n.Charter.Maturity)
@@ -439,6 +480,9 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			_, err = tx.Exec(`INSERT INTO graph_charter VALUES(?,?,?,?,?) ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, old, now, actor)
 		}
 	case "setting":
+		if _, moved := deliveryNodeKeys[attr]; moved {
+			return reject("%s moved to settings; use settings history to undo", attr)
+		}
 		var current string
 		err = tx.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`, node, attr).Scan(&current)
 		if err != nil && err != sql.ErrNoRows {
@@ -504,7 +548,7 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		}
 		if old == "" {
 			var n int
-			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM graph_node_settings WHERE node=?)`, node, node, node, node).Scan(&n); err != nil {
+			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM graph_node_settings WHERE node=? AND setting='worker_sandbox') + (SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?)`, node, node, node, node, node).Scan(&n); err != nil {
 				return err
 			}
 			if n != 0 {
@@ -731,7 +775,7 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
-	rows, err = s.db.Query(`SELECT node,setting,value FROM graph_node_settings`)
+	rows, err = s.db.Query(`SELECT node,setting,value FROM graph_node_settings WHERE setting='worker_sandbox'`)
 	if err != nil {
 		return g, err
 	}
@@ -752,6 +796,39 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	rows.Close()
 	if err != nil {
 		return g, err
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return g, err
+	}
+	for _, v := range snap.Values {
+		if v.Level != "repo" || v.Item != "" {
+			continue
+		}
+		n := byName[v.Scope]
+		if n == nil {
+			continue
+		}
+		for old, key := range deliveryNodeKeys {
+			if key != v.Key {
+				continue
+			}
+			var value string
+			if json.Unmarshal(v.Value, &value) != nil || protocol.ValidateNodeSetting(old, value) != nil {
+				continue
+			}
+			if n.Settings == nil {
+				n.Settings = map[string]string{}
+			}
+			n.Settings[old] = value
+		}
+	}
+	for i := range g.Nodes {
+		n := &g.Nodes[i]
+		n.Settings = nodeEffectiveSettings(snap, n.Name, n.Charter.Maturity, n.Settings)
+		if len(n.Settings) == 0 {
+			n.Settings = nil
+		}
 	}
 	// The owner's delegation policies are rules agents follow, so the public
 	// read shows them read-only. They are stored per machine and project.

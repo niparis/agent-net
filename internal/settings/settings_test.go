@@ -1,4 +1,4 @@
-package settings
+package settings_test
 
 import (
 	"encoding/json"
@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	. "github.com/niparis/agent-net/internal/settings"
 	"go.yaml.in/yaml/v3"
 )
 
 func raw(s string) json.RawMessage { return json.RawMessage(s) }
 func TestStandardAndParity(t *testing.T) {
 	r := Standard()
-	if len(r.Ledger) != 149 || len(r.Definitions) != 20 {
+	if len(r.Ledger) != 149 || len(r.Definitions) < 24 {
 		t.Fatalf("ledger/definitions: %d/%d", len(r.Ledger), len(r.Definitions))
 	}
 	for _, m := range []string{"", "unknown", "early", "growing", "mature", "critical", "critical - "} {
@@ -147,6 +148,25 @@ func TestGuidanceDefinitions(t *testing.T) {
 	for _, replacement := range []string{"{{unknown}}", "no slot"} {
 		if _, err := Load([]byte(strings.Replace(base, "{{reply}}", replacement, 1))); err == nil {
 			t.Fatalf("accepted %q", replacement)
+		}
+	}
+}
+
+func TestDeliverySafetyValues(t *testing.T) {
+	for key, values := range map[string][]string{
+		"delivery.worker_branch_prefix": {`"../"`, `"bad//"`, `"-bad/"`},
+		"delivery.trailer_worker":       {`"$(command)"`, `"a b"`},
+		"delivery.cleanup_interval":     {`"0s"`, `"-1m"`},
+	} {
+		def, ok := Standard().Definition(key)
+		if !ok {
+			t.Errorf("missing %s", key)
+			continue
+		}
+		for _, value := range values {
+			if _, err := def.Codec(raw(value)); err == nil {
+				t.Errorf("%s accepted %s", key, value)
+			}
 		}
 	}
 }
