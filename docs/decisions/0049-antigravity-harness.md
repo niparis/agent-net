@@ -1,7 +1,7 @@
 # 0049 - Antigravity as a full harness
 
 **Date:** 2026-11-03
-**Status:** Proposed; plan only, nothing built
+**Status:** Steps 2 to 5 and Enter in step 6 implemented; real interactive hook validation remains open.
 **Context:** [0012](0012-codex-peers.md) (how Codex became a peer), [0048](0048-skills-on-off-per-project.md) (skills already reach Antigravity), [0046](0046-open-sessions-in-herdr.md) (herdr).
 
 ## Goal

@@ -27,19 +27,20 @@ type roMessagesFindIn struct {
 }
 
 type roMessageRow struct {
-	ID           string           `json:"id"`
-	Conversation string           `json:"conversation"`
-	From         roSessionRefType `json:"from"`
-	To           roSessionRefType `json:"to"`
-	Type         string           `json:"type"`
-	State        string           `json:"state"`
-	Time         string           `json:"time"`
-	Ago          string           `json:"ago,omitempty"`
-	Text         string           `json:"text"`
-	Truncated    bool             `json:"truncated"`
-	Outcome      string           `json:"outcome,omitempty"`
-	Reason       string           `json:"reason,omitempty"`
-	key          string
+	ID             string           `json:"id"`
+	Conversation   string           `json:"conversation"`
+	From           roSessionRefType `json:"from"`
+	To             roSessionRefType `json:"to"`
+	Type           string           `json:"type"`
+	State          string           `json:"state"`
+	DeliveryDetail string           `json:"delivery_detail,omitempty"`
+	Time           string           `json:"time"`
+	Ago            string           `json:"ago,omitempty"`
+	Text           string           `json:"text"`
+	Truncated      bool             `json:"truncated"`
+	Outcome        string           `json:"outcome,omitempty"`
+	Reason         string           `json:"reason,omitempty"`
+	key            string
 }
 
 type roMessagesFindOut struct {
@@ -52,19 +53,20 @@ type roMessagesFindOut struct {
 // roMessageDetail is the message_get row. The output schema requires the
 // outcome and reason fields even when they are empty.
 type roMessageDetail struct {
-	ID           string           `json:"id"`
-	Conversation string           `json:"conversation"`
-	From         roSessionRefType `json:"from"`
-	To           roSessionRefType `json:"to"`
-	Type         string           `json:"type"`
-	State        string           `json:"state"`
-	Time         string           `json:"time"`
-	Ago          string           `json:"ago,omitempty"`
-	Text         string           `json:"text"`
-	Truncated    bool             `json:"truncated"`
-	Body         string           `json:"body"`
-	Outcome      string           `json:"outcome"`
-	Reason       string           `json:"reason"`
+	ID             string           `json:"id"`
+	Conversation   string           `json:"conversation"`
+	From           roSessionRefType `json:"from"`
+	To             roSessionRefType `json:"to"`
+	Type           string           `json:"type"`
+	State          string           `json:"state"`
+	DeliveryDetail string           `json:"delivery_detail,omitempty"`
+	Time           string           `json:"time"`
+	Ago            string           `json:"ago,omitempty"`
+	Text           string           `json:"text"`
+	Truncated      bool             `json:"truncated"`
+	Body           string           `json:"body"`
+	Outcome        string           `json:"outcome"`
+	Reason         string           `json:"reason"`
 }
 
 type roMessageGetIn struct {
@@ -150,7 +152,7 @@ func roFindMessages(ctx context.Context, call Caller, in roMessagesFindIn) (roMe
 			ID: message.ID, Conversation: message.ConversationID,
 			From: roSessionRef(message.From, roName(names, message.From, message.FromName)),
 			To:   roSessionRef(message.To, roName(names, message.To, "")),
-			Type: message.Type, State: message.State,
+			Type: message.Type, State: message.State, DeliveryDetail: message.DeliveryDetail,
 			Time: roTimeText(message.CreatedAt), Ago: roAgoText(message.CreatedAt),
 			Text: text, Truncated: truncated,
 			key: fmt.Sprintf("%020d|%s", message.CreatedAt.UnixNano(), message.ID),
@@ -278,7 +280,7 @@ func roGetMessage(ctx context.Context, call Caller, in roMessageGetIn) (roMessag
 			ID: message.ID, Conversation: message.ConversationID,
 			From: roSessionRef(message.From, roName(names, message.From, message.FromName)),
 			To:   roSessionRef(message.To, roName(names, message.To, "")),
-			Type: message.Type, State: message.State,
+			Type: message.Type, State: message.State, DeliveryDetail: message.DeliveryDetail,
 			Time: roTimeText(message.CreatedAt), Ago: roAgoText(message.CreatedAt),
 			Text: text, Truncated: truncated, Body: chunk,
 		},

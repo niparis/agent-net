@@ -1,7 +1,6 @@
 # Antigravity (agy)
 
-Antigravity is Google's CLI, called `agy` on the command line. It is part of
-the plan in [decision 0049](decisions/0049-antigravity-harness.md).
+Antigravity is Google's CLI, called `agy` on the command line. Its integration is described in [decision 0049](decisions/0049-antigravity-harness.md).
 
 ## What works so far
 
@@ -26,10 +25,39 @@ the plan in [decision 0049](decisions/0049-antigravity-harness.md).
 - **Display.** `agent-net nodes --wide` shows the agy row with its version, its
   models and its sign-in state.
 
-## What does not work yet
+## Main sessions
 
-- Antigravity as a main session (step 5): discovery and message delivery. The MCP conversation ID of an interactive session is passed to the daemon but not yet bound to a session.
-- Opening an agy session in herdr (step 6).
+An interactive `agy` started by the owner appears in Sessions and Graph after
+its SessionStart hook reports its conversation. The daemon checks the hook's
+process ancestry and working folder, and removes the session when that process
+ends. It reads the local conversation summaries database for a title and to
+exclude conversations with a parent. Worker conversations are not main
+sessions. A session started before the plugin was enabled must be restarted to
+be discovered. The daemon keeps start hooks in memory, so an existing session
+needs a new SessionStart hook after a daemon restart. If the summaries database or its parent column is unavailable,
+agy does not provide enough information to identify sub-conversations from it.
+
+The agent-net MCP tools bind a conversation only when its ID is discovered and
+the MCP process descends from the matching agy process. The session can then
+send messages as itself. If the check does not match, the connection remains
+unbound and cannot send as a session.
+
+Messages to a busy session wait for its next Stop hook, which returns the
+message to agy as a continuation. A PreInvocation hook can also inject a
+waiting message as a user message. When idle in herdr, agent-net sends the
+framed message as text to the matching pane and presses Enter. Messages with terminal control characters also wait for a hook. Otherwise the
+message waits for the next hook. Its status says "waiting for the session's
+next turn" until delivery. Waiting messages remain at the gateway while the
+daemon reconnects; messages expire under the normal message expiry rules.
+The hook path depends on agy running the installed plugin, and an idle session
+outside herdr must have another turn before it receives a waiting message.
+
+Enter opens `agy --conversation <id>` in the session folder or focuses its
+existing herdr pane. In herdr it opens beside the TUI; from a plain terminal on
+the same machine it uses the TUI terminal and ctrl+] returns. For a remote
+session a local herdr client opens the remote herdr when available. The
+new-session form does not offer agy; start an interactive session in its own
+terminal first.
 
 The vendor in an agy model id is used for display: `gemini` to Google,
 `claude` to Anthropic and `gpt` to OpenAI. A Claude model through agy draws on

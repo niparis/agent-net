@@ -286,3 +286,29 @@ func TestMessagesPageTotalAndOffset(t *testing.T) {
 		t.Fatalf("second: %v %d %v", second, total, err)
 	}
 }
+
+func TestAgyWaitingDeliveryState(t *testing.T) {
+	s, _ := newTestStore(t)
+	from, to := twoSessions(t, s)
+	m, _, err := send(s, from, to, "wait-key", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ApplyDelivery(m.ID, protocol.StateDispatched, "waiting for the session's next turn"); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Message(m.ID)
+	if err != nil || got.State != protocol.StateDispatched || got.DeliveryDetail != "waiting for the session's next turn" {
+		t.Fatalf("waiting: %+v %v", got, err)
+	}
+	if err = s.ApplyDelivery(m.ID, protocol.StateDelivered, "hook"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ApplyDelivery(m.ID, protocol.StateDispatched, "late waiting"); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = s.Message(m.ID)
+	if got.State != protocol.StateDelivered || got.DeliveryDetail != "hook" {
+		t.Fatalf("late update: %+v", got)
+	}
+}
