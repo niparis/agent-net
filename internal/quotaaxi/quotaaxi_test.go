@@ -2,9 +2,12 @@ package quotaaxi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -372,8 +375,95 @@ func TestExecEnvFindsCompatibleNVMNode(t *testing.T) {
 	}
 	fakeNode(t, nvm, "22.19.0")
 	env := ExecEnv(filepath.Join(quotaDir, "quota-axi"))
-	if !strings.Contains(strings.Join(env, "\n"), "PATH="+nvm+string(os.PathListSeparator)) {
-		t.Fatal("compatible Node was not prepended to PATH")
+	if !strings.Contains(strings.Join(env, "\n"), "PATH="+quotaDir+string(os.PathListSeparator)+nvm+string(os.PathListSeparator)) {
+		t.Fatal("the quota-axi folder and its compatible Node are not first on PATH")
+	}
+}
+
+// fakeQuotaEnv writes a quota-axi that prints the PATH, HOME and USER it
+// received as JSON.
+func fakeQuotaEnv(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "quota-axi")
+	body := "#!/bin/sh\nprintf '{\"path\":\"%s\",\"home\":\"%s\",\"user\":\"%s\"}\\n' \"$PATH\" \"$HOME\" \"$USER\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+type quotaEnv struct {
+	Path string `json:"path"`
+	Home string `json:"home"`
+	User string `json:"user"`
+}
+
+func runFakeQuotaEnv(t *testing.T, path string) quotaEnv {
+	t.Helper()
+	cmd := exec.Command(path)
+	cmd.Env = ExecEnv(path)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env quotaEnv
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("fake quota-axi output %q: %v", out, err)
+	}
+	return env
+}
+
+func TestExecEnvUsesHarnessSearchPathAndFillsUserIdentity(t *testing.T) {
+	home := t.TempDir()
+	oldHome := homeDir
+	homeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { homeDir = oldHome })
+	saved := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = saved })
+
+	t.Setenv("HOME", "")
+	t.Setenv("USER", "")
+	t.Setenv("PATH", t.TempDir())
+	fakeLoginPath(t, "/usr/bin:/bin")
+
+	dir := t.TempDir()
+	fakeNode(t, dir, "22.19.0")
+	path := fakeQuotaEnv(t, dir)
+	got := runFakeQuotaEnv(t, path)
+
+	if want := filepath.Join(home, ".local", "bin"); !strings.Contains(got.Path, want) {
+		t.Errorf("quota-axi PATH %q does not contain %q", got.Path, want)
+	}
+	if !strings.Contains(got.Path, "/opt/homebrew/bin") {
+		t.Errorf("quota-axi PATH %q does not contain /opt/homebrew/bin", got.Path)
+	}
+	if !strings.HasPrefix(got.Path, dir+string(os.PathListSeparator)) {
+		t.Errorf("the quota-axi folder is not first on PATH: %q", got.Path)
+	}
+	if got.Home != home {
+		t.Errorf("HOME: %q, want %q", got.Home, home)
+	}
+	current, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.User != current.Username {
+		t.Errorf("USER: %q, want %q", got.User, current.Username)
+	}
+}
+
+func TestExecEnvKeepsAnExistingHome(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "owner-home")
+	t.Setenv("HOME", existing)
+	t.Setenv("USER", "")
+	t.Setenv("PATH", t.TempDir())
+	fakeLoginPath(t, "/usr/bin:/bin")
+	fakeNode(t, dir, "22.19.0")
+	got := runFakeQuotaEnv(t, fakeQuotaEnv(t, dir))
+	if got.Home != existing {
+		t.Errorf("HOME: %q, want the existing %q", got.Home, existing)
 	}
 }
 

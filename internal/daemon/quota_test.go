@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -155,6 +156,45 @@ func TestRunQuotaAXIReceivesOpenCodeAuthEnvironment(t *testing.T) {
 	}, "\n")
 	if string(raw) != want {
 		t.Fatalf("quota-axi environment:\n%s\nwant:\n%s", raw, want)
+	}
+}
+
+func TestRunQuotaAXIUsesTheHarnessSearchPathAndUserIdentity(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("USER", "")
+	t.Setenv("PATH", t.TempDir())
+	if err := os.WriteFile(filepath.Join(dir, "node"), []byte("#!/bin/sh\necho v22.19.0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "quota-axi")
+	body := "#!/bin/sh\nprintf '{\"path\":\"%s\",\"home\":\"%s\",\"user\":\"%s\"}\\n' \"$PATH\" \"$HOME\" \"$USER\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, _, err := runQuotaAXI(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Path string `json:"path"`
+		Home string `json:"home"`
+		User string `json:"user"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("fake quota-axi output %q: %v", raw, err)
+	}
+	for _, want := range []string{filepath.Join(home, ".local", "bin"), "/opt/homebrew/bin"} {
+		if !strings.Contains(got.Path, want) {
+			t.Errorf("quota-axi PATH %q does not contain %q", got.Path, want)
+		}
+	}
+	if got.Home != home {
+		t.Errorf("HOME: %q, want %q", got.Home, home)
+	}
+	if got.User == "" {
+		t.Error("USER is empty")
 	}
 }
 

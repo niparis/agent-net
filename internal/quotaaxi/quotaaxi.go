@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -26,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/loginpath"
 )
 
@@ -549,21 +551,98 @@ func SetSystemNodeDirsForTesting(dirs []string) func() {
 }
 
 // NodeExecEnv finds a supported Node for quota-axi without requiring npm.
+//
+// The child gets the same search path the daemon uses to find the agent
+// harnesses, so the programs quota-axi runs (for example agy in ~/.local/bin)
+// are found. HOME and USER are filled in when the service environment lacks
+// them, because quota-axi uses both in its cache key.
 func NodeExecEnv(path string) ([]string, error) {
 	env := os.Environ()
+	loginPath := loginpath.Path()
 	dirs := append([]string{filepath.Dir(path)}, nvmBins()...)
 	dirs = append(dirs, systemNodeDirs...)
-	dirs = append(dirs, filepath.SplitList(loginpath.Path())...)
+	dirs = append(dirs, filepath.SplitList(loginPath)...)
 	if node, err := exec.LookPath("node"); err == nil {
 		dirs = append(dirs, filepath.Dir(node))
 	}
 	for _, dir := range dirs {
 		node := filepath.Join(dir, "node")
 		if usable(node) && nodeVersionOK(node) {
-			return prependPath(env, dir), nil
+			return setEnv(fillUserEnv(env), "PATH", quotaAXIPath(path, dir, loginPath)), nil
 		}
 	}
 	return nil, ErrNeedNode
+}
+
+// envHome is the owner's home folder, from the process environment when it is
+// there and from the user database otherwise.
+func envHome() string {
+	if h, err := homeDir(); err == nil && h != "" {
+		return h
+	}
+	if u, err := user.Current(); err == nil {
+		return u.HomeDir
+	}
+	return ""
+}
+
+// fillUserEnv sets HOME and USER when the service environment lacks them.
+func fillUserEnv(env []string) []string {
+	if !envHas(env, "HOME") {
+		env = setEnv(env, "HOME", envHome())
+	}
+	if !envHas(env, "USER") {
+		if u, err := user.Current(); err == nil && u.Username != "" {
+			env = setEnv(env, "USER", u.Username)
+		}
+	}
+	return env
+}
+
+// envHas reports whether key has a non-empty value in env.
+func envHas(env []string, key string) bool {
+	prefix := key + "="
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			return len(kv) > len(prefix)
+		}
+	}
+	return false
+}
+
+// setEnv replaces key in env, or appends it.
+func setEnv(env []string, key, value string) []string {
+	if value == "" {
+		return env
+	}
+	prefix := key + "="
+	for i, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
+}
+
+// quotaAXIPath is the PATH quota-axi runs with: its own folder and its Node
+// folder first, then the folder list the daemon searches for the agent
+// harnesses, then the login shell's PATH.
+func quotaAXIPath(quotaPath, nodeDir, loginPath string) string {
+	dirs := []string{filepath.Dir(quotaPath), nodeDir}
+	dirs = append(dirs, filepath.SplitList(os.Getenv("PATH"))...)
+	dirs = append(dirs, harnesses.DefaultDirs(envHome())...)
+	dirs = append(dirs, filepath.SplitList(loginPath)...)
+	seen := map[string]bool{}
+	out := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		if dir == "" || dir == "." || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		out = append(out, dir)
+	}
+	return strings.Join(out, string(os.PathListSeparator))
 }
 
 // ServiceEnvironment returns the non-secret path settings that the daemon's
