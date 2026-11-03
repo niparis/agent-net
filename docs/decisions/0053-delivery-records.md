@@ -41,3 +41,12 @@ later gateway push; uncertainty does not otherwise authorize a retry.
 
 W4.2 will add retry scheduling with backoff. W4.3 will add final failure and
 expiry notices to the sender. Neither is part of this decision's implementation.
+
+## W4.2 update (2026-11-03)
+
+The gateway stores retry counts and due times separately from delivery records.
+It retries an allowlist of known temporary failures at 30 seconds, 2 minutes,
+10 minutes, and every 30 minutes until expiry. Unknown failures and details
+saying the message may have arrived are not retried. Success and expiry clear
+the schedule. Held requests keep their existing path. W4.3 remains responsible
+for final failure and expiry notices.

@@ -508,6 +508,7 @@ The gateway enforces these on every send:
 | Messages in one conversation | 50 |
 | Reply depth ("hops") | 8 |
 | Message lifetime | 24 hours, then `expired` |
+| Delivery retries | Known temporary failures: 30 seconds, 2 minutes, 10 minutes, then every 30 minutes until expiry; uncertain writes are never retried |
 
 A repeated send with the same idempotency key stores nothing new.
 

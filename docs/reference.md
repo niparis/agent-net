@@ -637,8 +637,12 @@ restart. OpenCode queued worker turns become delivered only after the plugin ack
 Pi's first worker task can be pushed once more within the same delivery if its
 turn-start ack is missing. The extension remembers its last 200 accepted message
 IDs, skips another injection and repeats the ack after the turn has started.
-A known failure may be attempted on a later gateway push. Automatic retry with
-backoff and final sender notices are separate work.
+The gateway retries known temporary failures, such as an offline session or a
+lost plugin connection, after 30 seconds, 2 minutes, 10 minutes, and then every
+30 minutes until expiry. The schedule survives a gateway restart. Status shows
+when a retry is scheduled. A success clears the schedule. Owner-only and policy
+refusals, unknown errors, and failures saying the message may have arrived are
+not retried. Final sender notices are separate work.
 
 ## Housekeeping
 

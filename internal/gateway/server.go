@@ -308,6 +308,7 @@ func (g *Gateway) Close() error {
 
 // RunExpiry expires overdue messages once a minute until ctx ends.
 func (g *Gateway) RunExpiry(ctx context.Context) {
+	go g.RunRetries(ctx)
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	appsCleanup := time.NewTicker(10 * time.Minute)
@@ -1892,6 +1893,18 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	if err != nil {
 		return
 	}
+	// Claim a due retry atomically, so concurrent ticks cannot resend it.
+	if m.State == protocol.StateFailed {
+		res, err := g.store.db.Exec(`UPDATE messages SET state='dispatched' WHERE id=? AND state='failed' AND expires_at>? AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id AND next_at<=?)`, m.ID, g.store.now().UnixNano(), g.store.now().UnixNano())
+		if err != nil {
+			g.logLine("error", "where", "claim retry", "err", err)
+			return
+		}
+		n, err := res.RowsAffected()
+		if err != nil || n != 1 {
+			return
+		}
+	}
 	// Mark the message before the write. The node can answer "delivered" as soon
 	// as it has the frame, and a message that is already delivered can no
 	// longer be marked dispatched.
@@ -1899,7 +1912,11 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 		g.logLine("error", "where", "mark dispatched", "err", err)
 	}
 	if err := nc.write(ctx, frame); err != nil {
-		g.store.UnmarkDispatched(m.ID)
+		if m.State == protocol.StateFailed {
+			_, _ = g.store.db.Exec(`UPDATE messages SET state='failed' WHERE id=? AND state='dispatched'`, m.ID)
+		} else {
+			g.store.UnmarkDispatched(m.ID)
+		}
 	}
 }
 

@@ -604,6 +604,8 @@ SELECT 1 /* worker picker note */;
 -- show the caller after the worker session is cleaned. Old rows read empty and
 -- fall back to the worker record of their session while it still exists.
 SELECT 1 /* worker caller column */;
+`, `
+CREATE TABLE IF NOT EXISTS delivery_retries (message_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL, next_at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1911,7 +1913,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 // ---- messages ----
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
-	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),''),
+	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
 	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),'')
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
@@ -2144,6 +2146,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			protocol.StateReplied, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
 			return msg, false, err
 		}
+		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
+			return msg, false, err
+		}
 	}
 	detail := strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " ")
 	if m.FromCTO {
@@ -2274,6 +2279,26 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 	if err != nil {
 		return err
 	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 1 {
+		if state == protocol.StateFailed && retryableFailure(detail) {
+			var attempts int
+			err = tx.QueryRow(`SELECT attempts FROM delivery_retries WHERE message_id=?`, id).Scan(&attempts)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			attempts++
+			_, err = tx.Exec(`INSERT INTO delivery_retries(message_id,attempts,next_at) VALUES(?,?,?) ON CONFLICT(message_id) DO UPDATE SET attempts=excluded.attempts,next_at=excluded.next_at`, id, attempts, now+int64(retryDelay(attempts)))
+		} else if state != protocol.StateDispatched {
+			_, err = tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, id)
+		}
+		if err != nil {
+			return err
+		}
+	}
 	if state == protocol.StateDelivered {
 		if err = s.learnDelivery(tx, id, now); err != nil {
 			return err
@@ -2296,7 +2321,7 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 // Expire marks overdue undelivered messages expired and returns how many.
 func (s *Store) Expire() (int, error) {
 	now := s.now().UnixNano()
-	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched','held') AND expires_at <= ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored')`, now)
+	rows, err := s.db.Query(`SELECT id FROM messages WHERE (state IN ('stored','dispatched','held') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at <= ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored')`, now)
 	if err != nil {
 		return 0, err
 	}
@@ -2749,12 +2774,15 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND state IN ('stored','dispatched','held') AND expires_at<=?`, id, now)
+	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND (state IN ('stored','dispatched','held') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at<=?`, id, now)
 	if err != nil {
 		return false, err
 	}
 	count, err := res.RowsAffected()
 	if err != nil || count == 0 {
+		return false, err
+	}
+	if _, err = tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, id); err != nil {
 		return false, err
 	}
 	if m.State == protocol.StateHeld {
