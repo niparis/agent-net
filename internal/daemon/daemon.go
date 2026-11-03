@@ -144,6 +144,8 @@ type Config struct {
 	// HarnessInterval is how often DetectHarnesses runs after the first time.
 	// Default: 6 hours.
 	HarnessInterval time.Duration
+	// HarnessRetryDelay is the initial delay after an empty model probe.
+	HarnessRetryDelay time.Duration
 	// UsageSampler measures CPU and memory (see usage.go). Nil turns that off.
 	UsageSampler *usage.Sampler
 	// LoadProbe replaces the machine load that worker admission reads from
@@ -393,6 +395,9 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	if cfg.HarnessInterval == 0 {
 		cfg.HarnessInterval = 6 * time.Hour
+	}
+	if cfg.HarnessRetryDelay <= 0 {
+		cfg.HarnessRetryDelay = time.Minute
 	}
 	st, err := openState(cfg.StateDir)
 	if err != nil {
