@@ -1638,14 +1638,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "inbox.answer":
 		var p struct {
-			ID     string `json:"id"`
+			ID     string `json:"item_id"`
 			Answer string `json:"answer"`
 		}
-		if json.Unmarshal(raw, &p) != nil {
+		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
+			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
 			return nil, reject("bad inbox.answer")
 		}
 		item, err := st.AnswerInbox(p.ID, p.Answer)
 		if err != nil {
+			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err
 		}
 		node, err := st.SessionNode(item.SessionID)

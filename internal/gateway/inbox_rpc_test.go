@@ -18,7 +18,7 @@ func TestInboxAnswerGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(map[string]string{"id": item.ID, "answer": "yes"})
+	raw, _ := json.Marshal(map[string]string{"item_id": item.ID, "answer": "yes"})
 	g := &Gateway{store: s}
 	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "inbox.answer", raw); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestInboxDismissGatewayNeedsNoSession(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM sessions WHERE id=?`, agent); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ = json.Marshal(map[string]string{"id": items[0].ID, "answer": "dismiss"})
+	raw, _ = json.Marshal(map[string]string{"item_id": items[0].ID, "answer": "dismiss"})
 	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "inbox.answer", raw); err != nil {
 		t.Fatal(err)
 	}

@@ -1015,7 +1015,7 @@ func inboxGone(err error) bool {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "inbox item not found") || strings.Contains(text, "inbox item already answered")
+	return text == "inbox item not found"
 }
 
 // dropInboxItem removes an item the gateway no longer has open from the local
