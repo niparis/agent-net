@@ -61,10 +61,35 @@ func TestWorkersLogGoldens(t *testing.T) {
 		m.snap.WorkerLog = append(m.snap.WorkerLog, protocol.WorkerLogEntry{StartedAt: 1700000000 - int64(i)*100, Title: "Review worker history and difficulty scores", Model: "test-model:high", Status: status, Difficulty: "normal", Hostname: "test-machine", Harness: "codex", Project: "demo", RunSeconds: 120, Assessment: a})
 	}
 	m.snap.WorkerLog[0].ModelNote = "codex test-model:high (34.5, good enough; eligible for this task and available on the chosen machine)"
+	m.snap.WorkerLog[1].Failure = "the worker ended after its hand-back; a message from you starts it again 1 automatic continue was sent."
+	m.snap.WorkerLog[1].ModelNote = "difficulty R3 S2 C2 U1 V2 K1 · D 2.10 · normal -> codex test-model:high (34.5, good enough; eligible for this task and available on the chosen machine)"
+	m.snap.WorkerLog[3].Failure = "the model call failed: the provider was unavailable"
 	m.snap.WorkerLog[5].Assessment = nil
+	m.workerLogRow = 1
 	for _, size := range [][2]int{{120, 40}, {80, 40}} {
 		m.width, m.height = size[0], size[1]
 		golden(t, fmt.Sprintf("workers_log_%dx%d", size[0], size[1]), m.View())
+	}
+	m.workerLogRow = 3
+	golden(t, "workers_log_failed_120x40", m.View())
+}
+
+func TestWorkersLogNoteOnlyForFailedStatus(t *testing.T) {
+	m := New(&fakeSource{snap: fakeSnapshot()})
+	m.tab = quotasTab
+	m.workersLog = true
+	m.snap.WorkerLog = []protocol.WorkerLogEntry{
+		{StartedAt: 1700000000, Title: "Done run", Status: "done", Failure: "the worker ended after its hand-back"},
+		{StartedAt: 1699999900, Title: "Failed run", Status: "failed", Failure: "the provider was unavailable"},
+	}
+	got := ansi.Strip(strings.Join(m.workersLogView(120, 40), "\n"))
+	if !strings.Contains(got, "Note: the worker ended after its hand-back") || strings.Contains(got, "Failure: the worker ended after its hand-back") {
+		t.Fatalf("done run should show a note: %s", got)
+	}
+	m.workerLogRow = 1
+	got = ansi.Strip(strings.Join(m.workersLogView(120, 40), "\n"))
+	if !strings.Contains(got, "Failure: the provider was unavailable") || strings.Contains(got, "Note: the provider was unavailable") {
+		t.Fatalf("failed run should show a failure: %s", got)
 	}
 }
 

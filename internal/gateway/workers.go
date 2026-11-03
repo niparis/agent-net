@@ -668,6 +668,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
 	}
+	g.recordWorkerPickerNote(p.Assessment, launched.SessionID, modelNote)
 	event := "worker.started"
 	if launched.Starting {
 		event = "worker.starting"
@@ -682,6 +683,22 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
 		Track: track, Playbooks: books}, nil
+}
+
+// recordWorkerPickerNote stores the start's judge result and the picker's
+// explanation for the model under the new session. The machine's daemon sends
+// the same result later; the run id makes that write a no-op, and the store
+// keeps the note when the machine's write lands first.
+func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID, note string) {
+	if a == nil || a.RunID == "" || sessionID == "" {
+		return
+	}
+	copied := *a
+	copied.SessionID = sessionID
+	copied.PickerNote = note
+	if err := g.store.RecordWorkerStartAssessment(copied); err != nil {
+		g.logLine("error", "where", "worker picker note", "session", sessionID, "err", err)
+	}
 }
 
 // resolveWorkerModel applies the machine's model inventory and ranking to an explicit name.
@@ -992,6 +1009,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil || c.SessionID == "" {
 		return none, reject("machine %s answered without a session", old.Hostname)
 	}
+	g.recordWorkerPickerNote(c.Assessment, c.SessionID, modelNote)
 	event := "worker.started"
 	if c.Starting {
 		event = "worker.starting"
