@@ -599,6 +599,11 @@ CREATE TABLE IF NOT EXISTS transfer_parts (
 -- view shows a dash. The column is added by the migration code so a replay is
 -- safe.
 SELECT 1 /* worker picker note */;
+`, `
+-- The session that started the worker, kept on the run so the owner view can
+-- show the caller after the worker session is cleaned. Old rows read empty and
+-- fall back to the worker record of their session while it still exists.
+SELECT 1 /* worker caller column */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -961,6 +966,19 @@ func (s *Store) migrate() error {
 			}
 			if has == 0 {
 				if _, err := tx.Exec(`ALTER TABLE worker_assessments ADD COLUMN picker_note TEXT NOT NULL DEFAULT ''`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker caller column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = 'caller_session_id'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN caller_session_id TEXT NOT NULL DEFAULT ''`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}

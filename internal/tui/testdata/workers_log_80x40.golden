@@ -1,18 +1,19 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
   Quotas    [ Workers log ]
 ╭─Workers log──────────────────────────────────────────────────────────────────╮
-│   11-14 22:13  test-model:high      normal     Review worker histor… running │
-│ ▸ 11-14 22:11  test-model:high      normal     Review worker history a… done │
-│   11-14 22:10  test-model:high      normal     Review worker histor… blocked │
-│   11-14 22:08  test-model:high      normal     Review worker history… failed │
-│   11-14 22:06  test-model:high      normal     Review worker hist… timed out │
-│   11-14 22:05  test-model:high      normal     Review worker histor… stopped │
+│   11-14 22:13  test-model:high      normal     owner      Review wo… running │
+│ ▸ 11-14 22:11  test-model:high      normal     Agent One  Review worke… done │
+│   11-14 22:10  test-model:high      normal     CTO        Review wo… blocked │
+│   11-14 22:08  test-model:high      normal     Agent One  Review wor… failed │
+│   11-14 22:06  test-model:high      normal     CTO        Review … timed out │
+│   11-14 22:05  test-model:high      normal     -          Review wo… stopped │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────╮
 │ Title: Review worker history and difficulty scores                           │
+│ Caller: Agent One (caller-machine)                                           │
 │ Model: test-model:high                                                       │
 │ Machine: test-machine   Project: demo   Harness: codex                       │
 │ Run time: 2m0s                                                               │
@@ -28,7 +29,6 @@
 │ test-model:high (34.5, good enough; eligible for this task and available on  │
 │ the chosen machine)                                                          │
 │ Note: the worker ended after its hand-back; a message from you starts it     │
-│ again 1 automatic continue was sent.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
