@@ -19,3 +19,9 @@ by receiving middleware bypassed that step, so clients using protocol
 2026-07-28 rejected both the input request and the completed answer. Returning
 these results from the handler lets the SDK mark them input_required or
 complete. The session and tool binding and single-use random token remain.
+
+2026-11-03: Added `proposal_ask` (`{"id": "p_..."}`) so the CTO can reopen the
+approval dialog for an open proposal that is already waiting. The daemon checks
+that the proposal exists and is open, then returns the same proposal payload
+built from the stored call, so the MCP dialog handler and `cto_dialog_answer`
+run unchanged. Closed or unknown IDs fail with a short error.

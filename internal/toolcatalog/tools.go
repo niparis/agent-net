@@ -39,5 +39,6 @@ var Tools = []Tool{
 	toolEntry("settings_change", "Propose one owner settings change: providers, integrations, scores, worker profiles, CTO title, playbook, machine removal or token rotation.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("project_change", "Propose adding, removing, renaming or creating a project.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("mcp_call", "Propose a call to a tool on a shared MCP server; it runs after the owner approves. Credentials never appear in the call.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
+	toolEntry("proposal_ask", "Open the approval dialog in the chat for an open proposal that is already waiting.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("cto_new", "Propose starting a new CTO conversation. The timeline and proposals stay.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 }

@@ -14,7 +14,7 @@ import (
 
 var ctoV2Tools = map[string]bool{
 	"graph_change": true, "session_change": true, "worker_change": true,
-	"cto_ui_show": true, "cto_proposals_find": true,
+	"cto_ui_show": true, "cto_proposals_find": true, "proposal_ask": true,
 	"answer": true, "tools_change": true, "mcp_change": true,
 	"settings_change": true, "project_change": true, "mcp_call": true, "cto_new": true,
 }
@@ -250,6 +250,15 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(fmt.Errorf("invalid arguments: %w; example: %s", err, `{"server":"example","tool":"list","arguments":{}}`)), nil
 				}
+			} else if name == "proposal_ask" {
+				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
+					return v2Error(fmt.Errorf("%w; example: %s", err, `{"id":"p_1"}`)), nil
+				}
+				var q map[string]any
+				_ = json.Unmarshal(args, &q)
+				if strings.TrimSpace(stringValue(q["id"])) == "" {
+					return v2Error(fmt.Errorf("id is required; example: %s", `{"id":"p_1"}`)), nil
+				}
 			} else if name == "cto_ui_show" {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(err), nil
@@ -291,7 +300,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 			if json.Unmarshal(raw, &value) != nil {
 				value = string(raw)
 			}
-			if name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "cto_new" || name == "graph_change" || name == "session_change" || name == "worker_change" {
+			if name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "proposal_ask" || name == "cto_new" || name == "graph_change" || name == "session_change" || name == "worker_change" {
 				value = normalizeCTOProposalResult(value)
 			}
 			if name == "cto_ui_show" {
