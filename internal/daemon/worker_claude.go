@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/claudetrust"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The Claude Code worker (decision 0002 W16, decision 0008).
@@ -129,7 +130,13 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		args = append(args, "--mcp-config", string(mcp))
 	}
 	if w.model != "" {
-		args = append(args, "--model", w.model)
+		// Claude Code takes the effort as its own flag; "opus:xhigh" as a
+		// model name is refused.
+		name, effort := protocol.SplitModelLevel(w.model)
+		args = append(args, "--model", name)
+		if effort != "" {
+			args = append(args, "--effort", effort)
+		}
 	}
 	d.claudeStartMu.Lock()
 	locked := true

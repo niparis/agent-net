@@ -1057,3 +1057,17 @@ func TestPiWorkerFirstTaskRetriedAfterDrop(t *testing.T) {
 		return strings.TrimSpace(string(b)) == res.Task.ID
 	})
 }
+
+// Claude Code takes the effort as its own flag: "claude-opus-5-5:xhigh" as a
+// model name is refused ("There's an issue with the selected model").
+func TestClaudeWorkerModelEffort(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "claude-opus-5-5:xhigh", Task: "FAKE:handback say ok"})
+	rec := readClaude(t, repo)
+	if argValue(rec.Args, "--model") != "claude-opus-5-5" || argValue(rec.Args, "--effort") != "xhigh" {
+		t.Fatalf("args: %v", rec.Args)
+	}
+}
