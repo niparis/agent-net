@@ -299,12 +299,13 @@ type WorkerStartRequest struct {
 	// Machine picks the machine (host name or node ID) when the project is on
 	// more than one. Optional.
 	Machine string `json:"machine,omitempty"`
-	// Harness is the agent harness to run: "opencode" (the others come later).
+	// Harness is the agent harness to run; empty allows automatic selection.
 	Harness string `json:"harness"`
-	// Model is "provider/model", or a loose name such as "deepseek 4.1" that
-	// the gateway resolves against the machine's model list. Optional: empty
-	// means the harness default.
-	Model string `json:"model,omitempty"`
+	// Model is a model ID, loose name or profile. Legacy provider prefixes and
+	// effort suffixes are accepted; new callers use Provider and Effort.
+	Model    string `json:"model,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Effort   string `json:"effort,omitempty"`
 	// Difficulty selects the minimum score for automatic model choice.
 	Difficulty string   `json:"difficulty,omitempty"`
 	Touches    []string `json:"touches,omitempty"`
@@ -342,6 +343,8 @@ type WorkerStartResult struct {
 	Path      string `json:"path"`
 	Harness   string `json:"harness"`
 	Model     string `json:"model,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	Effort    string `json:"effort,omitempty"`
 	// ModelNote says how a loose model name was resolved ("deepseek 4.1 ->
 	// opencode-go/deepseek-v4.1-flash"). Empty when the name was used as given.
 	ModelNote string `json:"model_note,omitempty"`

@@ -138,3 +138,33 @@ func TestWorkerModelAuthProviderScope(t *testing.T) {
 	}
 	check("node", "opencode", "openai/luna", true)
 }
+
+func TestWorkerModelProfileEffortOverride(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0)}
+	if err := s.AddWorkerProfile(protocol.WorkerProfile{Name: "Sol Codex", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}); err != nil {
+		t.Fatal(err)
+	}
+	n := &protocol.NodeView{NodeID: "test", Hostname: "host", Harnesses: []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-sol"}}}}
+	got, _, err := g.resolveWorkerModel(n, &n.Harnesses[0], "codex", "Sol Codex:high", "")
+	if err != nil || got != "gpt-6.1-sol:high" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestWorkerAgyEffortInventory(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0)}
+	n := &protocol.NodeView{NodeID: "test", Hostname: "host"}
+	hi := &protocol.HarnessInfo{Name: "agy", Models: []string{"gemini-4-argon-low", "gemini-4-argon-high"}}
+	for _, query := range []string{"argon:high", "gemini-4-argon-high"} {
+		got, _, err := g.resolveWorkerModel(n, hi, "agy", query, "")
+		if err != nil || got != "gemini-4-argon-high" {
+			t.Fatalf("%s got %q, %v", query, got, err)
+		}
+	}
+	_, _, err := g.resolveWorkerModel(n, hi, "agy", "gemini-4-argon:xhigh", "")
+	if err == nil || !strings.Contains(err.Error(), "high, low") {
+		t.Fatalf("got %v", err)
+	}
+}

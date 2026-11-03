@@ -129,15 +129,12 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 			"agent-net": map[string]any{"command": d.cfg.Exe, "args": []string{"mcp"}}}})
 		args = append(args, "--mcp-config", string(mcp))
 	}
-	if w.model != "" {
-		// Claude Code takes the effort as its own flag; "opus:xhigh" as a
-		// model name is refused.
-		name, effort := protocol.SplitModelLevel(w.model)
-		args = append(args, "--model", name)
-		if effort != "" {
-			args = append(args, "--effort", effort)
-		}
+	modelArgs, err := protocol.ParseModelSelection("claude", "", w.model, "").Arguments(nil)
+	if err != nil {
+		return err
 	}
+	args = append(args, modelArgs...)
+
 	d.claudeStartMu.Lock()
 	locked := true
 	defer func() {

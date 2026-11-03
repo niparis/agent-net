@@ -44,6 +44,7 @@ type roProfileFindIn struct {
 }
 
 type roProfileRow struct {
+	Provider    string   `json:"provider"`
 	Name        string   `json:"name"`
 	Harness     string   `json:"harness"`
 	Model       string   `json:"model"`
@@ -188,8 +189,13 @@ func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) 
 		if len(on) == 0 && profile.Available != nil && *profile.Available {
 			on = append(on, profile.MachinesChecked...)
 		}
-		rows = append(rows, roProfileRow{Name: profile.Name, Harness: profile.Harness, Model: profile.Model,
-			Effort: profile.Effort, AvailableOn: roUniqueSorted(on), key: profile.Name})
+		selection := profile.Selection()
+		provider := selection.Provider
+		if provider == "" {
+			provider = protocol.ModelVendor(selection.Harness, selection.Model)
+		}
+		rows = append(rows, roProfileRow{Name: profile.Name, Harness: profile.Harness, Provider: provider, Model: selection.Model,
+			Effort: selection.Effort, AvailableOn: roUniqueSorted(on), key: profile.Name})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].key < rows[j].key })
 	page, next := roWindow(rows, limit, after, false, func(row roProfileRow) string { return row.key })

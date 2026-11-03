@@ -73,7 +73,13 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	// One session, with the model the caller chose.
 	req := map[string]any{"title": "agent-net worker " + w.id + ": " + w.project}
 	if model != "" {
-		base, effort := protocol.SplitModelLevel(model)
+		selection := protocol.ParseModelSelection("opencode", provider, model, "")
+		built, buildErr := selection.Arguments(nil)
+		if buildErr != nil {
+			return buildErr
+		}
+		_, base, _ := strings.Cut(built[0], "/")
+		effort := built[1]
 		selected := map[string]string{"providerID": provider, "id": base}
 		if effort != "" {
 			selected["variant"] = effort

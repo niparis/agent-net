@@ -286,6 +286,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	var none protocol.WorkerStartAnswer
 	p.Project, p.Harness = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness)
 	p.Model, p.Machine = protocol.CleanModel(p.Model), strings.TrimSpace(p.Machine)
+	selection := protocol.ParseModelSelection(p.Harness, p.Provider, p.Model, p.Effort)
+	p.Provider, p.Effort = selection.Provider, selection.Effort
+	if selection.Model != "" && selection.Model != "auto" {
+		p.Model = selection.LegacyModel()
+		if p.Harness == "agy" {
+			p.Model = selection.Model
+		}
+	}
 	p.Continue, p.Title = strings.TrimSpace(p.Continue), strings.TrimSpace(p.Title)
 	if err := protocol.ValidWorkerTitle(p.Title); err != nil {
 		return none, reject("%v", err)
@@ -562,18 +570,30 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("no safe automatic read-only worker is available")
 	}
 	lead := workerDifficultyLead(p.Assessment, difficultyUsed)
+
 	quotas := g.nodeQuotas(pick.NodeID)
 	var modelNote string
 	if automatic {
 		modelNote = lead + " -> " + p.Harness + " " + p.Model + " " + automaticNote
 	} else {
 		var resolveNote string
-		p.Model, resolveNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, "")
+		p.Model, resolveNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, "", p.Effort)
 		if err != nil {
 			return none, err
 		}
 		modelNote = appendModelNote(appendModelNote(lead, harnessNote), resolveNote)
 	}
+	selected := protocol.ParseModelSelection(p.Harness, "", p.Model, p.Effort)
+	p.Provider, p.Effort, p.Model = selected.Provider, selected.Effort, selected.LegacyModel()
+	if p.Provider == "" {
+		p.Provider = protocol.ModelVendor(p.Harness, selected.Model)
+	}
+	if p.Harness == "agy" {
+		if _, buildErr := selected.Arguments(hi.Models); buildErr != nil {
+			return none, reject("%v", buildErr)
+		}
+	}
+
 	if !automatic {
 		scores, err := g.store.scores()
 		if err != nil {
@@ -649,7 +669,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
+		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
@@ -667,7 +687,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			"project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner, "position", launched.Position,
 			"reason", launched.Reason)
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
-			Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Title: p.Title, Queued: true, QueueID: launched.QueueID,
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms,
 			Track: track, Playbooks: books}, nil
 	}
@@ -686,7 +706,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"worker", launched.WorkerID, "project", pick.Name, "path", pick.Path, "harness", p.Harness, "model", p.Model,
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch)
 	return protocol.WorkerStartAnswer{Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
-		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Title: p.Title,
+		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
 		Track: track, Playbooks: books}, nil
 }
@@ -708,24 +728,61 @@ func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID
 }
 
 // resolveWorkerModel applies the machine's model inventory and ranking to an explicit name.
-func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.HarnessInfo, harness, model, modelNote string) (string, string, error) {
+func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.HarnessInfo, harness, model, modelNote string, effortOverride ...string) (string, string, error) {
 	profiles, err := g.store.WorkerProfiles()
 	if err != nil {
 		return "", "", err
 	}
 	for _, profile := range profiles {
-		if !strings.EqualFold(profile.Name, model) {
+		override := ""
+		if len(effortOverride) > 0 {
+			override = effortOverride[0]
+		}
+		askedSelection := protocol.ParseModelSelection(harness, "", model, override)
+		if !strings.EqualFold(profile.Name, askedSelection.Model) {
 			continue
 		}
 		if profile.Harness != harness {
 			return "", "", reject("worker profile %q requires %s, not %s", profile.Name, profile.Harness, harness)
 		}
-		model = profile.Model
-		if profile.Effort != "" {
-			model += ":" + profile.Effort
+		effort := askedSelection.Effort
+		if effort == "" {
+			effort = profile.Effort
 		}
+		model = protocol.ParseModelSelection(profile.Harness, "", profile.Model, effort).LegacyModel()
 		modelNote = appendModelNote(modelNote, fmt.Sprintf("worker profile %q: %s %s", profile.Name, harness, model))
 		break
+	}
+	if harness == "agy" {
+		override := ""
+		if len(effortOverride) > 0 {
+			override = effortOverride[0]
+		}
+		selected := protocol.ParseModelSelection(harness, "", model, override)
+		if selected.Effort != "" {
+			var bases []string
+			seen := map[string]bool{}
+			for _, id := range hi.Models {
+				base := protocol.ParseModelSelection(harness, "", id, "").Model
+				if !seen[base] {
+					bases = append(bases, base)
+					seen[base] = true
+				}
+			}
+			resolved, resolveErr := protocol.ResolveModel(selected.Model, bases, nil, nil)
+			if resolveErr != nil {
+				return "", "", reject("agy model: %v", resolveErr)
+			}
+			selected.Model = resolved
+			if _, buildErr := selected.Arguments(hi.Models); buildErr != nil {
+				return "", "", reject("%v", buildErr)
+			}
+			result := selected.LegacyModel()
+			if result != model {
+				modelNote = appendModelNote(modelNote, model+" -> "+result)
+			}
+			return result, modelNote, nil
+		}
 	}
 	quotas := g.nodeQuotas(node.NodeID)
 	if model != "" && len(hi.Models) > 0 {
@@ -739,7 +796,7 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 			if profile.Harness != harness || profile.Model != profileModel {
 				continue
 			}
-			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, hi.Models)
+			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Selection().ModelID(), hi.Models)
 			if len(ambiguous) > 0 {
 				return "", "", reject("worker profile %q model %s is ambiguous on %s (%s)", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
 			}
@@ -825,7 +882,8 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 	}
 	profileHarness := ""
 	for _, p := range profiles {
-		if strings.EqualFold(p.Name, model) {
+		name, _ := protocol.SplitModelLevel(model)
+		if strings.EqualFold(p.Name, name) {
 			profileHarness = p.Harness
 			break
 		}
@@ -943,6 +1001,17 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	g.mu.Unlock()
 	if target == nil {
 		return none, reject("machine %s is offline, so worker %s cannot be continued", old.Hostname, old.SessionID)
+	}
+	if p.Effort != "" || p.Provider != "" {
+		harness := p.Harness
+		if harness == "" {
+			harness = old.Harness
+		}
+		model := p.Model
+		if model == "" {
+			model = old.Model
+		}
+		p.Model = protocol.ParseModelSelection(harness, p.Provider, model, p.Effort).LegacyModel()
 	}
 	if p.Model != "" {
 		harness := p.Harness
@@ -1374,7 +1443,7 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 			if profile.Harness != h.Name {
 				continue
 			}
-			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, h.Models)
+			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Selection().ModelID(), h.Models)
 			if resolved == "" {
 				message := fmt.Sprintf("stale profile %q skipped: %s model %s is not listed by %s", profile.Name, h.Name, profile.Model, node.Hostname)
 				if len(ambiguous) > 0 {
@@ -1400,9 +1469,7 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 				continue
 			}
 			model := resolved
-			if profile.Effort != "" {
-				model += ":" + profile.Effort
-			}
+			model = protocol.ParseModelSelection(profile.Harness, "", model, profile.Effort).LegacyModel()
 			candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero(), Track: trackByModel[h.Name+"\x00"+model]})
 			if resolved != profile.Model {
 				resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)

@@ -57,7 +57,7 @@ func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []pr
 					checked = append(checked, machine)
 					seenMachines[machine] = true
 				}
-				resolved, ambiguous := protocol.ResolveWorkerProfileModel(out[i].Model, harness.Models)
+				resolved, ambiguous := protocol.ResolveWorkerProfileModel(out[i].Selection().ModelID(), harness.Models)
 				status := protocol.WorkerProfileMachineAvailability{Machine: machine}
 				if resolved != "" && harness.SignedIn != "no" {
 					status.Available = true

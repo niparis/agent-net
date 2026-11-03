@@ -77,3 +77,9 @@ const (
 	OpWorkerProfileAdd    = "worker_profile_add"
 	OpWorkerProfileRemove = "worker_profile_remove"
 )
+
+// Selection maps both older inventory ids and separate effort fields to the
+// same model selection used by worker starts.
+func (p WorkerProfile) Selection() ModelSelection {
+	return ParseModelSelection(p.Harness, "", p.Model, p.Effort)
+}

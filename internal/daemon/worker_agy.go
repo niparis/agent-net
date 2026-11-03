@@ -156,13 +156,14 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	w.toolchainDirs = toolchains
 	d.wmu.Unlock()
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
-	if model != "" {
-		name, effort := protocol.SplitModelLevel(model)
-		args = append(args, "--model", name)
-		if effort != "" {
-			args = append(args, "--effort", effort)
-		}
+	// The gateway validated this id against the machine's agy inventory.
+	selection := protocol.ParseModelSelection("agy", "", model, "")
+	modelArgs, err := selection.Arguments([]string{selection.ModelID()})
+	if err != nil {
+		return err
 	}
+	args = append(args, modelArgs...)
+
 	args = append(args, "--mode", mode, "--sandbox", "--settings", settings)
 	for _, path := range toolchains {
 		args = append(args, "--add-dir", path)

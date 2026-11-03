@@ -180,6 +180,7 @@ func WorkerStartedText(session, harness, model, project, host string, waited tim
 	if len(title) > 0 && strings.TrimSpace(title[0]) != "" {
 		b += " · " + strings.TrimSpace(title[0])
 	}
+	b += "\nmodel: " + ParseModelSelection(harness, "", model, "").Display()
 	b += "\nqueue wait: " + waited.Round(time.Second).String() + "\n"
 	return b
 }
@@ -286,6 +287,8 @@ type (
 		Path      string `json:"path"`
 		Harness   string `json:"harness"`
 		Model     string `json:"model,omitempty"`
+		Provider  string `json:"provider,omitempty"`
+		Effort    string `json:"effort,omitempty"`
 		// ModelNote says how a loose model name was resolved, for example
 		// "deepseek 4.1 -> opencode-go/deepseek-v4.1-flash". Empty when the
 		// name was used as it was.
@@ -326,6 +329,8 @@ type (
 		Path            string `json:"path"`
 		Harness         string `json:"harness"`
 		Model           string `json:"model,omitempty"`
+		Provider        string `json:"provider,omitempty"`
+		Effort          string `json:"effort,omitempty"`
 		Owner           string `json:"owner_session"`
 		// OwnerName is the name the gateway knows for the caller, for the
 		// worker's commit trailers. Empty when the record is gone.
@@ -803,7 +808,7 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	if t := strings.TrimSpace(n.Title); t != "" {
 		b.WriteString(" · " + t)
 	}
-	b.WriteString("\n")
+	b.WriteString("\nmodel: " + ParseModelSelection(n.Harness, "", n.Model, "").Display() + "\n")
 	b.WriteString(WorkerPermissionsText(n.Permissions, n.Harness) + "\n")
 	b.WriteString("run time: " + n.RunTime.Round(time.Second).String() + "\n")
 	if n.Tokens != "" {
