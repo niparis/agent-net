@@ -87,6 +87,9 @@ func Uninstall(o Options) error {
 	}
 	r.removePiExtension()
 	r.removeOpenCodePlugin()
+	if err := agentfiles.RemoveAntigravity(); err != nil {
+		r.step("antigravity plugin", "", err)
+	}
 	r.removeGuidance()
 	if err := daemon.RemoveSkillState(daemon.StateDir()); err != nil {
 		r.step("skill state", "", err)

@@ -128,11 +128,15 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		} else {
 			err = mcpserver.RunCTO(ctx, daemon.SocketPath(), version)
 		}
+	case "hook":
+		err = cmdAntigravityHook(args)
 	case "mcp":
 		// No subcommand: the stdio server Claude Code starts. Anything else is the registry CLI.
 		if len(args) == 0 {
 			err = mcpserver.Run(ctx, daemon.SocketPath(), mcpserver.Options{Version: version,
 				Exe: startExe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"})
+		} else if len(args) == 1 && args[0] == "--antigravity" {
+			err = mcpserver.RunAntigravity(ctx, daemon.SocketPath(), mcpserver.Options{Version: version, Exe: startExe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"})
 		} else if len(args) == 1 && args[0] == "--codex" {
 			// The stdio server Codex starts, once per thread.
 			err = mcpserver.RunCodex(ctx, daemon.SocketPath(), mcpserver.Options{Version: version,

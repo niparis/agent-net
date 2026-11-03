@@ -455,6 +455,7 @@ func (r *runner) opencodePlugin() {
 	res := agentfiles.SyncOpencode()
 	r.stepResult(res)
 	r.stepResult(agentfiles.SyncOpencodeTools())
+	r.stepResult(agentfiles.SyncAntigravity(r.Exe))
 	if res.Err == nil && res.Changed {
 		// The service hosts every OpenCode session, so setup never restarts it;
 		// the user decides when.

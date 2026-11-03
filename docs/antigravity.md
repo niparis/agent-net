@@ -20,6 +20,7 @@ the plan in [decision 0049](decisions/0049-antigravity-harness.md).
   Account details are never kept.
 - **Worker profiles.** A profile may name `agy` and an agy model. It is
   accepted, stored and listed. The Workers panel says `not startable yet`.
+- **Plugin.** Setup and each daemon start install the agent-net plugin under `~/.gemini/config/plugins/agent-net/` when `~/.gemini` exists. Its rules supply guidance, its MCP server supplies tools, and its hooks report session starts and turns to the local daemon. Disable it with `agy plugin disable agent-net`. Uninstall removes its files.
 - **Updates.** The daily harness update runs `agy update` like the other
   harnesses.
 - **Display.** `agent-net nodes --wide` shows the agy row with its version, its
@@ -28,8 +29,7 @@ the plan in [decision 0049](decisions/0049-antigravity-harness.md).
 ## What does not work yet
 
 - Starting a worker on agy (build step 4).
-- Antigravity as a main session, the agent-net plugin, MCP and hooks (steps 3
-  and 5).
+- Antigravity main-session discovery and message delivery (step 5). The MCP conversation ID is passed to the daemon but is not yet bound to a session.
 - Opening an agy session in herdr (step 6).
 
 The vendor in an agy model id is used for display: `gemini` to Google,

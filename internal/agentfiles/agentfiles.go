@@ -100,7 +100,7 @@ func GuidanceFiles() []GuidanceFile {
 // symlink to an older agent-net plugin is replaced with a real file. Guidance
 // follows symlinks and changes only the part between the markers.
 func Sync() []Result {
-	rs := []Result{SyncPi(), SyncPiTools(), SyncOpencode(), SyncOpencodeTools(), SyncClaudeWorkers()}
+	rs := []Result{SyncPi(), SyncPiTools(), SyncOpencode(), SyncOpencodeTools(), SyncClaudeWorkers(), SyncAntigravity("")}
 	return append(rs, SyncGuidance()...)
 }
 
