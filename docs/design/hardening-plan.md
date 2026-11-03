@@ -1,0 +1,156 @@
+# Hardening plan: delivery, files, security, docs
+
+**Date:** 2026-11-03
+**Status:** Plan for the owner's approval, nothing built
+**Source:**
+- the external reverse-engineering report of commit 989e42bd (15 findings);
+- the gap found the same day: no way to move a file between machines or agents.
+
+## Goal
+
+agent-net's main job is that a message or a file arrives exactly, and that only the right machines and agents can act. Fix every finding of the report that matters for one owner with a few machines, and add files as a first-class thing to send.
+
+## Workstreams
+
+### W1. Docs that match the code
+
+One worker, half a day.
+
+- **README, the worker sandbox:** say plainly that only Codex workers (and agy with its own flag) are sandboxed; Claude, Pi and OpenCode workers run with the owner's permissions until W7.
+- **README, the harnesses table:** five harnesses, with agy.
+- **One backup instruction:** `agent-net gateway backup`, in security.md and reference.md.
+- **New section in reference.md,** "Dependencies on harness internals": Claude Code's `messagingSocketPath` inbox and its frame format (from open-cross-session), Codex's app-server control socket, OpenCode's server API, agy's hooks. What breaks if each changes, and how agent-net notices (W4.5).
+- **security.md:** the gateway's listening address and what is open without a token.
+
+### W2. Link health
+
+One worker.
+
+- **Keepalive:** a WebSocket ping every 20 s from both the daemon and the gateway; a link with no pong for 45 s is closed and redialled.
+- **The offline mark:** the gateway marks a machine offline as soon as its link closes, not after a 30 s wait plus TCP timeouts.
+- **Verification:** a real test with the Mac asleep. Its row goes offline within about a minute and comes back on wake, without a restart.
+
+### W3. Retention and logs
+
+One worker.
+
+- **Message bodies:** deleted after N days (default 90, a setting; 0 keeps them forever), like events today. Delivery rows and metadata stay.
+- **The daemon's `delivered` table:** pruned on the same schedule.
+- **A weekly `VACUUM`** of gateway.db, when its free pages exceed 20%.
+- **macOS logs:** rotated by size (10 MB, 5 files kept), done by the daemon itself, since launchd does not rotate.
+
+### W4. Delivery reliability
+
+The most important workstream. Five steps, run in order 1, 2, 3, then 4 and 5 in parallel.
+
+1. **No silent loss, no blind duplicate.**
+   - The receiving daemon writes the delivery as `injecting` before it writes to the harness, and as `delivered` only after the harness confirms.
+   - A write error is `failed`, not "delivered (unconfirmed)".
+   - After a crash, an `injecting` row is reported as "may have arrived" to the sender, and not re-injected. A lost turn is worse than a duplicate, but a silent duplicate is worse than a notice.
+   - Each harness reports a confirmation where it can: the plugin ack (Pi, OpenCode), the queue accept (Codex), the hook reply (agy), and for Claude the socket write plus the session file showing the message (to test).
+2. **Retry.** Failed and unconfirmed deliveries are retried with backoff (30 s, 2 min, 10 min, 30 min) until the message expires. Today only a reconnect retries.
+3. **The sender is told.** A message that expires or fails for good produces a short notice to the sender: "message to X was not delivered: reason". No silent expiry.
+4. **Claude's own replies.** The map from "B answers A" to the request it answers is stored in daemon.db, not in memory. It is matched by conversation and by the most recent open request from that sender, so two open requests no longer cross. When the match is unsure, the reply is threaded to the conversation, not to a guessed message.
+5. **The Claude socket contract.**
+   - At daemon start and after each Claude Code update, the daemon checks that a session file still has `messagingSocketPath` and that the socket accepts a frame.
+   - If not: a warning in the TUI, on the Graph machine card and in `nodes -wide`, saying "Claude delivery broken by Claude Code <version>". Claude sessions are then marked not deliverable, so senders get "failed" at once instead of silence.
+
+**Verification:** a real test on the live network for each step, with a fake failure injected (a socket removed, a daemon killed mid-write). The results are written down.
+
+### W5. Files between machines and agents (Taildrop)
+
+A spike first, then four build steps.
+
+- **T0. Spike (the orchestrator, 1 to 2 hours):**
+  - Linux: confirmed, `tailscale file get <dir>` works as the user.
+  - Mac: does the app save incoming files straight into ~/Downloads, or hold them for `tailscale file get`?
+  - File names with spaces, collisions, the largest size tried (500 MB), speed.
+  - What happens when the receiver is offline: Taildrop waits, or fails?
+- **T1. Decision record:**
+  - A message carries a manifest: name, size, sha256, and an id per file.
+  - The bytes go over Taildrop when both machines are on the same tailnet, under a unique name derived from the message id.
+  - Otherwise they go through the gateway in parts. This uses the same transfer in parts that skills above 2 MB need (decision 0048, step 7).
+  - **Limits:**
+    - a maximum per file, 100 MB;
+    - a maximum per message, 10 files;
+    - allowed source folders: the session's project or worktree and /tmp, never ~/.ssh, keychains, agent-net state or other credential paths;
+    - a secret scan of text files with the existing scanner;
+    - received files are kept 7 days;
+    - only the receiving session's folder.
+- **T2. Gateway transfer in parts:**
+  - upload and download in 1 MB parts, with a checksum on each;
+  - resumable;
+  - stored in the gateway data folder and deleted after delivery or expiry.
+- **T3. Daemon send and receive:**
+  - Send: check the path and the limits, hash, send the manifest, push the bytes (Taildrop or gateway).
+  - Receive:
+    - collect the files;
+    - match each to its manifest by name and hash;
+    - move it to `~/.local/state/agent-net/daemon/inbox/<session>/<message>/`;
+    - mark the message delivered only when every file is in;
+    - leave files nobody announced untouched, so the owner's own Taildrops are never taken.
+  - The receiving agent's message says where the files are.
+- **T4. Tools and harnesses:**
+  - `agent_file_send(to, paths, note)` for sessions.
+  - A `files` list on `agent_handback` for workers, which cannot send messages.
+  - All five harness integrations, the MCP schemas, the guidance text.
+- **T5. Owner flows:**
+  - "Send file" in the TUI, from any machine.
+  - The CTO can fetch a file from one of the owner's machines on the owner's request, as a proposal the owner approves, limited to folders the owner names (for example ~/Downloads).
+
+**Verification:** a real Mac to research transfer of the report.html case, through each path, in both directions.
+
+### W6. Security
+
+Four independent items; they can run in parallel.
+
+1. **Revoke and rotate machine tokens.** The owner removes a machine or rotates its token from the TUI (Graph or Settings) or through a CTO proposal. A removed machine's link is closed at once and its sessions marked offline.
+2. **The gateway's listening address:**
+   - setup defaults to the Tailscale address when Tailscale is present, else the LAN address, never 0.0.0.0 by default (an existing setup keeps its value);
+   - a warning at gateway start when it is reachable on a public address;
+   - rate limits on enrollment.
+3. **Signed releases:**
+   - checksums signed in the release workflow, with a key held only in GitHub Actions secrets;
+   - the public key embedded in the binary and in install.sh;
+   - `upgrade` and the installer refuse an unsigned or mismatching release;
+   - install.sh served from the tagged release, not from main;
+   - a setup option to turn auto-upgrade off.
+4. **Scheduled backups:**
+   - the gateway runs `gateway backup` daily, keeping 7, into a folder the owner sets (default in the gateway data folder);
+   - each daemon backs up daemon.db and node.json alongside;
+   - the TUI Settings tab shows the last backup and its check result.
+
+### W7. A sandbox for every worker
+
+Design first, then build.
+
+- **D. Design note:**
+  - Linux options: bubblewrap, Landlock;
+  - macOS: sandbox-exec, which still works although deprecated;
+  - what each harness needs to read and write (its config, its runtime folders, the worktree, /tmp, the network);
+  - what to do on a machine where the tool is missing;
+  - how the owner opts a project out.
+- **B. Build:** a wrapper used by every worker launcher. The existing Codex and agy sandboxes stay, inside it. Tested with a worker that tries to write in ~ and must fail.
+
+## Order and releases
+
+| Phase | Work | Parallel? | Release |
+|---|---|---|---|
+| 1 | W1 docs, W2 keepalive, W3 retention, W6.1 token revoke, T0 Taildrop spike | yes, separate files | one release |
+| 2 | W4.1, then W4.2, then W4.3 (delivery core) | in order; W6.2 and W6.4 in parallel | one release |
+| 3 | W4.4 Claude replies, W4.5 socket check | yes | one release |
+| 4 | T1 decision, then T2 + T3, then T4, then T5 | partly | a release after T4, one after T5 |
+| 5 | W6.3 signed releases | alone (it changes the release itself) | the release that turns signing on |
+| 6 | W7 design, then build | design alone | one release |
+
+Before each release:
+- the touched packages are tested after merging (the lesson of 2026-11-03);
+- each item that changes behaviour is checked on the live network by the orchestrator.
+
+## Questions for the owner
+
+1. **Message retention:** 90 days by default?
+2. **Gateway listening address:** default to the Tailscale address when present?
+3. **Release signing:** a key in GitHub Actions secrets (simple), or keyless signing tied to the GitHub workflow (no key to keep)?
+4. **Backups:** where should the daily backups go: the gateway machine only, or also another machine (for example the NAS)?
+5. **The CTO fetching files from the owner's machines:** acceptable with approval each time, or should only the owner start a fetch?
