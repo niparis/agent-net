@@ -20,5 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-tab skills per agent  ? help  ↑↓ move  / filter  t costs  esc clear  n add
-  enter actions  R rescan
+m back to skills  ? help  ↑↓ move  / filter  esc clear  n add  enter actions
+  R rescan

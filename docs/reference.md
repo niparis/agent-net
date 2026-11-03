@@ -307,28 +307,55 @@ current onboarding tip. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
 failures, plus graph diffs; a graph change refreshes the Graph.
 
-Press `5` to open Tools. It is one list of every skill and MCP server: one row
-per tool, with its name, status and estimated startup token cost. MCP servers
-are marked with a diamond. The selected row has a detail panel with its
-description, estimated costs and source. Rows that need
-attention come first with a `!` and the reason, such as a version that differs
-between machines or two different copies on one machine. `R` rescans tool
-copies. Press `t` to see skill costs per project, sorted by cost; Enter opens
-the selected project and Esc returns. `[` and `]` do nothing here.
+Press `5` to open Tools. It opens on one table: rows are skills with their
+estimated startup token cost, columns are your projects, and each cell is on or
+off. The last column, `NEW PROJECTS`, is the standing choice for projects
+agent-net finds later. The table never shows folders, machines, harnesses or
+scopes; agent-net decides where files go.
 
-Use `j`/`k` or up/down to select, Enter to open the selected tool's actions,
-`/` to filter, `n` to add, Esc to clear a nonempty filter, `?` for help and `q`
-to quit. Digits keep their global tab meanings.
+Arrows move between cells (`j`/`k` and `h`/`l` work too). `space` switches the
+selected cell. `enter` on `NEW PROJECTS` switches the standing choice; on a
+project cell it opens the selected skill's actions. `/` filters skills by name.
+`d` shows details, `i` imports every skill found outside agent-net, `m` opens
+the all-tools list for MCP servers, `R` rescans, `?` opens help and `q` quits.
+Digits keep their global tab meanings. The key bar always names the keys for
+the current mode.
 
-The filter combines words with `project:NAME`, `node:NAME` and `machine:NAME`.
-A graph node is its network project, across registered checkouts. With a
-project or node filter, statuses describe that scope, including tools available
-to turn on. The title shows the highest estimated cost across the project's checkout
-machines. It includes project skills and user-level skills observed on that
-machine. The project cost table names that machine; a project with no known
-machine shows `-`. Token counts are estimates. Turn on/Turn off uses the scope directly. Otherwise a picker lists
-machines and projects: space ticks, `/` filters, Enter applies the selection, and Esc
-cancels. Enter with nothing ticked explains that a target is required.
+A cell change is a plan first. The plan uses plain words, for example
+`Switch off archify in wbg-housing. archify moves from every project to 21
+projects; it leaves ~/.claude/skills on research.` Enter applies it and Esc
+cancels without changing anything. Refused targets and conflicts are listed
+with their reason. After apply the cell updates. A failed apply says
+`Nothing changed: <reason>` and never reports `Applied` when nothing was
+applied.
+
+Under the table the selected project's cost reads `wbg-housing loads 14
+skills, about 9,800 tokens per session`. Token counts are estimates. A skill
+that cannot be switched (too large, a plugin, package or system skill, or one
+the gateway refused) is dim, with a `×` in its cells and a line naming the
+reason; `space` only shows that reason. A skill in a project's repository is
+always on there, so it is dim too.
+
+Press `m` for the all-tools list. It is kept for MCP servers, whose management
+decision 0048 leaves unchanged. It lists every skill and MCP server: one row per
+tool, with its name, status and estimated startup token cost. MCP servers are
+marked with a diamond. The selected row has a detail panel with its
+description, estimated costs and source. Rows that need attention come first
+with a `!` and the reason, such as a version that differs between machines or
+two different copies on one machine. `R` rescans tool copies. `[` and `]` do
+nothing here.
+
+In the all-tools list, use `j`/`k` or up/down to select, Enter to open the
+selected tool's actions, `/` to filter, `n` to add, Esc to clear a nonempty
+filter, `m` to return to the table, `?` for help and `q` to quit.
+
+The all-tools filter combines words with `project:NAME`, `node:NAME` and
+`machine:NAME`. A graph node is its network project, across registered
+checkouts. With a project or node filter, statuses describe that scope,
+including tools available to turn on. Turn on/Turn off uses the scope directly.
+Otherwise a picker lists machines and projects: space ticks, `/` filters, Enter
+applies the selection, and Esc cancels. Enter with nothing ticked explains that
+a target is required.
 
 The action menu offers Read it, Turn on for..., Turn off for..., Remove
 everywhere, Compare the copies / Keep this one, Test it and Import it as
@@ -372,7 +399,7 @@ an agent running the owner CLI, cannot use them. Existing `tools_plan`,
 continue to supply plans, changes and results. No setup files are added.
 
 Graph and its node card show a Tools count. On an agent card, press `t` to open
-tab 5 filtered to `node:NAME` for that node.
+tab 5 with that node's project column selected.
 
 Press `2` to open the Graph tab, the network screen. Each node
 is an agent with a lasting identity and charter. The CTO is a fixed node named
@@ -820,38 +847,41 @@ A model provider that is not a subscription and has no usable quota reading is p
 
 ## Tools inventory
 
-Tab 5 opens skills per agent: projects on the left, skills and checkboxes on
-the right. The count and token total use the same rule as skill cost per
-project: count each name once on the machine with the highest total, using
-the highest cost among its copies. Costs are tokens in every session.
-Use up/down in either column, right or Enter to enter skills, and left to
-return to agents. Space queues an on/off change. Enter in the skills column
-reviews all pending changes for that agent in one plan. The review says
-which skills turn on or off for that agent, and how many other projects
-keep a skill that was global. `d` shows target details. Confirm to apply;
-cancel to keep editing. Esc with pending changes asks `Discard N changes? y/n`.
-Repo skills stay on in their repo and must be changed there. Turning on a
-skill found on a machine imports it first, after confirmation. Turning off
-a global skill for one agent assigns it to every other known project.
-When skills are installed outside agent-net, the view offers `i` to import
-them all in one review. Confirmation saves each distinct version in the store.
-Installed copies and their session availability stay unchanged; no assignment
-or installation is applied. Repo skills are excluded.
-Skills whose inventory manifest file sizes sum above the 2 MB import limit
-show a one-column `×` marker and cannot be toggled here. The state column
-explains the size limit; Space repeats the explanation. These skills still
-show their StartTokens cost because their descriptions load in sessions.
-Each copy is measured separately; no bundle is packed for this check.
-Import all skips those skills and lists
-the skipped count, names, sizes and limit in its review. Missing manifests
-do not prove that a skill fits; the import service still checks the bundle.
-`/` filters skill names. Tab switches between this view and all tools,
-which keeps the action menu, comparison, filters and `n` to add a tool.
-Every Tools screen lists its local actions with one display key per action.
-Aliases still work and are listed in `?` help. The key bar fits one line at
-120 columns and wraps to a second line when needed at 80 columns.
-The list includes `t` for costs and `R` for rescan;
-plans include `d` when exact folders are available.
+Tab 5 opens one table: skills down the side with their startup token cost,
+projects across, each cell on or off, and `NEW PROJECTS` last. The line under
+the table counts the selected project's skills and token total. Both use the
+same rule: count each skill name once, as it loads in that project's sessions,
+using the highest cost among its copies. Costs are tokens in every session.
+
+Arrows move between cells (`j`/`k` and `h`/`l` also work). Space switches the
+selected cell, which sends `tools_toggle` and shows the gateway's plan in plain
+words before anything changes. Enter applies the plan and Esc cancels it.
+Enter on `NEW PROJECTS` switches the standing choice (`tools_new_projects`);
+the setting is saved at once, and a plan is shown when files also have to move.
+Repo skills stay on in their repo and must be changed there; they are dim.
+Turning on a skill found on a machine imports it first, after confirmation.
+Turning off a global skill for one project assigns it to every other known
+project. The plan names the user folder a skill leaves.
+
+When skills are installed outside agent-net, `i` offers to import them all in
+one review. Confirmation saves each distinct version in the store. Installed
+copies and their session availability stay unchanged; no assignment or
+installation is applied. Repo skills are excluded. Skills whose inventory
+manifest file sizes sum above the 2 MB import limit show a one-column `×`
+marker and cannot be switched here; the reason line under the table explains
+the size limit, and Space repeats the explanation. Plugin, package and system
+skills are dim in the same way. These skills still show their StartTokens cost
+because their descriptions load in sessions. Each copy is measured separately;
+no bundle is packed for this check. Import all skips those skills and lists the
+skipped count, names, sizes and limit in its review. Missing manifests do not
+prove that a skill fits; the import service still checks the bundle.
+
+`/` filters skill names. `m` opens the all-tools list, which keeps the action
+menu, comparison, filters, MCP management and `n` to add a tool. Every Tools
+screen lists its local actions with one display key per action. Aliases still
+work and are listed in `?` help. The key bar fits one line at 120 columns and
+wraps to more lines when needed at 80 columns. The table and the all-tools list
+include `R` for rescan; plans include `d` when exact folders are available.
 
 `agent-net tools` groups the latest observations by kind, name and content
 hash. Each row shows scope, harnesses, machines, the number of same-name
@@ -1554,7 +1584,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Quotas | `p` protects or unprotects; `s` shows unset subscriptions; `R` refreshes. Enter is unused. |
 | Graph | Arrows select; Shift+arrows pan; `,` and `.` select linked nodes; Enter opens the card; `/` finds a node. The graph fits itself when the tab opens. `o`, Space, `t` and `0` do nothing. |
 | Agent card | Ctrl+U and Ctrl+D scroll. `,` and `.` select learned changes; `u` undoes the selected change. `!` does nothing; the legend is in the help overlay under Graph. `[` and `]` do not scroll. |
-| Tools | Opens skills per agent. Up/down selects an agent, right or Enter moves to skills, Space queues a toggle, and Enter reviews all pending changes for that agent before confirmation. Left returns to agents. Esc asks before discarding pending changes. `/` filters skill names. Tab switches to all tools and back. In all tools, Enter opens the selected tool's actions; `/` filters, `t` shows skill cost per project, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
+| Tools | Opens on one table: skills down, projects across, each cell on or off, and `NEW PROJECTS` last. Arrows move (`j`/`k`, `h`/`l` too), Space switches the cell, Enter on `NEW PROJECTS` switches the standing choice and elsewhere opens actions, `/` filters by skill name, `d` shows details, `i` imports outside skills, `m` opens the all-tools list for MCP servers, `R` rescans and `?` opens help. A change is a plan in plain words; Enter applies it and Esc cancels. The line under the table names the selected project's skill count and token cost. A skill that cannot be switched is dim with its reason. In the all-tools list, Enter opens the selected tool's actions; `/` filters, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
 | Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. |
 | Help | Esc closes. `?` switches between this screen and all screens. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: the screen you are on first, then Global keys; `?` again shows Global keys, the current tab, the other tabs in tab order, then In overlays. |
 | Confirmations | Enter or `y` says yes; Esc or `n` says no. Every question footer shows all four keys. |

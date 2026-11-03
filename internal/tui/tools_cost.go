@@ -222,28 +222,3 @@ func (m Model) projectCosts() []projectCostRow {
 	})
 	return rows
 }
-func (m Model) projectCostView(w, h int) []string {
-	rows := m.projectCosts()
-	nameW := max(12, (w-43)/3)
-	machineW := max(10, (w-43)/3)
-	biggestW := max(8, w-4-nameW-machineW-24)
-	body := []string{cell("PROJECT", nameW) + cell("MACHINE", machineW) + cell("SKILLS", 8) + cell("EVERY SESSION", 16) + "BIGGEST"}
-	start := max(0, m.tl.projectRow-max(h-5, 0))
-	end := min(len(rows), start+max(h-3, 0))
-	for i := start; i < end; i++ {
-		r := rows[i]
-		skills, cost, biggest := fmt.Sprint(r.skills), formatTokens(r.cost), r.biggest
-		if r.machine == "" {
-			skills, cost, biggest = "-", "-", "-"
-		}
-		line := cell(shortenWords(r.name, nameW), nameW) + cell(shortenWords(orStr(r.machine, "-"), machineW), machineW) + cell(skills, 8) + cell(cost, 16) + cell(shortenWords(biggest, biggestW), biggestW)
-		if i == m.tl.projectRow {
-			line = selectedRow(padStyled(line, w-4))
-		}
-		body = append(body, line)
-	}
-	for len(body) < h-2 {
-		body = append(body, "")
-	}
-	return panel("Skill cost per project · tokens in every session", body, w, roleAccent)
-}

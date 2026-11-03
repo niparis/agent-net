@@ -71,6 +71,24 @@ func (s *Client) ToolsNeeds(ctx context.Context) ([]protocol.ToolNeed, error) {
 	return decodeCall[[]protocol.ToolNeed](s.action(ctx, "tools_needs", struct{}{}))
 }
 
+// ToolsProjects reads the skill table: every skill, every known project and
+// the standing choice for future projects. It changes nothing.
+func (s *Client) ToolsProjects(ctx context.Context) ([]protocol.ToolProjectState, error) {
+	return decodeCall[[]protocol.ToolProjectState](s.action(ctx, "tools_projects", struct{}{}))
+}
+
+// ToolsToggle proposes switching one skill on or off for one project. It
+// returns a plan and changes nothing until ToolsApply runs it.
+func (s *Client) ToolsToggle(ctx context.Context, req protocol.ToolToggleRequest) (protocol.ToolPlan, error) {
+	return decodeCall[protocol.ToolPlan](s.action(ctx, "tools_toggle", req))
+}
+
+// ToolsNewProjects saves the standing choice for future projects and returns a
+// plan when files have to move.
+func (s *Client) ToolsNewProjects(ctx context.Context, req protocol.ToolNewProjectsRequest) (protocol.ToolPlan, error) {
+	return decodeCall[protocol.ToolPlan](s.action(ctx, "tools_new_projects", req))
+}
+
 // ToolsPlan proposes a plan. It changes nothing.
 func (s *Client) ToolsPlan(ctx context.Context, req protocol.ToolPlanRequest) (protocol.ToolPlan, error) {
 	return decodeCall[protocol.ToolPlan](s.action(ctx, "tools_plan", req))

@@ -76,6 +76,12 @@ type toolsModalMsg struct {
 	update     func(md *toolsModal)
 	reload     bool
 	onboarding bool
+	// lockName and lockReason mark a skill the gateway refused to manage, so
+	// its row turns dim and space explains why.
+	lockName, lockReason string
+	// newProjects is the saved standing choice that the table must show even
+	// when the owner cancels the placement plan.
+	newProjects *protocol.ToolNewProjectsRequest
 }
 
 func (m *Model) openModal(title string) *toolsModal {
@@ -88,6 +94,19 @@ func (m *Model) openModal(title string) *toolsModal {
 func (m Model) onToolsModal(r toolsModalMsg) (Model, tea.Cmd) {
 	if md := m.tl.modal; md != nil && md.id == r.id {
 		r.update(md)
+	}
+	if r.lockName != "" && r.lockReason != "" {
+		if m.tl.lockReasons == nil {
+			m.tl.lockReasons = map[string]string{}
+		}
+		m.tl.lockReasons[r.lockName] = r.lockReason
+	}
+	if p := r.newProjects; p != nil {
+		for i := range m.tl.states {
+			if m.tl.states[i].Item == p.Item {
+				m.tl.states[i].NewProjects = p.On
+			}
+		}
 	}
 	if r.reload {
 		model, cmd := m.loadTools()
