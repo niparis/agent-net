@@ -56,6 +56,12 @@ type Store struct {
 	// message body to it.
 	logf func(event string, kv ...any)
 
+	// path is the gateway.db file, for the size before and after a vacuum.
+	path string
+	// vacuumMu guards the weekly schedule of the vacuum.
+	vacuumMu   sync.Mutex
+	lastVacuum time.Time
+
 	mu            sync.Mutex
 	buckets       map[string]*bucket
 	learnMu       sync.Mutex
@@ -565,7 +571,7 @@ func OpenStore(path string) (*Store, error) {
 	}
 	// One connection keeps writes serialized and avoids lock errors.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	s := &Store{db: db, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
