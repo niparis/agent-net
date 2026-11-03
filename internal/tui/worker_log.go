@@ -114,7 +114,11 @@ func (m Model) workersLogView(w, h int) []string {
 		}
 		add("Picker: " + firstNonEmpty(r.ModelNote, "-"))
 		if r.Failure != "" {
-			add("Failure: " + r.Failure)
+			label := "Note: "
+			if r.Status == "failed" || r.Status == "timed out" {
+				label = "Failure: "
+			}
+			add(label + r.Failure)
 		}
 	}
 	available := max(h-6, 0)

@@ -24,7 +24,11 @@ type WorkerAssessment struct {
 	JudgeModel   string            `json:"judge_model"`
 	Reasons      map[string]string `json:"reasons,omitempty"`
 	PickerLabel  string            `json:"picker_label"`
-	Error        string            `json:"error,omitempty"`
+	// PickerNote is the picker's full explanation for the chosen model, stored
+	// with the start so the owner's worker view can show why it was chosen.
+	// Empty for runs recorded before this field existed.
+	PickerNote string `json:"picker_note,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // DifficultyLine is the one-line score profile: the six scores, D and label.

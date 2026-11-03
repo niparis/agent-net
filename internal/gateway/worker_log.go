@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -15,6 +16,8 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 200
 	}
+	// worker_runs.started_at is Unix seconds. An assessment's started_at is
+	// Unix nanoseconds; the join below converts explicitly.
 	rows, err := s.db.Query(`SELECT r.session_id,r.node_id,COALESCE(n.hostname,''),COALESCE(NULLIF(s.repo_project,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.project'),''),r.harness,r.model,COALESCE(NULLIF(s.worker_title,''),s.title,''),COALESCE(NULLIF(r.difficulty_used,''),r.difficulty),r.outcome,r.started_at,r.run_seconds,r.ended_at FROM worker_runs r LEFT JOIN sessions s ON s.id=r.session_id LEFT JOIN nodes n ON n.id=r.node_id ORDER BY r.started_at DESC,r.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -70,8 +73,14 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 	for i := range out {
 		r := &out[i]
 		// Match the start, not merely the session: continuations reuse a session.
+		// worker_runs.started_at is Unix seconds, while a worker assessment's
+		// started_at is Unix nanoseconds, taken when the judge was asked a few
+		// seconds before the run. Take the latest assessment at or before the
+		// run's start plus a small margin, never one from a later start.
+		runStartNS := r.StartedAt * int64(time.Second)
+		assessmentLimit := runStartNS + int64(5*time.Second)
 		var raw string
-		err = s.db.QueryRow(`SELECT json_object('run_id',run_id,'session_id',session_id,'started_at',started_at,'reasoning',reasoning,'scope',scope,'coupling',coupling,'uncertainty',uncertainty,'verification',verification,'risk',risk,'d',d,'label',label,'judge_harness',judge_harness,'judge_model',judge_model,'reasons',json(reasons),'picker_label',picker_label,'error',error) FROM worker_assessments WHERE session_id=? AND started_at=? ORDER BY assessed_at DESC LIMIT 1`, r.SessionID, r.StartedAt).Scan(&raw)
+		err = s.db.QueryRow(`SELECT json_object('run_id',run_id,'session_id',session_id,'started_at',started_at,'reasoning',reasoning,'scope',scope,'coupling',coupling,'uncertainty',uncertainty,'verification',verification,'risk',risk,'d',d,'label',label,'judge_harness',judge_harness,'judge_model',judge_model,'reasons',json(reasons),'picker_label',picker_label,'picker_note',picker_note,'error',error) FROM worker_assessments WHERE session_id=? AND started_at<=? ORDER BY started_at DESC, assessed_at DESC LIMIT 1`, r.SessionID, assessmentLimit).Scan(&raw)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
@@ -81,6 +90,7 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 				return nil, err
 			}
 			r.Assessment = &a
+			r.ModelNote = a.PickerNote
 			if r.Difficulty == "" {
 				r.Difficulty = a.PickerLabel
 				if r.Difficulty == "" {

@@ -593,6 +593,12 @@ CREATE TABLE IF NOT EXISTS transfer_parts (
  sha256 TEXT NOT NULL,
  at INTEGER NOT NULL,
  PRIMARY KEY(id, idx));
+`, `
+-- The picker's full explanation for a chosen start, for the owner's worker
+-- view. Runs recorded before this column existed read an empty note, and the
+-- view shows a dash. The column is added by the migration code so a replay is
+-- safe.
+SELECT 1 /* worker picker note */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -942,6 +948,19 @@ func (s *Store) migrate() error {
 			}
 			if has == 0 {
 				if _, err := tx.Exec(`ALTER TABLE profiles ADD COLUMN task_started INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker picker note") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_assessments') WHERE name = 'picker_note'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE worker_assessments ADD COLUMN picker_note TEXT NOT NULL DEFAULT ''`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
