@@ -806,6 +806,17 @@ If `git` is missing, slow or fails, the session is still reported, with fewer fi
 
 A worker profile may name `agy`, and can start an Antigravity worker (decision [0049](decisions/0049-antigravity-harness.md), build step 4). An exact model id keeps its effort as written. The vendor in an agy model id (`gemini` to Google, `claude` to Anthropic, `gpt` to OpenAI) is used for display. A Claude model through agy is not your Anthropic subscription, so the protected-provider rule never matches it.
 
+Antigravity workers started with persistent streams keep running across daemon
+restarts. The worker inherits a read/write FIFO for stdin and writes stdout to
+a private file under its worker directory. The new daemon reopens the FIFO,
+restores the in-flight turn and reads results from the saved offset. Usage and
+an acknowledged hand-back survive the restart, including a result written while
+the daemon was down. The normal done or blocked notice is sent once, without
+counting recovery as caller rework. Workers started by older versions with
+anonymous pipes cannot be reattached this way. See decision
+[0055](decisions/0055-agy-worker-restart.md).
+
+
 A daemon started by launchd or systemd has a short `PATH`, and it does not read `~/.bashrc` or `~/.zshrc`. So it searches, in this order: its own `PATH`, then `~/.local/bin`, `~/.bun/bin`, `~/.npm-global/bin`, `~/.opencode/bin`, the folders of Node version managers, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, `/bin`, and last the `PATH` of your login shell (`$SHELL -l -c`, or `/bin/zsh` on macOS if `$SHELL` is not set, 3 second limit). The login shell is never interactive: it reads your login startup files, not the interactive ones. The programs it runs get the search path as their `PATH`, so a script that starts with `#!/usr/bin/env node` works.
 
 The version manager folders are: nvm (`$NVM_DIR` if set, and `~/.nvm/versions/node/*/bin`), fnm (`$FNM_DIR`, `~/.local/share/fnm`, `~/.fnm`, `~/Library/Application Support/fnm`, each with `node-versions/*/installation/bin`), volta (`~/.volta/bin`), asdf and mise shims (`~/.asdf/shims`, `~/.local/share/mise/shims`, `~/.mise/shims`), pnpm global (`$PNPM_HOME`, `~/.local/share/pnpm`, `~/Library/pnpm`) and bun (`~/.bun/bin`). With several Node versions, the one named by nvm's default alias (`~/.nvm/alias/default`) or fnm's default alias comes first. If the alias does not resolve, the newest version comes first.

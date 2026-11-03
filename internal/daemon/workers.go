@@ -739,7 +739,11 @@ func (d *Daemon) spawnWorkerIO(w *worker, bin string, args []string, env []strin
 	}
 	cmd.Stdout, cmd.Stderr = logf, logf
 	if stdout != nil {
-		cmd.Stdout = io.MultiWriter(logf, stdout)
+		if f, ok := stdout.(*os.File); ok {
+			cmd.Stdout = f // inherited file, with no daemon-owned copier pipe
+		} else {
+			cmd.Stdout = io.MultiWriter(logf, stdout)
+		}
 	}
 	if w.discardStdout {
 		cmd.Stdout = nil // /dev/null
@@ -1469,7 +1473,10 @@ func (d *Daemon) adoptWorkers() {
 			continue // reported at the next connect
 		}
 		tok, alive := procToken(r.PID)
-		if !alive || tok != r.StartToken {
+		// agy may have written its last result while the daemon was down.
+		_, agyStreamErr := os.Stat(filepath.Join(d.cfg.StateDir, "workers", r.ID, "agy-stream.json"))
+		agyRecoverable := r.Harness == "agy" && r.NativeID != "" && agyStreamErr == nil && (!alive || tok == r.StartToken)
+		if (!alive || tok != r.StartToken) && !agyRecoverable {
 			if err := d.st.deleteWorkerIdleNotice(r.ID); err != nil {
 				d.Logf("worker %s: remove idle notice: %v", r.ID, err)
 			}

@@ -592,7 +592,18 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		note = sandboxNote + "; " + note
 	}
 	n := d.notice(w, req.Status, note, st)
-	raw, err := d.sendNoticeTo(ctx, w, n, req.Report, to, replyTo)
+	noticeKey := ""
+	if w.harness == "agy" {
+		d.wmu.Lock()
+		c := w.agy
+		d.wmu.Unlock()
+		if c != nil {
+			c.mu.Lock()
+			noticeKey = c.pendingKey
+			c.mu.Unlock()
+		}
+	}
+	raw, err := d.sendNoticeToKey(ctx, w, n, req.Report, to, replyTo, noticeKey, true)
 	if err != nil {
 		return nil, err
 	}

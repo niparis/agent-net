@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -36,8 +37,13 @@ type agyUsage struct {
 type agyConn struct {
 	d *Daemon
 	w *worker
-	// Write is called by exec's stdout copier. Its line buffer is private to
-	// that goroutine; mu guards input and figures shared with the daemon.
+	// The stream reader owns its line buffer. mu guards input, the stream
+	// checkpoint and figures shared with the daemon.
+	streamID    string
+	offset      int64
+	stop        chan struct{}
+	stopped     chan struct{}
+	stopOnce    sync.Once
 	buffer      []byte
 	mu          sync.Mutex
 	writeMu     sync.Mutex
@@ -47,6 +53,8 @@ type agyConn struct {
 	completed   bool
 	failure     string
 	handback    *protocol.WorkerHandbackRequest
+	pending     *protocol.WorkerHandbackRequest
+	pendingKey  string
 }
 
 func (agyLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
@@ -66,6 +74,9 @@ func (agyLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
 func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	w.agyProcessMu.Lock()
 	defer w.agyProcessMu.Unlock()
+	if d.workerStreamCtx != nil && d.workerStreamCtx.Err() != nil {
+		return d.workerStreamCtx.Err()
+	}
 	d.wmu.Lock()
 	if w.stopping {
 		d.wmu.Unlock()
@@ -77,6 +88,7 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	d.wmu.Unlock()
 	defer func() { d.wmu.Lock(); w.agyStarting = false; d.wmu.Unlock() }()
 	if old != nil {
+		old.closeStream()
 		old.mu.Lock()
 		if old.in != nil {
 			old.in.Close()
@@ -101,12 +113,27 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	rd, wr, err := os.Pipe()
+	fifo := filepath.Join(dir, "agy-stdin")
+	_ = os.Remove(fifo)
+	if err := syscall.Mkfifo(fifo, 0600); err != nil {
+		return err
+	}
+	rd, err := os.OpenFile(fifo, os.O_RDWR, 0)
 	if err != nil {
 		return err
 	}
 	defer rd.Close()
-	c := &agyConn{d: d, w: w, in: wr, initialized: make(chan string, 1)}
+	wr, err := os.OpenFile(fifo, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(filepath.Join(dir, "agy-events.jsonl"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		wr.Close()
+		return err
+	}
+	defer out.Close()
+	c := &agyConn{d: d, w: w, in: wr, streamID: protocol.NewID("s"), initialized: make(chan string, 1)}
 	if b, err := os.ReadFile(filepath.Join(dir, "agy-usage.json")); err == nil {
 		_ = json.Unmarshal(b, &c.usage)
 	}
@@ -140,10 +167,18 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 		args = append(args, "--conversation", native)
 	}
 	args = append(args, "-p=")
-	if err := d.spawnWorkerIO(w, bin, args, env, rd, c); err != nil {
+	if err := d.spawnWorkerIO(w, bin, args, env, rd, out); err != nil {
 		wr.Close()
 		return err
 	}
+	c.mu.Lock()
+	err = c.saveStreamLocked()
+	c.mu.Unlock()
+	if err != nil {
+		wr.Close()
+		return err
+	}
+	d.startAgyStream(c)
 	ok := false
 	defer func() {
 		if !ok {
@@ -217,7 +252,9 @@ func (c *agyConn) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (c *agyConn) event(line []byte) {
+func (c *agyConn) event(line []byte) { c.eventAt(line, -1) }
+
+func (c *agyConn) eventAt(line []byte, offset int64) {
 	var e struct {
 		Event        string `json:"event"`
 		Conversation string `json:"conversation_id"`
@@ -252,6 +289,9 @@ func (c *agyConn) event(line []byte) {
 	case "result":
 		r := e.Result
 		c.mu.Lock()
+		if offset >= 0 {
+			c.offset = offset
+		}
 		c.usage.Input += r.Usage.Input
 		c.usage.Output += r.Usage.Output
 		c.usage.Thinking += r.Usage.Thinking
@@ -267,7 +307,13 @@ func (c *agyConn) event(line []byte) {
 			c.failure = "Antigravity denied a tool action in headless mode"
 		}
 		usage, handback, failure := c.usage, c.handback, c.failure
-		c.handback = nil
+		if handback != nil {
+			c.pending, c.handback = handback, nil
+			c.pendingKey = fmt.Sprintf("agy-%s-%s-%d", w.id, c.streamID, c.offset)
+		}
+		// Save usage and the acknowledged report with the consumed offset.
+		// Keep the report until handbackTo has durably recorded the notice.
+		_ = c.saveStreamLocked()
 		c.mu.Unlock()
 		b, _ := json.Marshal(usage)
 		tmp := filepath.Join(w.dir, "agy-usage.json.tmp")
@@ -280,14 +326,7 @@ func (c *agyConn) event(line []byte) {
 			return
 		}
 		if handback != nil {
-			d.goBackground(func() {
-				if out, err := d.handbackTo(context.Background(), w, *handback, "", ""); err != nil {
-					d.Logf("worker %s: Antigravity handback: %v", w.id, err)
-				} else if out.AutoContinued {
-					// The automatic continue was queued behind this turn.
-					d.openCodeTurnIdle(w.sessionID)
-				}
-			})
+			c.publishHandback(*handback)
 		} else if !d.openCodeTurnIdle(w.sessionID) {
 			report := r.Response
 			if strings.TrimSpace(report) == "" {
@@ -357,6 +396,7 @@ func (agyLauncher) stop(d *Daemon, w *worker) {
 	c, exited := w.agy, w.exited
 	d.wmu.Unlock()
 	if c != nil {
+		c.closeStream()
 		c.mu.Lock()
 		if c.in != nil {
 			c.in.Close()
@@ -370,7 +410,7 @@ func (agyLauncher) stop(d *Daemon, w *worker) {
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	// endWorker follows this grace period with killGroup, including descendants.
+	// The inherited FIFO keeps stdin open. endWorker kills the process group.
 }
 
 func (d *Daemon) setAgyStatus(w *worker, status string) {
@@ -442,6 +482,10 @@ func (c *agyConn) send(line []byte) error {
 		return errors.New("the Antigravity input is closed")
 	}
 	c.completed = false
+	if err := c.saveStreamLocked(); err != nil {
+		c.mu.Unlock()
+		return err
+	}
 	c.mu.Unlock()
 	_, err := in.Write(line)
 	if err != nil {
@@ -476,6 +520,10 @@ func (d *Daemon) deferAgyHandback(w *worker, req protocol.WorkerHandbackRequest)
 		return nil, errors.New("the turn already has a handback")
 	}
 	c.handback = &req
+	if err := c.saveStreamLocked(); err != nil {
+		c.handback = nil
+		return nil, err
+	}
 	return &protocol.WorkerHandbackResult{Status: req.Status, Complete: req.IsComplete()}, nil
 }
 

@@ -296,12 +296,13 @@ type Daemon struct {
 	// bg tracks short-lived work that writes the state database or kills a
 	// process, such as ending a worker after its hand-back. bgMu gates new
 	// work once Stop begins, so Stop can wait for it before closing the state.
-	bgMu     sync.Mutex
-	bgClosed bool
-	bg       sync.WaitGroup
-	cancel   context.CancelFunc
-	ln       *localServer
-	mcp      *mcpHost
+	bgMu            sync.Mutex
+	bgClosed        bool
+	bg              sync.WaitGroup
+	cancel          context.CancelFunc
+	workerStreamCtx context.Context
+	ln              *localServer
+	mcp             *mcpHost
 
 	upg upgradeState
 
@@ -470,6 +471,7 @@ func New(cfg Config) (*Daemon, error) {
 // the background.
 func (d *Daemon) Start(ctx context.Context) error {
 	ctx, d.cancel = context.WithCancel(ctx)
+	d.workerStreamCtx = ctx
 	d.ctoCtx = ctx
 	if d.cfg.RefreshAgentFiles != nil {
 		d.cfg.RefreshAgentFiles(d.Logf)
