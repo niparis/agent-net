@@ -132,6 +132,8 @@ func TestLinkKeepaliveGatewayLiveTraffic(t *testing.T) {
 			g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
 			var pings atomic.Int32
 			ws := dialLinkPeer(t, url, token, mode == "pongs", &pings)
+			// Dial can return before the gateway registers the link.
+			waitLink(t, "link registered", func() bool { return nodeConnected(g, id) })
 			if mode != "pongs" {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
@@ -164,6 +166,7 @@ func TestLinkKeepaliveGatewayEmptyFragments(t *testing.T) {
 	g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
 	var pings atomic.Int32
 	ws := dialLinkPeer(t, url, token, false, &pings)
+	waitLink(t, "link registered", func() bool { return nodeConnected(g, id) })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stop := make(chan struct{})
