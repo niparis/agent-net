@@ -1,17 +1,12 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online · 1 busy                updated 14:05:00
 ╭─Subscriptions · read on research · read 40s ago──────────────────────────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                                                            │
-│ PROVIDER  PLAN    RESEARCH   WINDOW               LEFT                 PACE      RESETS                              │
-│ > claude  max     live       session              █████████─  88%      -         -                                   │
-│                              week                 ████──────  40%      -         -                                   │
-│                              Fable week           ██████████  95%      -         -                                   │
-│   codex   prolite live       week                 █─────────   8%      -         -                                   │
-│   copilot         live       chat                 ██████████ 100%      -         -                                   │
-│                              completions          ██████████ 100%      -         -                                   │
-│                              premium interactions ────────── exhausted -         -                                   │
-│   other           live       month                █████████─  85%      -         -                                   │
-│ unused: copilot, other                                                                                               │
-│ 17 providers not set up · s to show                                                                                  │
+│ PROVIDER PLAN    RESEARCH   WINDOW     LEFT                 PACE      RESETS                                         │
+│ > claude max     live       session    █████████─  88%      -         -                                              │
+│                             week       ████──────  40%      -         -                                              │
+│                             Fable week ██████████  95%      -         -                                              │
+│   codex  prolite live       week       █─────────   8%      -         -                                              │
+│ 19 other subscriptions · s to show                                                                                   │
 │ laptop: exit status 2                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
@@ -19,6 +14,11 @@
 │ terra              codex    gpt-6.1-terra:high        42.3/high    x     x     ·     ·     x      unused             │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
 
 
 

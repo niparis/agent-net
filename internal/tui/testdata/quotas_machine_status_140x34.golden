@@ -3,16 +3,16 @@
 │ no provider protected · select a subscription and press p                                                                                │
 │ PROVIDER      PLAN               NICOLAS-M… RESEARCH   WINDOW               LEFT                 PACE      RESETS                        │
 │ > claude                         live       -          week                 ██████████ 100%      on pace   -                             │
-│   cursor      live               live       sign in    week                 ██████████ 100%      -         -                             │
 │   opencode-go individual premium no key     live       premium interactions ██████████ 100%      -         -                             │
+│   cursor      live               live       sign in    week                 ██████████ 100%      -         -                             │
 │   deepseek                       no key     no key     -                    -                    -         -                             │
-│ unused: cursor, opencode-go                                                                                                              │
-│ 1 provider not set up · s to hide                                                                                                        │
+│ 2 other subscriptions · s to hide                                                                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED                                   │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
 
 
 

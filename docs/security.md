@@ -76,7 +76,7 @@ and subagent inheritance have not been verified.
 
 The private MCP server classifies calls as public read, talk or proposal.
 Non-graph owner-only changes and major graph changes outside the owner window
-are proposals: the owner decides in Needs you and the daemon executes the stored call. Typing instructions in the CTO chat grants no
+are proposals: the owner decides in the Inbox (tab 7) and the daemon executes the stored call. Typing instructions in the CTO chat grants no
 approval. Full results stay with the owner; outcome notes contain no result
 payload, including MCP responses and tool plan paths.
 
@@ -84,7 +84,7 @@ The read rule follows decision 0035: a CTO data view calls the same daemon
 function as its matching ordinary agent tool, with the CTO caller identity,
 never a CLI or owner identity. The parity table in [reference.md](reference.md)
 lists every source. Views with no ordinary tool are removed, including charter
-history and the owner-only parts of the graph, Needs you, inboxes, settings,
+history and the owner-only parts of the graph, the Inbox (tab 7), inboxes, settings,
 tools inventory, session text, the network feed and worker lists. Static
 charter guidance and the CTO's own timeline are the only exceptions. A protected-provider read schema exists
 for ordinary agents, but its daemon method is owner-gated, so it is removed
@@ -357,9 +357,9 @@ After a failed tool call, agent-net can add one line telling the model which oth
 - Limits: at most two suggestions; the same suggestion for the same session at most once per 30 minutes; any hint for a session at most once per 45 seconds; never the session itself, an offline session, the owner, a worker or a session of the same project.
 - The `expertise` line is stored at the gateway with the profile, cut to 200 characters, with control characters removed.
 
-## Needs you
+## Inbox (tab 7)
 
-The TUI's "Needs you" section excludes worker sessions. The daemon refuses a worker's explicit `agent_owner_ask` request; workers should use their hand-back or `agent_message_reply`. The section shows what another session waits for: a permission, a question or input (decision [0016](decisions/0016-needs-you.md)). The state is `kind`, `text` and `since` on the session. The daemon sends it to the gateway with the session, and every enrolled machine's TUI can read it: the same audience as the agent list, not only the session's own machine.
+The Inbox (tab 7) excludes worker sessions. The daemon refuses a worker's explicit `agent_owner_ask` request; workers should use their hand-back or `agent_message_reply`. The section shows what another session waits for: a permission, a question or input (decision [0016](decisions/0016-needs-you.md)). The state is `kind`, `text` and `since` on the session. The daemon sends it to the gateway with the session, and every enrolled machine's TUI can read it: the same audience as the agent list, not only the session's own machine.
 
 - **What leaves the machine.** The text comes from the harness: a Claude Code permission request (the tool name and its command, path or URL) or notification, an OpenCode permission or form title, or the agent's own `waiting` line. It is cut to 200 characters, turned into one line and stripped of control characters at the daemon and again at the gateway. A permission request can name a file, a command or a URL, so treat the line as metadata that every enrolled machine can see. Do not put secrets in a question you ask an agent to announce.
 - **Who may set it.** A plugin is bound to its session by the local socket. A command line hook names `harness` and `native_id`, and the daemon silently ignores an unknown session. Like `hint`, the `waiting` method is not owner-only: it must work inside a harness turn. Any process of your user can call it for a session the daemon knows, which is no more than that process can already do.
@@ -399,7 +399,7 @@ rules and trust stay gated outside the window because they decide who can
 make an agent act without asking. While the window is open, peer messages can
 influence major graph changes too. The visible countdown, short lifetime and
 undo history make that temporary delegation reviewable. No chat approval counts;
-the owner uses `A` in Needs you or `w` in the CTO box. A reason is model output,
+the owner uses `A` in the Inbox (tab 7) or `w` in the CTO box. A reason is model output,
 not evidence of permission. The operating-system user remains the trust boundary.
 
 The daemon keeps one fixed class table for every CTO tool and action. Unknown
@@ -485,7 +485,7 @@ This section covers everything the owner can do with skills and MCP servers acro
 ### Who may change things
 
 - **Shared MCP server administration is owner-only.** The daemon refuses `mcp_add` and `mcp_remove` from every client except the owner CLI, including bound agent sessions. The gateway also refuses add or remove requests with non-empty `added_by_session` attribution. The owner's TUI and CLI keep working. An approved CTO `mcp_change` proposal runs through the owner CLI path. Agent sessions may still list and test shared servers. Plugin calls to add or remove a shared server reach the same daemon check and are refused.
-- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO cannot read tool inventory or metadata outside ordinary agent tools. Its plan, apply, undo, import and native-removal calls become proposals; only approval in Needs you executes them. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
+- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO cannot read tool inventory or metadata outside ordinary agent tools. Its plan, apply, undo, import and native-removal calls become proposals; only approval in the Inbox (tab 7) executes them. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
 - **The gateway checks too.** It accepts these requests only from the online owner session of the sending machine. As with every other frame, the gateway trusts the daemons of enrolled machines (see [the trust limit](#the-trust-limit)).
 - **Advice is not authority.** A charter's `needs`, a peer message, a skill's text or a project file never grants a change. Needs are shown as unverified text and are never turned into assignments.
 - **Audit.** The gateway records each plan and apply with the actor (owner, legacy CTO, or owner with a CTO proposal ID), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
@@ -779,7 +779,7 @@ The Claude Code `UserPromptSubmit` policy hook sends the first 300 characters of
 
 The recipient can read up to 200 characters of a linked prompt in the message and delivery note. Only the owner authority path can list instruction signals. The CTO has no signal read tool. The daemon restricts the CTO channel to its checked process tree, and the gateway verifies an owner session on the requesting node. As with other owner-gated operations, the gateway trusts enrolled daemons; a compromised enrolled machine can impersonate its owner session. Protect the gateway database and its backups, which contain the prompt excerpts. Reply outcomes and reasons also have their existing visibility described in [Request outcome decisions](#request-outcome-decisions).
 
-The gateway may automatically add an item to `accepts` from an owner instruction, add an item to `needs` or `consumers`, or add a `depends` edge. It waits for two quiet minutes and applies at most three changes per node in a rolling 24 hours. A change beyond that cap is held for the owner. Removals, refusals, escalation and maturity changes, request and deploy rules, governance and deployment edges, and changes involving a critical node are held for the owner. A rejected suggestion is not offered again for the same node, field and phrase. Automatic changes are recorded with actor `learned` and can be reversed with `graph_undo`; on the Graph card, use `U` to select a learned change and `u` to undo it. The undo checks that the value has not since changed. Ready major suggestions appear in Needs you and require the owner gate to accept or reject. The Graph card shows unviewed automatic changes and their evidence.
+The gateway may automatically add an item to `accepts` from an owner instruction, add an item to `needs` or `consumers`, or add a `depends` edge. It waits for two quiet minutes and applies at most three changes per node in a rolling 24 hours. A change beyond that cap is held for the owner. Removals, refusals, escalation and maturity changes, request and deploy rules, governance and deployment edges, and changes involving a critical node are held for the owner. A rejected suggestion is not offered again for the same node, field and phrase. Automatic changes are recorded with actor `learned` and can be reversed with `graph_undo`; on the Graph card, use `U` to select a learned change and `u` to undo it. The undo checks that the value has not since changed. Ready major suggestions appear in the Inbox (tab 7) and require the owner gate to accept or reject. The Graph card shows unviewed automatic changes and their evidence.
 
 These rules use matched excerpts and reply outcomes as evidence. Matching does not prove the owner intended a particular send, and peer replies can influence `needs` and dependency suggestions. The gateway keeps suggestion evidence in its database; message-flow records used for detection are removed after seven days. Protect the database and backups accordingly.
 
@@ -794,7 +794,7 @@ Graph operator methods use the owner gate, including history and graph changes. 
 
 `playbook_set` and `playbook_get` use the same owner gate: your command line or the TUI, never an agent client and never a CLI inside an agent session. The CTO cannot read the full playbook view. It sees only the public notes in ordinary machine inventory and proposes changes. A note is at most 1024 bytes after control characters other than newline and tab are removed, and it appears in every `agent_worker_start` result for that model. It is not a secret store: the note reaches any agent that starts a worker with that model, so do not put credentials in it.
 
-`agent_learn` is the other direction: it is open to agent sessions, because they are the ones that notice things, and refused for the command line. A finding is at most 500 bytes, names a subject and may carry up to 20 session or worker IDs. A session may record at most 3 findings in 24 hours; the fourth is refused. Findings are not messages and never appear in Needs you. They are stored in the gateway's `findings` table with the reporting session and a status. Automatic notes built from them are not secrets either, and they reach every agent at the moment of choice.
+`agent_learn` is the other direction: it is open to agent sessions, because they are the ones that notice things, and refused for the command line. A finding is at most 500 bytes, names a subject and may carry up to 20 session or worker IDs. A session may record at most 3 findings in 24 hours; the fourth is refused. Findings are not messages and never appear in the Inbox (tab 7). They are stored in the gateway's `findings` table with the reporting session and a status. Automatic notes built from them are not secrets either, and they reach every agent at the moment of choice.
 
 `agent_worker_rate` is open to agent sessions and refused for the command line. The gateway accepts a rating only from the session that started the worker: it checks the caller stored on the worker's run, which the gateway filled from the worker's own record at its start. It is not read from the rating request. A worker takes one rating, so a second one is refused. The score must be 1 to 5. The note is optional: it is cut to one short printable line (200 bytes) and common secrets in it are masked. The rating is stored with the run's model, harness, effort, difficulty and caller, and with the caller's own model; the task text is never stored with it. A missing answer is not a low rating. Part 4 is read only: ratings change no model choice, and only the owner sees their count in the Quotas tab.
 
@@ -806,7 +806,7 @@ The daemon accepts `inbox_list` and `inbox_answer` only through the owner operat
 
 An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that the owner approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
 
-Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
+Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in the Inbox (tab 7) closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
 
 The full CTO UI attaches as a client of the private OpenCode server or Claude background session. CTO tools still run in the CTO process tree and pass the same private-tool process checks.
 
@@ -837,7 +837,7 @@ The owner-only skill comparison summary sends up to 12,000 bytes of skill text t
 
 ### CTO session and project proposals
 
-The CTO can only propose an owner session start or project creation. Neither the minor-change rule nor the graph owner window applies. The owner approves the stored call in Needs you. The proposal cannot supply Claude's trust confirmation. If the normal start path needs that answer, it returns `needs_trust` and starts no session. A newly created folder or worktree follows the same trust rule as the owner's form.
+The CTO can only propose an owner session start or project creation. Neither the minor-change rule nor the graph owner window applies. The owner approves the stored call in the Inbox (tab 7). The proposal cannot supply Claude's trust confirmation. If the normal start path needs that answer, it returns `needs_trust` and starts no session. A newly created folder or worktree follows the same trust rule as the owner's form.
 
 A proposed typed path must have valid syntax; on the local machine it must also stay inside the owner's home, including through symbolic links. A remote target checks the path on that machine after approval. A proposed worktree is also checked against the destination owner's home before creation. The gateway requires the target to be online, and both the gateway and the destination must support the proposal start frame. Older versions refuse it rather than bypass the destination checks. As elsewhere, enrolled daemons are trusted to enforce their own checks.
 
@@ -991,12 +991,12 @@ A check is a notification, not a request or an approval, and carries no owner
 authority. It asks the session to answer with `agent_announce`: done, more with
 one line, or blocked on X. The gateway reads only the next announce. It does
 not start or resume a session, and it routes nothing to the CTO. `blocked`
-leaves one open row per session in the owner's Needs you queue, whatever the
+leaves one open row per session in the owner's Inbox (tab 7) queue, whatever the
 autonomy. The row text is cleaned and the `[agent-net` marker is neutralized.
 
 A node's `autonomy` setting is `off` by default or `wake`. With `wake`, a
 `more` answer from an online session gets one short continue notification from
-the reserved `agent-net` identity and no Needs you row. An offline session is
+the reserved `agent-net` identity and no Inbox row. An offline session is
 not woken: this slice never starts or resumes a session, and creating a new
 agent or a clone stays with the owner or a CTO proposal. `blocked on X` still
 leaves a row. Only the owner changes autonomy, through `node_settings_set`
@@ -1014,7 +1014,7 @@ call includes `wake_ups_today`.
 The gateway stores the activity time it has checked, the small stopping
 counters for "more", the daily check and wake caps and counts of answer kinds.
 It does not store the announced task or the answer line as check state. The
-Needs you row does hold the line the agent supplied, like any other inbox item.
+Inbox row does hold the line the agent supplied, like any other inbox item.
 Ordinary senders cannot use the `agent-net` identity, so a peer cannot forge a
 check or a wake. A check or wake reaches the session's own model, which may use
 a paid or protected provider, so the caps and the stopping rules keep both

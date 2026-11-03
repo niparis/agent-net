@@ -1,11 +1,10 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online · 1 busy                updated 14:05:00
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                                                            │
-│ PROVIDER PLAN     MAC        OTHER      WINDOW LEFT                 PACE      RESETS                                 │
-│ > claude max      live       -          5h     █████─────  50%      on pace   -                                      │
-│   codex  pro      live       -          week   █─────────   8%      ahead     in 2h00                                │
-│   cursor business live       -          month  ────────── exhausted -         -                                      │
-│ unused: cursor                                                                                                       │
+│ PROVIDER PLAN MAC        OTHER      WINDOW LEFT                 PACE      RESETS                                     │
+│ > claude max  live       -          5h     █████─────  50%      on pace   -                                          │
+│   codex  pro  live       -          week   █─────────   8%      ahead     in 2h00                                    │
+│ 1 other subscriptions · s to show                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │
@@ -18,6 +17,7 @@
 │   not on research                                                                                                    │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
 
 
 

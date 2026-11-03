@@ -63,7 +63,7 @@ func (m Model) quotasView(w, h int) []string {
 
 	var newest int64
 	var configured, liveUnused, unset, unused []quotaRow
-	relevant := m.quotaRelevantProviders()
+	relevant := m.quotaUsableProviders()
 	for _, r := range rows {
 		provider := strings.ToLower(r.provider.Provider)
 		if len(r.provider.Windows) > 0 {
@@ -81,8 +81,8 @@ func (m Model) quotasView(w, h int) []string {
 			newest = r.at
 		}
 	}
-	configured = append(configured, liveUnused...)
 	if m.quotaShowUnset {
+		configured = append(configured, liveUnused...)
 		configured = append(configured, unset...)
 		configured = append(configured, unused...)
 	}
@@ -211,28 +211,12 @@ func (m Model) quotasView(w, h int) []string {
 		}
 
 	}
-	if len(liveUnused) > 0 {
-		var names []string
-		for _, r := range liveUnused {
-			names = append(names, sanitize(r.provider.Provider))
-		}
-		for _, line := range wrap("unused: "+strings.Join(names, ", "), w-4) {
-			subscription = append(subscription, sDim.Render(line))
-		}
-	}
-	if len(unset) > 0 {
+	if count := len(liveUnused) + len(unset) + len(unused); count > 0 {
 		action := "s to show"
 		if m.quotaShowUnset {
 			action = "s to hide"
 		}
-		subscription = append(subscription, sDim.Render(fmt.Sprintf("%s not set up · %s", plural(len(unset), "provider"), action)))
-	}
-	if len(unused) > 0 {
-		action := "s to show"
-		if m.quotaShowUnset {
-			action = "s to hide"
-		}
-		subscription = append(subscription, sDim.Render(fmt.Sprintf("%s without live windows · %s", plural(len(unused), "provider"), action)))
+		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d other subscriptions · %s", count, action)))
 	}
 	for _, e := range errors {
 		for _, line := range wrap(e, w-4) {

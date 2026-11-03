@@ -221,6 +221,26 @@ func (m Model) quotaNodes() (map[string]protocol.UsageNode, []string) {
 	return nodes, ids
 }
 
+func (m Model) quotaUsableProviders() map[string]bool {
+	relevant := m.quotaRelevantProviders()
+	for _, name := range []string{"claude", "codex", "opencode-go", "agy"} {
+		relevant[name] = true
+	}
+	for _, n := range m.snap.Nodes {
+		for _, h := range n.Harnesses {
+			if h.Name != "opencode" && h.Name != "pi" {
+				continue
+			}
+			for _, model := range h.Models {
+				if name := protocol.QuotaProviderForModel(model); name != "" {
+					relevant[name] = true
+				}
+			}
+		}
+	}
+	return relevant
+}
+
 func (m Model) quotaRelevantProviders() map[string]bool {
 	relevant := map[string]bool{}
 	for _, p := range m.snap.WorkerProfiles {
@@ -778,7 +798,7 @@ func (m Model) quotaProviderProtected(provider string) bool {
 // selectableQuotaRows follows the same ordering and visibility as the panel.
 func (m Model) selectableQuotaRows() []quotaRow {
 	rows := m.quotaDisplayRows()
-	relevant := m.quotaRelevantProviders()
+	relevant := m.quotaUsableProviders()
 	var configured, liveUnused, unset, unused []quotaRow
 	for _, r := range rows {
 		provider := strings.ToLower(r.provider.Provider)
@@ -794,8 +814,8 @@ func (m Model) selectableQuotaRows() []quotaRow {
 			unused = append(unused, r)
 		}
 	}
-	configured = append(configured, liveUnused...)
 	if m.quotaShowUnset {
+		configured = append(configured, liveUnused...)
 		configured = append(configured, unset...)
 		configured = append(configured, unused...)
 	}

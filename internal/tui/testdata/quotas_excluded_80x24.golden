@@ -1,11 +1,10 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
-│ PROVIDER PLAN  MAC     OTHER   WINDOW LEFT                 PACE      RESETS  │
-│ > claude max   live    -       5h     █████─────  50%      on pace   -       │
-│   codex  pro   live    -       week   █─────────   8%      ahead     in 2h00 │
-│   cursor busi… live    -       month  ────────── exhausted -         -       │
-│ unused: cursor                                                               │
+│ PROVIDER PLAN MAC     OTHER   WINDOW LEFT                 PACE      RESETS   │
+│ > claude max  live    -       5h     █████─────  50%      on pace   -        │
+│   codex  pro  live    -       week   █─────────   8%      ahead     in 2h00  │
+│ 1 other subscriptions · s to show                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 6 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
@@ -16,6 +15,7 @@
 │   (not a worker provider)                                                    │
 │ sol             codex    gpt-6.1-sol       x     x     ·     ·     x         │
 │ terra           codex    gpt-6.1-terra     x     x     ·     ·     x         │
+│ terra pi        pi       gpt-6.1-terra     x     ·     ·     x     x         │
 │ more below · up/down to scroll                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
