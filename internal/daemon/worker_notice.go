@@ -189,6 +189,10 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 		}
 		return fmt.Errorf("cannot make a worktree: %w", err)
 	}
+	if err := d.copyWorktreeSkills(ctx, main, dir); err != nil {
+		_, _ = gitOut(ctx, main, "worktree", "remove", "--force", dir)
+		return err
+	}
 	d.wmu.Lock()
 	w.mainPath, w.path, w.worktree, w.branch = main, dir, dir, branch
 	if !reuse || previousBase == "" {

@@ -79,6 +79,9 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		"AGENT_NET_SOCKET": d.cfg.SocketPath,
 	})
 	args := []string{"--mode", "rpc", "--session-id", native, "--name", "worker " + w.project}
+	if w.worktree != "" {
+		args = append(args, "--approve")
+	}
 	if w.model != "" {
 		args = append(args, "--model", w.model)
 	}

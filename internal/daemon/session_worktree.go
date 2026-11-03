@@ -84,6 +84,10 @@ func (d *Daemon) createOwnerWorktreeChecked(ctx context.Context, projectPath, pr
 		}
 		return "", "", "", fmt.Errorf("cannot make a worktree: %w", err)
 	}
+	if err := d.copyWorktreeSkills(ctx, projectPath, dir); err != nil {
+		_, _ = gitOut(ctx, projectPath, "worktree", "remove", "--force", dir)
+		return "", "", "", err
+	}
 	d.markOwnerWorktree(dir)
 	return dir, branch, base, nil
 }
