@@ -21,12 +21,16 @@ func (d *Daemon) inventory() ([]protocol.HarnessInfo, int) {
 }
 
 // harnessLoop detects the installed harnesses at start and then every
-// HarnessInterval, and tells the gateway after each run. Detection can take
+// HarnessInterval, retrying empty model probes sooner, and tells the gateway
+// after each run. Detection can take
 // seconds (it runs `opencode models`), so it never blocks start-up: hello
 // carries the inventory when it is ready, and an update follows when it is not.
 func (d *Daemon) harnessLoop(ctx context.Context) {
-	t := time.NewTicker(d.cfg.HarnessInterval)
-	defer t.Stop()
+	retry := d.cfg.HarnessRetryDelay
+	if retry <= 0 {
+		retry = time.Minute
+	}
+	nextRetry := retry
 	for {
 		list := d.cfg.DetectHarnesses(ctx)
 		if ctx.Err() != nil {
@@ -34,6 +38,12 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 		}
 		if list == nil {
 			list = []protocol.HarnessInfo{} // "none installed", not "not reported"
+		}
+		incomplete := false
+		for _, h := range list {
+			if h.Path != "" && modelsProbed(h.Name) && len(h.Models) == 0 {
+				incomplete = true
+			}
 		}
 		d.hmu.Lock()
 		list = keepMissingHarnesses(d.installed, list, d.Logf)
@@ -52,13 +62,29 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 		}
 		d.Logf("harnesses: %s", strings.Join(names, ","))
 		d.publishHarnesses(ctx)
+		delay := d.cfg.HarnessInterval
+		if incomplete {
+			delay = nextRetry
+			if nextRetry < 30*time.Minute {
+				nextRetry *= 2
+				if nextRetry > 30*time.Minute {
+					nextRetry = 30 * time.Minute
+				}
+			}
+		} else {
+			nextRetry = retry
+		}
+		t := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
 		}
 	}
 }
+
+func modelsProbed(name string) bool { return name == "opencode" || name == "pi" }
 
 // keepMissingHarnesses keeps a harness that was found before when a detection
 // run does not report it but its binary is still there. A probe can fail or
@@ -67,7 +93,9 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 func keepMissingHarnesses(prev, next []protocol.HarnessInfo, logf func(string, ...any)) []protocol.HarnessInfo {
 	seen := make(map[string]bool, len(next))
 	known := make(map[string]bool, len(prev))
+	previous := make(map[string]protocol.HarnessInfo, len(prev))
 	for _, h := range prev {
+		previous[h.Name] = h
 		if h.Path != "" {
 			known[h.Name] = true
 		}
@@ -78,6 +106,12 @@ func keepMissingHarnesses(prev, next []protocol.HarnessInfo, logf func(string, .
 		// found before. Without an earlier copy it is all there is.
 		if h.Path == "" && known[h.Name] {
 			continue
+		}
+		if old := previous[h.Name]; h.Path != "" && modelsProbed(h.Name) && len(h.Models) == 0 && len(old.Models) > 0 {
+			h.Models = old.Models
+			if logf != nil {
+				logf("harnesses: %s model probe failed; keeping the previous models", h.Name)
+			}
 		}
 		out = append(out, h)
 		seen[h.Name] = true
