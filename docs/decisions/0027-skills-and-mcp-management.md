@@ -6,6 +6,8 @@
 
 ## Status
 
+**2026-11-03:** the skill parts are replaced by [0048](0048-skills-on-off-per-project.md) (on or off per project, no registration, automatic intake). MCP management below is unchanged.
+
 Build steps 1 to 9 are done: inventory, gateway storage, the private skill store, owner-gated assignments, skill projection with journal and undo, scoped MCP federation, and native MCP import and guarded removal, with the final documentation, setup and uninstall pass. Step 8 is done: the Tools tab (Differences, All tools, By project, plans first) and the CTO workflows (`tools_differences` and the brief). The points left open at step 9 were built afterwards: a scope for one machine only, removal of a repo skill from the Tools tab, and repo copies told apart from local ones. Tab 5 was then rebuilt as one list with an action menu, `node:`, `project:` and `machine:` filters, `n` to add, and `t` from a Graph node card. The decision text below is unchanged.
 
 ## Goal and terms
