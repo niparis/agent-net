@@ -513,15 +513,15 @@ await test("worker delivery is confirmed only when its task starts", async () =>
   await until("first delivery", () => sent.length === 1);
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id)) throw new Error("confirmed before the task started");
+  // Pi may have dropped the first task: the daemon's repeat injects it again.
   pushDeliver(msg);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  if (sent.length !== 1) throw new Error("pending task was injected again");
-  if (requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id)) throw new Error("duplicate confirmed before the task started");
-  await p.fire("message_start", { type: "message_start", message: { role: "custom", ...sent[0] } });
+  await until("retry", () => sent.length === 2);
+  if (requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id)) throw new Error("confirmed before the task started");
+  await p.fire("message_start", { type: "message_start", message: { role: "custom", ...sent[1] } });
   await until("confirmed", () => requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id && r.params.ok));
   pushDeliver(msg);
   await until("duplicate turn-start ack", () => requests.slice(before).filter((r) => r.method === "delivered" && r.params.message_id === msg.message_id).length === 2);
-  if (sent.length !== 1) throw new Error("confirmed task was sent again");
+  if (sent.length !== 2) throw new Error("confirmed task was sent again");
   const acks = requests.slice(before).filter((r) => r.method === "delivered" && r.params.message_id === msg.message_id);
   if (acks.length !== 2 || acks.some((r) => !r.params.ok || r.params.detail !== "pi worker turn started")) throw new Error("duplicate lost the worker turn confirmation");
   await p.fire("session_shutdown", {});

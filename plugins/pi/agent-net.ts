@@ -445,9 +445,14 @@ export default function (pi: ExtensionAPI) {
         { deliverAs: "followUp", triggerTurn: true },
       );
       // A missing ack can make the daemon repeat a push. Keep recent IDs
-      // across reconnects so each accepted push reaches Pi only once.
-      injectedMessages.add(message.message_id);
-      if (injectedMessages.size > 200) injectedMessages.delete(injectedMessages.values().next().value!);
+      // across reconnects so each accepted push reaches Pi only once. The
+      // first worker task is the exception until its turn starts: Pi can
+      // drop it before it is ready, and the daemon's one repeat must then
+      // inject it again (the turn-start check below confirms it).
+      if (!first) {
+        injectedMessages.add(message.message_id);
+        if (injectedMessages.size > 200) injectedMessages.delete(injectedMessages.values().next().value!);
+      }
       if (!first) request("delivered", { message_id: message.message_id, ok: true }).catch(() => {});
     } catch (error) {
       request("delivered", { message_id: message.message_id, ok: false, detail: String(error) }).catch(() => {});
