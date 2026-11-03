@@ -1,12 +1,13 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
-│ PROVIDER PLAN WINDOW LEFT                 PACE      RESETS                   │
-│ > claude max  5h     █████─────  50%      on pace   -                        │
+│ PROVIDER PLAN     WINDOW LEFT                 PACE      RESETS               │
+│ > claude max      5h     █████─────  50%      on pace   -                    │
 │   (read on Mac; stale reading)                                               │
-│   codex  pro  week   █─────────   8%      ahead     in 2h00                  │
+│   codex  pro      week   █─────────   8%      ahead     in 2h00              │
 │   (read on Mac)                                                              │
-│ 1 more subscription (not used by your agents) · s to show                    │
+│   cursor business month  ────────── exhausted -         -                    │
+│   (not used by your agents; read on Mac)                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 6 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
@@ -15,7 +16,6 @@
 │ opus            claude   opus-5-5:high     x     x     x     █100% █100%     │
 │ router          opencode opus-5.5:high     x     x     x     ·     ·         │
 │   (not a worker provider)                                                    │
-│ sol             codex    gpt-6.1-sol       x     x     ·     ·     x         │
 │ more below · up/down to scroll                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

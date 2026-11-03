@@ -4,12 +4,12 @@
 │ PROVIDER      PLAN WINDOW LEFT                 PACE      RESETS                                                      │
 │ > opencode-go      -      -                    -         -                                                           │
 │   (needs you once: run agent-net setup --quota)                                                                      │
+│ 1 provider without live windows · s to hide                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 

@@ -1,12 +1,13 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online · 1 busy                updated 14:05:00
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                                                            │
-│ PROVIDER PLAN WINDOW LEFT                 PACE      RESETS                                                           │
-│ > claude max  5h     █████─────  50%      on pace   -                                                                │
+│ PROVIDER PLAN     WINDOW LEFT                 PACE      RESETS                                                       │
+│ > claude max      5h     █████─────  50%      on pace   -                                                            │
 │   (read on Mac; stale reading)                                                                                       │
-│   codex  pro  week   █─────────   8%      ahead     in 2h00                                                          │
+│   codex  pro      week   █─────────   8%      ahead     in 2h00                                                      │
 │   (read on Mac)                                                                                                      │
-│ 1 more subscription (not used by your agents) · s to show                                                            │
+│   cursor business month  ────────── exhausted -         -                                                            │
+│   (not used by your agents; read on Mac)                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │
@@ -20,7 +21,6 @@
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 opus claude: complete 10 · continue 0 · fix 0 · picked for hard and very complex (next start). Strong at hard.
-
 
 
 

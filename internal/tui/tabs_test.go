@@ -900,7 +900,7 @@ func TestQuotaLiveFixtureGoldens(t *testing.T) {
 		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
 		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra"}}}
 		v := m.View()
-		if !strings.Contains(ansi.Strip(v), "17 providers not set up · s to show") {
+		if !strings.Contains(ansi.Strip(v), "17 providers not set up · s to show") || !strings.Contains(ansi.Strip(v), "copilot") || !strings.Contains(ansi.Strip(v), "other") {
 			t.Fatal(v)
 		}
 		golden(t, fmt.Sprintf("quotas_live_%dx%d", size[0], size[1]), v)
@@ -943,17 +943,20 @@ func TestQuotaSourcesAgreeAcrossPlans(t *testing.T) {
 	}
 }
 
-func TestQuotaFoldsUnusedSubscriptions(t *testing.T) {
+func TestQuotaShowsLiveUnusedSubscriptionsByDefault(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6"}}
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "copilot", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "copilot") || !strings.Contains(v, "1 more subscription (not used by your agents) · s to show") {
+	if !strings.Contains(v, "copilot") || strings.Contains(v, "not used by your agents) · s to show") {
 		t.Fatal(v)
 	}
+	if strings.Index(v, "codex") > strings.Index(v, "copilot") || !strings.Contains(v, "(not used by your agents)") {
+		t.Fatalf("live rows should show used providers first and tag other providers:\n%s", v)
+	}
 	m = keys(m, "s")
-	if v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")); !strings.Contains(v, "copilot") {
+	if v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")); strings.Contains(v, "not used by your agents) · s to show") {
 		t.Fatal(v)
 	}
 }
@@ -966,7 +969,7 @@ func TestQuotaReadingPreventsProviderFromFoldingAsNotSetUp(t *testing.T) {
 		{Provider: "cursor", Plan: "api", Error: "credential_unavailable"},
 	}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "providers not set up") || !strings.Contains(v, "2 more subscriptions (not used by your agents) · s to show") {
+	if !strings.Contains(v, "providers not set up") || !strings.Contains(v, "cursor") || strings.Contains(v, "credential_unavailable") {
 		t.Fatal(v)
 	}
 	m = keys(m, "s")

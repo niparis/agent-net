@@ -62,7 +62,7 @@ func (m Model) quotasView(w, h int) []string {
 	}
 
 	var newest int64
-	var configured, unset, unused []quotaRow
+	var configured, liveUnused, unset, unused []quotaRow
 	relevant := m.quotaRelevantProviders()
 	providersWithQuota := map[string]bool{}
 	providerMachinesWithQuota := map[string]map[string]bool{}
@@ -83,17 +83,22 @@ func (m Model) quotasView(w, h int) []string {
 		if len(r.provider.Windows) == 0 && providersWithQuota[provider] && (r.machine == "" || !providerMachinesWithQuota[provider][r.machine]) {
 			continue
 		}
-		if quotaNotSetUp(r.provider) && !r.provider.NeedsAttention && !providersWithQuota[provider] {
+		if len(r.provider.Windows) > 0 {
+			if relevant[provider] {
+				configured = append(configured, r)
+			} else {
+				liveUnused = append(liveUnused, r)
+			}
+		} else if quotaNotSetUp(r.provider) {
 			unset = append(unset, r)
-		} else if !relevant[provider] && !r.provider.NeedsAttention {
-			unused = append(unused, r)
 		} else {
-			configured = append(configured, r)
+			unused = append(unused, r)
 		}
 		if r.at > newest {
 			newest = r.at
 		}
 	}
+	configured = append(configured, liveUnused...)
 	if m.quotaShowUnset {
 		configured = append(configured, unset...)
 		configured = append(configured, unused...)
@@ -197,6 +202,9 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, clip(line, w-4))
 		}
 		var notes []string
+		if len(p.Windows) > 0 && !relevant[strings.ToLower(p.Provider)] {
+			notes = append(notes, "not used by your agents")
+		}
 		if r.machine != "" && reporting > 1 {
 			notes = append(notes, "read on "+sanitize(r.machine))
 		}
@@ -226,7 +234,7 @@ func (m Model) quotasView(w, h int) []string {
 		if m.quotaShowUnset {
 			action = "s to hide"
 		}
-		subscription = append(subscription, sDim.Render(fmt.Sprintf("%s (not used by your agents) · %s", strings.Replace(plural(len(unused), "subscription"), " ", " more ", 1), action)))
+		subscription = append(subscription, sDim.Render(fmt.Sprintf("%s without live windows · %s", plural(len(unused), "provider"), action)))
 	}
 	for _, e := range errors {
 		for _, line := range wrap(e, w-4) {
