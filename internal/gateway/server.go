@@ -100,6 +100,8 @@ type Gateway struct {
 	rotationMu        sync.Mutex
 	machineRotationMu sync.Mutex
 	machineAuthMu     sync.Mutex // authentication, removal and confirmation ordering
+	// transferMu keeps the parts of every xfer.* frame in order.
+	transferMu sync.Mutex
 
 	enrollLimit      *enrollLimiter
 	exposureWarnings []string
@@ -398,6 +400,7 @@ func (g *Gateway) RunRetention(ctx context.Context) {
 		} else if ran {
 			g.logLine("db.vacuum", "before", before, "after", after)
 		}
+		g.sweepTransfersNow()
 		select {
 		case <-ctx.Done():
 			return
@@ -674,6 +677,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	st := g.store
 	if st.machineRemoved(nc.id) {
 		return nil, reject("this machine was removed from the network; run agent-net setup to join again")
+	}
+	if strings.HasPrefix(typ, "xfer.") {
+		return g.handleTransfer(nc, typ, raw)
 	}
 	if typ == "session.sync" || typ == "session.upsert" || typ == "project.add" {
 		// Freeze defaults before discovery so existing off cells stay off.

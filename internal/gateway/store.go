@@ -567,6 +567,32 @@ CREATE TRIGGER IF NOT EXISTS removed_node_session_online BEFORE UPDATE OF online
  BEGIN SELECT RAISE(ABORT,'machine was removed from the network'); END;
 `, `
 SELECT 1 /* model auth failure column */;
+`, `
+-- Uploads in parts (decision 0054). One row per upload and one per stored
+-- part; the bytes live under <gateway data>/transfers/<upload id>/ and are
+-- deleted when the receiver confirms or after seven days.
+CREATE TABLE IF NOT EXISTS transfers (
+ id TEXT PRIMARY KEY,
+ sender TEXT NOT NULL,
+ receiver TEXT NOT NULL,
+ name TEXT NOT NULL DEFAULT '',
+ size INTEGER NOT NULL,
+ sha256 TEXT NOT NULL,
+ part_size INTEGER NOT NULL,
+ parts INTEGER NOT NULL,
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ finished_at INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS transfers_sender ON transfers(sender);
+CREATE INDEX IF NOT EXISTS transfers_receiver ON transfers(receiver);
+CREATE INDEX IF NOT EXISTS transfers_expires ON transfers(expires_at);
+CREATE TABLE IF NOT EXISTS transfer_parts (
+ id TEXT NOT NULL,
+ idx INTEGER NOT NULL,
+ size INTEGER NOT NULL,
+ sha256 TEXT NOT NULL,
+ at INTEGER NOT NULL,
+ PRIMARY KEY(id, idx));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

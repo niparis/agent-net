@@ -589,6 +589,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Skill journal | `~/.local/state/agent-net/daemon/skill-journal/*.json` | One small record per skill operation that is running. Written before the first change and deleted when the operation ends. Mode 0600, folder 0700. A record left after a crash is read at the next daemon start. Uninstall removes the folder. |
 | Reply sockets | `<socket directory>/r/<session id>.sock` | One per sending session, used to catch Claude Code's native replies. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the tools inventory, assignments, plans, audit and MCP registry), `admin.json` (mode 0600: the local admin URL and token) and `skills.git` (mode 0700: the private bare Git repository of imported skills, which can hold secrets from skill files). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
+| Gateway transfer parts | `~/.local/state/agent-net/gateway/transfers/<upload id>/` | One file per part of an upload between machines, named by its part number. Folders 0700, files 0600. At most 100 MB per upload and 1 GB staged for each sending machine. A part file is deleted when the receiving machine confirms the whole file, or 7 days after the upload began. A `gateway backup` does not copy parts that are still in flight. Uninstall keeps them with the rest of the gateway data. See [security.md](security.md#files-between-machines). |
 | Gateway binaries | `~/.local/share/agent-net/dist/agent-net-<os>-<arch>` | The four binaries the gateway hands out to new machines. |
 | Binary | `~/.local/bin/agent-net` | |
 | Claude Code sessions (read) | `~/.claude/sessions/` | The daemon reads one file per live session. It never writes here. |
@@ -617,6 +618,7 @@ agent-net keeps message bodies as long as possible. These jobs only remove bookk
 
 - **Daemon duplicate check.** `daemon.db` has a `delivered` table with one row per message ID that was already delivered. It stops a duplicate delivery and holds no message text. Once an hour the daemon deletes rows older than the message expiry (24 hours) plus 7 days, so a message that is still alive can never be delivered twice. The first run is about a minute after start, so an upgrade does not postpone it.
 - **Gateway database.** `gateway.db` is vacuumed at most once a week, and only when more than 20% of its pages are free (deleted rows or events). The hourly maintenance runs the check; the vacuum rewrites the file and can make it much smaller. Nothing is deleted: messages, events and sessions follow the `--keep-*` retention settings, and the defaults keep messages for ever. A vacuum writes one `db.vacuum` line with the size before and after.
+- **Gateway transfer parts.** The parts of an upload between machines (see [Files](#files)) are deleted as soon as the receiving machine confirms the whole file. Every upload is also deleted 7 days after it began, downloaded or not. The hourly maintenance deletes expired parts even when no transfer runs. A failed removal keeps the row, so the next run tries again and the bytes keep counting against the sender's 1 GB cap.
 - **Log files.** On Linux the services write to journald, which rotates its own journal; agent-net does nothing. On macOS launchd sends stdout and stderr to `~/Library/Logs/agent-net-daemon.log` and `agent-net-gateway.log` and never rotates them. The daemon and gateway open their own log file, and when a write would pass 10 MB they rename the current file (`agent-net-daemon.log.1`) and start a new one. Five old files are kept (`.1` to `.5`); the oldest is removed at the next rotation. A process started by hand in a terminal, or in a test, writes to that terminal and does not rotate anything.
 
 ## Gateway log format
@@ -631,6 +633,10 @@ The gateway writes one line per event to stderr (the systemd journal, or the lau
 | `msg.failed` | It could not be delivered. | same, and `detail` |
 | `msg.expired` | It was not delivered within 24 hours. | same |
 | `msg.refused` | A send was refused (limit, unknown session, ...). | `node`, `from`, `to`, `bytes`, `reason` |
+| `transfer.started` | The gateway accepted an upload between machines. | `upload`, `from`, `to`, `bytes`, `parts` |
+| `transfer.finished` | The whole SHA-256 of an upload matched, so the receiver may download it. | `upload`, `from`, `to`, `bytes` |
+| `transfer.confirmed` | The receiving machine has the whole file and the parts were deleted. | `upload`, `from`, `to`, `bytes` |
+| `transfer.expired` | The 7 day retention passed and the parts were deleted. | `upload`, `from`, `to`, `bytes` |
 | `session.new` | The first time the gateway sees a session. | `session`, `node`, `host`, `harness`, `name` (the automatic name), `title` (the harness name, which TASK shows until the agent announces), `pid`, `cwd`, `project`, `git_root`, `worktree`, `remote`, `branch` |
 | `node.harnesses` | The harnesses installed on a machine changed (or it reported for the first time). | `node`, `host`, `change`, `installed` |
 | `project.added` | A project was registered. One line per project. | `node`, `host`, `session` (empty for the CLI), `harness` (`cli` for the CLI), `name`, `path`, `remote` |
@@ -660,7 +666,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_GRAPH_MOTION` | `agent-net tui` | `1` turns on the animated pixel graph (moving message dots, busy pulse, eased camera). Off by default: the pixel graph is still and changes only when the graph does. |
 | `AGENT_NET_NO_BAR` | `agent-net tui` | `1` turns off the agent-net row at the bottom of a session entered in the TUI terminal. For a terminal that mishandles the reserved row. See [Enter a session](#enter-a-session). |
 | `CODEX_HOME` | daemon, setup | Codex's home folder (default `~/.codex`). The daemon looks for the shared Codex app server's control socket in it, and setup writes `config.toml` and `AGENTS.md` in it. Codex reads the same variable. |
-| `AGENT_NET_GATEWAY_DATA` | gateway, `invite`, `enroll`, `setup`, `install.sh` | Gateway data directory. |
+| `AGENT_NET_GATEWAY_DATA` | gateway, `invite`, `enroll`, `setup`, `install.sh` | Gateway data directory, including the `transfers` folder of in-flight parts. |
 | `AGENT_NET_NO_SERVICE` | setup, `install.sh` | `1` means: write no service files and start nothing. Same as `--no-service`. |
 | `AGENT_NET_BASE_URL` | `install.sh` | Replaces the release download URL. For tests. |
 | `AGENT_NET_DIST` | `scripts/dist.sh` | Output directory for the built binaries. |

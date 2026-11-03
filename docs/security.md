@@ -197,6 +197,17 @@ A machine joins with a one-time code.
 - The server certificate lists `localhost`, `127.0.0.1`, `::1`, the host name, every interface address and any `--san` names. If a node reaches the gateway under another name, the TLS check fails until you add it.
 - The daemon and `agent-net join` use a TLS client that trusts only the pinned CA (minimum TLS 1.2), not the system roots. All traffic between a daemon and the gateway, including the WebSocket, goes over that connection.
 
+## Files between machines
+
+Files do not travel in messages. A message carries only a manifest: name, size, SHA-256 and an ID per file. The bytes go over Taildrop on the same tailnet, or through the gateway in parts when Taildrop is not available. The gateway transfer in parts is built; the Taildrop path and the session tools are later steps (decision [0054](decisions/0054-files-between-machines.md)).
+
+- **The gateway stores parts, not a trusted file.** Each part is 1 MB and carries its own SHA-256. The gateway checks the part hash, the length and, at the end, the whole SHA-256. It does not scan the bytes for secrets; the daemon does that before it sends.
+- **Who may act.** Only an enrolled machine with a valid node token can use the frames at all. Only the sending machine may begin, upload or resume an upload. Only the machine the sender named as receiver may download or confirm it. Any other enrolled machine is refused, and so is the sender.
+- **Limits.** One upload holds at most 100 MB. A sending machine may keep at most 1 GB staged in the gateway at once, which is one maximum message (10 files of 100 MB). An upload that would exceed either limit is refused before its first part is stored. A file name is at most 255 bytes and holds no control characters.
+- **Retention.** The parts are deleted as soon as the receiver confirms the whole file. Every upload is also deleted 7 days after it began, downloaded or not. The hourly maintenance deletes expired parts even when no transfer frame arrives.
+- **Where the bytes are.** Under `<gateway data>/transfers/<upload id>/`, folders 0700 and files 0600. They are never written elsewhere. A `gateway backup` does not copy parts that are still in flight; they expire within 7 days.
+- **What the log holds.** The gateway logs the upload ID, the sender, the receiver, the size and the part count. It never logs the file name or the bytes.
+
 ## Node tokens
 
 - At enrollment the gateway gives the machine a node ID and a token (32 random bytes, hex). It stores only the SHA-256 hash of the token.
