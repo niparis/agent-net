@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -790,5 +792,38 @@ func TestToolPlanDoesNotOfferExternalSkillRemoval(t *testing.T) {
 		if target.Action == "remove" && target.State == "pending" {
 			t.Fatalf("external source offered for removal: %+v", target)
 		}
+	}
+}
+
+func TestToolKnownProjectsManySessions(t *testing.T) {
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	node, _, err := s.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3000; i++ {
+		name := fmt.Sprintf("project-%04d", i)
+		if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: name, Cwd: "/work/" + name, Repo: protocol.RepoInfo{Root: "/work/" + name}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	start := time.Now()
+	names, err := s.knownToolProjectsTx(tx)
+	elapsed := time.Since(start)
+	if err != nil || len(names) != 3000 {
+		t.Fatalf("known projects: %d, %v", len(names), err)
+	}
+	t.Logf("known projects: %s", elapsed)
+	if elapsed > time.Second {
+		t.Fatalf("known project scan took %s", elapsed)
 	}
 }
