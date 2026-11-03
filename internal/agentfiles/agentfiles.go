@@ -18,6 +18,7 @@ import (
 
 // Result is the outcome for one managed file.
 type Result struct {
+	Note    string // additional information to log
 	Name    string // "pi extension", "claude guidance", ...
 	Path    string
 	Text    string // the result text setup prints, like "updated" or "skipped (symlink, left as is)"
@@ -114,6 +115,8 @@ func SyncAndLog(logf func(format string, args ...any)) {
 			logf("agent files: %s %s: %v", r.Name, DisplayPath(r.Path), r.Err)
 		case r.Symlink:
 			logf("agent files: %s left alone (symlink): %s", r.Name, DisplayPath(r.Path))
+		case r.Changed && r.Note != "":
+			logf("agent files: %s %s: %s; %s", r.Name, r.Text, DisplayPath(r.Path), r.Note)
 		case r.Changed && r.Text == "updated":
 			logf("agent files: %s updated: %s", r.Name, DisplayPath(r.Path))
 		case r.Changed && strings.HasPrefix(r.Text, "replaced "):

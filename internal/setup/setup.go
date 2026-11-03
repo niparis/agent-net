@@ -441,23 +441,7 @@ func (r *runner) daemonService() {
 
 // ---- Claude Code ----
 
-func claudePath() string {
-	if p, err := exec.LookPath("claude"); err == nil {
-		return p
-	}
-	h := home()
-	for _, p := range []string{
-		filepath.Join(h, ".local", "bin", "claude"),
-		filepath.Join(h, ".claude", "local", "claude"),
-		"/opt/homebrew/bin/claude",
-		"/usr/local/bin/claude",
-	} {
-		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
-			return p
-		}
-	}
-	return ""
-}
+func claudePath() string { return agentfiles.ClaudePath() }
 
 func runCmd(dir, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)

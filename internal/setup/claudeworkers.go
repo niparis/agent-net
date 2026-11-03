@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/agentfiles"
-	"github.com/niparis/agent-net/internal/daemon"
 )
 
 // The Claude Code "agent-net workers" plugin. Setup writes a local marketplace
@@ -33,7 +31,7 @@ type workersModState struct {
 }
 
 func workersModStatePath() string {
-	return filepath.Join(daemon.ConfigDir(), "claude-workers-mod.json")
+	return agentfiles.ClaudeWorkersStatePath()
 }
 
 func loadWorkersModState() workersModState {
@@ -109,13 +107,8 @@ func (r *runner) claudeWorkersMod() {
 		return
 	}
 	if st.Installed && changed {
-		// Claude Code reads the plugin from this folder. Refresh its catalog,
-		// then let it record the new version, so a session reloads these files.
-		if out, err := runCmd(home(), claude, "plugin", "marketplace", "update", agentfiles.ClaudeWorkersMarketplace); err != nil {
-			r.hint("hint: claude plugin marketplace update failed: %s", firstLine(out, err))
-		}
-		if out, err := runCmd(home(), claude, "plugin", "update", "agent-net-workers@agent-net", "-s", "user"); err != nil {
-			r.hint("hint: claude plugin update failed: %s", firstLine(out, err))
+		for _, failure := range agentfiles.RefreshClaudeWorkers() {
+			r.hint("hint: %s", failure)
 		}
 	}
 	if err := saveWorkersModState(workersModState{Asked: true, Installed: true, Dir: dir}); err != nil {

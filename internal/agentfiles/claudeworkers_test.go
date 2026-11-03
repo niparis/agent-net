@@ -2,6 +2,7 @@ package agentfiles
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,5 +132,62 @@ func TestSyncClaudeWorkersRefreshesAnOldCopy(t *testing.T) {
 	}
 	if r := SyncClaudeWorkers(); r.Changed || r.Text != "ok (unchanged)" {
 		t.Fatalf("second sync: %+v", r)
+	}
+}
+
+func TestSyncClaudeWorkersRefreshCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		installed, changed, fail bool
+		want                     string
+	}{
+		{"changed", true, true, false, "plugin marketplace update agent-net\nplugin update agent-net-workers@agent-net -s user\n"},
+		{"unchanged", true, false, false, ""},
+		{"not installed", false, true, false, ""},
+		{"failure", true, true, true, "plugin marketplace update agent-net\nplugin update agent-net-workers@agent-net -s user\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := fakeHome(t)
+			config := filepath.Join(h, "config")
+			t.Setenv("AGENT_NET_CONFIG_DIR", config)
+			calls := filepath.Join(h, "calls")
+			t.Setenv("CALLS", calls)
+			bin := filepath.Join(h, "bin")
+			if err := os.MkdirAll(bin, 0755); err != nil {
+				t.Fatal(err)
+			}
+			script := "#!/bin/sh\necho \"$*\" >> \"$CALLS\"\n"
+			if tc.fail {
+				script += "echo first-error\necho second-error\nexit 1\n"
+			}
+			if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin)
+			if tc.installed {
+				write(t, filepath.Join(config, "claude-workers-mod.json"), `{"installed":true}`)
+			}
+			if _, err := WriteClaudeWorkers(); err != nil {
+				t.Fatal(err)
+			}
+			if tc.changed {
+				write(t, filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx"), "old")
+			}
+			var lines []string
+			SyncAndLog(func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) })
+			got, _ := os.ReadFile(calls)
+			if string(got) != tc.want {
+				t.Errorf("calls = %q, want %q", got, tc.want)
+			}
+			if tc.installed && tc.changed {
+				log := strings.Join(lines, "\n")
+				if !strings.Contains(log, "/reload-plugins") {
+					t.Errorf("missing reload notice: %s", log)
+				}
+				if tc.fail && (!strings.Contains(log, "first-error") || strings.Contains(log, "second-error")) {
+					t.Errorf("failure log: %s", log)
+				}
+			}
+		})
 	}
 }

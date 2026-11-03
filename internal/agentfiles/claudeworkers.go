@@ -1,14 +1,19 @@
 package agentfiles
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	agentnetworkers "github.com/niparis/agent-net/plugins/claude/agent-net-workers"
 )
@@ -149,6 +154,66 @@ func WriteClaudeWorkers() (changed bool, err error) {
 	return changed, nil
 }
 
+// ClaudeWorkersStatePath is the setup record shared with the daemon sync.
+func ClaudeWorkersStatePath() string {
+	d := os.Getenv("AGENT_NET_CONFIG_DIR")
+	if d == "" {
+		d = os.Getenv("XDG_CONFIG_HOME")
+		if d == "" {
+			d = filepath.Join(home(), ".config")
+		}
+		d = filepath.Join(d, "agent-net")
+	}
+	return filepath.Join(d, "claude-workers-mod.json")
+}
+
+// ClaudePath finds Claude Code using the same locations as setup.
+func ClaudePath() string {
+	if p, err := exec.LookPath("claude"); err == nil {
+		return p
+	}
+	for _, p := range []string{filepath.Join(home(), ".local", "bin", "claude"), filepath.Join(home(), ".claude", "local", "claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"} {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0111 != 0 {
+			return p
+		}
+	}
+	return ""
+}
+
+// RefreshClaudeWorkers updates Claude Code's cached marketplace and plugin.
+// Each failure is returned as one line; both commands are attempted.
+func RefreshClaudeWorkers() []string {
+	claude := ClaudePath()
+	if claude == "" {
+		return []string{"claude not found"}
+	}
+	var failures []string
+	for _, args := range [][]string{{"plugin", "marketplace", "update", ClaudeWorkersMarketplace}, {"plugin", "update", "agent-net-workers@agent-net", "-s", "user"}} {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		cmd := exec.CommandContext(ctx, claude, args...)
+		cmd.Dir = home()
+		out, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			line := strings.TrimSpace(string(out))
+			if line == "" {
+				line = err.Error()
+			}
+			line = strings.SplitN(line, "\n", 2)[0]
+			failures = append(failures, "claude "+strings.Join(args[:len(args)-1], " ")+" failed: "+line)
+		}
+	}
+	return failures
+}
+
+func claudeWorkersInstalled() bool {
+	var st struct {
+		Installed bool `json:"installed"`
+	}
+	b, err := os.ReadFile(ClaudeWorkersStatePath())
+	return err == nil && json.Unmarshal(b, &st) == nil && st.Installed
+}
+
 // SyncClaudeWorkers refreshes the marketplace only when setup already wrote
 // it. A machine where setup was never asked for the mod gets no folder.
 func SyncClaudeWorkers() Result {
@@ -163,5 +228,12 @@ func SyncClaudeWorkers() Result {
 		return r
 	}
 	r.Text = fileResult(changed, true)
+	if changed && claudeWorkersInstalled() {
+		r.Note = strings.Join(RefreshClaudeWorkers(), "; ")
+		if r.Note != "" {
+			r.Note += "; "
+		}
+		r.Note += "open Claude Code sessions: run /reload-plugins"
+	}
 	return r
 }
