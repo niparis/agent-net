@@ -463,12 +463,9 @@ type (
 
 // WorkerHarnesses are the harnesses a worker can run (decision 0002, W4).
 // The first one is the default. Decision 0008 has how each is started.
-var WorkerHarnesses = []string{"opencode", "claude", "pi", "codex"}
+var WorkerHarnesses = []string{"opencode", "claude", "pi", "codex", "agy"}
 
-// KnownHarnesses are the harness names agent-net knows. They include a harness it
-// cannot start a worker on yet (agy, decision 0049 build step 2): a profile may
-// name it, and the TUI says that it is not startable, rather than calling it
-// stale.
+// KnownHarnesses are the harness names agent-net knows.
 var KnownHarnesses = []string{"opencode", "claude", "pi", "codex", "agy"}
 
 // HarnessKnown tells whether agent-net knows this harness name.
@@ -493,7 +490,7 @@ func WorkerHarnessSupported(h string) bool {
 
 // WorkerReadOnlySupported reports which worker adapters enforce read-only
 // access. Other adapters currently treat permissions as guidance only.
-func WorkerReadOnlySupported(h string) bool { return h == "codex" }
+func WorkerReadOnlySupported(h string) bool { return h == "codex" || h == "agy" }
 
 // WorkerPreamble is the fixed brief before the task (decision 0002, W5 and
 // W9). It is the worker's version of a subagent system prompt.
@@ -554,7 +551,7 @@ func WorkerPermissionsText(level, harness string) string {
 		detail = "no writes"
 	}
 	text := "permissions: " + level + " (" + detail + ")"
-	if harness != "codex" {
+	if harness != "codex" && !(harness == "agy" && level != WorkersNoNetwork) {
 		text += " (enforced for Codex only for now)"
 	}
 	return text

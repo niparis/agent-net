@@ -56,7 +56,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	d.wmu.Lock()
 	harness, native := w.harness, w.nativeID
 	d.wmu.Unlock()
-	if harness != "opencode" && harness != "codex" {
+	if harness != "opencode" && harness != "codex" && harness != "agy" {
 		return
 	}
 	d.mu.Lock()
@@ -78,7 +78,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	}
 	eligible := idle && !w.stopping && w.doneStatus == "" && w.taskMsg != "" &&
 		((harness == "opencode" && !w.turnActive && !w.turnAwaitingStart && len(w.turnQueue) == 0) ||
-			(harness == "codex" && w.idleNoticeReport != ""))
+			((harness == "codex" || harness == "agy") && w.idleNoticeReport != ""))
 	if !eligible {
 		d.wmu.Unlock()
 		return

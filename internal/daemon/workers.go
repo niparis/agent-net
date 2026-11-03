@@ -210,7 +210,11 @@ type worker struct {
 	// usage is the last figures the harness reported, and the copy in info.
 	contextTokens, contextLimit, totalTokens int64
 	// codex is the connection to the worker's Codex app server.
-	codex *codexConn
+	codex        *codexConn
+	agy          *agyConn
+	agyProcessMu sync.Mutex // serialize process starts with the polite stop
+	agyStarting  bool       // a between-turn process restart owns its process handle
+	exitErr      error      // process wait error, guarded by wmu
 	// piLimit is the context window of the Pi model the session file names.
 	// It is read from `pi --list-models` once and kept for the worker.
 	piLimitModel    string
@@ -707,6 +711,12 @@ func (d *Daemon) spawnWorker(w *worker, bin string, args []string, env []string)
 // spawnWorkerStdin is spawnWorker with a file for the standard input of the
 // process (nil is /dev/null).
 func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []string, stdin *os.File) error {
+	return d.spawnWorkerIO(w, bin, args, env, stdin, nil)
+}
+
+// spawnWorkerIO also streams stdout to the harness event reader. Wait drains
+// the reader before closing exited, so the last result and usage are retained.
+func (d *Daemon) spawnWorkerIO(w *worker, bin string, args []string, env []string, stdin *os.File, stdout io.Writer) error {
 	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
 	logPath := filepath.Join(dir, "worker.log")
 	d.wmu.Lock() // endWorker and workerLogTail read these from other goroutines
@@ -719,7 +729,6 @@ func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []st
 	if err != nil {
 		return err
 	}
-	defer logf.Close()
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = w.path
 	cmd.Env = env
@@ -727,6 +736,9 @@ func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []st
 		cmd.Stdin = stdin
 	}
 	cmd.Stdout, cmd.Stderr = logf, logf
+	if stdout != nil {
+		cmd.Stdout = io.MultiWriter(logf, stdout)
+	}
 	if w.discardStdout {
 		cmd.Stdout = nil // /dev/null
 	}
@@ -736,13 +748,22 @@ func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []st
 	// hangup, a service manager's group kill.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
+		logf.Close()
 		return fmt.Errorf("cannot run %s: %w", bin, err)
 	}
 	exited := make(chan struct{})
-	go func() { cmd.Wait(); close(exited) }()
 	d.wmu.Lock()
 	w.pid, w.pgid, w.exited = cmd.Process.Pid, cmd.Process.Pid, exited
+	w.exitErr = nil
 	d.wmu.Unlock()
+	go func() {
+		err := cmd.Wait()
+		logf.Close()
+		d.wmu.Lock()
+		w.exitErr = err
+		d.wmu.Unlock()
+		close(exited)
+	}()
 	for i := 0; i < 20; i++ {
 		if tok, _ := procToken(w.pid); tok != "" {
 			d.wmu.Lock() // gone() reads the token from the worker loop
@@ -791,7 +812,7 @@ func (d *Daemon) workerLogTail(w *worker) string {
 // gone tells whether the worker's process has ended.
 func (d *Daemon) gone(w *worker) bool {
 	d.wmu.Lock()
-	exited, pid, token := w.exited, w.pid, w.token
+	exited, pid, token, harness := w.exited, w.pid, w.token, w.harness
 	d.wmu.Unlock()
 	if pid == 0 {
 		return false
@@ -801,6 +822,11 @@ func (d *Daemon) gone(w *worker) bool {
 		case <-exited:
 			return true
 		default:
+			if harness == "agy" {
+				// Wait drains the stream reader. The process can disappear
+				// before its final result and usage have reached that reader.
+				return false
+			}
 		}
 	}
 	tok, alive := procToken(pid)
@@ -1229,7 +1255,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			started = true
 		default:
 		}
-		if w.pid != 0 && !w.stopping && started {
+		if w.pid != 0 && !w.stopping && !w.agyStarting && started {
 			list = append(list, w)
 		}
 	}
@@ -1277,7 +1303,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		d.checkIdleNotice(ctx, w, now, set.IdleNotice, stats)
 		switch {
-		case d.gone(w):
+		case d.gone(w) && !(harness == "agy" && agyTurnFinished(d, w)):
 			d.endWorker(w, protocol.StopExited)
 		case age >= set.MaxAge:
 			d.endWorker(w, protocol.StopMaxAge)

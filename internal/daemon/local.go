@@ -403,6 +403,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion(), "protocol": protocol.LocalProtocol}, nil
 
 	case "mcp":
+		if p.Harness == "agy" {
+			return lc.helloAgyMCP(p, pid)
+		}
 		if p.Harness == "codex" {
 			return lc.helloCodexMCP(p, pid)
 		}

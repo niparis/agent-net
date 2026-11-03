@@ -416,7 +416,7 @@ func New(cfg Config) (*Daemon, error) {
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
-			"pi": piLauncher{}, "codex": codexLauncher{}},
+			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
 	d.inSession = d.insideSession
@@ -1148,6 +1148,11 @@ retryWorker:
 func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Message) Result {
 	info := d.infoOf(ls)
 	info.SessionID = m.To
+	if info.Harness == "agy" {
+		if w := d.workerBySession(m.To); w != nil {
+			return d.deliverAgy(ctx, w, m)
+		}
+	}
 	d.mu.Lock()
 	conn := ls.conn
 	d.mu.Unlock()
