@@ -128,6 +128,28 @@ ACP (`agy acp`) is kept in reserve. It adds mid-turn cancel and permission reque
 
 Each step is one worker with failing tests first and fake `agy` binaries in tests. Step 1 and the end of steps 4 and 5 run on the real agy.
 
+## Step 1 results (research, agy 1.4.12, 2026-11-03)
+
+Run in a throwaway Git repo with `gemini-3.8-flash-low`. The test plugin lived in the project's `.agents/plugins/zt/`, so nothing was written to `~/.gemini`.
+
+- **Two turns in one process: works.**
+  - With `--input-format stream-json`, the prompt flag must come last and be empty: `agy --input-format stream-json --output-format stream-json --model M -p=`. If `-p` is followed by another flag, agy takes that flag as the prompt and exits with code 2.
+  - One `init` with the conversation ID, then one `result` per input line, each with its own token use. The second turn's input tokens include the first turn: same conversation.
+- **Plugin MCP server: works.**
+  - The plugin's server is renamed `<plugin>_<server>` (here `zt_zt`). Its tools are file-backed under `~/.gemini/antigravity-cli/mcp/<plugin>_<server>/`.
+  - Every `tools/call` carries `_meta` with `antigravity.google/conversation_id`, `root_conversation_id` and `artifacts_dir`.
+- **Tool approval in headless runs.**
+  - An MCP call is denied ("requires the mcp permission that headless mode cannot prompt for").
+  - A `PreToolUse` hook answering `{"decision":"allow"}` does not override that.
+  - A one-run allow rule does: `--settings '{"permissions":{"allow":["mcp(<plugin>_<server>/*)"]}}'`. It is never saved.
+  - So workers get the agent-net tools through `--settings`, without `--dangerously-skip-permissions`. File edits and commands need their own allow rules or `--mode auto`; this is still to test in build step 4.
+- **Hooks: all fire in print mode.**
+  - SessionStart, PreInvocation (every model call), PreToolUse (with `toolCall`), Stop (with `fullyIdle` and `terminationReason`).
+  - Every hook gets `conversationId`, `artifactDirectoryPath` and `lastUserInput`.
+- **Stop can inject a message.** A `Stop` hook answering `{"decision":"continue","reason":"<text>"}` made the agent run another turn with that text. This is the busy-session receive path.
+- **herdr can type into a pane.** `herdr pane send-text` and `send-keys` exist, and herdr tracks the agent session in each pane (`pane report-agent-session`). This is the idle-session receive path.
+- **Not tested:** hooks in an interactive session, which needs a trust answer in a new folder and so writes to `trustedWorkspaces`; and `--sandbox`. Both go into build steps 4 and 5.
+
 ## Risks
 
 - **Undocumented storage.** Conversation storage and ACP are not documented, so a release can change them. Only the summaries table is read, and every read tolerates missing columns.
