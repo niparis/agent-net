@@ -411,12 +411,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			if p.NativeID != "" && d.agyWorkerConversation(p.NativeID) {
 				return nil, errors.New("peer check failed: that conversation belongs to an Antigravity worker")
 			}
-			// An interactive agy session: tools without a bound session until
-			// discovery (decision 0049 step 5) verifies its conversation ID.
-			lc.mu.Lock()
-			lc.client, lc.peerPID, lc.agyNativeID = "mcp", pid, p.NativeID
-			lc.mu.Unlock()
-			return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion()}, nil
+			return lc.helloInteractiveAgy(p, pid)
 		}
 		if p.Harness == "codex" {
 			return lc.helloCodexMCP(p, pid)
@@ -693,8 +688,14 @@ func (lc *localConn) boundID() (string, error) {
 func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMessage) (any, error) {
 	d := lc.d
 	lc.mu.Lock()
-	client, ls := lc.client, lc.ls
+	client, ls, agyID := lc.client, lc.ls, lc.agyNativeID
 	lc.mu.Unlock()
+	if client == "mcp" && agyID != "" {
+		lc.bindInteractiveAgy()
+		lc.mu.Lock()
+		ls = lc.ls
+		lc.mu.Unlock()
+	}
 	if client == "cto-mcp" {
 		if method == "cto_dialog_answer" {
 			return lc.ctoDialogAnswer(ctx, raw)
@@ -711,10 +712,10 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if client != "cli" {
 			return nil, errors.New("agy hook requires cli")
 		}
-		if err := d.recordAntigravity(raw); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, nil
+		lc.mu.Lock()
+		pid := lc.peerPID
+		lc.mu.Unlock()
+		return d.antigravityHook(raw, pid)
 	}
 	if method == protocol.MethodHint {
 		return lc.hintCall(ctx, client, ls, raw)

@@ -348,6 +348,17 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": pass}
 		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. What you type here is your own input.", name)
 		return plan, nil
+	case "agy":
+		if info.NativeID == "" {
+			return no("%s has no Antigravity conversation ID", name)
+		}
+		bin, err := d.harnessBinary("agy")
+		if err != nil {
+			return no("%v", err)
+		}
+		plan.Argv = []string{bin, "--conversation", info.NativeID}
+		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
+		return plan, nil
 	case "codex":
 		if w == nil {
 			// A thread of the shared app server (codex_peers.go): `codex resume`

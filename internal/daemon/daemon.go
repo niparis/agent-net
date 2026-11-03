@@ -29,6 +29,7 @@ import (
 // the message may have arrived, so it must not be retried.
 type Result struct {
 	Delivered bool
+	Queued    bool
 	Detail    string
 }
 
@@ -84,8 +85,10 @@ type Config struct {
 	CodexHome string
 	// CodexInterval is how often the open Codex threads are listed (default 5 s).
 	CodexInterval time.Duration
-	Adapters      []Adapter
-	Logger        *log.Logger
+	// AgySummaries is the read-only agy summaries database. Empty disables it.
+	AgySummaries string
+	Adapters     []Adapter
+	Logger       *log.Logger
 
 	BackoffMin, BackoffMax time.Duration
 	// PluginAckTimeout is how long to wait for a plugin to confirm a push.
@@ -442,6 +445,9 @@ func New(cfg Config) (*Daemon, error) {
 		// when cfg.CodexHome is set (codex_peers.go).
 		d.adapters["codex"] = newCodexAdapter(d)
 	}
+	if d.adapters["agy"] == nil {
+		d.adapters["agy"] = newAgyAdapter(d)
+	}
 	d.addOwnerSession()
 	return d, nil
 }
@@ -471,6 +477,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	if ca, ok := d.adapters["codex"].(*codexAdapter); ok {
 		ca.Start(ctx, d) // our own Codex adapter is not in cfg.Adapters
+	}
+	if a, ok := d.adapters["agy"].(*agyAdapter); ok {
+		a.Start(ctx, d)
 	}
 	d.startUsage(ctx)
 	if d.cfg.ApplyIntegrations != nil {
@@ -1135,6 +1144,10 @@ retryWorker:
 		}
 	} else {
 		res = d.deliverTo(ctx, ls, m)
+	}
+	if res.Queued {
+		d.sendUpdate(ctx, m.ID, protocol.StateDispatched, res.Detail)
+		return
 	}
 	if !res.Delivered {
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, res.Detail)

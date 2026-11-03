@@ -548,6 +548,8 @@ CREATE INDEX IF NOT EXISTS worker_assessments_session ON worker_assessments(sess
 `, `
 CREATE TABLE IF NOT EXISTS tool_project_settings (item TEXT PRIMARY KEY, new_projects INTEGER NOT NULL CHECK(new_projects IN (0,1)));
 CREATE TABLE IF NOT EXISTS tool_project_seen (item TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY(item,project));
+`, `
+CREATE INDEX IF NOT EXISTS deliveries_message_state ON deliveries(message_id, state, id);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1780,7 +1782,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 // ---- messages ----
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
-	m.idem_key, m.created_at, m.expires_at, m.state,
+	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),''),
 	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),'')
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
@@ -1788,7 +1790,7 @@ func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction)
 	if m.FromCTO {
 		m.FromHarness = "cto"
 	}
@@ -2127,8 +2129,8 @@ func (s *Store) UnmarkDispatched(id string) {
 // ApplyDelivery records a daemon's report. A message that is already replied,
 // expired or failed keeps its state.
 func (s *Store) ApplyDelivery(id, state, detail string) error {
-	if state != protocol.StateDelivered && state != protocol.StateFailed {
-		return reject("delivery state must be delivered or failed")
+	if state != protocol.StateDelivered && state != protocol.StateFailed && state != protocol.StateDispatched {
+		return reject("delivery state must be dispatched, delivered or failed")
 	}
 	now := s.now().UnixNano()
 	tx, err := s.db.Begin()

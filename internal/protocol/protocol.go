@@ -63,6 +63,7 @@ type Message struct {
 	CreatedAt      time.Time `json:"created_at"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	State          string    `json:"state"`
+	DeliveryDetail string    `json:"delivery_detail,omitempty"`
 	FromName       string    `json:"sender_name"`
 	// FromHarness is filled by the gateway so a receiving adapter can say
 	// what kind of agent wrote the message.

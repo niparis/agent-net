@@ -613,6 +613,9 @@ func (m Model) messageView(w, rows int) []string {
 	it := m.feed.byMsg[o.id]
 	if it != nil {
 		body(fmt.Sprintf("  %s -> %s   %s   %s   %s", m.who(it.From), m.who(it.To), dashIfEmpty(it.Type), it.State, m.clock(it.At)))
+		if it.State == protocol.StateDispatched && it.Detail != "" {
+			body("  " + sanitize(it.Detail))
+		}
 	}
 	switch {
 	case o.loading:

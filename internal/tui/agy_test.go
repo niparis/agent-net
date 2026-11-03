@@ -55,3 +55,11 @@ func TestWorkerPanelAgyClaudeProfileIsNotProtected(t *testing.T) {
 		}
 	}
 }
+
+func TestAgyWaitingDeliveryDetail(t *testing.T) {
+	m, _ := feedModel([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.dispatched", MessageID: "m_1", Detail: "waiting for the session's next turn"}}}, nil)
+	m.open = &openMsg{id: "m_1", loading: true}
+	if got := strings.Join(m.messageView(120, 30), "\n"); !strings.Contains(got, "waiting for the session's next turn") {
+		t.Fatalf("waiting detail missing: %s", got)
+	}
+}

@@ -353,6 +353,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		GatewayData: defaultGatewayData(),
 		Adapters:    []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 		CodexHome:         agentfiles.CodexHome(),
+		AgySummaries:      filepath.Join(inventoryHome, ".gemini", "antigravity-cli", "conversation_summaries.db"),
 		RefreshAgentFiles: agentfiles.SyncAndLog,
 		ApplyIntegrations: setup.ApplyIntegrations,
 		UsageSampler:      sysusage.New(nil),
