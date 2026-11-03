@@ -5,7 +5,7 @@
 │   alice         held request → strategies                        5m │ │ session ci-runner · agent-net on build-vm    │
 ╰─────────────────────────────────────────────────────────────────────╯ │ 10 minutes ago                               │
 ╭─Proposals · 2───────────────────────────────────────────────────────╮ │                                              │
-│   CTO           start a Pi session in shop, on Mac               8m │ │ t answer  enter details                      │
+│   CTO           start a Pi session in shop, on Mac               8m │ │ t answer  x dismiss  enter details           │
 │   ops (learned) add "deploys" to what it refuses                 7m │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─For your information · 2────────────────────────────────────────────╮ │                                              │
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-t answer  enter details  ↑↓ select  ? help
+t answer  x dismiss  enter details  ↑↓ select  ? help

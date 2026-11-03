@@ -58,6 +58,7 @@ type Model struct {
 	inboxDetail, inboxEditing           bool
 	inboxIndex                          int
 	inboxError                          string
+	inboxNote                           string
 	inboxInput                          textinput.Model
 	cto                                 *ctoState
 	ctoGeneration                       int
@@ -659,17 +660,26 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case inboxAnswerMsg:
-		if msg.err != nil {
-			m.inboxError = sanitize(msg.err.Error())
-		} else {
+		switch {
+		case msg.err == nil:
 			m.inboxDetail = false
-			m.inboxError = ""
+			m.inboxError, m.inboxNote = "", ""
 			for i := range m.inboxItems {
 				if m.inboxItems[i].ID == msg.id {
 					m.inboxItems[i].Status = "answered"
 				}
 			}
 			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
+		case inboxGone(msg.err):
+			// The item left the gateway while the row waited. Keep the list
+			// honest: drop the row and say it is gone, not the raw error.
+			m.inboxDetail = false
+			m.inboxError = ""
+			m.inboxNote = "already gone"
+			m.dropInboxItem(msg.id)
+		default:
+			m.inboxError = sanitize(msg.err.Error())
+			m.inboxNote = ""
 		}
 		return m, nil
 	case onboardingMsg:
