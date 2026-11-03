@@ -43,7 +43,7 @@ func TestWorkerJudgeRunsBeforeStartAndIsStored(t *testing.T) {
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatal("the judge did not run before the start returned")
 	}
-	if want := "Tell your user: worker on fake/m1, difficulty trivial (D 1.20; R2 S1 C1 U1 V1 K1)."; res.OwnerLine != want {
+	if want := "Tell your user: worker on opencode · fake · m1 · default, difficulty trivial (D 1.20; R2 S1 C1 U1 V1 K1)."; res.OwnerLine != want {
 		t.Fatalf("owner line = %q, want %q", res.OwnerLine, want)
 	}
 	a := storedAssessment(t, g, res.SessionID)

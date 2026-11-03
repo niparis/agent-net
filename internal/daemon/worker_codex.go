@@ -52,7 +52,12 @@ import (
 type codexLauncher struct{}
 
 func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
-	name, effort := splitCodexModel(w.model)
+	selection := protocol.ParseModelSelection("codex", "", w.model, "")
+	modelArgs, err := selection.Arguments(nil)
+	if err != nil {
+		return err
+	}
+	name, effort := splitCodexModel(modelArgs[0])
 	if err := d.checkCodexEffort(ctx, name, effort); err != nil {
 		return err
 	}

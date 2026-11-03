@@ -91,13 +91,12 @@ var dashScoreLevels = map[string]bool{"minimal": true, "low": true, "medium": tr
 
 // splitScoreLevel is SplitModelLevel that also reads agy's dash suffix.
 func splitScoreLevel(model string) (base, level string) {
-	if base, level = SplitModelLevel(model); level != "" {
-		return base, level
+	selection := ParseModelSelection("agy", "", model, "")
+	base = selection.Model
+	if selection.Provider != "" {
+		base = selection.Provider + "/" + base
 	}
-	if i := strings.LastIndexByte(model, '-'); i > 0 && dashScoreLevels[strings.ToLower(model[i+1:])] {
-		return model[:i], model[i+1:]
-	}
-	return model, ""
+	return base, selection.Effort
 }
 
 // LookupModelScoreWithDefaultEffort uses the harness default when no effort is named.

@@ -135,6 +135,9 @@ func TestStartWithoutTouches(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
 		if method == "worker_start" {
 			p := params.(protocol.WorkerStartRequest)
+			if p.Provider != "vendor" || p.Effort != "high" {
+				t.Fatalf("fields dropped: %+v", p)
+			}
 			if len(p.Touches) != 0 {
 				t.Fatalf("touches was sent: %+v", p)
 			}
@@ -145,7 +148,7 @@ func TestStartWithoutTouches(t *testing.T) {
 		}
 		return json.RawMessage(`{}`), nil
 	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start", Arguments: map[string]any{"task": "x"}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start", Arguments: map[string]any{"task": "x", "provider": "vendor", "model": "x", "effort": "high"}})
 	if err != nil || res.IsError {
 		t.Fatalf("start without touches: %+v %v", res, err)
 	}

@@ -583,6 +583,8 @@ func (d *Daemon) runWorkerStart(ctx context.Context, l protocol.WorkerLaunch) (p
 }
 
 func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, async bool) (out protocol.WorkerLaunched, err error) {
+	selection := protocol.ParseModelSelection(l.Harness, l.Provider, l.Model, l.Effort)
+	l.Model = selection.LegacyModel()
 	transferredBase := false
 	defer func() {
 		if !transferredBase {

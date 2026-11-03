@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The Pi worker (decision 0008).
@@ -82,9 +84,11 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if w.worktree != "" {
 		args = append(args, "--approve")
 	}
-	if w.model != "" {
-		args = append(args, "--model", w.model)
+	modelArgs, err := protocol.ParseModelSelection("pi", "", w.model, "").Arguments(nil)
+	if err != nil {
+		return err
 	}
+	args = append(args, modelArgs...)
 	w.discardStdout = true // the rpc event stream; stderr (with the errors) goes to the log
 	if err := d.spawnWorkerStdin(w, bin, args, env, in); err != nil {
 		return err

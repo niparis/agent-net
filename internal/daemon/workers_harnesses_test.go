@@ -1071,3 +1071,18 @@ func TestClaudeWorkerModelEffort(t *testing.T) {
 		t.Fatalf("args: %v", rec.Args)
 	}
 }
+
+func TestClaudeWorkerSeparateModelFields(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Provider: "anthropic", Model: "claude-opus-5-5", Effort: "xhigh", Task: "FAKE:handback say ok"})
+	rec := readClaude(t, repo)
+	if argValue(rec.Args, "--model") != "claude-opus-5-5" || argValue(rec.Args, "--effort") != "xhigh" {
+		t.Fatalf("args: %v", rec.Args)
+	}
+	if res.Provider != "anthropic" || res.Effort != "xhigh" {
+		t.Fatalf("selection: %+v", res)
+	}
+}

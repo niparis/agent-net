@@ -959,7 +959,8 @@ export const TOOL_CATALOG = [
             "claude",
             "codex",
             "opencode",
-            "pi"
+            "pi",
+            "agy"
           ],
           "description": "Harness name."
         },
@@ -993,6 +994,14 @@ export const TOOL_CATALOG = [
           "type": "string",
           "maxLength": 60,
           "description": "One short line naming the worker, at most 60 characters, with no newlines. Leave it empty to derive a title from the task."
+        },
+        "provider": {
+          "type": "string",
+          "description": "Provider ID; omit to resolve from the model."
+        },
+        "effort": {
+          "type": "string",
+          "description": "Reasoning effort or thinking level."
         }
       },
       "required": [],

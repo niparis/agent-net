@@ -339,17 +339,22 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if err := json.Unmarshal(data, &ans); err != nil || (ans.SessionID == "" && !ans.Queued) {
 		return nil, errors.New("the gateway answered without a worker session")
 	}
+	selected := protocol.ParseModelSelection(ans.Harness, ans.Provider, ans.Model, ans.Effort)
+	ans.Provider, ans.Effort = selected.Provider, selected.Effort
+	if ans.Provider == "" {
+		ans.Provider = protocol.ModelVendor(ans.Harness, selected.Model)
+	}
 	if ans.Queued {
 		// No room on the machine: the start waits there, and its owner's
 		// machine sends the task when it begins (decision 0018).
 		return &protocol.WorkerStartResult{Status: "queued", QueueID: ans.QueueID, Position: ans.Position, QueueReason: ans.Reason,
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
-			Model: ans.Model, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
-			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, ans.Model)}, nil
+			Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
+			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display())}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
-		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
-		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, ans.Model)}
+		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
+		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display())}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil

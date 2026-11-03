@@ -315,3 +315,23 @@ func TestExistingRoleListsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerModelFieldsParity(t *testing.T) {
+	var schemas []map[string]any
+	for _, name := range []string{"agent_worker_start", "worker_change"} {
+		for _, tool := range Tools {
+			if tool.Name == name {
+				obj := decodeObject(t, name, tool.InputSchema)
+				schemas = append(schemas, obj["properties"].(map[string]any))
+			}
+		}
+	}
+	if len(schemas) != 2 {
+		t.Fatal("missing worker schemas")
+	}
+	for _, field := range []string{"provider", "model", "effort"} {
+		if schemas[0][field] == nil || !reflect.DeepEqual(schemas[0][field], schemas[1][field]) {
+			t.Errorf("%s differs: %v / %v", field, schemas[0][field], schemas[1][field])
+		}
+	}
+}

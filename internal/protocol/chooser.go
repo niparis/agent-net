@@ -15,6 +15,7 @@ type WorkerModelCandidate struct {
 	Name          string
 	Harness       string
 	Model         string
+	Effort        string
 	Provider      string
 	DefaultEffort string
 	Failed        bool
@@ -253,7 +254,8 @@ const workerOverQualificationScale = 8.0
 // adequate requires a good or excellent fit and a task at the model's maximum
 // level or exactly one below. Callers that show or choose share this rule.
 func WorkerCandidateFit(c WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64) (score float64, fit string, adequate, ok bool) {
-	s, found := LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
+	selection := ParseModelSelection(c.Harness, "", c.Model, c.Effort)
+	s, found := LookupModelScoreWithDefaultEffort(selection.LegacyModel(), c.DefaultEffort, scores)
 	if !found {
 		return 0, "", false, false
 	}
