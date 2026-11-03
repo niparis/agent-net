@@ -355,6 +355,10 @@ func TestSyncGuidanceSharedSymlinkTarget(t *testing.T) {
 		}
 	}
 	got := read(t, target)
+	wantFixture, err := os.ReadFile("testdata/shared.golden")
+	if err != nil || got != string(wantFixture) {
+		t.Fatalf("shared fixture mismatch: %v", err)
+	}
 	for _, want := range []string{"before\n" + guidance.Begin, guidance.End + "\nafter\n", "Claude Code:", "Pi, OpenCode, Codex:", "`SendMessage`", "`agent_message_reply`"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q", want)

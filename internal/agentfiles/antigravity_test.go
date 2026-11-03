@@ -68,6 +68,11 @@ func TestAntigravityPlugin(t *testing.T) {
 			t.Fatalf("invalid JSON %s", name)
 		}
 	}
+	gotRules, err := os.ReadFile(filepath.Join(AntigravityPluginDir(), "rules/AGENTS.md"))
+	wantRules, fixtureErr := os.ReadFile("testdata/antigravity.golden")
+	if err != nil || fixtureErr != nil || string(gotRules) != string(wantRules) {
+		t.Fatal("antigravity fixture mismatch")
+	}
 	if r := SyncAntigravity("/tmp/agent-net"); r.Changed || r.Err != nil {
 		t.Fatalf("repeat: %+v", r)
 	}
