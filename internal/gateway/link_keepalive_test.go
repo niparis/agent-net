@@ -160,6 +160,47 @@ func TestLinkKeepaliveGatewayLiveTraffic(t *testing.T) {
 	}
 }
 
+func TestLinkKeepaliveGatewayEmptyFragments(t *testing.T) {
+	g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
+	var pings atomic.Int32
+	ws := dialLinkPeer(t, url, token, false, &pings)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop := make(chan struct{})
+	var count atomic.Int32
+	go func() {
+		writer, err := ws.Writer(ctx, websocket.MessageText)
+		if err != nil {
+			return
+		}
+		ticker := time.NewTicker(testLinkPing)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			case <-ticker.C:
+				// Non-final frames are buffered by the library. Send enough
+				// empty frames to flush the writer on every tick.
+				for range 2200 {
+					if _, err := writer.Write(nil); err != nil {
+						return
+					}
+				}
+				count.Add(1)
+			}
+		}
+	}()
+	waitLink(t, "empty continuation frames", func() bool { return count.Load() >= 12 || !nodeConnected(g, id) })
+	if !nodeConnected(g, id) || count.Load() < 12 {
+		t.Fatalf("link closed after %d empty fragments", count.Load())
+	}
+	close(stop)
+	waitLink(t, "link to close after fragments stop", func() bool { return !nodeConnected(g, id) })
+}
+
 func TestLinkOfflineGraceQuickRedial(t *testing.T) {
 	g, url, id, token := newLinkGateway(t, 200*time.Millisecond)
 	var pings atomic.Int32

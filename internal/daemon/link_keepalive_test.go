@@ -26,10 +26,12 @@ func waitDaemonLink(t *testing.T, what string, condition func() bool) {
 }
 
 type keepaliveGateway struct {
-	pings       atomic.Int32
-	respond     atomic.Bool
-	traffic     atomic.Bool
-	pingTraffic atomic.Bool
+	pings         atomic.Int32
+	respond       atomic.Bool
+	traffic       atomic.Bool
+	pingTraffic   atomic.Bool
+	fragments     atomic.Bool
+	fragmentCount atomic.Int32
 }
 
 func (g *keepaliveGateway) serve(w http.ResponseWriter, r *http.Request) {
@@ -48,11 +50,29 @@ func (g *keepaliveGateway) serve(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ticker := time.NewTicker(40 * time.Millisecond)
 		defer ticker.Stop()
+		var writer interface{ Write([]byte) (int, error) }
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if g.fragments.Load() {
+					if writer == nil {
+						w, err := ws.Writer(ctx, websocket.MessageText)
+						if err != nil {
+							return
+						}
+						writer = w
+					}
+					// Non-final frames are buffered by the library. Send enough
+					// empty frames to flush the writer on every tick.
+					for range 2200 {
+						if _, err := writer.Write(nil); err != nil {
+							return
+						}
+					}
+					g.fragmentCount.Add(1)
+				}
 				if g.traffic.Load() && ws.Write(ctx, websocket.MessageText, []byte(`{}`)) != nil {
 					return
 				}
@@ -80,6 +100,35 @@ func (g *keepaliveGateway) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func TestLinkKeepaliveDaemonEmptyFragments(t *testing.T) {
+	peer := &keepaliveGateway{}
+	d := startKeepaliveDaemon(t, peer)
+	first := currentLink(d)
+	peer.fragments.Store(true)
+	waitDaemonLink(t, "empty continuation frames", func() bool {
+		select {
+		case <-first.dead:
+			return true
+		default:
+			return peer.fragmentCount.Load() >= 12
+		}
+	})
+	select {
+	case <-first.dead:
+		t.Fatalf("link closed after %d empty fragments", peer.fragmentCount.Load())
+	default:
+	}
+	peer.fragments.Store(false)
+	waitDaemonLink(t, "link to close after fragments stop", func() bool {
+		select {
+		case <-first.dead:
+			return true
+		default:
+			return false
+		}
+	})
 }
 
 func startKeepaliveDaemon(t *testing.T, peer *keepaliveGateway) *Daemon {

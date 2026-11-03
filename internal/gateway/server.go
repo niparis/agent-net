@@ -459,7 +459,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	health := linkkeepalive.New()
-	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+	ws, err := websocket.Accept(health.ResponseWriter(w), r, &websocket.AcceptOptions{
 		OnPingReceived: func(context.Context, []byte) bool { health.Received(); return true },
 		OnPongReceived: func(context.Context, []byte) { health.Received() },
 	})

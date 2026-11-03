@@ -224,7 +224,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	dctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	health := linkkeepalive.New()
 	ws, _, err := websocket.Dial(dctx, d.cfg.GatewayURL+"/v1/node", &websocket.DialOptions{
-		HTTPClient:     d.client,
+		HTTPClient:     health.Client(d.client),
 		HTTPHeader:     http.Header{"Authorization": {"Bearer " + d.cfg.Token}},
 		OnPingReceived: func(context.Context, []byte) bool { health.Received(); return true },
 		OnPongReceived: func(context.Context, []byte) { health.Received() },
