@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/harnesses"
+	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/repoinfo"
 	"github.com/niparis/agent-net/internal/usage"
@@ -91,6 +92,9 @@ type Config struct {
 	Logger       *log.Logger
 
 	BackoffMin, BackoffMax time.Duration
+	// KeepalivePingInterval and KeepaliveTimeout control gateway link health checks.
+	// Zero values use 20 seconds and 45 seconds respectively.
+	KeepalivePingInterval, KeepaliveTimeout time.Duration
 	// PluginAckTimeout is how long to wait for a plugin to confirm a push.
 	PluginAckTimeout time.Duration
 
@@ -377,6 +381,12 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	if cfg.BackoffMax == 0 {
 		cfg.BackoffMax = 30 * time.Second
+	}
+	if cfg.KeepalivePingInterval <= 0 {
+		cfg.KeepalivePingInterval = linkkeepalive.DefaultPingInterval
+	}
+	if cfg.KeepaliveTimeout <= 0 {
+		cfg.KeepaliveTimeout = linkkeepalive.DefaultTimeout
 	}
 	if cfg.PluginAckTimeout == 0 {
 		cfg.PluginAckTimeout = 10 * time.Second

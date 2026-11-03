@@ -11,22 +11,24 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // link is one WebSocket connection to the gateway.
 type link struct {
-	ws   *websocket.Conn
-	wmu  sync.Mutex
-	dead chan struct{}
+	ws     *websocket.Conn
+	wmu    sync.Mutex
+	dead   chan struct{}
+	health *linkkeepalive.Monitor
 
 	mu      sync.Mutex
 	nextID  int
 	pending map[string]chan protocol.Header
 }
 
-func newLink(ws *websocket.Conn) *link {
-	return &link{ws: ws, dead: make(chan struct{}), pending: map[string]chan protocol.Header{}}
+func newLink(ws *websocket.Conn, health *linkkeepalive.Monitor) *link {
+	return &link{ws: ws, health: health, dead: make(chan struct{}), pending: map[string]chan protocol.Header{}}
 }
 
 func (l *link) write(ctx context.Context, b []byte) error {
@@ -74,7 +76,7 @@ func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessag
 func (l *link) readLoop(ctx context.Context, d *Daemon) {
 	defer close(l.dead)
 	for {
-		_, raw, err := l.ws.Read(ctx)
+		_, raw, err := l.health.Read(ctx, l.ws)
 		if err != nil {
 			return
 		}
@@ -220,9 +222,12 @@ func (d *Daemon) linkLoop(ctx context.Context) {
 // up tells whether the handshake finished.
 func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	dctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	health := linkkeepalive.New()
 	ws, _, err := websocket.Dial(dctx, d.cfg.GatewayURL+"/v1/node", &websocket.DialOptions{
-		HTTPClient: d.client,
-		HTTPHeader: http.Header{"Authorization": {"Bearer " + d.cfg.Token}},
+		HTTPClient:     health.Client(d.client),
+		HTTPHeader:     http.Header{"Authorization": {"Bearer " + d.cfg.Token}},
+		OnPingReceived: func(context.Context, []byte) bool { health.Received(); return true },
+		OnPongReceived: func(context.Context, []byte) { health.Received() },
 	})
 	cancel()
 	if err != nil {
@@ -237,15 +242,17 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		d.connecting = false
 		d.mu.Unlock()
 	}()
-	l := newLink(ws)
+	l := newLink(ws, health)
 	rctx, rcancel := context.WithCancel(ctx)
+	health.Received()
+	go health.Run(rctx, ws, d.cfg.KeepalivePingInterval, d.cfg.KeepaliveTimeout)
 	go l.readLoop(rctx, d)
 	// readLoop adds to d.wg when a frame comes in. runLink is counted in d.wg
 	// (through linkLoop), so it must not return while readLoop still runs:
 	// an Add after the count has reached zero races with Stop's Wait.
 	defer func() {
-		ws.Close(websocket.StatusNormalClosure, "")
 		rcancel()
+		ws.CloseNow()
 		<-l.dead
 	}()
 
