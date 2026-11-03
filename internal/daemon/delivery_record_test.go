@@ -376,3 +376,56 @@ func TestDeliveryConfirmationStorageFailureKeepsIntent(t *testing.T) {
 		t.Fatalf("harness saw %d writes, want 1", n)
 	}
 }
+
+func TestDeliveryDuplicateWhileQueuedTurnIsStarting(t *testing.T) {
+	r := newDeliveryRig(t, &fakeAdapter{})
+	m := r.store(t, "queued-start-duplicate")
+	d := r.recv.d
+	w := &worker{id: "w_test", harness: "opencode", sessionID: r.to, owner: r.sender, turnActive: true}
+	d.wmu.Lock()
+	d.workers[w.id] = w
+	d.wmu.Unlock()
+	defer func() {
+		d.wmu.Lock()
+		delete(d.workers, w.id)
+		d.wmu.Unlock()
+	}()
+	d.onDeliver(context.Background(), m)
+
+	// Pause the background delivery after the idle handler dequeues the
+	// message, but before it can claim the durable harness write.
+	d.bgMu.Lock()
+	blocked := true
+	defer func() {
+		if blocked {
+			d.bgMu.Unlock()
+		}
+	}()
+	idleDone := make(chan bool, 1)
+	go func() { idleDone <- d.openCodeTurnIdle(r.to) }()
+	eventually(t, "queued turn dequeued", func() bool {
+		d.wmu.Lock()
+		defer d.wmu.Unlock()
+		return w.turnAwaitingStart && len(w.turnQueue) == 0
+	})
+	d.onDeliver(context.Background(), m)
+	d.wmu.Lock()
+	queued := len(w.turnQueue)
+	d.wmu.Unlock()
+	d.bgMu.Unlock()
+	blocked = false
+	<-idleDone
+	if queued != 0 {
+		t.Fatalf("duplicate re-entered the queue while its original was starting: %d queued", queued)
+	}
+	eventually(t, "queued turn confirmed", func() bool { return d.st.isDelivered(m.ID) })
+	d.wmu.Lock()
+	w.turnAwaitingStart = false // the harness reports that the turn started
+	d.wmu.Unlock()
+	if d.openCodeTurnIdle(r.to) {
+		t.Fatal("completed turn still has pending work")
+	}
+	if n := len(r.fb.delivered()); n != 1 {
+		t.Fatalf("harness writes = %d, want 1", n)
+	}
+}

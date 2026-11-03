@@ -637,6 +637,7 @@ func (d *Daemon) reconcileOpenCode(ctx context.Context) {
 			m := w.turnQueue[0]
 			w.turnQueue = w.turnQueue[1:]
 			w.turnAwaitingStart = true
+			w.turnMessageID = m.ID
 			next = &m
 		} else {
 			w.turnActive = false

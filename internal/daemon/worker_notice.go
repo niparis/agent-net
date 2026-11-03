@@ -620,6 +620,7 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		w.turnQueue = w.turnQueue[1:]
 		w.turnHandbackIdle = w.harness == "opencode"
 		w.turnAwaitingStart = true
+		w.turnMessageID = m.ID
 		next = &m
 	} else {
 		w.doneStatus = req.Status
@@ -726,7 +727,11 @@ func (d *Daemon) noteMidrun(w *worker, m protocol.Message) bool {
 		return false
 	}
 	// Queued turns remain dispatched until the plugin confirms them. A
-	// repeated gateway push must not count that same request twice.
+	// repeated gateway push must not count that same request twice, including
+	// the gap between dequeueing it and claiming its harness write.
+	if w.turnAwaitingStart && w.turnMessageID == m.ID {
+		return true
+	}
 	for _, queued := range w.turnQueue {
 		if queued.ID == m.ID {
 			return true
@@ -840,6 +845,9 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 	if w.harness != "opencode" && w.harness != "agy" {
 		return false, false
 	}
+	if w.turnAwaitingStart && w.turnMessageID == m.ID {
+		return true, false
+	}
 	if !w.turnActive {
 		w.idleFollowUp = w.idleNoticeSent && m.From == w.owner
 		w.idleNoticeSince = time.Time{}
@@ -915,6 +923,7 @@ func (d *Daemon) openCodeTurnIdle(session string) bool {
 			m := w.turnQueue[0]
 			w.turnQueue = w.turnQueue[1:]
 			w.turnAwaitingStart = true
+			w.turnMessageID = m.ID
 			pending = true
 			next = &m
 		}
