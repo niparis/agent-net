@@ -660,3 +660,26 @@ func TestSkillSymlinkOutsideHomeIsNotFollowed(t *testing.T) {
 	}
 	t.Fatal("missing outside link")
 }
+
+func TestAntigravitySkillRoots(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	for _, path := range []string{filepath.Join(home, ".gemini/config/skills/user-skill/SKILL.md"), filepath.Join(project, ".agent/skills/project-skill/SKILL.md")} {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("skill"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found := map[string]bool{}
+	for _, item := range Scan(Options{Home: home, Projects: []protocol.ProjectEntry{{Name: "p", Path: project}}}).Items {
+		if item.Harness == "antigravity" {
+			found[item.Name] = true
+		}
+	}
+	for _, name := range []string{"user-skill", "project-skill"} {
+		if !found[name] {
+			t.Errorf("missing %s", name)
+		}
+	}
+}

@@ -427,7 +427,7 @@ func Scan(o Options) protocol.InventoryReport {
 	if codex == "" {
 		codex = filepath.Join(home, ".codex")
 	}
-	for _, x := range [][2]string{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".config/opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/agent/skills"}, {"pi", ".agents/skills"}} {
+	for _, x := range [][2]string{{"antigravity", ".gemini/config/skills"}, {"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".config/opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/agent/skills"}, {"pi", ".agents/skills"}} {
 		skills(x[0], protocol.InventoryUser, "", "", home, filepath.Join(home, x[1]))
 	}
 	skills("codex", protocol.InventoryUser, "", "", codex, filepath.Join(codex, "skills"))
@@ -515,7 +515,7 @@ func Scan(o Options) protocol.InventoryReport {
 	}
 	for _, p := range o.Projects {
 		base := filepath.Clean(p.Path)
-		for _, x := range [][2]string{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}, {"pi", ".agents/skills"}} {
+		for _, x := range [][2]string{{"antigravity", ".agent/skills"}, {"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}, {"pi", ".agents/skills"}} {
 			skills(x[0], protocol.InventoryProject, p.Name, base, base, filepath.Join(base, x[1]))
 		}
 		config("claude", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".mcp.json"), "mcpServers", false)
