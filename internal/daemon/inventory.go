@@ -64,7 +64,7 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 		d.publishHarnesses(ctx)
 		delay := d.cfg.HarnessInterval
 		if incomplete {
-			delay = nextRetry
+			delay = min(nextRetry, d.cfg.HarnessInterval)
 			if nextRetry < 30*time.Minute {
 				nextRetry *= 2
 				if nextRetry > 30*time.Minute {
