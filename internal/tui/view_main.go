@@ -323,6 +323,10 @@ func (m Model) titleLine(w int) string {
 		left += sDim.Render(fmt.Sprintf("  hidden %d", len(m.hiddenSessions)))
 	}
 	if m.tab == sessionsTab {
+		for _, w := range m.snap.GatewayWarnings {
+			style := lipgloss.NewStyle().Foreground(roleWarning)
+			left += "  " + style.Render(w)
+		}
 		if warning, exhausted := m.quotaWarning(); warning != "" {
 			style := lipgloss.NewStyle().Foreground(roleWarning)
 			if exhausted {
