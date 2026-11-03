@@ -132,7 +132,7 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	calls := []request{
 		{method: protocol.OpWorkerLog, params: protocol.WorkerLogQuery{Limit: 200}},
 		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
-		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpWorkerProfiles},
+		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet},
 		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet}, {method: "outcome_inbox"}, {method: "learned_list"},
 		{method: protocol.OpHeldList}, {method: protocol.OpGraphGet},
@@ -177,6 +177,10 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 				}
 				err = json.Unmarshal(c.raw, &v)
 				snap.NotificationsDisabled = v.Disabled
+			case protocol.OpTimeZoneGet:
+				var v protocol.TimeZoneSettings
+				err = json.Unmarshal(c.raw, &v)
+				snap.TimeZone = v.Name
 			case protocol.OpNodes:
 				var v protocol.NodesInfo
 				err = json.Unmarshal(c.raw, &v)
@@ -531,6 +535,24 @@ func (s *Client) NotificationSettings(ctx context.Context, disabled *bool) (bool
 	}
 	err = json.Unmarshal(raw, &out)
 	return out.Disabled, err
+}
+
+// TimeZoneSettings reads the owner's display time zone for the whole network,
+// or writes it when name is not nil. Owner only.
+func (s *Client) TimeZoneSettings(ctx context.Context, name *string) (protocol.TimeZoneSettings, error) {
+	params := map[string]any{}
+	method := protocol.OpTimeZoneGet
+	if name != nil {
+		params["name"] = *name
+		method = protocol.OpTimeZoneSet
+	}
+	raw, err := s.action(ctx, method, params)
+	if err != nil {
+		return protocol.TimeZoneSettings{}, err
+	}
+	var out protocol.TimeZoneSettings
+	err = json.Unmarshal(raw, &out)
+	return out, err
 }
 
 func (s *Client) SessionStop(ctx context.Context, session string) (string, error) {

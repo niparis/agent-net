@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
@@ -105,7 +104,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if a.Online {
 		title += "  " + statusStyle(a.Status).Render(statusShort(a.Status))
 	} else {
-		title += "  " + sBad.Render("offline, last seen "+m.clock(time.Unix(a.LastSeen, 0)))
+		title += "  " + sBad.Render("offline, last seen "+m.clock(m.displayTime(a.LastSeen)))
 	}
 	id := a.SessionID
 	// The worker ID is here, not in the table: the table shows its task. It
@@ -131,14 +130,14 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		if p.Outgoing {
 			verb = "to"
 		}
-		out = append(out, kv("request", fmt.Sprintf("%s %s %s", verb, p.PeerName, m.clock(time.Unix(p.Since, 0)))))
+		out = append(out, kv("request", fmt.Sprintf("%s %s %s", verb, p.PeerName, m.clock(m.displayTime(p.Since)))))
 		out = append(out, kv("", p.MessageID))
 	}
 	if a.Worker != nil {
 		// Who started it matters most, so it comes first. Its ID is on the id
 		// line: the table shows the task instead (decision 0017).
 		out = append(out, kv("worker", fmt.Sprintf("started by %s, %s, project %s", m.who(a.Worker.Owner),
-			m.clock(time.Unix(a.Worker.StartedAt, 0)), dashIfEmpty(m.projectName(a.Worker.Project)))))
+			m.clock(m.displayTime(a.Worker.StartedAt)), dashIfEmpty(m.projectName(a.Worker.Project)))))
 		if a.Worker.Assessment != nil {
 			out = append(out, wrap("  difficulty "+sanitize(a.Worker.Assessment.Summary("picker")), w)...)
 		}

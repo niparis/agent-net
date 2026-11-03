@@ -293,7 +293,7 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) appsDate(t time.Time) string {
-	t = t.In(m.loc)
+	t = m.displayTime(t.Unix())
 	now := m.now().In(m.loc)
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
 		return "today " + t.Format("15:04")

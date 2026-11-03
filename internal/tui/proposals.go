@@ -314,7 +314,7 @@ func (m Model) proposalDetailView(w int) []string {
 	}
 	out = append(out, "", "Messages delivered before the proposal:")
 	for _, msg := range p.Messages {
-		out = append(out, "  "+clip(sanitize(msg.Sender)+"  "+msg.At.Local().Format("2006-01-02 15:04"), w-2))
+		out = append(out, "  "+clip(sanitize(msg.Sender)+"  "+m.displayTime(msg.At.Unix()).Format("2006-01-02 15:04"), w-2))
 	}
 	if len(p.Messages) == 0 {
 		out = append(out, "  None recorded")

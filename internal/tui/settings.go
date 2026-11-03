@@ -8,7 +8,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -108,7 +111,11 @@ func (m Model) settingsItems() []settingsItem {
 	if m.onboarding.Disabled {
 		tips = "off"
 	}
-	return append(items, settingsItem{3, "notifications", 0, "Desktop notifications: " + notifications}, settingsItem{4, "tips", 0, "Tips: " + tips}, settingsItem{4, "restart", 0, "Restart tips"})
+	return append(items,
+		settingsItem{3, "timezone", 0, m.timeZoneLine()},
+		settingsItem{4, "notifications", 0, "Desktop notifications: " + notifications},
+		settingsItem{5, "tips", 0, "Tips: " + tips},
+		settingsItem{5, "restart", 0, "Restart tips"})
 }
 
 func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -135,7 +142,7 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if keyAction(contextSettings, k.String()) == "previous section" {
 			step = -1
 		}
-		section := (item.section + step + 5) % 5
+		section := (item.section + step + 6) % 6
 		for i, row := range items {
 			if row.section == section {
 				m.settingsRow = i
@@ -199,6 +206,10 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				n := m.machineRows()[item.index]
 				return m.startRenameMachine(n.nodeID, n.host)
 			}
+		case "timezone":
+			if open {
+				return m.startTimeZoneEdit()
+			}
 		case "notifications":
 			src, ok := m.src.(interface {
 				NotificationSettings(context.Context, *bool) (bool, error)
@@ -228,6 +239,75 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func keyRunesForSettings(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// startTimeZoneEdit asks for the display time zone: auto, or a name the zone
+// database knows.
+func (m Model) startTimeZoneEdit() (Model, tea.Cmd) {
+	if _, ok := m.src.(interface {
+		TimeZoneSettings(context.Context, *string) (protocol.TimeZoneSettings, error)
+	}); !ok {
+		m.fail("The time zone setting is unavailable.")
+		return m, nil
+	}
+	m.mode = modeTimeZone
+	m.rename = textinput.New()
+	m.rename.Prompt = "time zone (auto or a name like Europe/Paris)> "
+	m.rename.CharLimit = 64
+	m.rename.Cursor.SetMode(cursor.CursorHide)
+	shown := m.snap.TimeZone
+	if shown == "" {
+		shown = protocol.TimeZoneAuto
+	}
+	m.rename.SetValue(shown)
+	m.rename.CursorEnd()
+	m.notice = notice{}
+	return m, m.rename.Focus()
+}
+
+func (m Model) timeZoneKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
+		m.mode = modeNormal
+		m.say("Time zone unchanged.")
+		return m, nil
+	case "submit":
+		name, err := protocol.NormalizeTimeZone(m.rename.Value())
+		if err != nil {
+			m.fail(err.Error())
+			return m, nil
+		}
+		if name == m.snap.TimeZone || name == protocol.TimeZoneAuto && m.snap.TimeZone == "" {
+			m.mode = modeNormal
+			m.say("Time zone unchanged.")
+			return m, nil
+		}
+		m.mode = modeNormal
+		m.say("Saving the time zone...")
+		src, ok := m.src.(interface {
+			TimeZoneSettings(context.Context, *string) (protocol.TimeZoneSettings, error)
+		})
+		if !ok {
+			m.fail("The time zone setting is unavailable.")
+			return m, nil
+		}
+		write := name
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			out, err := src.TimeZoneSettings(ctx, &write)
+			if err != nil {
+				return actionMsg{err: fmt.Errorf("Time zone not changed: %s", explain(err))}
+			}
+			if out.Name == protocol.TimeZoneAuto {
+				return actionMsg{text: "Time zone is auto: the zone of your own machine."}
+			}
+			return actionMsg{text: "Time zone set to " + sanitize(out.Name) + ", for every machine."}
+		}
+	}
+	var cmd tea.Cmd
+	m.rename, cmd = m.rename.Update(k)
+	return m, cmd
 }
 
 func (m Model) settingsAppsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -302,8 +382,8 @@ func (m Model) settingsView(w, h int) []string {
 	case modeApps:
 		return append(out, m.appsView(w, max(h-1, 1))...)
 	}
-	names := []string{"Connected apps", "Integrations", "Machines", "Notifications", "Tips"}
-	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips."}
+	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips"}
+	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips."}
 	items := m.settingsItems()
 	selected := min(max(m.settingsRow, 0), len(items)-1)
 	var body []string

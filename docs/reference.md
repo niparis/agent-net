@@ -787,6 +787,8 @@ Each daemon checks installed harnesses daily, starting 10 minutes after it start
 
 Each daemon sends two kinds of facts about its machine to the gateway. Agents and the CLI can read them.
 
+**Time zone in `hello`.** Every `hello` carries `time_zone`, the machine's IANA zone (`Europe/Paris`), read without sudo: the target of `/etc/localtime` on macOS, then `/etc/timezone`, then `timedatectl show -p Timezone --value`, then `systemsetup -gettimezone` on macOS, then `TZ`. An empty value from an older daemon leaves the stored one alone. The gateway keeps it on the node, `nodes` gives it as `time_zone`, and the owner's display setting uses it (see [Display time zone](#display-time-zone)). It is a fact about the machine, not a change to its clock.
+
 **Repo info for each session.** When the daemon finds a session (any harness), it runs `git` in the session's folder (with a 3 second limit for all commands) and sends:
 
 - `root`: the main working tree of the repository. Empty if the folder is not in a git repository. A linked git worktree has the root of the main tree it belongs to, found with `git rev-parse --git-common-dir`.
@@ -1679,6 +1681,30 @@ failure note. Missing assessments and picker notes show `-`. Fields from removed
 cleaned notices may be unavailable. The log has no row actions.
 `?` opens help.
 
+### Display time zone
+
+Every time the TUI shows is in the owner's display time zone, not the zone of
+the machine that runs it. That covers the Workers log, Messages and message
+bodies, Inbox, Sessions and session details, Graph labels, Quotas reset times,
+the `updated` header, Tools, and CTO proposals and timelines.
+
+The owner setting is `time_zone` in the gateway's `owner_settings` table. It is
+`auto` by default, or an IANA name such as `Europe/Paris`. Each daemon reports
+its own machine's IANA zone in its `hello` (the target of `/etc/localtime` on
+macOS, then `/etc/timezone` or `timedatectl` on Linux, then `TZ`); the gateway
+keeps it on the node and `nodes` gives it as `time_zone`. `auto` takes the first
+non-UTC zone among the owner's machines and prefers a Mac (Darwin), which is
+the owner's own machine rather than a server. When every machine is on UTC it
+shows UTC. The Settings tab shows the effective zone and where it came from,
+for example `Time zone: Europe/Paris (auto, from Nicolas-MBP)` or `set by you`.
+
+To change it, open Settings (`6`), select Time zone and press Enter. Type
+`auto` or an IANA name, then Enter; Esc cancels. An empty answer means `auto`.
+A name the zone database cannot load is refused before anything is saved. The
+binary carries the zone database (`time/tzdata`), so names load on a machine
+without zoneinfo files. The display is read-only: the setting never changes a
+machine's clock or the times stored on the gateway.
+
 ### TUI keys
 
 The bindings live in `internal/tui/keys.go`. The key line and the help overlay
@@ -1697,7 +1723,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Graph | Arrows select; Shift+arrows pan; `,` and `.` select linked nodes; Enter opens the card; `/` finds a node. The graph fits itself when the tab opens. `o`, Space, `t` and `0` do nothing. |
 | Agent card | Ctrl+U and Ctrl+D scroll. `,` and `.` select learned changes; `u` undoes the selected change. `!` does nothing; the legend is in the help overlay under Graph. `[` and `]` do not scroll. |
 | Tools | Opens Skills per project. Up/down selects a project, right or Enter moves to skills, and Space or Enter previews a toggle. Esc keeps pending choices for editing; Enter reviews pending choices and confirms in the review. Left returns to projects. Esc asks before discarding pending changes. `/` filters skill names. Tab switches between the two visible views. The information box follows the selected project or skill. In All tools, Enter opens actions; `/` filters, `t` shows skill cost per project, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
-| Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. |
+| Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. Enter on Time zone asks for `auto` or an IANA name. |
 | Help | Esc closes. `?` switches between this screen and all screens. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: the screen you are on first, then Global keys; `?` again shows Global keys, the current tab, the other tabs in tab order, then In overlays. |
 | Confirmations | Enter or `y` says yes; Esc or `n` says no. Every question footer shows all four keys. |
 

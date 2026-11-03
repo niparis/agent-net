@@ -606,6 +606,10 @@ SELECT 1 /* worker picker note */;
 SELECT 1 /* worker caller column */;
 `, `
 CREATE TABLE IF NOT EXISTS delivery_retries (message_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL, next_at INTEGER NOT NULL);
+`, `
+-- The IANA time zone each machine reported, for the owner's display time
+-- zone. A separate table so the migration can run again (append-only lock).
+CREATE TABLE IF NOT EXISTS node_time_zones (node_id TEXT PRIMARY KEY, zone TEXT NOT NULL, updated_at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

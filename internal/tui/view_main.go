@@ -388,7 +388,7 @@ func (m Model) titleLine(w int) string {
 	}
 	right := "no data yet"
 	if m.haveData {
-		right = "updated " + m.lastOK.In(m.loc).Format("15:04:05")
+		right = "updated " + m.displayTime(m.lastOK.Unix()).Format("15:04:05")
 	}
 	if !m.haveData && m.problem == ProblemNone {
 		right = "loading…"

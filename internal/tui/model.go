@@ -76,6 +76,10 @@ type Model struct {
 	loc  *time.Location
 	now  func() time.Time
 	home string // the local home folder, used by ~ paths
+	// zoneName is the display zone the owner's setting resolved to, and
+	// zoneSource says where it came from ("set by you", "auto, from X").
+	zoneName   string
+	zoneSource string
 
 	width, height     int
 	tab               int
@@ -954,6 +958,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	}
 	m.problem, m.problemT = ProblemNone, ""
 	m.snap, m.haveData, m.lastOK = r.snap, true, r.at
+	m.applyTimeZone()
 	if n := len(m.snap.Calibration.Quality.Agents); m.qualityAgent > n {
 		m.qualityAgent = 0
 	}
@@ -1069,6 +1074,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.renameKey(k)
 	case modeProjectRename:
 		return m.projectRenameKey(k)
+	case modeTimeZone:
+		return m.timeZoneKey(k)
 	case modeIntegrations:
 		return m.integrationsKey(k)
 	case modeApps:
