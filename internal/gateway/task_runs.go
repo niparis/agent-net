@@ -62,7 +62,7 @@ func (s *Store) reworkTasks(cut int64) ([]*taskRuns, []string, error) {
 		t.continueCount += cont
 		t.fixCount += fix
 		t.midrun += mid
-		t.nonStopped = t.nonStopped || outcome != protocol.OutcomeStopped
+		t.nonStopped = t.nonStopped || outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
 		t.recent = t.recent || ended >= cut
 		if ended > t.endedAt {
 			t.endedAt = ended

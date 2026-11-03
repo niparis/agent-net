@@ -168,7 +168,7 @@ func (s *Store) evaluatePlaybook(kind, subject, harness string) error {
 	// worker must not make the record look bad on its own.
 	bad := false
 	if track != nil {
-		decided := track.Runs - track.Stopped
+		decided := track.Runs - track.Stopped - track.Infra
 		bad = decided >= 4 && track.Complete*2 < decided
 	}
 	if !enough && !bad {

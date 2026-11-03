@@ -212,3 +212,54 @@ func TestWorkerRunStoresTouches(t *testing.T) {
 		t.Fatalf("got %q %q", touches, used)
 	}
 }
+
+func TestTrackInfraIsNeutral(t *testing.T) {
+	s, _ := newTestStore(t)
+	for _, run := range []protocol.WorkerRun{
+		{NodeID: "n", SessionID: "infra", Harness: "pi", Model: "m", Outcome: protocol.OutcomeInfra, EndedAt: s.now().Unix()},
+		{NodeID: "n", SessionID: "failed", Harness: "pi", Model: "bad", Outcome: protocol.OutcomeFailed, EndedAt: s.now().Unix()},
+	} {
+		if err := s.RecordWorkerRun(run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tr, ok, err := s.TrackRecord("n", "pi", "m", 0)
+	if err != nil || !ok || tr.Infra != 1 || tr.Failed != 0 || !strings.Contains(tr.Line(), "1 infra") {
+		t.Fatalf("track: %+v %v %v", tr, ok, err)
+	}
+	failed, err := s.RecentWorkerFailures("n", "pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed["m"] || !failed["bad"] {
+		t.Fatalf("recent failures: %v", failed)
+	}
+	log, err := s.WorkerLog(20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, row := range log {
+		if row.SessionID == "infra" && row.Status == "infra" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("worker log: %+v", log)
+	}
+}
+
+func TestTrackAuthBlockedWithoutFailurePenalty(t *testing.T) {
+	s, _ := newTestStore(t)
+	if err := s.RecordModelAuthFailure("n", "opencode", "p/m"); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := s.ModelAuthBlocked("n", "opencode", "p/m")
+	if err != nil || !blocked {
+		t.Fatalf("auth blocked: %v %v", blocked, err)
+	}
+	failed, err := s.FailedModels("n", "opencode")
+	if err != nil || len(failed) != 0 {
+		t.Fatalf("penalty: %v %v", failed, err)
+	}
+}

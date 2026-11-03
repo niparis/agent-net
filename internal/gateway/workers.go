@@ -107,7 +107,13 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			p.Model = storedModel
 		}
 		if p.Reason == protocol.StopModelFails && p.Model != "" {
-			if err := g.store.RecordModelFailure(nc.id, p.Harness, p.Model, p.Failure); err != nil {
+			var err error
+			if protocol.ModelAuthFailure(p.Failure) {
+				err = g.store.RecordModelAuthFailure(nc.id, p.Harness, p.Model)
+			} else if !protocol.ProviderQuotaRefusal(p.Failure) {
+				err = g.store.RecordModelFailure(nc.id, p.Harness, p.Model, p.Failure)
+			}
+			if err != nil {
 				return nil, err
 			}
 		}
@@ -131,7 +137,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			difficulty = "normal"
 		}
 		run := protocol.WorkerRun{NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
-			Outcome: protocol.WorkerOutcome(p.Reason, p.Status, p.Complete), StartedAt: p.StartedAt, EndedAt: end,
+			Outcome: protocol.WorkerOutcomeDetail(p.Reason, p.Status, p.Complete, p.Failure), StartedAt: p.StartedAt, EndedAt: end,
 			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches, TaskID: p.TaskID, Midrun: p.MidrunRun}
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err

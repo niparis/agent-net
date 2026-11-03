@@ -18,15 +18,15 @@ import (
 const TrackRecordDays = 30
 
 // Outcomes of a worker run in the track record. Complete, partial, failed and
-// timed out decide how the model did. Stopped is neutral: a stop on request, a
-// worker lost at a daemon restart or an owner that went away says nothing about
-// the model, so it is counted apart and never as a failure.
+// timed out decide how the model did. Stopped and infra are neutral and
+// counted apart: they do not describe the model's performance.
 const (
 	OutcomeComplete = "complete"
 	OutcomePartial  = "partial"
 	OutcomeFailed   = "failed"
 	OutcomeTimedOut = "timed_out"
 	OutcomeStopped  = "stopped"
+	OutcomeInfra    = "infra"
 )
 
 // WorkerRun is one ended worker as the gateway counts it.
@@ -71,12 +71,35 @@ type TrackRecord struct {
 	Failed           int    `json:"failed"`
 	TimedOut         int    `json:"timed_out"`
 	Stopped          int    `json:"stopped"`
+	Infra            int    `json:"infra"`
 	Continue         int    `json:"continue,omitempty"`
 	Fix              int    `json:"fix,omitempty"`
 	AutoContinue     int    `json:"auto_continue,omitempty"`
 	MedianRunSeconds int64  `json:"median_run_seconds,omitempty"`
 	// Resumable is true when a harness can open an ended session again.
 	Resumable bool `json:"resumable"`
+}
+
+// ProviderQuotaRefusal recognizes provider quota and rate refusals, not general errors.
+func ProviderQuotaRefusal(detail string) bool {
+	detail = strings.ToLower(detail)
+	for _, marker := range []string{"http 429", "status 429", "resource_exhausted", "quota reached", "rate limit", "rate_limit", "too many requests"} {
+		if strings.Contains(detail, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// WorkerOutcomeDetail classifies infrastructure failures without changing hand-backs.
+func WorkerOutcomeDetail(reason, status string, complete *bool, detail string) string {
+	if reason == StopLost || reason == StopStartFails {
+		return OutcomeInfra
+	}
+	if (reason == StopModelFails || reason == StopRunFailed) && (ProviderQuotaRefusal(detail) || ModelAuthFailure(detail)) {
+		return OutcomeInfra
+	}
+	return WorkerOutcome(reason, status, complete)
 }
 
 // WorkerOutcome maps why a worker ended and its hand-back to an outcome. A
@@ -100,8 +123,10 @@ func WorkerOutcome(reason, status string, complete *bool) string {
 	// restart (the owner is told "failed"), the owner went away, or it never
 	// ran the task.
 	switch reason {
-	case StopRequested, StopLost, StopOwnerGone, StopStartFails:
+	case StopRequested, StopOwnerGone:
 		return OutcomeStopped
+	case StopLost, StopStartFails:
+		return OutcomeInfra
 	case StopIdle, StopMaxAge:
 		return OutcomeTimedOut
 	}
@@ -138,7 +163,7 @@ func (t *TrackRecord) Line() string {
 	for _, n := range []struct {
 		count int
 		word  string
-	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}, {t.Stopped, "stopped"},
+	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}, {t.Stopped, "stopped"}, {t.Infra, "infra"},
 		{t.Continue, "continue"}, {t.Fix, "fix"}, {t.AutoContinue, "auto-continues"}} {
 		if n.count > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n.count, n.word))

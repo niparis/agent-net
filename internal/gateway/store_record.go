@@ -540,6 +540,13 @@ func (s *Store) RecordModelFailure(nodeID, harness, model string, failure ...str
 	return err
 }
 
+// RecordModelAuthFailure preserves sign-in blocking without a model failure penalty.
+func (s *Store) RecordModelAuthFailure(nodeID, harness, model string) error {
+	_, err := s.db.Exec(`INSERT INTO model_failures (node_id, harness, model, at, auth_at) VALUES (?, ?, ?, 0, ?)
+  ON CONFLICT (node_id, harness, model) DO UPDATE SET auth_at = MAX(model_failures.auth_at, excluded.auth_at)`, nodeID, harness, model, s.now().UnixNano())
+	return err
+}
+
 // FailedModels returns the models of a harness on a node that failed a worker
 // within protocol.ModelFailureHours, and when each last failed.
 func (s *Store) FailedModels(nodeID, harness string) (map[string]time.Time, error) {

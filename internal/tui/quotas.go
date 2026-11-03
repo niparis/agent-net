@@ -280,7 +280,7 @@ type quotaModel struct {
 	name, harness, model, defaultEffort           string
 	notOn                                         []string
 	score                                         protocol.ModelScore
-	used, done, failedRuns                        int
+	used, done, failedRuns, infraRuns             int
 	last                                          int64
 	failed, allowed, scored, succeeded, available bool
 	stale, protected                              bool
@@ -369,6 +369,7 @@ func (m Model) quotaModels() []quotaModel {
 					row.used += track.Runs
 					row.done += track.Complete
 					row.failedRuns += track.Failed + track.TimedOut
+					row.infraRuns += track.Infra
 				}
 			}
 		}
@@ -747,6 +748,9 @@ func workerUsage(r quotaModel) string {
 	if r.failedRuns > 0 {
 		usage += fmt.Sprintf(" · %d failed", r.failedRuns)
 	}
+	if r.infraRuns > 0 {
+		usage += fmt.Sprintf(" · %d infra", r.infraRuns)
+	}
 	return usage
 }
 
@@ -760,6 +764,9 @@ func workerUsageShort(r quotaModel) string {
 	usage := fmt.Sprintf("%d·%d%%", r.used, pct)
 	if r.failedRuns > 0 {
 		usage += fmt.Sprintf("·%d✗", r.failedRuns)
+	}
+	if r.infraRuns > 0 {
+		usage += fmt.Sprintf("·%d infra", r.infraRuns)
 	}
 	return usage
 }
