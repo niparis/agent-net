@@ -476,6 +476,28 @@ async function delivered(message) {
   return sent[0].content;
 }
 
+await test("a repeated delivery id is injected once and acknowledged again", async () => {
+  const p = makePi();
+  const sent = [];
+  p.api.sendMessage = (m) => sent.push(m);
+  extension(p.api);
+  const n = hellos.length;
+  const before = requests.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const msg = { message_id: "m_duplicate", sender_session_id: "s_a", body: "hello" };
+  try {
+    pushDeliver(msg);
+    await until("first ack", () => requests.slice(before).filter((r) => r.method === "delivered").length === 1);
+    pushDeliver(msg);
+    await until("duplicate ack", () => requests.slice(before).filter((r) => r.method === "delivered").length === 2);
+    if (sent.length !== 1) throw new Error(`injected ${sent.length} times`);
+    if (requests.slice(before).filter((r) => r.method === "delivered").some((r) => !r.params.ok)) throw new Error("duplicate refused");
+  } finally {
+    await p.fire("session_shutdown", {});
+  }
+});
+
 await test("worker delivery is confirmed only when its task starts", async () => {
   process.env.AGENT_NET_WORKER = "w_test";
   const p = makePi();
@@ -491,13 +513,17 @@ await test("worker delivery is confirmed only when its task starts", async () =>
   await until("first delivery", () => sent.length === 1);
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id)) throw new Error("confirmed before the task started");
+  // Pi may have dropped the first task: the daemon's repeat injects it again.
   pushDeliver(msg);
   await until("retry", () => sent.length === 2);
+  if (requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id)) throw new Error("confirmed before the task started");
   await p.fire("message_start", { type: "message_start", message: { role: "custom", ...sent[1] } });
   await until("confirmed", () => requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id && r.params.ok));
   pushDeliver(msg);
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await until("duplicate turn-start ack", () => requests.slice(before).filter((r) => r.method === "delivered" && r.params.message_id === msg.message_id).length === 2);
   if (sent.length !== 2) throw new Error("confirmed task was sent again");
+  const acks = requests.slice(before).filter((r) => r.method === "delivered" && r.params.message_id === msg.message_id);
+  if (acks.length !== 2 || acks.some((r) => !r.params.ok || r.params.detail !== "pi worker turn started")) throw new Error("duplicate lost the worker turn confirmation");
   await p.fire("session_shutdown", {});
   delete process.env.AGENT_NET_WORKER;
 });

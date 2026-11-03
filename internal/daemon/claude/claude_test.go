@@ -294,6 +294,45 @@ func TestDeliverFailures(t *testing.T) {
 	}
 }
 
+func TestDeliverWriteErrorAfterConnectingIsNotDelivered(t *testing.T) {
+	r := newRig(t)
+	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
+	// An inbox that accepts the connection and closes it at once: the frame,
+	// larger than the socket buffer, cannot be written to the end.
+	closing := filepath.Join(filepath.Dir(r.inboxPath), "closing.sock")
+	ln, err := net.Listen("unix", closing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	body := fmt.Sprintf(`{"pid":%d,"sessionId":"sess-1","status":"idle","messagingSocketPath":%q}`, os.Getpid(), closing)
+	os.WriteFile(filepath.Join(r.sessions, fmt.Sprintf("%d.json", os.Getpid())), []byte(body), 0o600)
+	eventually(t, "closing socket seen", func() bool {
+		r.a.mu.Lock()
+		defer r.a.mu.Unlock()
+		return r.a.byNative["sess-1"].sock == closing
+	})
+	big := msg
+	big.Body = strings.Repeat("x", 4<<20)
+	res := r.a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "sess-1"}, big)
+	if res.Delivered || !res.Uncertain || !strings.Contains(res.Detail, "may have arrived") {
+		t.Fatalf("write error after connecting: %+v, want not delivered, uncertain, may have arrived", res)
+	}
+	res = r.a.DeliverCTO(context.Background(), protocol.SessionInfo{NativeID: "sess-1"}, "m_cto", strings.Repeat("y", 4<<20))
+	if res.Delivered || !res.Uncertain {
+		t.Fatalf("CTO write error after connecting: %+v", res)
+	}
+}
+
 func TestBuildFrameReplyFooter(t *testing.T) {
 	m := msg
 	m.Type = "reply"

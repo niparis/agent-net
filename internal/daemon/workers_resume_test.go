@@ -69,7 +69,7 @@ func TestHandbackEndsTheWorkerAndOwnerFollowUpResumesIt(t *testing.T) {
 	})
 }
 
-func TestOpenCodeWorkerQueuedTurnAfterHandback(t *testing.T) {
+func TestOpenCodeWorkerQueuedDeliveryAfterHandback(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -78,7 +78,18 @@ func TestOpenCodeWorkerQueuedTurnAfterHandback(t *testing.T) {
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:wait-handback", Isolation: protocol.IsolationNone})
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:queued-handback"}), &sent)
-	eventually(t, "second message delivered", func() bool { return w.d.st.isDelivered(sent.Message.ID) })
+	eventually(t, "second message queued", func() bool {
+		worker := w.d.workerBySession(res.SessionID)
+		if worker == nil {
+			return false
+		}
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		return len(worker.turnQueue) == 1
+	})
+	if w.d.st.isDelivered(sent.Message.ID) {
+		t.Fatal("in-memory queued turn counted as delivered")
+	}
 	if err := os.WriteFile(filepath.Join(repo, "fake-opencode-finish"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

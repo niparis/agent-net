@@ -725,6 +725,13 @@ func (d *Daemon) noteMidrun(w *worker, m protocol.Message) bool {
 	if d.workers[w.id] != w || w.stopping {
 		return false
 	}
+	// Queued turns remain dispatched until the plugin confirms them. A
+	// repeated gateway push must not count that same request twice.
+	for _, queued := range w.turnQueue {
+		if queued.ID == m.ID {
+			return true
+		}
+	}
 	if m.Type == protocol.TypeRequest && m.From == w.owner {
 		if w.midrunSeen && !w.noticeSinceRequest {
 			w.midrunCount++
@@ -847,21 +854,40 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 		w.turnActive = true
 		return false, false
 	}
+	for _, queued := range w.turnQueue {
+		if queued.ID == m.ID {
+			return true, false
+		}
+	}
 	w.turnQueue = append(w.turnQueue, m)
 	return true, false
 }
 
 func (d *Daemon) deliverQueuedWorkerTurn(m protocol.Message) {
+	ctx := context.Background()
+	// A hand-back can drain the queue before onDeliver has saved dispatched.
+	// Wait for that push to finish before claiming the actual harness write.
+	for {
+		d.mu.Lock()
+		done := d.inflight[m.ID]
+		d.mu.Unlock()
+		if done == nil {
+			break
+		}
+		<-done
+	}
+	if !d.startDelivery(ctx, m) {
+		return
+	}
+	defer d.releaseDelivery(m.ID)
 	ls := d.sessionByID(m.To)
 	if ls == nil {
-		d.sendUpdate(context.Background(), m.ID, protocol.StateFailed, "worker session is gone")
+		d.finishDelivery(ctx, m, Result{Detail: "worker session is gone"})
 		return
 	}
 	d.noteAsk(m)
 	res := d.deliverTo(context.Background(), ls, m)
-	if !res.Delivered {
-		d.sendUpdate(context.Background(), m.ID, protocol.StateFailed, res.Detail)
-	}
+	d.finishDelivery(ctx, m, res)
 }
 
 // An OpenCode turn that did not hand back can finish normally. Let the next

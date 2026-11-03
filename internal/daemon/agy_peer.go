@@ -234,7 +234,7 @@ func (a *agyAdapter) Deliver(ctx context.Context, target protocol.SessionInfo, m
 	if event.Event == "Stop" && event.FullyIdle {
 		if sent, uncertain := a.typeInHerdr(peer, codexFrame(m)); sent || uncertain {
 			if uncertain {
-				return Result{Delivered: true, Detail: "unconfirmed"}
+				return Result{Uncertain: true, Detail: "write failed after connecting; the message may have arrived"}
 			}
 			return Result{Delivered: true, Detail: "typed into herdr"}
 		}
@@ -307,16 +307,20 @@ func (a *agyAdapter) typeInHerdr(info protocol.SessionInfo, text string) (sent, 
 }
 
 // takeHook runs under a.mu so delivery cannot be lost between a hook and queueing.
-func (a *agyAdapter) takeHook(e antigravityEvent, pid int) map[string]any {
+func (a *agyAdapter) takeHook(e antigravityEvent, pid int) *agyHookReply {
 	if e.Event != "Stop" && e.Event != "PreInvocation" {
-		return map[string]any{}
+		return &agyHookReply{value: map[string]any{}}
 	}
 	peer, ok := a.peers[e.ConversationID]
 	if !ok || !pidChain(pid)[peer.PID] || a.d.agyWorkerConversation(e.ConversationID) {
-		return map[string]any{}
+		return &agyHookReply{value: map[string]any{}}
 	}
 	var frames []string
 	var delivered, remaining []protocol.Message
+	// Bound intent writes as well as reply size. Without a durable intent,
+	// leave the message queued and do not include it in the hook response.
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancelWrite()
 	// The local client has a 4 MiB response limit. Bound the JSON-escaped
 	// output, leaving the rest for the next hook in their original order.
 	size := 0
@@ -334,6 +338,21 @@ func (a *agyAdapter) takeHook(e antigravityEvent, pid int) map[string]any {
 			remaining = append(remaining, m)
 			continue
 		}
+		a.d.mu.Lock()
+		done := a.d.inflight[m.ID]
+		a.d.mu.Unlock()
+		if done != nil {
+			select {
+			case <-done:
+			case <-writeCtx.Done():
+				remaining = append(remaining, m)
+				continue
+			}
+		}
+		if !a.d.startDelivery(writeCtx, m) {
+			remaining = append(remaining, m)
+			continue
+		}
 		size += len(encoded) + 16
 		frames = append(frames, frame)
 		delivered = append(delivered, m)
@@ -345,25 +364,8 @@ func (a *agyAdapter) takeHook(e antigravityEvent, pid int) map[string]any {
 	}
 
 	if len(frames) == 0 {
-		return map[string]any{}
+		return &agyHookReply{value: map[string]any{}}
 	}
-	// Bound the local receipt write as well as the answer size: a busy state
-	// database must not cause the hook client to time out before reading it.
-	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	for _, m := range delivered {
-		if _, err := a.d.st.db.ExecContext(writeCtx, `INSERT OR IGNORE INTO delivered (message_id, at) VALUES (?,?)`, m.ID, time.Now().Unix()); err != nil {
-			a.d.Logf("mark delivered: %v", err)
-		}
-	}
-	cancelWrite()
-	// The hook does not wait for the network receipt.
-	a.d.goBackground(func() {
-		for _, m := range delivered {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			a.d.sendUpdate(ctx, m.ID, protocol.StateDelivered, "Antigravity hook")
-			cancel()
-		}
-	})
 	text := strings.Join(frames, "\n\n")
 	if e.Event == "Stop" {
 		// The continuation immediately starts another turn; do not type an
@@ -373,9 +375,9 @@ func (a *agyAdapter) takeHook(e antigravityEvent, pid int) map[string]any {
 		current.FullyIdle = false
 		a.d.agyEvents[e.ConversationID] = current
 		a.d.mu.Unlock()
-		return map[string]any{"decision": "continue", "reason": text}
+		return &agyHookReply{value: map[string]any{"decision": "continue", "reason": text}, daemon: a.d, messages: delivered}
 	}
-	return map[string]any{"injectSteps": []map[string]string{{"userMessage": text}}}
+	return &agyHookReply{value: map[string]any{"injectSteps": []map[string]string{{"userMessage": text}}}, daemon: a.d, messages: delivered}
 }
 
 func (lc *localConn) helloInteractiveAgy(p helloParams, pid int) (any, error) {

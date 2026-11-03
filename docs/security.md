@@ -261,6 +261,22 @@ A message from the person at a machine is sent from that machine's **owner sessi
 - **Worktrees.** With `isolation: worktree` a worker edits its own git worktree under the daemon's state folder, not your checkout. The branch `agent-net/<worker id>` is made in your project.
 - **The feed** now also carries `worker.started`, `worker.stopped` and `worker.refused` (project, harness, model, reason and owner session ID, cut to 200 characters), readable by every enrolled machine, like the other feed events.
 
+## Delivery records
+
+Before calling a harness, the daemon saves a delivery intent in its private
+`daemon.db`. Confirmed messages and uncertain writes block another injection
+of the same message ID. An intent left by a stopped daemon is reported as
+failed with `may have arrived: the daemon stopped while delivering`.
+A write error after connecting also reports failed, with a may-have-arrived
+detail. Neither case counts as confirmed delivery. The record holds the message
+ID, state and timestamp, with no message text. It follows the existing private
+SQLite permissions and expiry plus seven-day pruning. Pi also remembers its
+last 200 accepted message IDs in memory and does not inject a repeated ID.
+This lets the daemon repeat a first worker task once within the same durable
+delivery when its turn-start ack is missing. The repeated push gets that ack
+only after the turn has started. See
+[delivery states](reference.md#delivery-states) and [decision 0053](decisions/0053-delivery-records.md).
+
 ## Delivery into a Claude Code session
 
 - To deliver, the daemon writes one frame to the inbox socket of the target Claude session. Before it writes, it checks that the path is a real Unix socket (not a symlink) owned by your user.
@@ -1121,7 +1137,7 @@ The plugin runs `agent-net hook antigravity` at session start and on each invoca
 
 The local agy hook reports a conversation ID and workspace. The daemon checks the hook process ancestry, the live agy process and its working folder before discovery. An MCP connection binds only when its conversation ID matches a discovered session and its process descends from that agy process. Known worker and child conversation IDs are excluded from main sessions. The parent check uses agy's read-only summaries database; when that database or column is missing it cannot identify a child from the summary. These checks are local identity checks, not a sandbox against a malicious program running as the same user.
 
-A queued message is returned in a Stop continuation or a PreInvocation user-message injection only to a hook in the discovered process tree. Message framing identifies the sender and whether a request has owner authority. For an idle session in herdr, the daemon sends the framed text and Enter to a pane only after its process information matches the agy process tree or the pane reports that exact agy conversation ID. Messages with terminal control characters wait for a hook instead of being typed. A failed or ambiguous herdr write is reported as unconfirmed to avoid typing the same message twice. As with normal terminal input, typing can race with the owner starting a turn.
+A queued message is returned in a Stop continuation or a PreInvocation user-message injection only to a hook in the discovered process tree. Message framing identifies the sender and whether a request has owner authority. For an idle session in herdr, the daemon sends the framed text and Enter to a pane only after its process information matches the agy process tree or the pane reports that exact agy conversation ID. Messages with terminal control characters wait for a hook instead of being typed. A failed or ambiguous herdr write is reported as failed with a detail saying the message may have arrived. A durable unconfirmed record prevents typing it again. As with normal terminal input, typing can race with the owner starting a turn.
 
 The `worker_log` operator method is owner only. It reads at most 200 recent
 worker runs, including assessments and stored notice facts. Agent connections

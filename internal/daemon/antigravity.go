@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 type antigravityEvent struct {
@@ -51,7 +54,53 @@ func (d *Daemon) recordAntigravity(raw json.RawMessage) error {
 
 // antigravityHook records the hook and returns only messages addressed to the
 // discovered process. An unrelated local process cannot drain its queue.
+// antigravityHook is also used by in-process callers that accept the reply
+// directly. The local socket path confirms only after writing its response.
 func (d *Daemon) antigravityHook(raw json.RawMessage, pid int) (map[string]any, error) {
+	reply, err := d.prepareAntigravityHook(raw, pid)
+	if err != nil {
+		return nil, err
+	}
+	reply.confirm(nil)
+	return reply.value, nil
+}
+
+type agyHookReply struct {
+	value    map[string]any
+	daemon   *Daemon
+	messages []protocol.Message
+}
+
+func (r *agyHookReply) confirm(writeErr error) {
+	if len(r.messages) == 0 {
+		return
+	}
+	// Save the result before returning, but do not hold up the hook for the
+	// network receipt. Stop waits for the background update.
+	for _, m := range r.messages {
+		var err error
+		if writeErr == nil {
+			err = r.daemon.st.markDelivered(m.ID)
+		} else {
+			err = r.daemon.st.markDeliveryUnconfirmed(m.ID)
+		}
+		state, detail := protocol.StateDelivered, "Antigravity hook"
+		if writeErr != nil {
+			state, detail = protocol.StateFailed, "write failed after connecting; the message may have arrived: "+writeErr.Error()
+		}
+		if err != nil {
+			state, detail = protocol.StateFailed, "may have arrived: cannot save hook delivery result: "+err.Error()
+		}
+		r.daemon.releaseDelivery(m.ID)
+		r.daemon.goBackground(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			r.daemon.sendUpdate(ctx, m.ID, state, detail)
+		})
+	}
+}
+
+func (d *Daemon) prepareAntigravityHook(raw json.RawMessage, pid int) (*agyHookReply, error) {
 	var e antigravityEvent
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return nil, err
@@ -65,7 +114,7 @@ func (d *Daemon) antigravityHook(raw json.RawMessage, pid int) (map[string]any, 
 	old := d.agyEvents[e.ConversationID]
 	d.mu.Unlock()
 	if old.Started && !pidChain(pid)[old.PID] && agyProcess(old.PID) {
-		return map[string]any{}, nil
+		return &agyHookReply{value: map[string]any{}}, nil
 	}
 	if err := d.recordAntigravity(raw); err != nil {
 		return nil, err
@@ -86,10 +135,10 @@ func (d *Daemon) antigravityHook(raw json.RawMessage, pid int) (map[string]any, 
 		d.mu.Unlock()
 	} else if current.PID == 0 || !pidChain(pid)[current.PID] {
 		// A hook without a verified SessionStart cannot receive messages.
-		return map[string]any{}, nil
+		return &agyHookReply{value: map[string]any{}}, nil
 	}
 	if a == nil {
-		return map[string]any{}, nil
+		return &agyHookReply{value: map[string]any{}}, nil
 	}
 	a.wake()
 	return a.takeHook(e, pid), nil

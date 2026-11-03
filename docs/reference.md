@@ -565,7 +565,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 |---|---|---|
 | Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). Optional `"quota_axi"` is an absolute path to quota-axi when it is not on `PATH` or in `~/.local/bin`. |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
-| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates), the outbox for sends made while the gateway is away, and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. A delivered row is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
+| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivery records (for duplicates and interrupted writes), the outbox for sends made while the gateway is away, and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. A delivery record is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its private data and state folders and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. Kept after hand-back for resume, otherwise deleted when the worker ends. OpenCode configuration remains shared. At each start OpenCode credentials are exported and imported through memory into the private database (mode 0600); OAuth token refresh in the copy may affect the original login. |
 | Worker worktrees | `~/.local/state/agent-net/daemon/worktrees/<worker id>/` | The default in a git repository (not with `--isolation none`). Eligible for the worker cleanup described below as soon as the worker ends. The branch is `agent-net/<worker id>` in the project. |
 | Owner session worktrees | Next to the project, `<project>.worktrees/<branch>/`, for example `~/code/agent-net.worktrees/agent-net/agent-net-1/` | A New session start with Folder `new worktree`. The branch is what the Branch line says, by default `agent-net/<project>-<n>` with the lowest free number. The worktree and its branch are yours: agent-net never removes them, and worker cleanup never touches them. |
@@ -613,11 +613,38 @@ Agent-net integrates with parts of each harness that are not general protocols. 
 | Pi extension API | The extension uses Pi's extension hooks and RPC events, and connects to the daemon over its local Unix socket. | Pi sessions may not register, receive messages or return replies. | A Pi worker start times out if the extension does not register it; the daemon logs connection or delivery failures. See [agent-net.ts](../plugins/pi/agent-net.ts) and [worker_pi.go](../internal/daemon/worker_pi.go). |
 | Antigravity hooks and stream-json | Hooks report session start, prompt and stop events to the daemon. Workers use `--input-format stream-json` and `--output-format stream-json`; the daemon reads events and writes incoming turns to the process. | The daemon may lose session status or worker conversations if hook events, JSON fields or stream event shapes change. | Sessions stop appearing or updating, or workers fail to initialize or report stream errors in the daemon log. See [antigravity.go](../internal/daemon/antigravity.go) and [worker_agy.go](../internal/daemon/worker_agy.go). |
 
+## Delivery states
+
+The receiver saves `injecting` in `daemon.db` before calling a harness. It saves
+`delivered` after confirmation, or `failed` after a known failure. Old rows in
+the `delivered` table migrate as delivered. A confirmed duplicate push reports
+`delivered` with detail `duplicate`, without writing to the harness again.
+
+A write error after connecting, a missing plugin ack or a disconnect before
+confirmation reports `failed` with a detail saying the message may have arrived.
+The local record is `unconfirmed`, so another push cannot inject it again.
+After a restart, an `injecting` record reports `failed` with
+`may have arrived: the daemon stopped while delivering`. It also blocks another
+write. These use the existing gateway and TUI failure state; there is no new
+protocol state. A delivery-record write failure never permits a harness write.
+
+Confirmation means acceptance by the harness: a Pi or OpenCode plugin ack,
+a Codex queue accept, an Antigravity hook reply or herdr acceptance, or a Claude
+inbox socket write. It does not mean the agent has read or answered the message.
+An in-memory queue waiting for a later turn remains `dispatched`; its record is
+cleared because nothing reached the harness. It can be pushed again after a
+restart. OpenCode queued worker turns become delivered only after the plugin ack.
+Pi's first worker task can be pushed once more within the same delivery if its
+turn-start ack is missing. The extension remembers its last 200 accepted message
+IDs, skips another injection and repeats the ack after the turn has started.
+A known failure may be attempted on a later gateway push. Automatic retry with
+backoff and final sender notices are separate work.
+
 ## Housekeeping
 
 agent-net keeps message bodies as long as possible. These jobs only remove bookkeeping rows and free space.
 
-- **Daemon duplicate check.** `daemon.db` has a `delivered` table with one row per message ID that was already delivered. It stops a duplicate delivery and holds no message text. Once an hour the daemon deletes rows older than the message expiry (24 hours) plus 7 days, so a message that is still alive can never be delivered twice. The first run is about a minute after start, so an upgrade does not postpone it.
+- **Daemon duplicate check.** `daemon.db` has a `delivered` table with one delivery record per message ID. It stops duplicate or uncertain writes and holds no message text. Once an hour the daemon deletes rows older than the message expiry (24 hours) plus 7 days, so a message that is still alive can never be delivered twice. The first run is about a minute after start, so an upgrade does not postpone it.
 - **Gateway database.** `gateway.db` is vacuumed at most once a week, and only when more than 20% of its pages are free (deleted rows or events). The hourly maintenance runs the check; the vacuum rewrites the file and can make it much smaller. Nothing is deleted: messages, events and sessions follow the `--keep-*` retention settings, and the defaults keep messages for ever. A vacuum writes one `db.vacuum` line with the size before and after.
 - **Gateway transfer parts.** The parts of an upload between machines (see [Files](#files)) are deleted as soon as the receiving machine confirms the whole file. Every upload is also deleted 7 days after it began, downloaded or not. The hourly maintenance deletes expired parts even when no transfer runs. A failed removal keeps the row, so the next run tries again and the bytes keep counting against the sender's 1 GB cap.
 - **Log files.** On Linux the services write to journald, which rotates its own journal; agent-net does nothing. On macOS launchd sends stdout and stderr to `~/Library/Logs/agent-net-daemon.log` and `agent-net-gateway.log` and never rotates them. The daemon and gateway open their own log file, and when a write would pass 10 MB they rename the current file (`agent-net-daemon.log.1`) and start a new one. Five old files are kept (`.1` to `.5`); the oldest is removed at the next rotation. A process started by hand in a terminal, or in a test, writes to that terminal and does not rotate anything.

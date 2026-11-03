@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -396,5 +397,82 @@ func TestAgyPeerHookKeepsOversizedQueueForNextInvocation(t *testing.T) {
 	a.mu.Unlock()
 	if remaining == 0 {
 		t.Fatal("all messages removed in one oversized answer")
+	}
+}
+
+func TestAgyPeerDeliveryRecordFailureDoesNotReturnMessage(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cwd := t.TempDir()
+	cmd := fakeInteractiveAgy(t, cwd, nil)
+	hook := func(event string) map[string]any {
+		t.Helper()
+		raw, _ := json.Marshal(map[string]any{"conversationId": "main", "event": event, "workspacePaths": []string{cwd}})
+		out, err := n.d.antigravityHook(raw, cmd.Process.Pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	hook("SessionStart")
+	a := n.d.adapters["agy"].(*agyAdapter)
+	a.refresh()
+	res := a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "main", PID: cmd.Process.Pid}, protocol.Message{ID: "m_no_record", Body: "keep queued"})
+	if !res.Queued {
+		t.Fatalf("not queued: %+v", res)
+	}
+	if _, err := n.d.st.db.Exec(`CREATE TRIGGER reject_hook_delivery BEFORE INSERT ON delivered BEGIN SELECT RAISE(FAIL, 'disk failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if out := hook("PreInvocation"); len(out) != 0 {
+		t.Fatalf("hook returned a message without a durable record: %#v", out)
+	}
+	a.mu.Lock()
+	count := len(a.pending["main"])
+	a.mu.Unlock()
+	if count != 1 {
+		t.Fatalf("pending messages = %d, want 1", count)
+	}
+}
+
+func TestAgyPeerDeliveryHookWaitsForReplyWrite(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cwd := t.TempDir()
+	cmd := fakeInteractiveAgy(t, cwd, nil)
+	raw, _ := json.Marshal(map[string]any{"conversationId": "main", "event": "SessionStart", "workspacePaths": []string{cwd}})
+	if _, err := n.d.antigravityHook(raw, cmd.Process.Pid); err != nil {
+		t.Fatal(err)
+	}
+	a := n.d.adapters["agy"].(*agyAdapter)
+	a.refresh()
+	for _, fail := range []bool{false, true} {
+		id := fmt.Sprintf("m_hook_%t", fail)
+		res := a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "main", PID: cmd.Process.Pid}, protocol.Message{ID: id, Body: "hello"})
+		if !res.Queued {
+			t.Fatalf("not queued: %+v", res)
+		}
+		raw, _ = json.Marshal(map[string]any{"conversationId": "main", "event": "PreInvocation"})
+		reply, err := n.d.prepareAntigravityHook(raw, cmd.Process.Pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state := recordState(n.d, id); state != deliveryInjecting {
+			t.Fatalf("before reply write = %q, want injecting", state)
+		}
+		client, hook := net.Pipe()
+		want := deliveryDelivered
+		if fail {
+			hook.Close()
+			want = deliveryUnconfirmed
+		} else {
+			go func() { bufio.NewReader(hook).ReadBytes('\n'); hook.Close() }()
+		}
+		conn := &localConn{c: client}
+		conn.respond(json.RawMessage(`1`), reply, nil)
+		client.Close()
+		if state := recordState(n.d, id); state != want {
+			t.Fatalf("after reply write = %q, want %q", state, want)
+		}
 	}
 }

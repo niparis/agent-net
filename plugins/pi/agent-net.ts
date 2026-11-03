@@ -416,10 +416,15 @@ export default function (pi: ExtensionAPI) {
   // acknowledge it. sendMessage only schedules the asynchronous operation.
   let firstWorkerMessage: string | undefined;
   let firstWorkerConfirmed = false;
+  const injectedMessages = new Set<string>();
 
   function handleDeliver(message: DeliveredMessage) {
-    if (firstWorkerConfirmed && firstWorkerMessage === message.message_id) {
-      request("delivered", { message_id: message.message_id, ok: true, detail: "pi worker turn started" }).catch(() => {});
+    if (injectedMessages.has(message.message_id) || (firstWorkerConfirmed && firstWorkerMessage === message.message_id)) {
+      if (firstWorkerMessage === message.message_id) {
+        if (firstWorkerConfirmed) request("delivered", { message_id: message.message_id, ok: true, detail: "pi worker turn started" }).catch(() => {});
+      } else {
+        request("delivered", { message_id: message.message_id, ok: true }).catch(() => {});
+      }
       return;
     }
     const first = Boolean(process.env.AGENT_NET_WORKER) && !firstWorkerConfirmed &&
@@ -439,6 +444,15 @@ export default function (pi: ExtensionAPI) {
         },
         { deliverAs: "followUp", triggerTurn: true },
       );
+      // A missing ack can make the daemon repeat a push. Keep recent IDs
+      // across reconnects so each accepted push reaches Pi only once. The
+      // first worker task is the exception until its turn starts: Pi can
+      // drop it before it is ready, and the daemon's one repeat must then
+      // inject it again (the turn-start check below confirms it).
+      if (!first) {
+        injectedMessages.add(message.message_id);
+        if (injectedMessages.size > 200) injectedMessages.delete(injectedMessages.values().next().value!);
+      }
       if (!first) request("delivered", { message_id: message.message_id, ok: true }).catch(() => {});
     } catch (error) {
       request("delivered", { message_id: message.message_id, ok: false, detail: String(error) }).catch(() => {});

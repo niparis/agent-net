@@ -26,11 +26,18 @@ import (
 )
 
 // Result is an adapter's report on one delivery.
-// Delivered with Detail "unconfirmed" means a write failed after connecting:
-// the message may have arrived, so it must not be retried.
+//
+//   - Delivered: the harness confirmed the message.
+//   - Queued: the adapter holds the message in memory for a later turn;
+//     nothing reached the harness yet.
+//   - Uncertain: a write failed after connecting, or was not confirmed. The
+//     message may have arrived, so it must not be written again. The sender
+//     sees failed with Detail (decision 0053).
+//   - none of these: a known failure; nothing reached the harness.
 type Result struct {
 	Delivered bool
 	Queued    bool
+	Uncertain bool
 	Detail    string
 }
 
@@ -277,7 +284,7 @@ type Daemon struct {
 	// an idle session look active. Guarded by mu.
 	activity map[string]time.Time
 	adapters map[string]Adapter
-	inflight map[string]bool
+	inflight map[string]chan struct{}
 	lk       *link
 	// connecting is true between a successful dial and the end of the handshake.
 	connecting bool
@@ -436,7 +443,7 @@ func New(cfg Config) (*Daemon, error) {
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
-		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
+		adapters: map[string]Adapter{}, inflight: map[string]chan struct{}{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
 	d.inSession = d.insideSession
 	d.ctoNow = time.Now
@@ -1047,22 +1054,10 @@ func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
 	for i := 0; i < 100 && d.isConnecting() && ctx.Err() == nil; i++ {
 		time.Sleep(50 * time.Millisecond)
 	}
-	if d.st.isDelivered(m.ID) {
-		d.sendUpdate(ctx, m.ID, protocol.StateDelivered, "duplicate")
+	if !d.startDelivery(ctx, m) {
 		return
 	}
-	d.mu.Lock()
-	if d.inflight[m.ID] {
-		d.mu.Unlock()
-		return
-	}
-	d.inflight[m.ID] = true
-	d.mu.Unlock()
-	defer func() {
-		d.mu.Lock()
-		delete(d.inflight, m.ID)
-		d.mu.Unlock()
-	}()
+	defer d.releaseDelivery(m.ID)
 
 	// A delivery may have been dispatched while the worker was still online,
 	// but reach the daemon as its hand-back ends it.
@@ -1075,7 +1070,7 @@ retryWorker:
 			row, ok, _ := d.st.workerBySession(m.To)
 			if ok && row.EndedReason == protocol.StopHandback && (m.From == row.Owner || m.FromHarness == protocol.OwnerHarness) {
 				if err := d.resumeWorkerSession(ctx, m.To, row.Owner); err != nil {
-					d.sendUpdate(ctx, m.ID, protocol.StateFailed, err.Error())
+					d.finishDelivery(ctx, m, Result{Detail: err.Error()})
 					return
 				}
 				continue
@@ -1087,11 +1082,11 @@ retryWorker:
 		d.wmu.Unlock()
 		if ending {
 			if m.From != owner && m.FromHarness != protocol.OwnerHarness {
-				d.sendUpdate(ctx, m.ID, protocol.StateFailed, "only the worker's owner can start it again")
+				d.finishDelivery(ctx, m, Result{Detail: "only the worker's owner can start it again"})
 				return
 			}
 			if err := d.resumeWorkerSession(ctx, m.To, owner); err != nil {
-				d.sendUpdate(ctx, m.ID, protocol.StateFailed, err.Error())
+				d.finishDelivery(ctx, m, Result{Detail: err.Error()})
 				return
 			}
 			continue
@@ -1105,10 +1100,7 @@ retryWorker:
 		}
 		if queued {
 			d.touchWorker(m.To, m.From)
-			if err := d.st.markDelivered(m.ID); err != nil {
-				d.Logf("mark delivered: %v", err)
-			}
-			d.sendUpdate(ctx, m.ID, protocol.StateDelivered, "queued behind the worker's turn")
+			d.finishDelivery(ctx, m, Result{Queued: true, Detail: "queued behind the worker's turn"})
 			return
 		}
 		targetWorker = w
@@ -1127,7 +1119,7 @@ retryWorker:
 				goto retryWorker
 			}
 		}
-		d.sendUpdate(ctx, m.ID, protocol.StateFailed, "no such local session")
+		d.finishDelivery(ctx, m, Result{Detail: "no such local session"})
 		return
 	}
 	firstPiTask := false
@@ -1156,25 +1148,85 @@ retryWorker:
 			res = Result{Detail: "Pi worker extension is disconnected"}
 		} else {
 			res = conn.pushWithConfirmation(ctx, m, d.cfg.PluginAckTimeout, true)
-			if !res.Delivered && res.Detail == "plugin did not confirm the worker turn" && ctx.Err() == nil {
+			// Pi can drop the initial push before it is ready. Repeat it once
+			// inside this delivery: the extension dedupes accepted message IDs
+			// and repeats the turn-start ack without injecting them again.
+			if res.Uncertain && res.Detail == "plugin did not confirm the worker turn; the message may have arrived" && ctx.Err() == nil {
 				res = conn.pushWithConfirmation(ctx, m, d.cfg.PluginAckTimeout, true)
 			}
 		}
 	} else {
 		res = d.deliverTo(ctx, ls, m)
 	}
-	if res.Queued {
-		d.sendUpdate(ctx, m.ID, protocol.StateDispatched, res.Detail)
-		return
+	d.finishDelivery(ctx, m, res)
+}
+
+// startDelivery serializes local pushes and persists intent before any harness
+// write. A surviving injecting record blocks a blind retry after a restart.
+func (d *Daemon) startDelivery(ctx context.Context, m protocol.Message) bool {
+	d.mu.Lock()
+	if d.inflight[m.ID] != nil {
+		d.mu.Unlock()
+		return false
 	}
-	if !res.Delivered {
-		d.sendUpdate(ctx, m.ID, protocol.StateFailed, res.Detail)
-		return
+	d.inflight[m.ID] = make(chan struct{})
+	d.mu.Unlock()
+	state, _, err := d.st.readDeliveryStateCtx(ctx, m.ID)
+	if err != nil {
+		d.releaseDelivery(m.ID)
+		d.sendUpdate(ctx, m.ID, protocol.StateFailed, "cannot read delivery record: "+err.Error())
+		return false
 	}
-	if err := d.st.markDelivered(m.ID); err != nil {
-		d.Logf("mark delivered: %v", err)
+	var status, detail string
+	switch state {
+	case deliveryDelivered:
+		status, detail = protocol.StateDelivered, "duplicate"
+	case deliveryInjecting:
+		status, detail = protocol.StateFailed, detailStoppedWhileDelivering
+	case deliveryUnconfirmed:
+		status, detail = protocol.StateFailed, detailEarlierUnconfirmed
 	}
-	d.sendUpdate(ctx, m.ID, protocol.StateDelivered, res.Detail)
+	if status != "" {
+		d.releaseDelivery(m.ID)
+		d.sendUpdate(ctx, m.ID, status, detail)
+		return false
+	}
+	if err := d.st.setDeliveryState(ctx, m.ID, deliveryInjecting); err != nil {
+		d.releaseDelivery(m.ID)
+		d.sendUpdate(ctx, m.ID, protocol.StateFailed, "cannot record delivery intent: "+err.Error())
+		return false
+	}
+	return true
+}
+
+func (d *Daemon) releaseDelivery(id string) {
+	d.mu.Lock()
+	close(d.inflight[id])
+	delete(d.inflight, id)
+	d.mu.Unlock()
+}
+
+func (d *Daemon) finishDelivery(ctx context.Context, m protocol.Message, res Result) {
+	status := protocol.StateFailed
+	var err error
+	switch {
+	case res.Delivered:
+		err = d.st.markDelivered(m.ID)
+		status = protocol.StateDelivered
+	case res.Uncertain:
+		err = d.st.markDeliveryUnconfirmed(m.ID)
+	case res.Queued:
+		err = d.st.clearDelivery(m.ID)
+		status = protocol.StateDispatched
+	default:
+		err = d.st.markDeliveryFailed(m.ID)
+	}
+	if err != nil {
+		d.Logf("record delivery %s: %v", m.ID, err)
+		status = protocol.StateFailed
+		res.Detail = "may have arrived: cannot save delivery result: " + err.Error()
+	}
+	d.sendUpdate(ctx, m.ID, status, res.Detail)
 }
 
 func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Message) Result {
