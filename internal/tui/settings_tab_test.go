@@ -317,3 +317,42 @@ func TestSettingsUndoSelectedRevision(t *testing.T) {
 		t.Fatalf("undo %+v", src.undo)
 	}
 }
+
+func TestSettingsWarnsAboutOnlineOldDaemons(t *testing.T) {
+	m := newModel(120, 80)
+	m.tab = settingsTab
+	m.snap.Nodes = []protocol.NodeView{
+		{Hostname: "old-a", Version: "v0.4.116", Online: true},
+		{Hostname: "old-b", Version: "v0.3.9", Online: true},
+		{Hostname: "current", Version: "v0.4.117", Online: true},
+		{Hostname: "offline", Version: "v0.4.10", Online: false},
+		{Hostname: "unknown", Version: "dev", Online: true},
+	}
+	m = selectSettingsKind(m, "setting-repo")
+	view := ansi.Strip(strings.Join(m.settingsView(120, 80), "\n"))
+	if !strings.Contains(view, "Settings updates may not reach old daemons: old-a, old-b") {
+		t.Fatalf("missing old machines: %s", view)
+	}
+	if !strings.Contains(view, "Settings sync support unknown: unknown") {
+		t.Fatalf("missing unknown machine: %s", view)
+	}
+	older, unknown := m.settingsSyncMachines()
+	if strings.Join(older, ",") != "old-a,old-b" || strings.Join(unknown, ",") != "unknown" {
+		t.Fatalf("older=%v unknown=%v", older, unknown)
+	}
+
+}
+
+func TestSettingsSyncVersionBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		version      string
+		old, unknown bool
+	}{
+		{"v0.4.116", true, false}, {"0.4.116-rc.1", true, false}, {"v0.4.117", false, false}, {"v0.4.117+build", false, false}, {"v0.4.117-rc.1", false, true}, {"v0.5.0", false, false}, {"", false, true}, {"dev", false, true}, {"broken", false, true},
+	} {
+		old, unknown := settingsSyncVersion(tc.version)
+		if old != tc.old || unknown != tc.unknown {
+			t.Errorf("%q: old=%v unknown=%v", tc.version, old, unknown)
+		}
+	}
+}

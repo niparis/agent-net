@@ -41,8 +41,11 @@ current value and leaves the whole batch unchanged. Advice changes and advice
 undo by the CTO apply immediately. Rules require an owner proposal, even in the
 graph owner window. The owner uses the TUI or owner-gated `settings_write` and
 `settings_undo` operator calls. A snapshot updates managed guidance files on
-each machine. Definitions marked not live are visible but do not yet control the
-old behavior; later build steps switch their readers and writers.
+each machine. The Settings view names online daemons older than v0.4.117,
+the first release with settings sync, and separately names machines whose version
+cannot establish support. Their settings updates may not reach them. Definitions
+marked not live are visible but do not yet control the old behavior; later build
+steps switch their readers and writers.
 
 ## CTO settings and conversation
 

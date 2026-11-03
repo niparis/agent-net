@@ -100,6 +100,15 @@ func syncAntigravity(exe string, snapshot settings.Snapshot) Result {
 			r.Err = err
 			return r
 		}
+		if name == "rules/AGENTS.md" {
+			existing, err := os.ReadFile(p)
+			if err != nil && !os.IsNotExist(err) {
+				r.Err = err
+				return r
+			}
+			updated, _ := guidance.ApplyWithSnapshot(string(existing), guidance.Other, snapshot)
+			data = []byte(updated)
+		}
 		changed, _, err := WriteIfChanged(p, data, 0644)
 		if err != nil {
 			r.Err = fmt.Errorf("%s: %w", name, err)
@@ -162,7 +171,18 @@ func RemoveAntigravity() error {
 			return err
 		}
 		if name == "rules/AGENTS.md" {
-			if !(strings.HasPrefix(string(data), guidance.Begin+"\n") && strings.HasSuffix(string(data), guidance.End+"\n") && strings.Count(string(data), guidance.Begin) == 1 && strings.Count(string(data), guidance.End) == 1) {
+			content := string(data)
+			if strings.Count(content, guidance.Begin) != 1 || strings.Count(content, guidance.End) != 1 || strings.Index(content, guidance.Begin) > strings.Index(content, guidance.End) {
+				continue
+			}
+			remaining, changed := guidance.Remove(content)
+			if !changed {
+				continue
+			}
+			if strings.TrimSpace(remaining) != "" {
+				if _, _, err = WriteIfChanged(p, []byte(remaining), 0644); err != nil {
+					return err
+				}
 				continue
 			}
 		} else if !bytes.Equal(data, files[name]) {
