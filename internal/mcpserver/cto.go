@@ -385,14 +385,14 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		}
 		return raw, nil
 	}
-	s.AddReceivingMiddleware(ctoDialogMiddleware(originalCall))
+	addTool := ctoDialogTools(s, originalCall)
 	for name, spec := range ctoTools {
 		if ctoV2Tools[name] {
 			continue
 		}
 		tool := &mcp.Tool{Name: name, Description: strings.TrimSuffix(spec.desc, "."), InputSchema: ctoSchema(name, spec)}
 		method := name
-		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		addTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if method == "worker_change" {
 				if err := CTOArguments(method, req.Params.Arguments); err != nil {
 					return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
@@ -410,8 +410,8 @@ func NewCTO(call Caller, version string) *mcp.Server {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 		})
 	}
-	addCTOV2Tools(s, call)
-	addCTOSharedTools(s, call)
+	addCTOV2Tools(s, call, addTool)
+	addCTOSharedTools(s, call, addTool)
 	filterCatalogTools(s, toolcatalog.RoleCTO)
 	return s
 }
@@ -431,7 +431,9 @@ type pendingCTODialog struct {
 	tool     string
 }
 
-func ctoDialogMiddleware(call Caller) mcp.Middleware {
+type ctoToolAdder func(*mcp.Tool, mcp.ToolHandler)
+
+func ctoDialogTools(s *mcp.Server, call Caller) ctoToolAdder {
 	var mu sync.Mutex
 	pending := make(map[string]pendingCTODialog)
 	finish := func(ctx context.Context, proposal ctoDialogProposal, action string) *mcp.CallToolResult {
@@ -456,10 +458,9 @@ func ctoDialogMiddleware(call Caller) mcp.Middleware {
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 	}
-	return func(next mcp.MethodHandler) mcp.MethodHandler {
-		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-			request, isTool := req.(*mcp.CallToolRequest)
-			if method == "tools/call" && isTool && request.Params != nil && (request.Params.RequestState != "" || request.Params.InputResponses != nil) {
+	return func(tool *mcp.Tool, next mcp.ToolHandler) {
+		s.AddTool(tool, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if request.Params != nil && (request.Params.RequestState != "" || request.Params.InputResponses != nil) {
 				mu.Lock()
 				item, ok := pending[request.Params.RequestState]
 				if ok {
@@ -476,12 +477,11 @@ func ctoDialogMiddleware(call Caller) mcp.Middleware {
 				return finish(ctx, item.proposal, action), nil
 			}
 			var proposal ctoDialogProposal
-			res, err := next(context.WithValue(ctx, ctoDialogKey{}, &proposal), method, req)
-			if err != nil || method != "tools/call" || proposal.ID == "" || !isTool {
+			res, err := next(context.WithValue(ctx, ctoDialogKey{}, &proposal), request)
+			if err != nil || proposal.ID == "" {
 				return res, err
 			}
-			result, ok := res.(*mcp.CallToolResult)
-			if !ok || result.IsError {
+			if res == nil || res.IsError {
 				return res, err
 			}
 			init := request.Session.InitializeParams()
@@ -505,7 +505,7 @@ func ctoDialogMiddleware(call Caller) mcp.Middleware {
 				return finish(ctx, proposal, ""), nil
 			}
 			return finish(ctx, proposal, answer.Action), nil
-		}
+		})
 	}
 }
 

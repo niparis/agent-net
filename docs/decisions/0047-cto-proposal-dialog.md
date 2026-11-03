@@ -12,3 +12,10 @@ the MCP session and tool call. Older protocol versions use direct elicitation.
 
 This follows the [CTO approval plan](../design/cto-approve-in-chat.md). The
 Inbox remains available and no separate dialog timeout is added.
+
+2026-11-03: Dialog handling now wraps every CTO tool handler. The SDK assigns
+resultType inside its tool dispatch, after the handler returns. Results built
+by receiving middleware bypassed that step, so clients using protocol
+2026-07-28 rejected both the input request and the completed answer. Returning
+these results from the handler lets the SDK mark them input_required or
+complete. The session and tool binding and single-use random token remain.

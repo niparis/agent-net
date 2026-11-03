@@ -15,7 +15,7 @@ import (
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
-func addCTOSharedTools(s *mcp.Server, call Caller) {
+func addCTOSharedTools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 	for _, entry := range toolcatalog.ForRole(toolcatalog.RoleCTO) {
 		if ctoV2Tools[entry.Name] {
 			continue
@@ -37,7 +37,7 @@ func addCTOSharedTools(s *mcp.Server, call Caller) {
 		if err != nil {
 			panic("mcpserver: " + name + " input schema: " + err.Error())
 		}
-		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		addTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args, err := applyCTOCatalogInput(name, resolved, req)
 			if err != nil {
 				return toolError(err)

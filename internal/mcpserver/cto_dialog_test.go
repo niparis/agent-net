@@ -9,6 +9,72 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestCTODialogResultTypes(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	ordinary := false
+	srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		if ordinary {
+			return json.RawMessage(`{"kind":"result","value":"ordinary"}`), nil
+		}
+		if method == "cto_dialog_answer" {
+			return json.RawMessage(`"done"`), nil
+		}
+		return json.RawMessage(`{"kind":"proposal","proposal_id":"p_1","message":"Stored proposal","text":"waiting"}`), nil
+	}, "test")
+	srv.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if method == "tools/call" && err == nil {
+				raw, e := json.Marshal(res)
+				if e != nil {
+					t.Error(e)
+				}
+				t.Logf("wire result: %s", raw)
+				var v map[string]json.RawMessage
+				if e := json.Unmarshal(raw, &v); e != nil {
+					t.Error(e)
+				}
+				want := `"complete"`
+				if len(v["inputRequests"]) > 0 {
+					want = `"input_required"`
+				}
+				if string(v["resultType"]) != want {
+					t.Errorf("resultType=%s want %s", v["resultType"], want)
+				}
+			}
+			return res, err
+		}
+	})
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, &mcp.ClientOptions{ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+		return &mcp.ElicitResult{Action: "accept"}, nil
+	}}).Connect(ctx, ct, &mcp.ClientSessionOptions{ProtocolVersion: "2026-07-28"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "graph_change", Arguments: map[string]any{"action": "node_add", "name": "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "Approved") {
+		t.Fatal(result)
+	}
+	ordinary = true
+	result, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "graph_change", Arguments: map[string]any{"action": "node_add", "name": "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "ordinary") {
+		t.Fatal(result)
+	}
+}
+
 func TestCTODialog(t *testing.T) {
 	for _, version := range []string{"2025-11-25", "2026-07-28"} {
 		for _, tc := range []struct {

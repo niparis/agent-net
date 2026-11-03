@@ -230,7 +230,7 @@ func actionExampleFor(tool, action string) string {
 
 func nonempty(v any) bool { s, ok := v.(string); return ok && strings.TrimSpace(s) != "" }
 
-func addCTOV2Tools(s *mcp.Server, call Caller) {
+func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 	for _, entry := range toolcatalog.ForRole(toolcatalog.RoleCTO) {
 		if !ctoV2Tools[entry.Name] {
 			continue
@@ -239,7 +239,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller) {
 		_ = json.Unmarshal(entry.InputSchema, &input)
 		tool := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: input}
 		name := entry.Name
-		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		addTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args := req.Params.Arguments
 			method := name
 			if name == "graph_change" || name == "session_change" || name == "worker_change" || name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" {
