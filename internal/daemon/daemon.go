@@ -1146,6 +1146,12 @@ retryWorker:
 			res = Result{Detail: "Pi worker extension is disconnected"}
 		} else {
 			res = conn.pushWithConfirmation(ctx, m, d.cfg.PluginAckTimeout, true)
+			// Pi can drop the initial push before it is ready. Repeat it once
+			// inside this delivery: the extension dedupes accepted message IDs
+			// and repeats the turn-start ack without injecting them again.
+			if res.Uncertain && res.Detail == "plugin did not confirm the worker turn; the message may have arrived" && ctx.Err() == nil {
+				res = conn.pushWithConfirmation(ctx, m, d.cfg.PluginAckTimeout, true)
+			}
 		}
 	} else {
 		res = d.deliverTo(ctx, ls, m)

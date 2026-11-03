@@ -709,6 +709,13 @@ func (d *Daemon) noteMidrun(w *worker, m protocol.Message) bool {
 	if d.workers[w.id] != w || w.stopping {
 		return false
 	}
+	// Queued turns remain dispatched until the plugin confirms them. A
+	// repeated gateway push must not count that same request twice.
+	for _, queued := range w.turnQueue {
+		if queued.ID == m.ID {
+			return true
+		}
+	}
 	if m.Type == protocol.TypeRequest && m.From == w.owner {
 		if w.midrunSeen && !w.noticeSinceRequest {
 			w.midrunCount++

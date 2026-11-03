@@ -632,6 +632,9 @@ inbox socket write. It does not mean the agent has read or answered the message.
 An in-memory queue waiting for a later turn remains `dispatched`; its record is
 cleared because nothing reached the harness. It can be pushed again after a
 restart. OpenCode queued worker turns become delivered only after the plugin ack.
+Pi's first worker task can be pushed once more within the same delivery if its
+turn-start ack is missing. The extension remembers its last 200 accepted message
+IDs, skips another injection and repeats the ack after the turn has started.
 A known failure may be attempted on a later gateway push. Automatic retry with
 backoff and final sender notices are separate work.
 

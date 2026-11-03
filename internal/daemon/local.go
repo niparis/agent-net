@@ -156,6 +156,9 @@ func (lc *localConn) pushWithConfirmation(ctx context.Context, m protocol.Messag
 		}
 		return Result{Detail: "plugin refused: " + a.detail}
 	case <-time.After(timeout):
+		if required {
+			return Result{Uncertain: true, Detail: "plugin did not confirm the worker turn; the message may have arrived"}
+		}
 		return Result{Uncertain: true, Detail: "plugin did not confirm delivery; the message may have arrived"}
 	case <-lc.closed:
 		return Result{Uncertain: true, Detail: "plugin connection closed before confirmation; the message may have arrived"}

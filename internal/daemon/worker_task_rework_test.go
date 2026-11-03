@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -154,13 +155,31 @@ func TestWorkerMidrunCountsQueuedRequestOnArrival(t *testing.T) {
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:wait-handback", Isolation: protocol.IsolationNone})
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:queued-handback"}), &sent)
-	eventually(t, "queued request delivered", func() bool { return w.d.st.isDelivered(sent.Message.ID) })
+	eventually(t, "request queued before confirmation", func() bool {
+		worker := w.d.workerBySession(res.SessionID)
+		if worker == nil {
+			return false
+		}
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		return len(worker.turnQueue) == 1
+	})
+	if w.d.st.isDelivered(sent.Message.ID) {
+		t.Fatal("in-memory queued request counted as delivered")
+	}
+	eventually(t, "queued dispatch saved", func() bool {
+		w.d.mu.Lock()
+		defer w.d.mu.Unlock()
+		return w.d.inflight[sent.Message.ID] == nil
+	})
+	w.d.onDeliver(context.Background(), *sent.Message)
 	if row := reworkRow(t, w, res.SessionID); row.MidrunCount != 1 {
 		t.Fatalf("queued request did not count on arrival: %+v", row)
 	}
 	if err := os.WriteFile(filepath.Join(repo, "fake-opencode-finish"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
+	eventually(t, "queued request confirmed", func() bool { return w.d.st.isDelivered(sent.Message.ID) })
 	w.workerStopped(t, g, protocol.StopHandback)
 	if row := reworkRow(t, w, res.SessionID); row.MidrunCount != 1 {
 		t.Fatalf("queued request counted twice: %+v", row)

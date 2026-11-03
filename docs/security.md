@@ -259,7 +259,11 @@ failed with `may have arrived: the daemon stopped while delivering`.
 A write error after connecting also reports failed, with a may-have-arrived
 detail. Neither case counts as confirmed delivery. The record holds the message
 ID, state and timestamp, with no message text. It follows the existing private
-SQLite permissions and expiry plus seven-day pruning. See
+SQLite permissions and expiry plus seven-day pruning. Pi also remembers its
+last 200 accepted message IDs in memory and does not inject a repeated ID.
+This lets the daemon repeat a first worker task once within the same durable
+delivery when its turn-start ack is missing. The repeated push gets that ack
+only after the turn has started. See
 [delivery states](reference.md#delivery-states) and [decision 0053](decisions/0053-delivery-records.md).
 
 ## Delivery into a Claude Code session

@@ -31,9 +31,13 @@ OpenCode plugin ack, Codex queue accept, Antigravity hook reply or herdr
 acceptance, and Claude inbox socket write. Acceptance does not prove that the
 agent processed the turn. For an Antigravity hook, save intent while preparing
 the reply and confirm only after the local response socket write. A failed
-response write remains uncertain. Remove the blind second push of a Pi first task
-when its ack is missing. A known refusal remains eligible for a later gateway
-push; uncertainty does not authorize a retry.
+response write remains uncertain. Pi's first worker task can be pushed once
+more within the same delivery when its turn-start ack is missing. The extension
+remembers the last 200 IDs passed to `sendMessage` and dedupes repeated pushes.
+A repeated first task is acknowledged only after its turn starts; other repeated
+IDs get the same successful ack without another injection. The durable intent
+stays in place until both pushes finish. A known refusal remains eligible for a
+later gateway push; uncertainty does not otherwise authorize a retry.
 
 W4.2 will add retry scheduling with backoff. W4.3 will add final failure and
 expiry notices to the sender. Neither is part of this decision's implementation.
