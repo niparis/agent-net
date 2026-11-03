@@ -142,7 +142,7 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
 		}
-		room, note, measured, blocked := workerQuotaRoom(quotas, provider)
+		room, note, measured, blocked := workerQuotaRoom(quotas, provider, c.Model)
 		if blocked {
 			continue
 		}
@@ -374,7 +374,7 @@ func WorkerRotationShares(level string, candidates []WorkerModelCandidate, rotat
 	return rotationShareNote(level, names, state.Recent)
 }
 
-func workerQuotaRoom(q *Quotas, provider string) (float64, string, bool, bool) {
+func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {
 	p, ok := q.Provider(provider)
 	if !ok || !p.usable() {
 		return 0, "", false, false
@@ -383,6 +383,9 @@ func workerQuotaRoom(q *Quotas, provider string) (float64, string, bool, bool) {
 	var note string
 	measured := false
 	for _, w := range p.Windows {
+		if !QuotaWindowServes(w, model) {
+			continue
+		}
 		if w.Exhausted || w.PercentUsed > 90 {
 			return 0, "", false, true
 		}

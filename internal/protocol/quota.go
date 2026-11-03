@@ -186,8 +186,32 @@ func QuotaProviderForHarness(harness string) string {
 		return "claude"
 	case "codex":
 		return "codex"
+	case "agy":
+		return "agy"
 	}
 	return ""
+}
+
+// QuotaWindowServes tells whether a window limits a model. agy reads one
+// provider with windows per model family, named by id: "gemini_argon_*" for
+// Argon, "gemini_*" for every Gemini model, "claude_gpt_*" for Claude and GPT
+// models. A window without a family prefix limits every model.
+func QuotaWindowServes(w QuotaWindow, model string) bool {
+	id, m := strings.ToLower(w.ID), strings.ToLower(model)
+	if i := strings.LastIndexByte(m, '/'); i >= 0 {
+		m = m[i+1:]
+	}
+	switch {
+	case m == "":
+		return true
+	case strings.HasPrefix(id, "gemini_argon_"):
+		return strings.Contains(m, "argon")
+	case strings.HasPrefix(id, "gemini_"):
+		return strings.HasPrefix(m, "gemini")
+	case strings.HasPrefix(id, "claude_gpt_"):
+		return strings.HasPrefix(m, "claude") || strings.HasPrefix(m, "gpt")
+	}
+	return true
 }
 
 // QuotaProviderForModel maps a full model id to its quota provider. It returns

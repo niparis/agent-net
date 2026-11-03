@@ -61,7 +61,7 @@ func TestChooseWorkerModelUsesHarnessDefaultEffort(t *testing.T) {
 func TestWorkerQuotaRoomMonthly(t *testing.T) {
 	now := time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)
 	q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "p", Windows: []QuotaWindow{{Kind: "monthly", Label: "month", PercentUsed: 30, ResetsAt: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC).Unix()}}}}}
-	room, note, known, blocked := workerQuotaRoom(q, "p")
+	room, note, known, blocked := workerQuotaRoom(q, "p", "")
 	if !known || blocked || room < 20 || room > 25 || !strings.Contains(note, "50% elapsed") {
 		t.Fatalf("room=%v note=%q known=%v blocked=%v", room, note, known, blocked)
 	}
@@ -410,5 +410,27 @@ func TestWorkerMaximumLevelUsesMinimumOverrides(t *testing.T) {
 		if eligible != (level != "simple") {
 			t.Errorf("%s: eligible=%v", level, eligible)
 		}
+	}
+}
+
+// agy has one provider with windows per model family, and its model names
+// carry no provider prefix.
+func TestChooseWorkerModelAgyWindowsPerFamily(t *testing.T) {
+	now := time.Unix(1000000, 0)
+	q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "agy", Windows: []QuotaWindow{
+		{ID: "gemini_5h", Kind: "session", PercentUsed: 9, ResetsAt: now.Add(3 * time.Hour).Unix()},
+		{ID: "gemini_argon_weekly", Kind: "weekly", PercentUsed: 22, ResetsAt: now.Add(84 * time.Hour).Unix()},
+		{ID: "claude_gpt_5h", Kind: "session", PercentUsed: 100, Exhausted: true, ResetsAt: now.Add(3 * time.Hour).Unix()},
+	}}}}
+	scores := []ModelScore{{Match: "claude-sonnet-5-5", Score: 30.3}, {Match: "gemini-3-8-flash", Score: 30}}
+	c := []WorkerModelCandidate{{Name: "sonnet agy", Harness: "agy", Model: "claude-sonnet-5-5-medium"}, {Name: "flash agy", Harness: "agy", Model: "gemini-3.8-flash-medium"}}
+	for i := 0; i < 6; i++ {
+		got, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, &WorkerRotation{})
+		if err != nil || got.Name != "flash agy" || !strings.Contains(got.QuotaNote, "agy") {
+			t.Fatalf("got %+v: %v", got, err)
+		}
+	}
+	if !QuotaWindowServes(QuotaWindow{ID: "gemini_argon_weekly"}, "gemini-4-argon-high") || QuotaWindowServes(QuotaWindow{ID: "gemini_argon_weekly"}, "gemini-3.8-flash-low") || !QuotaWindowServes(QuotaWindow{ID: "gemini_5h"}, "gemini-4-argon-high") || !QuotaWindowServes(QuotaWindow{ID: "claude_gpt_weekly"}, "gpt-oss-120b-medium") || QuotaWindowServes(QuotaWindow{ID: "claude_gpt_5h"}, "gemini-4-argon-high") || !QuotaWindowServes(QuotaWindow{ID: "week"}, "anything") {
+		t.Fatal("window families")
 	}
 }
