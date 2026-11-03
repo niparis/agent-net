@@ -132,6 +132,11 @@ func TestWorkerMidrunAfterNoticeSurvivesRestart(t *testing.T) {
 	eventually(t, "first request after notice", func() bool { r := reworkRow(t, w, res.SessionID); return r.Fix == 1 && r.MidrunCount == 0 })
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:ignore second follow-up"}), &sent)
 	eventually(t, "second request after notice", func() bool { r := reworkRow(t, w, res.SessionID); return r.Fix == 2 && r.MidrunCount == 1 })
+	// Arrival updates the counters before delivery is recorded. Let the
+	// follow-up finish so restart does not replay an in-flight request.
+	eventually(t, "second follow-up delivered", func() bool {
+		return w.d.st.isDelivered(sent.Message.ID)
+	})
 	w.d.Stop()
 	w.node.restart()
 	w.cli = cliClient(t, w.node)
