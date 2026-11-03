@@ -146,6 +146,8 @@ type Config struct {
 	HarnessInterval time.Duration
 	// HarnessRetryDelay is the initial delay after an empty model probe.
 	HarnessRetryDelay time.Duration
+	// Harness update delays are configurable for tests; zero uses production defaults.
+	HarnessUpdateInitialDelay, HarnessUpdateInterval, HarnessUpdateRetryDelay, HarnessUpdateTimeout time.Duration
 	// UsageSampler measures CPU and memory (see usage.go). Nil turns that off.
 	UsageSampler *usage.Sampler
 	// LoadProbe replaces the machine load that worker admission reads from
@@ -303,10 +305,12 @@ type Daemon struct {
 	graph graphState
 	// integrations holds the last network answers this daemon applied
 	// (integrations.go).
-	intgMu   sync.Mutex
-	intgSet  bool
-	intgLast protocol.Integrations
-	intgWake chan struct{}
+	intgMu             sync.Mutex
+	intgSet            bool
+	intgLast           protocol.Integrations
+	updateSettingKnown bool
+	updateSettingOff   bool
+	intgWake           chan struct{}
 	// qmu guards worker admission: the queue, lastStart and qGone (queue.go).
 	// It is taken before wmu, never after.
 	qmu sync.Mutex
@@ -340,6 +344,7 @@ type Daemon struct {
 	// hmu guards the inventory of installed harnesses. hgen grows with each
 	// new inventory, so the link can tell whether hello carried the latest.
 	hmu       sync.Mutex
+	hdetectMu sync.Mutex             // serializes inventory probes and publication
 	installed []protocol.HarnessInfo // nil until the first detection ends
 	hgen      int
 
@@ -483,6 +488,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.proposalNotesLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.harnessUpdateLoop(ctx) }()
 	if d.cfg.InventoryHome != "" {
 		d.wg.Add(1)
 		go func() { defer d.wg.Done(); d.toolsLoop(ctx) }()

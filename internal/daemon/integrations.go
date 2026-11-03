@@ -58,6 +58,10 @@ func (d *Daemon) applyNetworkIntegrations(ctx context.Context) {
 		return
 	}
 	d.intgMu.Lock()
+	// The update switch must take effect even if another integration fails to
+	// apply. Local per-machine answers still win over the network answer.
+	effective := integrations.Effective(res.Integrations, integrations.LoadLocal(ConfigDir()))
+	d.updateSettingKnown, d.updateSettingOff = true, effective.HarnessUpdatesOff
 	same := d.intgSet && d.intgLast == res.Integrations
 	d.intgMu.Unlock()
 	if same {

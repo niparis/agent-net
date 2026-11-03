@@ -32,36 +32,10 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 	}
 	nextRetry := retry
 	for {
-		list := d.cfg.DetectHarnesses(ctx)
+		_, incomplete := d.refreshHarnessInventory(ctx)
 		if ctx.Err() != nil {
 			return
 		}
-		if list == nil {
-			list = []protocol.HarnessInfo{} // "none installed", not "not reported"
-		}
-		incomplete := false
-		for _, h := range list {
-			if h.Path != "" && modelsProbed(h.Name) && len(h.Models) == 0 {
-				incomplete = true
-			}
-		}
-		d.hmu.Lock()
-		list = keepMissingHarnesses(d.installed, list, d.Logf)
-		for i := range list {
-			list[i].ModelProviders = d.cfg.ModelProviders
-			if list[i].Name == "claude" {
-				list[i].PolicyReady = policyHookInstalled()
-			}
-		}
-		d.installed = list
-		d.hgen++
-		d.hmu.Unlock()
-		var names []string
-		for _, h := range list {
-			names = append(names, h.Name)
-		}
-		d.Logf("harnesses: %s", strings.Join(names, ","))
-		d.publishHarnesses(ctx)
 		delay := d.cfg.HarnessInterval
 		if incomplete {
 			delay = min(nextRetry, d.cfg.HarnessInterval)
@@ -84,6 +58,42 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 	}
 }
 
+func (d *Daemon) refreshHarnessInventory(ctx context.Context) ([]protocol.HarnessInfo, bool) {
+	d.hdetectMu.Lock()
+	defer d.hdetectMu.Unlock()
+	list := d.cfg.DetectHarnesses(ctx)
+	if ctx.Err() != nil {
+		return nil, false
+	}
+	if list == nil {
+		list = []protocol.HarnessInfo{}
+	}
+	incomplete := false
+	for _, h := range list {
+		if h.Path != "" && modelsProbed(h.Name) && len(h.Models) == 0 {
+			incomplete = true
+		}
+	}
+	d.hmu.Lock()
+	list = keepMissingHarnesses(d.installed, list, d.Logf)
+	for i := range list {
+		list[i].ModelProviders = d.cfg.ModelProviders
+		if list[i].Name == "claude" {
+			list[i].PolicyReady = policyHookInstalled()
+		}
+	}
+	d.installed = list
+	d.hgen++
+	d.hmu.Unlock()
+	var names []string
+	for _, h := range list {
+		names = append(names, h.Name)
+	}
+	d.Logf("harnesses: %s", strings.Join(names, ","))
+	d.publishHarnesses(ctx)
+	return list, incomplete
+}
+
 func modelsProbed(name string) bool { return name == "opencode" || name == "pi" }
 
 // keepMissingHarnesses keeps a harness that was found before when a detection
@@ -102,6 +112,9 @@ func keepMissingHarnesses(prev, next []protocol.HarnessInfo, logf func(string, .
 	}
 	out := make([]protocol.HarnessInfo, 0, len(next)+len(prev))
 	for _, h := range next {
+		if old := previous[h.Name]; h.Update == nil {
+			h.Update = old.Update
+		}
 		if old := previous[h.Name]; h.SignedIn == "" {
 			h.SignedIn, h.SignIn = old.SignedIn, old.SignIn
 		}

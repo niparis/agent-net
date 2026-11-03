@@ -694,6 +694,10 @@ The seven setup integrations ([decision 0021](decisions/0021-network-integration
 
 The daemon reads the answers at start and every minute. It applies them only when they differ from the answers it last applied (`integrations-applied.json`). A per-item setup flag is kept in `integrations-local.json` on that machine and wins over the network answer. Uninstall still removes the integrations of that machine. Each item is described in [setup.md](setup.md#integrations).
 
+## Harness updates
+
+Each daemon checks installed harnesses daily, starting 10 minutes after it starts. It runs `claude update`, `codex update`, `opencode upgrade`, `pi update self`, and `agy update` for the installed programs. It waits for busy sessions or workers, retrying every 30 minutes until the next daily check. Each command has five minutes and runs without input. The daemon refreshes the inventory after each attempt. `agent-net nodes --wide` shows the result and versions; the graph shows failures. Antigravity (`agy`) is checked for updates only, and is not a session harness. In Settings, open Integrations and turn off **Keep harnesses updated** to stop checks on every machine. This setting is on by default and is stored with the network integrations.
+
 ## What each machine reports
 
 Each daemon sends two kinds of facts about its machine to the gateway. Agents and the CLI can read them.
