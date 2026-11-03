@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -448,6 +449,9 @@ func TestPiWorkerLifecycle(t *testing.T) {
 	session := argValue(rec.Args, "--session-id")
 	if rec.Args[0] != "--mode" || rec.Args[1] != "rpc" || len(session) != 36 || argValue(rec.Args, "--model") != "openai/gpt-4.1-nano:low" {
 		t.Errorf("args: %v", rec.Args)
+	}
+	if !slices.Contains(rec.Args, "--approve") {
+		t.Errorf("Pi worktree trust missing: %v", rec.Args)
 	}
 	noFlagThatSkipsPermissions(t, rec.Args)
 	if !strings.HasPrefix(rec.Env["AGENT_NET_WORKER"], "w_") || rec.Env["AGENT_NET_SOCKET"] != w.cfg.SocketPath {
