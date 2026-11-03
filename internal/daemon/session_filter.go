@@ -1,6 +1,9 @@
 package daemon
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -12,13 +15,46 @@ import (
 // no project. A session that was registered before is removed.
 const IgnoreEnv = "AGENT_NET_IGNORE"
 
+// isJudgeDir reports whether dir or any parent directory is a temporary folder
+// created for a difficulty judge.
+func isJudgeDir(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	clean := filepath.Clean(dir)
+	for d := clean; d != "/" && d != "." && d != ""; d = filepath.Dir(d) {
+		if strings.HasPrefix(filepath.Base(d), "agent-net-difficulty-") {
+			return true
+		}
+	}
+	return false
+}
+
+// processCwd returns the working directory of pid if accessible.
+func processCwd(pid int) string {
+	if cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid)); err == nil {
+		return cwd
+	}
+	return ""
+}
+
 // sessionIgnored reads the flag from the session process's environment. A
 // process that the daemon cannot read (another user, or gone) is not ignored.
+// It also ignores sessions whose process runs in a judge directory.
 func (d *Daemon) sessionIgnored(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	return strings.TrimSpace(processEnvVar(pid, IgnoreEnv)) == "1"
+	if strings.TrimSpace(processEnvVar(pid, IgnoreEnv)) == "1" {
+		return true
+	}
+	if isJudgeDir(processEnvVar(pid, "PWD")) {
+		return true
+	}
+	if isJudgeDir(processCwd(pid)) {
+		return true
+	}
+	return false
 }
 
 // tempFolders is the list of temporary folders. Nil means the system list,
