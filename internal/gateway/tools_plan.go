@@ -101,7 +101,10 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				checkouts = append(checkouts, protocol.ProjectView{})
 			} else {
 				for _, p := range projects {
-					if p.NodeID == node.NodeID && (p.Source == protocol.SourceRegistered || p.Source == protocol.SourceBoth) && selected(p.Name) {
+					if p.NodeID == node.NodeID && selected(p.Name) {
+						if p.Worktrees == nil {
+							p.Worktrees = []string{}
+						}
 						checkouts = append(checkouts, p)
 						for _, wt := range p.Worktrees {
 							v := p
@@ -126,7 +129,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 						t.State = "offline"
 						t.Conflict = "machine offline; destination cannot be inspected"
 					} else {
-						raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Checkout: checkout.Path}, 10*time.Second)
+						raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Worktrees: checkout.Worktrees}, 10*time.Second)
 						if e != nil {
 							t.State = "conflict"
 							t.Conflict = "destination inspection unavailable"

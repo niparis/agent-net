@@ -202,7 +202,7 @@ func (s *Store) finishMCPImport(p protocol.MCPImportPlan, reported []string, act
 	if _, err = tx.Exec(`UPDATE mcp_servers SET enabled=1 WHERE name=?`, name); err != nil {
 		return 0, err
 	}
-	r, err := assignToolTx(tx, item, p.Assignment, actor, "import:"+p.ID, now)
+	r, err := s.assignToolTx(tx, item, p.Assignment, actor, "import:"+p.ID, now)
 	if err != nil {
 		return 0, err
 	}

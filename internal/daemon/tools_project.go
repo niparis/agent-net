@@ -41,6 +41,61 @@ func projectGitConfig(checkout, excludes string, args ...string) ([]byte, error)
 	return cmd.Output()
 }
 
+// cleanRealPath resolves symlinks when it can and otherwise returns a clean
+// path. It is used to compare a folder with the home folder and with a Git top.
+func cleanRealPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(path)
+}
+
+// skillFolderConflict reports why a checkout cannot hold project skill copies,
+// or "" when it can (decision 0048). worktrees is the project's linked worktree
+// list on this machine; known says the list is real, so a linked worktree that
+// is not on it belongs to another project. A nil list from an older gateway is
+// not enforced here.
+func (d *Daemon) skillFolderConflict(checkout string, worktrees []string, known bool) string {
+	if checkout == "" {
+		return ""
+	}
+	path := cleanRealPath(checkout)
+	if home := d.cfg.InventoryHome; home != "" && path == cleanRealPath(home) {
+		return "the home folder is never a project"
+	}
+	top, err := projectGit(checkout, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "not a Git repository"
+	}
+	if cleanRealPath(strings.TrimSpace(string(top))) != path {
+		return "not a Git repository"
+	}
+	if !known {
+		return ""
+	}
+	for _, wt := range worktrees {
+		if cleanRealPath(wt) == path {
+			return ""
+		}
+	}
+	gitDir, err := projectGit(checkout, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "not a Git repository"
+	}
+	common, err := projectGit(checkout, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "not a Git repository"
+	}
+	commonPath := strings.TrimSpace(string(common))
+	if !filepath.IsAbs(commonPath) {
+		commonPath = filepath.Join(checkout, commonPath)
+	}
+	if cleanRealPath(strings.TrimSpace(string(gitDir))) != cleanRealPath(commonPath) {
+		return "worktree of another project"
+	}
+	return ""
+}
+
 func projectExcludePattern(rel string) string {
 	var b strings.Builder
 	b.WriteByte('/')
@@ -56,6 +111,13 @@ func projectExcludePattern(rel string) string {
 }
 
 func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol.ToolResult {
+	return d.copyProjectSkillIn(t, bundle, nil, false)
+}
+
+// copyProjectSkillIn is the apply-time copy. worktrees is the project's linked
+// worktree list on this machine; known says the list is real, so a linked
+// worktree that is not on it is refused.
+func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktrees []string, known bool) protocol.ToolResult {
 	r := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index}
 	fail := func(state, reason string) protocol.ToolResult { r.State = state; r.Reason = reason; return r }
 	if t.Revision.Assignment.Scope != "projects" || t.Target.Action != "copy" || !filepath.IsAbs(t.Target.Checkout) {
@@ -69,6 +131,11 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 	}
 	if !selected {
 		return fail("conflict", "project is not assigned")
+	}
+	// The machine is the authority on its own folders: this repeats the plan
+	// probe, so an old or wrong plan cannot write into home or a foreign repo.
+	if conflict := d.skillFolderConflict(t.Target.Checkout, worktrees, known); conflict != "" {
+		return fail("conflict", conflict)
 	}
 	if t.Target.Conflict != "" && t.Target.Conflict != "destination already exists and is not owned" && t.Target.Conflict != "machine offline; destination cannot be inspected" {
 		return fail("conflict", "plan target requires inspection")

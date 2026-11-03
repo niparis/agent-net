@@ -95,8 +95,8 @@ func TestFederatedAssignmentNeedsOwnerAndRegisteredProject(t *testing.T) {
 	if _, err := g.store.AssignTool(id, protocol.ToolAssignment{Scope: "global"}, "agent", "test"); err == nil {
 		t.Fatal("accepted a non-owner actor")
 	}
-	if _, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: id, Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{"nope"}}}, "owner"); err == nil || !strings.Contains(err.Error(), "not registered") {
-		t.Fatalf("unregistered project: %v", err)
+	if _, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: id, Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{"nope"}}}, "owner"); err == nil || !strings.Contains(err.Error(), "not known") {
+		t.Fatalf("unknown project: %v", err)
 	}
 }
 

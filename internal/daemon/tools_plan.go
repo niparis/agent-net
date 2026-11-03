@@ -51,6 +51,13 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 	if base == "" || !filepath.IsAbs(base) {
 		return bad("destination root unavailable")
 	}
+	if p.Checkout != "" {
+		// A machine refuses the home folder, a folder outside Git and a
+		// worktree of another project, whatever the plan says.
+		if conflict := d.skillFolderConflict(p.Checkout, p.Worktrees, p.Worktrees != nil); conflict != "" {
+			return bad(conflict)
+		}
+	}
 	var root string
 	switch p.Harness {
 	case "claude":

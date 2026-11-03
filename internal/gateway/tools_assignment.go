@@ -6,12 +6,55 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/temppath"
 )
+
+// projectKnownTx reports whether the gateway knows a project name: registered,
+// or seen in a stored session whose folder is a project (decision 0048). A
+// folder is a seen project when it is not temporary and the session did not
+// opt out of the network.
+func (s *Store) projectKnownTx(tx *sql.Tx, name string) (bool, error) {
+	var exists int
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM projects WHERE name=?)`, name).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists != 0 {
+		return true, nil
+	}
+	rows, err := tx.Query(`SELECT cwd, repo_root, repo_project, no_project FROM sessions WHERE harness != 'owner' AND (repo_project=? OR repo_project='')`, name)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	roots := s.tempRoots()
+	for rows.Next() {
+		var cwd, root, project string
+		var noProject int
+		if err = rows.Scan(&cwd, &root, &project, &noProject); err != nil {
+			return false, err
+		}
+		path := root
+		if path == "" {
+			path = cwd
+		}
+		if path == "" || noProject != 0 || temppath.Under(path, roots) {
+			continue
+		}
+		if project == "" {
+			project = filepath.Base(path)
+		}
+		if project == name {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
 
 func normalizeAssignment(a protocol.ToolAssignment) (protocol.ToolAssignment, error) {
 	switch a.Scope {
@@ -49,7 +92,7 @@ func normalizeAssignment(a protocol.ToolAssignment) (protocol.ToolAssignment, er
 	}
 	return a, nil
 }
-func assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment, actor, source string, now int64) (protocol.ToolRevision, error) {
+func (s *Store) assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment, actor, source string, now int64) (protocol.ToolRevision, error) {
 	var r protocol.ToolRevision
 	var err error
 	a, err = normalizeAssignment(a)
@@ -67,12 +110,12 @@ func assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment, actor, sou
 		return r, errors.New("tool item not found")
 	}
 	for _, p := range a.Projects {
-		var exists int
-		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM projects WHERE name=?)`, p).Scan(&exists); err != nil {
+		known, err := s.projectKnownTx(tx, p)
+		if err != nil {
 			return r, err
 		}
-		if exists == 0 {
-			return r, errors.New("project is not registered")
+		if !known {
+			return r, errors.New("project is not known")
 		}
 	}
 	for _, n := range a.Machines {
@@ -105,7 +148,7 @@ func (s *Store) AssignTool(item string, a protocol.ToolAssignment, actor, source
 		return protocol.ToolRevision{}, err
 	}
 	defer tx.Rollback()
-	r, err := assignToolTx(tx, item, a, actor, source, s.now().UnixNano())
+	r, err := s.assignToolTx(tx, item, a, actor, source, s.now().UnixNano())
 	if err != nil {
 		return r, err
 	}
@@ -218,12 +261,12 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 		return p, errors.New("tool item not found")
 	}
 	for _, name := range a.Projects {
-		var exists int
-		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM projects WHERE name=?)`, name).Scan(&exists); err != nil {
+		known, err := s.projectKnownTx(tx, name)
+		if err != nil {
 			return p, err
 		}
-		if exists == 0 {
-			return p, errors.New("project is not registered")
+		if !known {
+			return p, errors.New("project is not known")
 		}
 	}
 	for _, n := range a.Machines {
@@ -361,7 +404,7 @@ func (s *Store) applyToolPlan(id, actor string, validate ...bool) (protocol.Tool
 		}
 		break
 	}
-	r, err = assignToolTx(tx, p.Item, p.Assignment, actor, "plan:"+id, s.now().UnixNano())
+	r, err = s.assignToolTx(tx, p.Item, p.Assignment, actor, "plan:"+id, s.now().UnixNano())
 	if err != nil {
 		return r, err
 	}
@@ -541,7 +584,7 @@ func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRev
 	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan,applied) VALUES(?,?,?,?,1)`, p.ID, item, snapshot, string(raw)); err != nil {
 		return r, p, err
 	}
-	r, err = assignToolTx(tx, item, previous, actor, "plan:"+p.ID, now)
+	r, err = s.assignToolTx(tx, item, previous, actor, "plan:"+p.ID, now)
 	if err != nil {
 		return r, p, err
 	}

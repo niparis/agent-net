@@ -72,14 +72,39 @@ func projectFixture(t *testing.T) (*Daemon, protocol.ToolTarget, []byte) {
 	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Revision: 1, Version: hash, Assignment: protocol.ToolAssignment{Scope: "projects", Projects: []string{"project"}}}, Target: protocol.ToolPlanTarget{Harness: "claude", Checkout: checkout, Project: "project", Action: "copy"}}
 	return d, target, bundle
 }
-func TestProjectNonGitPending(t *testing.T) {
+func TestProjectNonGitRefused(t *testing.T) {
 	d, target, bundle := projectFixture(t)
 	r := d.copyProjectSkill(target, bundle)
-	if r.State != "pending" || r.Reason != "owner must choose an ignore mechanism" {
+	if r.State != "conflict" || r.Reason != "not a Git repository" {
 		t.Fatalf("result: %+v", r)
 	}
 	if _, err := os.Stat(filepath.Join(target.Target.Checkout, ".claude")); !os.IsNotExist(err) {
 		t.Fatalf("modified checkout: %v", err)
+	}
+}
+
+func TestProjectHomeRefused(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	target.Target.Checkout = d.cfg.InventoryHome
+	r := d.copyProjectSkill(target, bundle)
+	if r.State != "conflict" || r.Reason != "the home folder is never a project" {
+		t.Fatalf("result: %+v", r)
+	}
+}
+
+func TestProjectForeignWorktreeRefused(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q", "-b", "main")
+	other := filepath.Join(t.TempDir(), "other")
+	gitIn(t, checkout, "worktree", "add", "-qb", "other", other)
+	target.Target.Checkout = other
+	r := d.copyProjectSkillIn(target, bundle, []string{}, true)
+	if r.State != "conflict" || r.Reason != "worktree of another project" {
+		t.Fatalf("result: %+v", r)
+	}
+	if got := d.skillFolderConflict(other, []string{other}, true); got != "" {
+		t.Fatalf("own worktree refused: %s", got)
 	}
 }
 func TestProjectCopyExcludesExactPath(t *testing.T) {
@@ -313,6 +338,83 @@ func TestProjectTargetsReconcileThroughGateway(t *testing.T) {
 			t.Fatalf("duplicate %s: %v", rel, err)
 		}
 	}
+}
+
+// A project seen in a session, with a Git checkout, gets plan targets and an
+// applied copy without being registered.
+func TestSeenProjectGetsPlanAndApply(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	source := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	checkout := filepath.Join(t.TempDir(), "seenproj")
+	if err := os.Mkdir(checkout, 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, checkout, "init", "-q", "-b", "main")
+	detect := func(context.Context) []protocol.HarnessInfo {
+		return []protocol.HarnessInfo{{Name: "codex"}, {Name: "opencode"}, {Name: "pi"}}
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: detect, cfg: func(c *Config) { c.InventoryHome = home }})
+	helloPi(t, n, "seen-agent", checkout, true)
+	cli := cliClient(t, n)
+	eventually(t, "seen project", func() bool {
+		var pr struct {
+			Projects []protocol.ProjectView `json:"projects"`
+		}
+		raw, err := cli.call("projects", map[string]any{"name": "seenproj"})
+		if err != nil || json.Unmarshal(raw, &pr) != nil {
+			return false
+		}
+		return len(pr.Projects) == 1 && pr.Projects[0].Path == checkout && pr.Projects[0].Source == protocol.SourceSeen
+	})
+	var item protocol.ToolItem
+	eventually(t, "inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "skill"})
+		if err != nil {
+			return false
+		}
+		var p protocol.ToolsPage
+		if json.Unmarshal(raw, &p) != nil {
+			return false
+		}
+		for _, v := range p.Items {
+			if v.Name == "demo" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	loc := item.Locations[0]
+	cli.mustCall("tools_import", protocol.ToolImport{Item: item.ID, Location: protocol.ToolImportLocation{NodeID: loc.NodeID, Location: loc.Location}})
+	raw := cli.mustCall("tools_plan", protocol.ToolPlanRequest{Item: item.ID, Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{"seenproj"}}})
+	var plan protocol.ToolPlan
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	copied := false
+	for _, target := range plan.Targets {
+		if target.Checkout == checkout && target.Action == "copy" {
+			copied = true
+		}
+	}
+	if !copied {
+		t.Fatalf("no copy target for the seen checkout: %+v", plan.Targets)
+	}
+	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: plan.ID})
+	eventually(t, "seen project copied", func() bool {
+		b, err := os.ReadFile(filepath.Join(checkout, ".agents/skills/demo/SKILL.md"))
+		return err == nil && string(b) == "fixture"
+	})
 }
 
 func TestProjectTargetsRefuseShadowingCompatibilityRoot(t *testing.T) {

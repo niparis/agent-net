@@ -851,8 +851,8 @@ plans include `d` when exact folders are available.
 
 `agent-net tools` groups the latest observations by kind, name and content
 hash. Each row shows scope, harnesses, machines, the number of same-name
-variants and state, desired assignment and pending application. Scope lists global and registered project observations;
-unassigned identifies project locations that do not match the registry. Offline
+variants and state, desired assignment and pending application. Scope lists global and project observations;
+unassigned identifies project locations that match neither the registry nor a seen project. Offline
 machines retain their last observations as stale. The daemon scans at startup,
 after reconnecting, after its binary version changes and every five minutes.
 
@@ -1167,7 +1167,7 @@ harnesses are shown as unresolved. A skill that has not been imported and an
 unmanaged destination are conflicts. Review the plan before applying it.
 
 `tools_apply` takes `plan_id`. It refuses an out-of-date plan if its inventory,
-registered projects, item version, assignments or inspected paths have changed.
+known projects, item version, assignments or inspected paths have changed.
 Applying records a new desired revision and nudges connected daemons. Each
 daemon pulls its own targets again after reconnecting and on the regular scan
 interval. A plan that would remove the last assigned copy of an unimported
@@ -1177,10 +1177,13 @@ atomic no-replace rename. A different existing destination is a conflict.
 Global assignments place copies in `~/.claude/skills` and `~/.agents/skills`,
 and in `~/.gemini/config/skills` when `~/.gemini` already exists. Project
 assignments place copies in `.claude/skills` and `.agents/skills` in each
-registered Git checkout. OpenCode reads both and loads the skill once. A
-same-named skill in another source that can shadow these copies is a conflict.
-The scanner also observes project `.agent/skills` without managing it. Non-Git checkouts stay pending until the owner chooses an ignore
-mechanism. Removals move an agent-net-owned verified source to the daemon's local backup
+known Git checkout: registered ones and ones seen in a session. No
+registration step is needed. OpenCode reads both folders and loads the skill
+once. The machine refuses a checkout that is the home folder, a folder that is
+not a Git working tree, or a worktree of another project, with that reason in
+the plan. A same-named skill in another source that can shadow these copies is
+a conflict. The scanner also observes project `.agent/skills` without managing
+it. Removals move an agent-net-owned verified source to the daemon's local backup
 directory before removing it from the skill location.
 It compares the source hash with the planned version and reports a conflict if
 the content changed. Backups retain the original path under a timestamped
@@ -1326,7 +1329,7 @@ new data directory before starting it. It never replaces a live data directory.
 
 Without a registry, a project exists only after a session ran in it. A session in a system temporary folder does not make a seen project (see [what each machine reports](#what-each-machine-reports)), and a session with `AGENT_NET_IGNORE=1` is not registered at all. The registry lets you (or an agent, when you ask) say "this repository is a project" ahead of time. Workers (see [decision 0002](decisions/0002-workers.md)) start sessions only in known projects, and a registered project is known even if no session ever ran there.
 
-Each entry has the machine, the path of the main working tree, the identity derived from the `origin` remote, the `origin` remote without credentials, the default branch (the branch `origin/HEAD` points to, when the clone has it), who added it (`cli`, or the harness and session), when it was added and when it was last checked. The gateway keeps entries in the `projects` table of `gateway.db`. `agent-net projects` merges them with the projects found from sessions, one row per repository per machine. SOURCE says where a row comes from: `registered`, `seen` (only sessions) or `both`. Registered projects stay when their sessions are deleted by retention.
+Each entry has the machine, the path of the main working tree, the identity derived from the `origin` remote, the `origin` remote without credentials, the default branch (the branch `origin/HEAD` points to, when the clone has it), who added it (`cli`, or the harness and session), when it was added and when it was last checked. The gateway keeps entries in the `projects` table of `gateway.db`. `agent-net projects` merges them with the projects found from sessions, one row per repository per machine. SOURCE says where a row comes from: `registered`, `seen` (only sessions) or `both`. Registered projects stay when their sessions are deleted by retention. Skills accept both kinds: a project does not need to be registered to be a skill destination (decision [0048](decisions/0048-skills-on-off-per-project.md)).
 
 **Project identity and display name.** The last part of the `origin` URL, without `.git`, is the project identity. For example, `https://example.com/team/agent-net.git` gives `agent-net` even when the checkout folder has another name. With no usable origin, the main tree folder name is used. Repositories with the same last remote path part share an identity, even when their owners or hosts differ.
 
