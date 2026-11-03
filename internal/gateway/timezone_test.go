@@ -59,6 +59,65 @@ func TestTimeZoneSettingsRoutes(t *testing.T) {
 	}
 }
 
+func TestSettingTheTimeZoneChangesNoStoredTime(t *testing.T) {
+	gw, err := New(Options{DataDir: seededDataDir(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+	_, token, err := gw.Store().CreateNode("laptop", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := twoSessions(t, gw.Store())
+	msg, _, err := gw.Store().StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "hi", IdempotencyKey: "k1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(query string, arg any) int64 {
+		t.Helper()
+		var v int64
+		if err := gw.Store().db.QueryRow(query, arg).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	messageAt := read(`SELECT created_at FROM messages WHERE id=?`, msg.ID)
+	var nodeID string
+	if err := gw.Store().db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, a).Scan(&nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Store().SetNodeHello(nodeID, "h1", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	nodeSeen := read(`SELECT seen_at FROM nodes WHERE id=?`, nodeID)
+	if nodeSeen == 0 {
+		t.Fatal("node seen_at was not stored")
+	}
+
+	r := httptest.NewRequest(http.MethodPut, "/v1/timezone-settings", bytes.NewBufferString(`{"name":"Europe/Paris"}`))
+	r.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	gw.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT: %d %s", w.Code, w.Body)
+	}
+	// The setting is stored, and the timestamps it displays are untouched.
+	out, err := gw.Store().timeZoneSetting()
+	if err != nil || out.Name != "Europe/Paris" {
+		t.Fatalf("setting: %+v %v", out, err)
+	}
+	if got := read(`SELECT created_at FROM messages WHERE id=?`, msg.ID); got != messageAt {
+		t.Fatalf("message created_at changed from %d to %d", messageAt, got)
+	}
+	if got := read(`SELECT seen_at FROM nodes WHERE id=?`, nodeID); got != nodeSeen {
+		t.Fatalf("node seen_at changed from %d to %d", nodeSeen, got)
+	}
+	if msg.CreatedAt.UnixNano() != messageAt {
+		t.Fatalf("the stored message time is not the one the setting was set against: %d vs %d", msg.CreatedAt.UnixNano(), messageAt)
+	}
+}
+
 func TestNodesCarryTheReportedTimeZone(t *testing.T) {
 	gw, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
