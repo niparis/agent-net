@@ -127,6 +127,9 @@ func (m Model) hints() []hint {
 	}
 	cell := bindingHint(contextSessions, "cell")
 	cell.key = "left/right"
+	// The Enter hint now carries the way back, so at 80 columns the cell hint
+	// goes first and help and quit stay.
+	cell.prio = 3
 	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), cell, sessionHelp, sessionQuit}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {

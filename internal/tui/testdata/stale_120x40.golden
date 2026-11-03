@@ -37,4 +37,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  n new  left/right cell  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  n new  left/right cell  ? help  q quit

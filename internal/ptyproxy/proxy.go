@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -36,23 +37,59 @@ func (p *Proxy) Run() error {
 		return err
 	}
 	defer input.Close()
+	// A terminal read is unblocked by Cancel, so wait for it before Close.
+	// A pipe reader has no such cancel and is closed by its owner.
+	var readerWG sync.WaitGroup
+	if _, ok := p.in.(*os.File); ok {
+		defer readerWG.Wait()
+	}
 	defer input.Cancel()
 	pt, err := pty.Start(p.Cmd)
 	if err != nil {
 		return err
 	}
 	defer pt.Close()
+	status := newBar(p.out, p.Name)
+	termFile := p.terminal()
+	// The child gets the real size minus the bar row, initially and after
+	// every resize. The bar takes the row the child cannot reach.
+	resize := func() {
+		if termFile == nil {
+			return
+		}
+		ws, err := pty.GetsizeFull(termFile)
+		if err != nil || ws.Cols == 0 || ws.Rows == 0 {
+			return
+		}
+		child := *ws
+		if status.rowReserved() && child.Rows > 1 {
+			child.Rows--
+		}
+		if err := pty.Setsize(pt, &child); err != nil {
+			return
+		}
+		status.resize(int(ws.Cols), int(ws.Rows))
+	}
+	// Give the child the full size back on the way out, so an attach client
+	// such as tmux tells its server the real size before it goes.
+	restoreSize := func() {
+		if termFile == nil {
+			return
+		}
+		if ws, err := pty.GetsizeFull(termFile); err == nil {
+			_ = pty.Setsize(pt, ws)
+		}
+	}
 	if f, ok := p.in.(*os.File); ok {
 		if state, e := term.MakeRaw(f.Fd()); e == nil {
 			defer term.Restore(f.Fd(), state)
 		}
-		resize := func() { _ = pty.InheritSize(f, pt) }
-		resize()
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, syscall.SIGWINCH)
 		defer signal.Stop(ch)
 		done := make(chan struct{})
 		defer close(done)
+		resize()
 		go func() {
 			for {
 				select {
@@ -63,9 +100,11 @@ func (p *Proxy) Run() error {
 				}
 			}
 		}()
+	} else {
+		resize()
 	}
 	outputDone := make(chan struct{})
-	go func() { _, _ = io.Copy(p.out, pt); close(outputDone) }()
+	go func() { _, _ = io.Copy(barWriter{status}, pt); close(outputDone) }()
 	escaped := make(chan struct{}, 1)
 	inputDone := make(chan struct{})
 	defer close(inputDone)
@@ -74,7 +113,9 @@ func (p *Proxy) Run() error {
 		err  error
 	}
 	reads := make(chan readResult)
+	readerWG.Add(1)
 	go func() {
+		defer readerWG.Done()
 		b := make([]byte, 4096)
 		for {
 			n, err := input.Read(b)
@@ -134,6 +175,7 @@ func (p *Proxy) Run() error {
 	select {
 	case err = <-wait:
 	case <-escaped:
+		restoreSize()
 		_ = p.Cmd.Process.Signal(syscall.SIGHUP)
 		select {
 		case <-wait:
@@ -143,9 +185,26 @@ func (p *Proxy) Run() error {
 		}
 		err = nil
 	}
+	restoreSize()
+	status.close()
 	_ = pt.Close()
 	<-outputDone
 	return err
+}
+
+// terminal is the real terminal this proxy draws on, or nil when neither end
+// is a terminal.
+func (p *Proxy) terminal() *os.File {
+	for _, end := range []any{p.in, p.out} {
+		f, ok := end.(*os.File)
+		if !ok {
+			continue
+		}
+		if ws, err := pty.GetsizeFull(f); err == nil && ws.Cols > 0 && ws.Rows > 0 {
+			return f
+		}
+	}
+	return nil
 }
 
 // escapeMatcher watches for ctrl+] and drops the repeat and release events of

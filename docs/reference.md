@@ -612,6 +612,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_CLAUDE_SESSIONS_DIR` | daemon | Where to look for Claude Code session files. For tests. |
 | `AGENT_NET_GRAPH` | `agent-net tui` | Graph renderer: `auto` (default), `pixel` or `braille`. See the Graph tab. |
 | `AGENT_NET_GRAPH_MOTION` | `agent-net tui` | `1` turns on the animated pixel graph (moving message dots, busy pulse, eased camera). Off by default: the pixel graph is still and changes only when the graph does. |
+| `AGENT_NET_NO_BAR` | `agent-net tui` | `1` turns off the agent-net row at the bottom of a session entered in the TUI terminal. For a terminal that mishandles the reserved row. See [Enter a session](#enter-a-session). |
 | `CODEX_HOME` | daemon, setup | Codex's home folder (default `~/.codex`). The daemon looks for the shared Codex app server's control socket in it, and setup writes `config.toml` and `AGENTS.md` in it. Codex reads the same variable. |
 | `AGENT_NET_GATEWAY_DATA` | gateway, `invite`, `enroll`, `setup`, `install.sh` | Gateway data directory. |
 | `AGENT_NET_NO_SERVICE` | setup, `install.sh` | `1` means: write no service files and start nothing. Same as `--no-service`. |
@@ -1627,6 +1628,8 @@ The TUI asks for each readable message body once and keeps it by message ID. Own
 `Enter` asks the daemon (`session_enter`) to open the selected session. If herdr is available, the daemon focuses an existing herdr pane for that session. Otherwise it creates a pane beside the TUI when the TUI is in herdr, or a titled tab on the herdr server. The TUI keeps running and its result line says `opened <name> in herdr`. If the server is not running, the daemon tries to start its headless server. When no herdr client is attached, open herdr in a terminal to see its panes. See the [herdr installation instructions](https://herdr.dev/tui/docs/install/). Your input in a session counts as yours, so approvals you give there are yours.
 
 When herdr is missing or cannot start, agent-net uses the existing enter plan. The TUI hands its terminal to that command; press `ctrl+]` to return and see the installation hint. A session that has neither an attach command nor an accessible herdr or tmux pane shows a note to open its existing window.
+
+While the TUI has handed its terminal to a session, agent-net keeps the bottom row of the terminal for itself and gives the session every row above it. The row reads `agent-net · ctrl+] back to agent-net · <session name>` in dim text, so the way back stays visible over the session's full-screen UI. The row is drawn again after a resize and after the session clears the screen, and the window title still carries the same hint. `ctrl+]` returns as before: agent-net clears the row and gives the session its full size back. Set `AGENT_NET_NO_BAR=1` to turn the row off on a terminal that mishandles it; the session then gets the whole terminal. Sessions opened in a herdr pane are unchanged: the bar belongs to the TUI terminal fallback only.
 
 | Session | Command used for a new view |
 |---|---|
