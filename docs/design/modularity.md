@@ -70,6 +70,32 @@ The orchestrator of this repo played tech lead for a full day: 6 to 8 workers in
 - **Asking other agents works.** The Mac session found the agy quota cause, and a Mac worker found the CTO dialog error in 2 minutes, both on machines the orchestrator cannot read. This is foundation and should stay so.
 - **Where opinion is baked in today:** the guidance text (for example "start workers only when the owner asks", "announce your task"), the protected provider and "saved for your orchestrator" (which assume an Opus orchestrator), the picker's level rules and auto-continue, and one CTO per network. All of these move to the operating model.
 
+## Removing the integration bottleneck
+
+Options considered for the work after a worker finishes (merging, conflicts, CI, release):
+
+| Option | How | For | Against | Verdict |
+|---|---|---|---|---|
+| A. Merge gate | a finished run merges itself when CI passed, a review ran and the agent's report says merge | no manual merging; proven in Conductor | needs CI and a review step per repo; weak tests let bad merges through | **yes** |
+| B. Worker hands back a ready-to-merge branch | before handing back, the worker rebases on main, resolves conflicts and runs the tests it touched | the agent that knows the change resolves its conflicts; the lead's context stays small | more worker time; two finishing at once must rebase again | **yes, with independent checks** |
+| C. Release train | batch finished work, one CI run per batch (what happened on 2026-11-03) | fewer CI runs | one bad change blocks the batch; cross-worker clashes surface late | fallback only |
+| D. Integrator agent | a separate cheaper agent merges, runs CI and releases | frees the lead | one more agent; must understand conflicts or it escalates a lot | when volume is high (more than about 6 workers) |
+| E. Sub-leads per repo | several leads by area, **one of them the lead** that receives all communication | more thinking in parallel | needs reporting lines, which agent-net does not model yet | where a project is big enough |
+
+"Plan smaller, independent tasks" was also listed and dropped: it is a habit, not something agent-net can provide.
+
+**Quality control stays independent of the writer.** B moves the plumbing, not the judgement. The worker prepares the branch; it never approves it. Before anything merges:
+
+- CI runs on the branch: the worker's own word is not evidence;
+- a reviewer reads the final diff against main: the lead, a separate reviewer agent, or a bot review;
+- the merge gate merges only when CI and the review agree.
+
+The remaining risk is a conflict resolved "correctly" but wrongly. The reviewer sees the final diff, so it is caught at review.
+
+**Reporting lines** make E work. A new graph edge, "reports to", states who the lead is. Messages for a repo go to its lead, and sub-leads take work from the lead. A project's operating model decides whether it has sub-leads. The same edge fits the work-item preset: a workflow reports to whoever owns the board.
+
+**Recommendation:** B plus A, with D when volume calls for it and E where a project is large enough. All four are operating-model settings, so each project picks its own.
+
 ## Modules that come from Conductor
 
 - **Triggers:** tracker sources (Plane first) and alert sources (webhooks). They create work items and never start runs themselves.
