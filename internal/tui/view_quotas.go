@@ -92,7 +92,13 @@ func (m Model) quotasView(w, h int) []string {
 			machines = append(machines, nodes[id])
 		}
 	}
+	// Wide enough for the longest machine name (and "sign in"), so the header
+	// is not cut; narrow terminals keep a short fixed width.
 	machineWidth := 10
+	for _, n := range machines {
+		machineWidth = max(machineWidth, len([]rune(sanitize(firstNonEmpty(n.Hostname, n.NodeID)))))
+	}
+	machineWidth = min(machineWidth, 14)
 	if w < 110 {
 		machineWidth = 7
 	}
