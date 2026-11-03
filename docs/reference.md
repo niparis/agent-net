@@ -533,6 +533,15 @@ notifications.
 
 The daemon and the agents talk over Unix sockets, not network ports.
 
+## Gateway link health
+
+Each daemon and the gateway send a WebSocket ping every 20 seconds. Incoming
+messages, pings and pongs show that the link is alive. After 45 seconds without
+incoming traffic, either side closes the link. The daemon reconnects with its
+usual backoff. The machine shows offline when the gateway drops its connection;
+its sessions go offline after a grace period of at most 10 seconds, unless the
+machine reconnects first. A reconnect syncs the sessions again.
+
 ## Files
 
 | What | Default path | Notes |

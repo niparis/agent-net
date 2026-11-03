@@ -20,6 +20,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/funnel"
+	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/ratelimit"
@@ -41,9 +42,12 @@ type Options struct {
 	// SANs are extra host names or IPs for the server certificate.
 	SANs []string
 	// OfflineGrace is how long a node may be disconnected before its
-	// sessions go offline. Default 30 s.
+	// sessions go offline. Default and maximum 10 s.
 	OfflineGrace time.Duration
-	Logger       *log.Logger
+	// KeepalivePingInterval and KeepaliveTimeout control node link health checks.
+	// Zero values use 20 seconds and 45 seconds respectively.
+	KeepalivePingInterval, KeepaliveTimeout time.Duration
+	Logger                                  *log.Logger
 	// Now is for tests.
 	Now func() time.Time
 	// ToolsPageSize limits the item count per page for tests. Zero uses the normal byte limit.
@@ -90,10 +94,14 @@ type Gateway struct {
 
 	mu         sync.Mutex
 	conns      map[string]*nodeConn
-	timers     map[string]*time.Timer
+	timers     map[string]*offlineTimer
 	closed     bool
 	appsDone   chan struct{}
 	rotationMu sync.Mutex
+}
+
+type offlineTimer struct {
+	timer *time.Timer
 }
 
 type nodeConn struct {
@@ -102,6 +110,7 @@ type nodeConn struct {
 	wmu    sync.Mutex
 	cancel context.CancelFunc
 	dead   chan struct{} // closed when the connection ends
+	health *linkkeepalive.Monitor
 
 	pmu     sync.Mutex
 	nextID  int
@@ -173,8 +182,14 @@ func New(opts Options) (*Gateway, error) {
 	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
 		return nil, err
 	}
-	if opts.OfflineGrace == 0 {
-		opts.OfflineGrace = 30 * time.Second
+	if opts.OfflineGrace == 0 || opts.OfflineGrace > 10*time.Second {
+		opts.OfflineGrace = 10 * time.Second
+	}
+	if opts.KeepalivePingInterval <= 0 {
+		opts.KeepalivePingInterval = linkkeepalive.DefaultPingInterval
+	}
+	if opts.KeepaliveTimeout <= 0 {
+		opts.KeepaliveTimeout = linkkeepalive.DefaultTimeout
 	}
 	logger := opts.Logger
 	if logger == nil {
@@ -220,7 +235,7 @@ func New(opts Options) (*Gateway, error) {
 		return nil, err
 	}
 	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
-		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*offlineTimer{}}
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
@@ -264,7 +279,7 @@ func (g *Gateway) Close() error {
 	}
 	g.closed = true
 	for _, t := range g.timers {
-		t.Stop()
+		t.timer.Stop()
 	}
 	conns := make([]*nodeConn, 0, len(g.conns))
 	for _, c := range g.conns {
@@ -443,13 +458,17 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	ws, err := websocket.Accept(w, r, nil)
+	health := linkkeepalive.New()
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OnPingReceived: func(context.Context, []byte) bool { health.Received(); return true },
+		OnPongReceived: func(context.Context, []byte) { health.Received() },
+	})
 	if err != nil {
 		return
 	}
 	ws.SetReadLimit(4 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
-	nc := &nodeConn{id: nodeID, ws: ws, cancel: cancel, dead: make(chan struct{})}
+	nc := &nodeConn{id: nodeID, ws: ws, cancel: cancel, dead: make(chan struct{}), health: health}
 
 	g.mu.Lock()
 	if g.closed {
@@ -461,38 +480,45 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	old := g.conns[nodeID]
 	g.conns[nodeID] = nc
 	if t := g.timers[nodeID]; t != nil {
-		t.Stop()
+		t.timer.Stop()
 		delete(g.timers, nodeID)
 	}
 	g.mu.Unlock()
 	if old != nil {
-		old.ws.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
 		old.cancel()
+		old.ws.CloseNow()
 	}
 	g.store.Event("node.connected", nodeID, "", "", r.RemoteAddr)
 	g.logLine("node.connected", "node", nodeID, "host", g.store.hostname(nodeID), "remote", r.RemoteAddr)
 
+	health.Received()
+	go health.Run(ctx, ws, g.opts.KeepalivePingInterval, g.opts.KeepaliveTimeout)
 	g.serve(ctx, nc)
 
 	close(nc.dead)
 	cancel()
-	ws.Close(websocket.StatusNormalClosure, "")
 	g.mu.Lock()
 	if g.conns[nodeID] == nc && !g.closed {
 		delete(g.conns, nodeID)
-		g.timers[nodeID] = time.AfterFunc(g.opts.OfflineGrace, func() { g.nodeGone(nodeID) })
+		t := &offlineTimer{}
+		t.timer = time.AfterFunc(g.opts.OfflineGrace, func() { g.nodeGone(nodeID, t) })
+		g.timers[nodeID] = t
 	}
 	g.mu.Unlock()
+	ws.CloseNow()
 	g.store.Event("node.disconnected", nodeID, "", "", "")
 	g.logLine("node.disconnected", "node", nodeID, "host", g.store.hostname(nodeID))
 }
 
-func (g *Gateway) nodeGone(nodeID string) {
+func (g *Gateway) nodeGone(nodeID string, timer *offlineTimer) {
 	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.timers[nodeID] != timer {
+		return
+	}
 	_, live := g.conns[nodeID]
 	closed := g.closed
 	delete(g.timers, nodeID)
-	g.mu.Unlock()
 	if !live && !closed {
 		if err := g.store.SetNodeOffline(nodeID); err != nil {
 			g.logLine("error", "where", "node offline", "err", err)
@@ -502,7 +528,7 @@ func (g *Gateway) nodeGone(nodeID string) {
 
 func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 	for {
-		_, raw, err := nc.ws.Read(ctx)
+		_, raw, err := nc.health.Read(ctx, nc.ws)
 		if err != nil {
 			return
 		}
@@ -516,7 +542,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
+		if h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
