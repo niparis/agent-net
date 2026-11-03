@@ -337,9 +337,6 @@ func loginShellPATH(ctx context.Context) string {
 	cmd := exec.CommandContext(ctx, sh, "-l", "-c", `printf '%s%s%s' `+marker+` "$PATH" `+marker)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
-	if len(args) == 2 && args[0] == "login" && args[1] == "status" {
-		cmd.Stderr = &buf
-	}
 	cmd.WaitDelay = 500 * time.Millisecond
 	if cmd.Run() != nil {
 		return ""
