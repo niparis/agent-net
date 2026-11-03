@@ -61,13 +61,13 @@ func workerStatusStyle(status string) lipgloss.Style {
 	}
 }
 
-func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool) string {
+func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool, loc *time.Location) string {
 	lead := "  "
 	if selected {
 		lead = "▸ "
 	}
 	// The model includes the harness's effort suffix already.
-	prefix := time.Unix(r.StartedAt, 0).UTC().Format("01-02 15:04") + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), min(25, max(w/4, 6))) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
+	prefix := time.Unix(r.StartedAt, 0).In(loc).Format("01-02 15:04") + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), min(25, max(w/4, 6))) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
 	status := r.Status
 	room := max(w-2-len(status)-1, 0)
 	line := lead + cell(sanitize(prefix+firstNonEmpty(r.Title, "-")), room) + " " + workerStatusStyle(status).Render(status)
@@ -83,7 +83,7 @@ func (m Model) workersLogView(w, h int) []string {
 	selected := min(m.workerLogRow, max(len(m.snap.WorkerLog)-1, 0))
 	list := []string{}
 	for i, r := range m.snap.WorkerLog {
-		list = append(list, workerLogLine(r, inner, i == selected))
+		list = append(list, workerLogLine(r, inner, i == selected, m.loc))
 	}
 	if len(list) == 0 {
 		list = append(list, sDim.Render("No worker runs"))

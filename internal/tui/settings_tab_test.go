@@ -172,7 +172,7 @@ func TestSettingsActionsUseExistingOperations(t *testing.T) {
 func TestSettingsSectionNavigationAndHelp(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = settingsTab
-	for _, want := range []string{"integrations", "machine", "notifications", "tips", "public"} {
+	for _, want := range []string{"integrations", "machine", "timezone", "notifications", "tips", "public"} {
 		m, _ = press(m, tea.KeyMsg{Type: tea.KeyTab})
 		if got := m.settingsItems()[m.settingsRow].kind; got != want {
 			t.Fatalf("tab: got %s want %s", got, want)

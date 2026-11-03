@@ -101,6 +101,8 @@ type Operator interface {
 type Snapshot struct {
 	WorkerLog             []protocol.WorkerLogEntry
 	NotificationsDisabled bool
+	// TimeZone is the owner's display time zone: "auto" or an IANA name.
+	TimeZone string
 	// FailedCalls lists best-effort methods that could not be loaded.
 	FailedCalls []string
 	// Connected tells whether the daemon has a link to the gateway.

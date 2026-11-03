@@ -215,6 +215,8 @@ func (m Model) helpLine(w int) string {
 		return clip(m.defectSeverity.View()+sDim.Render("   enter asks to confirm, esc cancels"), w)
 	case modeProjectRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
+	case modeTimeZone:
+		return clip(m.rename.View()+sDim.Render("   enter saves, auto follows your machine, esc cancels"), w)
 	case modeRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty resets, esc cancels"), w)
 	case modeTrust:

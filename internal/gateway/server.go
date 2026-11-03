@@ -420,6 +420,8 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/node", g.handleNode)
 	mux.HandleFunc("GET /v1/quality-settings", g.handleQualitySettings)
 	mux.HandleFunc("PUT /v1/quality-settings", g.handleQualitySettings)
+	mux.HandleFunc("GET /v1/timezone-settings", g.handleTimeZoneSettings)
+	mux.HandleFunc("PUT /v1/timezone-settings", g.handleTimeZoneSettings)
 	mux.HandleFunc("GET /v1/protected-providers", g.handleProtectedProviders)
 	mux.HandleFunc("PUT /v1/protected-providers", g.handleProtectedProviders)
 	mux.HandleFunc("GET /v1/worker-providers", g.handleWorkerProviders)
@@ -718,6 +720,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		if err := st.SetNodeLaunch(nc.id, p.Launch); err != nil {
+			return nil, err
+		}
+		// Older daemons send no time zone; their stored one stays as it is.
+		if err := st.SetNodeTimeZone(nc.id, p.TimeZone); err != nil {
 			return nil, err
 		}
 		// The daemon uses the name the gateway lists (the owner's display name

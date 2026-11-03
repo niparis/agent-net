@@ -175,7 +175,7 @@ func (m Model) quotasView(w, h int) []string {
 			pace = paceStyle.Render(cell(pace, 9))
 			reset := "-"
 			if window.ResetsAt > 0 {
-				t := time.Unix(window.ResetsAt, 0).In(m.loc)
+				t := m.displayTime(window.ResetsAt)
 				d := t.Sub(m.now())
 				if d > 0 && d < 24*time.Hour {
 					minutes := int(d / time.Minute)

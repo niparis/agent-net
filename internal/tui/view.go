@@ -625,7 +625,7 @@ func (m Model) messageView(w, rows int) []string {
 			body("  " + sBad.Render(l))
 		}
 	default:
-		body(sDim.Render(fmt.Sprintf("  sent %s, conversation %s, hop %d", o.msg.CreatedAt.In(m.loc).Format("2006-01-02 15:04:05"),
+		body(sDim.Render(fmt.Sprintf("  sent %s, conversation %s, hop %d", m.displayTime(o.msg.CreatedAt.Unix()).Format("2006-01-02 15:04:05"),
 			sanitize(o.msg.ConversationID), o.msg.Hop)))
 		var lines []string
 		for _, l := range strings.Split(sanitizeBody(o.msg.Body), "\n") {

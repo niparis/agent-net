@@ -102,10 +102,24 @@ func (s *Store) NodeVersion(nodeID string) (string, error) {
 	return v, err
 }
 
+// SetNodeTimeZone records the machine's IANA time zone from its hello. An
+// empty zone (an older daemon) changes nothing.
+func (s *Store) SetNodeTimeZone(nodeID, zone string) error {
+	zone = strings.TrimSpace(zone)
+	if zone == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT INTO node_time_zones(node_id,zone,updated_at) VALUES(?,?,?)
+ON CONFLICT(node_id) DO UPDATE SET zone=excluded.zone,updated_at=excluded.updated_at`, nodeID, zone, s.now().UnixNano())
+	return err
+}
+
 // Nodes lists every node that has connected at least once. Online is left
 // false; the gateway fills it from its live connections.
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT id, hostname, os, version, seen_at, harnesses, launch, display_name, reported_hostname FROM nodes WHERE seen_at > 0 AND removed=0 ORDER BY hostname, id`)
+	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, COALESCE(z.zone,'')
+FROM nodes n LEFT JOIN node_time_zones z ON z.node_id=n.id
+WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +130,7 @@ func (s *Store) Nodes() ([]protocol.NodeView, error) {
 		var seen int64
 		var hs string
 		var launch int
-		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch, &n.DisplayName, &n.Reported); err != nil {
+		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch, &n.DisplayName, &n.Reported, &n.TimeZone); err != nil {
 			return nil, err
 		}
 		n.Launch = launchValue(launch)

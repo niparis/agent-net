@@ -138,7 +138,7 @@ const (
 var OperatorMethods = []string{OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
-	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet,
+	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs

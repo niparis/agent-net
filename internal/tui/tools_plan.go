@@ -67,6 +67,7 @@ type chooseState struct {
 	errors       map[int]string
 	online       map[string]bool
 	now          time.Time
+	loc          *time.Location
 	summary      string
 	summaryState string
 }
@@ -1240,7 +1241,7 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 	for _, machine := range m.tl.cat.Machines {
 		online[machine.ID] = machine.Online
 	}
-	st := &chooseState{act: act, items: m.tl.items, fetching: map[int]bool{}, errors: map[int]string{}, online: online, now: m.now()}
+	st := &chooseState{act: act, items: m.tl.items, fetching: map[int]bool{}, errors: map[int]string{}, online: online, now: m.now(), loc: m.loc}
 	md.choose = st
 
 	// A model summary is optional; a source without it still shows the files.
@@ -1377,7 +1378,7 @@ func (st *chooseState) sideLine(i int, c toolsdiff.Copy) string {
 	if who == "" {
 		who = "this machine"
 	}
-	known := knownCopy(c, st.now)
+	known := knownCopy(c, st.now, st.loc)
 	if !st.isOnline(c) {
 		return who + " is offline: no details" + known
 	}
@@ -1390,13 +1391,13 @@ func (st *chooseState) sideLine(i int, c toolsdiff.Copy) string {
 	return "no file details from " + who + " yet: its scan has no file list" + known
 }
 
-func knownCopy(c toolsdiff.Copy, now time.Time) string {
+func knownCopy(c toolsdiff.Copy, now time.Time, loc *time.Location) string {
 	var parts []string
 	if version := c.Version(); version != "" {
 		parts = append(parts, "version "+version)
 	}
 	if !c.Seen.IsZero() {
-		parts = append(parts, "last seen "+whenText(c.Seen, now))
+		parts = append(parts, "last seen "+whenText(c.Seen, now, loc))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -1404,7 +1405,7 @@ func knownCopy(c toolsdiff.Copy, now time.Time) string {
 	return " (" + strings.Join(parts, ", ") + ")"
 }
 
-func whenText(t, now time.Time) string {
+func whenText(t, now time.Time, loc *time.Location) string {
 	age := now.Sub(t)
 	when := "just now"
 	switch {
@@ -1415,7 +1416,7 @@ func whenText(t, now time.Time) string {
 	case age >= time.Minute:
 		when = nounCount(int(age.Minutes()), "minute", "minutes") + " ago"
 	}
-	return when + ", " + t.Format("2 Jan")
+	return when + ", " + t.In(loc).Format("2 Jan")
 }
 
 // renderChoose fills the compare modal from its chooseState. The box itself is
@@ -1552,7 +1553,7 @@ func (st *chooseState) usedBy(c toolsdiff.Copy) string {
 // changedText is the date of the newest file change, or why it is unknown.
 func (st *chooseState) changedText(i int, c toolsdiff.Copy) string {
 	if c.Manifest != nil && !c.Manifest.Newest.IsZero() {
-		return c.Manifest.Newest.Format("2 Jan")
+		return c.Manifest.Newest.In(st.loc).Format("2 Jan")
 	}
 	if c.Manifest != nil {
 		return "unknown"

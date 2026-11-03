@@ -344,6 +344,9 @@ type (
 	Hello struct {
 		Version  string `json:"version"`
 		Hostname string `json:"hostname"`
+		// TimeZone is the machine's IANA time zone, for example Europe/Paris.
+		// Empty from an older daemon.
+		TimeZone string `json:"time_zone,omitempty"`
 		// Harnesses is the inventory of installed harnesses. Nil (absent or
 		// null) means "not reported"; an empty list means "none installed".
 		Harnesses []HarnessInfo `json:"harnesses"`
@@ -474,8 +477,11 @@ type NodeView struct {
 	Hostname          string            `json:"hostname"`
 	OS                string            `json:"os"`
 	Version           string            `json:"version"`
-	Online            bool              `json:"online"`
-	LastSeen          int64             `json:"last_seen"`
+	// TimeZone is the IANA time zone this machine reported, for example
+	// Europe/Paris. Empty from an older daemon.
+	TimeZone string `json:"time_zone,omitempty"`
+	Online   bool   `json:"online"`
+	LastSeen int64  `json:"last_seen"`
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`
