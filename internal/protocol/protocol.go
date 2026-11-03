@@ -526,6 +526,16 @@ type HarnessInfo struct {
 	// Others are further copies of the same harness (a different real file),
 	// each with its own path and version. Absent in v0.3.5 and older.
 	Others []HarnessInstall `json:"others,omitempty"`
+	// Update is the last update check on this machine, when one has run.
+	Update *HarnessUpdate `json:"update,omitempty"`
+}
+
+type HarnessUpdate struct {
+	CheckedAt time.Time `json:"checked_at"`
+	Before    string    `json:"before,omitempty"`
+	After     string    `json:"after,omitempty"`
+	Result    string    `json:"result"`
+	Detail    string    `json:"detail,omitempty"`
 }
 
 // HarnessInstall is one extra copy of a harness found on a machine.

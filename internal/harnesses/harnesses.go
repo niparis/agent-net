@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -128,6 +129,59 @@ func Locate(ctx context.Context, name string, o Options) string {
 		}
 	}
 	return ""
+}
+
+// UpdateOnly finds a program with the same search and probes as the harnesses,
+// without adding it to Names or making it a supported session harness.
+func UpdateOnly(ctx context.Context, name string, o Options) *protocol.HarnessInfo {
+	s := prepare(ctx, &o)
+	installs := findAll(name, s.dirs)
+	if len(installs) == 0 {
+		return nil
+	}
+	path := installs[0]
+	primary := false
+	if first := find(name, s.loginDirs); first != "" {
+		for _, install := range installs {
+			if realPath(first) == realPath(install) {
+				path, primary = first, true
+				break
+			}
+		}
+	}
+	return &protocol.HarnessInfo{Name: name, Path: path, Version: version(ctx, o, path), Primary: primary}
+}
+
+// RunUpdate runs the selected harness in the same search environment as the
+// probes. Input is closed and the process group is stopped on cancellation.
+func RunUpdate(ctx context.Context, path string, o Options, args ...string) (string, error) {
+	s := prepare(ctx, &o)
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+s.path, "CI=1", "TERM=dumb", "GIT_TERMINAL_PROMPT=0")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 500 * time.Millisecond
+	var out updateTail
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+	return string(out), err
+}
+
+// updateTail bounds output from an updater while retaining its final line.
+type updateTail []byte
+
+func (b *updateTail) Write(p []byte) (int, error) {
+	n := len(p)
+	const limit = 8192
+	if len(p) >= limit {
+		*b = append((*b)[:0], p[len(p)-limit:]...)
+		return n, nil
+	}
+	if over := len(*b) + len(p) - limit; over > 0 {
+		*b = append((*b)[:0], (*b)[over:]...)
+	}
+	*b = append(*b, p...)
+	return n, nil
 }
 
 // search is where Detect and Locate look, and the PATH a harness sees.

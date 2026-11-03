@@ -37,3 +37,29 @@ func TestHarnessInfoWireCompat(t *testing.T) {
 		t.Fatalf("round trip: %+v", back)
 	}
 }
+
+func TestHarnessUpdateWireAndDefaultSetting(t *testing.T) {
+	var in Integrations
+	if err := json.Unmarshal([]byte(`{"quota_axi":true}`), &in); err != nil {
+		t.Fatal(err)
+	}
+	if !in.Get(IntegrationHarnessUpdates) {
+		t.Fatal("old settings must default to updates on")
+	}
+	in.Set(IntegrationHarnessUpdates, false)
+	raw, _ := json.Marshal(in)
+	var restored Integrations
+	if err := json.Unmarshal(raw, &restored); err != nil || restored.Get(IntegrationHarnessUpdates) {
+		t.Fatalf("setting: %s %+v %v", raw, restored, err)
+	}
+	h := HarnessInfo{Name: "pi", Update: &HarnessUpdate{Result: "failed", Detail: "oops"}}
+	raw, _ = json.Marshal(h)
+	var back HarnessInfo
+	if err := json.Unmarshal(raw, &back); err != nil || back.Update == nil || back.Update.Detail != "oops" {
+		t.Fatalf("update: %s %+v %v", raw, back, err)
+	}
+	plain, _ := json.Marshal(HarnessInfo{Name: "pi"})
+	if strings.Contains(string(plain), `"update"`) {
+		t.Fatalf("empty update not omitted: %s", plain)
+	}
+}

@@ -31,6 +31,10 @@ type integrationsSavedMsg struct {
 	err error
 }
 
+func networkSettingSpecs() []protocol.IntegrationSpec {
+	return append(protocol.IntegrationSpecs(), protocol.IntegrationSpec{ID: protocol.IntegrationHarnessUpdates, Label: "Keep harnesses updated"})
+}
+
 func (m Model) startIntegrations() (Model, tea.Cmd) {
 	m.intg = integrationsForm{loading: true}
 	m.mode = modeIntegrations
@@ -80,10 +84,10 @@ func (m Model) integrationsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.say("Integrations unchanged.")
 		return m, nil
 	case "previous field":
-		f.cur = (f.cur - 1 + len(protocol.IntegrationSpecs())) % len(protocol.IntegrationSpecs())
+		f.cur = (f.cur - 1 + len(networkSettingSpecs())) % len(networkSettingSpecs())
 		return m, nil
 	case "next field", "tab field":
-		f.cur = (f.cur + 1) % len(protocol.IntegrationSpecs())
+		f.cur = (f.cur + 1) % len(networkSettingSpecs())
 		return m, nil
 	case "submit":
 		if f.loading {
@@ -92,7 +96,7 @@ func (m Model) integrationsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.saveIntegrations()
 	}
 	if keyAction(contextForm, k.String()) == "toggle" && !f.loading {
-		s := protocol.IntegrationSpecs()[f.cur]
+		s := networkSettingSpecs()[f.cur]
 		f.values.Set(s.ID, !f.values.Get(s.ID))
 		f.err = ""
 	}
@@ -113,7 +117,7 @@ func (m Model) saveIntegrations() (tea.Model, tea.Cmd) {
 func (m Model) integrationsView(w, rows int) []string {
 	f := m.intg
 	out := []string{section("Integrations (all machines)", w)}
-	for i, s := range protocol.IntegrationSpecs() {
+	for i, s := range networkSettingSpecs() {
 		mark := "  "
 		if i == f.cur {
 			mark = "> "
@@ -125,8 +129,11 @@ func (m Model) integrationsView(w, rows int) []string {
 		out = append(out, clip(mark+box+" "+sanitize(s.Label), w))
 	}
 	on := f.values.CountOn()
+	if f.values.Get(protocol.IntegrationHarnessUpdates) {
+		on++
+	}
 	out = append(out, "")
-	out = append(out, sDim.Render(clip(fmt.Sprintf("  %d of %d on.", on, len(protocol.IntegrationSpecs())), w)))
+	out = append(out, sDim.Render(clip(fmt.Sprintf("  %d of %d on.", on, len(networkSettingSpecs())), w)))
 	if f.loading {
 		out = append(out, sDim.Render(clip("  Reading the answers from your network...", w)))
 	} else if f.err != "" {

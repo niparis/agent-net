@@ -67,3 +67,30 @@ func TestIntegrationsFormEscCancels(t *testing.T) {
 		t.Fatalf("esc saved or stayed in the form: mode %v saved %d", m.mode, len(src.intgSaved))
 	}
 }
+
+func TestHarnessUpdateSettingsToggle(t *testing.T) {
+	m, src := workerModel(120, 40)
+	m, cmd := openSessionSetting(m, 2)
+	m = send(m, cmd())
+	screen := strings.Join(lines(m.View()), "\n")
+	if !strings.Contains(screen, "[x] Keep harnesses updated") {
+		t.Fatalf("missing default on switch: %s", screen)
+	}
+	for range protocol.IntegrationSpecs() {
+		m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m, _ = press(m, spaceKey())
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = send(m, cmd())
+	if len(src.intgSaved) != 1 || !src.intgSaved[0].HarnessUpdatesOff {
+		t.Fatalf("not saved: %+v", src.intgSaved)
+	}
+}
+
+func TestHarnessUpdateGraphFailure(t *testing.T) {
+	m, _ := workerModel(120, 40)
+	row := machineRow{nodeID: "n", harnesses: []protocol.HarnessInfo{{Name: "pi", Update: &protocol.HarnessUpdate{Result: "failed", Detail: "no network"}}}}
+	if got := m.machineHarnessNote(row, []machineRow{row}); !strings.Contains(got, "pi update failed: no network") {
+		t.Fatalf("note: %q", got)
+	}
+}

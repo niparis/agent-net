@@ -1,5 +1,7 @@
 # Security
 
+The daemon runs each installed harness's own update command as the current user, with input closed and a five-minute timeout. It does not run sudo. The commands can change the harness installation and may access the network. Busy harnesses are skipped and retried later. The owner can turn this off for the network with **Keep harnesses updated** in Settings under Integrations. Update results, including the last line of a failed command's output, are sent with the machine's harness inventory.
+
 Decision [0036](decisions/0036-primitives.md) distinguishes authority over actions from autonomy over decisions about work. An agent is a chartered identity; a session is its running process. The checks below describe current behavior, including the autonomy setting and its guard rails.
 
 The network-wide CTO harness, model preference and auto-compaction rules are

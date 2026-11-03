@@ -815,6 +815,14 @@ func (m Model) machineHarnessNote(r machineRow, rows []machineRow) string {
 	if r.harnesses == nil {
 		return ""
 	}
+	for _, h := range r.harnesses {
+		if h.Update != nil && h.Update.Result == "failed" {
+			return sanitize(h.Name + " update failed: " + h.Update.Detail)
+		}
+		if h.Update != nil && h.Update.Result == "update by hand" {
+			return sanitize(h.Name + " update by hand: " + h.Update.Detail)
+		}
+	}
 	best := map[string]string{}
 	present := map[string]string{}
 	for _, row := range rows {
@@ -822,6 +830,9 @@ func (m Model) machineHarnessNote(r machineRow, rows []machineRow) string {
 			continue
 		}
 		for _, h := range row.harnesses {
+			if h.Name == "agy" {
+				continue
+			}
 			version := numberOf(h.Version)
 			if current, ok := best[h.Name]; !ok || versionGreater(version, current) {
 				best[h.Name] = version

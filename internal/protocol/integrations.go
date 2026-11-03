@@ -6,13 +6,14 @@ package protocol
 
 // Integration item IDs.
 const (
-	IntegrationPeerMessages = "claude_peer_messages"
-	IntegrationCodexTools   = "codex_tools"
-	IntegrationHintHook     = "claude_hint_hook"
-	IntegrationPolicyHook   = "claude_policy_hook"
-	IntegrationNeedsHook    = "claude_needs_hook"
-	IntegrationWorkersMod   = "claude_workers_mod"
-	IntegrationQuotaAXI     = "quota_axi"
+	IntegrationPeerMessages   = "claude_peer_messages"
+	IntegrationCodexTools     = "codex_tools"
+	IntegrationHintHook       = "claude_hint_hook"
+	IntegrationPolicyHook     = "claude_policy_hook"
+	IntegrationNeedsHook      = "claude_needs_hook"
+	IntegrationWorkersMod     = "claude_workers_mod"
+	IntegrationQuotaAXI       = "quota_axi"
+	IntegrationHarnessUpdates = "harness_updates"
 )
 
 // IntegrationSpec is one line of the setup question and one checkbox of the
@@ -46,6 +47,8 @@ type Integrations struct {
 	NeedsHook    bool `json:"needs_hook"`
 	WorkersMod   bool `json:"workers_mod"`
 	QuotaAXI     bool `json:"quota_axi"`
+	// The inverted field makes older saved answers default to on.
+	HarnessUpdatesOff bool `json:"harness_updates_off,omitempty"`
 }
 
 // Get returns one answer by item ID.
@@ -65,6 +68,8 @@ func (i Integrations) Get(id string) bool {
 		return i.WorkersMod
 	case IntegrationQuotaAXI:
 		return i.QuotaAXI
+	case IntegrationHarnessUpdates:
+		return !i.HarnessUpdatesOff
 	}
 	return false
 }
@@ -86,6 +91,8 @@ func (i *Integrations) Set(id string, on bool) {
 		i.WorkersMod = on
 	case IntegrationQuotaAXI:
 		i.QuotaAXI = on
+	case IntegrationHarnessUpdates:
+		i.HarnessUpdatesOff = !on
 	}
 }
 

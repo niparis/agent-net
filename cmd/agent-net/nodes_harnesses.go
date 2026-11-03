@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -85,11 +86,46 @@ func printHarnessDetails(w io.Writer, nodes []protocol.NodeView) {
 					path += "  (first found; the login shell does not say which one you run)"
 				}
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", n.Hostname, h.Name, dash(h.Version), modelSummary(h.Models), path)
+			version := dash(h.Version)
+			if update := harnessUpdateSummary(h.Update, time.Now()); update != "" {
+				version += ", " + update
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", n.Hostname, h.Name, version, modelSummary(h.Models), path)
 			for _, o := range h.Others {
 				fmt.Fprintf(tw, "%s\t%s (other copy)\t%s\t-\t%s\n", n.Hostname, h.Name, dash(o.Version), o.Path)
 			}
 		}
 	}
 	tw.Flush()
+}
+
+func harnessUpdateSummary(u *protocol.HarnessUpdate, now time.Time) string {
+	if u == nil {
+		return ""
+	}
+	detail := strings.Join(strings.Fields(u.Detail), " ")
+	switch u.Result {
+	case "failed":
+		return "update failed: " + detail
+	case "update by hand":
+		return "update by hand: " + detail
+	case "updated", "already current", "skipped busy":
+		if u.CheckedAt.IsZero() {
+			return u.Result
+		}
+		d := max(now.Sub(u.CheckedAt), 0)
+		var age string
+		switch {
+		case d < time.Minute:
+			age = fmt.Sprintf("%ds", int(d.Seconds()))
+		case d < time.Hour:
+			age = fmt.Sprintf("%dm", int(d.Minutes()))
+		case d < 24*time.Hour:
+			age = fmt.Sprintf("%dh", int(d.Hours()))
+		default:
+			age = fmt.Sprintf("%dd", int(d.Hours()/24))
+		}
+		return u.Result + " " + age + " ago"
+	}
+	return ""
 }
