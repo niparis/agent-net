@@ -383,6 +383,7 @@ func TestQualityReworkIncludesUnknownCountersAndSkipsStoppedTasks(t *testing.T) 
 	}
 	add("s_good", protocol.OutcomeComplete, 0, 1)
 	add("s_stopped", protocol.OutcomeStopped, 0, 9)
+	add("s_infra", protocol.OutcomeInfra, 0, 9)
 	// A task with an older run still contributes the counters that are known.
 	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at, caller, difficulty)
 		VALUES (?,?,?,?,?,?,?,?)`, node, "s_unknown", "opencode", "m:high", protocol.OutcomeComplete, now, caller, "normal"); err != nil {

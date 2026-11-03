@@ -1204,9 +1204,9 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 		t.Errorf("worker.stopped events: %v", evs)
 	}
 	// A worker lost at a restart is not the model's fault, even though the
-	// owner's notice says failed: the track record counts it as stopped.
+	// owner's notice says failed: the track record counts it as infra.
 	if tr, ok, err := g.gw.Store().TrackRecord(w.d.NodeID(), "opencode", "fake/m1", protocol.TrackRecordDays*24*time.Hour); err != nil ||
-		!ok || tr.Stopped != 1 || tr.Failed != 0 {
+		!ok || tr.Infra != 1 || tr.Failed != 0 {
 		t.Errorf("a lost run was counted against the model: %+v %v %v", tr, ok, err)
 	}
 	// The owner is told, with the status failed.

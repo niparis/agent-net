@@ -79,12 +79,12 @@ func TestWorkerOutcome(t *testing.T) {
 		// never ran the model are neither success nor failure.
 		{StopRequested, "", nil, OutcomeStopped},
 		{StopRequested, StatusStopped, nil, OutcomeStopped},
-		{StopLost, "", nil, OutcomeStopped},
+		{StopLost, "", nil, OutcomeInfra},
 		// The daemon's notice for a lost run says failed to its owner. That
 		// is the run's fate, not the model's: it is still neutral.
-		{StopLost, StatusFailed, nil, OutcomeStopped},
+		{StopLost, StatusFailed, nil, OutcomeInfra},
 		{StopOwnerGone, "", nil, OutcomeStopped},
-		{StopStartFails, "", nil, OutcomeStopped},
+		{StopStartFails, "", nil, OutcomeInfra},
 		{StopExited, "", nil, OutcomeFailed},
 		{StopRunFailed, "", nil, OutcomeFailed},
 		{StopModelFails, "", nil, OutcomeFailed},
@@ -143,5 +143,24 @@ func TestTrackMedianAndShortDuration(t *testing.T) {
 	}
 	if got := shortDuration(90 * time.Second); got != "2 min" {
 		t.Errorf("90s: %q", got)
+	}
+}
+
+func TestWorkerOutcomeInfrastructure(t *testing.T) {
+	for _, tc := range []struct{ reason, detail, want string }{
+		{StopModelFails, "HTTP 429", "infra"}, {StopModelFails, "RESOURCE_EXHAUSTED", "infra"},
+		{StopModelFails, "Individual quota reached", "infra"}, {StopModelFails, "rate limit exceeded", "infra"}, {StopModelFails, "rate_limit", "infra"}, {StopModelFails, "too many requests", "infra"}, {StopModelFails, "status 429", "infra"}, {StopModelFails, "not logged in", "infra"},
+		{StopLost, "", "infra"}, {StopStartFails, "missing Go toolchain", "infra"},
+		{StopModelFails, "model crashed", OutcomeFailed}, {StopExited, "", OutcomeFailed},
+	} {
+		if got := WorkerOutcomeDetail(tc.reason, "", nil, tc.detail); got != tc.want {
+			t.Errorf("%s %q: got %s want %s", tc.reason, tc.detail, got, tc.want)
+		}
+	}
+	if poorTrack(TrackRecord{Complete: 3, Infra: 10}) {
+		t.Error("infra made track poor")
+	}
+	if !poorTrack(TrackRecord{Complete: 2, Failed: 3}) {
+		t.Error("real failures did not make track poor")
 	}
 }
