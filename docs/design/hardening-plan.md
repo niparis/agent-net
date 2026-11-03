@@ -65,6 +65,15 @@ A spike first, then four build steps.
   - Mac: does the app save incoming files straight into ~/Downloads, or hold them for `tailscale file get`?
   - File names with spaces, collisions, the largest size tried (500 MB), speed.
   - What happens when the receiver is offline: Taildrop waits, or fails?
+- **T0 results (2026-11-03):**
+  - **Mac**, Tailscale 1.92.5, Mac App Store build: an incoming file is saved straight into `~/Downloads` under its own name, with no `tailscale file get` step. A name with spaces arrived intact.
+  - **Linux** (research, Tailscale 1.104.4): files wait until `tailscale file get <dir>` collects them. That works as the normal user, without root.
+  - **Speed and size:** a 90 KB file arrived from the Mac at once, and a small file from research arrived in under 0.1 s.
+  - **Consequence for T3:**
+    - The sender gives every file a unique name that starts with `agent-net-<message id>-`.
+    - The Mac daemon picks announced files up from `~/Downloads`, matched by name and hash.
+    - The Linux daemon collects into a staging folder and moves any file it was not told about to `~/Downloads`, so the owner's own Taildrops still arrive where they expect.
+  - **Not yet tested:** a receiver that is offline when the file is sent, and files above 100 MB.
 - **T1. Decision record:**
   - A message carries a manifest: name, size, sha256, and an id per file.
   - The bytes go over Taildrop when both machines are on the same tailnet, under a unique name derived from the message id.
