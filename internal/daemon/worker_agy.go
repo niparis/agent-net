@@ -225,6 +225,7 @@ func (c *agyConn) event(line []byte) {
 			Conversation string            `json:"conversation_id"`
 			Status       string            `json:"status"`
 			Response     string            `json:"response"`
+			Error        string            `json:"error"`
 			Finished     string            `json:"finished_reason"`
 			Usage        agyUsage          `json:"usage"`
 			Denied       []json.RawMessage `json:"denied_actions"`
@@ -257,7 +258,11 @@ func (c *agyConn) event(line []byte) {
 		c.usage.CacheRead += r.Usage.CacheRead
 		c.completed = true
 		if r.Status != "SUCCESS" || r.Finished != "" {
-			c.failure = cleanFailure("Antigravity result " + r.Status + " " + r.Finished + ": " + r.Response)
+			detail := r.Error
+			if detail == "" {
+				detail = r.Response
+			}
+			c.failure = cleanFailure("Antigravity result " + r.Status + " " + r.Finished + ": " + detail)
 		} else if len(r.Denied) > 0 {
 			c.failure = "Antigravity denied a tool action in headless mode"
 		}

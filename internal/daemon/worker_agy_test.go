@@ -147,6 +147,10 @@ func TestAgyProcess(t *testing.T) {
 			result["status"] = "ERROR"
 			result["response"] = "failed tool"
 		}
+		if strings.Contains(body, "FAKE:quota") {
+			result["status"], result["response"], result["finished_reason"] = "ERROR", "", "error"
+			result["error"] = "Individual quota reached. Resets in 3h42m27s."
+		}
 		if strings.Contains(body, "FAKE:timeout") {
 			result["finished_reason"] = "print_timeout"
 		}
@@ -447,7 +451,7 @@ func TestAgyWorkerStopKillsGroup(t *testing.T) {
 }
 
 func TestAgyWorkerFailures(t *testing.T) {
-	for _, task := range []string{"FAKE:error", "FAKE:failed-result", "FAKE:timeout"} {
+	for _, task := range []string{"FAKE:error", "FAKE:failed-result", "FAKE:timeout", "FAKE:quota"} {
 		t.Run(task, func(t *testing.T) {
 			w, _, _ := startAgyNode(t, shortSet)
 			w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: task, AutoContinue: autoContinueOff()})
@@ -457,6 +461,9 @@ func TestAgyWorkerFailures(t *testing.T) {
 			}
 			if task == "FAKE:error" && !strings.Contains(n.Body, "AGY_ERROR") {
 				t.Fatalf("error missing: %s", n.Body)
+			}
+			if task == "FAKE:quota" && !strings.Contains(n.Body, "Individual quota reached") {
+				t.Fatalf("result error missing: %s", n.Body)
 			}
 		})
 	}
