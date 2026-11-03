@@ -919,7 +919,7 @@ func TestCodexWorkerStartFails(t *testing.T) {
 // A worker does not start workers, whatever the harness (the flag is on the
 // session that the daemon registered).
 func TestStartedHarnessesAreListed(t *testing.T) {
-	want := []string{"opencode", "claude", "pi", "codex"}
+	want := []string{"opencode", "claude", "pi", "codex", "agy"}
 	if strings.Join(protocol.WorkerHarnesses, ",") != strings.Join(want, ",") {
 		t.Errorf("worker harnesses: %v", protocol.WorkerHarnesses)
 	}

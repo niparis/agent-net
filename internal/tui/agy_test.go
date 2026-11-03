@@ -9,27 +9,23 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// An agy profile is stored, and the Workers panel says that it cannot start a
-// worker yet instead of calling it stale (decision 0049, step 2).
-func TestWorkerPanelAgyProfileSaysNotStartableYet(t *testing.T) {
+// Since build step 4 an agy profile can start workers, so the panel shows it
+// like any other profile, not stale and not "not startable yet".
+func TestWorkerPanelAgyProfileIsStartable(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.Nodes = m.snap.Nodes[:1]
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "agy", Models: []string{"gemini-3.8-flash-low"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "argon agy", Harness: "agy", Model: "gemini-3.8-flash-low"}}
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	if !strings.Contains(view, "not startable yet") {
-		t.Fatalf("missing the note:\n%s", view)
-	}
-	for _, unwanted := range []string{"model gone", "not available on an online machine", "not a worker provider"} {
+	for _, unwanted := range []string{"not startable yet", "model gone"} {
 		if strings.Contains(view, unwanted) {
 			t.Errorf("agy profile shown as %q:\n%s", unwanted, view)
 		}
 	}
 }
 
-// A profile on a harness that cannot start workers yet is never a forecast
-// candidate, even when its model is listed, allowed and scored.
-func TestAgyProfileIsNotAWorkerCandidate(t *testing.T) {
+// An allowed, scored agy profile is a forecast candidate like other workers.
+func TestAgyProfileIsAWorkerCandidate(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.Nodes = m.snap.Nodes[:1]
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "agy", Models: []string{"gemini-3.8-flash-low"}}}
@@ -38,9 +34,10 @@ func TestAgyProfileIsNotAWorkerCandidate(t *testing.T) {
 	m.snap.Scores = []protocol.ModelScore{{Match: "gemini-3.8-flash-low", Score: 55}}
 	for _, c := range m.workerForecastInputs().candidates {
 		if c.Harness == "agy" {
-			t.Fatalf("agy is a worker candidate: %+v", c)
+			return
 		}
 	}
+	t.Fatal("agy profile is not a worker candidate")
 }
 
 // A Claude model through agy is not the owner's Anthropic subscription, so the
