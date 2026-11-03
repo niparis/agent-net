@@ -503,7 +503,7 @@ type NodeView struct {
 type HarnessInfo struct {
 	SignedIn string `json:"signed_in,omitempty"` // "yes", "no", or empty (unknown).
 	SignIn   string `json:"sign_in,omitempty"`
-	Name     string `json:"name"` // claude | opencode | pi | codex
+	Name     string `json:"name"` // claude | opencode | pi | codex | agy
 	Path     string `json:"path"`
 	Version  string `json:"version"`
 	// Models lists the models the harness can use: "provider/model" where the

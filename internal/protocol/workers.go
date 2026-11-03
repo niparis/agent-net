@@ -465,6 +465,22 @@ type (
 // The first one is the default. Decision 0008 has how each is started.
 var WorkerHarnesses = []string{"opencode", "claude", "pi", "codex"}
 
+// KnownHarnesses are the harness names agent-net knows. They include a harness it
+// cannot start a worker on yet (agy, decision 0049 build step 2): a profile may
+// name it, and the TUI says that it is not startable, rather than calling it
+// stale.
+var KnownHarnesses = []string{"opencode", "claude", "pi", "codex", "agy"}
+
+// HarnessKnown tells whether agent-net knows this harness name.
+func HarnessKnown(h string) bool {
+	for _, s := range KnownHarnesses {
+		if s == h {
+			return true
+		}
+	}
+	return false
+}
+
 // WorkerHarnessSupported tells whether a worker can run this harness.
 func WorkerHarnessSupported(h string) bool {
 	for _, s := range WorkerHarnesses {

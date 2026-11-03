@@ -94,7 +94,7 @@ func (d *Daemon) refreshHarnessInventory(ctx context.Context) ([]protocol.Harnes
 	return list, incomplete
 }
 
-func modelsProbed(name string) bool { return name == "opencode" || name == "pi" }
+func modelsProbed(name string) bool { return name == "opencode" || name == "pi" || name == "agy" }
 
 // keepMissingHarnesses keeps a harness that was found before when a detection
 // run does not report it but its binary is still there. A probe can fail or

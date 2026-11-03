@@ -410,7 +410,7 @@ func (m Model) workerForecastInputs() workerForecastInputs {
 	in := workerForecastInputs{rows: m.quotaModels(), quotas: &protocol.Quotas{}, running: map[string]int{}}
 	for _, r := range in.rows {
 		in.rowKeys = append(in.rowKeys, protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model}))
-		if r.available && r.allowed && r.scored {
+		if r.available && r.allowed && r.scored && protocol.WorkerHarnessSupported(r.harness) {
 			in.candidates = append(in.candidates, protocol.WorkerModelCandidate{Name: r.name, Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded, Track: r.track})
 		}
 	}
@@ -672,6 +672,12 @@ func (m Model) quotaModelsView(w int) []string {
 	for i, d := range displayed {
 		body = append(body, d.line)
 		r := rows[i]
+		if protocol.HarnessKnown(r.harness) && !protocol.WorkerHarnessSupported(r.harness) {
+			// A known harness whose worker adapter does not exist yet
+			// (agy, decision 0049): the profile is kept, not called stale.
+			body = append(body, sDim.Render("  not startable yet"))
+			continue
+		}
 		if r.stale {
 			body = append(body, sDim.Render("  model gone - ask the CTO to fix"))
 		} else {

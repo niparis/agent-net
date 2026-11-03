@@ -23,7 +23,7 @@ import (
 )
 
 // Names are the harnesses we look for, in the order they are reported.
-var Names = []string{"claude", "opencode", "pi", "codex"}
+var Names = []string{"claude", "opencode", "pi", "codex", "agy"}
 
 // Limits.
 const (
@@ -93,6 +93,12 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
 			h.Models, h.ModelDefaultEfforts = codexModels(mctx, installs[0], s.path)
 			cancel()
+		} else if n == "agy" {
+			// `agy models` needs the network and a sign-in, so the same probe
+			// says whether the machine is signed in (decision 0049 D4).
+			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+			h.Models, h.SignedIn = agyModels(mctx, installs[0], s.path)
+			cancel()
 		} else {
 			h.Models = models(ctx, o, n, installs[0], s.dirs)
 		}
@@ -129,27 +135,6 @@ func Locate(ctx context.Context, name string, o Options) string {
 		}
 	}
 	return ""
-}
-
-// UpdateOnly finds a program with the same search and probes as the harnesses,
-// without adding it to Names or making it a supported session harness.
-func UpdateOnly(ctx context.Context, name string, o Options) *protocol.HarnessInfo {
-	s := prepare(ctx, &o)
-	installs := findAll(name, s.dirs)
-	if len(installs) == 0 {
-		return nil
-	}
-	path := installs[0]
-	primary := false
-	if first := find(name, s.loginDirs); first != "" {
-		for _, install := range installs {
-			if realPath(first) == realPath(install) {
-				path, primary = first, true
-				break
-			}
-		}
-	}
-	return &protocol.HarnessInfo{Name: name, Path: path, Version: version(ctx, o, path), Primary: primary}
 }
 
 // RunUpdate runs the selected harness in the same search environment as the

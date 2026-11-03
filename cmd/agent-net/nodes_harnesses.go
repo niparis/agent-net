@@ -40,14 +40,16 @@ func launchSummary(n protocol.NodeView) string {
 }
 
 // modelSummary says how many models a harness lists and from which providers.
-func modelSummary(models []string) string {
+// A harness whose ids carry no provider part (agy) names its vendor by the
+// model family, through protocol.ModelVendor.
+func modelSummary(harness string, models []string) string {
 	if len(models) == 0 {
 		return "-"
 	}
 	seen := map[string]bool{}
 	var providers []string
 	for _, m := range models {
-		p, _, _ := strings.Cut(m, "/")
+		p := protocol.ModelVendor(harness, m)
 		if !seen[p] {
 			seen[p] = true
 			providers = append(providers, p)
@@ -71,7 +73,7 @@ func printHarnessDetails(w io.Writer, nodes []protocol.NodeView) {
 		}
 		for _, h := range n.Harnesses {
 			path := h.Path
-			if h.Name == "claude" || h.Name == "codex" {
+			if h.Name == "claude" || h.Name == "codex" || h.Name == "agy" {
 				switch h.SignedIn {
 				case "yes":
 					path += " (signed in)"
@@ -90,7 +92,7 @@ func printHarnessDetails(w io.Writer, nodes []protocol.NodeView) {
 			if update := harnessUpdateSummary(h.Update, time.Now()); update != "" {
 				version += ", " + update
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", n.Hostname, h.Name, version, modelSummary(h.Models), path)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", n.Hostname, h.Name, version, modelSummary(h.Name, h.Models), path)
 			for _, o := range h.Others {
 				fmt.Fprintf(tw, "%s\t%s (other copy)\t%s\t-\t%s\n", n.Hostname, h.Name, dash(o.Version), o.Path)
 			}

@@ -128,6 +128,36 @@ func providerOf(id string) string {
 	return ""
 }
 
+// ModelVendor is the vendor a model id names for display: the part before the
+// slash, or for a harness whose ids carry no provider part, the family in the
+// id. agy's ids are like that (decision 0049): gemini-* draws on Google,
+// claude-* on Anthropic and gpt-* on OpenAI through the Antigravity plan.
+func ModelVendor(harness, model string) string {
+	harness, model = strings.ToLower(strings.TrimSpace(harness)), strings.ToLower(strings.TrimSpace(model))
+	if i := strings.IndexByte(model, '/'); i > 0 {
+		return model[:i]
+	}
+	switch harness {
+	case "agy":
+		switch {
+		case strings.HasPrefix(model, "gemini"):
+			return "google"
+		case strings.HasPrefix(model, "claude"):
+			return "anthropic"
+		case strings.HasPrefix(model, "gpt"):
+			return "openai"
+		}
+		return "agy"
+	case "claude":
+		return "anthropic"
+	case "codex":
+		if strings.HasPrefix(model, "gpt") {
+			return "openai"
+		}
+	}
+	return harness
+}
+
 // NoModelMatchError says that a loose name matched no model. Closest holds up
 // to maxModelCandidates models that look like it, best first; it is empty when
 // nothing is close.

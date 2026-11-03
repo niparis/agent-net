@@ -23,6 +23,16 @@ func ProfileProvider(harness, model string) string {
 	if i := strings.IndexByte(model, '/'); i > 0 {
 		return model[:i]
 	}
+	if harness == "agy" {
+		// The vendor comes from the model id. A Claude model through agy draws
+		// on the Antigravity plan, not the owner's Anthropic subscription, so
+		// it gets a key the protected-provider rule never matches (decision
+		// 0049 D4).
+		if vendor := ModelVendor(harness, model); vendor != "anthropic" {
+			return vendor
+		}
+		return "agy-anthropic"
+	}
 	if strings.HasPrefix(model, "claude-") {
 		return "anthropic"
 	}

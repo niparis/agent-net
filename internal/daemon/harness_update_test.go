@@ -118,13 +118,21 @@ func TestHarnessUpdateSettingOff(t *testing.T) {
 	}
 }
 
-func TestHarnessUpdateAgyOnlyAndWorkerBusy(t *testing.T) {
-	d, _ := updateFixture(t, map[string]string{"agy": `case "$1" in --version) echo 1 ;; update) exit 0 ;; esac`})
-	if hs, _ := d.inventory(); len(hs) != 0 {
-		t.Fatalf("agy treated as a session harness: %+v", hs)
+func TestHarnessUpdateAgyIsOneNormalEntryAndWorkerBusy(t *testing.T) {
+	d, _ := updateFixture(t, map[string]string{"agy": `case "$1" in
+--version) echo 1 ;;
+models) printf 'Fetching available models...\ngemini-3.8-flash-low\tGemini 3.8 Flash (low)\n' ;;
+update) exit 0 ;;
+esac`})
+	hs, _ := d.inventory()
+	if len(hs) != 1 || hs[0].Name != "agy" || hs[0].Version != "1" || len(hs[0].Models) != 1 || hs[0].SignedIn != "yes" {
+		t.Fatalf("agy is one normal harness entry: %+v", hs)
 	}
 	startHarnessUpdateTest(t, d)
 	eventually(t, "agy update", func() bool { u := updateResult(d, "agy"); return u != nil && u.Result == "already current" })
+	if hs, _ := d.inventory(); len(hs) != 1 || hs[0].Name != "agy" {
+		t.Fatalf("the update loop added a second agy entry: %+v", hs)
+	}
 	d.wmu.Lock()
 	d.workers["w"] = &worker{harness: "codex", turnActive: true}
 	d.wmu.Unlock()
@@ -242,8 +250,9 @@ func TestHarnessUpdateInventoryStillRetriesFailedModelProbe(t *testing.T) {
 
 func TestHarnessUpdateAgyFoundEvenWhenVersionProbeFails(t *testing.T) {
 	d, dir := updateFixture(t, map[string]string{"agy": `case "$1" in --version) exit 1 ;; update) touch "$(dirname "$0")/ran" ;; esac`})
-	if h := harnesses.UpdateOnly(context.Background(), "agy", *d.cfg.HarnessSearch); h == nil {
-		t.Fatal("executable must be detected even when its version probe fails")
+	opts := *d.cfg.HarnessSearch
+	if got := harnesses.Detect(context.Background(), opts); len(got) != 1 || got[0].Name != "agy" {
+		t.Fatalf("executable must be detected even when its version probe fails: %+v", got)
 	}
 	startHarnessUpdateTest(t, d)
 	eventually(t, "agy update despite failed version", func() bool { _, err := os.Stat(filepath.Join(dir, "ran")); return err == nil })
