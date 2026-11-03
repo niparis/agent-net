@@ -55,7 +55,7 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - asks one question for the seven integrations, or applies the answers your network already has (see [Integrations](#integrations)),
 - asks for the CTO title on the first machine only (see [CTO title](#cto-title)),
 - registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found (see [codex.md](codex.md)),
-- writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone),
+- writes the Pi extension to `~/.pi/agent/extensions/agent-net/index.ts` if `~/.pi` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone; see [opencode.md](opencode.md)),
 - adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
 

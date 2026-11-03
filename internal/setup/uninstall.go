@@ -139,6 +139,9 @@ func (r *runner) removeClaudeMCP() {
 }
 
 func (r *runner) removePiExtension() {
+	if err := agentfiles.RemoveLegacyPi(); err != nil {
+		r.step("legacy pi files", "", err)
+	}
 	removeGeneratedCatalog(r, "pi tool catalog", agentfiles.PiToolsPath())
 	path := agentfiles.PiExtensionPath()
 	st, err := os.Lstat(path)

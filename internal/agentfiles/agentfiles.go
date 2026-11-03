@@ -44,7 +44,7 @@ func home() string {
 
 // PiExtensionPath is where the Pi extension lives.
 func PiExtensionPath() string {
-	return filepath.Join(home(), ".pi", "agent", "extensions", "agent-net.ts")
+	return filepath.Join(home(), ".pi", "agent", "extensions", "agent-net", "index.ts")
 }
 
 // OpencodeDir is OpenCode's global config directory. OpenCode v2 loads every
@@ -129,6 +129,10 @@ func SyncPi() Result {
 	r := Result{Name: "pi extension", Path: PiExtensionPath()}
 	if !exists(filepath.Join(home(), ".pi")) {
 		r.Text = "skipped (~/.pi not found)"
+		return r
+	}
+	if err := RemoveLegacyPi(); err != nil {
+		r.Err = err
 		return r
 	}
 	return syncPlugin(r, pi.Extension, piPluginMarker)
@@ -369,4 +373,25 @@ func WriteIfChanged(path string, data []byte, mode os.FileMode) (changed, existe
 		return false, existed, err
 	}
 	return true, existed, os.WriteFile(path, data, mode)
+}
+
+// RemoveLegacyPi removes only owned files from the old flat Pi layout.
+func RemoveLegacyPi() error {
+	dir := filepath.Join(home(), ".pi", "agent", "extensions")
+	for name, marker := range map[string]string{"agent-net.ts": piPluginMarker, "tools.gen.ts": generatedToolsMarker} {
+		path := filepath.Join(dir, name)
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if hasPluginMarker(data, marker) {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

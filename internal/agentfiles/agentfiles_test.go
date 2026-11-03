@@ -306,8 +306,8 @@ func TestSyncAndLog(t *testing.T) {
 	logf := func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) }
 	SyncAndLog(logf)
 	want := []string{
-		"agent files: pi extension updated: ~/.pi/agent/extensions/agent-net.ts",
-		"agent files: pi tool catalog created: ~/.pi/agent/extensions/tools.gen.ts",
+		"agent files: pi extension updated: ~/.pi/agent/extensions/agent-net/index.ts",
+		"agent files: pi tool catalog created: ~/.pi/agent/extensions/agent-net/tools.gen.ts",
 		"agent files: opencode plugin left alone (symlink): ~/.config/opencode/plugins/agent-net.ts",
 		"agent files: opencode tool catalog created: ~/.config/opencode/plugins/tools.gen.ts",
 		"agent files: agent guidance created: ~/.pi/agent/AGENTS.md",
@@ -332,7 +332,7 @@ func TestSyncAndLogReplacedSymlink(t *testing.T) {
 	symlink(t, target, PiExtensionPath())
 	var lines []string
 	SyncAndLog(func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) })
-	want := "agent files: pi extension replaced an old symlink to " + target + " with the current file: ~/.pi/agent/extensions/agent-net.ts"
+	want := "agent files: pi extension replaced an old symlink to " + target + " with the current file: ~/.pi/agent/extensions/agent-net/index.ts"
 	for _, l := range lines {
 		if l == want {
 			return
@@ -401,5 +401,30 @@ func TestSyncGuidanceSeparateFiles(t *testing.T) {
 		if got, want := read(t, f.Path), "before\n"+guidance.Block(f.Variant)+"after\n"; got != want {
 			t.Errorf("%s: got %q, want %q", f.Name, got, want)
 		}
+	}
+}
+
+func TestPiFolderMigration(t *testing.T) {
+	h := fakeHome(t)
+	old := filepath.Join(h, ".pi", "agent", "extensions", "agent-net.ts")
+	catalog := filepath.Join(filepath.Dir(old), "tools.gen.ts")
+	write(t, old, string(pi.Extension))
+	write(t, catalog, string(pi.Tools))
+	Sync()
+	if PiExtensionPath() != filepath.Join(filepath.Dir(old), "agent-net", "index.ts") {
+		t.Fatal("Pi extension must use a folder entry point")
+	}
+	for _, p := range []string{old, catalog} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("legacy file remains: %s", p)
+		}
+	}
+	write(t, old+".foreign", "foreign")
+	if err := os.Symlink(old+".foreign", old); err != nil {
+		t.Fatal(err)
+	}
+	Sync()
+	if _, err := os.Readlink(old); err != nil {
+		t.Fatal("foreign symlink removed", err)
 	}
 }
