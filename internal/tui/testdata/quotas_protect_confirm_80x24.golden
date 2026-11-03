@@ -2,15 +2,15 @@
 ╭─Subscriptions · read on Mac · read 0s ago────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
 │ workers use others first; this provider only when nothing else fits          │
-│ PROVIDER PLAN WINDOW LEFT                 PACE      RESETS                   │
-│ > claude max  week   ███████───  70%      -         -                        │
-│   (live on Mac)                                                              │
+│ PROVIDER PLAN MAC     WINDOW LEFT                 PACE      RESETS           │
+│ > claude max  live    week   ███████───  70%      -         -                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
 │ sonnet          claude   sonnet-4          x     x     x     x     x         │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
 
 
 

@@ -1,21 +1,21 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
 ╭─Subscriptions · read on research · read 40s ago──────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
-│ PROVIDER  PLAN    WINDOW        LEFT                 PACE      RESETS        │
-│ > claude  max     session       █████████─  88%      -         -             │
-│                   week          ████──────  40%      -         -             │
-│                   Fable week    ██████████  95%      -         -             │
-│   (live on research)                                                         │
-│   codex   prolite week          █─────────   8%      -         -             │
-│   (live on research)                                                         │
-│   copilot         chat          ██████████ 100%      -         -             │
-│                   completions   ██████████ 100%      -         -             │
-│                   premium inte… ────────── exhausted -         -             │
-│   (live on research · not used by your agents)                               │
-│   other           month         █████████─  85%      -         -             │
-│   (live on research · not used by your agents)                               │
+│ PROVIDER  PLAN  RESEAR… WINDOW   LEFT                 PACE      RESETS       │
+│ > claude  max   live    session  █████████─  88%      -         -            │
+│                         week     ████──────  40%      -         -            │
+│                         Fable w… ██████████  95%      -         -            │
+│   codex   prol… live    week     █─────────   8%      -         -            │
+│   copilot       live    chat     ██████████ 100%      -         -            │
+│                         complet… ██████████ 100%      -         -            │
+│                         premium… ────────── exhausted -         -            │
+│   other         live    month    █████████─  85%      -         -            │
+│ unused: copilot, other                                                       │
 │ 17 providers not set up · s to show                                          │
 │ laptop: exit status 2                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────╮
+│ NAME            HARNESS  MODEL               T     S     N     H     V       │
 │ more below · up/down to scroll                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
