@@ -502,11 +502,13 @@ type NodeView struct {
 
 // HarnessInfo is one agent harness found on a machine.
 type HarnessInfo struct {
-	SignedIn string `json:"signed_in,omitempty"` // "yes", "no", or empty (unknown).
-	SignIn   string `json:"sign_in,omitempty"`
-	Name     string `json:"name"` // claude | opencode | pi | codex | agy
-	Path     string `json:"path"`
-	Version  string `json:"version"`
+	// DeliveryWarning is a failed harness transport check, empty when healthy or unknown.
+	DeliveryWarning string `json:"delivery_warning,omitempty"`
+	SignedIn        string `json:"signed_in,omitempty"` // "yes", "no", or empty (unknown).
+	SignIn          string `json:"sign_in,omitempty"`
+	Name            string `json:"name"` // claude | opencode | pi | codex | agy
+	Path            string `json:"path"`
+	Version         string `json:"version"`
 	// Models lists the models the harness can use: "provider/model" where the
 	// harness has a provider, plain ids for Codex and Claude's aliases. It is
 	// empty when the harness did not report a list.

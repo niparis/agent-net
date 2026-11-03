@@ -57,6 +57,19 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 		title += " · " + node.Kind
 	}
 	add(section(title, width))
+	for _, machine := range m.snap.Nodes {
+		if machine.NodeID != node.Name && machine.Hostname != node.Name {
+			continue
+		}
+		for _, harness := range machine.Harnesses {
+			if harness.DeliveryWarning != "" {
+				for _, line := range wrap("! "+sanitize(harness.DeliveryWarning), max(width-2, 8)) {
+					add(sBad.Render(line))
+				}
+			}
+		}
+	}
+
 	if m.mp.err != "" {
 		add("")
 	}

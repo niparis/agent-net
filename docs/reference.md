@@ -2098,3 +2098,23 @@ Claude Code and Codex sign-in probes run `claude auth status` and `codex login s
 ### Antigravity main sessions
 
 Interactive agy sessions are discovered from SessionStart hooks and the matching live process and working folder. Conversation summaries supply the title and parent conversation when available. Worker conversations and known sub-conversations are excluded. Busy messages wait for a Stop or PreInvocation hook; idle sessions in a matching herdr pane receive typed text and Enter. Others wait until the next turn. A dispatched message's delivery detail names that wait; it becomes delivered after the hook returns it or herdr accepts it. See [Antigravity](antigravity.md#main-sessions) for Enter and limits.
+
+### Claude inbox health
+
+At daemon start, after managed harness updates, and on each harness inventory
+refresh, agent-net checks live Claude session files for `messagingSocketPath`
+and tries connecting to an inbox. It sends no bytes: the known frame format
+creates a user message and has no documented harmless probe. This checks the
+transport, not whether Claude processes a message after accepting it.
+
+With no live Claude session the result is unknown. If live sessions exist but
+none has a reachable inbox on two checks in a row, the machine reports
+`Claude delivery broken by Claude Code <version>` in the TUI machine note,
+Graph machine card, and `agent-net nodes -wide`. Delivery to that machine's
+Claude sessions fails immediately with that reason. A later successful check
+clears the warning. Other harnesses continue to work.
+
+Open a fresh Claude session and check that the installed Claude Code version
+still exposes the inbox socket. If an update removed the inbox contract, use a
+compatible Claude Code version and restart the daemon to check again. Do not
+send test user frames to a working session just to test the transport.
