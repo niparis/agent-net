@@ -51,8 +51,11 @@ type Adapter struct {
 	host   daemon.Host
 	models *modelReader
 
+	mu sync.Mutex
+	// healthWarning is set after healthBroken reaches two consecutive
+	// broken delivery checks (health.go).
 	healthWarning string
-	mu            sync.Mutex
+	healthBroken  int
 	byNative      map[string]found        // native_id -> session
 	bySock        map[string]string       // inbox socket -> native_id
 	replies       map[string]net.Listener // sender session id -> reply listener

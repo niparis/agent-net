@@ -56,6 +56,10 @@ func TestClaudeDeliveryHealthSessionFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "Claude delivery broken by Claude Code test-version"
+	// One broken check alone is not enough: a socket can be briefly away.
+	if got := a.CheckDelivery("test-version"); got != "" {
+		t.Fatalf("one broken check warned: %q", got)
+	}
 	if got := a.CheckDelivery("test-version"); got != want {
 		t.Fatalf("got %q", got)
 	}
@@ -82,6 +86,9 @@ func TestClaudeDeliveryHealthSessionFiles(t *testing.T) {
 		t.Fatal("warning not cleared")
 	}
 	ln.Close()
+	if got := a.CheckDelivery("later-version"); got != "" {
+		t.Fatalf("one broken check warned: %q", got)
+	}
 	if got := a.CheckDelivery("later-version"); got != "Claude delivery broken by Claude Code later-version" {
 		t.Fatal(got)
 	}

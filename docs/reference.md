@@ -2081,7 +2081,7 @@ creates a user message and has no documented harmless probe. This checks the
 transport, not whether Claude processes a message after accepting it.
 
 With no live Claude session the result is unknown. If live sessions exist but
-none has a reachable inbox, the machine reports
+none has a reachable inbox on two checks in a row, the machine reports
 `Claude delivery broken by Claude Code <version>` in the TUI machine note,
 Graph machine card, and `agent-net nodes -wide`. Delivery to that machine's
 Claude sessions fails immediately with that reason. A later successful check

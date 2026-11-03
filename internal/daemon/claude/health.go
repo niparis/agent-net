@@ -49,17 +49,25 @@ func (a *Adapter) CheckDelivery(version string) string {
 		}
 		sessions[sf.SessionID] = found{sock: sf.MessagingSocketPath}
 	}
-	warning := ""
-	if deliveryHealth(sessions) == "broken" {
-		if version == "" {
-			version = "unknown"
-		}
-		warning = "Claude delivery broken by Claude Code " + version
+	broken := deliveryHealth(sessions) == "broken"
+	if version == "" {
+		version = "unknown"
 	}
 	a.mu.Lock()
-	a.healthWarning = warning
-	a.mu.Unlock()
-	return warning
+	defer a.mu.Unlock()
+	// The warning blocks every Claude delivery on this machine, so it needs
+	// two broken checks in a row: a socket can be away for a moment while a
+	// session restarts. A passing or unknown check clears it at once.
+	if broken {
+		a.healthBroken++
+	} else {
+		a.healthBroken = 0
+	}
+	a.healthWarning = ""
+	if a.healthBroken >= 2 {
+		a.healthWarning = "Claude delivery broken by Claude Code " + version
+	}
+	return a.healthWarning
 }
 
 func (a *Adapter) deliveryWarning() string {
