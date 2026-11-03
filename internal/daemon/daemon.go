@@ -221,6 +221,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	agyEvents           map[string]antigravityEvent // guarded by mu
 	ctoGraph            ctoGraphWindow
 	operatorReads       operatorReadCache
 	startedSessions     map[string]protocol.StartedSession // guarded by mu

@@ -25,11 +25,20 @@ import (
 // registered MCP servers) use a connection that has none, and can only make
 // calls that need no session.
 func RunCodex(ctx context.Context, socket string, opts Options) error {
+	return runThreaded(ctx, socket, opts, "codex", "threadId")
+}
+
+// RunAntigravity routes calls by the root conversation ID supplied by agy.
+func RunAntigravity(ctx context.Context, socket string, opts Options) error {
+	return runThreaded(ctx, socket, opts, "agy", "antigravity.google/root_conversation_id")
+}
+
+func runThreaded(ctx context.Context, socket string, opts Options, harness, metaKey string) error {
 	logf := func(format string, a ...any) { fmt.Fprintf(os.Stderr, "agent-net mcp: "+format+"\n", a...) }
 	conn := newStdioConn(0, os.Stdout, takeHandover(logf), logf)
 	go conn.readLoop()
 	cwd, _ := os.Getwd()
-	rt := &threadRouter{socket: socket, cwd: cwd, version: opts.Version, perThread: map[string]*Daemon{}}
+	rt := &threadRouter{socket: socket, cwd: cwd, version: opts.Version, harness: harness, perThread: map[string]*Daemon{}}
 	rt.root = rt.newDaemon("")
 	defer rt.Close()
 	sw := &switcher{opts: opts, conn: conn, logf: logf}
@@ -37,7 +46,7 @@ func RunCodex(ctx context.Context, socket string, opts Options) error {
 	rt.root.conn(ctx)
 	srv := New(rt.Call, opts.Version, rt.takeNote)
 	sw.dropNote = rt.dropNotes
-	srv.AddReceivingMiddleware(threadFromMeta())
+	srv.AddReceivingMiddleware(metadataThread(metaKey))
 	dyn := NewDynamic(srv, rt.Call)
 	ictx, icancel := context.WithTimeout(ctx, 3*time.Second)
 	dyn.Refresh(ictx)
@@ -65,10 +74,14 @@ func validThreadID(s string) bool {
 // threadFromMeta puts the thread of a tool call in its context. The value is
 // read from the request's _meta, which Codex sets for every MCP tool call.
 func threadFromMeta() mcp.Middleware {
+	return metadataThread("threadId")
+}
+
+func metadataThread(key string) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			if c, ok := req.(*mcp.CallToolRequest); ok && method == "tools/call" && c.Params != nil {
-				if id, _ := c.Params.GetMeta()["threadId"].(string); validThreadID(id) {
+				if id, _ := c.Params.GetMeta()[key].(string); validThreadID(id) {
 					ctx = context.WithValue(ctx, threadKey{}, id)
 				}
 			}
@@ -79,15 +92,15 @@ func threadFromMeta() mcp.Middleware {
 
 // threadRouter sends each call over the connection of the thread it came from.
 type threadRouter struct {
-	socket, cwd, version string
-	root                 *Daemon // no thread
+	socket, cwd, version, harness string
+	root                          *Daemon // no thread
 
 	mu        sync.Mutex
 	perThread map[string]*Daemon
 }
 
 func (r *threadRouter) newDaemon(thread string) *Daemon {
-	hello := map[string]any{"client": "mcp", "harness": "codex", "cwd": r.cwd, "status": "idle",
+	hello := map[string]any{"client": "mcp", "harness": r.harness, "cwd": r.cwd, "status": "idle",
 		"protocol": protocol.LocalProtocol, "version": r.version}
 	if thread != "" {
 		hello["native_id"] = thread

@@ -1087,3 +1087,7 @@ Owner decisions, 2026-11-02:
   runs as the owner. The TUI warns when other routes exist on the host.
 
 Claude Code and Codex sign-in probes run `claude auth status` and `codex login status` with a five second limit. Only the signed-in state and auth method are kept; account details are discarded.
+
+### Antigravity hooks
+
+The plugin runs `agent-net hook antigravity` at session start and on each invocation and stop. The command sends the hook JSON, including the conversation ID, workspace paths, transcript path and last user input when present, to the local daemon socket. The daemon keeps only the latest event, conversation ID, workspace paths, time and stop idle flag in memory. Hook failures return an empty JSON object, and the command has a five second limit. Antigravity MCP calls carry a root conversation ID; it is untrusted and is not bound to a session until discovery can verify it.

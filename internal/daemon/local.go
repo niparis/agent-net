@@ -101,9 +101,10 @@ type localConn struct {
 	ls     *localSession // bound session; nil for cli
 	acks   map[string]chan ack
 	// peerPID is the process ID of the other end, read in hello.
-	peerPID int
-	tui     bool // an owner-gated TUI subscribed to interface pushes
-	cto     bool // private CTO process-tree gate
+	peerPID     int
+	agyNativeID string // untrusted until session discovery verifies it
+	tui         bool   // an owner-gated TUI subscribed to interface pushes
+	cto         bool   // private CTO process-tree gate
 	// tx holds the session_text requests sent to this plugin (sessiontext.go).
 	tx textState
 }
@@ -403,6 +404,12 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion(), "protocol": protocol.LocalProtocol}, nil
 
 	case "mcp":
+		if p.Harness == "agy" {
+			lc.mu.Lock()
+			lc.client, lc.peerPID, lc.agyNativeID = "mcp", pid, p.NativeID
+			lc.mu.Unlock()
+			return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion()}, nil
+		}
 		if p.Harness == "codex" {
 			return lc.helloCodexMCP(p, pid)
 		}
@@ -691,6 +698,15 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	}
 	if res, ok, err := lc.dispatchOperator(ctx, method, raw); ok {
 		return res, err
+	}
+	if method == "agy_hook" {
+		if client != "cli" {
+			return nil, errors.New("agy hook requires cli")
+		}
+		if err := d.recordAntigravity(raw); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, nil
 	}
 	if method == protocol.MethodHint {
 		return lc.hintCall(ctx, client, ls, raw)
