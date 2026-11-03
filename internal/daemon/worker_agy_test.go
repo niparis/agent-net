@@ -74,6 +74,17 @@ func TestAgyProcess(t *testing.T) {
 		r.Turns = append(r.Turns, body)
 		save()
 		write(map[string]any{"event": "step_update", "step_update": map[string]any{"conversation_id": native}})
+		if strings.Contains(body, "FAKE:usage") {
+			// Two model steps of one turn. agy reports each step's usage, and the
+			// result below repeats the run's sum.
+			for _, u := range []map[string]any{
+				{"input_tokens": 10000, "output_tokens": 40, "thinking_tokens": 10, "cache_read_tokens": 0, "total_tokens": 10050},
+				{"input_tokens": 10448, "output_tokens": 59, "thinking_tokens": 0, "cache_read_tokens": 0, "total_tokens": 10507},
+			} {
+				write(map[string]any{"event": "step_update", "step_update": map[string]any{
+					"conversation_id": native, "step_type": "agent_response", "state": "DONE", "usage": u}})
+			}
+		}
 		if strings.Contains(body, "FAKE:gate") {
 			for {
 				if _, err := os.Stat(filepath.Join(os.Getenv("FAKE_AGY_RECORDS"), "release")); err == nil {
@@ -143,6 +154,9 @@ func TestAgyProcess(t *testing.T) {
 			save()
 		}
 		result := map[string]any{"conversation_id": native, "status": "SUCCESS", "response": "turn ended", "usage": map[string]any{"input_tokens": 1200, "output_tokens": 340, "thinking_tokens": 50, "cache_read_tokens": 90, "total_tokens": 1590}}
+		if strings.Contains(body, "FAKE:usage") {
+			result["usage"] = map[string]any{"input_tokens": 20448, "output_tokens": 99, "thinking_tokens": 10, "cache_read_tokens": 0, "total_tokens": 20557}
+		}
 		if strings.Contains(body, "FAKE:failed-result") {
 			result["status"] = "ERROR"
 			result["response"] = "failed tool"
@@ -231,6 +245,29 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 			t.Fatalf("resume args: %v", rec.Args)
 		}
 	}
+}
+
+// agy reports per-step usage and no context window. The worker shows the
+// context of the last agent_response step, the run's tokens, and a notice
+// with the token count alone.
+func TestAgyWorkerContextFromSteps(t *testing.T) {
+	w, dir, _ := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:usage FAKE:gate FAKE:handback", Isolation: protocol.IsolationWorktree})
+	wk := w.d.workerBySession(res.SessionID)
+	eventually(t, "step usage recorded", func() bool {
+		info := w.d.workerInfo(wk)
+		return info.ContextTokens == 10448 && info.ContextLimit == 0 && info.Tokens == 20557
+	})
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	n := w.waitNotice(t, 1)[0]
+	for _, s := range []string{"context at end: 10k\n", "tokens: 20448 in, 99 out, 10 reasoning\n"} {
+		if !strings.Contains(n.Body, s) {
+			t.Errorf("notice lacks %q:\n%s", s, n.Body)
+		}
+	}
+	eventually(t, "agy ends after handback", func() bool { return w.d.workerCount() == 0 })
 }
 
 func TestAgyWorkerFollowupAndAutoContinue(t *testing.T) {

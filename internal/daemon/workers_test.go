@@ -1430,3 +1430,22 @@ func TestWorkerContextSurvivesMissingUsage(t *testing.T) {
 		})
 	}
 }
+
+// A harness that reports no context window (agy) keeps the tokens it does
+// report, through a missing read and into the final notice. The limit stays 0
+// so nothing invents a window size.
+func TestWorkerContextWithoutLimit(t *testing.T) {
+	d := &Daemon{}
+	w := &worker{harness: "agy"}
+	d.noteWorkerUsage(w, workerStats{ContextTokens: 10448, TotalTokens: 20557})
+	if got := d.workerInfo(w); got.ContextTokens != 10448 || got.ContextLimit != 0 || got.Tokens != 20557 {
+		t.Fatalf("token-only context not recorded: %+v", got)
+	}
+	d.noteWorkerUsage(w, workerStats{TotalTokens: 20557})
+	if got := d.workerInfo(w); got.ContextTokens != 10448 || got.ContextLimit != 0 {
+		t.Fatalf("a read without usage erased the token-only context: %+v", got)
+	}
+	if st := d.workerStats(w); st.ContextTokens != 10448 || st.ContextLimit != 0 {
+		t.Fatalf("final stats lost the token-only context: %+v", st)
+	}
+}

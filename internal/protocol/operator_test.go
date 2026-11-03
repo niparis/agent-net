@@ -82,6 +82,9 @@ func TestWorkerUsageNumbersFormat(t *testing.T) {
 	if got := ContextText(84000, 0); got != "84k" {
 		t.Errorf("ContextText without a limit = %q", got)
 	}
+	if got := ContextText(31000, 0); got != "31k" {
+		t.Errorf("ContextText with no context window = %q", got)
+	}
 	if got := ContextText(0, 1000000); got != "" {
 		t.Errorf("ContextText without tokens = %q", got)
 	}
