@@ -332,6 +332,12 @@ func (m Model) inboxProposalSummary(p protocol.CTOProposal) string {
 	case "edge_set":
 		return fmt.Sprintf("set the edge %s → %s to %s", value("from"), value("to"), value("rule"))
 	}
+	if p.Tool == "machine_remove" || (p.Tool == "settings_change" && p.Action == "machine_remove") {
+		return "remove machine " + machine + " and revoke its token"
+	}
+	if p.Tool == "machine_rotate" || (p.Tool == "settings_change" && p.Action == "machine_rotate") {
+		return "rotate token for " + machine
+	}
 	if p.Tool == "node_rename" || (p.Tool == "settings_change" && p.Action == "machine_name") {
 		return fmt.Sprintf("rename %s to %s", machine, value("name"))
 	}

@@ -68,7 +68,7 @@ var ctoChangeActions = map[string]map[string]string{
 		"worker_profile_add": "worker_profile_add", "worker_profile_remove": "worker_profile_remove",
 		"worker_providers": "worker_providers_set", "protected_providers": "protected_providers_set",
 		"score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings",
-		"cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename",
+		"cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename", "machine_remove": "machine_remove", "machine_rotate": "machine_rotate",
 		"invite": "invite", "onboarding": "onboarding_restart",
 	},
 	"project_change": {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
@@ -83,7 +83,7 @@ var ctoActions = map[string]map[string][]string{
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"tools_change":    {"action": {"toggle", "new_projects", "plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},
 	"mcp_change":      {"action": {"add", "remove", "test", "enable"}},
-	"settings_change": {"area": {"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"}},
+	"settings_change": {"area": {"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},
 }
 

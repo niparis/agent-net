@@ -174,9 +174,9 @@ var ctoTools = map[string]ctoToolDef{
 	"mcp_call": {desc: "Call a tool on a shared MCP server.", fields: map[string]ctoField{"server": {typ: "string", desc: "Server name."}, "tool": {typ: "string", desc: "Tool."}, "arguments": {typ: "object", desc: "Arguments."}}},
 	"cto_new":  {desc: "Start a new conversation for the active harness."},
 	"settings_change": {
-		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, invite or onboarding.",
+		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite or onboarding.",
 		fields: map[string]ctoField{
-			"area":                {typ: "string", enum: []string{"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"}},
+			"area":                {typ: "string", enum: []string{"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
 			"name":                {typ: "string", desc: "Profile or machine name; empty clears."},
 			"harness":             {typ: "string", desc: "Harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":               {typ: "string", desc: "Model ID or name."},

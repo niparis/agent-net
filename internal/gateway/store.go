@@ -556,6 +556,14 @@ CREATE TABLE IF NOT EXISTS tool_project_settings (item TEXT PRIMARY KEY, new_pro
 CREATE TABLE IF NOT EXISTS tool_project_seen (item TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY(item,project));
 `, `
 CREATE INDEX IF NOT EXISTS deliveries_message_state ON deliveries(message_id, state, id);
+`, `
+SELECT 1 /* machine token revocation columns */;
+CREATE TRIGGER IF NOT EXISTS removed_node_session_insert BEFORE INSERT ON sessions
+ WHEN EXISTS(SELECT 1 FROM nodes WHERE id=NEW.node_id AND removed=1)
+ BEGIN SELECT RAISE(ABORT,'machine was removed from the network'); END;
+CREATE TRIGGER IF NOT EXISTS removed_node_session_online BEFORE UPDATE OF online ON sessions
+ WHEN NEW.online=1 AND EXISTS(SELECT 1 FROM nodes WHERE id=NEW.node_id AND removed=1)
+ BEGIN SELECT RAISE(ABORT,'machine was removed from the network'); END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -650,6 +658,24 @@ func (s *Store) migrate() error {
 				}
 				if has == 0 {
 					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "machine token revocation columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"removed", `INTEGER NOT NULL DEFAULT 0`},
+				{"pending_token_hash", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('nodes') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE nodes ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
 						tx.Rollback()
 						return err
 					}
@@ -1008,10 +1034,28 @@ func (s *Store) CreateNode(hostname, osName string) (nodeID, token string, err e
 }
 
 func (s *Store) NodeByToken(token string) (nodeID string, ok bool, err error) {
-	err = s.db.QueryRow(`SELECT id FROM nodes WHERE token_hash = ?`, hashHex(token)).Scan(&nodeID)
+	// A reconnect proves that the daemon saved the staged token, even if its
+	// acknowledgement was lost. Promotion and lookup share one transaction.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", false, err
+	}
+	defer tx.Rollback()
+	hash := hashHex(token)
+	var pending string
+	err = tx.QueryRow(`SELECT id,pending_token_hash FROM nodes WHERE removed=0 AND (token_hash=? OR pending_token_hash=?)`, hash, hash).Scan(&nodeID, &pending)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
+	if err != nil {
+		return "", false, err
+	}
+	if pending == hash {
+		if _, err = tx.Exec(`UPDATE nodes SET token_hash=pending_token_hash,pending_token_hash='' WHERE id=?`, nodeID); err != nil {
+			return "", false, err
+		}
+	}
+	err = tx.Commit()
 	return nodeID, err == nil, err
 }
 

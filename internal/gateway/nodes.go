@@ -105,7 +105,7 @@ func (s *Store) NodeVersion(nodeID string) (string, error) {
 // Nodes lists every node that has connected at least once. Online is left
 // false; the gateway fills it from its live connections.
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT id, hostname, os, version, seen_at, harnesses, launch, display_name, reported_hostname FROM nodes WHERE seen_at > 0 ORDER BY hostname, id`)
+	rows, err := s.db.Query(`SELECT id, hostname, os, version, seen_at, harnesses, launch, display_name, reported_hostname FROM nodes WHERE seen_at > 0 AND removed=0 ORDER BY hostname, id`)
 	if err != nil {
 		return nil, err
 	}

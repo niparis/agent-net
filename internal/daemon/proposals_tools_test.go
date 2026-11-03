@@ -108,6 +108,8 @@ func TestCTOChangeParity(t *testing.T) {
 		"edge_remove":             {"graph_change", `{"action":"edge_remove","from":"first","to":"second","kind":"depends"}`},
 		"graph_undo":              {"graph_change", `{"action":"undo","id":1}`},
 		"node_settings_set":       {"graph_change", `{"action":"settings_set","node":"component","setting":"merge_authority","value":"ask"}`},
+		"machine_remove":          {"settings_change", `{"area":"machine_remove","node_id":"n_test"}`},
+		"machine_rotate":          {"settings_change", `{"area":"machine_rotate","node_id":"n_test"}`},
 		"node_rename":             {"settings_change", `{"area":"machine_name","node_id":"n_test","name":"test"}`},
 		"session_start":           {"session_change", `{"action":"session_start","project":"garden","harness":"claude"}`},
 		"session_rename":          {"session_change", `{"action":"rename","session_id":"s_test","name":"planner"}`},

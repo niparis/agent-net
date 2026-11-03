@@ -92,6 +92,7 @@ func (f *fakeOp) SetSessionPolicy(context.Context, protocol.SessionPolicyRequest
 func (f *fakeOp) RenameSession(context.Context, string, string) (protocol.SessionRenameResult, error) {
 	return protocol.SessionRenameResult{}, nil
 }
+func (f *fakeOp) MachineAction(context.Context, string, string) error { return nil }
 func (f *fakeOp) RenameNode(context.Context, string, string) (protocol.NodeRenameResult, error) {
 	return protocol.NodeRenameResult{}, nil
 }

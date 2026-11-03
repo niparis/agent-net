@@ -92,6 +92,26 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if ch != nil {
 				ch <- h
 			}
+		case "node.token":
+			var p struct {
+				Token string `json:"token"`
+			}
+			if json.Unmarshal(raw, &p) != nil || p.Token == "" {
+				continue
+			}
+			dir := d.cfg.NodeConfigDir
+			if dir == "" {
+				dir = ConfigDir()
+			}
+			err := saveRotatedToken(dir, d.cfg.NodeID, d.nodeToken(), p.Token)
+			if err == nil {
+				d.mu.Lock()
+				d.cfg.Token = p.Token
+				d.mu.Unlock()
+			}
+			if res, e := protocol.EncodeResult(h.ID, map[string]bool{"saved": err == nil}, err); e == nil {
+				l.write(ctx, res)
+			}
 		case "node.upgrade":
 			var p protocol.NodeUpgrade
 			if json.Unmarshal(raw, &p) != nil {
@@ -223,14 +243,17 @@ func (d *Daemon) linkLoop(ctx context.Context) {
 func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	dctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	health := linkkeepalive.New()
-	ws, _, err := websocket.Dial(dctx, d.cfg.GatewayURL+"/v1/node", &websocket.DialOptions{
+	ws, response, err := websocket.Dial(dctx, d.cfg.GatewayURL+"/v1/node", &websocket.DialOptions{
 		HTTPClient:     health.Client(d.client),
-		HTTPHeader:     http.Header{"Authorization": {"Bearer " + d.cfg.Token}},
+		HTTPHeader:     http.Header{"Authorization": {"Bearer " + d.nodeToken()}, "X-Agent-Net-Node-ID": {d.cfg.NodeID}},
 		OnPingReceived: func(context.Context, []byte) bool { health.Received(); return true },
 		OnPongReceived: func(context.Context, []byte) { health.Received() },
 	})
 	cancel()
 	if err != nil {
+		if response != nil && response.Header.Get("Agent-Net-Removed") == "true" {
+			return false, errors.New("this machine was removed from the network; run agent-net setup to join again")
+		}
 		return false, err
 	}
 	ws.SetReadLimit(4 << 20)

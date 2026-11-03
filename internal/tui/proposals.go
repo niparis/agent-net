@@ -80,6 +80,12 @@ func proposalSummary(p protocol.CTOProposal) string {
 	case "edge_set":
 		return fmt.Sprintf("edge %s -> %s rule %s", value("from"), value("to"), value("rule"))
 	}
+	if p.Tool == "machine_remove" || (p.Tool == "settings_change" && p.Action == "machine_remove") {
+		return "remove machine " + value("node_id") + " and revoke its token"
+	}
+	if p.Tool == "machine_rotate" || (p.Tool == "settings_change" && p.Action == "machine_rotate") {
+		return "rotate token for " + value("node_id")
+	}
 	if p.Tool == "node_rename" || (p.Tool == "settings_change" && p.Action == "machine_name") {
 		return "rename machine " + value("node_id") + " to " + value("name")
 	}

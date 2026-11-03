@@ -45,7 +45,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
-	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true,
+	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
@@ -626,6 +626,22 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			frame = "project.display.set"
 		}
 		res, err = d.call(ctx, frame, q)
+	case protocol.OpMachineRemove, protocol.OpMachineRotate:
+		var q struct {
+			NodeID string `json:"node_id"`
+		}
+		if json.Unmarshal(raw, &q) != nil || q.NodeID == "" {
+			return nil, true, errors.New("machine action needs node_id")
+		}
+		actor := proposalActor(ctx)
+		if actor == "" {
+			actor = "owner"
+		}
+		typ := "machine.remove"
+		if method == protocol.OpMachineRotate {
+			typ = "machine.rotate"
+		}
+		res, err = d.call(ctx, typ, map[string]string{"node_id": q.NodeID, "owner": d.ownerSessionID(), "actor": actor})
 	case protocol.OpNodeRename:
 		// The name appears in every machine's lists, hints and plans: only the
 		// owner at the keyboard sets it (decision 0015). The gate above refuses

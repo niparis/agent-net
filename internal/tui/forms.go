@@ -194,6 +194,21 @@ func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case yes:
 		m.mode = modeNormal
+		if m.confirmMachine != "" {
+			action, id, name := m.confirmMachine, m.confirmID, m.confirmName
+			m.confirmMachine = ""
+			src := m.src
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				err := src.MachineAction(ctx, id, action)
+				text := "Removed machine " + name + "."
+				if action == protocol.OpMachineRotate {
+					text = "Rotated token for " + name + "."
+				}
+				return actionMsg{text: text, err: err}
+			}
+		}
 		if m.confirmDefect {
 			worker, name := m.defectWorker, m.defectName
 			note, severity := strings.TrimSpace(m.defect.Value()), m.defectLevel
@@ -208,6 +223,11 @@ func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.stopCmd(m.confirmID, m.confirmName)
 	case no:
 		m.mode = modeNormal
+		if m.confirmMachine != "" {
+			m.confirmMachine = ""
+			m.say("Machine action cancelled.")
+			return m, nil
+		}
 		if m.confirmDefect {
 			m.confirmDefect = false
 			m.say("Defect not reported.")

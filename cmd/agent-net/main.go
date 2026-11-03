@@ -366,8 +366,8 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		return err
 	}
 	d, err := daemon.New(daemon.Config{
-		InventoryHome: inventoryHome,
-		GatewayURL:    nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
+		InventoryHome: inventoryHome, NodeConfigDir: daemon.ConfigDir(),
+		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
 		GatewayData: defaultGatewayData(),
 		Adapters:    []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 		CodexHome:         agentfiles.CodexHome(),
