@@ -153,6 +153,14 @@ func TestAgyProcess(t *testing.T) {
 			}
 			save()
 		}
+		if strings.Contains(body, "FAKE:result-gate") {
+			for {
+				if _, err := os.Stat(filepath.Join(os.Getenv("FAKE_AGY_RECORDS"), "result-release")); err == nil {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
 		result := map[string]any{"conversation_id": native, "status": "SUCCESS", "response": "turn ended", "usage": map[string]any{"input_tokens": 1200, "output_tokens": 340, "thinking_tokens": 50, "cache_read_tokens": 90, "total_tokens": 1590}}
 		if strings.Contains(body, "FAKE:usage") {
 			result["usage"] = map[string]any{"input_tokens": 20448, "output_tokens": 99, "thinking_tokens": 10, "cache_read_tokens": 0, "total_tokens": 20557}
@@ -335,7 +343,7 @@ func TestAgyWorkerStopClosesInput(t *testing.T) {
 	w, dir, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "reply OK", AutoContinue: autoContinueOff()})
 	w.cli.mustCall(protocol.OpWorkerStop, protocol.WorkerStopRequest{Session: res.SessionID})
-	eventually(t, "stdin closed gracefully", func() bool { rs := agyRecords(dir); return len(rs) == 1 && rs[0].InputClosed })
+	eventually(t, "worker process stopped", func() bool { rs := agyRecords(dir); return len(rs) == 1 && !alive(rs[0].PID) })
 }
 
 func TestAgyWorkerHandbackKeepsQueuedFollowup(t *testing.T) {
@@ -364,7 +372,8 @@ func TestAgyWorkerStopInterruptsBlockedInput(t *testing.T) {
 	defer rd.Close()
 	defer wr.Close()
 	c := &agyConn{in: wr}
-	w := &worker{agy: c}
+	w := &worker{agy: c, dir: t.TempDir()}
+	c.w = w
 	sent := make(chan error, 1)
 	go func() { sent <- c.send(bytes.Repeat([]byte("x"), 1<<20)) }()
 	// Observing a byte proves the write started; the rest exceeds pipe capacity.
@@ -536,5 +545,69 @@ func TestAgyWorkerMCPRejectsOutsideProcess(t *testing.T) {
 	}
 	if len(resp.Error) == 0 || string(resp.Error) == "null" {
 		t.Fatal("outside process accepted")
+	}
+}
+
+// Keep the same harness process and request across daemon replacement.
+func TestAgyWorkerRestart(t *testing.T) {
+	for _, afterHandback := range []bool{false, true} {
+		t.Run(fmt.Sprint(afterHandback), func(t *testing.T) {
+			set := shortSet
+			set.Idle, set.IdleNotice = time.Hour, time.Hour
+			w, dir, _ := startAgyNode(t, set)
+			task := "FAKE:gate FAKE:handback"
+			if afterHandback {
+				task = "FAKE:handback FAKE:result-gate FAKE:exit"
+			}
+			res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: task, AutoContinue: autoContinueOff()})
+			wk := w.d.workerBySession(res.SessionID)
+			eventually(t, "in-flight turn", func() bool {
+				rs := agyRecords(dir)
+				if len(rs) != 1 || len(rs[0].Turns) != 1 {
+					return false
+				}
+				if !afterHandback {
+					return true
+				}
+				wk.agy.mu.Lock()
+				defer wk.agy.mu.Unlock()
+				return wk.agy.handback != nil
+			})
+			pid := agyRecords(dir)[0].PID
+			w.d.Stop()
+			// In this case the result arrives while no daemon is reading.
+			if afterHandback {
+				if err := os.WriteFile(filepath.Join(dir, "result-release"), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if afterHandback {
+				eventually(t, "result written during downtime", func() bool { return !alive(pid) })
+			}
+			w.node.restart()
+			w.cli = cliClient(t, w.node)
+			if !afterHandback {
+				if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			n := w.waitNotice(t, 1)[0]
+			for _, want := range []string{"status: done", "finished agy task", "1200 in, 340 out, 50 reasoning, 90 cache read"} {
+				if !strings.Contains(n.Body, want) {
+					t.Errorf("notice lacks %q: %s", want, n.Body)
+				}
+			}
+			eventually(t, "worker stopped", func() bool { return w.d.workerCount() == 0 })
+			rs := agyRecords(dir)
+			if len(rs) != 1 || rs[0].PID != pid || rs[0].MCPError != "" {
+				t.Fatalf("records: %+v", rs)
+			}
+			w.d.Stop()
+			w.node.restart()
+			w.cli = cliClient(t, w.node)
+			if ns := w.notices(t); len(ns) != 1 {
+				t.Fatalf("duplicate notices: %+v", ns)
+			}
+		})
 	}
 }
