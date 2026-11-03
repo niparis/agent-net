@@ -728,7 +728,7 @@ func (m Model) openRepoRemove(project, name string, copies []toolsdiff.Copy) (te
 		repoTargets = append(repoTargets, protocol.ToolRepoTarget{NodeID: c.NodeID, Checkout: c.Checkout})
 	}
 	if len(copies) == 0 || len(repoTargets) == 0 {
-		md.lines = []string{tsErr.Render("! ") + "no registered project checkout is available for this repo skill"}
+		md.lines = []string{tsErr.Render("! ") + "no project checkout is available for this repo skill"}
 		return m, nil
 	}
 	md.loading = true

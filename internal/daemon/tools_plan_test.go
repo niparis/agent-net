@@ -280,6 +280,36 @@ func TestToolPlanReportsMissingCheckout(t *testing.T) {
 	}
 }
 
+// The machine refuses a destination that is the home folder, is not a Git
+// working tree, or is a worktree of another project (decision 0048).
+func TestToolPlanRefusesNonProjectFolders(t *testing.T) {
+	home := t.TempDir()
+	plain := t.TempDir()
+	repo := t.TempDir()
+	gitIn(t, repo, "init", "-q", "-b", "main")
+	other := filepath.Join(t.TempDir(), "other")
+	gitIn(t, repo, "worktree", "add", "-qb", "other", other)
+	d := &Daemon{cfg: Config{InventoryHome: home}}
+	probe := func(checkout string, worktrees []string) protocol.ToolPlanProbeResult {
+		return d.probeToolDestination(protocol.ToolPlanProbe{Name: "demo", Harness: "claude", Checkout: checkout, Worktrees: worktrees})
+	}
+	if got := probe(home, []string{}); got.Conflict != "the home folder is never a project" {
+		t.Fatalf("home: %+v", got)
+	}
+	if got := probe(plain, []string{}); got.Conflict != "not a Git repository" {
+		t.Fatalf("plain folder: %+v", got)
+	}
+	if got := probe(other, []string{}); got.Conflict != "worktree of another project" {
+		t.Fatalf("foreign worktree: %+v", got)
+	}
+	if got := probe(other, []string{other}); got.Conflict != "" {
+		t.Fatalf("own worktree: %+v", got)
+	}
+	if got := probe(repo, []string{other}); got.Conflict != "" {
+		t.Fatalf("main checkout: %+v", got)
+	}
+}
+
 func TestToolApplyRejectsUnscannedShadow(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")

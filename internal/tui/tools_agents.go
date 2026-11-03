@@ -383,7 +383,7 @@ func (m Model) agentToolsView(w, h int) []string {
 	if !m.tl.loaded {
 		b = []string{orStr(m.tl.err, "reading the tools...")}
 	} else if project == "" {
-		b = []string{"No projects registered."}
+		b = []string{"No known projects."}
 	} else if len(rows) == 0 {
 		b = []string{"No matching skills."}
 	}

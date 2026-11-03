@@ -315,15 +315,20 @@ type ToolSkillDetails struct {
 }
 
 type ToolPlanProbe struct {
-	Name          string `json:"name"`
-	Harness       string `json:"harness"`
-	Checkout      string `json:"checkout,omitempty"`
-	Source        string `json:"source,omitempty"`
-	Hash          string `json:"hash,omitempty"`
-	Operation     string `json:"operation,omitempty"`
-	Project       string `json:"project,omitempty"`
-	DefaultBranch string `json:"default_branch,omitempty"`
-	Branch        string `json:"branch,omitempty"`
+	Name    string `json:"name"`
+	Harness string `json:"harness"`
+	// Project is the assignment's project name for a checkout.
+	Project string `json:"project,omitempty"`
+	// Worktrees lists the project's linked worktrees where sessions ran. A
+	// checkout that is a linked worktree of another repository is refused
+	// unless it appears here. An older gateway sends none.
+	Worktrees     []string `json:"worktrees"`
+	Checkout      string   `json:"checkout,omitempty"`
+	Source        string   `json:"source,omitempty"`
+	Hash          string   `json:"hash,omitempty"`
+	Operation     string   `json:"operation,omitempty"`
+	DefaultBranch string   `json:"default_branch,omitempty"`
+	Branch        string   `json:"branch,omitempty"`
 }
 type ToolPlanProbeResult struct {
 	Destination string   `json:"destination,omitempty"`

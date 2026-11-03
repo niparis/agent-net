@@ -76,6 +76,72 @@ func TestToolAssignmentRevisions(t *testing.T) {
 	}
 }
 
+// A project seen in a stored session is a valid skill target without the
+// registration step. An unknown name is still refused.
+func TestToolAssignmentAcceptsSeenProject(t *testing.T) {
+	s, _ := newTestStore(t)
+	item := protocol.InventoryItem{Kind: "skill", Name: "sample", Hash: "abc", State: "ok"}
+	if err := s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES('machine','/w/registered','registered',0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO sessions (id,node_id,harness,native_id,cwd,repo_root,repo_project,last_seen,online,no_project) VALUES ('s1','machine','claude','n1','/w/seen','/w/seen','seen',0,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","sample","abc"]`
+	for _, name := range []string{"registered", "seen"} {
+		if _, err := s.AssignTool(id, protocol.ToolAssignment{Scope: "projects", Projects: []string{name}}, "owner", "test"); err != nil {
+			t.Fatalf("%s project: %v", name, err)
+		}
+	}
+	if _, err := s.AssignTool(id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"missing"}}, "owner", "test"); err == nil || !strings.Contains(err.Error(), "project is not known") {
+		t.Fatalf("unknown project: %v", err)
+	}
+	if _, err := s.SaveToolPlan(id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"seen"}}, nil, "owner"); err != nil {
+		t.Fatalf("seen project plan: %v", err)
+	}
+	if _, err := s.SaveToolPlan(id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"missing"}}, nil, "owner"); err == nil || !strings.Contains(err.Error(), "project is not known") {
+		t.Fatalf("unknown project plan: %v", err)
+	}
+}
+
+// The plan offers every checkout of a seen project, not only registered ones.
+func TestToolTargetsIncludeSeenProjectCheckout(t *testing.T) {
+	g, err := New(Options{DataDir: seededDataDir(t), TempFolders: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := "/w/seen"
+	if _, err = g.store.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "n1", Cwd: root,
+		Repo: protocol.RepoInfo{Root: root, Worktree: root, Project: "seen"}}); err != nil {
+		t.Fatal(err)
+	}
+	item := protocol.InventoryItem{Kind: "skill", Name: "sample", Hash: "abc", State: "ok", Location: "/fixture"}
+	if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
+		t.Fatal(err)
+	}
+	targets, err := g.toolTargets(context.Background(), `["skill","sample","abc"]`, protocol.ToolAssignment{Scope: "projects", Projects: []string{"seen"}}, map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, target := range targets {
+		if target.Checkout == root && target.Project == "seen" && target.Action == "copy" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no copy target for the seen checkout: %+v", targets)
+	}
+}
+
 func TestToolPlanRejectsChangedObservation(t *testing.T) {
 	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {

@@ -227,17 +227,25 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 	targets = d.targetsForThisNode(targets)
 	projectConflicts := projectTargets(targets)
 	projects := map[string]bool{}
+	// Project folders here are registered or seen in a session: any known
+	// Git checkout is a skill destination (decision 0048).
+	worktrees := map[string][]string{}
 	projectsReady := false
 	if raw, e := d.call(ctx, "query.projects", struct{}{}); e == nil {
 		var result protocol.ProjectsResult
 		if json.Unmarshal(raw, &result) == nil {
 			projectsReady = true
 			for _, p := range result.Projects {
-				if p.NodeID == d.cfg.NodeID && (p.Source == protocol.SourceRegistered || p.Source == protocol.SourceBoth) {
-					projects[p.Name+"\x00"+filepath.Clean(p.Path)] = true
-					for _, wt := range p.Worktrees {
-						projects[p.Name+"\x00"+filepath.Clean(wt)] = true
-					}
+				if p.NodeID != d.cfg.NodeID {
+					continue
+				}
+				projects[p.Name+"\x00"+filepath.Clean(p.Path)] = true
+				if _, ok := worktrees[p.Name]; !ok {
+					worktrees[p.Name] = []string{}
+				}
+				for _, wt := range p.Worktrees {
+					projects[p.Name+"\x00"+filepath.Clean(wt)] = true
+					worktrees[p.Name] = append(worktrees[p.Name], wt)
 				}
 			}
 		}
@@ -257,7 +265,7 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 			result.Reason = "project registry unavailable"
 		} else if t.Revision.Assignment.Scope == "projects" && t.Target.Action == "copy" && t.Target.Checkout != "" && !projects[t.Target.Project+"\x00"+filepath.Clean(t.Target.Checkout)] {
 			result.State = "conflict"
-			result.Reason = "checkout is no longer registered"
+			result.Reason = "checkout is no longer a known project"
 		} else if t.Revision.Assignment.Scope == "projects" && t.Target.Action == "copy" && t.Target.Checkout != "" && projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout] != "" {
 			result.State = "conflict"
 			result.Reason = projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout]
@@ -300,7 +308,7 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 							root, _ := inventory.ProjectSkillRoot(t.Target.Harness, names)
 							t.Target.Destination = filepath.Join(t.Target.Checkout, root, t.Name)
 						}
-						result = d.copyProjectSkill(t, b.Data)
+						result = d.copyProjectSkillIn(t, b.Data, worktrees[t.Target.Project], true)
 					} else {
 						result = d.copyGlobalSkill(t, b.Data)
 					}
