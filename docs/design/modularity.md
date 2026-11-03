@@ -1,197 +1,215 @@
-# Modular agent-net: sessions and work items
+# Modular agent-net
 
 **Date:** 2026-11-03
-**Status:** Draft for the owner, nothing built
-**Naming:** "playbook" already means model notes in the code, and "owner" on a worker means the calling session. This note calls the layer of opinions the **operating model**, and one complete way of working (modules plus operating model) a **recipe**.
-**Companion:** [modularity-inventory.md](modularity-inventory.md), the list of every feature and every built-in opinion, with file and line.
+**Status:** Draft for the owner, nothing built. Second version: the first version drifted into new features; this one keeps to the objective.
+**Companion:** [modularity-inventory.md](modularity-inventory.md), every feature and every built-in opinion, with file and line.
 
-## The goal
+## The objective
 
-agent-net should support different ways of working without code changes:
+In the owner's words: "how can the harness be adjusted to support my way and his way and other ways, and how can I control that from my CTO".
 
-- **The owner's way:** long-running sessions, one tech lead per repo, a CTO, and the human at feature level (Ideas).
-- **A friend's way (Conductor):** a tracker-driven daemon. A work item reaches a state, a workflow picks it up, an agent runs in a worktree, and an evidence-gated merge closes it. No long-running orchestrator.
-- **Other ways** nobody has thought of yet.
+- **agent-net provides mechanisms.** Sessions, messages, workers, the picker, the judge, skills, the graph, proposals and approvals.
+- **A way of working is an opinion on top.** Who may start workers, whether a lead writes code, which provider is protected, what agents are told, how work is tested and merged.
+- **Opinions are data, not code.** A way of working is written as a **recipe**. Changing it needs no release.
+- **The CTO controls it.** The CTO reads the recipe in force and proposes changes; the owner approves.
+- **Surfaces reflect it.** The TUI, phone and bots show what the recipe uses. They are not modules.
 
-The CTO can read and propose changes to the setup. The owner approves, as for any owner-only change.
+**The test of success:** the owner's way and a friend's way (Conductor) can both be written as recipes for the same binary. Where one cannot be written, that marks a missing mechanism. Only then is something built.
 
-## Four layers
+## Principles
 
-| Layer | What it is | Turned off? | Examples |
+1. **Mechanism, not opinion, in the code.** A value that someone may want different moves to the recipe.
+2. **Advice and rules are different.** Advice is text an agent reads and may not follow ("keep memory files"). A rule is a check agent-net enforces ("merge only when CI and a review agree"). If it must hold every time, it is a rule; a rule written only as advice is a bug.
+3. **Rules only tighten going down the levels; advice may change freely.**
+4. **A setting lives at the level where it really varies,** and says how far down it may be overridden.
+5. **Every effective value says where it came from** ("merge gate on: team wbg"), in the TUI and for the CTO.
+6. **One name per concept.** No special kinds where a setting does the job.
+
+## The concepts
+
+### Network
+
+The whole harness, one owner, one CTO. Foundation lives here: gateway, identity, caller checks, messages, security notes, herdr, harness detection and updates.
+
+### Team
+
+A group of repos and agents with a shared purpose, for example all the wbg repos.
+
+- A repo or an agent is a **member of** at most one team (a new edge kind). One parent keeps inheritance clear.
+- A team has a purpose and settings that its members inherit.
+- A team is not an architect. An architect is an agent that owns a team (below).
+
+### Repo
+
+The software being built: code in one place, its git remote, the machines it is checked out on. The repo holds the properties of the software, so that several agents in one repo cannot drift apart:
+
+- purpose and north star;
+- accepts and refuses (which feature requests fit);
+- escalation: which changes must go to the owner;
+- maturity and deploy rules;
+- delivery: tests, CI, review, merge, release;
+- skills placement.
+
+### Agent
+
+Who acts. One name for every kind: tech lead, worker, architect, product manager, expert, reviewer, CTO.
+
+- **Owns:** a repo, a part of a repo (a set of paths), a team, the network, or nothing. An agent has no purpose of its own: it takes the purpose of what it owns.
+- **Inside one repo, parts do not overlap.** The repo's lead owns whatever no one else owns, so every file has exactly one owner.
+- **Role:** free text, with shipped defaults (lead, worker, reviewer, architect, product manager, expert). A role feeds wording, not logic. A fixed list would go against modularity.
+- **Autonomy:** may write code, may start workers. "Non-coding" is a setting, not a kind.
+- **Escalation:** the repo's escalation binds every agent there; an agent may add stricter escalation for itself, never looser.
+- **Relationships:** see below.
+
+The owner's style stays one agent per repo. The split matters when it is not 1-1, and it removes the architect as a special node kind: an architect is an agent that owns a team.
+
+Examples:
+
+| Agent | Owns | Role | May write code |
 |---|---|---|---|
-| Foundation | what agent-net is | never | sessions, identity and caller checks, messages, gateway, security, herdr, harness detection and updates, **work items and runs** (new) |
-| Modules | capabilities | per network, machine or project | workers and the picker, difficulty judge, quality, skills, MCP sharing, quotas, CTO graph and charters, Inbox approvals, Ideas, triggers, merge gate |
-| Operating model | a way of working, as data | edited, not switched | rules for people and agents, workflows, defaults, escalation levels, north stars |
-| Surfaces | where the human looks and acts | they show what is on | TUI, phone app, bots, CTO chat, CLI |
-
-Surfaces have no logic of their own: if a module is off, no surface shows it.
-
-## The finding: two different centres
-
-agent-net today is built around **sessions**. Work starts because an agent or the owner decides. A worker belongs to the session that started it, and its report goes back to that session.
-
-Conductor is built around **work items**. A ticket moves through states; a daemon leases it, routes it to a workflow, runs it, and applies the result. Nothing needs to be running in between.
-
-To support both, agent-net needs **work items as a foundation object next to sessions**, and **runs that belong to either one**.
-
-### Work item
-
-A unit of work the human cares about.
-
-- **Fields:** an id, a title, a level (idea, feature, task), a state (parked, ready, active, needs-you, done, closed), labels, a project, links (depends on, part of), and a conversation (one chat per item, as in the Ideas screen).
-- **Sources:** the owner, an agent, the CTO, or a trigger: a tracker such as Plane, an alert, or a schedule.
-- **Optional mirror:** an external tracker. Plane owns the state and agent-net mirrors it, or agent-net owns it. This is set per project.
-- **One owner at a time.** A work item has exactly one current owner: a session, a run or the human.
-- **Handoff is not a message.** Passing an item to a new owner (lead to reviewer, worker back to lead) is one database step: the old owner's hold closes, the new one's opens, and the history keeps both. A message about the item can still be sent, but it never moves ownership. A message can be lost or ignored; a handoff cannot.
-- **Waiting names what it waits for.** An item in needs-you or blocked records the thing it waits for: an owner decision, another item, a CI run. When that thing resolves, agent-net wakes the owner. Nobody polls, in the same way as worker notices today.
-
-A run ends in one of a small fixed set of exits: done, handoff, waiting, failed. A workflow step lists which exits it allows.
+| Tech lead | a repo | lead | trivial fixes only (advice) |
+| Worker | one task in one repo, for one run | worker | yes |
+| Architect | a team | architect | no |
+| Product manager | a team's feature backlog | product manager | no |
+| Expert (for example a library agent) | nothing, or a knowledge source | expert | no |
+| Security reviewer | nothing; may review a team's repos | reviewer | no |
+| CTO | the network | CTO | no |
 
 ### Run
 
-One agent working on one thing in one worktree. That is today's worker, with two changes:
+One worker start: one agent working on one task in one worktree. Today's worker. A task has one active run at a time; a retry or a continuation is another run of the same task.
 
-- **The owner of a run** is a session (today), a work item (new), or both: a tech lead runs a worker for a feature.
-- **Reports** go to the owner. For a work item, the report becomes the item's state change and a line in its conversation, not a message to a session.
+### Machine
 
-## Operating model
+Not a level. A machine says what it **can** do: installed harnesses, toolchains, whether it accepts workers, harness updates. It never takes part in inheritance.
 
-Data, per network with per-project overrides. Versioned, and changed through owner-approved proposals.
+## Relationships, as a module
 
-- **Rules:** who may start runs; whether a tech lead may edit code; the level the human works at (feature or task); when to escalate and how to bundle escalations; protected providers; compaction advice.
-- **Workflows:** route by labels or level to an agent, model, effort, prompts and completion effects. This is Conductor's workflow folder, as data.
-- **Defaults:** picker thresholds, auto-continue, judge timeout, isolation.
-- **North stars:** per project, what the agents there may build on their own.
+The graph edges today (`depends`, `governs` with modes advisor, arbiter or owner, `deploys`) answer one question: how should a receiving agent treat a message from a sender, as an **order**, a **suggestion** or **information**? Today the answer is worked out at delivery and written into the trust note.
 
-The guidance text in every agent's instructions is generated from the operating model, not written in the code.
+As a module it is a rule from (sender, receiver, the edges between them) to order, suggestion or information.
 
-### Advice and rules are different things
+- The owner's rule is today's: owner, then CTO, then an owner-mode governor, then peers.
+- Reporting lines ("reports to") are one more edge type in this module, not a separate system.
+- A way of working without messages between agents (Conductor) may need almost none of it.
 
-An agent reads text and may not follow it. Only agent-net itself can make something always true. So every entry in the operating model is one of two kinds:
+## Levels and inheritance
 
-| Kind | Who makes it hold | Examples | Who may change it |
+```
+network
+  team
+    repo chain:   repo  -> run
+    agent chain:  agent -> session
+```
+
+A worker started by agent Y in repo X takes delivery settings from X and behaviour settings from Y.
+
+### Where a setting lives
+
+1. Touches a shared resource: **network** (subscriptions, quotas, protected providers).
+2. Measurement or calibration: **network** (model scores, judge, cut points, quality data). Splitting it would make the data meaningless.
+3. Security: **set at network; lower levels may only tighten** (owner-only actions, approval path, caller checks, sandbox minimum).
+4. Coordination across repos: **team** (who leads, cross-repo features, intake).
+5. How the software is built and shipped: **repo**, with a network default.
+6. How one agent behaves: **agent**.
+
+### Classification
+
+| Setting or module | Home | Overridable at | Why |
 |---|---|---|---|
-| **Advice** | the agent, by reading it | bundle escalations, keep memory files, "tech lead may fix trivial things", which tests a worker runs before handing back | the CTO within limits, the owner |
-| **Rule** | the daemon or gateway, whatever the agent does | who may start runs, protected providers, merge only when CI and a review agree, owner-only actions | the owner only |
+| Gateway, identity, messages, caller checks, herdr, harness updates | network (foundation) | nowhere | what agent-net is |
+| Quotas, protected providers | network | nowhere | shared money |
+| Worker profiles | network | nowhere (a team allowlist is out of scope) | shared |
+| Model scores, judge, cut points, quality data, picker weights | network | nowhere | calibration |
+| Owner-only actions, approval path | network | lower levels tighten only | security |
+| CTO | network, one per owner | - | the owner's single control point |
+| Shared MCP servers | registry at network | which ones attach: team, repo, agent | registry shared, use local |
+| Relationships rule | network | team | how messages are read |
+| Escalation and bundling of what reaches the owner | network default | team, repo, agent (tighten) | how much reaches the owner |
+| Intake (owner, Ideas, tracker) | team | repo | a tracker project usually maps to a team |
+| Ideas (feature backlog) | optional module, team | - | today it lives inside an agent session |
+| Purpose, accepts, refuses | repo; team for a team's own purpose | - | properties of the software |
+| Maturity, deploy rules | repo | - | how careful to be with this code |
+| Delivery: tests, CI, review, merge gate, release | network default | team, repo | varies by repo |
+| Release train (repos that release together) | team | - | only meaningful across repos |
+| Skills on or off | network default | team, repo | already per project |
+| Worker isolation, sandbox | network minimum | repo, run (tighten) | security minimum |
+| Owns, role, may write code, may start workers | agent | - | who acts |
+| Advice text (guidance) | network | team, repo, agent | advice changes freely |
+| Model for one task | run | - | only inside what is allowed above |
 
-The test: if it must hold every time, it is a rule, and the guidance text only explains it. A rule written only as advice is a bug. This also answers the open question about the CTO: it may change advice, never rules.
+### Resolution rules
 
-## Lessons from running the owner's way (2026-11-03)
-
-The orchestrator of this repo played tech lead for a full day: 6 to 8 workers in parallel, about 10 releases. What that taught, for the owner's preset:
-
-- **One orchestrator per repo is right, but it is a bottleneck.** Merging, conflict resolution and CI rounds held the work up, not the thinking. Three releases failed CI because one worker's tests asserted what another worker had just changed. The merge gate module and a "test every touched package after a multi-worker merge" rule in the operating model address this.
-- **"The tech lead never writes code" is too strict.** A handful of one-line fixes (a retry cap, a judge timeout, a column width) were faster done directly than briefed to a worker, which takes about 10 minutes and a full brief. Operating model rule: "tech lead never writes features; may fix trivial things (a few lines, tested)".
-- **Compaction alone loses detail.** Memory files (feedback, project facts, decisions) carried what mattered across compactions; the summary alone would not have. Operating model advice: long-running sessions keep memory files, and compaction is a supplement to them.
-- **Asking other agents works.** The Mac session found the agy quota cause, and a Mac worker found the CTO dialog error in 2 minutes, both on machines the orchestrator cannot read. This is foundation and should stay so.
-- **Where opinion is baked in today:** the guidance text (for example "start workers only when the owner asks", "announce your task"), the protected provider and "saved for your orchestrator" (which assume an Opus orchestrator), the picker's level rules and auto-continue, and one CTO per network. All of these move to the operating model.
-
-## Removing the integration bottleneck
-
-Options considered for the work after a worker finishes (merging, conflicts, CI, release):
-
-| Option | How | For | Against | Verdict |
-|---|---|---|---|---|
-| A. Merge gate | a finished run merges itself when CI passed, a review ran and the agent's report says merge | no manual merging; proven in Conductor | needs CI and a review step per repo; weak tests let bad merges through | **yes** |
-| B. Worker hands back a ready-to-merge branch | before handing back, the worker rebases on main, resolves conflicts and runs the tests it touched | the agent that knows the change resolves its conflicts; the lead's context stays small | more worker time; two finishing at once must rebase again | **yes, with independent checks** |
-| C. Release train | batch finished work, one CI run per batch (what happened on 2026-11-03) | fewer CI runs | one bad change blocks the batch; cross-worker clashes surface late | fallback only |
-| D. Integrator agent | a separate cheaper agent merges, runs CI and releases | frees the lead | one more agent; must understand conflicts or it escalates a lot | when volume is high (more than about 6 workers) |
-| E. Sub-leads per repo | several leads by area, **one of them the lead** that receives all communication | more thinking in parallel | needs reporting lines, which agent-net does not model yet | where a project is big enough |
-
-"Plan smaller, independent tasks" was also listed and dropped: it is a habit, not something agent-net can provide.
-
-**Quality control stays independent of the writer.** B moves the plumbing, not the judgement. The worker prepares the branch; it never approves it. Before anything merges:
-
-- CI runs on the branch: the worker's own word is not evidence;
-- a reviewer reads the final diff against main: the lead, a separate reviewer agent, or a bot review;
-- the merge gate merges only when CI and the review agree.
-
-The remaining risk is a conflict resolved "correctly" but wrongly. The reviewer sees the final diff, so it is caught at review.
-
-**Reporting lines** make E work. A new graph edge, "reports to", states who the lead is. Messages for a repo go to its lead, and sub-leads take work from the lead. A project's operating model decides whether it has sub-leads. The same edge fits the work-item preset: a workflow reports to whoever owns the board.
-
-**Recommendation:** B plus A, with D when volume calls for it and E where a project is large enough. All four are operating-model settings, so each project picks its own.
-
-## Modules that come from Conductor
-
-- **Triggers:** tracker sources (Plane first) and alert sources (webhooks). They create work items and never start runs themselves.
-- **Merge gate:** a run's end effect. It merges only when both sides agree:
-  - **Policy:** CI passed, a review ran, no review flag on the item.
-  - **Evidence:** the agent's own report says merge.
-
-  Missing evidence is a refusal. The owner's way benefits too: today the tech lead merges by hand.
-- **Ideas:** the feature-level backlog for the human, one chat per idea, and "Do now" starts a product-owner run.
+1. Each setting declares its home level and how far down it may be overridden.
+2. The most specific allowed level wins.
+3. Rules only tighten going down; advice may change freely.
+4. A repo or an agent is a member of at most one team.
+5. Every effective value carries its source.
+6. A CTO proposal names the level it changes: "merge gate for team wbg" and "merge gate for wbg-housing" are different proposals.
 
 ## Recipes
 
-A **recipe** is the blueprint for one way of working. It says which modules are on, with which settings, and how the work moves from an idea to a release. It is one versioned file. Modules are the parts; the recipe is how they are put together.
+A recipe is one versioned file: which modules are on, and the settings at each level. The owner's way is the first recipe and reproduces today's behaviour exactly.
 
-The idea comes from OpenRig's team definitions (starter, workshop, factory), widened: OpenRig's team files list agents, while a recipe also carries the delivery strategy and the rules.
+Sections:
 
-### What a recipe holds
-
-| Section | What it decides | Example (the owner's recipe) |
+| Section | Decides | The owner's recipe |
 |---|---|---|
-| **Modules** | which modules are on, and their settings | workers and picker on; judge on, 60 s; quality weighting on; Ideas on; triggers off |
-| **Roles** | which long-running sessions exist, their reporting lines, harness and model hints | one CTO per network; one tech lead per repo on an Anthropic model; no sub-leads |
-| **Intake** | where work comes from, and the level the human works at | the owner and Ideas; the human works at feature level and never sees tasks |
-| **Routing** | which work goes to which kind of run | the difficulty judge picks the level; the picker picks the model; non-Anthropic first |
-| **Delivery** | how a change gets tested, reviewed, merged and released | see below |
-| **Escalation** | what reaches the human, and how it is bundled | owner-only actions; decisions with a recommendation; bundled at the end of a turn |
-| **Advice** | the guidance text agents read | "announce your task", "decide, do not defer" |
+| Modules | which are on, with their settings | workers and picker, judge, quality weighting, skills, CTO graph, Inbox |
+| Teams | teams, members, purposes | none yet |
+| Repos | purpose, accepts, refuses, escalation, maturity, delivery | today's charters and defaults |
+| Agents | owns, role, autonomy | one lead per repo, the CTO |
+| Relationships | the rule and the edges | today's edges and modes |
+| Intake | where work comes from | the owner and agents |
+| Advice | the guidance text | today's guidance lines, as data |
 
-### Delivery strategy
+**Delivery example**, the owner's recipe for agent-net, each line marked:
 
-The integration lessons of 2026-11-03 belong here, as data, so each project picks its own. Each line is marked as a rule (agent-net enforces it) or advice (agents follow it).
-
-| Step | Choices | The owner's recipe for agent-net |
+| Step | Setting | Kind |
 |---|---|---|
-| Worker tests | none; changed packages; full suite | changed packages only, never the full suite (advice) |
-| Branch prep | lead merges; worker rebases on main and resolves conflicts before hand-back | worker rebases (advice) |
-| CI | none; on the branch; on the merged batch | on the branch, required (rule) |
-| Review | none; the lead; a reviewer agent; a bot; never the writer | the lead reads the diff (rule: the writer never approves its own run) |
-| Merge | by hand; merge gate | merge gate when CI and review agree, else the lead (rule) |
-| Batching | per change; release train | per change, train as fallback |
-| After a multi-run merge | nothing; test every touched package | test every touched package (rule, CI does it) |
-| Release | none; on tag; automatic after CI on main | automatic: CI on main, then tag (rule) |
+| Worker tests | changed packages only | advice |
+| Branch prep | the worker rebases on main before handing back | advice |
+| CI | on the branch, required | rule |
+| Review | the lead reads the diff; the writer never approves its own run | rule |
+| Merge | merge gate when CI and review agree, otherwise the lead | rule |
+| After a multi-worker merge | test every touched package | rule |
+| Release | automatic after CI on main | rule |
 
-Two other examples:
+**How a recipe is changed.** The CTO reads the recipe and the effective values with their sources, and proposes a change at a named level. The proposal shows the difference in plain words. The owner approves through the existing proposal path. The CTO may change advice within limits; rules always need the owner.
 
-- **A docs repo:** no CI, the lead reviews and merges, no release.
-- **Conductor:** the worker rebases; CI on the branch; a bot review; the merge gate closes the item; release is left to the project.
+## Two lists to complete
 
-### The recipes that ship
+1. **The opinion list.** Every opinion now in the code, from the inventory, marked advice or rule, with the recipe setting that replaces it. Writing the owner's recipe from it must reproduce today exactly. The largest groups are the guidance text, the CTO brief, the maturity defaults, the picker numbers, worker limits and auto-continue, and the protected provider.
+2. **The gap list.** The friend's way written as a recipe, with every line that today's mechanisms cannot express. Known so far:
+   - work that starts from a tracker item, not from a session (intake as a module);
+   - a run that reports to an item in a tracker, not to a session;
+   - merging decided by policy and evidence, not by a lead (the merge gate).
 
-- **Owner:** sessions at the centre; tech leads; work items only at feature level; the human never sees tasks; merges by the tech lead or the merge gate.
-- **Conductor:** work items at the centre; no tech leads; triggers from Plane and alerts; workflows route items to runs; the merge gate closes them; the human sees needs-you items and the runs page.
-- **Minimal:** messages and sessions only.
+   The rest needs the friend's way in more detail.
 
-### How a recipe is used
+## Build order
 
-- **Scope.** One recipe per network. A project may pick another recipe or override single sections, most often Delivery.
-- **Setup asks for one.** Today's behaviour is the Owner recipe, so nothing changes for an existing network.
-- **Switching or editing is a proposal.** The CTO may propose; the owner approves. The proposal shows the difference in plain words: which modules turn on or off, which rules change, which guidance lines change.
-- **Sharing.** A recipe can be exported as a file and imported from a commit-pinned Git path. A recipe is instructions for agents, so an imported one is treated like code from a stranger: the owner reads the difference and approves it, and it can never relax a Foundation security check.
-- **Measuring.** Runs already carry ratings, rework and late defects. Grouped by recipe, these show which way of working gives better results for the same kind of work, with numbers instead of opinion. OpenRig has no such measure.
+Each step ships alone and keeps today's behaviour.
 
-## How to get there
+1. **The opinion list** (inventory done in draft).
+2. **Settings as data, owner recipe only.** The code reads values instead of constants; each value marked advice or rule; effective values show their source; the CTO can read them.
+3. **Repo and agent split, with ownership and free-text roles.** The architect becomes an agent that owns a team.
+4. **Teams** with the "member of" edge and inheritance.
+5. **Relationships as a module,** today's rule as its first form.
+6. **CTO proposals at a named level.**
+7. **Gap list for the friend's way,** then only the mechanisms it needs (intake, merge gate, run reporting).
 
-Each step ships alone and keeps today's behaviour as the default.
+## Dropped from the first version, and why
 
-1. **Inventory, done in draft:** see the companion file. The owner marks anything misclassified.
-2. **The recipe file, holding today's behaviour as the Owner recipe:**
-   - start with the guidance text and the hard-coded rules listed in the inventory, each marked advice or rule;
-   - the code reads values from the recipe, not constants;
-   - the CTO gets read access and owner-gated change proposals;
-   - nothing changes in behaviour.
-3. **Module switches:** each module declares its tools, tabs, hooks and guidance lines; the recipe's Modules section switches them, and switching one off removes them all.
-4. **Work items and runs owned by work items,** with handoff and waiting: the foundation change. The Ideas screen is the first surface on it.
-5. **Delivery section and merge gate:** the merge gate reads its conditions from the recipe.
-6. **Triggers:** Plane first.
-7. **Recipes in setup:** Owner, Conductor and Minimal; per-project overrides; export and import; results grouped by recipe.
+- **Work items as a foundation object.** At task level a work item and a run are nearly 1-1. Only an item that exists before any run, or above runs (a feature), is new. For a tracker-driven way the tracker can own the item; agent-net keeps a reference on the run.
+- **Module on/off switches as a goal.** Turning things off is a side effect of recipes, not the objective.
+- **Handoff and waiting as foundation objects.** Taken from OpenRig without a problem that needed them. Revisit if the gap list asks for them.
+- **"Measure by recipe".** With one owner and one recipe there is nothing to compare.
+- **Recipe import and sharing.** No one needs it yet; it adds a security surface.
+- **Merge-bottleneck options.** The merge gate and a rebased hand-back are good features in their own right. They are delivery settings once built, but building them is not modularity work.
 
-## Open questions for the owner
+## Open questions
 
-- **Where state lives** when an external tracker exists: agent-net or the tracker? Conductor says the tracker owns item state and its own database owns run state. That works well and could be the rule.
-- **One recipe per network with per-project overrides** (this note's proposal), or fully per project?
-- **Whether the CTO may change advice within limits** without asking, in the same way as the 30-minute graph window. Rules always need the owner.
+1. When a tracker exists, does it own the item state, or does agent-net? Conductor's answer is the tracker.
+2. Should a part of a repo ever have its own maturity (a stable core and an experimental module)? Proposed: not now.
+3. A cross-cutting agent (for example a security reviewer for a team) owns nothing and works through relationships. Is that enough?
