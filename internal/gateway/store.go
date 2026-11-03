@@ -545,6 +545,9 @@ CREATE TABLE IF NOT EXISTS worker_assessments (
  confidence TEXT NOT NULL, rules_version TEXT NOT NULL, judge_harness TEXT NOT NULL,
  judge_model TEXT NOT NULL, reasons TEXT NOT NULL, picker_label TEXT NOT NULL, error TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_assessments_session ON worker_assessments(session_id, started_at DESC);
+`, `
+CREATE TABLE tool_project_settings (item TEXT PRIMARY KEY, new_projects INTEGER NOT NULL CHECK(new_projects IN (0,1)));
+CREATE TABLE tool_project_seen (item TEXT NOT NULL, project TEXT NOT NULL, PRIMARY KEY(item,project));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

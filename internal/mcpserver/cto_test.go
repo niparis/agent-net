@@ -96,7 +96,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 		"session_change": {"action": {"rename", "trust", "policy", "session_start"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
 		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex"}, "isolation": {"worktree", "none"}},
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
-		"tools_change":   {"action": {"plan", "apply", "undo", "import", "native_remove"}},
+		"tools_change":   {"action": {"plan", "apply", "undo", "import", "native_remove", "toggle", "new_projects"}},
 		"settings_change": {
 			"area": {"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"},
 		},

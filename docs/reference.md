@@ -1139,6 +1139,38 @@ file, which stays on that machine, can hold a literal value the file had.
 
 ### Desired tool assignments
 
+The owner socket also accepts project switches for skills. `tools_toggle`
+takes `item`, `project` and boolean `on`. It returns the ordinary plan; confirm
+it with `tools_apply`. Turning a global skill off in one project moves it to
+copies in every other known project in one plan. Turning the last project off
+makes it uninstalled. Turning every known project on uses global placement
+when its new-projects choice is on. Machine limits are kept.
+
+`tools_new_projects` takes `item` and boolean `on`. It saves the standing
+choice and returns a placement plan to confirm with `tools_apply`. For example,
+turning this choice off for a global skill plans copies in all current projects
+instead of user folders. The default is on for a global skill and off for other
+assignments. Existing off cells stay off when the choice is enabled. When a
+new project is first reported, the gateway adds it to project assignments with
+this choice on. Those automatic plans use actor `standing choice`, the normal
+journal, and the normal apply and undo path. Global assignments need no change.
+
+`tools_projects` returns an array of `ToolProjectState` rows: `item`, `projects`
+(a map from every known project name to on/off), `new_projects`, and `machines`
+(the node IDs with observed copies). Targets use the same registered or seen
+project set as assignments. The daemon checks Git placement before any copy.
+These three socket methods require the owner connection. Their gateway frames
+are `tools.toggle`, `tools.new_projects` and `query.tools_projects`.
+The CTO proposes `tools_change` actions `toggle` and `new_projects`; the owner
+approves them through the usual proposal gate.
+
+A switch on an unmanaged user-folder skill first imports its current content.
+A size, secret or hash refusal also refuses the switch. Import leaves the source
+alone until the plan is applied. Migration limits the assignment to the node
+IDs where that content is found today. It never spreads the skill to a machine
+that did not already have it. Plugin, package and system copies cannot be used
+as the import source for a switch.
+
 The owner can plan a global, project or uninstalled assignment. Use the exact
 item ID from `tools_items`, including its brackets and quotes:
 
@@ -1289,7 +1321,8 @@ assignments.
 The owner can import an observed skill with the `tools_import` operator method.
 Pass `item` as the ID from `tools_items` and `location` as an object with
 `node_id` and `location` from that item's locations. The source machine must be
-online. The owner should inspect the skill files for secrets before importing.
+online. The gateway refuses recognised secret shapes before storing a bundle.
+The owner should still inspect the skill files for secrets before importing.
 Import reads the selected directory and does not change it. The gateway rejects
 an import if its contents no longer match the observed hash. The packed bundle
 must be at most 2 MiB and may contain at most 2,048 entries. A larger skill can

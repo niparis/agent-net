@@ -147,10 +147,11 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"tools_change": {
-		desc: "Change tools: plan, apply, undo, import or native_remove.",
+		desc: "Change tools: toggle, new_projects, plan, apply, undo, import or native_remove.",
 		fields: map[string]ctoField{
-			"action":       {typ: "string", enum: []string{"plan", "apply", "undo", "import", "native_remove"}},
+			"action":       {typ: "string", enum: []string{"plan", "apply", "undo", "import", "native_remove", "toggle", "new_projects"}},
 			"item":         {typ: "string", desc: "Item ID."},
+			"on":           {typ: "boolean", desc: "On or off."},
 			"target":       {typ: "object", desc: "Assignment."},
 			"operation":    {typ: "string", desc: "Operation.", enum: []string{"repo_remove"}},
 			"project":      {typ: "string", desc: "Project."},

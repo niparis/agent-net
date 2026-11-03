@@ -60,7 +60,7 @@ var ctoChangeActions = map[string]map[string]string{
 	"worker_change":  {"start": "worker_start", "stop": "worker_stop"},
 	"answer":         {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
 	"tools_change": {
-		"plan": "tools_plan", "apply": "tools_apply", "undo": "tools_undo",
+		"toggle": "tools_toggle", "new_projects": "tools_new_projects", "plan": "tools_plan", "apply": "tools_apply", "undo": "tools_undo",
 		"import": "mcp_import", "native_remove": "mcp_native_remove",
 	},
 	"mcp_change": {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable"},
@@ -81,7 +81,7 @@ var ctoActions = map[string]map[string][]string{
 	"session_change":  {"action": {"rename", "trust", "policy", "session_start"}},
 	"worker_change":   {"action": {"start", "stop"}},
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
-	"tools_change":    {"action": {"plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},
+	"tools_change":    {"action": {"toggle", "new_projects", "plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},
 	"mcp_change":      {"action": {"add", "remove", "test", "enable"}},
 	"settings_change": {"area": {"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},

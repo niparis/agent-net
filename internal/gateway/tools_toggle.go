@@ -1,0 +1,389 @@
+package gateway
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"path/filepath"
+	"sort"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// Enumerate candidates, then apply exactly the assignment target predicate.
+func (s *Store) knownToolProjectsTx(tx *sql.Tx) ([]string, error) {
+	rows, err := tx.Query(`SELECT name FROM projects UNION SELECT CASE WHEN repo_project<>'' THEN repo_project ELSE '' END FROM sessions UNION SELECT cwd FROM sessions WHERE repo_project='' UNION SELECT repo_root FROM sessions WHERE repo_project=''`)
+	if err != nil {
+		return nil, err
+	}
+	candidates := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if name != "" {
+			candidates[name] = true
+			candidates[filepath.Base(name)] = true
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	names := []string{}
+	for name := range candidates {
+		known, e := s.projectKnownTx(tx, name)
+		if e != nil {
+			return nil, e
+		}
+		if known {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func initToolProjectSettingTx(tx *sql.Tx, item string, on bool, names []string) error {
+	res, err := tx.Exec(`INSERT OR IGNORE INTO tool_project_settings(item,new_projects) VALUES(?,?)`, item, boolInt(on))
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil || n == 0 {
+		return err
+	}
+	for _, p := range names {
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO tool_project_seen(item,project) VALUES(?,?)`, item, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) ToolProjectStates() ([]protocol.ToolProjectState, error) {
+	return s.toolProjectStates(false)
+}
+func (s *Store) toolProjectStates(validate bool) ([]protocol.ToolProjectState, error) {
+	items, err := s.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	if err != nil {
+		return nil, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	names, err := s.knownToolProjectsTx(tx)
+	if err != nil {
+		return nil, err
+	}
+	out := []protocol.ToolProjectState{}
+	for _, item := range items {
+		a := observedToolAssignment(item)
+		if err = initToolProjectSettingTx(tx, item.ID, a.Scope == "global", names); err != nil {
+			return nil, err
+		}
+		row := protocol.ToolProjectState{Item: item.ID, Projects: map[string]bool{}, Machines: []string{}}
+		if err = tx.QueryRow(`SELECT new_projects FROM tool_project_settings WHERE item=?`, item.ID).Scan(&row.NewProjects); err != nil {
+			return nil, err
+		}
+		for _, p := range names {
+			row.Projects[p] = a.Scope == "global"
+			for _, selected := range a.Projects {
+				if selected == p {
+					row.Projects[p] = true
+				}
+			}
+		}
+		machines := map[string]bool{}
+		for _, loc := range item.Locations {
+			machines[loc.NodeID] = true
+		}
+		for n := range machines {
+			row.Machines = append(row.Machines, n)
+		}
+		sort.Strings(row.Machines)
+		out = append(out, row)
+	}
+	if !validate {
+		err = tx.Commit()
+	}
+	return out, err
+}
+
+func observedToolAssignment(item protocol.ToolItem) protocol.ToolAssignment {
+	if item.Desired != nil {
+		return item.Desired.Assignment
+	}
+	a := protocol.ToolAssignment{Scope: "uninstalled"}
+	if item.Global {
+		a.Scope = "global"
+	} else if len(item.Projects) > 0 {
+		a.Scope = "projects"
+		a.Projects = append([]string(nil), item.Projects...)
+	}
+	// Migration never extends an unmanaged skill to another machine.
+	found := map[string]bool{}
+	for _, loc := range item.Locations {
+		found[loc.NodeID] = true
+	}
+	for n := range found {
+		a.Machines = append(a.Machines, n)
+	}
+	sort.Strings(a.Machines)
+	return a
+}
+
+func (s *Store) SetToolNewProjects(p protocol.ToolNewProjectsRequest, actor string, validate bool) error {
+	if !validChangeActor(actor) {
+		return errors.New("owner authority required")
+	}
+	rows, err := s.toolProjectStates(validate)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, r := range rows {
+		found = found || r.Item == p.Item
+	}
+	if !found {
+		return errors.New("skill item not found")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	names, err := s.knownToolProjectsTx(tx)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`INSERT INTO tool_project_settings(item,new_projects) VALUES(?,?) ON CONFLICT(item) DO UPDATE SET new_projects=excluded.new_projects`, p.Item, boolInt(p.On)); err != nil {
+		return err
+	}
+	// Enabling a rule affects future projects, not existing off cells.
+	for _, name := range names {
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO tool_project_seen(item,project) VALUES(?,?)`, p.Item, name); err != nil {
+			return err
+		}
+	}
+	if validate {
+		return nil
+	}
+	return tx.Commit()
+}
+
+func (s *Store) ToolToggleAssignment(p protocol.ToolToggleRequest) (protocol.ToolAssignment, error) {
+	return s.toolToggleAssignment(p, false)
+}
+func (s *Store) toolToggleAssignment(p protocol.ToolToggleRequest, validate bool) (protocol.ToolAssignment, error) {
+	rows, err := s.toolProjectStates(validate)
+	if err != nil {
+		return protocol.ToolAssignment{}, err
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	if err != nil {
+		return protocol.ToolAssignment{}, err
+	}
+	for _, row := range rows {
+		if row.Item != p.Item {
+			continue
+		}
+		if _, ok := row.Projects[p.Project]; !ok {
+			return protocol.ToolAssignment{}, errors.New("project is not known")
+		}
+		var a protocol.ToolAssignment
+		for _, item := range items {
+			if item.ID == p.Item {
+				a = observedToolAssignment(item)
+			}
+		}
+		row.Projects[p.Project] = p.On
+		a.Scope = "projects"
+		a.Projects = nil
+		for name, on := range row.Projects {
+			if on {
+				a.Projects = append(a.Projects, name)
+			}
+		}
+		if len(a.Projects) == 0 {
+			a.Scope = "uninstalled"
+		} else if len(a.Projects) == len(row.Projects) && row.NewProjects {
+			a.Scope = "global"
+			a.Projects = nil
+		}
+		return normalizeAssignment(a)
+	}
+	return protocol.ToolAssignment{}, errors.New("skill item not found")
+}
+
+func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, actor string) (protocol.ToolPlan, error) {
+	if !validChangeActor(actor) {
+		return protocol.ToolPlan{}, errors.New("owner authority required")
+	}
+	a, err := g.store.toolToggleAssignment(p, validatingProposal(ctx))
+	if err != nil {
+		return protocol.ToolPlan{}, err
+	}
+	return g.planSkillAssignment(ctx, p.Item, a, actor)
+}
+
+func (g *Gateway) planSkillAssignment(ctx context.Context, itemID string, a protocol.ToolAssignment, actor string) (protocol.ToolPlan, error) {
+	var imported int
+	var err error
+	if err = g.store.db.QueryRow(`SELECT COUNT(*) FROM skill_versions WHERE item=?`, itemID).Scan(&imported); err != nil {
+		return protocol.ToolPlan{}, err
+	}
+	if imported == 0 {
+		items, e := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+		if e != nil {
+			return protocol.ToolPlan{}, e
+		}
+		var location protocol.ToolImportLocation
+		for _, item := range items {
+			if item.ID == itemID {
+				for _, loc := range item.Locations {
+					if loc.Scope == protocol.InventoryUser && loc.State == protocol.InventoryOK && (loc.Source == "" || loc.Source == protocol.InventoryNative) && g.conn(loc.NodeID) != nil {
+						location = protocol.ToolImportLocation{NodeID: loc.NodeID, Location: loc.Location}
+						break
+					}
+				}
+			}
+		}
+		if location.NodeID == "" {
+			return protocol.ToolPlan{}, errors.New("unmanaged skill has no online user-folder copy to import")
+		}
+		if _, err = g.importSkill(ctx, protocol.ToolImport{Item: itemID, Location: location}); err != nil {
+			return protocol.ToolPlan{}, err
+		}
+	}
+	return g.planTool(ctx, protocol.ToolPlanRequest{Item: itemID, Target: a}, actor)
+}
+
+// Called after project discovery. Seen cells remember existing off choices.
+// Failed plans leave the project unseen so a later report can retry safely.
+func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
+	g.skillProjectsMu.Lock()
+	defer g.skillProjectsMu.Unlock()
+	rows, err := g.store.ToolProjectStates()
+	if err != nil {
+		return err
+	}
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, row := range rows {
+		var a protocol.ToolAssignment
+		for _, item := range items {
+			if item.ID == row.Item {
+				a = observedToolAssignment(item)
+			}
+		}
+		unseen := []string{}
+		for name := range row.Projects {
+			var seen int
+			if err = g.store.db.QueryRow(`SELECT COUNT(*) FROM tool_project_seen WHERE item=? AND project=?`, row.Item, name).Scan(&seen); err != nil {
+				return err
+			}
+			if seen == 0 {
+				unseen = append(unseen, name)
+			}
+		}
+		sort.Strings(unseen)
+		if len(unseen) == 0 {
+			continue
+		}
+		if row.NewProjects && a.Scope == "projects" {
+			for _, name := range unseen {
+				exists := false
+				for _, p := range a.Projects {
+					exists = exists || p == name
+				}
+				if !exists {
+					a.Projects = append(a.Projects, name)
+				}
+			}
+			// Keep project placement here: this standing choice only adds projects.
+			plan, e := g.planTool(ctx, protocol.ToolPlanRequest{Item: row.Item, Target: a}, "standing choice")
+			if e == nil {
+				_, e = g.applyTool(ctx, plan.ID, "standing choice")
+			}
+			if e != nil {
+				if firstErr == nil {
+					firstErr = e
+				}
+				continue
+			}
+		}
+		for _, name := range unseen {
+			if _, err = g.store.db.Exec(`INSERT OR IGNORE INTO tool_project_seen(item,project) VALUES(?,?)`, row.Item, name); err != nil {
+				return err
+			}
+		}
+	}
+	return firstErr
+}
+
+// The setting is an owner choice immediately. A placement change still needs
+// the returned plan to be confirmed through tools.apply.
+func (g *Gateway) setToolNewProjects(ctx context.Context, p protocol.ToolNewProjectsRequest, actor string) (protocol.ToolPlan, error) {
+	if !validChangeActor(actor) {
+		return protocol.ToolPlan{}, errors.New("owner authority required")
+	}
+	rows, err := g.store.toolProjectStates(validatingProposal(ctx))
+	if err != nil {
+		return protocol.ToolPlan{}, err
+	}
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	if err != nil {
+		return protocol.ToolPlan{}, err
+	}
+	for _, item := range items {
+		if item.ID != p.Item {
+			continue
+		}
+		a := observedToolAssignment(item)
+		for _, row := range rows {
+			if row.Item != p.Item {
+				continue
+			}
+			if len(row.Projects) == 0 && a.Scope == "global" && p.On {
+				break
+			}
+			a.Projects = nil
+			for name, on := range row.Projects {
+				if on {
+					a.Projects = append(a.Projects, name)
+				}
+			}
+			a.Scope = "projects"
+			if len(a.Projects) == 0 {
+				a.Scope = "uninstalled"
+			} else if len(a.Projects) == len(row.Projects) && p.On {
+				a.Scope = "global"
+				a.Projects = nil
+			}
+		}
+		a, err = normalizeAssignment(a)
+		if err != nil {
+			return protocol.ToolPlan{}, err
+		}
+		// Import refusal must also refuse the setting change. Generate a preview
+		// first, then bind the final plan to the saved setting's snapshot.
+		previewCtx := context.WithValue(ctx, proposalValidationKey{}, true)
+		if _, err = g.planSkillAssignment(previewCtx, p.Item, a, actor); err != nil {
+			return protocol.ToolPlan{}, err
+		}
+		if err = g.store.SetToolNewProjects(p, actor, validatingProposal(ctx)); err != nil {
+			return protocol.ToolPlan{}, err
+		}
+		return g.planSkillAssignment(ctx, p.Item, a, actor)
+	}
+	return protocol.ToolPlan{}, errors.New("skill item not found")
+}
