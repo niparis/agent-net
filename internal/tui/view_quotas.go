@@ -86,9 +86,23 @@ func (m Model) quotasView(w, h int) []string {
 		configured = append(configured, unset...)
 		configured = append(configured, unused...)
 	}
-	providerWidth, planWidth, windowWidth := quotaColumnWidths(configured, m, w)
+	var machines []protocol.UsageNode
+	for _, id := range ids {
+		if nodes[id].Usage.Quotas != nil {
+			machines = append(machines, nodes[id])
+		}
+	}
+	machineWidth := 10
+	if w < 110 {
+		machineWidth = 7
+	}
+	providerWidth, planWidth, windowWidth := quotaColumnWidths(configured, m, w-len(machines)*(machineWidth+1))
 	if len(rows) > 0 {
-		header := cell("PROVIDER", providerWidth) + " " + cell("PLAN", planWidth) + " " + cell("WINDOW", windowWidth) + " LEFT                 PACE      RESETS"
+		header := cell("PROVIDER", providerWidth) + " " + cell("PLAN", planWidth)
+		for _, node := range machines {
+			header += " " + cell(strings.ToUpper(sanitize(firstNonEmpty(node.Hostname, node.NodeID))), machineWidth)
+		}
+		header += " " + cell("WINDOW", windowWidth) + " LEFT                 PACE      RESETS"
 		subscription = append(subscription, sBold.Render(header))
 	}
 	for rowIndex, r := range configured {
@@ -178,32 +192,32 @@ func (m Model) quotasView(w, h int) []string {
 			if rowIndex == m.quotaSelected && i == 0 {
 				providerCell = sSel.Render(providerCell)
 			}
-			line := fmt.Sprintf("%s %s %s %s %s %s", providerCell, cell(plan, planWidth), cell(name, windowWidth), remaining, pace, reset)
-			if p.Stale || p.Error != "" {
-				line = sDim.Render(stripStyles(line))
+			line := providerCell + " " + cell(plan, planWidth)
+			for _, node := range machines {
+				status := ""
+				if i == 0 {
+					status = quotaMachineStatus(node.Usage.Quotas, p.Provider)
+				}
+				value := cell(status, machineWidth)
+				if status == "live" {
+					value = sBusy.Render(value)
+				} else {
+					value = sDim.Render(value)
+				}
+				line += " " + value
 			}
+			line += fmt.Sprintf(" %s %s %s %s", cell(name, windowWidth), remaining, pace, reset)
 			subscription = append(subscription, clip(line, w-4))
 		}
-		var notes []string
-		notes = append(notes, r.machineNotes...)
-		if len(p.Windows) > 0 && !relevant[strings.ToLower(p.Provider)] {
-			notes = append(notes, "not used by your agents")
+
+	}
+	if len(liveUnused) > 0 {
+		var names []string
+		for _, r := range liveUnused {
+			names = append(names, sanitize(r.provider.Provider))
 		}
-		if len(r.machineNotes) == 0 && r.machine != "" && reporting > 1 {
-			notes = append(notes, "read on "+sanitize(r.machine))
-		}
-		if p.Stale && len(r.machineNotes) == 0 {
-			notes = append(notes, "stale reading")
-		}
-		if p.NeedsAttention && len(p.Windows) > 0 && len(r.machineNotes) == 0 {
-			notes = append(notes, "needs you once: run agent-net setup --quota")
-		} else if p.Error != "" && len(p.Windows) > 0 && len(r.machineNotes) == 0 {
-			notes = append(notes, quotaErrorLabel(p.Error))
-		}
-		if len(notes) > 0 {
-			for _, line := range wrap("("+strings.Join(notes, " · ")+")", w-6) {
-				subscription = append(subscription, sDim.Render("  "+line))
-			}
+		for _, line := range wrap("unused: "+strings.Join(names, ", "), w-4) {
+			subscription = append(subscription, sDim.Render(line))
 		}
 	}
 	if len(unset) > 0 {
@@ -348,6 +362,30 @@ func quotaNotSetUp(p protocol.QuotaProvider) bool {
 	return strings.Contains(reason, "credential unavailable") || strings.Contains(reason, "sign-in required") || strings.Contains(reason, "sign in required") || strings.Contains(reason, "not running") || strings.Contains(reason, "cli unavailable")
 }
 
+func quotaMachineStatus(q *protocol.Quotas, provider string) string {
+	status := "-"
+	for _, p := range q.Providers {
+		if !strings.EqualFold(p.Provider, provider) {
+			continue
+		}
+		if len(p.Windows) > 0 {
+			return "live"
+		}
+		err := strings.ToLower(quotaErrorLabel(p.Error))
+		switch {
+		case strings.Contains(err, "sign-in") || strings.Contains(err, "sign in"):
+			status = "sign in"
+		case strings.Contains(err, "credential") || strings.Contains(err, "no key"):
+			status = "no key"
+		case strings.Contains(err, "cli") && (strings.Contains(err, "unavailable") || strings.Contains(err, "not installed")):
+			status = "no CLI"
+		case err != "":
+			status = clip(sanitize(err), 10)
+		}
+	}
+	return status
+}
+
 func quotaErrorLabel(err string) string {
 	switch {
 	case strings.HasSuffix(err, "credential_unavailable"):
@@ -390,7 +428,7 @@ func quotaColumnWidths(rows []quotaRow, m Model, w int) (int, int, int) {
 			window--
 		case plan > 5:
 			plan--
-		case provider > 7:
+		case provider > 11:
 			provider--
 		default:
 			return max(provider, 1), max(plan, 1), max(window, 1)

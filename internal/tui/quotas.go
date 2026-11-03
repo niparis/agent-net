@@ -581,7 +581,6 @@ func shortWorkerModel(model string, w int) string {
 func (m Model) quotaModelsView(w int) []string {
 	in := m.workerForecastInputs()
 	rows, levels := in.rows, workerForecastLevels
-	levelText := []string{"trivial", "simple", "normal", "hard", "very complex"}
 	runningCount := 0
 	for _, a := range m.snap.Agents {
 		if a.Online && a.Worker != nil {
@@ -597,11 +596,11 @@ func (m Model) quotaModelsView(w int) []string {
 			*m.workerForecastMemo = *f
 		}
 	}
-	picks, shares, counts := f.picks, f.shares, f.counts
+	picks, counts := f.picks, f.counts
 	if len(counts) != len(levels) || (len(counts) > 0 && len(counts[0]) != len(rows)) {
 		f = &workerForecastMemo{}
 		f.refresh(m, in)
-		picks, shares, counts = f.picks, f.shares, f.counts
+		picks, counts = f.picks, f.counts
 	}
 	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
 	if w < 110 {
@@ -620,40 +619,27 @@ func (m Model) quotaModelsView(w int) []string {
 	var body []string
 	body = append(body, sDim.Render(header))
 	type displayRow struct {
-		line      string
-		picks     []int
-		fitLetter []string
+		line string
 	}
 	displayed := make([]displayRow, 0, len(rows))
-	selectedRow, selectedCount := -1, 0
 	for rowIndex, r := range rows {
-		var cellsOut, fitLetters []string
-		var chosen []int
+		var cellsOut []string
 		for i, level := range levels {
-			letter := "-"
 			eligible := false
 			if r.scored && !r.stale {
 				_, fit, fits, _ := protocol.WorkerCandidateFit(protocol.WorkerModelCandidate{Model: r.model, DefaultEffort: r.defaultEffort}, level, m.snap.Scores, m.snap.DifficultyMinimums)
 				switch fit {
 				case "excellent":
-					if fits {
-						letter = "E"
-					}
 					eligible = fits
 				case "good":
-					letter = "G"
 					eligible = fits
-				case "poor":
-					letter = "P"
 				}
 			}
 			share := workerShareCell(counts[i][rowIndex], eligible)
 			if picks[i].Model == r.model && picks[i].Harness == r.harness && picks[i].Model != "" {
 				share = sSel.Bold(true).Render(stripStyles(share))
-				chosen = append(chosen, i)
 			}
 			cellsOut = append(cellsOut, share)
-			fitLetters = append(fitLetters, letter)
 		}
 		score := "-"
 		if r.scored && !r.stale {
@@ -678,20 +664,14 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 			line += "  " + cell(usage, usedWidth)
 		}
-		if len(chosen) > selectedCount {
-			selectedRow, selectedCount = rowIndex, len(chosen)
-		}
 		if !r.available || !r.allowed {
 			line = sDim.Render(stripStyles(line))
 		}
-		displayed = append(displayed, displayRow{line: clip(line, w-4), picks: chosen, fitLetter: fitLetters})
+		displayed = append(displayed, displayRow{line: clip(line, w-4)})
 	}
 	for i, d := range displayed {
 		body = append(body, d.line)
 		r := rows[i]
-		if r.protected {
-			body = append(body, sDim.Render(clip("  protected · saved for your orchestrator ("+r.provider+")", w-4)))
-		}
 		if r.stale {
 			body = append(body, sDim.Render("  model gone - ask the CTO to fix"))
 		} else {
@@ -717,51 +697,7 @@ func (m Model) quotaModelsView(w int) []string {
 	if len(m.snap.ProtectedProviders.Providers) > 0 {
 		title = fmt.Sprintf("Workers · 🔒 protected · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	}
-	out := panel(title, body, w, roleAccent)
-	if selectedRow >= 0 {
-		r := rows[selectedRow]
-		var selected, strong, good, poor []string
-		for _, i := range displayed[selectedRow].picks {
-			selected = append(selected, levelText[i])
-		}
-		for i, fit := range displayed[selectedRow].fitLetter {
-			switch fit {
-			case "E":
-				strong = append(strong, levelText[i])
-			case "G":
-				good = append(good, levelText[i])
-			case "P":
-				poor = append(poor, levelText[i])
-			}
-		}
-		label := sanitize(r.name)
-		if !strings.Contains(strings.ToLower(label), strings.ToLower(r.harness)) {
-			label += " " + sanitize(r.harness)
-		}
-		var recent []string
-		for _, i := range displayed[selectedRow].picks {
-			if shares[i] != "" {
-				recent = append(recent, shares[i])
-			}
-		}
-		detail := label + ": "
-		if line := r.track.ReworkLine(); line != "" {
-			detail += line + " · "
-		}
-		detail += fmt.Sprintf("picked for %s (next start).", naturalList(selected))
-		if len(recent) > 0 {
-			detail += " " + strings.Join(recent, " · ") + "."
-		}
-		if len(strong) > 0 {
-			detail += " Strong at " + naturalList(strong) + "."
-		} else if len(good) > 0 {
-			detail += " OK at " + naturalList(good) + "."
-		} else if len(poor) > 0 {
-			detail += " Weak at " + naturalList(poor) + "."
-		}
-		out = append(out, sDim.Render(clip(detail, w)))
-	}
-	return out
+	return panel(title, body, w, roleAccent)
 }
 
 func workerDisplayModel(harness, model string) string {
