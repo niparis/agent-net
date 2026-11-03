@@ -1,7 +1,11 @@
 package claude
 
 import (
+	"encoding/json"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -23,4 +27,43 @@ func deliveryHealth(sessions map[string]found) string {
 		}
 	}
 	return "broken"
+}
+
+// CheckDelivery checks fresh session files after harness detection, including at
+// daemon start and after an update. No session means unknown, never broken.
+func (a *Adapter) CheckDelivery(version string) string {
+	sessions := map[string]found{}
+	entries, _ := os.ReadDir(a.cfg.SessionsDir)
+	for _, e := range entries {
+		m := pidFile.FindStringSubmatch(e.Name())
+		if m == nil {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(a.cfg.SessionsDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var sf sessionFile
+		if json.Unmarshal(raw, &sf) != nil || strconv.Itoa(sf.PID) != m[1] || sf.SessionID == "" || !pidAlive(sf.PID) {
+			continue
+		}
+		sessions[sf.SessionID] = found{sock: sf.MessagingSocketPath}
+	}
+	warning := ""
+	if deliveryHealth(sessions) == "broken" {
+		if version == "" {
+			version = "unknown"
+		}
+		warning = "Claude delivery broken by Claude Code " + version
+	}
+	a.mu.Lock()
+	a.healthWarning = warning
+	a.mu.Unlock()
+	return warning
+}
+
+func (a *Adapter) deliveryWarning() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.healthWarning
 }

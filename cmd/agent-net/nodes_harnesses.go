@@ -89,6 +89,9 @@ func printHarnessDetails(w io.Writer, nodes []protocol.NodeView) {
 				}
 			}
 			version := dash(h.Version)
+			if h.DeliveryWarning != "" {
+				version += ", warning: " + h.DeliveryWarning
+			}
 			if update := harnessUpdateSummary(h.Update, time.Now()); update != "" {
 				version += ", " + update
 			}

@@ -174,3 +174,17 @@ If the message stays, install the harness on that machine, or run `agent-net set
 ## Enter on the CTO seems to do nothing
 
 Opening the CTO can take several seconds while the daemon starts its Claude conversation. The CTO box shows "Opening the CTO..." at once, and a second Enter is ignored until the first attempt ends. If the attempt fails, or runs past its timeout, the CTO box shows the reason. Press Enter again after it ends. Enter on the CTO row in the Sessions tab behaves the same way.
+
+### Claude delivery broken by Claude Code
+
+This warning means live Claude session files exist, but none provides an inbox
+socket that agent-net can connect to. Claude delivery fails immediately while
+this warning is active. Find the affected machine and version with
+`agent-net nodes -wide` or its Graph machine card.
+
+Open a new Claude session. Check whether a Claude Code update changed or removed
+`messagingSocketPath`. If needed, return to a compatible Claude Code version.
+Restart the daemon to recheck immediately; regular harness inventory refreshes
+and managed updates also recheck and clear the warning when an inbox works.
+No live sessions means unknown, not broken. The check only connects and sends
+no message, so a passing check cannot prove that Claude consumed a user frame.

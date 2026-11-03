@@ -82,6 +82,9 @@ func (d *Daemon) refreshHarnessInventory(ctx context.Context) ([]protocol.Harnes
 			list[i].PolicyReady = policyHookInstalled()
 		}
 	}
+	d.hmu.Unlock()
+	d.checkClaudeDelivery(list)
+	d.hmu.Lock()
 	d.installed = list
 	d.hgen++
 	d.hmu.Unlock()

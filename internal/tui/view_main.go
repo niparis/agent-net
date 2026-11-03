@@ -820,6 +820,9 @@ func (m Model) machineHarnessNote(r machineRow, rows []machineRow) string {
 		return ""
 	}
 	for _, h := range r.harnesses {
+		if h.DeliveryWarning != "" {
+			return sanitize(h.DeliveryWarning)
+		}
 		if h.Update != nil && h.Update.Result == "failed" {
 			return sanitize(h.Name + " update failed: " + h.Update.Detail)
 		}

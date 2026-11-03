@@ -51,11 +51,12 @@ type Adapter struct {
 	host   daemon.Host
 	models *modelReader
 
-	mu       sync.Mutex
-	byNative map[string]found        // native_id -> session
-	bySock   map[string]string       // inbox socket -> native_id
-	replies  map[string]net.Listener // sender session id -> reply listener
-	last     map[string]string       // sender+"|"+recipient -> last message_id delivered
+	healthWarning string
+	mu            sync.Mutex
+	byNative      map[string]found        // native_id -> session
+	bySock        map[string]string       // inbox socket -> native_id
+	replies       map[string]net.Listener // sender session id -> reply listener
+	last          map[string]string       // sender+"|"+recipient -> last message_id delivered
 }
 
 func New(cfg Config) *Adapter {
@@ -322,6 +323,9 @@ func BuildCTOFrame(id, text string) ([]byte, error) {
 
 // DeliverCTO delivers only to a session the daemon selected as its CTO.
 func (a *Adapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, id, text string) daemon.Result {
+	if warning := a.deliveryWarning(); warning != "" {
+		return daemon.Result{Detail: warning}
+	}
 	a.mu.Lock()
 	f, ok := a.byNative[target.NativeID]
 	a.mu.Unlock()
@@ -363,6 +367,9 @@ func checkSocket(path string) error {
 }
 
 func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) daemon.Result {
+	if warning := a.deliveryWarning(); warning != "" {
+		return daemon.Result{Detail: warning}
+	}
 	a.mu.Lock()
 	f, ok := a.byNative[target.NativeID]
 	a.mu.Unlock()
