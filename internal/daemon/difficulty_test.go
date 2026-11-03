@@ -278,7 +278,9 @@ func TestAssessDifficultyTimeoutFallsBackToNormal(t *testing.T) {
 		"analyzer": {difficultyProfileJSON("high")},
 	})
 	t.Setenv(envFakeCodexExecHang, "1")
-	d := newDifficultyDaemon(t, "codex", "gpt-cheap", 150*time.Millisecond)
+	// Long enough for the fake to record its call on a busy CI machine, still
+	// well under the 2 s bound below.
+	d := newDifficultyDaemon(t, "codex", "gpt-cheap", 800*time.Millisecond)
 	started := time.Now()
 	a, err := d.assessDifficulty(context.Background(), t.TempDir(), "a slow task")
 	if err != nil {
