@@ -139,6 +139,7 @@ type fakeTools struct {
 	needs                 []protocol.ToolNeed
 	itemsErr              error
 
+	toggleHook  func(context.Context, protocol.ToolToggleRequest)
 	toggles     []protocol.ToolToggleRequest
 	toggleErr   error
 	togglePlan  *protocol.ToolPlan
@@ -343,7 +344,10 @@ func (f *fakeTools) ToolsProjects(context.Context) ([]protocol.ToolProjectState,
 	}
 	return states, nil
 }
-func (f *fakeTools) ToolsToggle(_ context.Context, r protocol.ToolToggleRequest) (protocol.ToolPlan, error) {
+func (f *fakeTools) ToolsToggle(ctx context.Context, r protocol.ToolToggleRequest) (protocol.ToolPlan, error) {
+	if f.toggleHook != nil {
+		f.toggleHook(ctx, r)
+	}
 	f.toggles = append(f.toggles, r)
 	if f.toggleErr != nil {
 		return protocol.ToolPlan{}, f.toggleErr

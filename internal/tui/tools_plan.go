@@ -47,6 +47,7 @@ type toolsModal struct {
 	showPaths    bool
 	scroll       int
 	loading      bool
+	cancel       context.CancelFunc
 	done         bool
 	actions      map[string]func(Model) (Model, tea.Cmd)
 	foot         []string // key and label pairs
@@ -73,6 +74,7 @@ type chooseState struct {
 // toolsModalMsg changes the open modal when a background call ends.
 type toolsModalMsg struct {
 	projectReasons map[string][]string
+	next           tea.Cmd
 	id             int
 	update         func(md *toolsModal)
 	reload         bool
@@ -87,6 +89,7 @@ func (m *Model) openModal(title string) *toolsModal {
 }
 
 func (m Model) onToolsModal(r toolsModalMsg) (Model, tea.Cmd) {
+	matched := false
 	if md := m.tl.modal; md != nil && md.id == r.id {
 		if m.tl.projectReasons == nil {
 			m.tl.projectReasons = map[string][]string{}
@@ -95,10 +98,14 @@ func (m Model) onToolsModal(r toolsModalMsg) (Model, tea.Cmd) {
 			m.tl.projectReasons[p] = reasons
 		}
 		r.update(md)
+		matched = true
 	}
 	if r.reload {
 		model, cmd := m.loadTools()
 		return model.(Model), cmd
+	}
+	if matched {
+		return m, r.next
 	}
 	return m, nil
 }
@@ -134,9 +141,15 @@ func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openHelp()
 		return m, nil
 	case action == "cancel" && key == "esc" && md.back != nil:
+		if md.cancel != nil {
+			md.cancel()
+		}
 		m.tl.modal = md.back
 		return m, nil
 	case (action == "cancel" && key == "esc") || (md.done && action == "apply"):
+		if md.cancel != nil {
+			md.cancel()
+		}
 		m.tl.modal = nil
 		return m, nil
 	case md.loading:

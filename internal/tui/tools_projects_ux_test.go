@@ -82,7 +82,7 @@ func TestToolsProjectToggleErrorAndSkipped(t *testing.T) {
 	s.toggleErr = errors.New("no writable checkout")
 	m = pressKey(m, "right")
 	m = pressKey(m, " ")
-	if !strings.Contains(plain(m), "Nothing changed: no writable checkout") {
+	if !strings.Contains(plain(m), "archify: nothing changed: no writable checkout") {
 		t.Fatal(plain(m))
 	}
 	m = pressKey(m, "esc")

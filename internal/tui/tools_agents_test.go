@@ -1,9 +1,13 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -162,5 +166,66 @@ func TestToolsAgentsProjectStateAndCosts(t *testing.T) {
 	m.tl.search = "no-match-in-all-tools"
 	if len(m.agentSkills()) != 4 {
 		t.Fatal("all-tools filter leaked into agent skills")
+	}
+}
+
+func TestToolsAgentsPlanningProgressAndTimeouts(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
+	m.tl.agentPending = map[string]map[string]bool{"homelab": {"archify": false, "found-skill": true, "react-best-practices": true}}
+	var deadlines []time.Time
+	s.toggleErr = errors.New("fixture refusal")
+	s.toggleHook = func(ctx context.Context, _ protocol.ToolToggleRequest) {
+		d, ok := ctx.Deadline()
+		if !ok || time.Until(d) < 119*time.Second {
+			t.Errorf("deadline %v", d)
+		}
+		deadlines = append(deadlines, d)
+	}
+	model, cmd := m.reviewAgentChanges("homelab")
+	m = model.(Model)
+	if !strings.Contains(strings.ToLower(strings.Join(m.tl.modal.lines, " ")), "planning 1 of 3: archify") {
+		t.Errorf("missing first progress: %v", m.tl.modal.lines)
+	}
+	for i := 0; i < 3; i++ {
+		msg := cmd()
+		var next tea.Cmd
+		m, next = m.onToolsModal(msg.(toolsModalMsg))
+		cmd = next
+		if i < 2 && !strings.Contains(strings.ToLower(strings.Join(m.tl.modal.lines, " ")), fmt.Sprintf("planning %d of 3:", i+2)) {
+			t.Errorf("missing progress: %v", m.tl.modal.lines)
+		}
+	}
+	if len(deadlines) != 3 {
+		t.Fatalf("calls %d", len(deadlines))
+	}
+	for _, name := range []string{"archify", "found-skill", "react-best-practices"} {
+		if !strings.Contains(strings.Join(m.tl.modal.lines, "\n"), name+": nothing changed:") {
+			t.Errorf("missing result for %s: %v", name, m.tl.modal.lines)
+		}
+	}
+}
+
+func TestToolsAgentsPlanningEscapeCancels(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
+	m.tl.agentPending = map[string]map[string]bool{"homelab": {"archify": false, "found-skill": true}}
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	s.toggleHook = func(ctx context.Context, _ protocol.ToolToggleRequest) { close(started); <-ctx.Done(); close(canceled) }
+	model, cmd := m.reviewAgentChanges("homelab")
+	m = model.(Model)
+	result := make(chan tea.Msg, 1)
+	go func() { result <- cmd() }()
+	<-started
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("escape did not cancel request")
+	}
+	msg := <-result
+	_, follow := m.onToolsModal(msg.(toolsModalMsg))
+	if follow != nil {
+		t.Fatal("closed modal started another plan")
 	}
 }

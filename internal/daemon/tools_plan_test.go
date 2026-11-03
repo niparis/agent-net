@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -374,5 +376,19 @@ func TestToolProjectFolderTargetsAndShadow(t *testing.T) {
 	}
 	if got := projectTargets(targets); len(got) == 0 {
 		t.Fatal("foreign OpenCode source was not detected")
+	}
+}
+
+func TestToolProbeBatchLogs(t *testing.T) {
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{InventoryHome: t.TempDir()}, log: log.New(&logs, "", 0)}
+	results := d.probeToolDestinations([]protocol.ToolPlanProbe{{Name: "demo", Harness: "claude"}, {Name: "bad/name", Harness: "claude"}})
+	if len(results) != 2 || results[0].Conflict != "" || results[1].Conflict == "" {
+		t.Fatalf("results: %+v", results)
+	}
+	for _, want := range []string{"tool probes: count=2", "duration=", "tool probe failed:", "bad/name"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q: %s", want, logs.String())
+		}
 	}
 }

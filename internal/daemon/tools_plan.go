@@ -14,9 +14,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // probeToolDestination checks paths and fingerprints existing destinations.
@@ -156,6 +158,33 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 	}
 	return out
 }
+func (d *Daemon) probeToolDestinations(probes []protocol.ToolPlanProbe) []protocol.ToolPlanProbeResult {
+	start := time.Now()
+	results := make([]protocol.ToolPlanProbeResult, len(probes))
+	for i, probe := range probes {
+		results[i] = d.probeToolDestination(probe)
+		if probe.Operation == "repo_remove" {
+			results[i] = d.probeRepoSkillRemoval(probe)
+		}
+		if results[i].Conflict != "" {
+			d.Logf("tool probe failed: skill=%q project=%q reason=%q", redact.Secrets(probe.Name), redact.Secrets(probe.Project), redact.Secrets(results[i].Conflict))
+		}
+	}
+	d.Logf("tool probes: count=%d duration=%s", len(probes), time.Since(start))
+	return results
+}
+
+func (d *Daemon) onToolPlanProbes(ctx context.Context, l *link, h protocol.Header, raw []byte) {
+	var p protocol.ToolPlanProbes
+	if json.Unmarshal(raw, &p) != nil {
+		return
+	}
+	results := d.probeToolDestinations(p.Probes)
+	if b, err := protocol.EncodeResult(h.ID, results, nil); err == nil {
+		_ = l.write(ctx, b)
+	}
+}
+
 func (d *Daemon) onToolPlanProbe(ctx context.Context, l *link, h protocol.Header, raw []byte) {
 	var p protocol.ToolPlanProbe
 	if json.Unmarshal(raw, &p) != nil {
@@ -164,6 +193,9 @@ func (d *Daemon) onToolPlanProbe(ctx context.Context, l *link, h protocol.Header
 	result := d.probeToolDestination(p)
 	if p.Operation == "repo_remove" {
 		result = d.probeRepoSkillRemoval(p)
+	}
+	if result.Conflict != "" {
+		d.Logf("tool probe failed: skill=%q project=%q reason=%q", redact.Secrets(p.Name), redact.Secrets(p.Project), redact.Secrets(result.Conflict))
 	}
 	if b, err := protocol.EncodeResult(h.ID, result, nil); err == nil {
 		_ = l.write(ctx, b)

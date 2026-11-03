@@ -6,17 +6,19 @@ import (
 	"errors"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/temppath"
 )
 
-// Enumerate candidates, then apply exactly the assignment target predicate.
+// Enumerate registered projects and eligible session repositories in one pass.
 func (s *Store) knownToolProjectsTx(tx *sql.Tx) ([]string, error) {
-	rows, err := tx.Query(`SELECT name FROM projects UNION SELECT repo_project FROM sessions WHERE repo_root<>'' AND repo_project<>'' UNION SELECT repo_root FROM sessions WHERE repo_root<>'' AND repo_project=''`)
+	rows, err := tx.Query(`SELECT name FROM projects`)
 	if err != nil {
 		return nil, err
 	}
-	candidates := map[string]bool{}
+	known := map[string]bool{}
 	for rows.Next() {
 		var name string
 		if err = rows.Scan(&name); err != nil {
@@ -24,8 +26,7 @@ func (s *Store) knownToolProjectsTx(tx *sql.Tx) ([]string, error) {
 			return nil, err
 		}
 		if name != "" {
-			candidates[name] = true
-			candidates[filepath.Base(name)] = true
+			known[name] = true
 		}
 	}
 	err = rows.Err()
@@ -33,15 +34,36 @@ func (s *Store) knownToolProjectsTx(tx *sql.Tx) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := []string{}
-	for name := range candidates {
-		known, e := s.projectKnownTx(tx, name)
-		if e != nil {
-			return nil, e
+	rows, err = tx.Query(`SELECT repo_root, repo_project, no_project FROM sessions WHERE harness != 'owner' AND repo_root<>''`)
+	if err != nil {
+		return nil, err
+	}
+	roots := s.tempRoots()
+	for rows.Next() {
+		var root, project string
+		var noProject int
+		if err = rows.Scan(&root, &project, &noProject); err != nil {
+			rows.Close()
+			return nil, err
 		}
-		if known {
-			names = append(names, name)
+		if noProject != 0 || temppath.Under(root, roots) {
+			continue
 		}
+		if project == "" {
+			project = filepath.Base(root)
+		}
+		if project != "" {
+			known[project] = true
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(known))
+	for name := range known {
+		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names, nil
@@ -221,7 +243,11 @@ func (s *Store) toolToggleAssignment(p protocol.ToolToggleRequest, validate bool
 	return protocol.ToolAssignment{}, errors.New("skill item not found")
 }
 
-func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, actor string) (protocol.ToolPlan, error) {
+func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, actor string) (out protocol.ToolPlan, err error) {
+	start := time.Now()
+	defer func() {
+		g.logToolOperation("tools.toggle", p.Item, p.Project, len(out.Targets), len(out.Skipped), start, err)
+	}()
 	if !validChangeActor(actor) {
 		return protocol.ToolPlan{}, errors.New("owner authority required")
 	}
