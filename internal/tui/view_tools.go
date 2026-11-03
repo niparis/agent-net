@@ -7,8 +7,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// toolsView draws skills per agent, the all-tools list or one modal. The list is
-// not drawn underneath a modal, so old panel borders cannot bleed through.
+// toolsView draws the skill table, the MCP and all-tools list, or one modal.
+// The list is not drawn underneath a modal, so old panel borders cannot bleed
+// through.
 func (m Model) toolsView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if notice, ok := m.noticeLine(w); ok {
@@ -18,9 +19,7 @@ func (m Model) toolsView(w, h int) []string {
 		box := m.modalBox(w, max(h-1, 6))
 		out = append(out, box...)
 	} else if !m.tl.allTools {
-		out = append(out, m.agentToolsView(w, max(h-1, 3))...)
-	} else if m.tl.projectsOpen {
-		out = append(out, m.projectCostView(w, max(h-1, 3))...)
+		out = append(out, m.tableView(w, max(h-1, 3))...)
 	} else if w >= 100 {
 		left := w * 55 / 100
 		a, b := m.toolListView(left, max(h-1, 3)), m.toolDetailView(w-left, max(h-1, 3))
@@ -47,16 +46,13 @@ func (m Model) toolsHints() []hint {
 		return out
 	}
 	if !m.tl.allTools {
-		return m.agentToolsHints()
-	}
-	if m.tl.projectsOpen {
-		return []hint{{"j/k", "move", 0}, {"enter", "open", 0}, {"esc", "back", 0}}
+		return m.tableHints()
 	}
 	return []hint{
 		bindingPairHint(contextTools, actDown, actUp),
 		bindingHint(contextTools, "open actions"),
 		bindingHint(contextTools, "filter"),
-		bindingHint(contextTools, "skills per agent"),
+		bindingHint(contextTools, "all tools"),
 		bindingHint(contextTools, "add"),
 		bindingHint(contextTools, "clear filter"),
 		bindingHint(contextTools, "help"),

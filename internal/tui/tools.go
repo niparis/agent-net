@@ -12,7 +12,8 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-// The Tools tab opens skills per agent and can switch to the all-tools list.
+// The Tools tab opens one table of skills by project and switches each cell on
+// or off. The all-tools list stays reachable for MCP management.
 // Changes use owner-only daemon methods and the existing plan/apply services.
 // Legacy catalog helpers remain shared with comparison and backend tests.
 
@@ -20,6 +21,9 @@ import (
 // has these methods; a source without them shows a note instead of the tab.
 type ToolsSource interface {
 	ToolsItems(context.Context) ([]protocol.ToolItem, error)
+	ToolsProjects(context.Context) ([]protocol.ToolProjectState, error)
+	ToolsToggle(context.Context, protocol.ToolToggleRequest) (protocol.ToolPlan, error)
+	ToolsNewProjects(context.Context, protocol.ToolNewProjectsRequest) (protocol.ToolPlan, error)
 	ToolsAccepted(context.Context) ([]string, error)
 	ToolsAccept(ctx context.Context, key string, accepted bool) error
 	ToolsNeeds(context.Context) ([]protocol.ToolNeed, error)
@@ -38,8 +42,10 @@ type ToolsSource interface {
 	MCPCoverageUndo(ctx context.Context, planID string) (protocol.MCPCoverageResult, error)
 }
 
+// toolsMsg is one answer to a Tools tab read.
 type toolsMsg struct {
 	items    []protocol.ToolItem
+	states   []protocol.ToolProjectState
 	accepted []string
 	needs    []protocol.ToolNeed
 	err      error
@@ -52,22 +58,26 @@ type toolsState struct {
 	err             string
 	at              time.Time
 	items           []protocol.ToolItem
+	states          []protocol.ToolProjectState
 	accepted        map[string]bool
 	needs           []protocol.ToolNeed
 	cat             toolsdiff.Catalog
 
-	allTools                     bool
-	agentRow, skillRow           int
-	skillsFocus                  bool
-	agentFilter                  string
-	agentSearching, agentDiscard bool
-	agentPending                 map[string]map[string]bool
-	row, scroll                  int
-	projectsOpen                 bool
-	projectRow                   int
-	summaries                    map[string]string
+	// The skill table. row is the selected skill, col the selected project
+	// column. col == len(projectCols) is the last column, "new projects".
+	row, col    int
+	colScroll   int
+	costCol     int
+	scroll      int
+	projectCols []string
+	lockReasons map[string]string
+	summaries   map[string]string
 
-	search    string // the filter of the one list
+	// allTools is the MCP and all-tools list, reached with m. It is kept
+	// because MCP management is unchanged by decision 0048.
+	allTools bool
+
+	search    string // the skill name filter
 	searching bool   // the filter text box has the keys
 
 	toast   string
@@ -84,7 +94,7 @@ func (m Model) toolsSource() (ToolsSource, bool) {
 
 // capturing says the Tools tab needs every key: a text box or a plan is open.
 func (t toolsState) capturing() bool {
-	return t.searching || t.modal != nil || t.agentSearching || t.agentDiscard
+	return t.searching || t.modal != nil
 }
 
 func (m *Model) toolsToast(s string) {
@@ -102,6 +112,7 @@ func (m Model) activeToast() string {
 func (m Model) startTools() (tea.Model, tea.Cmd) {
 	m.tab, m.mapOn, m.focus = toolsTab, false, focusSessions
 	m.uiFilter = ""
+	m.tl.allTools = false
 	if m.tl.loading {
 		return m, nil
 	}
@@ -122,6 +133,7 @@ func (m Model) loadTools() (tea.Model, tea.Cmd) {
 		r := toolsMsg{at: now()}
 		r.items, r.err = ts.ToolsItems(ctx)
 		if r.err == nil {
+			r.states, _ = ts.ToolsProjects(ctx)
 			r.accepted, _ = ts.ToolsAccepted(ctx)
 			r.needs, _ = ts.ToolsNeeds(ctx)
 		}
@@ -139,7 +151,7 @@ func (m *Model) applyTools(r toolsMsg) {
 		return
 	}
 	m.tl.err, m.tl.loaded, m.tl.at = "", true, r.at
-	m.tl.items, m.tl.needs = r.items, r.needs
+	m.tl.items, m.tl.needs, m.tl.states = r.items, r.needs, r.states
 	m.tl.accepted = map[string]bool{}
 	for _, k := range r.accepted {
 		m.tl.accepted[k] = true
@@ -150,7 +162,38 @@ func (m *Model) applyTools(r toolsMsg) {
 // rebuildTools computes the catalog again from the items and the machines.
 func (m *Model) rebuildTools() {
 	m.tl.cat = toolsdiff.Build(m.tl.items, toolsdiff.MachinesOf(m.snap.Nodes))
+	m.rebuildTable()
 	m.toolsClamp()
+}
+
+// rebuildTable takes the project columns from the on/off API and keeps the
+// selection inside the table.
+func (m *Model) rebuildTable() {
+	seen := map[string]bool{}
+	var cols []string
+	for _, st := range m.tl.states {
+		for name := range st.Projects {
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			cols = append(cols, name)
+		}
+	}
+	if len(cols) == 0 {
+		cols = m.toolsProjects()
+	}
+	sort.Strings(cols)
+	m.tl.projectCols = cols
+	m.tableClamp()
+}
+
+// tableClamp keeps the row and column selection inside the table.
+func (m *Model) tableClamp() {
+	rows := m.skillRows()
+	m.tl.row = min(max(m.tl.row, 0), max(len(rows)-1, 0))
+	m.tl.col = min(max(m.tl.col, 0), max(len(m.tl.projectCols), 0))
+	m.tl.colScroll = min(max(m.tl.colScroll, 0), max(len(m.tl.projectCols)-1, 0))
 }
 
 func hasStr(list []string, v string) bool {
@@ -236,7 +279,10 @@ func (m *Model) toolsClamp() {
 }
 
 func (m Model) selectedRow() (toolsdiff.Row, bool) {
-	rows := m.shownRows()
+	rows := m.skillRows()
+	if m.tl.allTools {
+		rows = m.shownRows()
+	}
 	if m.tl.row < 0 || m.tl.row >= len(rows) {
 		return toolsdiff.Row{}, false
 	}
@@ -249,42 +295,28 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tl.modal != nil {
 		return m.toolsModalKey(k)
 	}
-	if !m.tl.allTools {
-		return m.agentToolsKey(k)
+	if m.tl.allTools {
+		return m.toolsListKey(k)
 	}
-	if m.tl.projectsOpen {
-		projects := m.projectCosts()
-		switch k.String() {
-		case "esc":
-			m.tl.projectsOpen = false
-		case "j", "down":
-			m.tl.projectRow = min(m.tl.projectRow+1, max(len(projects)-1, 0))
-		case "k", "up":
-			m.tl.projectRow = max(m.tl.projectRow-1, 0)
-		case "enter":
-			if len(projects) > 0 {
-				m.tl.search = "project:" + projects[m.tl.projectRow].name
-				m.tl.row, m.tl.scroll = 0, 0
-				m.tl.projectsOpen = false
-			}
-		}
-		return m, nil
-	}
+	return m.tableKey(k)
+}
+
+// toolsListKey keeps the MCP and all-tools list reachable. The table is the
+// opening screen; this list remains because MCP management is unchanged.
+func (m Model) toolsListKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tl.searching {
-		return m.toolsSearchKey(k)
+		return m.toolsListSearchKey(k)
 	}
 	m.tl.toast = ""
 	switch keyAction(contextTools, k.String()) {
-	case "skills per agent":
+	case "all tools":
 		m.tl.allTools = false
+		return m, nil
 	case actQuit:
 		m.quitting = true
 		return m, tea.Quit
 	case "help":
 		m.openHelp()
-	case "project costs":
-		m.tl.projectsOpen = true
-		m.tl.projectRow = 0
 	case "rescan":
 		return m.toolsRescan()
 	case actDown:
@@ -304,27 +336,37 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) toolsListSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.toolsSearchKey(k)
+}
+
 func (m Model) toolsSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	target := &m.tl.search
-	switch k.Type {
-	case tea.KeyEsc:
+	switch keyAction(contextToolsFilter, k.String()) {
+	case "keep":
+		m.tl.searching = false
+	case "clear filter":
 		if *target != "" {
 			*target = ""
 		} else {
 			m.tl.searching = false
 		}
-	case tea.KeyEnter:
-		m.tl.searching = false
-	case tea.KeyBackspace, tea.KeyCtrlH:
+	case "delete text":
 		r := []rune(*target)
 		if len(r) > 0 {
 			*target = string(r[:len(r)-1])
 		}
-	case tea.KeyRunes, tea.KeySpace:
-		*target += string(k.Runes)
+	default:
+		if k.Type == tea.KeyRunes || k.Type == tea.KeySpace {
+			*target += string(k.Runes)
+		}
 	}
-	m.tl.row, m.tl.scroll = 0, 0
-	m.toolsClamp()
+	m.tl.row, m.tl.col, m.tl.colScroll = 0, 0, 0
+	if m.tl.allTools {
+		m.toolsClamp()
+	} else {
+		m.tableClamp()
+	}
 	return m, nil
 }
 
@@ -342,6 +384,7 @@ func (m Model) toolsRescan() (tea.Model, tea.Cmd) {
 		r := toolsMsg{at: now()}
 		r.items, r.err = ts.ToolsItems(ctx)
 		if r.err == nil {
+			r.states, _ = ts.ToolsProjects(ctx)
 			r.accepted, _ = ts.ToolsAccepted(ctx)
 			r.needs, _ = ts.ToolsNeeds(ctx)
 		}

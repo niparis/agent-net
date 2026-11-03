@@ -24,6 +24,12 @@ func TestToolsMethodsPageAndCarryTheirParameters(t *testing.T) {
 			return protocol.ToolsPage{Items: []protocol.ToolItem{{ID: "b", Name: "b"}}}, ""
 		case "tools_accepted":
 			return []string{"drift:x"}, ""
+		case "tools_projects":
+			return []protocol.ToolProjectState{{Item: "a", Projects: map[string]bool{"demo": true}, NewProjects: true}}, ""
+		case "tools_toggle":
+			return protocol.ToolPlan{ID: "plan_toggle", Item: "a", Assignment: protocol.ToolAssignment{Scope: "projects", Projects: []string{"demo"}}}, ""
+		case "tools_new_projects":
+			return protocol.ToolPlan{ID: "plan_new", Item: "a"}, ""
 		case "tools_accept", "tools_import":
 			return map[string]any{}, ""
 		case "tools_plan":
@@ -67,6 +73,23 @@ func TestToolsMethodsPageAndCarryTheirParameters(t *testing.T) {
 	}
 	if err = c.ToolsImport(ctx, protocol.ToolImport{Item: "a", Location: protocol.ToolImportLocation{NodeID: "n", Location: "/x"}}); err != nil {
 		t.Fatal(err)
+	}
+	states, err := c.ToolsProjects(ctx)
+	if err != nil || len(states) != 1 || !states[0].Projects["demo"] || !states[0].NewProjects {
+		t.Fatalf("projects %+v %v", states, err)
+	}
+	toggled, err := c.ToolsToggle(ctx, protocol.ToolToggleRequest{Item: "a", Project: "demo", On: false})
+	if err != nil || toggled.ID != "plan_toggle" {
+		t.Fatalf("toggle %+v %v", toggled, err)
+	}
+	var tr protocol.ToolToggleRequest
+	json.Unmarshal(d.params["tools_toggle"], &tr)
+	if tr.Item != "a" || tr.Project != "demo" || tr.On {
+		t.Errorf("toggle params %+v", tr)
+	}
+	standing, err := c.ToolsNewProjects(ctx, protocol.ToolNewProjectsRequest{Item: "a", On: true})
+	if err != nil || standing.ID != "plan_new" {
+		t.Fatalf("new projects %+v %v", standing, err)
 	}
 }
 

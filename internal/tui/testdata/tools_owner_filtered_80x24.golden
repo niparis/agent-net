@@ -1,15 +1,15 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
-╭─34 skills · ~0 tokens in every session on research───────────────────────────╮
+╭─34 skills · ~6.8k tokens in every session on research────────────────────────╮
 │   NAME                          STATUS                              COST     │
-│ ! code-review                   on for homelab                      ~0       │
-│ ! design-taste-frontend         2 different copies on research      ~0       │
-│ ! imnplementing-clean-architec… off for homelab                     ~0       │
-│   clean-architecture-python     on for homelab                      ~0       │
-│   diagnosing-bugs               on for homelab                      ~0       │
+│ ! code-review                   on for homelab                      ~140     │
+│ ! design-taste-frontend         2 different copies on research      ~60      │
+│ ! imnplementing-clean-architec… off for homelab                     ~180     │
+│   clean-architecture-python     on for homelab                      ~140     │
+│   diagnosing-bugs               on for homelab                      ~220     │
 │ 35 tools · ! needs attention · enter opens actions                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─code-review──────────────────────────────────────────────────────────────────╮
-│ ~0 tokens in every session                                                   │
+│ ~140 tokens in every session                                                 │
 │ +~0 when the skill is used                                                   │
 │ on: on for homelab                                                           │
 │ ! v1 on Nicolas-MBP, v3 on research                                          │
@@ -20,5 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-tab skills per agent  ? help  ↑↓ move  / filter  t costs  esc clear  n add
-  enter actions  R rescan
+m back to skills  ? help  ↑↓ move  / filter  esc clear  n add  enter actions
+  R rescan
