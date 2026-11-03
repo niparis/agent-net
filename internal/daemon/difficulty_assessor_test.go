@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -249,5 +250,110 @@ func TestJudgeRetrySkippedWhenUnavailableOrBudgetShort(t *testing.T) {
 				t.Fatalf("looked up retry with too little time")
 			}
 		})
+	}
+}
+
+func TestJudgeOpenCodeCleanupRunsAfterTimeout(t *testing.T) {
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions.json")
+	if err := os.WriteFile(sessions, []byte(`[{"id":"ses_judge_timeout","directory":"{dir}"}]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	deleted := filepath.Join(dir, "deleted")
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv("FAKE_OPENCODE_SESSIONS", sessions)
+	t.Setenv("FAKE_OPENCODE_DELETED", deleted)
+	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
+	_, _ = NewDifficultyAssessor(Config{
+		HarnessPaths:          map[string]string{"opencode": os.Args[0]},
+		DifficultyTimeout:     100 * time.Millisecond,
+		testJudgeFirstTimeout: 100 * time.Millisecond,
+	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+
+	raw, err := os.ReadFile(deleted)
+	if err != nil {
+		t.Fatalf("sessions were not deleted after timeout: %v", err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "ses_judge_timeout" {
+		t.Fatalf("deleted sessions: %q, want ses_judge_timeout", got)
+	}
+}
+
+func TestJudgeTimeoutNoteFirstTimeoutRetryOk(t *testing.T) {
+	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
+	a, err := NewDifficultyAssessor(Config{
+		HarnessPaths:          map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
+		DifficultyTimeout:     60 * time.Second,
+		testJudgeFirstTimeout: 100 * time.Millisecond,
+	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil || a.Label != "hard" {
+		t.Fatalf("assessment: %+v, %v", a, err)
+	}
+	wantNote := "first judge opencode-go/deepseek-v4.1-flash timed out at 1s of the 60s budget"
+	if a.Notes != wantNote {
+		t.Fatalf("note: %q, want %q", a.Notes, wantNote)
+	}
+	if calls := difficultyCalls(t, dir); len(calls) != 1 {
+		t.Fatalf("calls: %+v", calls)
+	}
+}
+
+func TestJudgeTimeoutNoteFirstTimeoutRetryTimeout(t *testing.T) {
+	fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
+	t.Setenv(envFakeCodexExecHang, "1")
+	a, err := NewDifficultyAssessor(Config{
+		HarnessPaths:          map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
+		DifficultyTimeout:     300 * time.Millisecond,
+		testJudgeFirstTimeout: 100 * time.Millisecond,
+	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.Notes, "first judge opencode-go/deepseek-v4.1-flash timed out at 1s of the 1s budget") {
+		t.Fatalf("note missing first judge: %q", a.Notes)
+	}
+	if !strings.Contains(a.Notes, "retry judge codex gpt-6.1-sol timed out after the remaining 1s") {
+		t.Fatalf("note missing retry judge: %q", a.Notes)
+	}
+}
+
+func TestJudgeTimeoutNoteFormatSample(t *testing.T) {
+	note := formatJudgeTimeoutNote("opencode", "opencode-go/deepseek-v4.1-flash", 39*time.Second, 60*time.Second, "codex", "gpt-6.1-sol", 20994038720*time.Nanosecond)
+	want := "first judge opencode-go/deepseek-v4.1-flash timed out at 39s of the 60s budget; retry judge codex gpt-6.1-sol timed out after the remaining 21s"
+	if note != want {
+		t.Fatalf("note:\n  got:  %q\n  want: %q", note, want)
+	}
+}
+
+func TestJudgeAttemptLoggedPerAttempt(t *testing.T) {
+	fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
+	var logs []string
+	sources := DifficultySources{
+		Logf: func(format string, args ...any) {
+			logs = append(logs, fmt.Sprintf(format, args...))
+		},
+	}
+	_, err := NewDifficultyAssessor(Config{
+		HarnessPaths:          map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
+		DifficultyTimeout:     60 * time.Second,
+		testJudgeFirstTimeout: 100 * time.Millisecond,
+	}, sources).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("expected 2 log lines, got %d: %v", len(logs), logs)
+	}
+	if !strings.HasPrefix(logs[0], "judge.attempt harness=opencode model=opencode-go/deepseek-v4.1-flash ") || !strings.Contains(logs[0], "result=timeout") {
+		t.Fatalf("unexpected log line 1: %q", logs[0])
+	}
+	if !strings.HasPrefix(logs[1], "judge.attempt harness=codex model=gpt-6.1-sol ") || !strings.Contains(logs[1], "result=ok") {
+		t.Fatalf("unexpected log line 2: %q", logs[1])
 	}
 }

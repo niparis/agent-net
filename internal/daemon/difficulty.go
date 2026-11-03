@@ -62,7 +62,14 @@ func (d *Daemon) assessDifficulty(ctx context.Context, project, task string) (di
 			return d.difficultyMinimums(ctx), nil
 		},
 		Binary: d.harnessBinary,
+		Logf:   d.safeLogf,
 	}).Assess(ctx, project, task)
+}
+
+func (d *Daemon) safeLogf(format string, args ...any) {
+	if d != nil && d.log != nil {
+		d.Logf(format, args...)
+	}
 }
 
 // difficultyProfiles reads the worker roster through the gateway link. The

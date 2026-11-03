@@ -37,6 +37,7 @@ type DifficultySources struct {
 	Scores   func(context.Context) ([]protocol.ModelScore, error)
 	Minimums func(context.Context) (map[string]float64, error)
 	Binary   func(string) (string, error)
+	Logf     func(string, ...any)
 }
 
 // NewDifficultyAssessor returns an assessor for cfg. The daemon passes its
@@ -122,20 +123,29 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		if a.cfg.testJudgeFirstTimeout > 0 {
 			firstTimeout = a.cfg.testJudgeFirstTimeout
 		}
+		firstStart := time.Now()
 		raw, runErr := a.runDifficultyOneShot(budgetCtx, judgeHarness, judgeModel, judgeDir, judgeBriefForTask(task), firstTimeout)
+		firstDuration := time.Since(firstStart)
 		var scores difficulty.Scores
 		var insufficient []string
 		var parseErr error
 		if runErr == nil {
 			scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
 		}
+		firstResult := judgeAttemptResult(runErr, parseErr)
+		a.logAttempt(judgeHarness, judgeModel, firstDuration, firstResult)
+
+		firstTimedOut := firstResult == "timeout"
+		firstTimeoutMsg := fmt.Sprintf("first judge %s timed out at %s of the %s budget", judgeName(judgeHarness, judgeModel), formatSeconds(firstTimeout), formatSeconds(timeout))
 		failure := ""
-		if runErr != nil {
+		if firstTimedOut {
+			failure = firstTimeoutMsg
+		} else if runErr != nil {
 			failure = "the judge " + runErr.Error()
 		} else if parseErr != nil {
 			failure = "the judge reply did not parse: " + parseErr.Error()
 		}
-		retryable := parseErr != nil || (runErr != nil && strings.HasPrefix(runErr.Error(), "timed out after"))
+		retryable := parseErr != nil || firstTimedOut
 		retryHarness := strings.ToLower(strings.TrimSpace(a.cfg.DifficultyRetryJudgeHarness))
 		retryModel := strings.TrimSpace(a.cfg.DifficultyRetryJudgeModel)
 		if retryHarness == "" {
@@ -145,17 +155,33 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 			retryModel = "gpt-6.1-sol"
 		}
 		remaining := time.Until(deadline)
-		if retryable && remaining >= 20*time.Second && budgetCtx.Err() == nil {
+		minRetryRemaining := 20 * time.Second
+		if a.cfg.testJudgeFirstTimeout > 0 {
+			minRetryRemaining = 50 * time.Millisecond
+		}
+		if retryable && remaining >= minRetryRemaining && budgetCtx.Err() == nil {
 			if _, lookupErr := a.harnessBinary(retryHarness); lookupErr == nil {
-				judgeNote = redact.Cut(failure, 300)
+				judgeNote = failure
 				a0.JudgeModel = retryHarness + ":" + retryModel
+				retryStart := time.Now()
 				raw, runErr = a.runDifficultyOneShot(budgetCtx, retryHarness, retryModel, judgeDir, judgeBriefForTask(task), remaining)
+				retryDuration := time.Since(retryStart)
 				if runErr == nil {
 					scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
 				} else {
 					parseErr = nil
 				}
-				if runErr != nil {
+				retryResult := judgeAttemptResult(runErr, parseErr)
+				a.logAttempt(retryHarness, retryModel, retryDuration, retryResult)
+
+				if retryResult == "timeout" {
+					if firstTimedOut {
+						failure = formatJudgeTimeoutNote(judgeHarness, judgeModel, firstTimeout, timeout, retryHarness, retryModel, remaining)
+					} else {
+						failure = fmt.Sprintf("%s; retry judge %s timed out after the remaining %s", failure, judgeName(retryHarness, retryModel), formatSeconds(remaining))
+					}
+					judgeNote = ""
+				} else if runErr != nil {
 					failure = "the retry judge " + runErr.Error()
 				} else if parseErr != nil {
 					failure = "the retry judge reply did not parse: " + parseErr.Error()
@@ -312,11 +338,24 @@ func (a *DifficultyAssessor) difficultyMinimums(ctx context.Context) map[string]
 }
 
 func (a *DifficultyAssessor) judgeDifficulty(ctx context.Context, harness, model, dir string, profile difficulty.Profile, timeout time.Duration) (difficulty.Scores, []string, error) {
+	start := time.Now()
 	raw, err := a.runDifficultyOneShot(ctx, harness, model, dir, judgeBrief(profile), timeout)
+	dur := time.Since(start)
+	var scores difficulty.Scores
+	var insufficient []string
+	var parseErr error
+	if err == nil {
+		scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
+	}
+	res := judgeAttemptResult(err, parseErr)
+	a.logAttempt(harness, model, dur, res)
 	if err != nil {
 		return difficulty.Scores{}, nil, err
 	}
-	return difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
+	if parseErr != nil {
+		return difficulty.Scores{}, nil, parseErr
+	}
+	return scores, insufficient, nil
 }
 
 // runDifficultyOneShot runs one prompt and returns its final text. It never
@@ -397,7 +436,11 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 	// OpenCode files the session under $PWD when it is set, not under the
 	// process folder; an inherited PWD would put the judge's session in the
 	// caller's folder, where the cleanup below does not look.
-	env := workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock"), "PWD": dir})
+	env := workerEnv(os.Environ(), map[string]string{
+		"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock"),
+		"PWD":              dir,
+		IgnoreEnv:          "1",
+	})
 	// Even a standalone run saves its session in OpenCode's shared store, where
 	// it shows as an idle session. Delete it once the judge is done.
 	defer deleteOpenCodeSessions(ctx, bin, dir, env)
@@ -438,7 +481,7 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 // sessions are never listed for deletion. Failures are ignored: a leftover
 // session is untidy, not harmful.
 func deleteOpenCodeSessions(parent context.Context, bin, dir string, env []string) {
-	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
 	defer cancel()
 	list := exec.CommandContext(ctx, bin, "session", "list", "--format", "json")
 	list.Dir, list.Env = dir, env
@@ -494,6 +537,10 @@ func (a *DifficultyAssessor) runCodexExec(ctx context.Context, model, dir, promp
 	args = append(args, "-")
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
+	cmd.Env = workerEnv(os.Environ(), map[string]string{
+		IgnoreEnv: "1",
+		"PWD":     dir,
+	})
 	cmd.Stdin = strings.NewReader(prompt)
 	stderr := &capWriter{limit: 4096}
 	cmd.Stderr = stderr
@@ -542,4 +589,62 @@ func (a *DifficultyAssessor) harnessBinary(name string) (string, error) {
 		return p, nil
 	}
 	return "", fmt.Errorf("%s is not installed on this machine", name)
+}
+
+func judgeName(harness, model string) string {
+	harness = strings.TrimSpace(harness)
+	model = strings.TrimSpace(model)
+	if strings.HasPrefix(model, harness) {
+		return model
+	}
+	if harness != "" && model != "" {
+		return harness + " " + model
+	}
+	if model != "" {
+		return model
+	}
+	return harness
+}
+
+func formatSeconds(d time.Duration) string {
+	s := int((d + 500*time.Millisecond) / time.Second)
+	if s <= 0 && d > 0 {
+		s = 1
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
+func formatJudgeTimeoutNote(firstHarness, firstModel string, firstTimeout, budget time.Duration, retryHarness, retryModel string, remaining time.Duration) string {
+	firstNote := fmt.Sprintf("first judge %s timed out at %s of the %s budget", judgeName(firstHarness, firstModel), formatSeconds(firstTimeout), formatSeconds(budget))
+	if retryHarness != "" || retryModel != "" {
+		return fmt.Sprintf("%s; retry judge %s timed out after the remaining %s", firstNote, judgeName(retryHarness, retryModel), formatSeconds(remaining))
+	}
+	return firstNote
+}
+
+func judgeAttemptResult(runErr, parseErr error) string {
+	if runErr != nil {
+		if strings.HasPrefix(runErr.Error(), "timed out after") || errors.Is(runErr, context.DeadlineExceeded) {
+			return "timeout"
+		}
+		return "other error"
+	}
+	if parseErr != nil {
+		return "parse error"
+	}
+	return "ok"
+}
+
+func (a *DifficultyAssessor) logf(format string, args ...any) {
+	if a.sources.Logf != nil {
+		a.sources.Logf(format, args...)
+	}
+}
+
+func (a *DifficultyAssessor) logAttempt(harness, model string, dur time.Duration, res string) {
+	resultVal := res
+	if strings.Contains(res, " ") {
+		resultVal = fmt.Sprintf("%q", res)
+	}
+	a.logf("judge.attempt harness=%s model=%s duration=%s result=%s", harness, model, dur.Round(time.Millisecond), resultVal)
 }

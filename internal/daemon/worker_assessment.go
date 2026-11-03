@@ -35,7 +35,7 @@ func (d *Daemon) assessWorkerStart(ctx context.Context, project, task string) *p
 	cfg.DifficultyTimeout = workerJudgeTimeout
 	jctx, cancel := context.WithTimeout(ctx, workerJudgeTimeout)
 	defer cancel()
-	result, err := NewDifficultyAssessor(cfg, DifficultySources{Binary: d.harnessBinary}).Assess(jctx, project, task)
+	result, err := NewDifficultyAssessor(cfg, DifficultySources{Binary: d.harnessBinary, Logf: d.safeLogf}).Assess(jctx, project, task)
 	harness, model, _ := strings.Cut(result.JudgeModel, ":")
 	a.Reasoning, a.Scope, a.Coupling = result.Scores.Reasoning, result.Scores.Scope, result.Scores.Coupling
 	a.Uncertainty, a.Verification, a.Risk = result.Scores.Uncertainty, result.Scores.Verification, result.Scores.Risk
