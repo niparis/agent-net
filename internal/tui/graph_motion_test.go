@@ -39,8 +39,8 @@ func TestGraphPixelStopsSendingWhenNothingMoves(t *testing.T) {
 		t.Fatal("an idle scene scheduled another frame")
 	}
 	second := m.View()
-	if strings.Contains(second, "\x1b_G") {
-		t.Fatal("an unchanged idle frame was transmitted again")
+	if second != first {
+		t.Fatal("an unchanged idle frame changed, so the renderer would send it again")
 	}
 	if !strings.Contains(second, "\U0010EEEE") {
 		t.Fatal("idle frame lost its placeholders")

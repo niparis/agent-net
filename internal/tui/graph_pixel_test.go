@@ -40,12 +40,13 @@ func TestGraphPixelModeUsesPlaceholdersAndCachesImage(t *testing.T) {
 	if !strings.Contains(first, "\U0010EEEE") {
 		t.Fatal("first frame has no Unicode placeholders")
 	}
+	// A second View before Bubble Tea flushes must still carry the image:
+	// the renderer writes only the latest View, so a transmit that appears
+	// once can be dropped. The output is identical, so the renderer's
+	// unchanged-row check sends nothing new to the terminal.
 	second := m.View()
-	if strings.Contains(second, "\x1b_G") {
-		t.Fatal("unchanged picture was transmitted again")
-	}
-	if !strings.Contains(second, "\U0010EEEE") {
-		t.Fatal("second frame lost its placeholders")
+	if second != first {
+		t.Fatal("an unchanged frame changed between Views; the image could be dropped or sent twice")
 	}
 }
 

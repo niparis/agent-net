@@ -386,9 +386,13 @@ func (m Model) pixelLines(gw, gh int) ([]string, bool) {
 	if g.transmit == "" {
 		return g.lines, true
 	}
+	// The transmit stays on the first row until the next frame replaces it.
+	// Bubble Tea flushes only the latest View at its frame rate, so a transmit
+	// sent in one View and cleared in the next can be dropped, leaving the
+	// placeholders pointing at an image the terminal never got (a blank
+	// flash). The renderer skips unchanged rows, so it is still written once.
 	frame := append([]string(nil), g.lines...)
 	frame[0] = g.transmit + frame[0]
-	g.transmit = ""
 	return frame, true
 }
 
