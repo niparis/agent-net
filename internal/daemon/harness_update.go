@@ -41,7 +41,6 @@ func (d *Daemon) harnessUpdateLoop(ctx context.Context) {
 		nextDay := time.Now().Add(daily)
 		if d.harnessUpdatesAllowed() {
 			d.refreshHarnessInventory(ctx)
-			d.refreshUpdateOnly(ctx)
 			hs, _ := d.inventory()
 			pending := make(map[string]bool)
 			for _, h := range hs {
@@ -122,39 +121,6 @@ func (d *Daemon) harnessBusy(name string) bool {
 	return false
 }
 
-func (d *Daemon) refreshUpdateOnly(ctx context.Context) {
-	var opts harnesses.Options
-	if d.cfg.HarnessSearch != nil {
-		opts = *d.cfg.HarnessSearch
-	}
-	h := harnesses.UpdateOnly(ctx, "agy", opts)
-	if ctx.Err() != nil {
-		return
-	}
-	d.hmu.Lock()
-	next := append([]protocol.HarnessInfo{}, d.installed...)
-	found := false
-	for i := range next {
-		if next[i].Name == "agy" {
-			found = true
-			if h != nil {
-				h.Update = next[i].Update
-				next[i] = *h
-			} else {
-				next = append(next[:i], next[i+1:]...)
-			}
-			break
-		}
-	}
-	if !found && h != nil {
-		next = append(next, *h)
-	}
-	d.installed = next
-	d.hgen++
-	d.hmu.Unlock()
-	d.publishHarnesses(ctx)
-}
-
 func (d *Daemon) setHarnessUpdate(ctx context.Context, name string, u *protocol.HarnessUpdate) {
 	d.hmu.Lock()
 	next := append([]protocol.HarnessInfo{}, d.installed...)
@@ -193,9 +159,6 @@ func (d *Daemon) updateHarness(ctx context.Context, h protocol.HarnessInfo) {
 	}
 	// The regular probe refreshes models, sign-in and version as well as inventory.
 	d.refreshHarnessInventory(ctx)
-	if h.Name == "agy" {
-		d.refreshUpdateOnly(ctx)
-	}
 	hs, _ := d.inventory()
 	after := ""
 	for _, current := range hs {

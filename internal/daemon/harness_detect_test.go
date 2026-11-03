@@ -160,7 +160,7 @@ func TestHarnessDetectionRetriesEmptyModels(t *testing.T) {
 }
 
 func TestHarnessDetectionKeepsPreviousModels(t *testing.T) {
-	for _, name := range []string{"opencode", "pi", "claude"} {
+	for _, name := range []string{"opencode", "pi", "agy", "claude"} {
 		t.Run(name, func(t *testing.T) {
 			prev := []protocol.HarnessInfo{{Name: name, Path: "/old", Models: []string{"provider/model"}}}
 			next := []protocol.HarnessInfo{{Name: name, Path: "/new"}}

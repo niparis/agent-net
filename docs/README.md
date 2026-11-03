@@ -14,6 +14,7 @@
 - [upgrade.md](upgrade.md): how machines upgrade, and what happens to running sessions.
 - [opencode.md](opencode.md): OpenCode sessions and the plugin.
 - [codex.md](codex.md): Codex threads as peers: how they are found, how messages reach them, setup and limits.
+- [antigravity.md](antigravity.md): Antigravity (`agy`): what agent-net does with it so far.
 
 ## Work on it
 

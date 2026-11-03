@@ -199,7 +199,7 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 		return map[string]bool{"removed": true}, nil
 	case "worker.profile.add":
 		harness := strings.ToLower(strings.TrimSpace(p.Harness))
-		if !protocol.WorkerHarnessSupported(harness) {
+		if !protocol.HarnessKnown(harness) {
 			return nil, reject("unknown worker harness %q", harness)
 		}
 		model := strings.TrimSpace(p.Model)

@@ -135,3 +135,21 @@ func TestProtectedChooserNoEligibleModelReportsWholeRoster(t *testing.T) {
 		}
 	}
 }
+
+// Claude models through agy are not the owner's Anthropic subscription, so the
+// protected rule must leave them alone (decision 0049 D4).
+func TestProtectedChooserIgnoresAgyClaudeModels(t *testing.T) {
+	protected := protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "orchestrator"}
+	if isProtected("agy", "claude-sonnet-5-5-medium", protected) {
+		t.Fatal("an agy Claude model is treated as protected Anthropic")
+	}
+	if !isProtected("opencode", "anthropic/claude-sonnet-4", protected) {
+		t.Fatal("an OpenCode Anthropic model is no longer protected")
+	}
+	candidates := []protocol.WorkerModelCandidate{{Name: "sonnet agy", Harness: "agy", Model: "claude-sonnet-5-5-medium"}}
+	scores := []protocol.ModelScore{{Match: "claude-sonnet-5-5-medium", Score: 55}}
+	c, note, err := chooseProtectedWorker(candidates, "very_complex", scores, nil, nil, nil, &protocol.WorkerRotation{}, protected)
+	if err != nil || c.Model != "claude-sonnet-5-5-medium" || strings.Contains(note, "orchestrator") {
+		t.Fatalf("choice: %+v %q %v", c, note, err)
+	}
+}

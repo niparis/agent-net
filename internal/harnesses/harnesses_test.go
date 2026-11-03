@@ -54,10 +54,10 @@ func TestDetectUsesLoginShellPathToo(t *testing.T) {
 		script(t, dirs[n], n, `echo "`+n+` 1.0"`)
 	}
 	calls := 0
-	opts := Options{PATH: dirs["claude"], Dirs: []string{dirs["opencode"], dirs["pi"]},
+	opts := Options{PATH: dirs["claude"], Dirs: []string{dirs["opencode"], dirs["pi"], dirs["agy"]},
 		LoginShellPATH: func(context.Context) string { calls++; return dirs["codex"] }}
 	got := Detect(context.Background(), opts)
-	if len(got) != 4 || got[3].Name != "codex" || got[3].Version != "codex 1.0" || !got[3].Primary {
+	if len(got) != 5 || got[3].Name != "codex" || got[3].Version != "codex 1.0" || !got[3].Primary || got[4].Name != "agy" {
 		t.Fatalf("got %+v", got)
 	}
 	if calls != 1 {

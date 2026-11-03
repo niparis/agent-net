@@ -160,27 +160,32 @@ func TestHarnessSummaryAndDetails(t *testing.T) {
 		Others: []protocol.HarnessInstall{{Path: "/old/opencode", Version: "1.18.16"}},
 		Models: []string{"anthropic/claude-x", "openai/gpt-5", "openai/gpt-6"}}
 	nodes := []protocol.NodeView{
-		{Hostname: "mac", Harnesses: []protocol.HarnessInfo{{Name: "claude", Path: "/u/claude", Version: "2.1"}, oc}},
+		{Hostname: "mac", Harnesses: []protocol.HarnessInfo{{Name: "claude", Path: "/u/claude", Version: "2.1"}, oc,
+			{Name: "agy", Path: "/u/agy", Version: "1.4.12", SignedIn: "yes", Models: []string{"gemini-3.8-flash-low", "gemini-4-argon-high", "claude-sonnet-5-5-medium", "gpt-oss-120b-medium"}}}},
 		{Hostname: "bare", Harnesses: []protocol.HarnessInfo{}},
 		{Hostname: "old"},
 	}
-	want := []string{"claude,opencode", "none", "unknown"}
+	want := []string{"claude,opencode,agy", "none", "unknown"}
 	for i, n := range nodes {
 		if got := harnessSummary(n); got != want[i] {
 			t.Errorf("harnessSummary(%s) = %q, want %q", n.Hostname, got, want[i])
 		}
 	}
-	if got := modelSummary(oc.Models); got != "3 (anthropic, openai)" {
+	if got := modelSummary("opencode", oc.Models); got != "3 (anthropic, openai)" {
 		t.Errorf("modelSummary = %q", got)
 	}
-	if modelSummary(nil) != "-" {
+	if modelSummary("opencode", nil) != "-" {
 		t.Error("no models shows a dash")
+	}
+	if got := modelSummary("agy", nodes[0].Harnesses[2].Models); got != "4 (anthropic, google, openai)" {
+		t.Errorf("agy modelSummary = %q", got)
 	}
 	var b bytes.Buffer
 	printHarnessDetails(&b, nodes)
 	out := b.String()
 	for _, w := range []string{"HOST", "HARNESS", "VERSION", "MODELS", "PATH", "mac", "/u/opencode", "v2.2.0", "3 (anthropic, openai)",
 		"primary", "opencode (other copy)", "1.18.16", "/old/opencode",
+		"agy", "1.4.12", "4 (anthropic, google, openai)", "signed in",
 		"old", "not reported (older agent-net)"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("details lack %q:\n%s", w, out)

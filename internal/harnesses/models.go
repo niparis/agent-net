@@ -211,3 +211,69 @@ func readCodexAnswer(sc *bufio.Scanner, id int) (json.RawMessage, bool) {
 	}
 	return nil, false
 }
+
+// ParseAgyModels reads the output of `agy models`: a first line "Fetching
+// available models...", then one "<id>\t<label>" per line. The id is kept as
+// printed: the effort is part of it (gemini-3.8-flash-low), not a suffix.
+// Other lines are ignored. The result is sorted, without duplicates and at
+// most MaxModels long. It is nil when no model is found.
+func ParseAgyModels(out string) []string {
+	seen := map[string]bool{}
+	var models []string
+	for _, line := range strings.Split(out, "\n") {
+		i := strings.IndexByte(line, '\t')
+		if i <= 0 {
+			continue
+		}
+		id := strings.TrimSpace(line[:i])
+		if id == "" || len(id) > maxModelLen || strings.ContainsAny(id, " \t") || seen[id] {
+			continue
+		}
+		seen[id] = true
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	if len(models) > MaxModels {
+		models = models[:MaxModels]
+	}
+	if len(models) == 0 {
+		return nil
+	}
+	return models
+}
+
+// agyModels reads the model list of Antigravity (agy). The list arrives only
+// when the machine is signed in, so this is also the sign-in check: a list
+// means "yes", a signed-out message means "no", and a failure or timeout leaves
+// the state unknown ("") rather than guessing. The caller's context bounds the
+// whole read. Account details in the output are never kept.
+func agyModels(ctx context.Context, path, searchPATH string) ([]string, string) {
+	cmd := exec.CommandContext(ctx, path, "models")
+	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+searchPATH)
+	cmd.WaitDelay = 500 * time.Millisecond // as in runProgram
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	_ = cmd.Run()
+	if ctx.Err() != nil {
+		return nil, ""
+	}
+	text := out.String()
+	if agySignedOut(text) {
+		return nil, "no"
+	}
+	if models := ParseAgyModels(text); len(models) > 0 {
+		return models, "yes"
+	}
+	return nil, ""
+}
+
+// agySignedOut matches the messages agy prints when it has no usable login.
+func agySignedOut(out string) bool {
+	lower := strings.ToLower(out)
+	for _, marker := range []string{"not logged in", "not signed in", "logged out", "login required", "log in to", "sign in to", "please log in", "please sign in", "no credentials", "unauthenticated", "not authenticated", "authentication required"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
