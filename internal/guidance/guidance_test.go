@@ -97,7 +97,7 @@ func TestApplyReplacesMarkedBlock(t *testing.T) {
 }
 
 func TestApplyMigratesLegacySection(t *testing.T) {
-	legacy := strings.TrimRight(strings.ReplaceAll(text, "{{reply}}", "with `agent_message_reply` and the message ID"), "\n") + "\n"
+	legacy := strings.TrimSuffix(strings.TrimPrefix(Block(Other), Begin+"\n"), End+"\n")
 	// Section at end of file.
 	in := "# Global\n\n- a\n\n" + legacy
 	out, changed := Apply(in, Other)

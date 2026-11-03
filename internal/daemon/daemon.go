@@ -138,7 +138,7 @@ type Config struct {
 	// the Pi extension, the OpenCode plugin and the guidance blocks in line
 	// with this binary. It logs through the function it gets. Default: none
 	// (tests must not touch the home dir of the machine they run on).
-	RefreshAgentFiles func(logf func(format string, args ...any))
+	RefreshAgentFiles func(logf func(format string, args ...any), snapshot settings.Snapshot)
 	// ApplyIntegrations makes this machine follow the owner's setup answers
 	// for the network. It runs at start and when the answers change. Default:
 	// none (tests must not touch the home dir of the machine they run on).
@@ -488,7 +488,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.workerStreamCtx = ctx
 	d.ctoCtx = ctx
 	if d.cfg.RefreshAgentFiles != nil {
-		d.cfg.RefreshAgentFiles(d.Logf)
+		d.cfg.RefreshAgentFiles(d.Logf, d.SettingsSnapshot())
 	}
 	d.mcp.start(ctx)
 	ln, err := listenLocal(d, d.cfg.SocketPath)

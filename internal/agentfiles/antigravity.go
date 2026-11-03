@@ -9,13 +9,14 @@ import (
 	"strings"
 
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 func AntigravityPluginDir() string {
 	return filepath.Join(home(), ".gemini", "config", "plugins", "agent-net")
 }
 
-func antigravityFiles(exe string) map[string][]byte {
+func antigravityFiles(exe string, snapshot settings.Snapshot) map[string][]byte {
 	marshal := func(v any) []byte { b, _ := json.MarshalIndent(v, "", "  "); return append(b, '\n') }
 	quote := "'" + strings.ReplaceAll(exe, "'", "'\\''") + "'"
 	hooks := map[string]any{}
@@ -29,12 +30,13 @@ func antigravityFiles(exe string) map[string][]byte {
 		"plugin.json":     marshal(map[string]any{"name": "agent-net", "description": "agent-net guidance, tools and hooks"}),
 		"mcp_config.json": marshal(map[string]any{"mcpServers": map[string]any{"agent-net": map[string]any{"command": exe, "args": []string{"mcp", "--antigravity"}, "env": map[string]string{}}}}),
 		"hooks.json":      marshal(map[string]any{"agent-net": hooks}),
-		"rules/AGENTS.md": []byte(guidance.Block(guidance.Other)),
+		"rules/AGENTS.md": []byte(guidance.BlockWithSnapshot(guidance.Other, snapshot)),
 	}
 }
 
 // SyncAntigravity writes the plugin only when Antigravity's home exists.
-func SyncAntigravity(exe string) Result {
+func SyncAntigravity(exe string) Result { return syncAntigravity(exe, settings.Snapshot{}) }
+func syncAntigravity(exe string, snapshot settings.Snapshot) Result {
 	r := Result{Name: "antigravity plugin", Path: AntigravityPluginDir()}
 	if !exists(filepath.Join(home(), ".gemini")) {
 		r.Text = "skipped (~/.gemini not found)"
@@ -59,7 +61,7 @@ func SyncAntigravity(exe string) Result {
 			return r
 		}
 	}
-	for name := range antigravityFiles(exe) {
+	for name := range antigravityFiles(exe, snapshot) {
 		p := filepath.Join(r.Path, name)
 		if st, err := os.Lstat(p); err == nil && st.Mode()&os.ModeSymlink != 0 {
 			r.Symlink = true
@@ -88,7 +90,7 @@ func SyncAntigravity(exe string) Result {
 		r.Err = err
 		return r
 	}
-	for name, data := range antigravityFiles(exe) {
+	for name, data := range antigravityFiles(exe, snapshot) {
 		p := filepath.Join(r.Path, name)
 		if st, err := os.Lstat(p); err == nil && st.Mode()&os.ModeSymlink != 0 {
 			r.Symlink = true
@@ -141,7 +143,7 @@ func RemoveAntigravity() error {
 	if exe == "" {
 		return nil
 	}
-	files := antigravityFiles(exe)
+	files := antigravityFiles(exe, settings.Snapshot{})
 
 	for _, name := range []string{"rules/AGENTS.md", "mcp_config.json", "hooks.json", "plugin.json"} {
 		p := filepath.Join(dir, name)

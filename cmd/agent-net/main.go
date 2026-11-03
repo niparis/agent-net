@@ -373,7 +373,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		Adapters:    []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 		CodexHome:         agentfiles.CodexHome(),
 		AgySummaries:      filepath.Join(inventoryHome, ".gemini", "antigravity-cli", "conversation_summaries.db"),
-		RefreshAgentFiles: agentfiles.SyncAndLog,
+		RefreshAgentFiles: agentfiles.SyncAndLogWithSnapshot,
 		ApplyIntegrations: setup.ApplyIntegrations,
 		UsageSampler:      sysusage.New(nil),
 		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",

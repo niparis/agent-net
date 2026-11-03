@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/niparis/agent-net/internal/guidance"
 	"github.com/niparis/agent-net/internal/protocol"
 	"go.yaml.in/yaml/v3"
 )
@@ -15,7 +14,7 @@ import (
 func raw(s string) json.RawMessage { return json.RawMessage(s) }
 func TestStandardAndParity(t *testing.T) {
 	r := Standard()
-	if len(r.Ledger) != 149 || len(r.Definitions) != 5 {
+	if len(r.Ledger) != 149 || len(r.Definitions) != 20 {
 		t.Fatalf("ledger/definitions: %d/%d", len(r.Ledger), len(r.Definitions))
 	}
 	for _, m := range []string{"", "unknown", "early", "growing", "mature", "critical", "critical - "} {
@@ -31,25 +30,6 @@ func TestStandardAndParity(t *testing.T) {
 		e, err := (Snapshot{}).Resolve(k, Where{})
 		if err != nil || string(e.Value) != want {
 			t.Fatalf("%s %s %v", k, e.Value, err)
-		}
-	}
-	e, _ := (Snapshot{}).Resolve("guidance.peer_help_direct", Where{})
-	var line string
-	json.Unmarshal(e.Value, &line)
-	for v, reply := range map[string]string{
-		guidance.Claude:   "(Claude: `SendMessage` to the sender; others: `agent_message_reply` with the message ID)",
-		guidance.Other:    "with `agent_message_reply` and the message ID",
-		guidance.Combined: "as follows: Claude Code: use `SendMessage` to the sender; Pi, OpenCode, Codex: use `agent_message_reply` with the message ID",
-	} {
-		parts := strings.Split(guidance.Block(v), "\n")
-		var actual string
-		for _, p := range parts {
-			if strings.HasPrefix(p, "- **When another agent messages you") {
-				actual = p
-			}
-		}
-		if actual != strings.ReplaceAll(line, "{{reply}}", reply) {
-			t.Fatalf("guidance %s: %q", v, actual)
 		}
 	}
 }
@@ -147,5 +127,26 @@ func TestResolveSources(t *testing.T) {
 	e, _ = s.Resolve("guidance.peer_help_direct", Where{})
 	if string(e.Value) != `"Answer {{reply}}."` || e.Source != "network" {
 		t.Fatal(e)
+	}
+}
+
+func TestGuidanceDefinitions(t *testing.T) {
+	r := Standard()
+	for _, l := range r.Ledger {
+		if l.Row < 2 || l.Row > 20 {
+			continue
+		}
+		for _, key := range l.Keys {
+			d, ok := r.Definition(key)
+			if !ok || !d.Live || d.Kind != "advice" || d.Type != "text" || len(d.Levels) != 1 || d.Levels[0] != "network" {
+				t.Fatalf("row %d: invalid definition %+v", l.Row, d)
+			}
+		}
+	}
+	base := string(StandardYAML())
+	for _, replacement := range []string{"{{unknown}}", "no slot"} {
+		if _, err := Load([]byte(strings.Replace(base, "{{reply}}", replacement, 1))); err == nil {
+			t.Fatalf("accepted %q", replacement)
+		}
 	}
 }
