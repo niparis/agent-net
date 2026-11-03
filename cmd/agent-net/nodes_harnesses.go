@@ -70,6 +70,14 @@ func printHarnessDetails(w io.Writer, nodes []protocol.NodeView) {
 		}
 		for _, h := range n.Harnesses {
 			path := h.Path
+			if h.Name == "claude" || h.Name == "codex" {
+				switch h.SignedIn {
+				case "yes":
+					path += " (signed in)"
+				case "no":
+					path += " (not signed in)"
+				}
+			}
 			if len(h.Others) > 0 {
 				if h.Primary {
 					path += "  (primary: first in your login shell PATH)"

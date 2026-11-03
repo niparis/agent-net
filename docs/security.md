@@ -1059,3 +1059,5 @@ Owner decisions, 2026-11-02:
 - The phone cookie is scoped to the host name, not the port. Other HTTPS
   services on that host receive it. Anything able to add such a route already
   runs as the owner. The TUI warns when other routes exist on the host.
+
+Claude Code and Codex sign-in probes run `claude auth status` and `codex login status` with a five second limit. Only the signed-in state and auth method are kept; account details are discarded.

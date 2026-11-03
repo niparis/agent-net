@@ -102,6 +102,9 @@ func keepMissingHarnesses(prev, next []protocol.HarnessInfo, logf func(string, .
 	}
 	out := make([]protocol.HarnessInfo, 0, len(next)+len(prev))
 	for _, h := range next {
+		if old := previous[h.Name]; h.SignedIn == "" {
+			h.SignedIn, h.SignIn = old.SignedIn, old.SignIn
+		}
 		// An entry a failed probe could not fill in gives way to the copy
 		// found before. Without an earlier copy it is all there is.
 		if h.Path == "" && known[h.Name] {

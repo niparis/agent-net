@@ -9,6 +9,7 @@ package harnesses
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,6 +87,7 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 		}
 		h := protocol.HarnessInfo{Name: n, Path: installs[0], Primary: primary}
 		h.Version = version(ctx, o, installs[0])
+		h.SignedIn, h.SignIn = signIn(ctx, o, n, installs[0])
 		if n == "codex" {
 			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
 			h.Models, h.ModelDefaultEfforts = codexModels(mctx, installs[0], s.path)
@@ -298,9 +300,12 @@ func runProgram(ctx context.Context, path, searchPATH string, args ...string) (s
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+searchPATH)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
+	if len(args) == 2 && args[0] == "login" && args[1] == "status" {
+		cmd.Stderr = &buf
+	}
 	cmd.WaitDelay = 500 * time.Millisecond
 	if err := cmd.Run(); err != nil {
-		return "", err
+		return buf.String(), err
 	}
 	return buf.String(), nil
 }
@@ -332,6 +337,9 @@ func loginShellPATH(ctx context.Context) string {
 	cmd := exec.CommandContext(ctx, sh, "-l", "-c", `printf '%s%s%s' `+marker+` "$PATH" `+marker)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
+	if len(args) == 2 && args[0] == "login" && args[1] == "status" {
+		cmd.Stderr = &buf
+	}
 	cmd.WaitDelay = 500 * time.Millisecond
 	if cmd.Run() != nil {
 		return ""
@@ -347,4 +355,53 @@ func loginShellPATH(ctx context.Context) string {
 		return ""
 	}
 	return s[:j]
+}
+
+func signIn(ctx context.Context, o Options, name, path string) (string, string) {
+	if name != "claude" && name != "codex" {
+		return "", ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, VersionTimeout)
+	defer cancel()
+	args := []string{"auth", "status"}
+	if name == "codex" {
+		args = []string{"login", "status"}
+	}
+	out, err := o.Run(ctx, path, args...)
+	if ctx.Err() != nil {
+		return "", ""
+	}
+	if name == "codex" {
+		if strings.TrimSpace(out) == "Not logged in" {
+			return "no", ""
+		}
+		if err == nil {
+			switch strings.TrimSpace(out) {
+			case "Logged in using ChatGPT":
+				return "yes", "ChatGPT"
+			case "Logged in using an API key":
+				return "yes", "API key"
+			}
+		}
+		return "", ""
+	}
+	if err != nil {
+		return "", ""
+	}
+	var status struct {
+		LoggedIn   *bool  `json:"loggedIn"`
+		AuthMethod string `json:"authMethod"`
+	}
+	if json.Unmarshal([]byte(out), &status) != nil || status.LoggedIn == nil {
+		return "", ""
+	}
+	if !*status.LoggedIn {
+		return "no", ""
+	}
+	method := ""
+	switch status.AuthMethod {
+	case "claude.ai", "oauth", "api_key", "apiKey", "console":
+		method = status.AuthMethod
+	}
+	return "yes", method
 }
