@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/internal/settings"
 	"github.com/niparis/agent-net/plugins/opencode"
 	"github.com/niparis/agent-net/plugins/pi"
 )
@@ -100,16 +101,20 @@ func GuidanceFiles() []GuidanceFile {
 // folder must exist. A plugin symlink to a foreign file is left alone; a
 // symlink to an older agent-net plugin is replaced with a real file. Guidance
 // follows symlinks and changes only the part between the markers.
-func Sync() []Result {
-	rs := []Result{SyncPi(), SyncPiTools(), SyncOpencode(), SyncOpencodeTools(), SyncClaudeWorkers(), SyncAntigravity("")}
-	return append(rs, SyncGuidance()...)
+func Sync() []Result { return SyncWithSnapshot(settings.Snapshot{}) }
+func SyncWithSnapshot(snapshot settings.Snapshot) []Result {
+	rs := []Result{SyncPi(), SyncPiTools(), SyncOpencode(), SyncOpencodeTools(), SyncClaudeWorkers(), syncAntigravity("", snapshot)}
+	return append(rs, syncGuidanceFiles(snapshot)...)
 }
 
 // SyncAndLog runs Sync and logs one line for each file it changed, failed on
 // or left alone because it is a symlink to a foreign file. Files that are up
 // to date, and harnesses that are not installed, log nothing.
 func SyncAndLog(logf func(format string, args ...any)) {
-	for _, r := range Sync() {
+	SyncAndLogWithSnapshot(logf, settings.Snapshot{})
+}
+func SyncAndLogWithSnapshot(logf func(format string, args ...any), snapshot settings.Snapshot) {
+	for _, r := range SyncWithSnapshot(snapshot) {
 		switch {
 		case r.Err != nil:
 			logf("agent files: %s %s: %v", r.Name, DisplayPath(r.Path), r.Err)
@@ -262,7 +267,8 @@ func replaceSymlink(path string, data []byte) error {
 }
 
 // SyncGuidance writes the guidance blocks.
-func SyncGuidance() []Result {
+func SyncGuidance() []Result { return syncGuidanceFiles(settings.Snapshot{}) }
+func syncGuidanceFiles(snapshot settings.Snapshot) []Result {
 	files := GuidanceFiles()
 	keys := make([]string, len(files))
 	variants := make(map[string]map[string]bool)
@@ -292,7 +298,7 @@ func SyncGuidance() []Result {
 		if len(variants[key]) > 1 {
 			f.Variant = guidance.Combined
 		}
-		r := syncGuidance(f)
+		r := syncGuidance(f, snapshot)
 		rs = append(rs, r)
 		if key != "" {
 			seen[key] = r
@@ -301,7 +307,7 @@ func SyncGuidance() []Result {
 	return rs
 }
 
-func syncGuidance(f GuidanceFile) Result {
+func syncGuidance(f GuidanceFile, snapshot settings.Snapshot) Result {
 	r := Result{Name: f.Name, Path: f.Path}
 	if !exists(f.Dir) {
 		r.Text = "skipped (" + DisplayPath(f.Dir) + " not found)"
@@ -312,7 +318,7 @@ func syncGuidance(f GuidanceFile) Result {
 		r.Err = err
 		return r
 	}
-	out, changed := guidance.Apply(string(old), f.Variant)
+	out, changed := guidance.ApplyWithSnapshot(string(old), f.Variant, snapshot)
 	if !changed {
 		r.Text = "ok (unchanged)"
 		return r

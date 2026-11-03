@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/niparis/agent-net/internal/settings"
 	"path/filepath"
 	"testing"
 )
@@ -11,7 +12,7 @@ func TestStartRefreshesAgentFiles(t *testing.T) {
 	calls := 0
 	d, err := New(Config{
 		StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"),
-		RefreshAgentFiles: func(logf func(string, ...any)) {
+		RefreshAgentFiles: func(logf func(string, ...any), snapshot settings.Snapshot) {
 			calls++
 			logf("agent files: test")
 		},

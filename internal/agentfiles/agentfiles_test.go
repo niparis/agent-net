@@ -2,7 +2,9 @@ package agentfiles
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"github.com/niparis/agent-net/internal/settings"
 	"os"
 	"path/filepath"
 	"strings"
@@ -430,5 +432,30 @@ func TestPiFolderMigration(t *testing.T) {
 	Sync()
 	if _, err := os.Readlink(old); err != nil {
 		t.Fatal("foreign symlink removed", err)
+	}
+}
+
+func TestGuidanceNetworkSnapshot(t *testing.T) {
+	h := fakeHome(t)
+	t.Setenv("CODEX_HOME", "")
+	snapshot := settings.Snapshot{Values: []settings.Value{{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: json.RawMessage(`"Network introduction."`)}}}
+	for _, r := range syncGuidanceFiles(snapshot) {
+		if r.Err != nil {
+			t.Fatal(r.Err)
+		}
+	}
+	for _, f := range GuidanceFiles() {
+		if exists(f.Dir) && !strings.Contains(read(t, f.Path), "Network introduction.") {
+			t.Fatalf("%s missing network guidance", f.Path)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(h, ".gemini"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if r := syncAntigravity("/tmp/agent-net", snapshot); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if !strings.Contains(read(t, filepath.Join(AntigravityPluginDir(), "rules/AGENTS.md")), "Network introduction.") {
+		t.Fatal("antigravity missing network guidance")
 	}
 }

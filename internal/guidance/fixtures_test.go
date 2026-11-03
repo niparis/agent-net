@@ -1,7 +1,10 @@
 package guidance
 
 import (
+	"encoding/json"
+	"github.com/niparis/agent-net/internal/settings"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -22,5 +25,13 @@ func TestOriginalFixtures(t *testing.T) {
 		if got != string(want) {
 			t.Errorf("%s differs from original", name)
 		}
+	}
+}
+
+func TestNetworkGuidance(t *testing.T) {
+	s := settings.Snapshot{Values: []settings.Value{{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: json.RawMessage(`"Custom introduction."`)}}}
+	got := BlockWithSnapshot(Other, s)
+	if !strings.Contains(got, "Custom introduction.") || strings.Contains(got, "Other coding agents run") {
+		t.Fatal("network text not applied")
 	}
 }
