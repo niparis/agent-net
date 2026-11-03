@@ -229,3 +229,22 @@ func TestToolsAgentsPlanningEscapeCancels(t *testing.T) {
 		t.Fatal("closed modal started another plan")
 	}
 }
+
+func TestToolsSkillOffRowDoesNotClaimEveryProject(t *testing.T) {
+	m, _ := agentToolsFixture(120, 34)
+	for i := range m.tl.items {
+		if m.tl.items[i].Name == "archify" {
+			m.tl.items[i].Desired.Assignment.Machines = []string{toolNodeM}
+		}
+	}
+	m.rebuildTools()
+	for _, line := range strings.Split(plain(m), "\n") {
+		if strings.Contains(line, "[ ] archify") {
+			if strings.Contains(line, "every project") {
+				t.Fatalf("off row claims every project: %s", line)
+			}
+			return
+		}
+	}
+	t.Fatal("off skill row missing")
+}

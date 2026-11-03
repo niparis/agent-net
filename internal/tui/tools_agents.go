@@ -270,7 +270,7 @@ func (m Model) agentToolsView(w, h int) []string {
 		if on {
 			state = "this project only"
 		}
-		if r.Item.Desired != nil && r.Item.Desired.Assignment.Scope == "global" {
+		if on && r.Item.Desired != nil && r.Item.Desired.Assignment.Scope == "global" {
 			state = "every project"
 		}
 		outside := r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal
