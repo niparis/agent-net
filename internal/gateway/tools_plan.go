@@ -172,7 +172,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 			targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Action: "inspect", State: "conflict", Conflict: "inventory scan incomplete"})
 		}
 		for _, obs := range report.Items {
-			if obs.Kind == kind && len(obs.Unsupported) > 0 && (obs.Source == protocol.InventoryPlugin || obs.Source == protocol.InventoryPackage || obs.Source == protocol.InventorySystem) {
+			if obs.Kind == kind && obs.Name == name && len(obs.Unsupported) > 0 && (obs.Source == protocol.InventoryPlugin || obs.Source == protocol.InventoryPackage || obs.Source == protocol.InventorySystem) {
 				targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, Action: "inspect", State: "conflict", Conflict: "opaque source may shadow this item"})
 			}
 

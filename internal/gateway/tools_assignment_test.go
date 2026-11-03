@@ -577,3 +577,31 @@ func TestGatewaySkillSummaryRequiresOwnerSession(t *testing.T) {
 		t.Fatal("gateway accepted unauthenticated summary")
 	}
 }
+
+func TestToolTargetsIgnoreOtherNamedOpaqueSkill(t *testing.T) {
+	g, err := New(Options{DataDir: seededDataDir(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []protocol.InventoryItem{
+		{Kind: "skill", Name: "sample", Hash: "abc", State: "ok"},
+		{Kind: "skill", Name: "other", Hash: "def", State: "ok", Source: protocol.InventoryPlugin, Unsupported: []string{"opaque"}},
+	}
+	if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+		t.Fatal(err)
+	}
+	targets, err := g.toolTargets(context.Background(), `["skill","sample","abc"]`, protocol.ToolAssignment{Scope: "uninstalled"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		if target.Conflict == "opaque source may shadow this item" {
+			t.Fatalf("unrelated opaque skill: %+v", target)
+		}
+	}
+}
