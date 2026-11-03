@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -98,6 +99,17 @@ CREATE TABLE IF NOT EXISTS workers (
 	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = 'harness_ref'`).Scan(&hasRef)
 	if hasRef == 0 {
 		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN harness_ref TEXT NOT NULL DEFAULT ''`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	// state is the delivery record of a message (decision 0053). A table
+	// from an older version has only delivered messages in it, so the
+	// default keeps those rows delivered.
+	var hasDeliveryState int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivered') WHERE name = 'state'`).Scan(&hasDeliveryState)
+	if hasDeliveryState == 0 {
+		if _, err := db.Exec(`ALTER TABLE delivered ADD COLUMN state TEXT NOT NULL DEFAULT 'delivered'`); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -313,24 +325,92 @@ func (s *state) saveSessionActivity(harness, native string, at time.Time) error 
 	return err
 }
 
+// Delivery record states, one row per message ID in the delivered table
+// (decision 0053). A record moves from injecting to one of the other three;
+// delivered is final.
+const (
+	// deliveryInjecting is written before the write to the harness. A record
+	// still in this state after a restart means the daemon stopped during
+	// the write: the message may have arrived.
+	deliveryInjecting = "injecting"
+	// deliveryDelivered: the harness confirmed the message.
+	deliveryDelivered = "delivered"
+	// deliveryUnconfirmed: the write started but failed or was not
+	// confirmed. The message may have arrived, so it is not written again.
+	deliveryUnconfirmed = "unconfirmed"
+	// deliveryFailed: a known failure before anything reached the harness.
+	// A later push may try again.
+	deliveryFailed = "failed"
+)
+
+// The details sent to the gateway when a push finds a record that may have
+// reached the harness already. The gateway shows them with state failed.
+const (
+	detailStoppedWhileDelivering = "may have arrived: the daemon stopped while delivering"
+	detailEarlierUnconfirmed     = "may have arrived: an earlier write failed after connecting"
+)
+
 func (s *state) isDelivered(id string) bool {
 	var n int
-	s.db.QueryRow(`SELECT COUNT(*) FROM delivered WHERE message_id = ?`, id).Scan(&n)
+	s.db.QueryRow(`SELECT COUNT(*) FROM delivered WHERE message_id = ? AND state = ?`, id, deliveryDelivered).Scan(&n)
 	return n > 0
 }
 
-func (s *state) markDelivered(id string) error {
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO delivered (message_id, at) VALUES (?,?)`, id, time.Now().Unix())
+// deliveryState returns the delivery record of a message, if there is one.
+func (s *state) deliveryState(id string) (string, bool) {
+	var st string
+	if err := s.db.QueryRow(`SELECT state FROM delivered WHERE message_id = ?`, id).Scan(&st); err != nil {
+		return "", false
+	}
+	return st, true
+}
+
+// setDeliveryState writes the record of a message. A delivered record is
+// never changed.
+func (s *state) setDeliveryState(ctx context.Context, id, st string) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO delivered (message_id, at, state) VALUES (?,?,?)
+		ON CONFLICT (message_id) DO UPDATE SET state=excluded.state, at=excluded.at WHERE delivered.state != ?`,
+		id, time.Now().Unix(), st, deliveryDelivered)
 	return err
 }
 
-// deliveredMargin is how long a delivered row outlives its message. The row
-// is only a duplicate check, but keeping it past the message expiry means a
+// beginDelivery records that the daemon is about to write the message to
+// its harness. It must be called, and succeed, before that write.
+func (s *state) beginDelivery(id string) error {
+	return s.setDeliveryState(context.Background(), id, deliveryInjecting)
+}
+
+func (s *state) markDelivered(id string) error {
+	return s.markDeliveredCtx(context.Background(), id)
+}
+
+func (s *state) markDeliveredCtx(ctx context.Context, id string) error {
+	return s.setDeliveryState(ctx, id, deliveryDelivered)
+}
+
+func (s *state) markDeliveryFailed(id string) error {
+	return s.setDeliveryState(context.Background(), id, deliveryFailed)
+}
+
+func (s *state) markDeliveryUnconfirmed(id string) error {
+	return s.setDeliveryState(context.Background(), id, deliveryUnconfirmed)
+}
+
+// clearDelivery removes an injecting record when the adapter only queued the
+// message in memory: nothing reached the harness, and a push after a restart
+// must deliver it.
+func (s *state) clearDelivery(id string) error {
+	_, err := s.db.Exec(`DELETE FROM delivered WHERE message_id = ? AND state = ?`, id, deliveryInjecting)
+	return err
+}
+
+// deliveredMargin is how long a delivery record outlives its message. The
+// record is a duplicate check, but keeping it past the message expiry means a
 // message that is still alive can never be accepted twice.
 const deliveredMargin = 7 * 24 * time.Hour
 
-// pruneDelivered deletes duplicate-check rows older than the message expiry
-// plus deliveredMargin. It returns how many rows went.
+// pruneDelivered deletes delivery records, in any state, older than the
+// message expiry plus deliveredMargin. It returns how many rows went.
 func (s *state) pruneDelivered(now time.Time) (int64, error) {
 	cutoff := now.Add(-(protocol.DefaultTTL + deliveredMargin)).Unix()
 	res, err := s.db.Exec(`DELETE FROM delivered WHERE at < ?`, cutoff)

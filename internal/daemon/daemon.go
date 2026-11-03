@@ -26,11 +26,18 @@ import (
 )
 
 // Result is an adapter's report on one delivery.
-// Delivered with Detail "unconfirmed" means a write failed after connecting:
-// the message may have arrived, so it must not be retried.
+//
+//   - Delivered: the harness confirmed the message.
+//   - Queued: the adapter holds the message in memory for a later turn;
+//     nothing reached the harness yet.
+//   - Uncertain: a write failed after connecting, or was not confirmed. The
+//     message may have arrived, so it must not be written again. The sender
+//     sees failed with Detail (decision 0053).
+//   - none of these: a known failure; nothing reached the harness.
 type Result struct {
 	Delivered bool
 	Queued    bool
+	Uncertain bool
 	Detail    string
 }
 

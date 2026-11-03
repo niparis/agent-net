@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -159,6 +160,11 @@ type fakeAdapter struct {
 	host    Host
 	got     []protocol.Message
 	fail    string
+	// uncertain makes Deliver report a write that failed after connecting.
+	uncertain string
+	// crash makes Deliver end its goroutine during the write, as if the
+	// daemon process died there: nothing after the write runs.
+	crash bool
 }
 
 func (a *fakeAdapter) Harness() string { return a.harness }
@@ -169,10 +175,19 @@ func (a *fakeAdapter) Start(ctx context.Context, h Host) error {
 
 func (a *fakeAdapter) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) Result {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.got = append(a.got, m)
+	crash := a.crash
+	a.mu.Unlock()
+	if crash {
+		runtime.Goexit()
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.fail != "" {
 		return Result{Detail: a.fail}
+	}
+	if a.uncertain != "" {
+		return Result{Uncertain: true, Detail: a.uncertain}
 	}
 	return Result{Delivered: true}
 }

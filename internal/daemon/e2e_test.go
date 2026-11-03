@@ -225,7 +225,10 @@ func TestDuplicateDeliverOnce(t *testing.T) {
 	}
 }
 
-func TestUnconfirmedPluginIsNotRetried(t *testing.T) {
+// A plugin that takes the push but never confirms it: the message may have
+// arrived, so the sender sees failed with that detail, and it is not pushed
+// again.
+func TestUnconfirmedPluginDeliveryFailsAndIsNotRetried(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	startNode(t, g, nodeOpts{adapter: fa})
@@ -239,7 +242,14 @@ func TestUnconfirmedPluginIsNotRetried(t *testing.T) {
 	m := pi.nextPush()
 	cli := dialLocal(t, b.sock)
 	cli.mustCall("hello", map[string]any{"client": "cli"})
-	eventually(t, "unconfirmed counts as delivered", func() bool { return messageState(t, cli, m.ID) == protocol.StateDelivered })
+	eventually(t, "unconfirmed is failed", func() bool { return messageState(t, cli, m.ID) == protocol.StateFailed })
+	got, _, err := g.gw.Store().Message(m.ID)
+	if err != nil || !strings.Contains(got.DeliveryDetail, "may have arrived") {
+		t.Fatalf("detail %q (%v), want it to say the message may have arrived", got.DeliveryDetail, err)
+	}
+	if s, _ := b.d.st.deliveryState(m.ID); s != deliveryUnconfirmed {
+		t.Fatalf("record %q, want %q", s, deliveryUnconfirmed)
+	}
 	select {
 	case again := <-pi.Pushes:
 		t.Fatalf("pushed again: %+v", again)
