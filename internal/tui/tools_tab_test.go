@@ -232,6 +232,9 @@ func TestToolsTabGoldens(t *testing.T) {
 		table, _ := newToolsModel(size[0], size[1])
 		table = openTable(table)
 		golden(t, fmt.Sprintf("tools_table_%dx%d", size[0], size[1]), table.View())
+		table = selectCell(table, "using-git-worktrees", "homelab")
+		table = pressKey(table, " ")
+		golden(t, fmt.Sprintf("tools_toggle_plan_%dx%d", size[0], size[1]), strings.ReplaceAll(table.View(), "Nicolas-MBP", "laptop     "))
 	}
 }
 
@@ -292,7 +295,7 @@ func TestTableToggleShowsThePlanBeforeApplying(t *testing.T) {
 		t.Fatal("space applied before the owner confirmed")
 	}
 	v := plain(m)
-	for _, want := range []string{"Switch off using-git-worktrees in homelab", "moves from every project to", "leaves ", "on research", "enter apply", "esc cancel"} {
+	for _, want := range []string{"Switch off using-git-worktrees in homelab", "moves from every project to", "to agent-net's backup", "on research", "enter apply", "esc cancel"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("plan lacks %q:\n%s", want, v)
 		}

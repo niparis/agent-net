@@ -554,6 +554,57 @@ func planCanApply(plan protocol.ToolPlan) bool {
 // togglePlanLines turns the gateway's plan into plain words.
 func togglePlanLines(plan protocol.ToolPlan, current protocol.ToolAssignment, name, project string, on bool) []string {
 	lines := []string{"Switch " + onOff(on) + " " + name + " in " + project + "."}
+	seen := map[string]bool{}
+	represented := map[string]bool{}
+	for _, t := range plan.Targets {
+		if t.Conflict == "" {
+			continue
+		}
+		represented[t.Conflict] = true
+		who := strings.TrimSpace(t.Machine + " " + t.Project)
+		line := t.Conflict
+		if who != "" {
+			line = who + ": " + line
+		}
+		if !seen[line] {
+			seen[line] = true
+			lines = append(lines, tsWarn.Render("! ")+sanitize(line))
+		}
+	}
+	for _, c := range plan.Conflicts {
+		if c != "" && !represented[c] && !seen[c] {
+			seen[c] = true
+			lines = append(lines, tsWarn.Render("! ")+sanitize(c))
+		}
+	}
+	if len(plan.Skipped) > 0 {
+		groups := map[string][]string{}
+		var machines []string
+		seenSkip := map[string]bool{}
+		for _, skip := range plan.Skipped {
+			reason := skip.Reason
+			if reason == "destination contains a symlink" {
+				reason = "its skill folder is a symlink"
+			}
+			item := sanitize(skip.Project) + " (" + sanitize(reason) + ")"
+			key := skip.Machine + "\x00" + item
+			if seenSkip[key] {
+				continue
+			}
+			seenSkip[key] = true
+			if _, ok := groups[skip.Machine]; !ok {
+				machines = append(machines, skip.Machine)
+			}
+			groups[skip.Machine] = append(groups[skip.Machine], item)
+		}
+		for _, machine := range machines {
+			line := "Skipped, cannot hold project skills: " + strings.Join(groups[machine], ", ")
+			if len(machines) > 1 {
+				line = sanitize(machine) + ": " + line
+			}
+			lines = append(lines, line)
+		}
+	}
 	move := assignmentMove(name, current, plan.Assignment)
 	if move != "" {
 		lines = append(lines, move)
@@ -561,30 +612,31 @@ func togglePlanLines(plan protocol.ToolPlan, current protocol.ToolAssignment, na
 	if len(plan.Assignment.Machines) == 1 {
 		lines = append(lines, "It applies on one machine only; the other machines keep what they have.")
 	}
-	for _, t := range plan.Targets {
-		if t.Action == "remove" && t.Source != "" {
-			lines = append(lines, name+" leaves "+sanitize(t.Source)+" on "+sanitize(t.Machine)+".")
-		}
-	}
-	seen := map[string]bool{}
-	for _, c := range plan.Conflicts {
-		if c != "" && !seen[c] {
-			seen[c] = true
-			lines = append(lines, tsWarn.Render("! ")+sanitize(c))
-		}
-	}
-	for _, t := range plan.Targets {
-		if t.Conflict == "" {
+	copies := map[string]map[string]bool{}
+	for _, target := range plan.Targets {
+		if target.Action != "copy" || target.Conflict != "" || target.Project == "" {
 			continue
 		}
-		who := t.Machine
-		if t.Project != "" {
-			who += " " + t.Project
+		if copies[target.Machine] == nil {
+			copies[target.Machine] = map[string]bool{}
 		}
-		line := sanitize(strings.TrimSpace(who) + ": " + t.Conflict)
-		if !seen[line] {
-			seen[line] = true
-			lines = append(lines, tsWarn.Render("! ")+line)
+		copies[target.Machine][target.Project] = true
+	}
+	var machines []string
+	for machine := range copies {
+		machines = append(machines, machine)
+	}
+	sort.Strings(machines)
+	for _, machine := range machines {
+		lines = append(lines, "Copies to "+nounCount(len(copies[machine]), "project", "projects")+" on "+sanitize(machine)+".")
+	}
+	for _, t := range plan.Targets {
+		if t.Action == "remove" && t.Source != "" && t.Conflict == "" {
+			line := "Moves " + shortSkillPath(t.Source) + " on " + sanitize(t.Machine) + " to agent-net's backup."
+			if !seen[line] {
+				seen[line] = true
+				lines = append(lines, line)
+			}
 		}
 	}
 	if !planCanApply(plan) {
@@ -651,10 +703,62 @@ func (m Model) applyTogglePlan(planID, name, project string, on bool) (Model, te
 				return
 			}
 			md.title = "Applied: " + name
-			md.lines = []string{tsGood.Render("✓ ") + "Switched " + onOff(on) + " " + name + " in " + project + "."}
-			md.lines = append(md.lines, outcomeLines(name, res)[1:]...)
+			md.lines = []string{toggleOutcomeSummary(project, on, res)}
 		}}
 	}
+}
+
+func shortSkillPath(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) > 3 && (parts[1] == "home" || parts[1] == "Users") {
+		return sanitize("~/" + strings.Join(parts[3:], "/"))
+	}
+	return sanitize(path)
+}
+
+func toggleOutcomeSummary(project string, on bool, res protocol.ToolApplyResult) string {
+	line := "Switched " + onOff(on) + " in " + sanitize(project) + "."
+	projects := map[string]map[string]bool{}
+	var moves, issues []string
+	for _, t := range res.Targets {
+		if t.State != "ok" && t.State != "applied" {
+			issue := sanitize(t.Machine) + ": " + orStr(t.Reason, t.State)
+			if !hasStr(issues, issue) {
+				issues = append(issues, issue)
+			}
+			continue
+		}
+		if t.Action == "copy" && t.Project != "" {
+			if projects[t.Machine] == nil {
+				projects[t.Machine] = map[string]bool{}
+			}
+			projects[t.Machine][t.Project] = true
+		}
+		if t.Action == "remove" && t.Source != "" {
+			move := "moved " + shortSkillPath(t.Source) + " to backup"
+			if !hasStr(moves, move) {
+				moves = append(moves, move)
+			}
+		}
+	}
+	var machines []string
+	for m := range projects {
+		machines = append(machines, m)
+	}
+	sort.Strings(machines)
+	var actions []string
+	for _, m := range machines {
+		actions = append(actions, "Copied to "+nounCount(len(projects[m]), "project", "projects")+" on "+sanitize(m))
+	}
+	actions = append(actions, moves...)
+	if len(actions) > 0 {
+		line += " " + strings.Join(actions, "; ") + "."
+	}
+	if len(issues) > 0 {
+		line = strings.Replace(line, "Switched "+onOff(on)+" in "+sanitize(project)+".", "Partly applied in "+sanitize(project)+".", 1)
+		line += " " + strings.Join(issues, "; ") + "."
+	}
+	return line
 }
 
 // tableToggleNewProjects changes the standing choice. The gateway saves it at

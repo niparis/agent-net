@@ -1041,6 +1041,10 @@ same bounded text reader as an observed file. Neither operation runs scripts.
 A copy choice validates all named observations before any removal, imports the
 chosen copy first, and uses the host's hash-checked backup journal for the other
 native user copies. Tracked, package, plugin and system sources are refused.
+A skill switch can also remove an observed unmanaged native copy after the
+owner applies the plan. The daemon rechecks its location and content hash,
+refuses tracked files and unsafe paths, and moves it to a private backup before
+forgetting it. Changed content stops the removal.
 
 ### Public apps listener
 

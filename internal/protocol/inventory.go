@@ -234,7 +234,16 @@ type ToolPlanTarget struct {
 	Files         []string `json:"files,omitempty"`
 	Dirty         bool     `json:"dirty,omitempty"`
 }
+type ToolPlanSkip struct {
+	NodeID   string `json:"node_id"`
+	Machine  string `json:"machine"`
+	Project  string `json:"project"`
+	Checkout string `json:"checkout"`
+	Reason   string `json:"reason"`
+}
+
 type ToolPlan struct {
+	Skipped      []ToolPlanSkip   `json:"skipped,omitempty"`
 	ID           string           `json:"id"`
 	Item         string           `json:"item"`
 	Version      string           `json:"version"`
