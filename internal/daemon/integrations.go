@@ -16,12 +16,13 @@ import (
 const defaultIntegrationsInterval = time.Minute
 
 func (d *Daemon) integrationsClient() (integrations.Client, bool) {
-	if d.cfg.GatewayURL == "" || d.cfg.Token == "" {
+	token := d.nodeToken()
+	if d.cfg.GatewayURL == "" || token == "" {
 		return integrations.Client{}, false
 	}
 	// d.client already trusts only the gateway CA. Building a new pinned
 	// client here on every call leaked one idle connection per call.
-	return integrations.Client{URL: d.cfg.GatewayURL, Token: d.cfg.Token, HTTP: d.client}, true
+	return integrations.Client{URL: d.cfg.GatewayURL, Token: token, HTTP: d.client}, true
 }
 
 func (d *Daemon) integrationsLoop(ctx context.Context) {

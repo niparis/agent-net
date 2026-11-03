@@ -2,6 +2,22 @@
 
 Decision [0036](decisions/0036-primitives.md) defines an agent as a lasting identity with a charter and a Graph node, and a session as one running process of an agent. A worker is an agent for one task. A task is a contract with a caller, doer, done condition and result; the free-text status label is an announced task. Authority covers actions requiring the owner; autonomy covers decisions about work. Pending work is derived. The current interfaces below may still use older labels and do not yet implement every part of the decision.
 
+## Remove a machine or rotate its token
+
+In the TUI, open Settings (`6`) and select a machine. Press `x` to remove it
+or `r` to rotate its token. Confirm the prompt naming the machine, or press
+Esc to cancel. An offline machine can only be removed, not rotated.
+
+Removal revokes its credential, closes its link and marks its sessions offline.
+Its history stays. To join that machine again, run `agent-net setup` there.
+Rotation saves a new token to that machine's `node.json` atomically with mode
+0600 and reconnects it. The old token stops working when the save is confirmed.
+
+The owner-only operator methods are `machine_remove` and `machine_rotate`, both
+with `{node_id}`. The CTO uses `settings_change` with `area: machine_remove` or
+`area: machine_rotate` and `node_id`. These create proposals for the owner's
+approval in Inbox. Agent sessions cannot invoke the owner methods directly.
+
 ## CTO settings and conversation
 
 Minor CTO graph changes apply immediately with actor `CTO (minor)`: charter
@@ -268,7 +284,7 @@ are proposals. The CTO has one action tool per area:
 | `tools_change` | `action: plan`, `apply`, `undo`, `import` or `native_remove` |
 | `mcp_change` | `action: add`, `remove`, `test` or `enable` |
 | `mcp_call` | one call on a shared MCP server |
-| `settings_change` | `area: worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `invite` or `onboarding` |
+| `settings_change` | `area: worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite` or `onboarding` |
 | `project_change` | `action: add`, `remove` or `display` |
 | `cto_new` | a new conversation for the active harness |
 

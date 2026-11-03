@@ -88,20 +88,23 @@ type Gateway struct {
 	// usage holds the newest CPU and memory report of each node (usage.go).
 	usage usageTable
 
-	mu         sync.Mutex
-	conns      map[string]*nodeConn
-	timers     map[string]*time.Timer
-	closed     bool
-	appsDone   chan struct{}
-	rotationMu sync.Mutex
+	mu                sync.Mutex
+	conns             map[string]*nodeConn
+	timers            map[string]*time.Timer
+	closed            bool
+	appsDone          chan struct{}
+	rotationMu        sync.Mutex
+	machineRotationMu sync.Mutex
+	machineAuthMu     sync.Mutex // authentication, removal and confirmation ordering
 }
 
 type nodeConn struct {
-	id     string
-	ws     *websocket.Conn
-	wmu    sync.Mutex
-	cancel context.CancelFunc
-	dead   chan struct{} // closed when the connection ends
+	id        string
+	tokenHash string // credential used for this connection
+	ws        *websocket.Conn
+	wmu       sync.Mutex
+	cancel    context.CancelFunc
+	dead      chan struct{} // closed when the connection ends
 
 	pmu     sync.Mutex
 	nextID  int
@@ -437,23 +440,33 @@ func (g *Gateway) handleEnroll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
+	g.machineAuthMu.Lock()
+	if g.store.machineRemoved(r.Header.Get("X-Agent-Net-Node-ID")) {
+		g.machineAuthMu.Unlock()
+		w.Header().Set("Agent-Net-Removed", "true")
+		http.Error(w, "this machine was removed from the network; run agent-net setup to join again", http.StatusGone)
+		return
+	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	nodeID, ok, err := g.store.NodeByToken(token)
 	if err != nil || !ok || token == "" {
+		g.machineAuthMu.Unlock()
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
+		g.machineAuthMu.Unlock()
 		return
 	}
 	ws.SetReadLimit(4 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
-	nc := &nodeConn{id: nodeID, ws: ws, cancel: cancel, dead: make(chan struct{})}
+	nc := &nodeConn{id: nodeID, tokenHash: hashHex(token), ws: ws, cancel: cancel, dead: make(chan struct{})}
 
 	g.mu.Lock()
 	if g.closed {
 		g.mu.Unlock()
+		g.machineAuthMu.Unlock()
 		ws.Close(websocket.StatusGoingAway, "gateway closing")
 		cancel()
 		return
@@ -465,6 +478,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		delete(g.timers, nodeID)
 	}
 	g.mu.Unlock()
+	g.machineAuthMu.Unlock()
 	if old != nil {
 		old.ws.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
 		old.cancel()
@@ -516,7 +530,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
+		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -587,6 +601,11 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 	if nc.write(ctx, reply) != nil {
 		return errNodeGone
 	}
+	if (h.Type == "machine.rotate" || h.Type == "machine.remove") && err == nil {
+		if result, ok := data.(map[string]bool); ok && result["reconnect"] {
+			nc.ws.Close(websocket.StatusServiceRestart, "machine credentials changed")
+		}
+	}
 	if h.Type == "session.sync" && err == nil {
 		g.sendMCPSync(ctx, nc)
 		g.dispatchPending(ctx, nc.id, true)
@@ -605,6 +624,9 @@ func decode[T any](raw []byte) (T, error) {
 
 func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	st := g.store
+	if st.machineRemoved(nc.id) {
+		return nil, reject("this machine was removed from the network; run agent-net setup to join again")
+	}
 	if typ == "session.sync" || typ == "session.upsert" || typ == "project.add" {
 		// Freeze defaults before discovery so existing off cells stay off.
 		if _, err := st.ToolProjectStates(); err != nil {
@@ -656,6 +678,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return st.SetProjectDisplayName(p.Project, p.Name)
 		}
 		return st.ProjectDisplayName(p.Project)
+
+	case "machine.remove", "machine.rotate":
+		return g.machineAction(ctx, nc, typ, raw)
 
 	case "node.rename.validate":
 		p, err := decode[protocol.NodeRename](raw)

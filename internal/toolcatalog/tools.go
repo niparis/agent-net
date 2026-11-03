@@ -36,7 +36,7 @@ var Tools = []Tool{
 	toolEntry("answer", "Propose the owner's answer to a held request, an inbox item or a contested outcome (let stand or overrule).", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("tools_change", "Propose a change to shared tools and skills: plan, apply, undo, import or remove a native tool.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("mcp_change", "Propose adding, removing, testing or enabling a shared MCP server. Only the owner can approve it.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
-	toolEntry("settings_change", "Propose one owner settings change: providers, integrations, scores, worker profiles, CTO title or playbook.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
+	toolEntry("settings_change", "Propose one owner settings change: providers, integrations, scores, worker profiles, CTO title, playbook, machine removal or token rotation.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("project_change", "Propose adding, removing, renaming or creating a project.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("mcp_call", "Propose a call to a tool on a shared MCP server; it runs after the owner approves. Credentials never appear in the call.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("cto_new", "Propose starting a new CTO conversation. The timeline and proposals stay.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),

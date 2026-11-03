@@ -84,6 +84,10 @@ func (m Model) hints() []hint {
 	case m.tab == quotasTab:
 		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "quality details"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == settingsTab:
+		item := m.settingsItems()[min(max(m.settingsRow, 0), len(m.settingsItems())-1)]
+		if item.kind == "machine" {
+			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), {key: "x", label: "remove", prio: 1}, bindingHint(contextSettings, "rotate token"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
+		}
 		if m.settingsItems()[min(max(m.settingsRow, 0), len(m.settingsItems())-1)].section == 0 {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "toggle"), bindingHint(contextSettings, "public"), bindingHint(contextSettings, "url"), bindingHint(contextSettings, "add"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 		}
@@ -186,6 +190,15 @@ func (m Model) helpLine(w int) string {
 		}
 		return confirmLine("Protect "+sanitize(m.quotaConfirm)+"?", w)
 	case modeConfirm:
+		if m.confirmMachine != "" {
+			prefix := "Remove machine "
+			suffix := " and revoke its token?"
+			if m.confirmMachine == protocol.OpMachineRotate {
+				prefix = "Rotate token for "
+				suffix = "?"
+			}
+			return clip(sBold.Render(confirmName(prefix, sanitize(m.confirmName), suffix, w)), w)
+		}
 		if m.confirmDefect {
 			return clip(sBold.Render(confirmName(fmt.Sprintf("Report a severity %d defect found later on ", m.defectLevel), m.defectName, "?", w)), w)
 		}

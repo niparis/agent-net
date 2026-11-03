@@ -142,8 +142,29 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
+	case "rotate token":
+		if item.kind == "machine" {
+			n := m.machineRows()[item.index]
+			if !n.online {
+				m.fail("Machine is offline; offline machines can only be removed, not rotated.")
+				return m, nil
+			}
+			m.mode = modeConfirm
+			m.confirmMachine = protocol.OpMachineRotate
+			m.confirmID = n.nodeID
+			m.confirmName = n.host
+		}
+		return m, nil
 	case "public", "url", "add", "revoke":
 		action := keyAction(contextSettings, k.String())
+		if action == "revoke" && item.kind == "machine" {
+			n := m.machineRows()[item.index]
+			m.mode = modeConfirm
+			m.confirmMachine = protocol.OpMachineRemove
+			m.confirmID = n.nodeID
+			m.confirmName = n.host
+			return m, nil
+		}
 		if item.section != 0 || (action == "revoke" && item.kind != "app") {
 			return m, nil
 		}

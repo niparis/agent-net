@@ -196,7 +196,9 @@ A machine joins with a one-time code.
 - At enrollment the gateway gives the machine a node ID and a token (32 random bytes, hex). It stores only the SHA-256 hash of the token.
 - The token is saved in `~/.config/agent-net/node.json` with mode 0600. The daemon sends it as a bearer token when it opens its WebSocket. One node has one live connection, and a new one replaces the old.
 - The gateway only accepts a message from a session that belongs to the node on the connection. A node can directly read messages sent from or to its own sessions. The owner can also request another message through the relay described below. It can list every session on the network and read the event feed (metadata, no bodies; see [the event feed](#what-every-node-can-read-the-event-feed)).
-- There is no token rotation and no revocation command yet. To remove a machine, delete its row from the `nodes` table in `gateway.db`, or stop trusting the network and start a new gateway data dir.
+- In Settings, select a machine and press `x` to remove it, or `r` to rotate its token. Both ask for confirmation with the machine's name. Only the owner can act. CTO requests become proposals for owner approval.
+- Removal deletes the token hash, marks the machine removed, closes its live link, and marks its sessions offline immediately. History rows stay. Reconnecting is refused; the daemon logs `this machine was removed from the network; run agent-net setup to join again`.
+- Rotation requires an online machine. The gateway stages a new hash and sends the token over its pinned TLS link. The daemon atomically replaces `node.json` with mode 0600, preserves other settings, and confirms the save. Confirmation revokes the old token and closes any link still using it. The daemon reconnects with the new token. A reconnect with the staged token also confirms it, so losing the acknowledgement does not lock the machine out. Before confirmation the old token remains valid. Offline machines can only be removed, not rotated.
 
 ## Which local process is calling
 

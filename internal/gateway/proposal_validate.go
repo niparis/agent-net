@@ -42,6 +42,8 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		return g.handle(ctx, nc, "charter.validate", q.Args)
 	case "edge_set":
 		return g.handle(ctx, nc, "edge.validate", q.Args)
+	case "machine_remove", "machine_rotate":
+		return nil, g.checkMachineAction(str("node_id"), q.Tool == "machine_rotate")
 	case "node_rename":
 		return g.handle(ctx, nc, "node.rename.validate", q.Args)
 	case "node_add":

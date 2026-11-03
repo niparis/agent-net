@@ -66,6 +66,7 @@ type Config struct {
 	GatewayURL       string
 	NodeID           string
 	Token            string
+	NodeConfigDir    string // node.json directory; empty uses ConfigDir().
 	CAPEM            []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.

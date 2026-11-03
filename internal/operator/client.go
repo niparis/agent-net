@@ -403,6 +403,14 @@ func (s *Client) SetSessionPolicy(ctx context.Context, q protocol.SessionPolicyR
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) MachineAction(ctx context.Context, nodeID, action string) error {
+	if action != protocol.OpMachineRemove && action != protocol.OpMachineRotate {
+		return fmt.Errorf("unknown machine action %q", action)
+	}
+	_, err := s.action(ctx, action, map[string]string{"node_id": nodeID})
+	return err
+}
+
 func (s *Client) RenameNode(ctx context.Context, nodeID, name string) (protocol.NodeRenameResult, error) {
 	var out protocol.NodeRenameResult
 	raw, err := s.action(ctx, protocol.OpNodeRename, protocol.NodeRenameRequest{NodeID: nodeID, Name: name})

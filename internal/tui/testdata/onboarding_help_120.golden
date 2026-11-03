@@ -5,7 +5,8 @@ Keys · all screens ────────────────────
   p                      switch internet access in Connected apps
   u                      set the tunnel URL in Connected apps
   a                      add a connected app
-  x                      revoke the selected app
+  x                      remove the selected machine or revoke the selected app
+  r                      rotate the selected online machine token
 
  Inbox
   pgup/pgdn              page
@@ -35,6 +36,5 @@ Keys · all screens ────────────────────
   a                      approve
   r                      decline
   A                      approve all
-
   more below
 up/down scroll  ? this screen  esc close
