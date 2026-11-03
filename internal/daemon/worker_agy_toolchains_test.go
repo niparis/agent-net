@@ -13,9 +13,12 @@ import (
 )
 
 func TestAgyWorkerToolchainDirs(t *testing.T) {
-	for _, tc := range []string{"go", "home", "parent-of-home", "symlink-home", "missing", "no-go"} {
+	for _, tc := range []string{"go", "standard-location", "home", "parent-of-home", "symlink-home", "missing", "no-go"} {
 		t.Run(tc, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
+			old := standardGoPaths
+			standardGoPaths = func(home string) []string { return []string{filepath.Join(home, ".local", "go", "bin", "go")} }
+			t.Cleanup(func() { standardGoPaths = old })
 			w, records, _ := startAgyNode(t, shortSet)
 			base := t.TempDir()
 			home, err := os.UserHomeDir()
@@ -30,7 +33,7 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 			}
 			var want []string
 			switch tc {
-			case "go":
+			case "go", "standard-location":
 				want = []string{root, cache}
 			case "home":
 				root, cache = home, home
@@ -49,7 +52,15 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 			t.Setenv("FAKE_GO_CACHE", cache)
 			if tc != "no-go" {
 				script := "#!/bin/sh\ncase \"$*\" in\n'--version') echo 'go version fake';;\n'env GOROOT GOMODCACHE') printf '%s\\n%s\\n' \"$FAKE_GO_ROOT\" \"$FAKE_GO_CACHE\";;\n*) exit 1;;\nesac\n"
-				if err := os.WriteFile(filepath.Join(base, "go"), []byte(script), 0700); err != nil {
+				dir := base
+				if tc == "standard-location" {
+					// Not on the search path, only where the Go tarball is often unpacked.
+					dir = filepath.Join(home, ".local", "go", "bin")
+					if err := os.MkdirAll(dir, 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.WriteFile(filepath.Join(dir, "go"), []byte(script), 0700); err != nil {
 					t.Fatal(err)
 				}
 			}

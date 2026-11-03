@@ -24,3 +24,5 @@ shown to the worker and its owner. Keep the probes together so other toolchains
 can be added later. Only Go is supported now.
 
 Codex workers keep their current sandbox rules.
+
+2026-11-03: Go is also looked for in standard install folders when it is not on the harness search path. On research it lives in ~/.local/go/bin, which only the project worker notes add to PATH, so the first release added no folders.

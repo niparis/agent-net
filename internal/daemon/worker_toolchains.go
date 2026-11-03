@@ -29,6 +29,9 @@ func (d *Daemon) workerToolchainDirs(ctx context.Context, dir string, env []stri
 		}
 	}
 	bin := harnesses.Executable(ctx, "go", opts)
+	if bin == "" {
+		bin = standardGo(opts.Home)
+	}
 	if bin == "" || ctx.Err() != nil {
 		return nil
 	}
@@ -87,4 +90,25 @@ func (d *Daemon) workerToolchainPermissions(w *worker, body string) string {
 	old := protocol.WorkerPermissionsText(level, harness)
 	added := strings.Replace(old, ")", ", plus toolchains: "+strings.Join(dirs, ", ")+")", 1)
 	return strings.Replace(body, old, added, 1)
+}
+
+// standardGo finds Go in the folders its installers use when it is not on
+// the search path: an owner who installs Go under ~/.local/go adds it to
+// PATH only in the project's worker notes.
+func standardGo(home string) string {
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	for _, path := range standardGoPaths(home) {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+			return path
+		}
+	}
+	return ""
+}
+
+// standardGoPaths is a variable so tests can keep the machine's own Go out.
+var standardGoPaths = func(home string) []string {
+	return []string{filepath.Join(home, ".local", "go", "bin", "go"), filepath.Join(home, "go", "bin", "go"),
+		"/usr/local/go/bin/go", "/opt/homebrew/bin/go", "/usr/local/bin/go"}
 }
