@@ -108,6 +108,9 @@ func TestAgyProcess(t *testing.T) {
 			fmt.Fprintln(os.Stderr, `AGY_ERROR: {"message":"local worker exploded"}`)
 			os.Exit(3)
 		}
+		if strings.Contains(body, "FAKE:edit") {
+			_ = os.WriteFile(filepath.Join(cwd, "agy-work.txt"), []byte("work\n"), 0644)
+		}
 		partial := strings.Contains(r.Turns[0], "FAKE:partial")
 		if strings.Contains(body, "FAKE:handback") || partial {
 			conn, err := net.Dial("unix", r.Socket)
@@ -609,5 +612,18 @@ func TestAgyWorkerRestart(t *testing.T) {
 				t.Fatalf("duplicate notices: %+v", ns)
 			}
 		})
+	}
+}
+
+func TestAgyHandbackCommit(t *testing.T) {
+	w, _, repo := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:edit FAKE:handback", Isolation: protocol.IsolationWorktree})
+	w.waitNotice(t, 1)
+	msg := gitOutT(t, repo, "log", "-1", "--format=%B", res.Branch)
+	if !strings.Contains(msg, "finished agy task") || !strings.Contains(msg, "Agent-Net-Harness: agy") {
+		t.Fatalf("commit message: %s", msg)
+	}
+	if got := gitOutT(t, repo, "show", res.Branch+":agy-work.txt"); got != "work" {
+		t.Fatal(got)
 	}
 }

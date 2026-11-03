@@ -573,6 +573,8 @@ func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, 
 		b = WorkerPreambleCodex
 	case "claude":
 		b += WorkerClaudeNote
+	case "agy":
+		b += "\n- The daemon commits your work when you hand back, so do not run git commit."
 	}
 	b += "\n- " + WorkerPermissionsText(level, harness)
 	switch WorkerPermissionsOrDefault(level) {

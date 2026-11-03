@@ -255,3 +255,23 @@ func TestWorkerCommitAmendKeepsOneSet(t *testing.T) {
 		}
 	}
 }
+
+func TestAgyCommitNoWorktreeOrChanges(t *testing.T) {
+	d := commitTestDaemon(t)
+	if d.saveWorkerChanges(&worker{harness: "agy"}, "report", "handback", false) {
+		t.Fatal("committed without a worktree")
+	}
+	w, dir := commitTestWorker(t, d)
+	w.harness = "agy"
+	if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("work"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	fakeHarnessCommit(t, dir, d.workerCommitEnv(w), "worker commit")
+	before := gitOutT(t, dir, "rev-parse", "HEAD")
+	if d.saveWorkerChanges(w, "report", "handback", false) {
+		t.Fatal("made an extra commit")
+	}
+	if after := gitOutT(t, dir, "rev-parse", "HEAD"); before != after {
+		t.Fatal("HEAD changed")
+	}
+}
