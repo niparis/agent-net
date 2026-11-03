@@ -2,10 +2,12 @@ package daemon
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -386,6 +388,213 @@ func claudeContextLimit(model string) int64 {
 		return 200_000
 	}
 	return 0
+}
+
+var claudeDirBad = regexp.MustCompile(`[^A-Za-z0-9]`)
+
+func claudeTranscriptDir(cwd string) string {
+	return claudeDirBad.ReplaceAllString(cwd, "-")
+}
+
+func claudeTranscriptPath(projectsDir, session, cwd string) string {
+	if session == "" {
+		return ""
+	}
+	name := session + ".jsonl"
+	if cwd != "" {
+		p := filepath.Join(projectsDir, claudeTranscriptDir(cwd), name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	matches, _ := filepath.Glob(filepath.Join(projectsDir, "*", name))
+	if len(matches) > 0 {
+		return matches[0]
+	}
+	return ""
+}
+
+// failure reads the worker's transcript tail and reports whether the latest
+// assistant entry is a synthetic error or API error.
+func (claudeLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, bool) {
+	d.wmu.Lock()
+	native, cwd, off := w.nativeID, w.path, w.claudeTranscriptOff
+	d.wmu.Unlock()
+	if native == "" {
+		return "", false
+	}
+	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	path := claudeTranscriptPath(projectsDir, native, cwd)
+	if path == "" {
+		return "", false
+	}
+	msg, provider, newOff := claudeTranscriptFailureAt(path, off)
+	if newOff != off {
+		d.wmu.Lock()
+		w.claudeTranscriptOff = newOff
+		d.wmu.Unlock()
+	}
+	return msg, provider
+}
+
+const claudeFailureMaxRead = 8 << 20
+
+// claudeTranscriptFailureAt reads new complete lines in path from fromOff and
+// reports if the newest assistant entry is a synthetic error or API error.
+func claudeTranscriptFailureAt(path string, fromOff int64) (msg string, provider bool, newOff int64) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return "", false, fromOff
+	}
+	size := fi.Size()
+	if fromOff < 0 || size < fromOff {
+		fromOff = 0
+	}
+	if size <= fromOff {
+		return "", false, fromOff
+	}
+	readStart := fromOff
+	if size-readStart > claudeFailureMaxRead {
+		readStart = size - claudeFailureMaxRead
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false, fromOff
+	}
+	defer f.Close()
+
+	buf := make([]byte, size-readStart)
+	n, err := f.ReadAt(buf, readStart)
+	if err != nil && err != io.EOF {
+		return "", false, fromOff
+	}
+	buf = buf[:n]
+
+	lastNl := bytes.LastIndexByte(buf, '\n')
+	if lastNl < 0 {
+		return "", false, fromOff
+	}
+	buf = buf[:lastNl+1]
+	newOff = readStart + int64(lastNl) + 1
+
+	lines := bytes.Split(buf, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
+		if len(line) == 0 || !bytes.Contains(line, []byte(`"assistant"`)) {
+			continue
+		}
+		var e struct {
+			Type        string `json:"type"`
+			Subtype     string `json:"subtype"`
+			IsSidechain bool   `json:"isSidechain"`
+			IsError     bool   `json:"isError"`
+			Error       any    `json:"error"`
+			Message     struct {
+				Role       string          `json:"role"`
+				Model      string          `json:"model"`
+				StopReason string          `json:"stop_reason"`
+				Content    json.RawMessage `json:"content"`
+				Error      any             `json:"error"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.IsSidechain {
+			continue
+		}
+
+		isSynthetic := strings.EqualFold(e.Message.Model, "<synthetic>") || (strings.HasPrefix(e.Message.Model, "<") && strings.Contains(e.Message.Model, "synthetic"))
+		isError := isSynthetic || e.IsError || e.Subtype == "api_error" || e.Subtype == "error" || e.Message.StopReason == "error" || e.Error != nil || e.Message.Error != nil
+
+		var text string
+		if json.Unmarshal(e.Message.Content, &text) != nil {
+			var blocks []struct {
+				Type    string          `json:"type"`
+				Text    string          `json:"text"`
+				Content json.RawMessage `json:"content"`
+				IsError bool            `json:"is_error"`
+			}
+			if json.Unmarshal(e.Message.Content, &blocks) == nil {
+				for _, b := range blocks {
+					if b.IsError || b.Type == "error" || b.Type == "api_error" {
+						isError = true
+					}
+					if b.Type == "text" && strings.TrimSpace(b.Text) != "" {
+						if text != "" {
+							text += " "
+						}
+						text += b.Text
+					}
+				}
+			}
+		}
+		if text == "" {
+			text = claudeExtractError(e.Error)
+			if text == "" {
+				text = claudeExtractError(e.Message.Error)
+			}
+		}
+
+		if !isError {
+			// A normal assistant reply: not a failure.
+			return "", false, newOff
+		}
+
+		cleaned := cleanFailure(text)
+		return cleaned, claudeProviderFailure(text), newOff
+	}
+
+	return "", false, newOff
+}
+
+func claudeExtractError(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if m, ok := v.(map[string]any); ok {
+		if msg, ok := m["message"].(string); ok {
+			return msg
+		}
+		if errStr, ok := m["error"].(string); ok {
+			return errStr
+		}
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// claudeProviderFailure classifies provider errors: model not found or no access,
+// auth (401/403), quota, rate limit or capacity (429, usage limit, rate limit,
+// at capacity, overloaded), or other API errors.
+func claudeProviderFailure(text string) bool {
+	s := strings.ToLower(text)
+	for _, local := range []string{"sqlerror", "sqlite", "database", "tool.error", "tool error"} {
+		if strings.Contains(s, local) {
+			return false
+		}
+	}
+	for _, m := range []string{"not exist", "no access", "not have access", "model not found", "model_not_found", "model unavailable", "model not available", "unknown model", "invalid model", "issue with the selected model"} {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	for _, m := range []string{"401", "403", "unauthorized", "forbidden", "not logged in", "authentication", "invalid api key", "invalid_api_key"} {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	for _, m := range []string{"429", "usage limit", "usage_limit", "rate limit", "rate_limit", "at capacity", "overloaded", "quota", "too many requests", "resource_exhausted", "credit balance"} {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	for _, m := range []string{"500", "502", "503", "504", "529", "api error", "api_error", "internal server error", "bad gateway", "service unavailable", "overloaded_error", "anthropic api"} {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // launchClaudeBackground is shared by workers and owner sessions. The caller

@@ -220,13 +220,14 @@ type worker struct {
 	exitErr      error      // process wait error, guarded by wmu
 	// piLimit is the context window of the Pi model the session file names.
 	// It is read from `pi --list-models` once and kept for the worker.
-	piLimitModel    string
-	piLimit         int64
-	exited          chan struct{} // closed when an own child is reaped; nil if adopted
-	backgroundStart bool          // a start whose response was sent before launch
-	startDone       chan struct{} // closed after deferred task delivery
-	ready           chan struct{} // closed when the session has a gateway ID
-	readyOnce       sync.Once
+	piLimitModel        string
+	piLimit             int64
+	claudeTranscriptOff int64
+	exited              chan struct{} // closed when an own child is reaped; nil if adopted
+	backgroundStart     bool          // a start whose response was sent before launch
+	startDone           chan struct{} // closed after deferred task delivery
+	ready               chan struct{} // closed when the session has a gateway ID
+	readyOnce           sync.Once
 }
 
 // launcher starts one kind of harness for a worker.
