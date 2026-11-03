@@ -154,6 +154,57 @@ func TestSettingsSnapshotSyncLink(t *testing.T) {
 		t.Fatal(next)
 	}
 }
+
+// The old daemon's read loop handles result and known push types, and has no
+// default case. This peer deliberately has no settings.sync handler and sends
+// no acknowledgment for that frame.
+func TestSettingsSyncLegacyPeer(t *testing.T) {
+	_, url, _, token := newLinkGateway(t, time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	sendLinkSession(t, ws)
+	seenSync := false
+	for {
+		_, raw, err := ws.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var h struct {
+			Type string `json:"type"`
+			ID   string `json:"id"`
+			OK   bool   `json:"ok"`
+		}
+		if err = json.Unmarshal(raw, &h); err != nil {
+			t.Fatal(err)
+		}
+		// This observation belongs to the test harness, not a peer handler.
+		if h.Type == "settings.sync" && !seenSync {
+			seenSync = true
+			if err = ws.Write(ctx, websocket.MessageText, []byte(`{"type":"session.sync","id":"legacy-again","sessions":[]}`)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		switch h.Type {
+		case "result":
+			if h.ID == "legacy-again" {
+				if !h.OK {
+					t.Fatal("legacy peer's second sync was rejected")
+				}
+				if !seenSync {
+					t.Fatal("no settings frame received")
+				}
+				return
+			}
+		case "mcp.sync", "node.name":
+			// Known pushes also do not require an answer.
+		}
+	}
+}
 func TestSettingsMaturityUndoRemove(t *testing.T) {
 	s, _ := newTestStore(t)
 	if err := s.AddArchitect("alpha", "owner"); err != nil {
