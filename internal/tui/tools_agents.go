@@ -44,20 +44,30 @@ func (m Model) agentNode(project string) string {
 
 // Match projectCostOn, including observed user copies and tracked repo skills.
 func (m Model) agentSkillState(name, project string) (on bool, repo string) {
-	node := m.agentNode(project)
+	nodes := map[string]bool{}
+	for _, p := range m.projectRows() {
+		if p.Name == project {
+			nodes[p.NodeID] = true
+		}
+	}
+	if len(nodes) == 0 {
+		nodes[m.agentNode(project)] = true
+	}
 	for _, it := range m.tl.items {
 		if it.Kind != protocol.InventorySkill || it.Name != name {
 			continue
 		}
 		if it.Desired != nil {
 			a := it.Desired.Assignment
-			on = on || a.OnMachine(node) && (a.Scope == "global" || a.Scope == "projects" && hasStr(a.Projects, project))
+			for node := range nodes {
+				on = on || a.OnMachine(node) && (a.Scope == "global" || a.Scope == "projects" && hasStr(a.Projects, project))
+			}
 		}
 		for _, l := range it.Locations {
 			if l.Scope == "project" && l.Tracked && (l.GraphNode == project || l.Project == project) {
 				repo = project
 			}
-			if l.NodeID == node && (l.Scope == "user" || l.Scope == "project" && l.Tracked && (l.GraphNode == project || l.Project == project)) {
+			if nodes[l.NodeID] && (it.Desired == nil && (l.Scope == "user" || l.Scope == "project" && (l.GraphNode == project || l.Project == project)) || l.Scope == "project" && l.Tracked && (l.GraphNode == project || l.Project == project)) {
 				on = true
 			}
 		}
@@ -270,7 +280,7 @@ func (m Model) agentToolsView(w, h int) []string {
 		if on {
 			state = "this project only"
 		}
-		if r.Item.Desired != nil && r.Item.Desired.Assignment.Scope == "global" {
+		if on && r.Item.Desired != nil && r.Item.Desired.Assignment.Scope == "global" {
 			state = "every project"
 		}
 		outside := r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal

@@ -360,6 +360,19 @@ func (s *Store) applyToolPlan(id, actor string, validate ...bool) (protocol.Tool
 		return r, err
 	}
 	defer tx.Rollback()
+	r, err = s.applyToolPlanTx(tx, id, actor)
+	if err != nil {
+		return r, err
+	}
+	if len(validate) > 0 && validate[0] {
+		return r, nil
+	}
+	return r, tx.Commit()
+}
+
+func (s *Store) applyToolPlanTx(tx *sql.Tx, id, actor string) (protocol.ToolRevision, error) {
+	var r protocol.ToolRevision
+	var err error
 	var snapshot, raw string
 	var applied int
 	if err = tx.QueryRow(`SELECT snapshot,plan,applied FROM tool_plans WHERE id=?`, id).Scan(&snapshot, &raw, &applied); err != nil {
@@ -448,10 +461,7 @@ func (s *Store) applyToolPlan(id, actor string, validate ...bool) (protocol.Tool
 	if err = auditToolTx(tx, p.Item, id, "apply", actor, r.Revision, p.Targets, "pending", r.At, &p.Assignment); err != nil {
 		return r, err
 	}
-	if len(validate) > 0 && validate[0] {
-		return r, nil
-	}
-	return r, tx.Commit()
+	return r, nil
 }
 
 // auditToolTx writes one audit event. a is the assignment the event is about,
@@ -570,6 +580,9 @@ func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRev
 		return r, p, err
 	}
 	previous := protocol.ToolAssignment{Scope: "uninstalled"}
+	if last.Previous != nil {
+		previous = *last.Previous
+	}
 	var rawAssignment string
 	if err = tx.QueryRow(`SELECT assignment FROM tool_revisions WHERE item=? AND revision=?`, item, revision-1).Scan(&rawAssignment); err == nil {
 		if err = json.Unmarshal([]byte(rawAssignment), &previous); err != nil {

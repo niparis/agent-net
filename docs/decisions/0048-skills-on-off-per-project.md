@@ -124,3 +124,14 @@ Each step is one worker with failing tests first.
 7. **Large skills** sent in pieces.
 
 Docs (`reference.md`, `security.md`, uninstall) change with each step that changes what is written to a machine or a security rule.
+
+## Correction: versions across machines (2026-11-03)
+
+A project switch covers a skill name, including every content identity of that
+name. The owner never chooses a machine. One plan group contains the existing
+per-identity plans, each with its own snapshot, targets and daemon revision.
+Apply validates all members before recording their revisions together; undo
+reverses each member. A stale member refuses the group before any change.
+For placement, prefer the checkout's version, then the machine's user version,
+then the newest library version. The Skills row checks all identities across
+the project's checkouts, and the information box names differing copies.

@@ -229,3 +229,48 @@ func TestToolsAgentsPlanningEscapeCancels(t *testing.T) {
 		t.Fatal("closed modal started another plan")
 	}
 }
+
+func TestToolsSkillOffRowDoesNotClaimEveryProject(t *testing.T) {
+	m, _ := agentToolsFixture(120, 34)
+	for i := range m.tl.items {
+		if m.tl.items[i].Name == "archify" {
+			m.tl.items[i].Desired.Assignment.Machines = []string{toolNodeM}
+		}
+	}
+	m.rebuildTools()
+	for _, line := range strings.Split(plain(m), "\n") {
+		if strings.Contains(line, "[ ] archify") {
+			if strings.Contains(line, "every project") {
+				t.Fatalf("off row claims every project: %s", line)
+			}
+			return
+		}
+	}
+	t.Fatal("off skill row missing")
+}
+
+func TestToolsSkillStateAcrossVersionsAndCheckouts(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
+	m.snap.Projects = append(m.snap.Projects, protocol.ProjectView{Name: "homelab", NodeID: toolNodeM, Path: "/repos/homelab"})
+	s.items = []protocol.ToolItem{
+		toolManaged(toolSkill("versions", "a", toolLoc(toolNodeR, "research", "/skills/versions", "user", "", "claude")), "uninstalled"),
+		toolManaged(toolSkill("versions", "b", toolLoc(toolNodeM, "laptop", "/skills/versions", "user", "", "codex")), "projects", "homelab"),
+	}
+	s.items[0].Desired.Assignment.Machines = []string{toolNodeR}
+	s.items[1].Desired.Assignment.Machines = []string{toolNodeM}
+	m = pressKey(m, "5")
+	if on, _ := m.agentSkillState("versions", "homelab"); !on {
+		t.Fatal("other checkout's version ignored")
+	}
+	s.items[1].Desired.Assignment.Scope = "uninstalled"
+	s.items[1].Desired.Assignment.Projects = nil
+	m = pressKey(m, "5")
+	if on, _ := m.agentSkillState("versions", "homelab"); on {
+		t.Fatal("old observed user copy overrode desired off")
+	}
+	m.tl.skillsFocus = true
+	info := strings.Join(m.agentInfoView(100), "\n")
+	if !strings.Contains(info, "2 versions: laptop and research differ") {
+		t.Fatal(info)
+	}
+}

@@ -1211,10 +1211,19 @@ file, which stays on that machine, can hold a literal value the file had.
 
 The owner socket also accepts project switches for skills. `tools_toggle`
 takes `item`, `project` and boolean `on`. It returns the ordinary plan; confirm
-it with `tools_apply`. Turning a global skill off in one project moves it to
+it with `tools_apply`. A switch applies to every content version of that skill
+name across the project's checkouts. Different versions produce one group ID
+with per-identity member plans, snapshots and revisions. Apply checks all
+members before saving their revisions together. Undo accepts the group ID
+or the selected item and reverses every member. The daemon feed stays per
+identity. Placement uses the checkout's own version first, then its machine's
+user copy, and otherwise the newest library version.
+Turning a global skill off in one project moves it to
 copies in every other known project in one plan. Turning the last project off
 makes it uninstalled. Turning every known project on uses global placement
-when its new-projects choice is on. Machine limits are kept.
+when its new-projects choice is on. The owner chooses projects only.
+The Skills row checks all versions across the project's known checkouts.
+The information box lists machines whose copies differ.
 
 `tools_new_projects` takes `item` and boolean `on`. It saves the standing
 choice and returns a placement plan to confirm with `tools_apply`. For example,
