@@ -707,3 +707,9 @@ func TestInboxDismissOfAGoneItemDropsItAndSaysAlreadyGone(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxAlreadyAnsweredIsNotGone(t *testing.T) {
+	if inboxGone(fmt.Errorf("inbox item already answered")) {
+		t.Fatal("already answered is not not-found")
+	}
+}
