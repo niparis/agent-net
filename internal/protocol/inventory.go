@@ -243,6 +243,8 @@ type ToolPlanSkip struct {
 }
 
 type ToolPlan struct {
+	Members      []ToolPlan       `json:"members,omitempty"`
+	Previous     *ToolAssignment  `json:"previous,omitempty"`
 	Skipped      []ToolPlanSkip   `json:"skipped,omitempty"`
 	ID           string           `json:"id"`
 	Item         string           `json:"item"`

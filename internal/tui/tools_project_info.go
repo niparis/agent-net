@@ -76,6 +76,15 @@ func (m Model) agentInfoView(w int) []string {
 			}
 		}
 		sort.Strings(names)
+		hashes := map[string]bool{}
+		for _, it := range m.tl.items {
+			if it.Kind == protocol.InventorySkill && it.Name == r.Name {
+				hashes[it.Hash] = true
+			}
+		}
+		if len(hashes) > 1 {
+			add(fmt.Sprintf("%d versions: %s differ", len(hashes), strings.Join(names, " and ")))
+		}
 		add("Machines: " + orStr(strings.Join(names, ", "), "none observed"))
 		add("New projects: " + onOff(newProjects))
 		if why := m.skillLockReason(r); why != "" {

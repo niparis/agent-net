@@ -113,6 +113,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				}
 			}
 			for _, checkout := range checkouts {
+				if ctx.Value(skillGroupKey{}) != nil && !g.skillCopyIdentity(item, node.NodeID, checkout.Name) {
+					continue
+				}
 				roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
 				if checkout.Path == "" {
 					roots = append(roots, struct{ root, harness string }{".gemini/config/skills", "antigravity"})
@@ -195,6 +198,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				}
 			}
 			for _, checkout := range checkouts {
+				if ctx.Value(skillGroupKey{}) != nil && !g.skillCopyIdentity(item, node.NodeID, checkout.Name) {
+					continue
+				}
 				checkoutStart := len(targets)
 				roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
 				if checkout.Path == "" {
@@ -270,6 +276,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				continue
 			}
 			if obs.Hash != hash {
+				if ctx.Value(skillGroupKey{}) != nil {
+					continue
+				}
 				targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, Action: "inspect", State: "conflict", Conflict: "same name has another version that may shadow this item"})
 				continue
 			}
@@ -351,7 +360,7 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	}
 	var targets []protocol.ToolPlanTarget
 	switch p.Operation {
-	case "":
+	case "", "skill_member":
 		targets, err = g.toolTargets(ctx, p.Item, a, failed)
 	case "repo_remove":
 		targets, err = g.repoRemovalTargets(ctx, p)
@@ -457,6 +466,9 @@ func firstRepoProject(targets []protocol.ToolPlanTarget) string {
 }
 
 func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol.ToolApplyResult, err error) {
+	if group, ok, e := g.applySkillGroup(ctx, id, actor); ok || e != nil {
+		return group, e
+	}
 	start := time.Now()
 	var logPlan protocol.ToolPlan
 	skippedCount := 0
@@ -483,6 +495,9 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	var p protocol.ToolPlan
 	if json.Unmarshal([]byte(raw), &p) != nil {
 		return out, errors.New("invalid plan")
+	}
+	if p.Operation == "skill_member" {
+		ctx = context.WithValue(ctx, skillGroupKey{}, true)
 	}
 	logPlan = p
 	current, e := g.store.ToolSnapshot(p.Item)
@@ -571,6 +586,13 @@ func (g *Gateway) notifyToolNodes(ctx context.Context, targets []protocol.ToolPl
 
 // undoTool reverses the item's newest revision as a new audited revision.
 func (g *Gateway) undoTool(ctx context.Context, item, actor string) (protocol.ToolApplyResult, error) {
+	if group, ok, e := g.undoSkillGroup(ctx, item, actor); ok || e != nil {
+		return group, e
+	}
+	return g.undoSingleTool(ctx, item, actor)
+}
+
+func (g *Gateway) undoSingleTool(ctx context.Context, item, actor string) (protocol.ToolApplyResult, error) {
 	r, p, err := g.store.UndoTool(item, actor, validatingProposal(ctx))
 	if err != nil {
 		return protocol.ToolApplyResult{}, err

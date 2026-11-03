@@ -251,6 +251,12 @@ func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, 
 	if !validChangeActor(actor) {
 		return protocol.ToolPlan{}, errors.New("owner authority required")
 	}
+	if _, e := g.refreshToolObservations(ctx); e != nil {
+		return protocol.ToolPlan{}, e
+	}
+	if group, ok, e := g.toggleSkillGroup(ctx, p, actor); ok || e != nil {
+		return group, e
+	}
 	a, err := g.store.toolToggleAssignment(p, validatingProposal(ctx))
 	if err != nil {
 		return protocol.ToolPlan{}, err
@@ -258,22 +264,22 @@ func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, 
 	return g.planSkillAssignment(ctx, p.Item, a, actor)
 }
 
-func (g *Gateway) planSkillAssignment(ctx context.Context, itemID string, a protocol.ToolAssignment, actor string) (protocol.ToolPlan, error) {
+func (g *Gateway) ensureSkillImported(ctx context.Context, itemID string) error {
 	var imported int
 	var err error
 	if err = g.store.db.QueryRow(`SELECT COUNT(*) FROM skill_versions WHERE item=?`, itemID).Scan(&imported); err != nil {
-		return protocol.ToolPlan{}, err
+		return err
 	}
 	if imported == 0 {
 		items, e := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
 		if e != nil {
-			return protocol.ToolPlan{}, e
+			return e
 		}
 		var location protocol.ToolImportLocation
 		for _, item := range items {
 			if item.ID == itemID {
 				for _, loc := range item.Locations {
-					if loc.Scope == protocol.InventoryUser && loc.State == protocol.InventoryOK && (loc.Source == "" || loc.Source == protocol.InventoryNative) && g.conn(loc.NodeID) != nil {
+					if (loc.Scope == protocol.InventoryUser || ctx.Value(skillGroupKey{}) != nil && loc.Scope == protocol.InventoryProject && !loc.Tracked) && loc.State == protocol.InventoryOK && (loc.Source == "" || loc.Source == protocol.InventoryNative) && g.conn(loc.NodeID) != nil {
 						location = protocol.ToolImportLocation{NodeID: loc.NodeID, Location: loc.Location}
 						break
 					}
@@ -281,13 +287,24 @@ func (g *Gateway) planSkillAssignment(ctx context.Context, itemID string, a prot
 			}
 		}
 		if location.NodeID == "" {
-			return protocol.ToolPlan{}, errors.New("unmanaged skill has no online user-folder copy to import")
+			return errors.New("unmanaged skill has no online user-folder copy to import")
 		}
 		if _, err = g.importSkill(ctx, protocol.ToolImport{Item: itemID, Location: location}); err != nil {
-			return protocol.ToolPlan{}, err
+			return err
 		}
 	}
-	return g.planTool(ctx, protocol.ToolPlanRequest{Item: itemID, Target: a}, actor)
+	return nil
+}
+
+func (g *Gateway) planSkillAssignment(ctx context.Context, itemID string, a protocol.ToolAssignment, actor string) (protocol.ToolPlan, error) {
+	if err := g.ensureSkillImported(ctx, itemID); err != nil {
+		return protocol.ToolPlan{}, err
+	}
+	operation := ""
+	if ctx.Value(skillGroupKey{}) != nil {
+		operation = "skill_member"
+	}
+	return g.planTool(ctx, protocol.ToolPlanRequest{Item: itemID, Target: a, Operation: operation}, actor)
 }
 
 // Called after project discovery. Seen cells remember existing off choices.
