@@ -577,3 +577,30 @@ func TestGatewaySkillSummaryRequiresOwnerSession(t *testing.T) {
 		t.Fatal("gateway accepted unauthenticated summary")
 	}
 }
+
+func TestToolSnapshotIgnoresOtherSkills(t *testing.T) {
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := protocol.InventoryItem{Kind: "skill", Name: "a", Hash: "aaa", State: "ok"}
+	b := protocol.InventoryItem{Kind: "skill", Name: "b", Hash: "bbb", State: "ok"}
+	if err := s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{a, b}}); err != nil {
+		t.Fatal(err)
+	}
+	pa, err := s.SaveToolPlan(`["skill","a","aaa"]`, protocol.ToolAssignment{Scope: "global"}, nil, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, err := s.SaveToolPlan(`["skill","b","bbb"]`, protocol.ToolAssignment{Scope: "global"}, nil, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ApplyToolPlan(pa.ID, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ApplyToolPlan(pb.ID, "owner"); err != nil {
+		t.Fatal(err)
+	}
+}

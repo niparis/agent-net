@@ -137,7 +137,7 @@ func (g *Gateway) planMCPImport(ctx context.Context, key, actor string) (out pro
 	if err != nil {
 		return out, err
 	}
-	snap, err := g.store.ToolSnapshot()
+	snap, err := g.store.ToolSnapshot("")
 	if err != nil {
 		return out, err
 	}
@@ -258,7 +258,7 @@ func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string)
 	if err != nil {
 		return out, err
 	}
-	current, err := g.store.ToolSnapshot()
+	current, err := g.store.ToolSnapshot("")
 	if err != nil {
 		return out, err
 	}

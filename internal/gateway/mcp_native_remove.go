@@ -141,7 +141,7 @@ func (g *Gateway) planMCPNativeRemove(ctx context.Context, key, actor string) (o
 			fileHash = res.FileHash
 		}
 	}
-	snap, err := g.store.ToolSnapshot()
+	snap, err := g.store.ToolSnapshot("")
 	if err != nil {
 		return out, err
 	}
@@ -218,7 +218,7 @@ func (g *Gateway) applyMCPNativeRemove(ctx context.Context, id, actor, owner str
 	if err != nil {
 		return out, err
 	}
-	current, err := g.store.ToolSnapshot()
+	current, err := g.store.ToolSnapshot("")
 	if err != nil {
 		return out, err
 	}

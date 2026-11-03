@@ -167,17 +167,36 @@ func (s *Store) AssignTool(item string, a protocol.ToolAssignment, actor, source
 // It leaves out sessions and the new-projects settings: a session starting
 // anywhere, or a setting row created on first read, does not change what a
 // plan writes, and must not make every pending plan out of date.
-func (s *Store) toolSnapshot(tx *sql.Tx) (string, error) {
+func (s *Store) toolSnapshot(tx *sql.Tx, item string) (string, error) {
 	h := sha256.New()
+	var kind, name string
+	if item != "" {
+		if err := tx.QueryRow("SELECT kind,name FROM tool_identities WHERE id=?", item).Scan(&kind, &name); err != nil {
+			return "", errors.New("plan out of date")
+		}
+	}
 	for _, query := range []string{
-		`SELECT id,hostname,os,version,seen_at,harnesses FROM nodes ORDER BY id`,
+		`SELECT id,hostname,os,version,harnesses FROM nodes ORDER BY id`,
 		`SELECT node_id,path,name,remote,default_branch FROM projects ORDER BY node_id,path`,
 		`SELECT node_id,report FROM inventory_reports ORDER BY node_id`,
 		`SELECT id,kind,name,hash FROM tool_identities ORDER BY id`,
 		`SELECT item,hash,commit_id FROM skill_versions ORDER BY item,hash`,
 		`SELECT item,revision,assignment,version FROM tool_revisions ORDER BY item,revision`,
 	} {
-		rows, err := tx.Query(query)
+		var args []any
+		if item != "" {
+			for _, table := range []string{"tool_identities", "skill_versions", "tool_revisions"} {
+				if strings.Contains(query, "FROM "+table) {
+					column := "item"
+					if table == "tool_identities" {
+						column = "id"
+					}
+					query = strings.Replace(query, " ORDER BY", " WHERE "+column+"=? ORDER BY", 1)
+					args = []any{item}
+				}
+			}
+		}
+		rows, err := tx.Query(query, args...)
 		if err != nil {
 			return "", err
 		}
@@ -209,6 +228,15 @@ func (s *Store) toolSnapshot(tx *sql.Tx) (string, error) {
 					rows.Close()
 					return "", err
 				}
+				if item != "" {
+					filtered := report.Items[:0]
+					for _, observed := range report.Items {
+						if string(observed.Kind) == kind && observed.Name == name {
+							filtered = append(filtered, observed)
+						}
+					}
+					report.Items = filtered
+				}
 				report.ScannedAt = time.Time{}
 				for i := range report.Items {
 					report.Items[i].ScannedAt = time.Time{}
@@ -236,13 +264,13 @@ func (s *Store) toolSnapshot(tx *sql.Tx) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-func (s *Store) ToolSnapshot() (string, error) {
+func (s *Store) ToolSnapshot(item string) (string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback()
-	v, err := s.toolSnapshot(tx)
+	v, err := s.toolSnapshot(tx, item)
 	if err != nil {
 		return "", err
 	}
@@ -291,7 +319,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if err = tx.QueryRow(`SELECT COALESCE(MAX(revision),0) FROM tool_revisions WHERE item=?`, item).Scan(&baseRevision); err != nil {
 		return p, err
 	}
-	snapshot, err := s.toolSnapshot(tx)
+	snapshot, err := s.toolSnapshot(tx, item)
 	if err != nil {
 		return p, err
 	}
@@ -343,16 +371,16 @@ func (s *Store) applyToolPlan(id, actor string, validate ...bool) (protocol.Tool
 	if applied != 0 {
 		return r, errors.New("plan already applied")
 	}
-	current, err := s.toolSnapshot(tx)
+	var p protocol.ToolPlan
+	if err = json.Unmarshal([]byte(raw), &p); err != nil {
+		return r, err
+	}
+	current, err := s.toolSnapshot(tx, p.Item)
 	if err != nil {
 		return r, err
 	}
 	if snapshot != current {
 		return r, errors.New("plan out of date")
-	}
-	var p protocol.ToolPlan
-	if err = json.Unmarshal([]byte(raw), &p); err != nil {
-		return r, err
 	}
 	for _, target := range p.Targets {
 		if target.Action != "remove" {
@@ -580,7 +608,7 @@ func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRev
 		t.Action, t.State, t.Conflict, t.Fingerprint = action, "pending", "", ""
 		targets = append(targets, t)
 	}
-	snapshot, err := s.toolSnapshot(tx)
+	snapshot, err := s.toolSnapshot(tx, item)
 	if err != nil {
 		return r, p, err
 	}

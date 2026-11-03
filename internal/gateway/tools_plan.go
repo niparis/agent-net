@@ -240,7 +240,7 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	if err != nil {
 		return out, err
 	}
-	snap, err := g.store.ToolSnapshot()
+	snap, err := g.store.ToolSnapshot(p.Item)
 	if err != nil {
 		return out, err
 	}
@@ -366,16 +366,16 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	if e != nil {
 		return out, e
 	}
-	current, e := g.store.ToolSnapshot()
+	var p protocol.ToolPlan
+	if json.Unmarshal([]byte(raw), &p) != nil {
+		return out, errors.New("invalid plan")
+	}
+	current, e := g.store.ToolSnapshot(p.Item)
 	if e != nil {
 		return out, e
 	}
 	if snapshot != current {
 		return out, errors.New("plan out of date")
-	}
-	var p protocol.ToolPlan
-	if json.Unmarshal([]byte(raw), &p) != nil {
-		return out, errors.New("invalid plan")
 	}
 	var targets []protocol.ToolPlanTarget
 	if p.Operation == "repo_remove" {
