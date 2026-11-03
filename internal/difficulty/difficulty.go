@@ -10,6 +10,7 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -204,20 +205,36 @@ func ParseScores(raw []byte) (Scores, []string, error) {
 		if !ok {
 			return Scores{}, nil, fmt.Errorf("missing score %q", name)
 		}
-		if err := json.Unmarshal(value, ptr); err != nil {
-			// The judge sometimes nests each score with its reason.
-			var pair struct {
-				Score  *int   `json:"score"`
-				Reason string `json:"reason"`
-			}
-			if json.Unmarshal(value, &pair) != nil || pair.Score == nil {
+		var reason string
+		var pair map[string]json.RawMessage
+		if len(value) > 0 && value[0] == '{' {
+			if err := json.Unmarshal(value, &pair); err != nil {
 				return Scores{}, nil, fmt.Errorf("score %q: %w", name, err)
 			}
-			*ptr = *pair.Score
-			if pair.Reason != "" {
-				nested[name] = pair.Reason
+			value = pair["score"]
+			if len(value) == 0 {
+				value = pair["value"]
+			}
+			if r, ok := pair["reason"]; ok {
+				if err := json.Unmarshal(r, &reason); err != nil {
+					return Scores{}, nil, fmt.Errorf("score %q reason: %w", name, err)
+				}
 			}
 		}
+		var text string
+		if json.Unmarshal(value, &text) == nil {
+			n, err := strconv.Atoi(text)
+			if err != nil {
+				return Scores{}, nil, fmt.Errorf("score %q: invalid integer", name)
+			}
+			*ptr = n
+		} else if err := json.Unmarshal(value, ptr); err != nil || string(value) == "null" || len(value) == 0 {
+			return Scores{}, nil, fmt.Errorf("score %q: invalid integer", name)
+		}
+		if reason != "" {
+			nested[name] = reason
+		}
+
 		if *ptr < 1 || *ptr > 5 {
 			return Scores{}, nil, fmt.Errorf("score %q must be 1 to 5", name)
 		}

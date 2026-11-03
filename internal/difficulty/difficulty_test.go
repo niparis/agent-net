@@ -1,6 +1,7 @@
 package difficulty
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -141,5 +142,20 @@ func TestRubricTextStartsAtOneWithExamples(t *testing.T) {
 	text := RubricText()
 	if !strings.Contains(text, "Start every dimension at 1") || !strings.Contains(text, "for example: keep the last good list") {
 		t.Fatalf("rubric text lacks the start-at-1 rule or the examples:\n%s", text)
+	}
+}
+
+func TestParseScoresFlexibleValues(t *testing.T) {
+	base := `{"reasoning":%s,"scope":1,"coupling":1,"uncertainty":1,"verification":1,"risk":1}`
+	for _, tc := range []struct{ value, reason string }{{`"3"`, ""}, {`{"score":3,"reason":"evidence"}`, "evidence"}, {`{"value":"3","reason":"evidence"}`, "evidence"}} {
+		got, _, err := ParseScores([]byte(fmt.Sprintf(base, tc.value)))
+		if err != nil || got.Reasoning != 3 || got.Reasons["reasoning"] != tc.reason {
+			t.Errorf("%s: %+v, %v", tc.value, got, err)
+		}
+	}
+	for _, value := range []string{`0`, `6`, `1.5`, `"1.5"`, `"6"`, `null`, `true`, `[]`, `{}`, `{"value":false}`, `{"score":null}`} {
+		if _, _, err := ParseScores([]byte(fmt.Sprintf(base, value))); err == nil {
+			t.Errorf("accepted %s", value)
+		}
 	}
 }

@@ -186,8 +186,11 @@ type Config struct {
 	DifficultyAnalyzer bool
 	// DifficultyJudgeHarness and DifficultyJudgeModel override the independent
 	// evidence judge. Defaults are opencode and opencode-go/deepseek-v4.1-flash.
-	DifficultyJudgeHarness string
-	DifficultyJudgeModel   string
+	DifficultyJudgeHarness      string
+	DifficultyJudgeModel        string
+	DifficultyRetryJudgeHarness string
+	DifficultyRetryJudgeModel   string
+	testJudgeFirstTimeout       time.Duration
 	// DifficultyTimeout bounds each one-shot difficulty run. Default 3 minutes.
 	DifficultyTimeout time.Duration
 	// ModelProviders is model_providers of node.json. It goes to the gateway

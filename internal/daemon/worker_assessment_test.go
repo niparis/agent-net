@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,8 @@ func setupShadowJudge(t *testing.T, reply string, gate bool) (string, string) {
 	}
 	marker := filepath.Join(dir, "marker")
 	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeCodex, "1")
+	t.Setenv(envFakeCodexExec, t.TempDir())
 	t.Setenv(envFakeOpenCodeReply, replyFile)
 	t.Setenv("FAKE_DIFFICULTY_MARKER", marker)
 	path := filepath.Join(dir, "gate")
@@ -146,5 +149,23 @@ func TestWorkerAssessmentQueueFlush(t *testing.T) {
 	}
 	if err := os.WriteFile(gate, nil, 0600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWorkerJudgeRetryStoresFirstFailure(t *testing.T) {
+	setupShadowJudge(t, "not json", false)
+	fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
+	d := &Daemon{cfg: Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}}}
+	a := d.assessWorkerStart(context.Background(), t.TempDir(), "brief")
+	if a.Error != "" || a.JudgeHarness != "codex" || a.JudgeModel != "gpt-6.1-sol" || !strings.Contains(a.Reasons["judge_note"], "parse") || a.PickerLabel != "hard" {
+		t.Fatalf("assessment: %+v", a)
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored protocol.WorkerAssessment
+	if err := json.Unmarshal(raw, &stored); err != nil || stored.Reasons["judge_note"] != a.Reasons["judge_note"] {
+		t.Fatalf("stored: %+v, %v", stored, err)
 	}
 }
