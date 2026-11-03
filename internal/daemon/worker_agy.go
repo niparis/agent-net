@@ -44,9 +44,13 @@ type agyConn struct {
 	in          *os.File
 	initialized chan string
 	usage       agyUsage
-	completed   bool
-	failure     string
-	handback    *protocol.WorkerHandbackRequest
+	// turnUsage is this turn's sum of the per-step usage that step_update
+	// reports. It is not saved: the result event repeats the run's total, and
+	// that is what usage records.
+	turnUsage agyUsage
+	completed bool
+	failure   string
+	handback  *protocol.WorkerHandbackRequest
 }
 
 func (agyLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
@@ -221,7 +225,12 @@ func (c *agyConn) event(line []byte) {
 	var e struct {
 		Event        string `json:"event"`
 		Conversation string `json:"conversation_id"`
-		Result       struct {
+		StepUpdate   struct {
+			StepType string    `json:"step_type"`
+			State    string    `json:"state"`
+			Usage    *agyUsage `json:"usage"`
+		} `json:"step_update"`
+		Result struct {
 			Conversation string            `json:"conversation_id"`
 			Status       string            `json:"status"`
 			Response     string            `json:"response"`
@@ -249,6 +258,7 @@ func (c *agyConn) event(line []byte) {
 		d.wmu.Unlock()
 		d.keepWorkerActive(w, time.Now())
 		d.setAgyStatus(w, "busy")
+		c.noteStepUsage(e.StepUpdate.StepType, e.StepUpdate.State, e.StepUpdate.Usage)
 	case "result":
 		r := e.Result
 		c.mu.Lock()
@@ -256,6 +266,7 @@ func (c *agyConn) event(line []byte) {
 		c.usage.Output += r.Usage.Output
 		c.usage.Thinking += r.Usage.Thinking
 		c.usage.CacheRead += r.Usage.CacheRead
+		c.turnUsage = agyUsage{}
 		c.completed = true
 		if r.Status != "SUCCESS" || r.Finished != "" {
 			detail := r.Error
@@ -296,6 +307,28 @@ func (c *agyConn) event(line []byte) {
 			d.noteCodexIdle(w, report)
 		}
 	}
+}
+
+// noteStepUsage records the context of a finished model step and the run's
+// tokens so far. Antigravity reports per-step usage and no context window, so
+// the context is the input that step saw plus its cache reads. The result
+// event repeats the run's sum, so this adds to turnUsage and never to usage:
+// the result handler is the one that saves usage.
+func (c *agyConn) noteStepUsage(stepType, state string, usage *agyUsage) {
+	if usage == nil || stepType != "agent_response" || state != "DONE" {
+		return
+	}
+	c.mu.Lock()
+	c.turnUsage.Input += usage.Input
+	c.turnUsage.Output += usage.Output
+	c.turnUsage.Thinking += usage.Thinking
+	c.turnUsage.CacheRead += usage.CacheRead
+	base, turn := c.usage, c.turnUsage
+	c.mu.Unlock()
+	c.d.noteWorkerUsage(c.w, workerStats{
+		ContextTokens: int64(usage.Input + usage.CacheRead),
+		TotalTokens:   int64(base.Input + base.Output + base.Thinking + turn.Input + turn.Output + turn.Thinking),
+	})
 }
 
 func agyStats(u agyUsage, model string) workerStats {

@@ -369,8 +369,13 @@ func (d *Daemon) workerStats(w *worker) workerStats {
 
 // lastWorkerContext keeps the last complete context pair through failed reads
 // and turns that have not reported usage yet. A real value may be lower after
-// compaction, so this is not a high-water mark. The caller holds d.wmu.
+// compaction, so this is not a high-water mark. A harness that reports no
+// context window at all (agy) still keeps the tokens it reports: with no
+// limit, a token count alone is the whole picture. The caller holds d.wmu.
 func lastWorkerContext(w *worker, st workerStats) workerStats {
+	if st.ContextLimit <= 0 && w.contextLimit <= 0 && st.ContextTokens > 0 {
+		return st
+	}
 	if st.ContextTokens <= 0 || st.ContextLimit <= 0 {
 		st.ContextTokens, st.ContextLimit = w.contextTokens, w.contextLimit
 	}

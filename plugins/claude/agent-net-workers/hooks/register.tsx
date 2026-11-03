@@ -86,11 +86,21 @@ function shortDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h${minutes % 60}m`
 }
 
+// compactTokens writes a token count short enough for a band: 840, 2k, 84k,
+// 1M, 1.5M, as the daemon does.
+function compactTokens(n: number): string {
+  if (n < 1000) return `${n}`
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+}
+
 // contextOf writes the context window line of a worker, and the color of the
 // percentage: warning at 70 percent and over, error at 90 percent and over.
-// It is undefined when the harness has not reported either figure.
+// A harness that reports no context window (agy) shows the token count alone.
+// It is undefined when the harness has not reported any tokens.
 function contextOf(w: AgentNetWorker): { text: string; color?: 'warning' | 'error' } | undefined {
-  if (!(w.contextTokens > 0) || !(w.contextLimit > 0)) return undefined
+  if (!(w.contextTokens > 0)) return undefined
+  if (!(w.contextLimit > 0)) return { text: `ctx ${compactTokens(w.contextTokens)}` }
   const percent = Math.round((w.contextTokens / w.contextLimit) * 100)
   const color = percent >= 90 ? 'error' : percent >= 70 ? 'warning' : undefined
   return { text: `ctx ${percent}%`, color }

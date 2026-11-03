@@ -410,6 +410,16 @@ test('the model is never shortened for width', () => {
   expect(row.model).toBe('deepseek-v4.1-flash-preview-extra')
 })
 
+test('a worker without a context window shows its token count, not a percentage', () => {
+  const rows = formatWorkerRows([
+    running({ harness: 'agy', model: 'gemini-3.8-flash-low', contextTokens: 31000, contextLimit: 0 }),
+  ], NOW / 1000, 100)
+  expect(rows[0]?.line.includes('ctx 31k')).toBe(true)
+  expect(rows[0]?.line.includes('%')).toBe(false)
+  // No context window means no warning or error colour either.
+  expect(rows[0]?.lastColor).toBeUndefined()
+})
+
 test('a narrow pane drops the context column before the run time', () => {
   const wide = formatWorkerRows([running()], NOW / 1000, 100)[0]!
   expect(wide.line.includes('ctx 22%')).toBe(true)
