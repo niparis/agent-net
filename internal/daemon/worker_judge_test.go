@@ -14,6 +14,10 @@ import (
 func withDifficulty(next func(*Config)) func(*Config) {
 	return func(c *Config) {
 		c.testNoDifficulty = false
+		if c.HarnessPaths == nil {
+			c.HarnessPaths = make(map[string]string)
+		}
+		c.HarnessPaths["codex"] = os.Args[0]
 		if next != nil {
 			next(c)
 		}

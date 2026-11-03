@@ -111,14 +111,63 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 			return fallback("difficulty: cannot make a judge folder: " + err.Error() + "; started at normal")
 		}
 		defer os.RemoveAll(judgeDir)
-		raw, err := a.runDifficultyOneShot(ctx, judgeHarness, judgeModel, judgeDir, judgeBriefForTask(task), timeout)
-		if err != nil {
-			return fallback("difficulty: the judge " + err.Error() + "; started at normal")
+		budgetCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		deadline, _ := budgetCtx.Deadline()
+		firstTimeout := timeout
+		// Reserve 20 seconds for a retry when the budget is large enough.
+		if timeout >= 40*time.Second {
+			firstTimeout = timeout - 21*time.Second
 		}
-		scores, insufficient, err := difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
-		if err != nil {
-			return fallback("difficulty: the judge reply did not parse: " + err.Error() + "; started at normal")
+		if a.cfg.testJudgeFirstTimeout > 0 {
+			firstTimeout = a.cfg.testJudgeFirstTimeout
 		}
+		raw, runErr := a.runDifficultyOneShot(budgetCtx, judgeHarness, judgeModel, judgeDir, judgeBriefForTask(task), firstTimeout)
+		var scores difficulty.Scores
+		var insufficient []string
+		var parseErr error
+		if runErr == nil {
+			scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
+		}
+		failure := ""
+		if runErr != nil {
+			failure = "the judge " + runErr.Error()
+		} else if parseErr != nil {
+			failure = "the judge reply did not parse: " + parseErr.Error()
+		}
+		retryable := parseErr != nil || (runErr != nil && strings.HasPrefix(runErr.Error(), "timed out after"))
+		retryHarness := strings.ToLower(strings.TrimSpace(a.cfg.DifficultyRetryJudgeHarness))
+		retryModel := strings.TrimSpace(a.cfg.DifficultyRetryJudgeModel)
+		if retryHarness == "" {
+			retryHarness = "codex"
+		}
+		if retryModel == "" {
+			retryModel = "gpt-6.1-sol"
+		}
+		remaining := time.Until(deadline)
+		if retryable && remaining >= 20*time.Second && budgetCtx.Err() == nil {
+			if _, lookupErr := a.harnessBinary(retryHarness); lookupErr == nil {
+				judgeNote = redact.Cut(failure, 300)
+				a0.JudgeModel = retryHarness + ":" + retryModel
+				raw, runErr = a.runDifficultyOneShot(budgetCtx, retryHarness, retryModel, judgeDir, judgeBriefForTask(task), remaining)
+				if runErr == nil {
+					scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
+				} else {
+					parseErr = nil
+				}
+				if runErr != nil {
+					failure = "the retry judge " + runErr.Error()
+				} else if parseErr != nil {
+					failure = "the retry judge reply did not parse: " + parseErr.Error()
+				} else {
+					failure = ""
+				}
+			}
+		}
+		if failure != "" {
+			return fallback("difficulty: " + failure + "; started at normal")
+		}
+
 		if len(insufficient) > 0 {
 			return fallback("difficulty: the judge returned INSUFFICIENT_EVIDENCE in judge-only mode; started at normal")
 		}
@@ -128,6 +177,7 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 			a0.Confidence = "unknown"
 		}
 		a0.Label, a0.D, a0.Bottleneck, a0.RulesVersion = difficulty.Label(scores)
+		a0.Notes = judgeNote
 		a0.Elapsed = time.Since(started)
 		return a0, nil
 	}
@@ -350,7 +400,7 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 	env := workerEnv(os.Environ(), map[string]string{"AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock"), "PWD": dir})
 	// Even a standalone run saves its session in OpenCode's shared store, where
 	// it shows as an idle session. Delete it once the judge is done.
-	defer deleteOpenCodeSessions(bin, dir, env)
+	defer deleteOpenCodeSessions(ctx, bin, dir, env)
 	// A standalone server exits with the judge instead of leaving a session
 	// running in OpenCode's shared service. The nonexistent socket also prevents
 	// the agent-net plugin from registering that private session or exposing tools.
@@ -387,8 +437,8 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 // sessions whose folder is exactly dir are touched, so the owner's own
 // sessions are never listed for deletion. Failures are ignored: a leftover
 // session is untidy, not harmful.
-func deleteOpenCodeSessions(bin, dir string, env []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func deleteOpenCodeSessions(parent context.Context, bin, dir string, env []string) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	list := exec.CommandContext(ctx, bin, "session", "list", "--format", "json")
 	list.Dir, list.Env = dir, env
@@ -432,6 +482,9 @@ func (a *DifficultyAssessor) runCodexExec(ctx context.Context, model, dir, promp
 	defer os.RemoveAll(outDir)
 	last := filepath.Join(outDir, "last-message")
 	args := []string{"exec", "-C", dir, "-s", "read-only", "--skip-git-repo-check", "--ephemeral", "-o", last}
+	if strings.Contains(prompt, "AGENT_NET_DIFFICULTY_KIND=judge") {
+		args = append(args, "-c", `model_reasoning_effort="low"`)
+	}
 	if model != "" {
 		args = append(args, "-m", model)
 	}

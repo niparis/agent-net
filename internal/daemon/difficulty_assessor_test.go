@@ -185,3 +185,69 @@ func TestJudgeOpenCodeDeletesOnlyItsOwnSessions(t *testing.T) {
 		t.Fatalf("deleted sessions: %q", got)
 	}
 }
+
+func TestJudgeRetryAfterParseFailure(t *testing.T) {
+	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
+	reply := filepath.Join(t.TempDir(), "reply")
+	if err := os.WriteFile(reply, []byte("not json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" || !strings.Contains(a.Notes, "parse") {
+		t.Fatalf("assessment: %+v, %v", a, err)
+	}
+	calls := difficultyCalls(t, dir)
+	if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Args, " "), `model_reasoning_effort="low"`) {
+		t.Fatalf("calls: %+v", calls)
+	}
+}
+
+func TestJudgeRetryAfterTimeout(t *testing.T) {
+	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
+	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeFirstTimeout: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" || !strings.Contains(a.Notes, "timed out") {
+		t.Fatalf("assessment: %+v, %v", a, err)
+	}
+	if calls := difficultyCalls(t, dir); len(calls) != 1 {
+		t.Fatalf("calls: %+v", calls)
+	}
+}
+
+func TestJudgeRetrySkippedWhenUnavailableOrBudgetShort(t *testing.T) {
+	reply := filepath.Join(t.TempDir(), "reply")
+	if err := os.WriteFile(reply, []byte("not json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	for _, tc := range []struct {
+		name      string
+		timeout   time.Duration
+		available bool
+	}{{"missing", 60 * time.Second, false}, {"short budget", 2 * time.Second, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			source := DifficultySources{Binary: func(name string) (string, error) {
+				if name == "opencode" {
+					return os.Args[0], nil
+				}
+				calls++
+				if tc.available {
+					return os.Args[0], nil
+				}
+				return "", os.ErrNotExist
+			}}
+			a, err := NewDifficultyAssessor(Config{DifficultyTimeout: tc.timeout}, source).Assess(context.Background(), t.TempDir(), "brief")
+			if err != nil || a.Label != "normal" || !strings.Contains(a.Notes, "parse") || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
+				t.Fatalf("assessment: %+v, %v", a, err)
+			}
+			if tc.available && calls != 0 {
+				t.Fatalf("looked up retry with too little time")
+			}
+		})
+	}
+}

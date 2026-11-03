@@ -42,6 +42,12 @@ func (d *Daemon) assessWorkerStart(ctx context.Context, project, task string) *p
 	a.D, a.Label, a.Bottleneck = result.D, result.Label, result.Bottleneck
 	a.Confidence, a.RulesVersion = result.Confidence, difficulty.RulesVersion
 	a.JudgeHarness, a.JudgeModel, a.Reasons = harness, model, result.Scores.Reasons
+	if result.Notes != "" && result.Scores.Reasoning != 0 {
+		if a.Reasons == nil {
+			a.Reasons = make(map[string]string)
+		}
+		a.Reasons["judge_note"] = result.Notes
+	}
 	if err != nil || result.Scores.Reasoning == 0 || result.Label == "" {
 		a.Label, a.PickerLabel = "normal", "normal"
 		a.Error = assessmentFailure(result, err)
