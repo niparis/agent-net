@@ -350,3 +350,71 @@ func TestToolToggleNewProjectsWithoutKnownProjects(t *testing.T) {
 		t.Fatalf("global choice without projects: %+v %v", plan, err)
 	}
 }
+
+func TestToolToggleTwoUnmanagedSkills(t *testing.T) {
+	g, n, _ := toggleFixture(t)
+	id, bundle := toggleBundle(t, g, n, "# Demo\nA harmless skill.\n")
+	var identity []string
+	if err := json.Unmarshal([]byte(id), &identity); err != nil {
+		t.Fatal(err)
+	}
+	items := []protocol.InventoryItem{}
+	ids := []string{}
+	for _, name := range []string{"alpha", "beta"} {
+		items = append(items, protocol.InventoryItem{Kind: "skill", Name: name, Hash: identity[2], State: "ok", Scope: "user", Location: "/skills/" + name})
+		raw, _ := json.Marshal([]string{"skill", name, identity[2]})
+		ids = append(ids, string(raw))
+	}
+	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+		t.Fatal(err)
+	}
+	toggleFakeNode(t, g, n, bundle, nil)
+	plans := []protocol.ToolPlan{}
+	for _, item := range ids {
+		a, err := g.store.ToolToggleAssignment(protocol.ToolToggleRequest{Item: item, Project: "one", On: false})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := g.planSkillAssignment(context.Background(), item, a, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		plans = append(plans, p)
+	}
+	for _, p := range plans {
+		if _, err := g.applyTool(context.Background(), p.ID, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestToolSnapshotSameItemChangesAndReconnect(t *testing.T) {
+	for _, change := range []string{"version", "revision", "reconnect"} {
+		t.Run(change, func(t *testing.T) {
+			g, n, id := toggleFixture(t)
+			p, err := g.store.SaveToolPlan(id, protocol.ToolAssignment{Scope: "global"}, nil, "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "version":
+				_, err = g.store.db.Exec(`INSERT INTO skill_versions(item,hash,commit_id,node_id,location,imported_at) VALUES(?,?,?,?,?,?)`, id, "new", "fixture", n, "fixture", 0)
+			case "revision":
+				_, err = g.store.AssignTool(id, protocol.ToolAssignment{Scope: "global"}, "owner", "test")
+			case "reconnect":
+				err = g.store.SetNodeHello(n, "fixture", "")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = g.store.ApplyToolPlan(p.ID, "owner")
+			if change == "reconnect" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "plan out of date") {
+				t.Fatalf("expected stale plan: %v", err)
+			}
+		})
+	}
+}
