@@ -1,4 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 9 online · 2 busy · 4 workers
+[ Sessions ]    Workers log
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
@@ -16,7 +17,6 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner                     pi       agent-net gpt-6      idle   -     normal -            ?     ?
   scratch                       pi       -         -          shell  -     normal -            ?     ?
-
 
 
 

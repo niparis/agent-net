@@ -1,10 +1,10 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 0 sessions, 0 online · 0 busy             loading…
+[ Sessions ]    Workers log
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   no machines yet                                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK          view: all  (v)
   waiting for the daemon...
-
 
 
 

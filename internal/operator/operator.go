@@ -99,6 +99,7 @@ type Operator interface {
 
 // Snapshot is the state of the network as one daemon sees it.
 type Snapshot struct {
+	WorkerLog             []protocol.WorkerLogEntry
 	NotificationsDisabled bool
 	// FailedCalls lists best-effort methods that could not be loaded.
 	FailedCalls []string

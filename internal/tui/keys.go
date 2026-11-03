@@ -17,6 +17,7 @@ type keyBinding struct {
 
 const (
 	contextGlobal          keyContext = "global"
+	contextWorkersLog      keyContext = "Workers log"
 	contextSessions        keyContext = "Sessions"
 	contextHeld            keyContext = "held request"
 	contextSuggestion      keyContext = "learned suggestion"
@@ -51,7 +52,7 @@ const (
 )
 
 var allKeyContexts = []keyContext{
-	contextGlobal, contextSessions, contextHeld, contextSuggestion, contextOutcome,
+	contextGlobal, contextWorkersLog, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard,
 	contextTools, contextToolsFilter, contextToolsCosts, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
@@ -112,6 +113,16 @@ const (
 )
 
 var keyBindings = []keyBinding{
+	bind(contextWorkersLog, "tab", "workers log", "Sessions", 0),
+	bind(contextWorkersLog, "up|k", "up", "select run", 1),
+	bind(contextWorkersLog, "down|j", "down", "select run", 1),
+	bind(contextWorkersLog, "pgup", "page up", "ten runs up", 2),
+	bind(contextWorkersLog, "pgdown", "page down", "ten runs down", 2),
+	bind(contextWorkersLog, "left|h", "scroll details up", "scroll details up", 3),
+	bind(contextWorkersLog, "right|l", "scroll details down", "scroll details down", 3),
+	bind(contextWorkersLog, "?", "help", "help", 4),
+	bind(contextWorkersLog, "q|ctrl+c", "quit", "quit", 5),
+	bind(contextSessions, "tab", "workers log", "Sessions / Workers log", 0),
 	bind(contextGlobal, "1", "sessions tab", "Sessions", -1),
 	bind(contextGlobal, "2", "graph tab", "Graph", -1),
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),

@@ -1,6 +1,7 @@
 Keys · Sessions ────────────────────────────────────────────────────────────────
 
  Sessions
+  tab                    Sessions / Workers log
   pgup/pgdn              page
   home/g, end            first, last row
   enter                  go into the selected session on NAME, or open the
@@ -16,9 +17,8 @@ Keys · Sessions ─────────────────────
                          with offline and hidden
   d                      show or hide the selected session details
 
- Global keys
-  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
-                         Settings, Inbox
-  enter                  go into the selected thing
+ Workers log
+  tab                    Sessions
+  pgup                   ten runs up
   more below
 up/down scroll  ? all screens  esc close

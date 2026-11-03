@@ -1,10 +1,10 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ loading…
+[ Sessions ]    Workers log
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │   no machines yet                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
   waiting for the daemon...
-
 
 
 

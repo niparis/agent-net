@@ -1758,6 +1758,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"agent": a}, nil
 
+	case "query.worker_log":
+		p, err := decode[protocol.WorkerLogQuery](raw)
+		if err != nil {
+			return nil, reject("bad query.worker_log")
+		}
+		return st.WorkerLog(p.Limit)
 	case "query.conversations":
 		p, err := decode[protocol.QueryConversations](raw)
 		if err != nil {

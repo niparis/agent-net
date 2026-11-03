@@ -1,4 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 10 sessions, 9 online · 2 busy · workers 4 running
+[ Sessions ]    Workers log
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
@@ -10,7 +11,6 @@
   ↳ backtest-b                  opencode -         haiku-4-5  idle   -     normal -            ?     ? p
  build-vm 1 session ────────────────────────────────────────────────────────────────────────────────────────────────────
   ↳ backtest-on-a-remote-machi… opencode -         haiku-4-5  idle   -     normal -            ?     ? p
-
 
 
 

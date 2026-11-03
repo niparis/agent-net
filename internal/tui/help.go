@@ -114,6 +114,9 @@ func (m Model) hints() []hint {
 			return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextHeld, "approve"), bindingHint(contextHeld, "refuse"), sessionHelp, sessionQuit}
 		}
 	}
+	if m.tab == sessionsTab && m.workersLog {
+		return []hint{{key: "tab", label: "Sessions"}, {key: "↑↓", label: "select run"}, {key: "←→", label: "details"}, sessionHelp, sessionQuit}
+	}
 	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
 			if m.sessionCell == 1 {
@@ -324,6 +327,8 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextCTO)
 	case m.open != nil:
 		return m.helpContextSection(contextBody)
+	case m.tab == sessionsTab && m.workersLog:
+		return m.helpContextSection(contextWorkersLog)
 	case m.mapOn:
 		return m.helpContextSection(contextCard)
 	case m.tab == graphTab && m.mp.finding:
@@ -357,7 +362,7 @@ func (m Model) toolsHelpSection() helpSection {
 
 func helpSections() []helpSection {
 	return []helpSection{
-		{"Sessions", []keyContext{contextSessions}},
+		{"Sessions", []keyContext{contextSessions, contextWorkersLog}},
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
 		{"Quotas", []keyContext{contextQuotas}},
 		{"Messages", []keyContext{contextMessages}},

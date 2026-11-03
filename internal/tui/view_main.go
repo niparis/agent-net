@@ -58,7 +58,7 @@ func (m Model) layout() layout {
 	}
 	if m.mode == modeNormal {
 		box := m.ctoBoxHeight(m.tab)
-		fixed := 1 + max(l.machines, 1) + 3 + 1 + box
+		fixed := 2 + max(l.machines, 1) + 3 + 1 + box
 		if l.banner {
 			fixed++
 		}
@@ -197,6 +197,9 @@ func (m Model) View() string {
 }
 
 func (m Model) mainView(w, h int) []string {
+	if m.workersLog && m.mode == modeNormal {
+		return m.workersLogView(w, h)
+	}
 	// A stop question uses only the key line; keep the selected board in place.
 	if m.mode == modeConfirm {
 		m.mode = modeNormal
@@ -206,6 +209,9 @@ func (m Model) mainView(w, h int) []string {
 	add := func(s string) { out = append(out, s) }
 
 	add(m.titleLine(w))
+	if m.mode == modeNormal {
+		add(m.sessionsSubtabs(w))
+	}
 	if l.banner {
 		if m.problem != ProblemNone {
 			add(m.bannerLine(w))

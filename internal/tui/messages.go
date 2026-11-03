@@ -310,12 +310,8 @@ func (m Model) workerConversationLine(c messageConversation, w int, selected boo
 		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	status := m.workerThreadStatus(c)
-	statusStyle := lipgloss.NewStyle().Foreground(roleText)
-	if status == "done" {
-		statusStyle = sBusy
-	} else if status == "failed" || status == "blocked" || status == "timed out" {
-		statusStyle = sBad
-	} else if len(c.items) > 0 && c.typ == protocol.TypeRequest && c.state != protocol.StateReplied && c.state != protocol.StateFailed && c.state != protocol.StateExpired {
+	statusStyle := workerStatusStyle(status)
+	if status != "done" && status != "failed" && status != "blocked" && status != "timed out" && len(c.items) > 0 && c.typ == protocol.TypeRequest && c.state != protocol.StateReplied && c.state != protocol.StateFailed && c.state != protocol.StateExpired {
 		statusStyle = lipgloss.NewStyle().Foreground(roleWarning)
 	}
 	caller := m.partyName(c.workerOwner, c.fromName)

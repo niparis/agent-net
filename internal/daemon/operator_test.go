@@ -253,7 +253,7 @@ func TestAgentConnectionsCannotCallOwnerData(t *testing.T) {
 	oc.mustCall("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "o1", "cwd": "/w/o"})
 	un := dialLocal(t, n.sock) // never said hello as anything useful: a cli client is the only one allowed
 	for name, lc := range map[string]*localClient{"pi": pi, "opencode": oc} {
-		for _, method := range []string{"usage", "usage_top", "session_text", "counts", "session_enter", protocol.OpToolsDifferences, protocol.OpProtectedProvidersSet, "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule"} {
+		for _, method := range []string{protocol.OpWorkerLog, "usage", "usage_top", "session_text", "counts", "session_enter", protocol.OpToolsDifferences, protocol.OpProtectedProvidersSet, "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule"} {
 			params := map[string]any{"session_id": sid}
 			res, err := lc.call(method, params)
 			if err == nil || !strings.Contains(err.Error(), "only available to the owner") {

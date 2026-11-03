@@ -12,6 +12,7 @@
   q, ctrl+c              quit
 
  Sessions
+  tab                    Sessions / Workers log
   pgup/pgdn              page
   home/g, end            first, last row
   enter                  go into the selected session on NAME, or open the
@@ -26,6 +27,11 @@
   v                      cycle the view: active only, all, all with offline, all
                          with offline and hidden
   d                      show or hide the selected session details
+
+ Workers log
+  tab                    Sessions
+  pgup                   ten runs up
+  pgdown                 ten runs down
 
  Graph
   /                      find a node; enter selects the first match
