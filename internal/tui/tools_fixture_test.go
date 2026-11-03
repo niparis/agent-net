@@ -134,6 +134,7 @@ type fakeTools struct {
 	folders               []protocol.ToolImportLocation
 	mu                    sync.Mutex
 	items                 []protocol.ToolItem
+	projectStates         []protocol.ToolProjectState
 	accepted              []string
 	needs                 []protocol.ToolNeed
 	itemsErr              error
@@ -317,7 +318,30 @@ func (f *fakeTools) ToolsReadFile(_ context.Context, p protocol.SkillTextRequest
 }
 
 func (f *fakeTools) ToolsProjects(context.Context) ([]protocol.ToolProjectState, error) {
-	return nil, nil
+	if f.projectStates != nil {
+		return f.projectStates, nil
+	}
+	var states []protocol.ToolProjectState
+	for _, it := range f.items {
+		if it.Kind != protocol.InventorySkill {
+			continue
+		}
+		state := protocol.ToolProjectState{Item: it.ID, Projects: map[string]bool{}}
+		state.NewProjects = it.Desired != nil && it.Desired.Assignment.Scope == "global"
+		for _, loc := range it.Locations {
+			if loc.Scope == protocol.InventoryUser && it.Desired == nil {
+				state.NewProjects = true
+			}
+			if !hasStr(state.Machines, loc.NodeID) {
+				state.Machines = append(state.Machines, loc.NodeID)
+			}
+		}
+		for _, p := range f.snap.Projects {
+			state.Projects[p.Name] = false
+		}
+		states = append(states, state)
+	}
+	return states, nil
 }
 func (f *fakeTools) ToolsToggle(_ context.Context, r protocol.ToolToggleRequest) (protocol.ToolPlan, error) {
 	f.toggles = append(f.toggles, r)

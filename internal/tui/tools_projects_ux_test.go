@@ -169,3 +169,33 @@ func TestToolsProjectSkillPaneUsesAvailableRows(t *testing.T) {
 		t.Fatal("the four skill rows must fit above the information box")
 	}
 }
+
+func TestToolsProjectsExcludeSeenFoldersWithoutGitRoot(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
+	for _, name := range []string{"backend", "home-one", "home-two"} {
+		m.snap.Projects = append(m.snap.Projects, protocol.ProjectView{Name: name, NodeID: toolNodeR, Path: "/tmp/" + name, Source: protocol.SourceSeen})
+		m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "seen-" + name, NodeID: toolNodeR, Repo: protocol.RepoInfo{Project: name}})
+	}
+	s.projectStates = []protocol.ToolProjectState{
+		{Projects: map[string]bool{"homelab": true}},
+		{Projects: map[string]bool{"tenebrae": false}},
+	}
+	m = pressKey(m, "5")
+	if m.tl.agentRow >= len(m.toolsProjects()) {
+		t.Fatal("refresh must keep the selected project within the filtered list")
+	}
+	if got := strings.Join(m.toolsProjects(), ","); got != "homelab,tenebrae" {
+		t.Fatalf("left pane must use gateway Git projects, got %s", got)
+	}
+	for _, name := range []string{"backend", "home-one", "home-two"} {
+		if strings.Contains(plain(m), name) {
+			t.Errorf("seen folder without Git root listed: %s", name)
+		}
+	}
+	if n, _, _, _ := m.projectCost("homelab"); n != 2 {
+		t.Fatalf("per-project skill count changed: %d", n)
+	}
+	if !strings.Contains(plain(m), "homelab          2") {
+		t.Fatal("left pane lost the project skill count: " + plain(m))
+	}
+}

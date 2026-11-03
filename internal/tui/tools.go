@@ -168,18 +168,15 @@ func hasStr(list []string, v string) bool {
 	return false
 }
 
-// toolsProjects lists the projects the picker offers: registered or seen
-// projects, plus any project a tool names.
+// toolsProjects uses the gateway's Git project set. Snapshot projects also
+// include seen working folders, which cannot necessarily hold project skills.
 func (m Model) toolsProjects() []string {
 	seen := map[string]bool{}
-	for _, p := range m.snap.Projects {
-		if p.Name != "" {
-			seen[p.Name] = true
-		}
-	}
-	for _, r := range m.tl.cat.Rows {
-		for _, p := range r.Projects {
-			seen[p.Name] = true
+	for _, state := range m.tl.states {
+		for project := range state.Projects {
+			if project != "" {
+				seen[project] = true
+			}
 		}
 	}
 	out := make([]string, 0, len(seen))
@@ -237,6 +234,7 @@ func (m Model) shownRows() []toolsdiff.Row {
 func (m Model) toolsRowCount() int { return len(m.shownRows()) }
 
 func (m *Model) toolsClamp() {
+	m.tl.agentRow = min(max(m.tl.agentRow, 0), max(len(m.toolsProjects())-1, 0))
 	n := m.toolsRowCount()
 	m.tl.row = min(max(m.tl.row, 0), max(n-1, 0))
 }

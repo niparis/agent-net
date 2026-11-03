@@ -821,7 +821,10 @@ A model provider that is not a subscription and has no usable quota reading is p
 ## Tools inventory
 
 Tab 5 opens Skills per project: projects on the left, skills and checkboxes
-on the right. The visible tabs at the top show Skills per project and All
+on the right. The project list comes from `tools_projects`, which includes
+only projects inside a Git repository. Seen folders without a Git root
+are excluded. Each project keeps its skill count.
+The visible tabs at the top show Skills per project and All
 tools; Tab switches between them. The focused pane has an accent border.
 The selected row has the Sessions highlight and marker. The project keeps
 a dim highlight while focus is on skills.
