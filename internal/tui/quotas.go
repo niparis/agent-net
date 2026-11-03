@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -14,11 +15,12 @@ import (
 )
 
 type quotaRow struct {
-	provider protocol.QuotaProvider
-	at       int64
-	machine  string
-	readers  int
-	disagree bool
+	provider     protocol.QuotaProvider
+	at           int64
+	machine      string
+	readers      int
+	disagree     bool
+	machineNotes []string
 }
 
 // quotaRows merges readings for the same provider and plan. A local report
@@ -68,6 +70,133 @@ func (m Model) quotaRows() []quotaRow {
 		return out[i].provider.Plan < out[j].provider.Plan
 	})
 	return out
+}
+
+// quotaDisplayRows keeps one row per provider while preserving each machine's
+// reading in machineNotes. Quota selection and forecasting continue to use
+// quotaRows, which retains provider and plan detail.
+func (m Model) quotaDisplayRows() []quotaRow {
+	if !m.usage.have {
+		return nil
+	}
+	type machineStatus struct {
+		name    string
+		local   bool
+		live    bool
+		details []string
+	}
+	type providerReading struct {
+		row      quotaRow
+		set      bool
+		live     bool
+		chosenAt int64
+		statuses map[string]machineStatus
+	}
+	nodes, ids := m.quotaNodes()
+	readings := map[string]*providerReading{}
+	var reporting []machineStatus
+	for _, id := range ids {
+		n := nodes[id]
+		q := n.Usage.Quotas
+		if q == nil {
+			continue
+		}
+		machine := firstNonEmpty(n.Hostname, id)
+		reporting = append(reporting, machineStatus{name: machine, local: id == m.usage.raw.NodeID})
+		for _, p := range q.Providers {
+			key := strings.ToLower(strings.TrimSpace(p.Provider))
+			if key == "" {
+				continue
+			}
+			r := readings[key]
+			if r == nil {
+				r = &providerReading{statuses: map[string]machineStatus{}}
+				readings[key] = r
+			}
+			live := len(p.Windows) > 0
+			previous, exists := r.statuses[machine]
+			if !exists {
+				previous = machineStatus{name: machine, local: id == m.usage.raw.NodeID}
+			}
+			if live {
+				previous.live = true
+			}
+			if !live || p.Error != "" || p.NeedsAttention || p.Stale {
+				for _, detail := range quotaProviderMachineStatuses(p) {
+					if !slices.Contains(previous.details, detail) {
+						previous.details = append(previous.details, detail)
+					}
+				}
+			}
+			r.statuses[machine] = previous
+			if !r.set || live && !r.live || live == r.live && q.GeneratedAt > r.chosenAt {
+				r.row = quotaRow{provider: p, at: q.GeneratedAt, machine: machine}
+				r.set = true
+				r.live = live
+				r.chosenAt = q.GeneratedAt
+			}
+			if q.GeneratedAt > r.row.at {
+				r.row.at = q.GeneratedAt
+			}
+		}
+	}
+	var out []quotaRow
+	for _, r := range readings {
+		for _, machine := range reporting {
+			if _, ok := r.statuses[machine.name]; !ok {
+				r.statuses[machine.name] = machineStatus{name: machine.name, local: machine.local, details: []string{"not reported"}}
+			}
+		}
+		var live, other []machineStatus
+		for _, status := range r.statuses {
+			if status.live {
+				live = append(live, status)
+			} else {
+				other = append(other, status)
+			}
+		}
+		machineLess := func(a, b machineStatus) bool {
+			if a.local != b.local {
+				return a.local
+			}
+			return a.name < b.name
+		}
+		sort.Slice(live, func(i, j int) bool { return machineLess(live[i], live[j]) })
+		sort.Slice(other, func(i, j int) bool { return machineLess(other[i], other[j]) })
+		for _, status := range append(live, other...) {
+			if status.live {
+				r.row.machineNotes = append(r.row.machineNotes, "live on "+sanitize(status.name))
+			}
+			for _, detail := range status.details {
+				r.row.machineNotes = append(r.row.machineNotes, sanitize(status.name)+": "+sanitize(detail))
+			}
+		}
+		if m.tab == quotasTab && m.uiFilter != "" && !strings.Contains(strings.ToLower(r.row.provider.Provider+" "+r.row.provider.Plan+" "+strings.Join(r.row.machineNotes, " ")), strings.ToLower(m.uiFilter)) {
+			continue
+		}
+		out = append(out, r.row)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].provider.Provider) < strings.ToLower(out[j].provider.Provider)
+	})
+	return out
+}
+
+func quotaProviderMachineStatuses(p protocol.QuotaProvider) []string {
+	var statuses []string
+	if p.Error != "" {
+		statuses = append(statuses, quotaErrorLabel(p.Error))
+	}
+	if p.NeedsAttention {
+		statuses = append(statuses, "needs you once: run agent-net setup --quota")
+	}
+	if p.Stale {
+		statuses = append(statuses, "stale reading")
+	}
+	if len(statuses) == 0 {
+		statuses = append(statuses, "no live windows")
+	}
+	return statuses
 }
 
 // quotaNodes selects the live local usage over the gateway copy.
@@ -706,25 +835,24 @@ func (m Model) quotaProviderProtected(provider string) bool {
 
 // selectableQuotaRows follows the same ordering and visibility as the panel.
 func (m Model) selectableQuotaRows() []quotaRow {
-	rows := m.quotaRows()
+	rows := m.quotaDisplayRows()
 	relevant := m.quotaRelevantProviders()
-	withQuota := map[string]bool{}
-	for _, r := range rows {
-		if len(r.provider.Windows) > 0 {
-			withQuota[strings.ToLower(r.provider.Provider)] = true
-		}
-	}
-	var configured, unset, unused []quotaRow
+	var configured, liveUnused, unset, unused []quotaRow
 	for _, r := range rows {
 		provider := strings.ToLower(r.provider.Provider)
-		if quotaNotSetUp(r.provider) && !withQuota[provider] {
+		if len(r.provider.Windows) > 0 {
+			if relevant[provider] {
+				configured = append(configured, r)
+			} else {
+				liveUnused = append(liveUnused, r)
+			}
+		} else if quotaNotSetUp(r.provider) {
 			unset = append(unset, r)
-		} else if !relevant[provider] {
-			unused = append(unused, r)
 		} else {
-			configured = append(configured, r)
+			unused = append(unused, r)
 		}
 	}
+	configured = append(configured, liveUnused...)
 	if m.quotaShowUnset {
 		configured = append(configured, unset...)
 		configured = append(configured, unused...)

@@ -109,15 +109,15 @@ func TestQuotaViewGoldens(t *testing.T) {
 				t.Fatalf("wide line: %q", line)
 			}
 		}
+		paceColumn := -1
 		for _, line := range lines(ansi.Strip(view)) {
-			for _, value := range []string{"behind", "ahead", "exhausted"} {
+			for _, value := range []string{"on pace", "ahead"} {
 				if i := strings.Index(line, value); i >= 0 {
 					col := ansi.StringWidth(line[:i])
-					if value == "exhausted" {
-						col = ansi.StringWidth(line[:i+len(value)]) + 1
-					}
-					if col != 60 {
-						t.Errorf("pace starts at column %d in %q", col, line)
+					if paceColumn < 0 {
+						paceColumn = col
+					} else if col != paceColumn {
+						t.Errorf("pace columns differ: %d and %d in %q", paceColumn, col, line)
 					}
 				}
 			}
@@ -784,7 +784,7 @@ func TestQuotaUnconfiguredFold(t *testing.T) {
 	}
 	m = keys(m, "s")
 	v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if !strings.Contains(v, "inactive") || !strings.Contains(v, "credential_unavailable") {
+	if !strings.Contains(v, "inactive") || !strings.Contains(v, "no credential found") || strings.Contains(v, "credential_unavailable") {
 		t.Fatal(v)
 	}
 }
@@ -798,12 +798,56 @@ func TestQuotaReadingSourceLabels(t *testing.T) {
 	p := protocol.QuotaProvider{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 20}}}
 	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{p}}
 	show := func() string { return ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")) }
-	if v := show(); !strings.Contains(v, "read on research") || strings.Contains(v, "(read on research)") {
+	if v := show(); !strings.Contains(v, "(live on research)") {
 		t.Fatal(v)
 	}
 	m.usage.raw.Gateway.Nodes = []protocol.UsageNode{{NodeID: "other", Hostname: "build", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "claude"}}}}}}
-	if v := show(); !strings.Contains(v, "(read on research)") {
+	if v := show(); !strings.Contains(v, "(live on research · build: not reported)") {
 		t.Fatal(v)
+	}
+}
+
+func TestQuotaDisplayDedupesEmptyProvidersAndFitsColumns(t *testing.T) {
+	m := newModel(140, 34)
+	m.tab = quotasTab
+	m.quotaShowUnset = true
+	m.usage.raw.Hostname = "research"
+	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{
+		{Provider: "opencode-go", Plan: "individual premium", Windows: []protocol.QuotaWindow{{Label: "premium interactions"}}},
+		{Provider: "cursor", Error: "cursor_sign_in_required"},
+		{Provider: "deepseek", Error: "deepseek_credential_unavailable"},
+	}}
+	m.usage.raw.Gateway.Nodes = []protocol.UsageNode{{NodeID: "mbp", Hostname: "Nicolas-MBP", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Add(-time.Second).Unix(), Providers: []protocol.QuotaProvider{
+		{Provider: "opencode-go", Plan: "unused", Error: "opencode_go_credential_unavailable"},
+		{Provider: "cursor", Plan: "live", Windows: []protocol.QuotaWindow{{ID: "week"}}},
+		{Provider: "deepseek", Error: "deepseek_credential_unavailable"},
+		{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week", Pace: protocol.QuotaPaceBehind}}},
+	}}}}}
+	v := ansi.Strip(strings.Join(m.quotasView(140, 34), "\n"))
+	if strings.Count(v, "opencode-go") != 1 || !strings.Contains(v, "premium interactions") || !strings.Contains(v, "individual premium") || !strings.Contains(v, "live on research · Nicolas-MBP: no credential found") {
+		t.Fatalf("provider rows or long columns: %s", v)
+	}
+	if strings.Count(v, "cursor") != 1 || strings.Count(v, "deepseek") != 1 || !strings.Contains(v, "live on Nicolas-MBP · research: sign-in required") || !strings.Contains(v, "research: no credential found · Nicolas-MBP: no credential found") || strings.Contains(v, "credential_unavailable") || !strings.Contains(v, "on pace") || strings.Contains(v, "behind") {
+		t.Fatalf("error or pace label: %s", v)
+	}
+	golden(t, "quotas_machine_status_140x34", m.View())
+	narrow := ansi.Strip(strings.Join(m.quotasView(80, 34), "\n"))
+	if !strings.Contains(narrow, "…") || strings.Contains(narrow, "premium interactions") {
+		t.Fatalf("narrow columns should truncate: %s", narrow)
+	}
+}
+
+func TestQuotaErrorLabels(t *testing.T) {
+	for input, want := range map[string]string{
+		"deepseek_credential_unavailable": "no credential found",
+		"bl_cli_unavailable":              "CLI not installed",
+		"commandcode_sign_in_required":    "sign-in required",
+		"Grok sign-in required":           "Grok sign-in required",
+		"Antigravity/agy is not running":  "Antigravity/agy is not running",
+	} {
+		if got := quotaErrorLabel(input); got != want {
+			t.Errorf("quotaErrorLabel(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 
@@ -829,7 +873,7 @@ func TestQuotaLongWindowNames(t *testing.T) {
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{Label: "Fable week"}, {Label: "completions"}, {Label: "premium interactions"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(80, 40), "\n"))
-	for _, name := range []string{"Fable week", "completions", "premium inter…"} {
+	for _, name := range []string{"Fable week", "completions", "premium interact…"} {
 		if !strings.Contains(v, name) {
 			t.Errorf("missing %q: %s", name, v)
 		}
@@ -866,7 +910,7 @@ func TestQuotaLiveFixtureGoldens(t *testing.T) {
 		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
 		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra"}}}
 		v := m.View()
-		if !strings.Contains(ansi.Strip(v), "17 providers not set up · s to show") {
+		if !strings.Contains(ansi.Strip(v), "17 providers not set up · s to show") || !strings.Contains(ansi.Strip(v), "copilot") || !strings.Contains(ansi.Strip(v), "other") {
 			t.Fatal(v)
 		}
 		golden(t, fmt.Sprintf("quotas_live_%dx%d", size[0], size[1]), v)
@@ -909,17 +953,20 @@ func TestQuotaSourcesAgreeAcrossPlans(t *testing.T) {
 	}
 }
 
-func TestQuotaFoldsUnusedSubscriptions(t *testing.T) {
+func TestQuotaShowsLiveUnusedSubscriptionsByDefault(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6"}}
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "copilot", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "copilot") || !strings.Contains(v, "1 more subscription (not used by your agents) · s to show") {
+	if !strings.Contains(v, "copilot") || strings.Contains(v, "not used by your agents) · s to show") {
 		t.Fatal(v)
 	}
+	if strings.Index(v, "codex") > strings.Index(v, "copilot") || !strings.Contains(v, "not used by your agents") {
+		t.Fatalf("live rows should show used providers first and tag other providers:\n%s", v)
+	}
 	m = keys(m, "s")
-	if v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")); !strings.Contains(v, "copilot") {
+	if v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")); strings.Contains(v, "not used by your agents) · s to show") {
 		t.Fatal(v)
 	}
 }
@@ -932,12 +979,12 @@ func TestQuotaReadingPreventsProviderFromFoldingAsNotSetUp(t *testing.T) {
 		{Provider: "cursor", Plan: "api", Error: "credential_unavailable"},
 	}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "providers not set up") || !strings.Contains(v, "2 more subscriptions (not used by your agents) · s to show") {
+	if strings.Contains(v, "providers not set up") || !strings.Contains(v, "cursor") || !strings.Contains(v, "Mac: no credential found") || strings.Contains(v, "credential_unavailable") {
 		t.Fatal(v)
 	}
 	m = keys(m, "s")
 	v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if !strings.Contains(v, "cursor") || !strings.Contains(v, "exhausted") || !strings.Contains(v, "credential_unavailable") {
+	if !strings.Contains(v, "cursor") || !strings.Contains(v, "exhausted") || !strings.Contains(v, "Mac: no credential found") || strings.Contains(v, "credential_unavailable") {
 		t.Fatal(v)
 	}
 }
@@ -992,7 +1039,7 @@ func TestQuotaFailedReadingHasNoBar(t *testing.T) {
 		view := ansi.Strip(m.View())
 		for _, line := range lines(view) {
 			if strings.Contains(line, "opencode-go") && !strings.Contains(line, "provider_auth_rejected") {
-				if strings.Contains(line, "100%") || strings.ContainsAny(line, "█─") || !strings.Contains(line, "-              -") {
+				if strings.Contains(line, "%") || strings.Contains(line, "█") {
 					t.Fatalf("failed reading has a quota: %s", line)
 				}
 			}
