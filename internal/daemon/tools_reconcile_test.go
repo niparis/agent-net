@@ -494,3 +494,43 @@ func TestVerifySkillAbsence(t *testing.T) {
 		t.Fatalf("absent skill: %+v", r)
 	}
 }
+
+func TestRemoveSkillUnmanagedCodexHome(t *testing.T) {
+	home := t.TempDir()
+	state := t.TempDir()
+	codex := filepath.Join(home, ".codex")
+	path := filepath.Join(codex, "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := inventory.SkillHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home, CodexHome: codex, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("remove: %+v", r)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("source still exists: %v", err)
+	}
+	found := false
+	err = filepath.WalkDir(filepath.Join(state, "skill-backups"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Name() == "SKILL.md" {
+			data, e := os.ReadFile(path)
+			found = e == nil && string(data) == "fixture"
+		}
+		return nil
+	})
+	if err != nil || !found {
+		t.Fatalf("backup missing: %v", err)
+	}
+}

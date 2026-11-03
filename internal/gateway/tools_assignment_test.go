@@ -605,3 +605,129 @@ func TestToolTargetsIgnoreOtherNamedOpaqueSkill(t *testing.T) {
 		}
 	}
 }
+
+func TestToolPlanUnmanagedRemovalIsPending(t *testing.T) {
+	g, n, _ := toggleFixture(t)
+	id, bundle := toggleBundle(t, g, n, "# Demo\nFixture.\n")
+	toggleFakeNode(t, g, n, bundle, nil)
+	plan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range plan.Targets {
+		if target.Action == "remove" {
+			if target.State != "pending" || target.Conflict != "" || target.OwnedOnly {
+				t.Fatalf("removal is not pending: %+v", target)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing removal: %+v", plan.Targets)
+}
+
+func TestToolPlanSkipsUnusableCheckout(t *testing.T) {
+	for _, reason := range []string{"the home folder is never a project", "not a Git repository", "worktree of another project", "destination contains a symlink"} {
+		if !toolCheckoutSkipped(reason) {
+			t.Errorf("not skipped: %s", reason)
+		}
+	}
+	if toolCheckoutSkipped("same name has another version") {
+		t.Fatal("real conflict skipped")
+	}
+	targets, skips := splitToolSkips([]protocol.ToolPlanTarget{{Machine: "host", Project: "demo", Checkout: "/demo", Action: "skip", Conflict: "not a Git repository"}, {Action: "copy", State: "pending"}})
+	if len(targets) != 1 || targets[0].Action != "copy" || len(skips) != 1 || skips[0].Project != "demo" {
+		t.Fatalf("targets %+v skips %+v", targets, skips)
+	}
+}
+
+func TestToolPlanSkipsCheckoutAndAppliesOthers(t *testing.T) {
+	g, n, _ := toggleFixture(t)
+	id, bundle := toggleBundle(t, g, n, "# Demo\nFixture.\n")
+	for _, project := range []string{"good", "home", "symlink"} {
+		if _, err := g.store.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, n, "/repo/"+project, project); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reports, err := g.store.Inventories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := append(reports[0].Items, protocol.InventoryItem{Kind: "skill", Name: "other", Hash: "def", State: "ok", Source: protocol.InventoryPlugin, Unsupported: []string{"opaque"}})
+	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+		t.Fatal(err)
+	}
+	toggleFakeNodeProbe(t, g, n, bundle, nil, func(p protocol.ToolPlanProbe) protocol.ToolPlanProbeResult {
+		reasons := map[string]string{"/repo/two": "not a Git repository", "/repo/home": "the home folder is never a project", "/repo/symlink": "destination contains a symlink"}
+		if reason := reasons[p.Checkout]; reason != "" {
+			return protocol.ToolPlanProbeResult{Conflict: reason}
+		}
+		return protocol.ToolPlanProbeResult{Destination: filepath.Join(p.Checkout, p.Root, p.Name)}
+	})
+	plan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Skipped) != 3 {
+		t.Fatalf("skips: %+v", plan.Skipped)
+	}
+	copies, removes := 0, 0
+	for _, target := range plan.Targets {
+		if target.Conflict != "" || target.Project == "two" || target.Project == "home" || target.Project == "symlink" {
+			t.Fatalf("unexpected target: %+v", target)
+		}
+		if target.Action == "copy" && target.Project == "good" {
+			copies++
+		}
+		if target.Action == "remove" && !target.OwnedOnly && target.State == "pending" {
+			removes++
+		}
+	}
+	if copies != 2 || removes != 1 {
+		t.Fatalf("copies %d removals %d: %+v", copies, removes, plan.Targets)
+	}
+	result, err := g.applyTool(t.Context(), plan.ID, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, target := range result.Targets {
+		if target.Project == "two" || target.Project == "home" || target.Project == "symlink" || target.State == "failed" || target.State == "conflict" {
+			t.Fatalf("unexpected outcome: %+v", target)
+		}
+		if err := g.store.ReportToolResult(n, protocol.ToolResult{Item: id, Revision: result.Revision, Index: i, State: "applied"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outcome, waiting := g.store.toolOutcomes(result.ToolRevision, plan.Targets, func(string) bool { return true })
+	if waiting || len(outcome.Targets) != 3 {
+		t.Fatalf("outcome %+v waiting %v", outcome, waiting)
+	}
+	for _, target := range outcome.Targets {
+		if target.State != "ok" {
+			t.Fatalf("outcome %+v", target)
+		}
+	}
+}
+
+func TestToolPlanDoesNotOfferExternalSkillRemoval(t *testing.T) {
+	g, n, _ := toggleFixture(t)
+	id, bundle := toggleBundle(t, g, n, "# Demo\nFixture.\n")
+	reports, err := g.store.Inventories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := reports[0].Items
+	items[0].Source = protocol.InventoryPlugin
+	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+		t.Fatal(err)
+	}
+	toggleFakeNode(t, g, n, bundle, nil)
+	targets, err := g.toolTargets(t.Context(), id, protocol.ToolAssignment{Scope: "uninstalled"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		if target.Action == "remove" && target.State == "pending" {
+			t.Fatalf("external source offered for removal: %+v", target)
+		}
+	}
+}

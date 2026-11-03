@@ -124,6 +124,10 @@ func TestToolToggleStandingChoice(t *testing.T) {
 
 // A node that answers the real gateway RPC path without touching a daemon.
 func toggleFakeNode(t *testing.T, g *Gateway, n string, bundle []byte, bundleErr error) {
+	toggleFakeNodeProbe(t, g, n, bundle, bundleErr, nil)
+}
+
+func toggleFakeNodeProbe(t *testing.T, g *Gateway, n string, bundle []byte, bundleErr error, probe func(protocol.ToolPlanProbe) protocol.ToolPlanProbeResult) {
 	t.Helper()
 	accepted := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +168,9 @@ func toggleFakeNode(t *testing.T, g *Gateway, n string, bundle []byte, bundleErr
 				var p protocol.ToolPlanProbe
 				_ = json.Unmarshal(raw, &p)
 				data = protocol.ToolPlanProbeResult{Destination: filepath.Join(p.Checkout, p.Root, p.Name), Fingerprint: "fixture"}
+				if probe != nil {
+					data = probe(p)
+				}
 			}
 			if h.ID != "" {
 				b, _ := protocol.EncodeResult(h.ID, data, answerErr)

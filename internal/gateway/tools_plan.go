@@ -115,6 +115,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				}
 			}
 			for _, checkout := range checkouts {
+				checkoutStart := len(targets)
 				roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
 				if checkout.Path == "" {
 					roots = append(roots, struct{ root, harness string }{".gemini/config/skills", "antigravity"})
@@ -141,6 +142,11 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 							} else {
 								if r.Skip {
 									continue
+								}
+								if checkout.Path != "" && toolCheckoutSkipped(r.Conflict) {
+									targets = targets[:checkoutStart]
+									targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Project: checkout.Name, Checkout: checkout.Path, Action: "skip", Conflict: r.Conflict})
+									break
 								}
 								t.Destination = r.Destination
 								t.Fingerprint = r.Fingerprint
@@ -187,23 +193,28 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 			if !remove {
 				continue
 			}
-			t := protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, OwnedOnly: true, Action: "remove", State: "conflict", Conflict: "unmanaged source requires guarded removal"}
+			t := protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, Action: "remove", State: "pending"}
 			if kind != protocol.InventorySkill {
 				t.Action = "manual"
+				t.State = "conflict"
 				t.Conflict = "native MCP removal is not supported"
+			} else if obs.Source == protocol.InventoryPlugin || obs.Source == protocol.InventoryPackage || obs.Source == protocol.InventorySystem {
+				t.Action, t.State, t.Conflict = "manual", "conflict", "source is managed externally"
+			} else if obs.Tracked {
+				t.Action, t.State, t.Conflict = "manual", "conflict", "source contains tracked files"
 			} else if host := g.conn(report.NodeID); host == nil {
 				t.State = "offline"
 				t.Conflict = "machine offline; source cannot be inspected"
 			} else {
 				raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: obs.Harness, Source: obs.Location, Hash: hash}, 10*time.Second)
 				if e != nil {
-					t.Conflict = "source inspection unavailable"
+					t.State, t.Conflict = "conflict", "source inspection unavailable"
 				} else {
 					var r protocol.ToolPlanProbeResult
 					if json.Unmarshal(raw, &r) != nil {
-						t.Conflict = "invalid source inspection"
+						t.State, t.Conflict = "conflict", "invalid source inspection"
 					} else if r.Conflict != "" {
-						t.Conflict = r.Conflict
+						t.State, t.Conflict = "conflict", r.Conflict
 					}
 				}
 			}
@@ -256,7 +267,10 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	if err != nil {
 		return out, err
 	}
-	return g.store.saveToolPlan(p.Item, a, targets, actor, snap, p.Operation, p.RepoTargets, validatingProposal(ctx))
+	targets, skipped := splitToolSkips(targets)
+	out, err = g.store.saveToolPlan(p.Item, a, targets, actor, snap, p.Operation, p.RepoTargets, validatingProposal(ctx))
+	out.Skipped = skipped
+	return out, err
 }
 
 func (g *Gateway) repoRemovalTargets(ctx context.Context, p protocol.ToolPlanRequest) ([]protocol.ToolPlanTarget, error) {
@@ -396,6 +410,7 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 			}
 		}
 	}
+	targets, _ = splitToolSkips(targets)
 	if !reflect.DeepEqual(targets, p.Targets) {
 		return out, errors.New("plan out of date")
 	}
@@ -568,4 +583,26 @@ func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]bool,
 		return nil, ctx.Err()
 	}
 	return failed, nil
+}
+
+// Skipped checkouts are explanatory only and never enter the revision feed.
+func toolCheckoutSkipped(reason string) bool {
+	switch reason {
+	case "the home folder is never a project", "not a Git repository", "worktree of another project", "destination contains a symlink":
+		return true
+	}
+	return false
+}
+
+func splitToolSkips(targets []protocol.ToolPlanTarget) ([]protocol.ToolPlanTarget, []protocol.ToolPlanSkip) {
+	kept := make([]protocol.ToolPlanTarget, 0, len(targets))
+	var skips []protocol.ToolPlanSkip
+	for _, t := range targets {
+		if t.Action == "skip" {
+			skips = append(skips, protocol.ToolPlanSkip{NodeID: t.NodeID, Machine: t.Machine, Project: t.Project, Checkout: t.Checkout, Reason: t.Conflict})
+		} else {
+			kept = append(kept, t)
+		}
+	}
+	return kept, skips
 }
