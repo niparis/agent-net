@@ -85,3 +85,15 @@ This does not build teams, agents, their ownership or membership, relationships,
 - **Owner choice: ancestor changes.** Recommend rejecting changes that conflict with descendants and showing the conflicts. Alternative: automatically remove or clamp descendants. Rejection preserves owner intent and avoids silent changes.
 - **Owner choice: defaults and inventory.** Recommend one Go definition table with a generated inventory view and reviewed conditional default functions. Alternative: a separate recipe or inventory file as source. One source makes drift testable while preserving binary defaults before file recipes exist.
 - **Owner choice: rollout.** Recommend guidance first and parity before each cutover. Alternative: migrate all settings at once. Small changes make discrepancies and rollback local.
+
+## Owner decisions (2026-11-03)
+
+These replace the recommendations above where they differ.
+
+1. **Approval: the CTO may change advice on its own; only rules need the owner.** Most approvals today are not critical, so routing every advice change through the owner adds work without adding safety. A rule change (a gate, a limit, an approval) always goes through an owner-approved proposal. Every change, advice or rule, is recorded with its author and can be undone.
+2. **Rollout: the ways to review and test code move in the first half of the build.** After the guidance text, the delivery opinions come next: tests a worker runs, CI, review, merge and release (inventory delivery rows), so the owner's way and a tracker-driven way can differ there early. The order of the rest does not matter.
+3. **Parent-level changes: a stricter parent adjusts the children.** When a parent level is made stricter than a child that set its own value, the child is moved to the new parent value and the owner is told which children changed. A change is never refused for this. Keep rule overrides few and plain: the owner finds limits hard to reason about, so a setting should only allow lower-level overrides where someone has a real need.
+4. **Defaults: a readable file, which is the standard recipe.** Every setting's key, description, type, kind, levels and default live in one readable file (YAML or TOML) in the repository and inside the binary. That file is the owner's standard recipe; another way of working is the same format with other values. Go code holds only what cannot be data: the per-type "is this stricter" checks and the few defaults that depend on context. A test checks the file against the inventory so the two cannot drift.
+
+Still open, after the independent review: storage (a new table or reuse of the existing two) and the exact tightening checks per type.
+
