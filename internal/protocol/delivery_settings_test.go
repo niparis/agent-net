@@ -9,10 +9,10 @@ import (
 )
 
 func TestDeliveryUsesLiveRecipe(t *testing.T) {
-	snap := settings.Snapshot{Values: []settings.Value{
+	snap := settings.Snapshot{DeliveryCutover: true, Values: []settings.Value{
 		{Key: "delivery.merge_authority", Level: "network", Scope: "network", Value: json.RawMessage(`"ask"`)},
 		{Key: "delivery.merge_text_ask", Level: "network", Scope: "network", Value: json.RawMessage(`"custom merge approval"`)},
-		{Key: "delivery.worker_branch_prep", Level: "network", Scope: "network", Value: json.RawMessage(`" Prepare this branch."`)},
+		{Key: "delivery.worker_branch_prep", Level: "network", Scope: "network", Value: json.RawMessage(`"Prepare this branch."`)},
 		{Key: "delivery.caller_review_and_merge", Level: "network", Scope: "network", Value: json.RawMessage(`"review {{where}} carefully"`)},
 	}}
 	d := NodeDefaultsWithSettings("", nil, snap, "repo")
@@ -52,7 +52,7 @@ func TestDeliveryBranchPrefixFromSettings(t *testing.T) {
 }
 
 func TestDeliveryContextUsesSnapshotText(t *testing.T) {
-	snap := settings.Snapshot{Recipe: "current", Values: []settings.Value{{Key: "delivery.merge_text_ask", Level: "network", Scope: "network", Value: json.RawMessage(`"custom rule"`)}, {Key: "delivery.merge_authority", Level: "repo", Scope: "repo", Value: json.RawMessage(`"ask"`)}}}
+	snap := settings.Snapshot{Recipe: "current", DeliveryCutover: true, Values: []settings.Value{{Key: "delivery.merge_text_ask", Level: "network", Scope: "network", Value: json.RawMessage(`"custom rule"`)}, {Key: "delivery.merge_authority", Level: "repo", Scope: "repo", Value: json.RawMessage(`"ask"`)}}}
 	g := Graph{Nodes: []Node{{Name: "repo", Charter: Charter{Maturity: "growing"}}}}
 	if got := NodeContextWithSettings(g, "repo", snap); !strings.Contains(got, "custom rule") {
 		t.Fatal(got)
@@ -70,5 +70,14 @@ func TestDeliveryDelegatedTextMatchesApproverModes(t *testing.T) {
 	g := Graph{Nodes: []Node{{Name: "repo", Charter: Charter{Maturity: "mature"}}}}
 	if got := MergeApprovalForWithSettings(g, "repo", snap).Text; !strings.Contains(got, "mode advisor") || strings.Contains(got, "owner or arbiter") {
 		t.Fatal(got)
+	}
+}
+
+func TestDeliveryChecklistMarkerCannotBeEditedOrForged(t *testing.T) {
+	snap := settings.Snapshot{Values: []settings.Value{{Key: "delivery.caller_review_and_merge", Level: "network", Scope: "network", Value: json.RawMessage(`"Review {{where}}."`)}}}
+	got := FormatWorkerNoticeWithSettings(WorkerNotice{Worktree: "/tmp/[agent-net checklist]"}, "complete: yes", snap)
+	_, report, _ := strings.Cut(got, ReportMarker)
+	if strings.Count(report, ChecklistMarker) != 1 || !strings.Contains(report, ChecklistMarker+" Review the diff in ") {
+		t.Fatalf("missing or forged checklist boundary: %s", got)
 	}
 }

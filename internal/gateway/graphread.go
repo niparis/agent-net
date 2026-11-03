@@ -126,6 +126,15 @@ func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
 	return rule, err
 }
 
+func chartedProject(g protocol.Graph, project string) string {
+	for _, node := range g.Nodes {
+		if node.Name == project {
+			return project
+		}
+	}
+	return ""
+}
+
 // MergeAuthorityForSession resolves the receiving node's effective setting.
 func (s *Store) MergeAuthorityForSession(session string) (string, error) {
 	authority, _, err := s.MergeRuleForSession(session)
@@ -143,16 +152,7 @@ func (s *Store) MergeRuleForSession(session string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	found := false
-	for _, n := range graph.Nodes {
-		if n.Name == project {
-			found = true
-			break
-		}
-	}
-	if !found {
-		project = ""
-	}
+	project = chartedProject(graph, project)
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
 		return "", "", err

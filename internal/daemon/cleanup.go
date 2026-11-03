@@ -83,13 +83,32 @@ type cleanupWorktree struct {
 	EndedAt                                           time.Time
 }
 
+// cleanupBranch verifies a recorded worker branch without depending on the
+// currently configured prefix, which may have changed after the run.
+func cleanupBranch(branch, id string) bool {
+	if branch == protocol.WorktreeBranch(id) {
+		return true
+	}
+	if !strings.HasSuffix(branch, "/"+id) {
+		return false
+	}
+	prefix := strings.TrimSuffix(branch, id)
+	def, ok := settings.DefinitionFor("delivery.worker_branch_prefix")
+	if !ok {
+		return false
+	}
+	raw, _ := json.Marshal(prefix)
+	_, err := def.Codec(raw)
+	return err == nil
+}
+
 // cleanupWorktree never removes a worktree with uncommitted files or a branch
 // containing commits absent from the project default branch.
 func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.Time) error {
 	if w.EndedAt.IsZero() {
 		return nil
 	}
-	if !strings.HasPrefix(w.ID, "w_") || filepath.Base(w.ID) != w.ID || (w.Branch != protocol.WorktreeBranchWithSettings(w.ID, d.SettingsSnapshot()) && w.Branch != protocol.WorktreeBranch(w.ID)) || filepath.Clean(w.Path) != filepath.Join(d.worktreesDir(), w.ID) {
+	if !strings.HasPrefix(w.ID, "w_") || filepath.Base(w.ID) != w.ID || !cleanupBranch(w.Branch, w.ID) || filepath.Clean(w.Path) != filepath.Join(d.worktreesDir(), w.ID) {
 		return nil
 	}
 	d.resumeMu.Lock()
@@ -283,15 +302,16 @@ func (d *Daemon) observeLegacyWorktrees(ctx context.Context, project string, now
 	var path, branch string
 	record := func() error {
 		id := filepath.Base(path)
-		if !strings.HasPrefix(id, "w_") || path != filepath.Join(d.worktreesDir(), id) || branch != "refs/heads/"+protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot()) || active[id] || d.startingBases[protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot())] > 0 {
+		actual, ok := strings.CutPrefix(branch, "refs/heads/")
+		if !strings.HasPrefix(id, "w_") || path != filepath.Join(d.worktreesDir(), id) || !ok || !cleanupBranch(actual, id) || active[id] || d.startingBases[actual] > 0 {
 			return nil
 		}
 		for _, q := range queued {
-			if q.Base == protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot()) || filepath.Clean(q.Path) == path {
+			if q.Base == actual || filepath.Clean(q.Path) == path {
 				return nil
 			}
 		}
-		_, err := d.st.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at,harness) VALUES(?,?,?,?,?,?) ON CONFLICT(worker_id) DO NOTHING`, id, project, path, protocol.WorktreeBranchWithSettings(id, d.SettingsSnapshot()), now.UnixNano(), harnesses[id])
+		_, err := d.st.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at,harness) VALUES(?,?,?,?,?,?) ON CONFLICT(worker_id) DO NOTHING`, id, project, path, actual, now.UnixNano(), harnesses[id])
 		return err
 	}
 	for _, line := range strings.Split(data, "\x00") {

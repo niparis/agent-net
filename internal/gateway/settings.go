@@ -50,7 +50,7 @@ func (s *Store) SettingsSnapshot() (settings.Snapshot, error) {
 	return out, err
 }
 func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
-	out := settings.Snapshot{Recipe: settings.RecipeHash(), Values: []settings.Value{}, Maturity: map[string]string{}}
+	out := settings.Snapshot{DeliveryCutover: true, Recipe: settings.RecipeHash(), Values: []settings.Value{}, Maturity: map[string]string{}}
 	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&out.Revision); err != nil {
 		return out, err
 	}
@@ -91,12 +91,12 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 }
 
 // settingsCutoverActor identifies an internal migration in history. It is
-// recognized here for attribution but is never authorized for settings writes.
+// reserved for history and is never accepted as a settings writer.
 const settingsCutoverActor = "agent-net cutover"
 
 func settingsActor(actor string) bool {
 	switch actor {
-	case "owner", "cto", "CTO (minor)", "CTO (owner window)", settingsCutoverActor:
+	case "owner", "cto", "CTO (minor)", "CTO (owner window)":
 		return true
 	}
 	const prefix = "owner (CTO proposal p_"
@@ -107,7 +107,7 @@ func settingsActor(actor string) bool {
 	return n != "" && strings.Trim(n, "0123456789") == ""
 }
 func actorAllowed(actor, kind string) bool {
-	if !settingsActor(actor) || actor == settingsCutoverActor {
+	if !settingsActor(actor) {
 		return false
 	}
 	return actor == "owner" || strings.HasPrefix(actor, "owner (CTO proposal p_") || kind == "advice"

@@ -585,7 +585,7 @@ func WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter,
 	case "claude":
 		b += WorkerClaudeNote
 	case "agy":
-		b += snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
+		b += "\n- " + snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
 	}
 	b += "\n- " + WorkerPermissionsText(level, harness)
 	switch WorkerPermissionsOrDefault(level) {
@@ -598,7 +598,7 @@ func WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter,
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
 			", not in the user's own checkout."
 		if harness != "agy" {
-			b += snap.String("delivery.worker_branch_prep", settings.Where{})
+			b += " " + snap.String("delivery.worker_branch_prep", settings.Where{})
 		}
 	}
 	if rules != "" {
@@ -874,7 +874,7 @@ func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Sn
 	if worktree != "" {
 		where = "the diff in " + worktree
 	}
-	line := strings.ReplaceAll(snap.String("delivery.caller_review_and_merge", settings.Where{}), "{{where}}", where)
+	line := ChecklistMarker + " " + strings.ReplaceAll(snap.String("delivery.caller_review_and_merge", settings.Where{}), "{{where}}", NeutralizeMarkers(where))
 	if learned {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}

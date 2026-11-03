@@ -22,8 +22,10 @@ The older `node.settings.set` frame may omit the label for compatibility with
 older daemons and is then treated as owner, as before. If it supplies a label
 for a moved setting, the label must be valid. Current daemons send it explicitly.
 A settings proposal is validated against the current state before it is stored
-and again on approval. Guidance values cannot contain managed-block or
-agent-net notice markers.
+and again on approval. Text settings cannot contain managed-block or agent-net
+notice markers, apart from the standard guidance's worker-brief reference.
+Worker delivery text cannot contain a task boundary. The completion checklist
+marker is fixed framing, separate from editable advice.
 
 ## Gateway exposure
 

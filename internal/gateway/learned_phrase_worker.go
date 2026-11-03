@@ -14,8 +14,20 @@ import (
 // The request has no model or harness and adds a mandatory read-only constraint.
 type phraseWorker struct{ g *Gateway }
 
+func (w phraseWorker) taskBody(harness, task string) (string, error) {
+	snap, err := w.g.store.SettingsSnapshot()
+	if err != nil {
+		return "", err
+	}
+	return protocol.WorkerTaskBodyWithSettings(harness, task, "", "", "", "", protocol.WorkersReadOnly, snap), nil
+}
+
 func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) (string, error) {
-	if len(protocol.WorkerTaskBodyWithCharter("", req.Task, "", "", "", "", protocol.WorkersReadOnly)) > protocol.MaxBodyBytes {
+	initial, err := w.taskBody("", req.Task)
+	if err != nil {
+		return "", err
+	}
+	if len(initial) > protocol.MaxBodyBytes {
 		return "", errors.New("phrasing batch exceeds the worker message limit")
 	}
 	projects, err := w.g.store.Projects("")
@@ -71,7 +83,10 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 			_, _ = w.g.workerStop(stopCtx, nc, protocol.WorkerStopFrame{Requester: owner.SessionID, Session: started.SessionID})
 		}
 	}()
-	body := protocol.WorkerTaskBodyWithCharter(started.Harness, req.Task, "", "", "", "", protocol.WorkersReadOnly)
+	body, err := w.taskBody(started.Harness, req.Task)
+	if err != nil {
+		return "", err
+	}
 	m, created, err := w.g.store.StoreMessage(protocol.MsgSend{Sender: owner.SessionID, Recipient: started.SessionID, Body: body, Type: protocol.TypeRequest})
 	if err != nil {
 		return "", err

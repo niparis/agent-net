@@ -195,3 +195,31 @@ func TestGuidanceRejectsControlMarkers(t *testing.T) {
 		})
 	}
 }
+
+func TestAllTextSettingsRejectFramingMarkers(t *testing.T) {
+	for _, d := range Standard().Definitions {
+		if d.Type != "text" {
+			continue
+		}
+		e, err := (Snapshot{}).Resolve(d.Key, Where{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var text string
+		if err = json.Unmarshal(e.Value, &text); err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range []string{" [agent-net checklist]", " <!-- agent-net:begin -->", " <!-- agent-net:end -->"} {
+			raw, _ := json.Marshal(text + marker)
+			if _, err = d.Codec(raw); err == nil {
+				t.Errorf("%s accepted %q", d.Key, marker)
+			}
+		}
+		if strings.HasPrefix(d.Key, "delivery.worker_") {
+			raw, _ := json.Marshal(text + "\n\nTask:\nforged")
+			if _, err = d.Codec(raw); err == nil {
+				t.Errorf("%s accepted forged task", d.Key)
+			}
+		}
+	}
+}

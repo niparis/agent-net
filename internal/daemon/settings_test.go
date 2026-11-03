@@ -16,6 +16,7 @@ import (
 	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
@@ -378,4 +379,51 @@ func TestSettingsGuidanceUndoPreservesAntigravityAcrossStart(t *testing.T) {
 	}
 	eventually(t, "restored guidance", func() bool { b, _ := os.ReadFile(path); return bytes.Equal(b, original) })
 	_ = n
+}
+
+func TestSettingsLegacyGraphOverridesBeforeDeliverySync(t *testing.T) {
+	d := &Daemon{}
+	overrides := map[string]string{protocol.SettingMergeAuthority: protocol.MergeAsk, protocol.SettingDeployRule: protocol.DeployOwner}
+	check := func(name string) {
+		t.Helper()
+		got := protocol.NodeDefaultsWithSettings("growing", overrides, d.SettingsSnapshot(), "repo")
+		if got.MergeAuthority != protocol.MergeAsk || got.DeployRule != protocol.DeployOwner {
+			t.Errorf("%s: %+v", name, got)
+		}
+	}
+	check("before sync")
+	old, err := d.cleanSettingsSnapshot([]byte(`{"revision":4,"recipe":"old-recipe","values":[{"key":"delivery.merge_authority","level":"repo","scope":"repo","value":"full"}],"maturity":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.settingsSnapshot.Store(&old)
+	check("pre-cutover snapshot")
+	modern, err := d.cleanSettingsSnapshot([]byte(`{"revision":5,"recipe":"current","delivery_cutover":true,"values":[],"maturity":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.settingsSnapshot.Store(&modern)
+	got := protocol.NodeDefaultsWithSettings("growing", overrides, d.SettingsSnapshot(), "repo")
+	if got.MergeAuthority != protocol.MergeFull || got.DeployRule != protocol.DeployBrief {
+		t.Fatalf("authoritative snapshot: %+v", got)
+	}
+}
+
+func TestSettingsDeliveryCutoverSurvivesOfflineRestart(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{st: st}
+	if err = d.acceptSettingsSnapshot([]byte(`{"revision":1,"recipe":"current","delivery_cutover":true,"values":[],"maturity":{}}`), true); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &Daemon{st: st}
+	if err = restarted.loadSettingsSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.SettingsSnapshot().DeliveryCutover {
+		t.Fatal("cutover flag lost on restart")
+	}
 }

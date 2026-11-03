@@ -178,7 +178,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: " Commit your work there if the task asks for it."
+    default: "Commit your work there if the task asks for it."
     live: true
   - key: delivery.worker_agy_commit_instruction
     rows: [134]
@@ -186,7 +186,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "\n- The daemon commits your work when you hand back, so do not run git commit."
+    default: "The daemon commits your work when you hand back, so do not run git commit."
     live: true
   - key: delivery.caller_review_and_merge
     rows: [131]
@@ -195,7 +195,7 @@ settings:
     type: text
     levels: [network]
     slots: [where]
-    default: "[agent-net checklist] Before you tell your user it is done: read {{where}}, run the project's tests there, then report what you checked. Merge only if your user asked."
+    default: "Before you tell your user it is done: read {{where}}, run the project's tests there, then report what you checked. Merge only if your user asked."
     live: true
   - key: delivery.worker_branch_prefix
     rows: [133]

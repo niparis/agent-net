@@ -1,12 +1,14 @@
 package gateway
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 func legacyReworkRun(t *testing.T, s *Store, session, caller string) {
@@ -252,5 +254,14 @@ func TestReworkBackfillReplacesMixedLiveCounters(t *testing.T) {
 	var known, cont, fix int
 	if err := s.db.QueryRow(`SELECT SUM(counters_known),SUM(continue_count),SUM(fix_count) FROM worker_runs`).Scan(&known, &cont, &fix); err != nil || known != 2 || cont != 1 || fix != 1 {
 		t.Fatalf("known=%d continue=%d fix=%d err=%v", known, cont, fix, err)
+	}
+}
+
+func TestReworkNoticeParsesWithCustomChecklist(t *testing.T) {
+	snap := settings.Snapshot{Values: []settings.Value{{Key: "delivery.caller_review_and_merge", Level: "network", Scope: "network", Value: json.RawMessage(`"Review {{where}} carefully."`)}}}
+	notice := protocol.FormatWorkerNoticeWithSettings(protocol.WorkerNotice{Status: protocol.StatusDone, Worktree: "/tmp/work"}, "complete: yes", snap)
+	handback, partial, idle, ok := storedReworkNotice(notice)
+	if !ok || !handback || partial || idle {
+		t.Fatalf("completion misread: %t %t %t %t\n%s", handback, partial, idle, ok, notice)
 	}
 }

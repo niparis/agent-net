@@ -1423,7 +1423,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			// settings writer, never an implicit owner or the cutover actor.
 			if supplied, ok := fields["by"]; ok {
 				actor = ""
-				if err := json.Unmarshal(supplied, &actor); err != nil || !settingsActor(actor) || actor == settingsCutoverActor {
+				if err := json.Unmarshal(supplied, &actor); err != nil || !settingsActor(actor) {
 					return nil, reject("invalid settings actor")
 				}
 			}

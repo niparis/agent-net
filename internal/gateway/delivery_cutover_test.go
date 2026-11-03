@@ -22,7 +22,7 @@ func TestDeliveryCutoverMigratesLegacyRows(t *testing.T) {
 		}
 	}
 	// Replay only the final migration, with data in the old tables.
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version=?`, len(migrations)); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery settings cutover")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.migrate(); err != nil {
@@ -92,6 +92,7 @@ func TestDeliveryUnchartedSessionUsesNetwork(t *testing.T) {
 	}
 	changes := []SettingsChange{
 		{Key: "delivery.merge_authority", Level: "repo", Scope: "ghost", Value: json.RawMessage(`"ask"`)},
+		{Key: "charter.autonomy_mode", Level: "repo", Scope: "ghost", Value: json.RawMessage(`"wake"`)},
 	}
 	if _, err := s.WriteSettings(changes, "owner", "test"); err != nil {
 		t.Fatal(err)
@@ -107,6 +108,44 @@ func TestDeliveryUnchartedSessionUsesNetwork(t *testing.T) {
 	}
 	if got, err := s.MergeAuthorityForSession(ids["ghost"]); err != nil || got != "full" {
 		t.Fatalf("uncharted authority: %q %v", got, err)
+	}
+	a, ok, err := s.Agent(ids["ghost"])
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	for _, rule := range a.Charter.Rules {
+		if rule.Name == protocol.SettingMergeAuthority && rule.Value != protocol.MergeFull {
+			t.Errorf("uncharted charter merge: %+v", rule)
+		}
+		if rule.Name == protocol.SettingAutonomy && rule.Value != protocol.AutonomyOff {
+			t.Errorf("uncharted charter autonomy: %+v", rule)
+		}
+	}
+	if got, err := s.agentAutonomy(a); err != nil || got != protocol.AutonomyOff {
+		t.Errorf("uncharted autonomy: %q %v", got, err)
+	}
+	more := []SettingsChange{
+		{Key: "delivery.merge_authority", Level: "network", Scope: "network", Value: json.RawMessage(`"delegated"`)},
+		{Key: "charter.autonomy_mode", Level: "network", Scope: "network", Value: json.RawMessage(`"wake"`)},
+		{Key: "charter.autonomy_mode", Level: "repo", Scope: "ghost", Value: json.RawMessage(`"off"`), Expect: json.RawMessage(`"wake"`)},
+	}
+	if _, err = s.WriteSettings(more, "owner", "network test"); err != nil {
+		t.Fatal(err)
+	}
+	a, ok, err = s.Agent(ids["ghost"])
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if got, err := s.MergeAuthorityForSession(ids["ghost"]); err != nil || got != protocol.MergeDelegated {
+		t.Errorf("network merge: %q %v", got, err)
+	}
+	if got, err := s.agentAutonomy(a); err != nil || got != protocol.AutonomyWake {
+		t.Errorf("network autonomy: %q %v", got, err)
+	}
+	for _, r := range a.Charter.Rules {
+		if r.Name == protocol.SettingMergeAuthority && r.Value != protocol.MergeDelegated || r.Name == protocol.SettingAutonomy && r.Value != protocol.AutonomyWake {
+			t.Errorf("network charter: %+v", r)
+		}
 	}
 }
 
@@ -202,10 +241,10 @@ func TestDeliveryAdaptersMatchMaturityFixtures(t *testing.T) {
 	}
 }
 
-func TestDeliveryCutoverActorIsRecognizedButCannotWrite(t *testing.T) {
+func TestDeliveryCutoverActorCannotWriteOrUndo(t *testing.T) {
 	const cutoverActor = "agent-net cutover"
-	if !settingsActor(cutoverActor) {
-		t.Fatal("cutover history actor is not recognized")
+	if settingsActor(cutoverActor) {
+		t.Fatal("cutover actor accepted at wire boundary")
 	}
 	for _, kind := range []string{"advice", "rule"} {
 		if actorAllowed(cutoverActor, kind) {
@@ -216,6 +255,25 @@ func TestDeliveryCutoverActorIsRecognizedButCannotWrite(t *testing.T) {
 	change := SettingsChange{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: json.RawMessage(`"test"`)}
 	if _, err := s.WriteSettings([]SettingsChange{change}, cutoverActor, "spoofed cutover"); err == nil {
 		t.Fatal("cutover actor wrote through settings API")
+	}
+	result, err := s.WriteSettings([]SettingsChange{change}, "owner", "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.UndoSettings(result.Revision, cutoverActor); err == nil {
+		t.Error("cutover actor undid settings")
+	}
+	g := &Gateway{store: s}
+	ctx := context.Background()
+	for _, typ := range []string{"settings.write", "settings.validate"} {
+		raw, _ := json.Marshal(map[string]any{"by": cutoverActor, "changes": []SettingsChange{change}})
+		if _, err = g.handle(ctx, &nodeConn{}, typ, raw); err == nil {
+			t.Errorf("cutover actor accepted by %s", typ)
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"by": cutoverActor, "revision": result.Revision})
+	if _, err = g.handle(ctx, &nodeConn{}, "settings.undo", raw); err == nil {
+		t.Error("cutover actor accepted by settings.undo")
 	}
 }
 
@@ -242,4 +300,78 @@ func TestDeliveryNodeSettingsFrameActorCompatibility(t *testing.T) {
 			t.Fatalf("legacy/owner frame %s: %v", raw, err)
 		}
 	}
+}
+
+func TestDeliveryCutoverIsIdempotentAndKeepsExistingValues(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES('alpha','merge_authority','ask',1,'owner'),('beta','deploy_rule','owner',1,'owner'); INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('delivery.merge_authority','repo','alpha','','"full"',0)`); err != nil {
+		t.Fatal(err)
+	}
+	run := func() {
+		t.Helper()
+		tx, err := s.db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		if err = s.cutoverDeliveryTx(tx); err != nil {
+			t.Fatal(err)
+		}
+		if err = tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run()
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := s.SettingsHistory("", 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snap.DeliveryCutover {
+		t.Fatal("gateway snapshot lacks delivery cutover flag")
+	}
+	if len(hist) != 1 || hist[0].Key != "delivery.deploy_rule" {
+		t.Fatalf("history: %+v", hist)
+	}
+	for _, v := range snap.Values {
+		if v.Key == "delivery.merge_authority" && string(v.Value) != `"full"` {
+			t.Fatalf("overwrote existing value: %+v", v)
+		}
+	}
+	run()
+	next, _ := s.SettingsSnapshot()
+	history, _ := s.SettingsHistory("", 0, true)
+	if next.Revision != snap.Revision || len(history) != len(hist) {
+		t.Fatalf("second run changed revision/history: %d/%d -> %d/%d", snap.Revision, len(hist), next.Revision, len(history))
+	}
+}
+
+func TestDeliveryProfileProjectMatchesChartedMergeRule(t *testing.T) {
+	s, _ := newTestStore(t)
+	ids, _ := graphSessions(t, s, "repo")
+	if _, err := s.db.Exec(`INSERT INTO graph_nodes(name,kind,created_at) VALUES('repo','component',1); UPDATE sessions SET repo_project='',repo_root='' WHERE id=?; INSERT INTO profiles(session_id,project,updated_at) VALUES(?,'repo',1)`, ids["repo"], ids["repo"]); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeSetting("repo", protocol.SettingMergeAuthority, protocol.MergeAsk, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	a, ok, err := s.Agent(ids["repo"])
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if got, err := s.MergeAuthorityForSession(ids["repo"]); err != nil || got != protocol.MergeAsk {
+		t.Fatalf("merge authority: %q %v", got, err)
+	}
+	for _, rule := range a.Charter.Rules {
+		if rule.Name == protocol.SettingMergeAuthority {
+			if rule.Value != protocol.MergeAsk {
+				t.Fatalf("charter: %+v", rule)
+			}
+			return
+		}
+	}
+	t.Fatal("missing merge rule")
 }

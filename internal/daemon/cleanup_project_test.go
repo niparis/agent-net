@@ -537,3 +537,45 @@ func TestCleanupSeenProjectRemovesEndedWorktree(t *testing.T) {
 		t.Fatalf("ended worktree in a seen project remains: %v", err)
 	}
 }
+
+func TestCleanupWorktreeFindsPreviousCustomPrefix(t *testing.T) {
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_old")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "old-prefix/w_old", dir)
+	st, err := openState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{cfg: Config{StateDir: state}, st: st, workers: map[string]*worker{}}
+	if err = d.observeLegacyWorktrees(context.Background(), project, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := st.cleanupWorktrees(project)
+	if err != nil || len(entries) != 1 || entries[0].Branch != "old-prefix/w_old" {
+		t.Fatalf("recorded: %+v %v", entries, err)
+	}
+	if err = d.cleanupWorktree(context.Background(), entries[0], time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("merged worktree remains: %v", err)
+	}
+}
+
+func TestCleanupBranchValidatesRecordedPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		branch string
+		want   bool
+	}{
+		{"agent-net/w_1", true}, {"old/team/w_1", true}, {"-invalid/w_1", false}, {"old/../w_1", false}, {"old/w_2", false}, {"old/w_1/extra", false},
+	} {
+		if got := cleanupBranch(tc.branch, "w_1"); got != tc.want {
+			t.Errorf("%q: %v", tc.branch, got)
+		}
+	}
+}

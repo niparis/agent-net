@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -259,5 +261,17 @@ func TestLearnPhraseWaitsForNextWindow(t *testing.T) {
 	h, err = s.CharterHistory("app", 10)
 	if err != nil || len(h) != 2 || len(fake.req) != 2 || h[0].NewValue != "clean first phrase; clean second phrase" {
 		t.Fatalf("next window: history=%+v calls=%d err=%v", h, len(fake.req), err)
+	}
+}
+
+func TestPhraseWorkerBodyUsesSettingsSnapshot(t *testing.T) {
+	s, _ := newTestStore(t)
+	change := SettingsChange{Key: "delivery.worker_agy_commit_instruction", Level: "network", Scope: "network", Value: json.RawMessage(`"custom instruction"`)}
+	if _, err := s.WriteSettings([]SettingsChange{change}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := (phraseWorker{g: &Gateway{store: s}}).taskBody("agy", "do work")
+	if err != nil || !strings.Contains(body, "custom instruction") {
+		t.Fatalf("body: %q %v", body, err)
 	}
 }

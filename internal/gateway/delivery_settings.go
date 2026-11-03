@@ -39,6 +39,17 @@ func (s *Store) cutoverDeliveryTx(tx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
+	pending := all[:0]
+	for _, r := range all {
+		var exists int
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item='')`, deliveryNodeKeys[r.key], r.node).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			pending = append(pending, r)
+		}
+	}
+	all = pending
 	if len(all) == 0 {
 		return nil
 	}
@@ -52,19 +63,10 @@ func (s *Store) cutoverDeliveryTx(tx *sql.Tx) error {
 	for i, r := range all {
 		key := deliveryNodeKeys[r.key]
 		b, _ := json.Marshal(r.value)
-		var old sql.NullString
-		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, key, r.node).Scan(&old)
-		if err != nil && err != sql.ErrNoRows {
+		if _, err = tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES(?,'repo',?,'',?,?)`, key, r.node, string(b), rev); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES(?,'repo',?,'',?,?) ON CONFLICT(key,level,scope,item) DO UPDATE SET value=excluded.value,revision=excluded.revision`, key, r.node, string(b), rev); err != nil {
-			return err
-		}
-		var oldValue any
-		if old.Valid {
-			oldValue = old.String
-		}
-		if _, err = tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) VALUES(?,?,?,'repo',?,'',?,?,?,'migrate node settings','cutover',?)`, rev, i+1, key, r.node, oldValue, string(b), settingsCutoverActor, s.now().UnixNano()); err != nil {
+		if _, err = tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) VALUES(?,?,?,'repo',?,'',?,?,?,'migrate node settings','cutover',?)`, rev, i+1, key, r.node, nil, string(b), settingsCutoverActor, s.now().UnixNano()); err != nil {
 			return err
 		}
 	}

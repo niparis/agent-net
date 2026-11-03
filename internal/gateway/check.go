@@ -92,6 +92,11 @@ func agentNode(a protocol.AgentView) string {
 // stored value is off.
 func (s *Store) agentAutonomy(a protocol.AgentView) (string, error) {
 	node := agentNode(a)
+	graph, err := s.Graph()
+	if err != nil {
+		return protocol.AutonomyOff, err
+	}
+	node = chartedProject(graph, node)
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
 		return protocol.AutonomyOff, err

@@ -128,14 +128,32 @@ func nodeDefaults(maturity string, overrides map[string]string, snap settings.Sn
 	}
 	snap.Maturity[repo] = level
 	keys := map[string]string{SettingTestsBeforeMerge: "delivery.tests_before_merge", SettingMergeAuthority: "delivery.merge_authority", SettingJudgeConsumers: "charter.judge_consumers", SettingDeployRule: "delivery.deploy_rule"}
+	if carry && !snap.DeliveryCutover {
+		// A pre-cutover snapshot may contain shadow values which were not in
+		// force on that gateway. Its graph remains authoritative for them.
+		filtered := snap.Values[:0]
+		for _, v := range snap.Values {
+			moved := false
+			for _, key := range keys {
+				if v.Key == key {
+					moved = true
+					break
+				}
+			}
+			if !moved {
+				filtered = append(filtered, v)
+			}
+		}
+		snap.Values = filtered
+	}
 	for old, key := range keys {
 		v := overrides[old]
 		if v == "" || ValidateNodeSetting(old, v) != nil {
 			continue
 		}
 		// The graph remains the fallback for an older gateway. Once a settings
-		// snapshot exists, it is authoritative over the cached graph.
-		if carry && snap.Recipe != "" {
+		// snapshot says the delivery cutover completed, it is authoritative.
+		if carry && snap.DeliveryCutover {
 			continue
 		}
 		b, _ := json.Marshal(v)

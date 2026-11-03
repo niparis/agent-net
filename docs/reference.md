@@ -56,14 +56,15 @@ the CTO must propose changes to these rules. A repo with no graph node uses the
 network merge authority. Text and worker delivery settings appear under
 `delivery.*` in Settings. The delegated merge text uses the configured
 `delivery.delegated_approver_modes`. Branch prefix changes apply to new workers;
-a resumed worker keeps its recorded branch. Cleanup may leave worktrees made
-with an older custom prefix for the owner to inspect. The worker sandbox and
+a resumed worker keeps its recorded branch. Cleanup recognizes recorded branches
+with a valid older prefix. The worker sandbox and
 project policies stay where they are until the worker settings step. Older
 daemons and extensions use their built-in merge text until upgraded, even when
 the authority value has synced.
 
 On first upgrade, the gateway copies old node setting rows into settings in one
-transaction and records their cutover. The old rows stay as a backup. An older
+transaction and records their cutover. Existing settings values take precedence;
+repeating the cutover does not change them. The old rows stay as a backup. An older
 binary reads that backup after a downgrade, so changes made after the cutover
 are absent. Changes made to old rows while downgraded are not copied on a later
 upgrade. There is no downgrade tool.

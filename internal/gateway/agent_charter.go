@@ -83,9 +83,18 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 				settingsByNode[v.Scope][old] = value
 			}
 		}
+		graph, err := s.Graph()
+		if err != nil {
+			return err
+		}
 		for _, a := range agents {
-			project := a.Repo.Project
-			settingsByNode[project] = nodeEffectiveSettings(snap, project, byNode[project].Maturity, settingsByNode[project])
+			project := projectOfSession(a)
+			charted := chartedProject(graph, project)
+			if charted == "" {
+				settingsByNode[project] = nodeEffectiveSettings(snap, "", "", nil)
+			} else {
+				settingsByNode[project] = nodeEffectiveSettings(snap, project, byNode[project].Maturity, settingsByNode[project])
+			}
 		}
 	}
 	cut := func(s string) string {
@@ -97,7 +106,8 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 	}
 	for i := range agents {
 		a := &agents[i]
-		c := byNode[a.Repo.Project]
+		project := projectOfSession(*a)
+		c := byNode[project]
 		if c.Purpose == "" && a.Repo.Description != "" {
 			c.Purpose = a.Repo.Description
 			c.PurposeFallback = true
@@ -110,7 +120,7 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 		if !short {
 			// A single agent's view carries its node's rules, so a session can
 			// check its own rules. A list stays compact.
-			c.Rules = protocol.RulesFor(c.Maturity, settingsByNode[a.Repo.Project])
+			c.Rules = protocol.RulesFor(c.Maturity, settingsByNode[project])
 			if c.Rules == nil {
 				c.Rules = []protocol.PublicRule{}
 			}

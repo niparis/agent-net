@@ -387,14 +387,20 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 		if d.Type == "enum" && !contains(d.Values, s) {
 			return nil, fmt.Errorf("unknown enum value %q", s)
 		}
-		if !expected && strings.HasPrefix(d.Key, "guidance.") && (d.Type == "text" || d.Type == "string") {
+		if !expected && (d.Type == "text" || (strings.HasPrefix(d.Key, "guidance.") && d.Type == "string")) {
 			lower := strings.ToLower(s)
 			// The existing worker-brief marker is quoted in the standard recipe;
 			// it is a reference to a brief, not an agent-net notice.
-			notices := strings.ReplaceAll(s, "[agent-net worker brief]", "")
-			if strings.Contains(lower, "<!-- agent-net:begin -->") || strings.Contains(lower, "<!-- agent-net:end -->") || markers.Neutralize(notices) != notices {
-				return nil, fmt.Errorf("guidance contains an agent-net marker")
+			notices := s
+			if d.Key == "guidance.worker_brief_precedence" {
+				notices = strings.ReplaceAll(notices, "[agent-net worker brief]", "")
 			}
+			if strings.Contains(lower, "<!-- agent-net:begin -->") || strings.Contains(lower, "<!-- agent-net:end -->") || markers.Neutralize(notices) != notices {
+				return nil, fmt.Errorf("text contains an agent-net marker")
+			}
+		}
+		if !expected && d.Type == "text" && strings.HasPrefix(d.Key, "delivery.worker_") && strings.Contains(s, "\n\nTask:\n") {
+			return nil, fmt.Errorf("worker text contains a task boundary")
 		}
 		if d.Type == "text" {
 			found := map[string]bool{}
@@ -571,10 +577,11 @@ type Value struct {
 	Value json.RawMessage `json:"value"`
 }
 type Snapshot struct {
-	Revision int64             `json:"revision"`
-	Recipe   string            `json:"recipe"`
-	Values   []Value           `json:"values"`
-	Maturity map[string]string `json:"maturity"`
+	DeliveryCutover bool              `json:"delivery_cutover,omitempty"`
+	Revision        int64             `json:"revision"`
+	Recipe          string            `json:"recipe"`
+	Values          []Value           `json:"values"`
+	Maturity        map[string]string `json:"maturity"`
 }
 type Host struct{ RAMBytes int64 }
 type Where struct {
