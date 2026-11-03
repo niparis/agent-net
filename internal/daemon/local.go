@@ -405,6 +405,14 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 
 	case "mcp":
 		if p.Harness == "agy" {
+			if w := d.workerForPeer(pid); w != nil && w.harness == "agy" {
+				return lc.helloAgyMCP(p, pid)
+			}
+			if p.NativeID != "" && d.agyWorkerConversation(p.NativeID) {
+				return nil, errors.New("peer check failed: that conversation belongs to an Antigravity worker")
+			}
+			// An interactive agy session: tools without a bound session until
+			// discovery (decision 0049 step 5) verifies its conversation ID.
 			lc.mu.Lock()
 			lc.client, lc.peerPID, lc.agyNativeID = "mcp", pid, p.NativeID
 			lc.mu.Unlock()

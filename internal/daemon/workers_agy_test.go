@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -18,9 +17,7 @@ func agyInventory(ctx context.Context) []protocol.HarnessInfo {
 	})
 }
 
-// A profile can name agy now (decision 0049, build step 2), but a worker
-// cannot start it until step 4.
-func TestAgyProfileIsAcceptedButNotStartable(t *testing.T) {
+func TestAgyProfileIsAccepted(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNodeWithDetect(t, g, shortSet, agyInventory, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -41,11 +38,7 @@ func TestAgyProfileIsAcceptedButNotStartable(t *testing.T) {
 	if available := profiles[0].Available; available != nil && !*available {
 		t.Fatalf("agy model is listed, so the profile is not stale: %+v", profiles[0])
 	}
-	if protocol.WorkerHarnessSupported("agy") {
-		t.Fatal("agy must not start workers in step 2")
-	}
-	_, err = w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "x"})
-	if err == nil || !strings.Contains(err.Error(), "workers can run these harnesses") {
-		t.Fatalf("agy start: %v", err)
+	if !protocol.WorkerHarnessSupported("agy") {
+		t.Fatal("agy must start workers")
 	}
 }

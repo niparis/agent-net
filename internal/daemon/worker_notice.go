@@ -540,6 +540,9 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 	if w == nil {
 		return nil, errors.New("only a worker started by agent-net can hand back a report")
 	}
+	if w.harness == "agy" {
+		return d.deferAgyHandback(w, req)
+	}
 	return d.handbackTo(ctx, w, req, "", "")
 }
 
@@ -595,10 +598,11 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	}
 	d.wmu.Lock()
 	var next *protocol.Message
-	if w.harness == "opencode" && len(w.turnQueue) > 0 {
+	if (w.harness == "opencode" || w.harness == "agy") && len(w.turnQueue) > 0 {
+		w.turnActive = true
 		m := w.turnQueue[0]
 		w.turnQueue = w.turnQueue[1:]
-		w.turnHandbackIdle = true
+		w.turnHandbackIdle = w.harness == "opencode"
 		w.turnAwaitingStart = true
 		next = &m
 	} else {
@@ -810,7 +814,7 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 	if d.workers[w.id] != w || w.stopping || w.doneStatus != "" {
 		return false, true
 	}
-	if w.harness != "opencode" {
+	if w.harness != "opencode" && w.harness != "agy" {
 		return false, false
 	}
 	if !w.turnActive {
@@ -851,7 +855,7 @@ func (d *Daemon) openCodeTurnIdle(session string) bool {
 	var next *protocol.Message
 	pending := false
 	for _, w := range d.workers {
-		if w.sessionID != session || w.harness != "opencode" || w.stopping || w.doneStatus != "" {
+		if w.sessionID != session || (w.harness != "opencode" && w.harness != "agy") || w.stopping || w.doneStatus != "" {
 			continue
 		}
 		if w.turnHandbackIdle {

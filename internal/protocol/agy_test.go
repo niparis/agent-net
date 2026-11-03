@@ -2,13 +2,15 @@ package protocol
 
 import "testing"
 
-// agy is a known harness name (decision 0049), but workers cannot run it yet.
-func TestAgyIsKnownButNotStartable(t *testing.T) {
+func TestAgyWorkerHarness(t *testing.T) {
 	if !HarnessKnown("agy") {
 		t.Error("agy is not a known harness name")
 	}
-	if WorkerHarnessSupported("agy") {
-		t.Error("agy must not be startable in step 2")
+	if !WorkerHarnessSupported("agy") {
+		t.Error("agy must be startable")
+	}
+	if !WorkerReadOnlySupported("agy") {
+		t.Error("agy plan workers must support read-only access")
 	}
 	for _, h := range WorkerHarnesses {
 		if !HarnessKnown(h) {
@@ -17,6 +19,19 @@ func TestAgyIsKnownButNotStartable(t *testing.T) {
 	}
 	if HarnessKnown("gemini") {
 		t.Error("gemini is a known harness name")
+	}
+}
+
+// Antigravity model IDs have no provider/ prefix. They must remain startable
+// even when the subscription quota probe has not completed yet.
+func TestAgyWorkerSubscription(t *testing.T) {
+	for _, model := range []string{"gemini-3.8-flash-low", "claude-sonnet-5-5-medium", "gpt-oss-120b-medium"} {
+		if !SubscriptionProvider("agy", model, nil) {
+			t.Errorf("agy %s is a subscription", model)
+		}
+		if _, err := ResolveWorkerModelRankedQuota("agy", model, []string{model}, nil, nil, nil, nil, nil); err != nil {
+			t.Errorf("resolve %s: %v", model, err)
+		}
 	}
 }
 

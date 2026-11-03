@@ -48,7 +48,7 @@ func WorkerProviderAllowed(harness, model string, allowed []string, quotas *Quot
 func SubscriptionProvider(harness, model string, quotas *Quotas) bool {
 	p := WorkerProvider(harness, model)
 	switch {
-	case harness == "claude" || harness == "codex":
+	case harness == "claude" || harness == "codex" || harness == "agy":
 		return true
 	case p == "codex" || p == "opencode-go":
 		return true
