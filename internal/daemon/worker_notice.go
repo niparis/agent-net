@@ -470,7 +470,7 @@ func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.Work
 	if len(report) > 48*1024 {
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
-	raw, err := d.sendWorkerNoticeBody(ctx, w, protocol.FormatWorkerNotice(n, report), to, replyTo, noticeKey)
+	raw, err := d.sendWorkerNoticeBody(ctx, w, d.workerToolchainPermissions(w, protocol.FormatWorkerNotice(n, report)), to, replyTo, noticeKey)
 	if err == nil {
 		switch n.Status {
 		case protocol.StatusDone, protocol.StatusFailed, protocol.StatusTimedOut, "partial", "idle without hand-back":

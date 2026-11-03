@@ -137,6 +137,16 @@ func Locate(ctx context.Context, name string, o Options) string {
 	return ""
 }
 
+// Executable finds a program on the harness search path without running it.
+// The login shell's copy takes precedence, as it does for harnesses.
+func Executable(ctx context.Context, name string, o Options) string {
+	s := prepare(ctx, &o)
+	if p := find(name, s.loginDirs); p != "" {
+		return p
+	}
+	return find(name, s.dirs)
+}
+
 // RunUpdate runs the selected harness in the same search environment as the
 // probes. Input is closed and the process group is stopped on cancellation.
 func RunUpdate(ctx context.Context, path string, o Options, args ...string) (string, error) {

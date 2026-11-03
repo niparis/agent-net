@@ -191,6 +191,8 @@ type worker struct {
 	leftAsIs bool
 	// permissions is the level the worker was started with (decision 0020).
 	permissions string
+	// toolchainDirs are the extra writable folders passed to agy.
+	toolchainDirs []string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
@@ -692,11 +694,11 @@ func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch,
 		return protocol.WorkerLaunched{}, err
 	}
 	d.wmu.Lock()
-	sid, wt, br := w.sessionID, w.worktree, w.branch
+	sid, wt, br, toolchains := w.sessionID, w.worktree, w.branch, strings.Join(w.toolchainDirs, ", ")
 	d.wmu.Unlock()
 	d.recordWorkerAssessment(w, l.Assessment)
-	d.Logf("worker.started worker=%s session=%s project=%s path=%s harness=%s model=%s owner=%s pid=%d worktree=%s branch=%s",
-		w.id, sid, w.project, w.path, w.harness, w.model, w.owner, w.pid, wt, br)
+	d.Logf("worker.started worker=%s session=%s project=%s path=%s harness=%s model=%s owner=%s pid=%d worktree=%s branch=%s toolchains=%q",
+		w.id, sid, w.project, w.path, w.harness, w.model, w.owner, w.pid, wt, br, toolchains)
 	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br, ProjectRules: rules}, nil
 }
 
