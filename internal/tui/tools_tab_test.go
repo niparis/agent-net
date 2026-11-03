@@ -246,7 +246,7 @@ func TestToolsIsOneListWithNoScreenSwitching(t *testing.T) {
 			}
 		}
 		v := plain(m)
-		for _, gone := range []string{"Differences", "All tools", "By project", "switch screen"} {
+		for _, gone := range []string{"Differences", "By project", "switch screen"} {
 			if strings.Contains(v, gone) {
 				t.Errorf("%dx%d: the old three screens are back (%q):\n%s", size[0], size[1], gone, v)
 			}

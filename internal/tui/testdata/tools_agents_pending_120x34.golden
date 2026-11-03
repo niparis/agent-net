@@ -1,10 +1,11 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
+[ Skills per project ]    All tools
 1 skill is installed outside agent-net. i imports them all (backups kept, nothing is turned off)
-╭─Agents───────────────╮╭─homelab · on research · 2 skills on · ~280 tokens per session────────────────────────────────╮
-│   a2a-ocs          1 ││ [x] archify → off                     ~120    change not applied yet                         │
-│   cogforge         1 ││ [x] estate-runbook                    ~160    in the homelab repo (always on)                │
-│   dotfiles         1 ││ [ ] found-skill → on                  ~200    change not applied yet                         │
-│   flood-wargame    1 ││ [ ] react-best-practices              ~240                                                   │
+╭─Projects─────────────╮╭─Skills · homelab─────────────────────────────────────────────────────────────────────────────╮
+│   a2a-ocs          1 ││   [x] archify → off                   ~120    change not applied yet                         │
+│   cogforge         1 ││   [x] estate-runbook                  ~160    repo (always on)                               │
+│   dotfiles         1 ││ ▸ [ ] found-skill → on                ~200    change not applied yet                         │
+│   flood-wargame    1 ││   [ ] react-best-practices            ~240                                                   │
 │ ▸ homelab          2 ││                                                                                              │
 │   homelab-portal   1 ││                                                                                              │
 │   infra-game       1 ││                                                                                              │
@@ -13,22 +14,21 @@
 │   tenebrae         2 ││                                                                                              │
 │   wbg-arch         1 ││                                                                                              │
 │   wbg-housing      1 ││                                                                                              │
-│   wbg-worldview    1 ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││                                                                                              │
-│                      ││ skills per agent · tab: all tools                                                            │
 ╰──────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Skill information────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ found-skill · ~200 tokens per session                                                                                │
+│ Read the project layout and explain its architecture before planning a change. Use the repository conventions and    │
+│ keep the result easy to review.                                                                                      │
+│ on in 0 of 13 projects                                                                                               │
+│ Machines: laptop                                                                                                     │
+│ New projects: on                                                                                                     │
+│ installed on laptop, outside agent-net (on for every session there)                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-i import all  ↑↓ move  tab all tools  / filter  ? help  esc back  ← agents  space on/off  enter review (2 changes)
+i import all  ↑↓ move  tab switches  / filter  ? help  q quit  esc back  ← projects  space on/off
+  enter review (2 changes)

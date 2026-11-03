@@ -61,16 +61,15 @@ func TestToolsUnstoredToggleReviewsBeforeImport(t *testing.T) {
 	m = pressKey(m, "down")
 	m = pressKey(m, "down")
 	m = pressKey(m, " ")
-	m = pressKey(m, "enter")
-	if m.tl.modal == nil || !strings.Contains(plain(m), "Review 1 change") {
-		t.Fatal("Enter must show a plan")
+	if m.tl.modal == nil || !strings.Contains(plain(m), "Review 1 change") || len(s.toggles) != 1 {
+		t.Fatal("space must show a gateway plan")
 	}
 	if len(s.imports) != 0 || len(s.plans) != 0 || len(s.applied) != 0 {
-		t.Fatal("review must not import, assign or apply")
+		t.Fatal("review changed files")
 	}
 	m = pressKey(m, "enter")
-	if len(s.imports) != 1 || len(s.applied) != 1 {
-		t.Fatal("confirmation did not apply the reviewed toggle")
+	if len(s.applied) != 1 || len(s.imports) != 0 {
+		t.Fatal("gateway plan must handle import on apply")
 	}
 }
 
@@ -152,20 +151,20 @@ func TestToolsOversizedRowOnlyMarkerAndCost(t *testing.T) {
 			t.Errorf("%d: oversized skill must retain StartTokens: %s", width, text)
 		}
 		count := strings.Count(text, "too large to manage (11 MB, the limit is 2 MB)")
-		want := 1
+		want := 2
 		if width == 80 {
-			want = 0
+			want = 1
 		} // Narrow rows omit state text; Space still explains it.
 		if count != want {
-			t.Errorf("%d: size reason must only appear in the state column, got %d copies", width, count)
+			t.Errorf("%d: size reason must appear in the info box and wide state column, got %d copies", width, count)
 		}
 		m.tl.agentFilter = ""
 		regular, oversized := -1, -1
 		for _, line := range strings.Split(plain(m), "\n") {
-			if at := strings.Index(line, "~120"); at >= 0 {
+			if at := strings.Index(line, "~120"); at >= 0 && strings.Contains(line, "[x]") {
 				regular = ansi.StringWidth(line[:at])
 			}
-			if at := strings.Index(line, "~310"); at >= 0 {
+			if at := strings.Index(line, "~310"); at >= 0 && strings.Contains(line, "×") {
 				oversized = ansi.StringWidth(line[:at])
 			}
 		}

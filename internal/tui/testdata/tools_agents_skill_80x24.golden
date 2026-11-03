@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
+[ Skills per project ]    All tools
+1 skill is installed outside agent-net. i imports them all (backups kept,
+  nothing is turned off)
+╭─Projects─────────╮╭─Skills · homelab─────────────────────────────────────────╮
+│   cogforge     1 ││ ▸ [x] archify                         ~120               │
+│   dotfiles     1 ││   [x] estate-runbook                  ~160               │
+│   flood-war…   1 ││   [ ] found-skill                     ~200               │
+│ ▸ homelab      2 ││   [ ] react-best-practices            ~240               │
+╰──────────────────╯╰──────────────────────────────────────────────────────────╯
+╭─Skill information────────────────────────────────────────────────────────────╮
+│ archify · ~120 tokens per session                                            │
+│ Read the project layout and explain its architecture before planning a       │
+│ change. Use the repository conventions and keep the result easy to review.   │
+│ on in 13 of 13 projects                                                      │
+│ Machines: none observed                                                      │
+│ New projects: on                                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+i import all  ↑↓ move  tab switches  / filter  ? help  q quit  esc back
+  ← projects  space on/off  enter on/off

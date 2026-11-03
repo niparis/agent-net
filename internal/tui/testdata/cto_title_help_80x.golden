@@ -102,27 +102,27 @@ Legend ────────────────────────�
  Tools
   i                      import all
   j/k, down/up           move
-  tab                    all tools
+  tab                    switches
   /                      filter
   ?                      help
   q                      quit
   esc                    back
   right, enter           skills
 
- agent skills
+ project skills
   i                      import all
   j/k, down/up           move
-  tab                    all tools
+  tab                    switches
   /                      filter
   ?                      help
   q                      quit
   esc                    back
-  left                   agents
+  left                   projects
   space                  on/off
-  enter                  review and apply
+  enter                  on/off or review
 
  Tools
-  tab                    skills per agent
+  tab                    switches
   t                      show skill cost per project
   n                      add an MCP server or a skill from a folder
   enter                  open the actions for the selected tool

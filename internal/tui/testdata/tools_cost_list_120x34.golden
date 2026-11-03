@@ -1,4 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
+  Skills per project    [ All tools ]
 ╭─Tools · 40 tools───────────────────────────────────────────────╮╭─code-review────────────────────────────────────────╮
 │   NAME                    STATUS                      COST     ││ Description for code-review                        │
 │ ! code-review             v1 on Nicolas-MBP, v3 on…   ~130     ││ ~130 tokens in every session                       │
@@ -22,7 +23,6 @@
 │   found-skill-10          outside agent-net           ~235     ││                                                    │
 │   found-skill-11          outside agent-net           ~270     ││                                                    │
 │   found-skill-12          outside agent-net           ~60      ││                                                    │
-│   found-skill-13          outside agent-net           ~95      ││                                                    │
 │ 40 tools · ! needs attention · enter opens actions             ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab skills per agent  ? help  ↑↓ move  / filter  t costs  esc clear  n add  enter actions  R rescan
+tab switches  q quit  ? help  ↑↓ move  / filter  t costs  esc clear  n add  enter actions  R rescan

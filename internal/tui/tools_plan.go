@@ -72,10 +72,11 @@ type chooseState struct {
 
 // toolsModalMsg changes the open modal when a background call ends.
 type toolsModalMsg struct {
-	id         int
-	update     func(md *toolsModal)
-	reload     bool
-	onboarding bool
+	projectReasons map[string][]string
+	id             int
+	update         func(md *toolsModal)
+	reload         bool
+	onboarding     bool
 }
 
 func (m *Model) openModal(title string) *toolsModal {
@@ -87,6 +88,12 @@ func (m *Model) openModal(title string) *toolsModal {
 
 func (m Model) onToolsModal(r toolsModalMsg) (Model, tea.Cmd) {
 	if md := m.tl.modal; md != nil && md.id == r.id {
+		if m.tl.projectReasons == nil {
+			m.tl.projectReasons = map[string][]string{}
+		}
+		for p, reasons := range r.projectReasons {
+			m.tl.projectReasons[p] = reasons
+		}
 		r.update(md)
 	}
 	if r.reload {

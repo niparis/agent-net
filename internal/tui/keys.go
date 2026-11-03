@@ -36,8 +36,8 @@ const (
 	contextCard            keyContext = "agent card"
 	contextToolsFilter     keyContext = "tools filter"
 	contextToolsCosts      keyContext = "tools project costs"
-	contextToolsAgents     keyContext = "skills per agent"
-	contextToolsSkills     keyContext = "agent skills"
+	contextToolsAgents     keyContext = "skills per project"
+	contextToolsSkills     keyContext = "project skills"
 	contextToolsDiscard    keyContext = "discard skill changes"
 	contextTools           keyContext = "Tools"
 	contextToolsPlan       keyContext = "tools plan"
@@ -297,25 +297,25 @@ var keyBindings = []keyBinding{
 	withLocal(bind(contextToolsSkills, "i", "import all", "import all", 0)),
 	withLocal(bind(contextToolsAgents, "j|down", actDown, "move", 0)),
 	withLocal(bind(contextToolsAgents, "k|up", actUp, "move", 0)),
-	withLocal(bind(contextToolsAgents, "tab", "all tools", "all tools", 0)),
+	withLocal(bind(contextToolsAgents, "tab", "all tools", "switches", 0)),
 	withLocal(bind(contextToolsAgents, "/", "filter", "filter", 0)),
 	withLocal(bind(contextToolsAgents, "?", "help", "help", 0)),
 	withLocal(bind(contextToolsAgents, "q", actQuit, "quit", 0)),
 	withLocal(bind(contextToolsAgents, "esc", "back", "back", 0)),
 	withLocal(bind(contextToolsSkills, "j|down", actDown, "move", 0)),
 	withLocal(bind(contextToolsSkills, "k|up", actUp, "move", 0)),
-	withLocal(bind(contextToolsSkills, "tab", "all tools", "all tools", 0)),
+	withLocal(bind(contextToolsSkills, "tab", "all tools", "switches", 0)),
 	withLocal(bind(contextToolsSkills, "/", "filter", "filter", 0)),
 	withLocal(bind(contextToolsSkills, "?", "help", "help", 0)),
 	withLocal(bind(contextToolsSkills, "q", actQuit, "quit", 0)),
 	withLocal(bind(contextToolsSkills, "esc", "back", "back", 0)),
 	withLocal(bind(contextToolsAgents, "right|enter", "skills", "skills", 0)),
-	withLocal(bind(contextToolsSkills, "left", "agents", "agents", 0)),
+	withLocal(bind(contextToolsSkills, "left", "agents", "projects", 0)),
 	withLocal(bind(contextToolsSkills, "space", "toggle", "on/off", 0)),
-	withLocal(bind(contextToolsSkills, "enter", "review", "review and apply", 0)),
+	withLocal(bind(contextToolsSkills, "enter", "review", "on/off or review", 0)),
 	withLocal(bind(contextToolsDiscard, "y|Y", "discard", "discard", 0)),
 	withLocal(bind(contextToolsDiscard, "n|N|esc", "keep", "keep changes", 0)),
-	bind(contextTools, "tab", "skills per agent", "skills per agent", 0),
+	bind(contextTools, "tab", "skills per agent", "switches", 0),
 	bind(contextTools, "q", actQuit, "quit", 0),
 	bind(contextTools, "?", "help", "help", 1),
 	bind(contextTools, "j|down", actDown, "move", 0),

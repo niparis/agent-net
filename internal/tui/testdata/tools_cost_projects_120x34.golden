@@ -1,4 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
+  Skills per project    [ All tools ]
 ╭─Skill cost per project · tokens in every session─────────────────────────────────────────────────────────────────────╮
 │ PROJECT                  MACHINE                  SKILLS  EVERY SESSION   BIGGEST                                    │
 │ sovl-clone               research                 35      ~6.1k           deploy-test-server                         │
@@ -14,7 +15,6 @@
 │ infra-game               research                 33      ~5.5k           found-skill-04                             │
 │ strategies               research                 33      ~5.5k           found-skill-04                             │
 │ wbg-arch                 research                 33      ~5.5k           found-skill-04                             │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

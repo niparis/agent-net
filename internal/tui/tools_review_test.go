@@ -11,25 +11,21 @@ func TestToolsReviewDescribesSelectedAgent(t *testing.T) {
 	m, s := agentToolsFixture(120, 34)
 	m = pressKey(m, "right")
 	m = pressKey(m, " ")
+	m = pressKey(m, "esc")
 	m = pressKey(m, "down")
 	m = pressKey(m, "down")
 	m = pressKey(m, " ")
-	m = pressKey(m, "enter")
-	for _, want := range []string{"- archify off for homelab (stays on for the 12 other projects)", "+ found-skill on for homelab"} {
+	for _, want := range []string{"Switch off archify in homelab.", "archify moves from every project to 12 projects", "Switch on found-skill in homelab."} {
 		if !strings.Contains(plain(m), want) {
-			t.Errorf("missing %q:\n%s", want, plain(m))
+			t.Errorf("missing %q: %s", want, plain(m))
 		}
 	}
-	if strings.Contains(plain(m), "+ archify for") || len(s.imports) != 0 || len(s.applied) != 0 {
-		t.Fatal("review must describe pending changes without applying")
-	}
-	jobs, why := m.agentJobs("homelab")
-	if why != "" || len(jobs[0].target.Projects) != 12 || hasStr(jobs[0].target.Projects, "homelab") {
-		t.Fatalf("exact targets changed: %+v %s", jobs, why)
+	if len(s.applied) != 0 || len(s.imports) != 0 {
+		t.Fatal("review changed files")
 	}
 	m = pressKey(m, "d")
-	if !strings.Contains(plain(m), "archify target projects:") || !strings.Contains(plain(m), "found-skill target projects: homelab") {
-		t.Fatal("target details missing: " + plain(m))
+	if !strings.Contains(plain(m), "/home/n/.agents/skills/x") {
+		t.Fatal(plain(m))
 	}
 }
 
@@ -45,8 +41,7 @@ func TestToolsSingularCounts(t *testing.T) {
 	m = pressKey(m, "esc")
 	m = pressKey(m, "right")
 	m = pressKey(m, " ")
-	m = pressKey(m, "enter")
-	if !strings.Contains(plain(m), "Review 1 change for homelab") || !strings.Contains(plain(m), "- archify off for homelab") {
+	if !strings.Contains(plain(m), "Review 1 change for homelab") || !strings.Contains(plain(m), "Switch off archify in homelab.") {
 		t.Fatal(plain(m))
 	}
 }
@@ -73,7 +68,7 @@ func TestToolsCompactActionKeys(t *testing.T) {
 		if focus == "agents" && !strings.Contains(text, "→ skills") {
 			t.Fatal(text)
 		}
-		if focus == "skills" && (!strings.Contains(text, "← agents") || !strings.Contains(text, "enter review (0 changes)")) {
+		if focus == "skills" && (!strings.Contains(text, "← projects") || !strings.Contains(text, "enter on/off")) {
 			t.Fatal(text)
 		}
 	}
@@ -83,8 +78,7 @@ func TestToolsSingleReviewKeepsExactFolders(t *testing.T) {
 	m, s := agentToolsFixture(120, 34)
 	m = pressKey(m, "right")
 	m = pressKey(m, " ")
-	m = pressKey(m, "enter")
-	if !strings.Contains(plain(m), "- archify off for homelab") || len(s.plans) != 1 || len(s.applied) != 0 {
+	if !strings.Contains(plain(m), "Switch off archify in homelab.") || len(s.toggles) != 1 || len(s.applied) != 0 {
 		t.Fatal(plain(m))
 	}
 	m = pressKey(m, "d")

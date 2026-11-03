@@ -10,7 +10,7 @@ func toolsBindingParts(ctx keyContext, include func(keyBinding) bool) []string {
 	var parts []string
 	positions := map[string]int{}
 	for _, b := range keyBindings {
-		if b.context != ctx || b.action == actQuit || include != nil && !include(b) {
+		if b.context != ctx || include != nil && !include(b) {
 			continue
 		}
 		keys := toolDisplayKey(b)
@@ -102,7 +102,11 @@ func (m Model) toolsKeyLines(w int) []string {
 		if m.tl.skillsFocus {
 			for i := 0; i+1 < len(parts); i += 2 {
 				if parts[i] == "enter" {
-					parts[i+1] = "review (" + nounCount(len(m.tl.agentPending[m.agentProject()]), "change", "changes") + ")"
+					if n := len(m.tl.agentPending[m.agentProject()]); n > 0 {
+						parts[i+1] = "review (" + nounCount(n, "change", "changes") + ")"
+					} else {
+						parts[i+1] = "on/off"
+					}
 				}
 			}
 		}

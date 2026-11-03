@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -137,15 +138,19 @@ type fakeTools struct {
 	needs                 []protocol.ToolNeed
 	itemsErr              error
 
-	plans      []protocol.ToolPlanRequest
-	applied    []string
-	imports    []protocol.ToolImport
-	acceptCall []protocol.ToolAccept
-	acceptErr  error
-	rescans    int
-	sent       []string // "to: body"
-	mcpPlans   []string
-	mcpApplied []string
+	toggles     []protocol.ToolToggleRequest
+	toggleErr   error
+	togglePlan  *protocol.ToolPlan
+	applyResult *protocol.ToolApplyResult
+	plans       []protocol.ToolPlanRequest
+	applied     []string
+	imports     []protocol.ToolImport
+	acceptCall  []protocol.ToolAccept
+	acceptErr   error
+	rescans     int
+	sent        []string // "to: body"
+	mcpPlans    []string
+	mcpApplied  []string
 
 	coveragePlans   []protocol.MCPCoverageRequest
 	coverageTargets []protocol.MCPCoverageTarget
@@ -214,6 +219,9 @@ func (f *fakeTools) ToolsApply(_ context.Context, id string) (protocol.ToolApply
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.applied = append(f.applied, id)
+	if f.applyResult != nil {
+		return *f.applyResult, nil
+	}
 	if len(f.plans) > 0 && f.plans[len(f.plans)-1].Operation == "repo_remove" {
 		return protocol.ToolApplyResult{Targets: []protocol.ToolTargetOutcome{{NodeID: toolNodeR, Machine: "research", Project: "sovl-clone", Action: "repo_remove", State: "ok", Branch: "agent-net/remove-deploy-test-server", Commit: strings.Repeat("a", 40)}}}, nil
 	}
@@ -306,4 +314,35 @@ func (f *fakeTools) ToolsReadFile(_ context.Context, p protocol.SkillTextRequest
 		return "old text\n", nil
 	}
 	return "new text\n", nil
+}
+
+func (f *fakeTools) ToolsProjects(context.Context) ([]protocol.ToolProjectState, error) {
+	return nil, nil
+}
+func (f *fakeTools) ToolsToggle(_ context.Context, r protocol.ToolToggleRequest) (protocol.ToolPlan, error) {
+	f.toggles = append(f.toggles, r)
+	if f.toggleErr != nil {
+		return protocol.ToolPlan{}, f.toggleErr
+	}
+	if f.togglePlan != nil {
+		return *f.togglePlan, nil
+	}
+	target := protocol.ToolAssignment{Scope: "projects"}
+	for _, it := range f.items {
+		if it.ID != r.Item {
+			continue
+		}
+		if it.Desired != nil {
+			for _, p := range f.snap.Projects {
+				if p.Name != r.Project && (it.Desired.Assignment.Scope == "global" || hasStr(it.Desired.Assignment.Projects, p.Name)) {
+					target.Projects = append(target.Projects, p.Name)
+				}
+			}
+		}
+	}
+	if r.On {
+		target.Projects = append(target.Projects, r.Project)
+	}
+	sort.Strings(target.Projects)
+	return protocol.ToolPlan{ID: fmt.Sprintf("toggle_%d", len(f.toggles)), Item: r.Item, Assignment: target, Targets: []protocol.ToolPlanTarget{{NodeID: toolNodeR, Machine: "research", Project: r.Project, Action: "copy", State: "pending", Destination: "/home/n/.agents/skills/x"}}}, nil
 }

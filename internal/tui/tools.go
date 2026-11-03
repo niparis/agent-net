@@ -23,6 +23,8 @@ type ToolsSource interface {
 	ToolsAccepted(context.Context) ([]string, error)
 	ToolsAccept(ctx context.Context, key string, accepted bool) error
 	ToolsNeeds(context.Context) ([]protocol.ToolNeed, error)
+	ToolsProjects(context.Context) ([]protocol.ToolProjectState, error)
+	ToolsToggle(context.Context, protocol.ToolToggleRequest) (protocol.ToolPlan, error)
 	ToolsPlan(context.Context, protocol.ToolPlanRequest) (protocol.ToolPlan, error)
 	ToolsApply(ctx context.Context, planID string) (protocol.ToolApplyResult, error)
 	ToolsImport(context.Context, protocol.ToolImport) error
@@ -39,6 +41,7 @@ type ToolsSource interface {
 }
 
 type toolsMsg struct {
+	states   []protocol.ToolProjectState
 	items    []protocol.ToolItem
 	accepted []string
 	needs    []protocol.ToolNeed
@@ -51,6 +54,7 @@ type toolsState struct {
 	loaded, loading bool
 	err             string
 	at              time.Time
+	states          []protocol.ToolProjectState
 	items           []protocol.ToolItem
 	accepted        map[string]bool
 	needs           []protocol.ToolNeed
@@ -62,6 +66,7 @@ type toolsState struct {
 	agentFilter                  string
 	agentSearching, agentDiscard bool
 	agentPending                 map[string]map[string]bool
+	projectReasons               map[string][]string
 	row, scroll                  int
 	projectsOpen                 bool
 	projectRow                   int
@@ -122,6 +127,7 @@ func (m Model) loadTools() (tea.Model, tea.Cmd) {
 		r := toolsMsg{at: now()}
 		r.items, r.err = ts.ToolsItems(ctx)
 		if r.err == nil {
+			r.states, _ = ts.ToolsProjects(ctx)
 			r.accepted, _ = ts.ToolsAccepted(ctx)
 			r.needs, _ = ts.ToolsNeeds(ctx)
 		}
@@ -139,7 +145,7 @@ func (m *Model) applyTools(r toolsMsg) {
 		return
 	}
 	m.tl.err, m.tl.loaded, m.tl.at = "", true, r.at
-	m.tl.items, m.tl.needs = r.items, r.needs
+	m.tl.items, m.tl.needs, m.tl.states = r.items, r.needs, r.states
 	m.tl.accepted = map[string]bool{}
 	for _, k := range r.accepted {
 		m.tl.accepted[k] = true
@@ -342,6 +348,7 @@ func (m Model) toolsRescan() (tea.Model, tea.Cmd) {
 		r := toolsMsg{at: now()}
 		r.items, r.err = ts.ToolsItems(ctx)
 		if r.err == nil {
+			r.states, _ = ts.ToolsProjects(ctx)
 			r.accepted, _ = ts.ToolsAccepted(ctx)
 			r.needs, _ = ts.ToolsNeeds(ctx)
 		}

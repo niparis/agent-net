@@ -820,19 +820,34 @@ A model provider that is not a subscription and has no usable quota reading is p
 
 ## Tools inventory
 
-Tab 5 opens skills per agent: projects on the left, skills and checkboxes on
-the right. The count and token total use the same rule as skill cost per
-project: count each name once on the machine with the highest total, using
-the highest cost among its copies. Costs are tokens in every session.
-Use up/down in either column, right or Enter to enter skills, and left to
-return to agents. Space queues an on/off change. Enter in the skills column
-reviews all pending changes for that agent in one plan. The review says
-which skills turn on or off for that agent, and how many other projects
-keep a skill that was global. `d` shows target details. Confirm to apply;
-cancel to keep editing. Esc with pending changes asks `Discard N changes? y/n`.
-Repo skills stay on in their repo and must be changed there. Turning on a
-skill found on a machine imports it first, after confirmation. Turning off
-a global skill for one agent assigns it to every other known project.
+Tab 5 opens Skills per project: projects on the left, skills and checkboxes
+on the right. The visible tabs at the top show Skills per project and All
+tools; Tab switches between them. The focused pane has an accent border.
+The selected row has the Sessions highlight and marker. The project keeps
+a dim highlight while focus is on skills.
+
+The information box below the panes follows focus. For a project it shows
+the name, checkout machines, skills on and tokens per session, plus any
+known reason a checkout cannot hold project skills. Reasons reported by a
+gateway plan remain visible here after closing the plan. For a skill it
+shows the name, tokens per session, up to two lines of its front matter
+description, how many projects have it on, its machines, and the standing
+choice for new projects. The count and token total count each name once
+on the machine with the highest total, using the highest cost among its
+copies. Costs are tokens in every session.
+
+Use up/down in either pane, right or Enter to enter skills, and left to
+return to projects. Space or Enter on a skill previews an on/off change
+through `tools_toggle`. Nothing is imported or applied during preview.
+Esc cancels the preview and keeps the pending choice for editing. To review
+several changes together, cancel each preview and select another skill;
+the next preview includes all pending choices for that project. Enter
+with pending choices reopens their review. `d` shows exact folders. Enter
+in the review applies each skill's plan in turn through `tools_apply`.
+The result reports changed targets or `Nothing changed: <reason>` when no
+target changed. Esc with pending changes asks `Discard N changes? y/n`.
+Repo skills stay on in their repo and must be changed there. The gateway
+handles importing an observed skill and preserving other project choices.
 When skills are installed outside agent-net, the view offers `i` to import
 them all in one review. Confirmation saves each distinct version in the store.
 Installed copies and their session availability stay unchanged; no assignment
@@ -848,8 +863,9 @@ do not prove that a skill fits; the import service still checks the bundle.
 `/` filters skill names. Tab switches between this view and all tools,
 which keeps the action menu, comparison, filters and `n` to add a tool.
 Every Tools screen lists its local actions with one display key per action.
-Aliases still work and are listed in `?` help. The key bar fits one line at
-120 columns and wraps to a second line when needed at 80 columns.
+Aliases still work and are listed in `?` help. The key bar wraps when
+needed and includes navigation, toggles, review, view switching, filtering,
+import, help and quit.
 The list includes `t` for costs and `R` for rescan;
 plans include `d` when exact folders are available.
 
@@ -1554,7 +1570,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Quotas | `p` protects or unprotects; `s` shows unset subscriptions; `R` refreshes. Enter is unused. |
 | Graph | Arrows select; Shift+arrows pan; `,` and `.` select linked nodes; Enter opens the card; `/` finds a node. The graph fits itself when the tab opens. `o`, Space, `t` and `0` do nothing. |
 | Agent card | Ctrl+U and Ctrl+D scroll. `,` and `.` select learned changes; `u` undoes the selected change. `!` does nothing; the legend is in the help overlay under Graph. `[` and `]` do not scroll. |
-| Tools | Opens skills per agent. Up/down selects an agent, right or Enter moves to skills, Space queues a toggle, and Enter reviews all pending changes for that agent before confirmation. Left returns to agents. Esc asks before discarding pending changes. `/` filters skill names. Tab switches to all tools and back. In all tools, Enter opens the selected tool's actions; `/` filters, `t` shows skill cost per project, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
+| Tools | Opens Skills per project. Up/down selects a project, right or Enter moves to skills, and Space or Enter previews a toggle. Esc keeps pending choices for editing; Enter reviews pending choices and confirms in the review. Left returns to projects. Esc asks before discarding pending changes. `/` filters skill names. Tab switches between the two visible views. The information box follows the selected project or skill. In All tools, Enter opens actions; `/` filters, `t` shows skill cost per project, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
 | Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. |
 | Help | Esc closes. `?` switches between this screen and all screens. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: the screen you are on first, then Global keys; `?` again shows Global keys, the current tab, the other tabs in tab order, then In overlays. |
 | Confirmations | Enter or `y` says yes; Esc or `n` says no. Every question footer shows all four keys. |

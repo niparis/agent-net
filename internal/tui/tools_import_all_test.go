@@ -143,8 +143,7 @@ func TestToolsImportedOutsideSkillOffKeepsOtherAgents(t *testing.T) {
 	m = pressKey(m, "down")
 	m = pressKey(m, "down")
 	m = pressKey(m, " ")
-	jobs, why := m.agentJobs("homelab")
-	if why != "" || len(jobs) != 1 || jobs[0].target.Scope != "projects" || hasStr(jobs[0].target.Projects, "homelab") || !hasStr(jobs[0].target.Projects, "tenebrae") {
-		t.Fatalf("outside user skill must stay on for other agents: %+v %s", jobs, why)
+	if len(s.toggles) != 1 || s.toggles[0].On || s.toggles[0].Project != "homelab" || len(s.plans) != 0 {
+		t.Fatalf("outside skill must use gateway project toggle: %v", s.toggles)
 	}
 }

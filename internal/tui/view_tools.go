@@ -14,22 +14,31 @@ func (m Model) toolsView(w, h int) []string {
 	if notice, ok := m.noticeLine(w); ok {
 		out[0] = notice
 	}
+	skills, all := "  Skills per project  ", "  All tools  "
+	if m.tl.allTools {
+		all = sActiveTab.Render("[ All tools ]")
+		skills = sDim.Render(skills)
+	} else {
+		skills = sActiveTab.Render("[ Skills per project ]")
+		all = sDim.Render(all)
+	}
+	out = append(out, skills+"  "+all)
 	if m.tl.modal != nil {
-		box := m.modalBox(w, max(h-1, 6))
+		box := m.modalBox(w, max(h-2, 6))
 		out = append(out, box...)
 	} else if !m.tl.allTools {
-		out = append(out, m.agentToolsView(w, max(h-1, 3))...)
+		out = append(out, m.agentToolsView(w, max(h-2, 3))...)
 	} else if m.tl.projectsOpen {
-		out = append(out, m.projectCostView(w, max(h-1, 3))...)
+		out = append(out, m.projectCostView(w, max(h-2, 3))...)
 	} else if w >= 100 {
 		left := w * 55 / 100
-		a, b := m.toolListView(left, max(h-1, 3)), m.toolDetailView(w-left, max(h-1, 3))
+		a, b := m.toolListView(left, max(h-2, 3)), m.toolDetailView(w-left, max(h-2, 3))
 		for i := range a {
 			out = append(out, a[i]+b[i])
 		}
 	} else {
 		detail := min(8, max(h/2, 3))
-		out = append(out, m.toolListView(w, max(h-1-detail, 3))...)
+		out = append(out, m.toolListView(w, max(h-2-detail, 3))...)
 		out = append(out, m.toolDetailView(w, detail)...)
 	}
 	for len(out) < h {
