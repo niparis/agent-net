@@ -31,13 +31,23 @@ func TestWorkerWorktreeSkills(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(p, "SKILL.md"), []byte("manual"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	ignored := filepath.Join(repo, ".agents/skills/ignored")
+	if err := os.MkdirAll(ignored, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ignored, "SKILL.md"), []byte("ignored"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(ignored, "SKILL.md"), filepath.Join(entries[0].Path, "link")); err != nil {
+		t.Fatal(err)
+	}
 	b, _ := json.Marshal(entries)
 	if err := os.WriteFile(filepath.Join(d.cfg.StateDir, "skill-manifest.json"), b, 0600); err != nil {
 		t.Fatal(err)
 	}
 	gitWithEnv(t, repo, nil, "config", "core.excludesfile", "/dev/null")
 	exclude := filepath.Join(repo, ".git/info/exclude")
-	if err := os.WriteFile(exclude, []byte("/.claude/skills/owned/\n/.agents/skills/owned/\n"), 0644); err != nil {
+	if err := os.WriteFile(exclude, []byte("/.claude/skills/owned/\n/.agents/skills/owned/\n/.agents/skills/ignored/\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	w := &worker{id: protocol.NewID("w"), path: repo}
@@ -49,6 +59,12 @@ func TestWorkerWorktreeSkills(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(w.worktree, rel, "SKILL.md")); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if info, err := os.Stat(filepath.Join(w.worktree, ".agents/skills/ignored/SKILL.md")); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("ignored skill or mode: %v %v", info, err)
+	}
+	if _, err := os.Lstat(filepath.Join(w.worktree, ".claude/skills/owned/link")); !os.IsNotExist(err) {
+		t.Fatal("symlink copied")
 	}
 	if _, err := os.Stat(filepath.Join(w.worktree, ".agents/skills/manual")); !os.IsNotExist(err) {
 		t.Fatal("unignored skill copied")
