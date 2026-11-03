@@ -434,3 +434,20 @@ func TestChooseWorkerModelAgyWindowsPerFamily(t *testing.T) {
 		t.Fatal("window families")
 	}
 }
+
+// A start is refused only for a window that limits its model.
+func TestQuotaRefusalAgyPerFamily(t *testing.T) {
+	q := &Quotas{GeneratedAt: 1, Providers: []QuotaProvider{{Provider: "agy", Windows: []QuotaWindow{
+		{ID: "gemini_5h", Kind: "session", PercentUsed: 9},
+		{ID: "claude_gpt_5h", Kind: "session", PercentUsed: 100, Exhausted: true},
+	}}}}
+	if r := QuotaRefusal(q, "agy", "gemini-4-argon-high"); r != "" {
+		t.Fatalf("argon refused: %s", r)
+	}
+	if r := QuotaRefusal(q, "agy", "claude-opus-5-5-high"); !strings.Contains(r, "Claude/GPT") && !strings.Contains(r, "claude_gpt_5h") {
+		t.Fatalf("opus not refused: %q", r)
+	}
+	if w := QuotaWarning(q, "agy", "gemini-3.8-flash-low"); w != "" {
+		t.Fatalf("flash warned: %s", w)
+	}
+}

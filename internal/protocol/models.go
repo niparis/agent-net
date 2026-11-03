@@ -113,11 +113,13 @@ func modelPart(id string) string {
 }
 
 // quotaHigh tells whether a provider is above QuotaHighPercent in a window.
-func quotaHigh(q *Quotas, provider string) bool {
+func quotaHigh(q *Quotas, provider string) bool { return quotaHighFor(q, provider, "") }
+
+func quotaHighFor(q *Quotas, provider, model string) bool {
 	if q == nil {
 		return false
 	}
-	_, ok := q.HighWindow(provider)
+	_, ok := q.HighWindowFor(provider, model)
 	return ok
 }
 
@@ -287,12 +289,12 @@ func ResolveModelRankedQuota(query string, models []string, usage map[string]int
 				keep = append(keep, m)
 				continue
 			}
-			if _, ok := quotas.ExhaustedWindow(qp); ok || quotaHigh(quotas, qp) {
+			if _, ok := quotas.ExhaustedWindowFor(qp, m); ok || quotaHighFor(quotas, qp, m) {
 				if !seen[qp] {
 					seen[qp] = true
-					if w, ok := quotas.ExhaustedWindow(qp); ok {
+					if w, ok := quotas.ExhaustedWindowFor(qp, m); ok {
 						blocked = append(blocked, fmt.Sprintf("%s is exhausted (%s; %s)", qp, QuotaWindowName(w), QuotaResetText(w)))
-					} else if w, ok := quotas.HighWindow(qp); ok {
+					} else if w, ok := quotas.HighWindowFor(qp, m); ok {
 						blocked = append(blocked, fmt.Sprintf("%s is at %.0f%% of its %s window", qp, w.PercentUsed, QuotaWindowName(w)))
 					}
 				}

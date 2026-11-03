@@ -88,11 +88,20 @@ func (p QuotaProvider) usable() bool {
 // ExhaustedWindow returns the window that has no allowance left. A stale
 // reading is ignored.
 func (q *Quotas) ExhaustedWindow(provider string) (QuotaWindow, bool) {
+	return q.ExhaustedWindowFor(provider, "")
+}
+
+// ExhaustedWindowFor looks only at the windows that limit model (see
+// QuotaWindowServes); an empty model means every window.
+func (q *Quotas) ExhaustedWindowFor(provider, model string) (QuotaWindow, bool) {
 	p, ok := q.Provider(provider)
 	if !ok || !p.usable() {
 		return QuotaWindow{}, false
 	}
 	for _, w := range p.Windows {
+		if !QuotaWindowServes(w, model) {
+			continue
+		}
 		if w.Exhausted || w.PercentUsed >= 100 {
 			return w, true
 		}
@@ -102,11 +111,16 @@ func (q *Quotas) ExhaustedWindow(provider string) (QuotaWindow, bool) {
 
 // HighWindow returns the most used window when it is above QuotaHighPercent.
 func (q *Quotas) HighWindow(provider string) (QuotaWindow, bool) {
+	return q.HighWindowFor(provider, "")
+}
+
+// HighWindowFor is HighWindow over the windows that limit model.
+func (q *Quotas) HighWindowFor(provider, model string) (QuotaWindow, bool) {
 	p, ok := q.Provider(provider)
 	if !ok || !p.usable() {
 		return QuotaWindow{}, false
 	}
-	w, ok := p.worstWindow()
+	w, ok := p.worstWindowFor(model)
 	if !ok || w.PercentUsed <= QuotaHighPercent {
 		return QuotaWindow{}, false
 	}
@@ -128,10 +142,15 @@ func (q *Quotas) Ahead(provider string) bool {
 	return false
 }
 
-func (p QuotaProvider) worstWindow() (QuotaWindow, bool) {
+func (p QuotaProvider) worstWindow() (QuotaWindow, bool) { return p.worstWindowFor("") }
+
+func (p QuotaProvider) worstWindowFor(model string) (QuotaWindow, bool) {
 	var best QuotaWindow
 	found := false
 	for _, w := range p.Windows {
+		if !QuotaWindowServes(w, model) {
+			continue
+		}
 		if !found || w.PercentUsed > best.PercentUsed {
 			best, found = w, true
 		}
@@ -258,10 +277,10 @@ func QuotaWarning(quotas *Quotas, provider, model string) string {
 	if qp == "" {
 		return ""
 	}
-	if w, ok := quotas.ExhaustedWindow(qp); ok {
+	if w, ok := quotas.ExhaustedWindowFor(qp, model); ok {
 		return fmt.Sprintf("%s is exhausted (%s; %s)", qp, QuotaWindowName(w), QuotaResetText(w))
 	}
-	if w, ok := quotas.HighWindow(qp); ok {
+	if w, ok := quotas.HighWindowFor(qp, model); ok {
 		return fmt.Sprintf("%s is at %.0f%% of its %s window", qp, w.PercentUsed, QuotaWindowName(w))
 	}
 	return ""
@@ -274,7 +293,7 @@ func QuotaRefusal(quotas *Quotas, harness, model string) string {
 	if qp == "" {
 		return ""
 	}
-	w, ok := quotas.ExhaustedWindow(qp)
+	w, ok := quotas.ExhaustedWindowFor(qp, model)
 	if !ok {
 		return ""
 	}
