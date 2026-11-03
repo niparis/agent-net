@@ -164,7 +164,10 @@ func (s *Store) AssignTool(item string, a protocol.ToolAssignment, actor, source
 }
 
 // toolSnapshot binds plans to registry, observations, versions and revisions.
-func toolSnapshot(tx *sql.Tx) (string, error) {
+// It leaves out sessions and the new-projects settings: a session starting
+// anywhere, or a setting row created on first read, does not change what a
+// plan writes, and must not make every pending plan out of date.
+func (s *Store) toolSnapshot(tx *sql.Tx) (string, error) {
 	h := sha256.New()
 	for _, query := range []string{
 		`SELECT id,hostname,os,version,seen_at,harnesses FROM nodes ORDER BY id`,
@@ -173,8 +176,6 @@ func toolSnapshot(tx *sql.Tx) (string, error) {
 		`SELECT id,kind,name,hash FROM tool_identities ORDER BY id`,
 		`SELECT item,hash,commit_id FROM skill_versions ORDER BY item,hash`,
 		`SELECT item,revision,assignment,version FROM tool_revisions ORDER BY item,revision`,
-		`SELECT item,new_projects FROM tool_project_settings ORDER BY item`,
-		`SELECT node_id,harness,cwd,repo_root,repo_worktree,repo_project,no_project FROM sessions ORDER BY node_id,harness,cwd,repo_root,repo_worktree,repo_project,no_project`,
 	} {
 		rows, err := tx.Query(query)
 		if err != nil {
@@ -241,7 +242,7 @@ func (s *Store) ToolSnapshot() (string, error) {
 		return "", err
 	}
 	defer tx.Rollback()
-	v, err := toolSnapshot(tx)
+	v, err := s.toolSnapshot(tx)
 	if err != nil {
 		return "", err
 	}
@@ -290,7 +291,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if err = tx.QueryRow(`SELECT COALESCE(MAX(revision),0) FROM tool_revisions WHERE item=?`, item).Scan(&baseRevision); err != nil {
 		return p, err
 	}
-	snapshot, err := toolSnapshot(tx)
+	snapshot, err := s.toolSnapshot(tx)
 	if err != nil {
 		return p, err
 	}
@@ -342,7 +343,7 @@ func (s *Store) applyToolPlan(id, actor string, validate ...bool) (protocol.Tool
 	if applied != 0 {
 		return r, errors.New("plan already applied")
 	}
-	current, err := toolSnapshot(tx)
+	current, err := s.toolSnapshot(tx)
 	if err != nil {
 		return r, err
 	}
@@ -579,7 +580,7 @@ func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRev
 		t.Action, t.State, t.Conflict, t.Fingerprint = action, "pending", "", ""
 		targets = append(targets, t)
 	}
-	snapshot, err := toolSnapshot(tx)
+	snapshot, err := s.toolSnapshot(tx)
 	if err != nil {
 		return r, p, err
 	}
