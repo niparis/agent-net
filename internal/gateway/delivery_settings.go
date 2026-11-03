@@ -64,7 +64,7 @@ func (s *Store) cutoverDeliveryTx(tx *sql.Tx) error {
 		if old.Valid {
 			oldValue = old.String
 		}
-		if _, err = tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) VALUES(?,?,?,'repo',?,'',?,?,?,'migrate node settings','cutover',?)`, rev, i+1, key, r.node, oldValue, string(b), "agent-net cutover", s.now().UnixNano()); err != nil {
+		if _, err = tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) VALUES(?,?,?,'repo',?,'',?,?,?,'migrate node settings','cutover',?)`, rev, i+1, key, r.node, oldValue, string(b), settingsCutoverActor, s.now().UnixNano()); err != nil {
 			return err
 		}
 	}

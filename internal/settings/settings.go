@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/niparis/agent-net/internal/markers"
 )
 
 //go:embed standard.yaml
@@ -310,6 +312,17 @@ func (d Definition) yamlValue(n *yaml.Node) (json.RawMessage, error) {
 var slotRE = regexp.MustCompile(`\{\{([^{}]+)\}\}`)
 
 func (d Definition) Codec(raw json.RawMessage) (json.RawMessage, error) {
+	return d.codec(raw, false)
+}
+
+// CodecExpected canonicalizes a previously stored value for a conflict check.
+// Old guidance containing markers may be named here so it can be replaced or
+// removed, but Codec still refuses to store it as a new value.
+func (d Definition) CodecExpected(raw json.RawMessage) (json.RawMessage, error) {
+	return d.codec(raw, true)
+}
+
+func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, error) {
 	raw = bytes.TrimSpace(raw)
 	if !json.Valid(raw) || string(raw) == "null" {
 		return nil, fmt.Errorf("invalid JSON value")
@@ -373,6 +386,15 @@ func (d Definition) Codec(raw json.RawMessage) (json.RawMessage, error) {
 		}
 		if d.Type == "enum" && !contains(d.Values, s) {
 			return nil, fmt.Errorf("unknown enum value %q", s)
+		}
+		if !expected && strings.HasPrefix(d.Key, "guidance.") && (d.Type == "text" || d.Type == "string") {
+			lower := strings.ToLower(s)
+			// The existing worker-brief marker is quoted in the standard recipe;
+			// it is a reference to a brief, not an agent-net notice.
+			notices := strings.ReplaceAll(s, "[agent-net worker brief]", "")
+			if strings.Contains(lower, "<!-- agent-net:begin -->") || strings.Contains(lower, "<!-- agent-net:end -->") || markers.Neutralize(notices) != notices {
+				return nil, fmt.Errorf("guidance contains an agent-net marker")
+			}
 		}
 		if d.Type == "text" {
 			found := map[string]bool{}

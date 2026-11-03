@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"regexp"
+	"github.com/niparis/agent-net/internal/markers"
 	"strings"
 )
 
@@ -69,14 +69,14 @@ func authorityNote(trusted, worker bool, rule string) string {
 	return PeerCheckNote
 }
 
-var markerRE = regexp.MustCompile(`(?i)\[(\s*)agent-net`)
+var markerRE = markers.Pattern
 
 // NeutralizeMarkers breaks the "[agent-net" marker in a message body, so a
 // sender cannot write a line that looks like agent-net's own framing (for
 // example a forged "message from your user" or a forged trust note). It puts a
 // zero width space after the bracket. The text stays readable.
 func NeutralizeMarkers(body string) string {
-	return markerRE.ReplaceAllString(body, "[​${1}agent-net")
+	return markers.Neutralize(body)
 }
 
 // MaxExpertiseLen is the longest expertise line, in characters.

@@ -41,8 +41,11 @@ current value and leaves the whole batch unchanged. Advice changes and advice
 undo by the CTO apply immediately. Rules require an owner proposal, even in the
 graph owner window. The owner uses the TUI or owner-gated `settings_write` and
 `settings_undo` operator calls. A snapshot updates managed guidance files on
-each machine. Definitions marked not live are visible but do not yet control the
-old behavior; later build steps switch their readers and writers.
+each machine. The Settings view names online daemons older than v0.4.117,
+the first release with settings sync, and separately names machines whose version
+cannot establish support. Their settings updates may not reach them. Definitions
+marked not live are visible but do not yet control the old behavior; later build
+steps switch their readers and writers.
 
 Delivery values live in the embedded recipe and gateway settings tables. The
 moved node settings are `delivery.tests_before_merge`,
@@ -55,8 +58,9 @@ network merge authority. Text and worker delivery settings appear under
 `delivery.delegated_approver_modes`. Branch prefix changes apply to new workers;
 a resumed worker keeps its recorded branch. Cleanup may leave worktrees made
 with an older custom prefix for the owner to inspect. The worker sandbox and
-project policies stay where they are until the worker settings step. Older daemons and extensions use their
-built-in merge text until upgraded, even when the authority value has synced.
+project policies stay where they are until the worker settings step. Older
+daemons and extensions use their built-in merge text until upgraded, even when
+the authority value has synced.
 
 On first upgrade, the gateway copies old node setting rows into settings in one
 transaction and records their cutover. The old rows stay as a backup. An older

@@ -15,7 +15,15 @@ replacing a newer value.
 The gateway trusts the authenticated daemon's actor label, as for graph writes.
 An enrolled machine token can therefore assert owner authority. A compromised
 enrolled machine can change rules; revoke its token if control is lost. The
-gateway checks the actor class, address, value and bound in its transaction.
+gateway requires a known settings actor label for `settings.write`,
+`settings.validate` and `settings.undo`, and checks its class, address, value
+and bound in its transaction. Those frames reject missing and unknown labels.
+The older `node.settings.set` frame may omit the label for compatibility with
+older daemons and is then treated as owner, as before. If it supplies a label
+for a moved setting, the label must be valid. Current daemons send it explicitly.
+A settings proposal is validated against the current state before it is stored
+and again on approval. Guidance values cannot contain managed-block or
+agent-net notice markers.
 
 ## Gateway exposure
 

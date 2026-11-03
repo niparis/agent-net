@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -36,12 +37,12 @@ func TestDeliveryCutoverMigratesLegacyRows(t *testing.T) {
 			continue
 		}
 		names := map[string]string{protocol.SettingTestsBeforeMerge: "delivery.tests_before_merge", protocol.SettingMergeAuthority: "delivery.merge_authority", protocol.SettingJudgeConsumers: "charter.judge_consumers", protocol.SettingDeployRule: "delivery.deploy_rule", protocol.SettingAutonomy: "charter.autonomy_mode"}
-		var raw, cause string
-		err := s.db.QueryRow(`SELECT v.value,h.cause FROM setting_values v JOIN setting_history h ON h.revision=v.revision AND h.key=v.key AND h.scope=v.scope WHERE v.key=? AND v.level='repo' AND v.scope='alpha'`, names[key]).Scan(&raw, &cause)
+		var raw, cause, actor string
+		err := s.db.QueryRow(`SELECT v.value,h.cause,h.actor FROM setting_values v JOIN setting_history h ON h.revision=v.revision AND h.key=v.key AND h.scope=v.scope WHERE v.key=? AND v.level='repo' AND v.scope='alpha'`, names[key]).Scan(&raw, &cause, &actor)
 		var got string
 		_ = json.Unmarshal([]byte(raw), &got)
-		if err != nil || got != value || cause != "cutover" {
-			t.Errorf("%s migrated: %q %q %v", key, got, cause, err)
+		if err != nil || got != value || cause != "cutover" || actor != settingsCutoverActor {
+			t.Errorf("%s migrated: %q %q %q %v", key, got, cause, actor, err)
 		}
 	}
 }
@@ -197,6 +198,48 @@ func TestDeliveryAdaptersMatchMaturityFixtures(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+		}
+	}
+}
+
+func TestDeliveryCutoverActorIsRecognizedButCannotWrite(t *testing.T) {
+	const cutoverActor = "agent-net cutover"
+	if !settingsActor(cutoverActor) {
+		t.Fatal("cutover history actor is not recognized")
+	}
+	for _, kind := range []string{"advice", "rule"} {
+		if actorAllowed(cutoverActor, kind) {
+			t.Fatalf("cutover actor can write %s", kind)
+		}
+	}
+	s, _ := newTestStore(t)
+	change := SettingsChange{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: json.RawMessage(`"test"`)}
+	if _, err := s.WriteSettings([]SettingsChange{change}, cutoverActor, "spoofed cutover"); err == nil {
+		t.Fatal("cutover actor wrote through settings API")
+	}
+}
+
+func TestDeliveryNodeSettingsFrameActorCompatibility(t *testing.T) {
+	s, _ := newTestStore(t)
+	if err := s.AddArchitect("alpha", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	g := &Gateway{store: s}
+	ctx := context.Background()
+	for _, actor := range []string{"", "agent", "agent-net cutover", "owner (CTO proposal p_bad)"} {
+		raw, _ := json.Marshal(map[string]any{"node": "alpha", "setting": "merge_authority", "value": "ask", "by": actor})
+		if _, err := g.handle(ctx, &nodeConn{}, "node.settings.set", raw); err == nil {
+			t.Errorf("accepted actor %q", actor)
+		}
+	}
+	for _, raw := range []string{`{"node":"alpha","setting":"merge_authority","value":"ask","by":null}`, `{"node":"alpha","setting":"merge_authority","value":"ask","by":7}`} {
+		if _, err := g.handle(ctx, &nodeConn{}, "node.settings.set", []byte(raw)); err == nil {
+			t.Errorf("accepted invalid actor in %s", raw)
+		}
+	}
+	for _, raw := range []string{`{"node":"alpha","setting":"merge_authority","value":"ask"}`, `{"node":"alpha","setting":"merge_authority","value":"full","by":"owner"}`} {
+		if _, err := g.handle(ctx, &nodeConn{}, "node.settings.set", []byte(raw)); err != nil {
+			t.Fatalf("legacy/owner frame %s: %v", raw, err)
 		}
 	}
 }

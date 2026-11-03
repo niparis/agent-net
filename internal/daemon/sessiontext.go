@@ -703,6 +703,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		delete(p, "by")
 		if actor := proposalActor(ctx); actor != "" {
 			p["by"] = actor
+		} else if method == protocol.OpNodeSettingsSet {
+			p["by"] = "owner"
 		}
 		var params any = p
 		var q protocol.GraphUndoRequest

@@ -170,3 +170,28 @@ func TestDeliverySafetyValues(t *testing.T) {
 		}
 	}
 }
+
+func TestGuidanceRejectsControlMarkers(t *testing.T) {
+	markers := []string{"<!-- agent-net:begin -->", "<!-- agent-net:end -->", "[agent-net]", "[ AGENT-NET]", "[agent-net worker notice]", "[agent-net checklist]"}
+	for _, marker := range markers {
+		t.Run(marker, func(t *testing.T) {
+			recipe := strings.Replace(string(StandardYAML()), "Other coding agents run on my machines", marker+" Other coding agents run on my machines", 1)
+			if _, err := Load([]byte(recipe)); err == nil {
+				t.Error("loader accepted marker")
+			}
+			for _, d := range Standard().Definitions {
+				if !strings.HasPrefix(d.Key, "guidance.") {
+					continue
+				}
+				text := marker
+				for _, slot := range d.Slots {
+					text += " {{" + slot + "}}"
+				}
+				b, _ := json.Marshal(text)
+				if _, err := d.Codec(b); err == nil {
+					t.Errorf("%s accepted marker", d.Key)
+				}
+			}
+		})
+	}
+}

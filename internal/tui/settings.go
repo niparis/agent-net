@@ -424,6 +424,19 @@ func (m Model) settingsView(w, h int) []string {
 	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Change network values and review their history."}
 	items := m.settingsItems()
 	selected := min(max(m.settingsRow, 0), len(items)-1)
+	if items[selected].section == 6 {
+		old, unknown := m.settingsSyncMachines()
+		if len(old) > 0 {
+			for _, line := range wrap("Settings updates may not reach old daemons: "+strings.Join(old, ", "), max(w-2, 1)) {
+				out = append(out, lipgloss.NewStyle().Foreground(roleWarning).Render(clip("  "+line, w)))
+			}
+		}
+		if len(unknown) > 0 {
+			for _, line := range wrap("Settings sync support unknown: "+strings.Join(unknown, ", "), max(w-2, 1)) {
+				out = append(out, lipgloss.NewStyle().Foreground(roleWarning).Render(clip("  "+line, w)))
+			}
+		}
+	}
 	var body []string
 	selectedLine := 0
 	selectedEnd := 0
@@ -491,7 +504,7 @@ func (m Model) settingsView(w, h int) []string {
 	if m.apps.err != "" {
 		body = append(body, lipgloss.NewStyle().Foreground(roleWarning).Render(clip("  "+sanitize(m.apps.err), w)))
 	}
-	room := max(h-1, 1)
+	room := max(h-len(out), 1)
 	start := 0
 	if selectedEnd >= room {
 		start = min(selectedLine, selectedEnd-room+1)
@@ -663,4 +676,58 @@ func (m Model) settingUndoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// The settings snapshot first shipped in v0.4.117. Unparseable and development
+// versions do not prove support and are shown separately from older releases.
+func settingsSyncVersion(v string) (old, unknown bool) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if v == "" || v == "dev" {
+		return false, true
+	}
+	base := v
+	pre := false
+	if i := strings.IndexByte(base, '+'); i >= 0 {
+		base = base[:i]
+	}
+	if i := strings.IndexByte(base, '-'); i >= 0 {
+		base = base[:i]
+		pre = true
+	}
+	parts := strings.Split(base, ".")
+	if len(parts) != 3 {
+		return false, true
+	}
+	numbers := [3]int{}
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 || part == "" {
+			return false, true
+		}
+		numbers[i] = n
+	}
+	first := [3]int{0, 4, 117}
+	for i := range first {
+		if numbers[i] != first[i] {
+			return numbers[i] < first[i], false
+		}
+	}
+	return false, pre
+}
+func (m Model) settingsSyncMachines() (old, unknown []string) {
+	for _, n := range m.snap.Nodes {
+		if !n.Online {
+			continue
+		}
+		older, unsure := settingsSyncVersion(n.Version)
+		name := sanitize(firstNonEmpty(n.Hostname, firstNonEmpty(n.Reported, n.NodeID)))
+		if older {
+			old = append(old, name)
+		} else if unsure {
+			unknown = append(unknown, name)
+		}
+	}
+	sort.Strings(old)
+	sort.Strings(unknown)
+	return old, unknown
 }

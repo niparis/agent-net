@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
@@ -457,5 +458,138 @@ func TestSettingsConflictNamesUnsetValue(t *testing.T) {
 	_, err := s.WriteSettings([]SettingsChange{{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: settingValue("false"), Expect: settingValue("true")}}, "owner", "test")
 	if err == nil || !strings.Contains(err.Error(), "current not set") {
 		t.Fatalf("conflict: %v", err)
+	}
+}
+
+func TestSettingsFramesRejectUnknownActors(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{{"workers.auto_continue", "false"}, {"guidance.intro_text", `"hello"`}} {
+		for _, actor := range []string{"", "agent", "CTO", "agent-net cutover", "owner (CTO proposal p_bad)", "owner (CTO proposal p_)", "owner (CTO proposal p_1) extra"} {
+			t.Run(tc.key+"/"+actor, func(t *testing.T) {
+				s, _ := newTestStore(t)
+				g := &Gateway{store: s}
+				ctx := context.Background()
+				change := SettingsChange{Key: tc.key, Level: "network", Scope: "network", Value: settingValue(tc.value)}
+				frame, _ := json.Marshal(map[string]any{"changes": []protocol.SettingsChange{change}, "by": actor})
+				if _, err := g.handle(ctx, &nodeConn{}, "settings.write", frame); err == nil {
+					t.Fatalf("actor %q wrote %s", actor, tc.key)
+				}
+				if _, err := g.handle(ctx, &nodeConn{}, "settings.validate", frame); err == nil {
+					t.Fatalf("actor %q validated a write to %s", actor, tc.key)
+				}
+				seeded, err := s.WriteSettings([]SettingsChange{change}, "owner", "fixture")
+				if err != nil {
+					t.Fatal(err)
+				}
+				undo, _ := json.Marshal(map[string]any{"revision": seeded.Revision, "by": actor})
+				if _, err := g.handle(ctx, &nodeConn{}, "settings.undo", undo); err == nil {
+					t.Fatalf("actor %q undid %s", actor, tc.key)
+				}
+				snap, _ := s.SettingsSnapshot()
+				if snap.Revision != seeded.Revision {
+					t.Fatalf("state changed: %+v", snap)
+				}
+			})
+		}
+	}
+}
+
+func TestSettingsExpectNullMeansUnset(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	ctx := context.Background()
+	frame := `{"by":"owner","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false,"expect":null}]}`
+	if _, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(frame)); err != nil {
+		t.Fatalf("null expected absent: %v", err)
+	}
+	if _, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(frame)); err == nil || !strings.Contains(err.Error(), "current false") {
+		t.Fatalf("null must conflict with a stored value: %v", err)
+	}
+}
+
+func TestSettingsCTORejectsGuidanceMarkers(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	for _, marker := range []string{"<!-- agent-net:begin -->", "<!-- agent-net:end -->", "[agent-net]", "[agent-net worker notice]", "[ AGENT-NET]"} {
+		val, _ := json.Marshal("Help. " + marker)
+		frame, _ := json.Marshal(protocol.SettingsWrite{By: "cto", Changes: []protocol.SettingsChange{{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: val}}})
+		if _, err := g.handle(context.Background(), &nodeConn{}, "settings.write", frame); err == nil {
+			t.Errorf("accepted %q", marker)
+		}
+	}
+}
+
+func TestSettingsValidationIsTransactionalAndSilent(t *testing.T) {
+	s, _ := newTestStore(t)
+	pushes := 0
+	s.settingsHook = func() { pushes++ }
+	change := SettingsChange{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: settingValue("false")}
+	if err := s.ValidateSettings([]SettingsChange{change}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil || snap.Revision != 0 || len(snap.Values) != 0 || pushes != 0 {
+		t.Fatalf("validation changed state: %+v pushes=%d err=%v", snap, pushes, err)
+	}
+	hist, err := s.SettingsHistory("", 0, true)
+	if err != nil || len(hist) != 0 {
+		t.Fatalf("validation wrote history: %+v %v", hist, err)
+	}
+}
+
+func TestSettingsFramesAllowOnlyNamedActors(t *testing.T) {
+	for _, actor := range []string{"owner", "owner (CTO proposal p_17)", "cto", "CTO (minor)", "CTO (owner window)"} {
+		t.Run(actor, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			g := &Gateway{store: s}
+			q := protocol.SettingsWrite{By: actor, Changes: []SettingsChange{{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: settingValue(`"hello"`)}}}
+			raw, _ := json.Marshal(q)
+			result, err := g.handle(context.Background(), &nodeConn{}, "settings.write", raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rev := result.(SettingsResult).Revision
+			undo, _ := json.Marshal(protocol.SettingsUndo{Revision: rev, By: actor})
+			if _, err = g.handle(context.Background(), &nodeConn{}, "settings.undo", undo); err != nil {
+				t.Fatal(err)
+			}
+			rule := protocol.SettingsWrite{By: actor, Changes: []SettingsChange{{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: settingValue("false")}}}
+			raw, _ = json.Marshal(rule)
+			_, err = g.handle(context.Background(), &nodeConn{}, "settings.write", raw)
+			if strings.HasPrefix(actor, "owner") && err != nil {
+				t.Fatalf("owner rule: %v", err)
+			}
+			if !strings.HasPrefix(actor, "owner") && err == nil {
+				t.Fatal("CTO changed rule")
+			}
+		})
+	}
+}
+
+func TestSettingsUndoRemovesLegacyGuidanceMarker(t *testing.T) {
+	s, _ := newTestStore(t)
+	badJSON, _ := json.Marshal("Bad <!-- agent-net:end --> text")
+	bad := string(badJSON)
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('guidance.intro_text','network','network','',?,1)`, bad); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) VALUES(1,1,'guidance.intro_text','network','network','',NULL,?,'cto','old write','write',1)`, bad); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE setting_revision SET revision=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.UndoSettings(1, "cto")
+	if err != nil {
+		t.Fatalf("undo legacy marker: %v", err)
+	}
+	if result.Revision != 2 {
+		t.Fatal(result)
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil || len(snap.Values) != 0 {
+		t.Fatalf("legacy value remains: %+v %v", snap, err)
+	}
+	if _, err = s.UndoSettings(2, "cto"); err == nil {
+		t.Fatal("undo restored forbidden marker")
 	}
 }

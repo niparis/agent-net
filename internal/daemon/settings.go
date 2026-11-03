@@ -172,9 +172,11 @@ func validateSettingsWrite(q protocol.SettingsWrite) (bool, error) {
 	if len(q.Changes) == 0 {
 		return false, fmt.Errorf("changes required")
 	}
+	recipe := settings.Standard()
+	seen := map[[4]string]bool{}
 	rule := false
 	for _, c := range q.Changes {
-		def, ok := settings.Standard().Definition(c.Key)
+		def, ok := recipe.Definition(c.Key)
 		if !ok {
 			return false, fmt.Errorf("unknown setting %s", c.Key)
 		}
@@ -184,9 +186,23 @@ func validateSettingsWrite(q protocol.SettingsWrite) (bool, error) {
 		if def.Kind == "rule" {
 			rule = true
 		}
-		if c.Expect != nil {
-			if _, err := def.Codec(c.Expect); err != nil {
-				return false, err
+		allowed := false
+		for _, level := range def.Levels {
+			if level == c.Level {
+				allowed = true
+			}
+		}
+		if c.Item != "" || (c.Level != "network" && c.Level != "repo") || !allowed || (c.Level == "network" && c.Scope != "network") || (c.Level == "repo" && c.Scope == "") {
+			return false, fmt.Errorf("invalid setting address")
+		}
+		address := [4]string{c.Key, c.Level, c.Scope, c.Item}
+		if seen[address] {
+			return false, fmt.Errorf("duplicate setting address")
+		}
+		seen[address] = true
+		if c.Expect != nil && !bytes.Equal(bytes.TrimSpace(c.Expect), []byte("null")) {
+			if _, err := def.CodecExpected(c.Expect); err != nil {
+				return false, fmt.Errorf("invalid expected value: %w", err)
 			}
 		}
 		if c.Delete {

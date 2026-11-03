@@ -87,7 +87,11 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 		if err := json.Unmarshal(call.Args, &q); err != nil {
 			return err
 		}
-		_, err := validateSettingsWrite(q)
+		if _, err := validateSettingsWrite(q); err != nil {
+			return err
+		}
+		q.By = "owner"
+		_, err := d.call(ctx, "settings.validate", q)
 		return err
 	case "settings_values_undo":
 		var q protocol.SettingsUndo

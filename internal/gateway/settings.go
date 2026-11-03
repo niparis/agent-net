@@ -89,11 +89,39 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	rows.Close()
 	return out, err
 }
-func actorAllowed(actor, kind string) bool {
-	if actor == "owner" || strings.HasPrefix(actor, "owner (CTO proposal ") && strings.HasSuffix(actor, ")") {
+
+// settingsCutoverActor identifies an internal migration in history. It is
+// recognized here for attribution but is never authorized for settings writes.
+const settingsCutoverActor = "agent-net cutover"
+
+func settingsActor(actor string) bool {
+	switch actor {
+	case "owner", "cto", "CTO (minor)", "CTO (owner window)", settingsCutoverActor:
 		return true
 	}
-	return kind == "advice" && (actor == "cto" || actor == "CTO (minor)" || actor == "CTO (owner window)")
+	const prefix = "owner (CTO proposal p_"
+	if !strings.HasPrefix(actor, prefix) || !strings.HasSuffix(actor, ")") {
+		return false
+	}
+	n := strings.TrimSuffix(strings.TrimPrefix(actor, prefix), ")")
+	return n != "" && strings.Trim(n, "0123456789") == ""
+}
+func actorAllowed(actor, kind string) bool {
+	if !settingsActor(actor) || actor == settingsCutoverActor {
+		return false
+	}
+	return actor == "owner" || strings.HasPrefix(actor, "owner (CTO proposal p_") || kind == "advice"
+}
+
+// ValidateSettings checks a batch against current state without committing it.
+func (s *Store) ValidateSettings(changes []SettingsChange, actor string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = s.writeSettingsTx(tx, changes, actor, "", "write", nil)
+	return err
 }
 func (s *Store) WriteSettings(changes []SettingsChange, actor, reason string) (SettingsResult, error) {
 	return s.writeSettings(changes, actor, reason, "write", nil)
@@ -151,8 +179,8 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		seen[a] = true
 		old := current[a]
 		var expect json.RawMessage
-		if c.Expect != nil {
-			expect, err = d.Codec(c.Expect)
+		if c.Expect != nil && !bytes.Equal(bytes.TrimSpace(c.Expect), []byte("null")) {
+			expect, err = d.CodecExpected(c.Expect)
 			if err != nil {
 				// A broken legacy value can still be compared and repaired,
 				// but only by a writer that saw its exact stored bytes.

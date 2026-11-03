@@ -1373,13 +1373,25 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || len(p.Changes) == 0 {
 			return nil, reject("bad settings.write")
 		}
-		return st.WriteSettings(p.Changes, graphActor(raw), p.Reason)
+		if !settingsActor(p.By) {
+			return nil, reject("invalid settings actor")
+		}
+		return st.WriteSettings(p.Changes, p.By, p.Reason)
+	case "settings.validate":
+		p, err := decode[protocol.SettingsWrite](raw)
+		if err != nil || len(p.Changes) == 0 || !settingsActor(p.By) {
+			return nil, reject("bad settings.validate")
+		}
+		return nil, st.ValidateSettings(p.Changes, p.By)
 	case "settings.undo":
 		p, err := decode[protocol.SettingsUndo](raw)
 		if err != nil || p.Revision <= 0 {
 			return nil, reject("bad settings.undo")
 		}
-		return st.UndoSettings(p.Revision, graphActor(raw))
+		if !settingsActor(p.By) {
+			return nil, reject("invalid settings actor")
+		}
+		return st.UndoSettings(p.Revision, p.By)
 	case "settings.history":
 		p, err := decode[struct {
 			Key      string `json:"key"`
@@ -1401,7 +1413,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || p.Node == "" || p.Setting == "" {
 			return nil, reject("bad node.settings.set")
 		}
-		if err := st.SetNodeSetting(p.Node, p.Setting, p.Value, graphActor(raw)); err != nil {
+		actor := graphActor(raw)
+		if _, moved := deliveryNodeKeys[p.Setting]; moved {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				return nil, reject("bad node.settings.set")
+			}
+			// Old daemons omitted by. If it is present, it must be a known
+			// settings writer, never an implicit owner or the cutover actor.
+			if supplied, ok := fields["by"]; ok {
+				actor = ""
+				if err := json.Unmarshal(supplied, &actor); err != nil || !settingsActor(actor) || actor == settingsCutoverActor {
+					return nil, reject("invalid settings actor")
+				}
+			}
+		}
+		if err := st.SetNodeSetting(p.Node, p.Setting, p.Value, actor); err != nil {
 			return nil, err
 		}
 		return st.NodeSettings(p.Node)

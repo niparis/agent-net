@@ -3,6 +3,7 @@ package agentfiles
 import (
 	"encoding/json"
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/internal/settings"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,5 +127,39 @@ func TestAntigravityUninstallChangedGuidance(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("managed file remains: %v", err)
+	}
+}
+
+func TestAntigravityPreservesTextAcrossGuidanceRefreshAndUninstall(t *testing.T) {
+	h := fakeHome(t)
+	if err := os.Mkdir(filepath.Join(h, ".gemini"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if r := SyncAntigravity("/tmp/agent-net"); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	path := filepath.Join(AntigravityPluginDir(), "rules", "AGENTS.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("\n# Personal\nKeep this.\n")...)
+	if err = os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	snap := settings.Snapshot{Values: []settings.Value{{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: json.RawMessage(`"Changed introduction."`)}}}
+	if r := syncAntigravity("/tmp/agent-net", snap); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(got), "Changed introduction.") || !strings.Contains(string(got), "# Personal\nKeep this.") {
+		t.Fatalf("refresh lost text: %s %v", got, err)
+	}
+	if err = RemoveAntigravity(); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(path)
+	if err != nil || strings.Contains(string(got), guidance.Begin) || !strings.Contains(string(got), "# Personal\nKeep this.") {
+		t.Fatalf("uninstall did not preserve personal text: %s %v", got, err)
 	}
 }

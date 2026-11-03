@@ -1,15 +1,20 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/niparis/agent-net/internal/agentfiles"
+	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/settings"
 )
@@ -287,4 +292,90 @@ func TestSettingsDeliveryRuleCTOProposesOwnerApplies(t *testing.T) {
 	if string(e.Value) != `"ask"` {
 		t.Fatalf("owner approval did not apply: %s", e.Value)
 	}
+}
+
+func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	invalid := []string{
+		`[{"key":"delivery.merge_authority","level":"team","scope":"alpha","value":"ask"}]`,
+		`[{"key":"delivery.merge_authority","level":"repo","scope":"","value":"ask"}]`,
+		`[{"key":"delivery.merge_authority","level":"network","scope":"other","value":"ask"}]`,
+		`[{"key":"workers.auto_continue","level":"repo","scope":"alpha","value":false}]`,
+		`[{"key":"delivery.merge_authority","level":"network","scope":"network","item":"x","value":"ask"}]`,
+		`[{"key":"delivery.merge_authority","level":"network","scope":"network","delete":true,"value":"ask"}]`,
+		`[{"key":"delivery.merge_authority","level":"network","scope":"network"}]`,
+		`[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"ask","expect":true}]`,
+		`[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"ask"},{"key":"delivery.merge_authority","level":"network","scope":"network","value":"full"}]`,
+		`[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"ask"},{"key":"delivery.merge_authority","level":"repo","scope":"alpha","value":"full"}]`,
+		`[{"key":"workers.auto_continue","level":"network","scope":"network","value":false,"expect":true}]`,
+	}
+	for _, changes := range invalid {
+		raw := json.RawMessage(`{"area":"values_write","changes":` + changes + `}`)
+		if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err == nil {
+			t.Errorf("accepted %s", changes)
+		}
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 0 {
+		t.Fatalf("invalid proposal saved: %+v %v", items, err)
+	}
+	snap, err := g.gw.Store().SettingsSnapshot()
+	if err != nil || snap.Revision != 0 {
+		t.Fatalf("validation changed settings: %+v %v", snap, err)
+	}
+	valid := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false,"expect":null}]}`)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", valid); err != nil {
+		t.Fatalf("null expected absent: %v", err)
+	}
+	items, err = n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposal: %+v %v", items, err)
+	}
+	if err = n.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSettingsGuidanceUndoPreservesAntigravityAcrossStart(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	if err := os.Mkdir(filepath.Join(home, ".gemini"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if r := agentfiles.SyncAntigravity("/tmp/agent-net-test"); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	path := filepath.Join(agentfiles.AntigravityPluginDir(), "rules", "AGENTS.md")
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original = append(original, []byte("\n# Personal\nLeave this alone.\n")...)
+	if err = os.WriteFile(path, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.RefreshAgentFiles = agentfiles.SyncAndLogWithSnapshot }})
+	got, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, original) {
+		t.Fatalf("startup lost text: %s %v", got, err)
+	}
+	val, _ := json.Marshal("Changed intro.")
+	result, err := g.gw.Store().WriteSettings([]gateway.SettingsChange{{Key: "guidance.intro_text", Level: "network", Scope: "network", Value: val}}, "cto", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "changed guidance", func() bool {
+		b, _ := os.ReadFile(path)
+		return strings.Contains(string(b), "Changed intro.") && strings.Contains(string(b), "# Personal")
+	})
+	if _, err = g.gw.Store().UndoSettings(result.Revision, "cto"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "restored guidance", func() bool { b, _ := os.ReadFile(path); return bytes.Equal(b, original) })
+	_ = n
 }
