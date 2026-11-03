@@ -75,6 +75,7 @@ func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessag
 
 func (l *link) readLoop(ctx context.Context, d *Daemon) {
 	defer close(l.dead)
+	firstSettings := true
 	for {
 		_, raw, err := l.health.Read(ctx, l.ws)
 		if err != nil {
@@ -183,6 +184,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 		case "node.skill_bundle":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onSkillBundle(ctx, l, h, raw) }()
+		case "settings.sync":
+			if err := d.acceptSettingsSnapshot(raw, firstSettings); err == nil {
+				firstSettings = false
+			} else if d.log != nil {
+				d.log.Printf("settings sync: %v", err)
+			}
 		case "mcp.sync", "mcp.probe", "mcp.invoke", "mcp.changed":
 			d.wg.Add(1)
 			go func() {

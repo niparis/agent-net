@@ -33,6 +33,8 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
+	settingsHookMu    sync.RWMutex
+	settingsHook      func()
 	qualityMu         sync.Mutex
 	quality           protocol.QualityAnalysis
 	qualityFit        qualityFit
@@ -606,6 +608,25 @@ SELECT 1 /* worker picker note */;
 SELECT 1 /* worker caller column */;
 `, `
 CREATE TABLE IF NOT EXISTS delivery_retries (message_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL, next_at INTEGER NOT NULL);
+`, `
+CREATE TABLE IF NOT EXISTS setting_revision (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL CHECK (revision >= 0));
+INSERT OR IGNORE INTO setting_revision VALUES (1, 0);
+CREATE TABLE IF NOT EXISTS setting_values (
+ key TEXT NOT NULL, level TEXT NOT NULL CHECK (level IN ('network', 'team', 'repo', 'agent')),
+ scope TEXT NOT NULL, item TEXT NOT NULL DEFAULT '', value TEXT NOT NULL CHECK (json_valid(value)),
+ revision INTEGER NOT NULL, PRIMARY KEY (key, level, scope, item),
+ CHECK (level <> 'network' OR scope = 'network'));
+CREATE TABLE IF NOT EXISTS setting_history (
+ revision INTEGER NOT NULL, seq INTEGER NOT NULL, key TEXT NOT NULL, level TEXT NOT NULL,
+ scope TEXT NOT NULL, item TEXT NOT NULL DEFAULT '', old_value TEXT, new_value TEXT,
+ actor TEXT NOT NULL, reason TEXT NOT NULL,
+ cause TEXT NOT NULL CHECK (cause IN ('write', 'parent', 'undo', 'release', 'cutover')),
+ undo_of INTEGER, at INTEGER NOT NULL, PRIMARY KEY (revision, seq),
+ CHECK (old_value IS NOT NULL OR new_value IS NOT NULL));
+CREATE TRIGGER IF NOT EXISTS setting_history_no_update BEFORE UPDATE ON setting_history
+BEGIN SELECT RAISE(ABORT, 'setting history is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS setting_history_no_delete BEFORE DELETE ON setting_history
+BEGIN SELECT RAISE(ABORT, 'setting history is append-only'); END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

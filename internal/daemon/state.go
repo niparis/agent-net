@@ -40,6 +40,7 @@ func openState(dir string) (*state, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`
 CREATE TABLE IF NOT EXISTS notification_sent (session_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS settings_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), received_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS owner_preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_network (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);

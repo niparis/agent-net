@@ -70,6 +70,11 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
+	var settingsRevisionBefore int64
+	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionBefore); err != nil {
+		return err
+	}
+
 	now := s.now().UnixNano()
 	query := `SELECT l.id,l.node,l.field,l.edge_kind,l.kind,l.phrase,l.severity,COALESCE(d.origin,''),COALESCE(p.raw_phrase,l.phrase) FROM learned_suggestions l LEFT JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=?`
 	if s.phraseCleaner != nil {
@@ -205,5 +210,20 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	var settingsRevisionAfter int64
+	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionAfter); err != nil {
+		return err
+	}
+	if settingsRevisionAfter > settingsRevisionBefore+1 {
+		if _, err = tx.Exec(`UPDATE setting_revision SET revision=? WHERE id=1`, settingsRevisionBefore+1); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if settingsRevisionAfter != settingsRevisionBefore {
+		s.settingsNotify()
+	}
+	return nil
 }

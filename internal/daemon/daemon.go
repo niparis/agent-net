@@ -22,6 +22,7 @@ import (
 	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/repoinfo"
+	"github.com/niparis/agent-net/internal/settings"
 	"github.com/niparis/agent-net/internal/usage"
 )
 
@@ -239,6 +240,8 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	settingsMu          sync.Mutex
+	settingsSnapshot    atomic.Pointer[settings.Snapshot]
 	agyEvents           map[string]antigravityEvent // guarded by mu
 	ctoGraph            ctoGraphWindow
 	operatorReads       operatorReadCache
@@ -445,6 +448,10 @@ func New(cfg Config) (*Daemon, error) {
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]chan struct{}{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
+	if err := d.loadSettingsSnapshot(); err != nil {
+		st.close()
+		return nil, err
+	}
 	d.inSession = d.insideSession
 	d.ctoNow = time.Now
 	d.ctoCompactEvery = time.Second
