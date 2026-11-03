@@ -502,11 +502,30 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 `tools_import` copies a skill from a machine to the gateway. Only an owner connection can ask for it. Review the files for secrets first, because this is the one step that sends skill contents.
 
 - The gateway checks the observed hash, so a skill that changed after its scan is rejected. It rejects traversal, escaping links, special files and bundles over 2 MiB or 2,048 entries.
+- Before storing an import, the gateway checks regular file contents with its common-secret recognizer. A recognized secret refuses the import without showing its value. This is a best-effort check, not proof that a skill is free of secrets.
 - The skill goes into `skills.git` in the gateway data directory: a private bare Git repository, mode 0700. SQLite keeps the item ID, content hash, commit and source. Nothing is pushed anywhere.
 - Git keeps history. A later version that drops a secret does not erase it from earlier commits. Anyone who can read the data directory or a backup can read these contents.
 - `gateway_backup` holds a consistent database snapshot, the skill repository, the CA key and the server key. The folder and its files are owner-only. Treat a backup like the gateway data. Restore writes only to a new directory and checks SQLite, Git objects and every saved skill hash before it finishes.
 
 ### Plans, copies and ownership
+
+Project skill switches and the new-projects setting use the owner gate at both
+the operator socket and gateway. The CTO can propose them through the same
+owner approval path as an assignment plan. An unmanaged switch imports first,
+using the same bundle, hash, size and secret checks. Its assignment names only
+the machines with observed copies, so migration cannot deploy it to a new
+machine. Plugin, package and system sources remain read-only.
+
+The gateway may create and apply a skill plan with actor `standing choice`
+when it first learns a project. This only adds the new project to an existing
+project assignment whose owner set new-projects on. It keeps the assignment's
+machine limits, content version and existing off choices. It cannot import a
+new version, turn an existing project on, or broaden the machine list. Global
+items need no automatic plan. The ordinary snapshot, conflict, backup, journal,
+reconciliation and undo rules still apply. Incoming daemon frames cannot claim
+the `standing choice` actor. The setting defaults on for existing global skills
+and off for other assignments. Failed automatic plans leave the new project
+eligible for retry on a later discovery report.
 
 A plan changes nothing. It lists the machines, harnesses, checkouts, sources, destinations and conflicts, and binds to the inventory, the known projects, the item versions and the desired revisions. An out-of-date plan is refused. Destination checks use a bounded fingerprint, locally keyed, so the plan carries no file contents. Incomplete scans, opaque sources and offline paths are conflicts. An apply records the desired state as pending. It does not claim that a file changed. A target stays `pending` until the machine reports.
 

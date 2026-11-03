@@ -62,16 +62,17 @@ type Options struct {
 }
 
 type Gateway struct {
-	publicMu     sync.Mutex
-	publicURLMu  sync.RWMutex
-	publicURL    string
-	public       protocol.AppsPublicStatus
-	publicServer *http.Server
-	publicAddr   string
-	limiter      *ratelimit.Limiter
-	opts         Options
-	store        *Store
-	skillsMu     sync.Mutex
+	publicMu        sync.Mutex
+	publicURLMu     sync.RWMutex
+	publicURL       string
+	public          protocol.AppsPublicStatus
+	publicServer    *http.Server
+	publicAddr      string
+	limiter         *ratelimit.Limiter
+	opts            Options
+	store           *Store
+	skillsMu        sync.Mutex
+	skillProjectsMu sync.Mutex
 	// importMu serializes MCP imports, so two applies cannot race on a name.
 	importMu sync.Mutex
 	skills   *skillStore
@@ -515,7 +516,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
+		if h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -604,6 +605,17 @@ func decode[T any](raw []byte) (T, error) {
 
 func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	st := g.store
+	if typ == "session.sync" || typ == "session.upsert" || typ == "project.add" {
+		// Freeze defaults before discovery so existing off cells stay off.
+		if _, err := st.ToolProjectStates(); err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := g.addNewSkillProjects(ctx); err != nil {
+				g.logLine("skills.standing_choice.refused", "error", err)
+			}
+		}()
+	}
 	switch typ {
 	case "cto.session.register":
 		p, err := decode[struct {
@@ -695,6 +707,34 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, nil
 
+	case "tools.toggle":
+		p, err := decode[struct {
+			protocol.ToolToggleRequest
+			Actor string `json:"actor"`
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.toggleTool(ctx, p.ToolToggleRequest, p.Actor)
+	case "tools.new_projects":
+		p, err := decode[struct {
+			protocol.ToolNewProjectsRequest
+			Actor string `json:"actor"`
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.setToolNewProjects(ctx, p.ToolNewProjectsRequest, p.Actor)
+	case "query.tools_projects":
+		p, err := decode[struct {
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return st.ToolProjectStates()
 	case "tools.plan":
 		p, err := decode[struct {
 			protocol.ToolPlanRequest

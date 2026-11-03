@@ -133,6 +133,18 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		p.Owner = q.Owner
 		p.SessionID = ""
 		return g.mcpCall(ctx, nc, p, true)
+	case "tools_toggle":
+		var p protocol.ToolToggleRequest
+		if err := json.Unmarshal(q.Args, &p); err != nil {
+			return nil, err
+		}
+		return g.toggleTool(ctx, p, "owner")
+	case "tools_new_projects":
+		var p protocol.ToolNewProjectsRequest
+		if err := json.Unmarshal(q.Args, &p); err != nil {
+			return nil, err
+		}
+		return g.setToolNewProjects(ctx, p, "owner")
 	case "tools_plan":
 		var p protocol.ToolPlanRequest
 		if err := json.Unmarshal(q.Args, &p); err != nil {

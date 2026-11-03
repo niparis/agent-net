@@ -539,7 +539,7 @@ func (d *Daemon) recordCTOAction(text string) error {
 // These allowlists are reachable only from ctoTool's process-tree check.
 var ctoOwnerMethods = map[string]bool{
 	"notification_settings": true, "onboarding_restart": true,
-	"mcp_import": true, "mcp_native_remove": true, "tools_plan": true, "tools_apply": true, "tools_undo": true,
+	"mcp_import": true, "mcp_native_remove": true, "tools_toggle": true, "tools_new_projects": true, "tools_plan": true, "tools_apply": true, "tools_undo": true,
 	"inbox_answer": true, "outcome_overrule": true,
 	"session_trust": true, "session_policy": true, "session_rename": true, "node_rename": true, "project_display_set": true, "integrations_set": true,
 	"held_answer":  true,

@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -188,6 +190,26 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 	if inventory.UnpackSkill(result.Data, dir) != nil {
 		return v, reject("invalid or oversized skill bundle")
 	}
+	// Check before Git writes an immutable version. Do not echo file contents.
+	err = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		b, e := os.ReadFile(path)
+		if e != nil {
+			return e
+		}
+		if redact.Secrets(string(b)) != string(b) {
+			return errors.New("skill contains a recognised secret")
+		}
+		return nil
+	})
+	if err != nil {
+		return v, reject("cannot import skill: %v", err)
+	}
 	got, err := inventory.SkillHash(dir)
 	if err != nil || got != hash {
 		return v, reject("skill changed since its inventory scan")
@@ -195,6 +217,9 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 	canonical, err := inventory.PackSkill(dir)
 	if err != nil {
 		return v, reject("cannot verify skill bundle")
+	}
+	if validatingProposal(ctx) {
+		return v, nil
 	}
 	repo, err := g.skillRepository()
 	if err != nil {

@@ -17,3 +17,9 @@ func validChangeActor(actor string) bool {
 	n, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(actor, prefix), ")"), 10, 64)
 	return err == nil && n > 0
 }
+
+// Only gateway-internal skill plans can use the standing choice actor.
+// Incoming requests still require validChangeActor.
+func validToolChangeActor(actor string) bool {
+	return actor == "standing choice" || validChangeActor(actor)
+}

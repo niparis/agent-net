@@ -99,7 +99,7 @@ func (s *Store) assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment,
 	if err != nil {
 		return r, err
 	}
-	if !validChangeActor(actor) {
+	if !validToolChangeActor(actor) {
 		return r, errors.New("owner authority required")
 	}
 	if source == "" || len(source) > 128 {
@@ -126,6 +126,13 @@ func (s *Store) assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment,
 		if exists == 0 {
 			return r, errors.New("machine is not enrolled")
 		}
+	}
+	names, err := s.knownToolProjectsTx(tx)
+	if err != nil {
+		return r, err
+	}
+	if err = initToolProjectSettingTx(tx, item, a.Scope == "global", names); err != nil {
+		return r, err
 	}
 	var revision int64
 	if err = tx.QueryRow(`SELECT COALESCE(MAX(revision),0)+1 FROM tool_revisions WHERE item=?`, item).Scan(&revision); err != nil {
@@ -166,7 +173,8 @@ func toolSnapshot(tx *sql.Tx) (string, error) {
 		`SELECT id,kind,name,hash FROM tool_identities ORDER BY id`,
 		`SELECT item,hash,commit_id FROM skill_versions ORDER BY item,hash`,
 		`SELECT item,revision,assignment,version FROM tool_revisions ORDER BY item,revision`,
-		`SELECT node_id,harness,repo_root,repo_worktree,repo_project FROM sessions WHERE repo_root<>'' AND repo_worktree<>'' ORDER BY node_id,harness,repo_root,repo_worktree,repo_project`,
+		`SELECT item,new_projects FROM tool_project_settings ORDER BY item`,
+		`SELECT node_id,harness,cwd,repo_root,repo_worktree,repo_project,no_project FROM sessions ORDER BY node_id,harness,cwd,repo_root,repo_worktree,repo_project,no_project`,
 	} {
 		rows, err := tx.Query(query)
 		if err != nil {
@@ -244,7 +252,7 @@ func (s *Store) SaveToolPlan(item string, a protocol.ToolAssignment, targets []p
 }
 func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected, operation string, repoTargets []protocol.ToolRepoTarget, validate ...bool) (protocol.ToolPlan, error) {
 	var p protocol.ToolPlan
-	if !validChangeActor(actor) {
+	if !validToolChangeActor(actor) {
 		return p, errors.New("owner authority required")
 	}
 	a, err := normalizeAssignment(a)
@@ -318,7 +326,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 }
 func (s *Store) applyToolPlan(id, actor string, validate ...bool) (protocol.ToolRevision, error) {
 	var r protocol.ToolRevision
-	if !validChangeActor(actor) {
+	if !validToolChangeActor(actor) {
 		return r, errors.New("owner authority required")
 	}
 	tx, err := s.db.Begin()
@@ -471,7 +479,7 @@ func (s *Store) ToolHistory(item string) ([]protocol.ToolAuditEvent, error) {
 }
 
 func (s *Store) recordRefusedToolApply(id, actor string) error {
-	if !validChangeActor(actor) {
+	if !validToolChangeActor(actor) {
 		return errors.New("owner authority required")
 	}
 	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at,assignment) SELECT item,id,'apply',?,COALESCE(json_extract(plan,'$.base_revision'),0),json_extract(plan,'$.targets'),'refused',?,COALESCE(json_extract(plan,'$.assignment'),'') FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
@@ -515,7 +523,7 @@ func undoAction(action string) string {
 func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRevision, protocol.ToolPlan, error) {
 	var r protocol.ToolRevision
 	var p protocol.ToolPlan
-	if !validChangeActor(actor) {
+	if !validToolChangeActor(actor) {
 		return r, p, errors.New("owner authority required")
 	}
 	tx, err := s.db.Begin()

@@ -460,3 +460,24 @@ func SkillTokenEstimates(name, description string, manifest *SkillManifest) (sta
 	}
 	return
 }
+
+// ToolToggleRequest changes one skill's choice for one known project.
+type ToolToggleRequest struct {
+	Item    string `json:"item"`
+	Project string `json:"project"`
+	On      bool   `json:"on"`
+}
+
+type ToolNewProjectsRequest struct {
+	Item string `json:"item"`
+	On   bool   `json:"on"`
+}
+
+// ToolProjectState is the skill table row. Machines are observed node IDs;
+// Projects includes every known project, including choices that are off.
+type ToolProjectState struct {
+	Item        string          `json:"item"`
+	Projects    map[string]bool `json:"projects"`
+	NewProjects bool            `json:"new_projects"`
+	Machines    []string        `json:"machines"`
+}
