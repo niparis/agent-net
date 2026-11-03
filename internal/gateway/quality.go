@@ -252,9 +252,9 @@ func (s *Store) refreshQuality() error {
 	for _, p := range profiles {
 		v := qualityPrediction(q, strong, p.Model, p.Harness, p.Effort, "normal")
 		row := protocol.ProfileQuality{Name: p.Name, Quality: v, Weights: map[string]float64{}}
-		if len(ratings) >= protocol.QualityMinRatings {
+		if len(ratings) >= protocol.QualityMinRatings || len(r.Counts) > 0 {
 			for _, level := range protocol.DifficultyLevels {
-				row.Weights[level] = qualityRotationWeight(qualityPrediction(q, strong, p.Model, p.Harness, p.Effort, level), q.Average)
+				row.Weights[level] = combinedQualityRotationWeight(q, r, strong, len(ratings), p.Model, p.Harness, p.Effort, level)
 			}
 		}
 		actual, predicted := 0.0, 0.0
@@ -291,6 +291,7 @@ func (s *Store) refreshQuality() error {
 	out.WeightingEnabled = settings.Enabled
 	s.quality = out
 	s.qualityFit = q
+	s.reworkFit = r
 	s.qualityStrong = strong
 	return nil
 }
@@ -359,7 +360,7 @@ func (s *Store) applyQualityWeights(candidates []protocol.WorkerModelCandidate, 
 	}
 	s.qualityMu.Lock()
 	defer s.qualityMu.Unlock()
-	if s.quality.Ratings < protocol.QualityMinRatings {
+	if s.quality.Ratings < protocol.QualityMinRatings && len(s.reworkFit.Counts) == 0 {
 		return nil
 	}
 	for i, c := range candidates {
@@ -367,12 +368,30 @@ func (s *Store) applyQualityWeights(candidates []protocol.WorkerModelCandidate, 
 		if effort == "" {
 			effort = c.DefaultEffort
 		}
-		v := qualityPrediction(s.qualityFit, s.qualityStrong, model, c.Harness, effort, difficulty)
-		candidates[i].QualityWeight = qualityRotationWeight(v, s.qualityFit.Average)
+		candidates[i].QualityWeight = combinedQualityRotationWeight(s.qualityFit, s.reworkFit, s.qualityStrong, s.quality.Ratings, model, c.Harness, effort, difficulty)
 	}
 	return nil
 }
 
 func qualityRotationWeight(prediction, average float64) float64 {
 	return math.Max(.5, math.Min(1.5, 1+(prediction-average)/4))
+}
+
+// combinedQualityRotationWeight is shared by the picker and profile previews.
+func combinedQualityRotationWeight(q, r qualityFit, strong map[string]int, ratings int, model, harness, effort, difficulty string) float64 {
+	weight := 1.0
+	if ratings >= protocol.QualityMinRatings {
+		weight = qualityRotationWeight(qualityPrediction(q, strong, model, harness, effort, difficulty), q.Average)
+	}
+	if len(r.Counts) > 0 {
+		weight *= reworkRotationWeight(r.predict(model, harness, effort, difficulty), r.Average)
+	}
+	return weight
+}
+
+func reworkRotationWeight(prediction, average float64) float64 {
+	if prediction <= 0 {
+		return 1
+	}
+	return math.Max(.5, math.Min(1.5, average/prediction))
 }
