@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -121,14 +120,8 @@ func toolFixtureItems() []protocol.ToolItem {
 		}
 		items = append(items, toolSkill(name, h, toolLoc(toolNodeR, "research", "/home/n/.claude/skills/"+name, "user", "", "claude")))
 	}
-	// The MCP server on the gateway
+	// the MCP server on the gateway
 	items = append(items, protocol.ToolItem{ID: "mcp:tenebrae-library", Kind: "mcp", Name: "tenebrae-library", Hash: "federated-1", Federated: true, Host: "research", HostOnline: true, Scope: "global", State: "ok"})
-	// Token figures so the table and its cost line are realistic.
-	for i := range items {
-		if items[i].Kind == protocol.InventorySkill && items[i].StartTokens == 0 {
-			items[i].StartTokens = int64(60 + (i%9)*40)
-		}
-	}
 	return items
 }
 
@@ -140,7 +133,6 @@ type fakeTools struct {
 	folders               []protocol.ToolImportLocation
 	mu                    sync.Mutex
 	items                 []protocol.ToolItem
-	states                []protocol.ToolProjectState
 	accepted              []string
 	needs                 []protocol.ToolNeed
 	itemsErr              error
@@ -154,13 +146,6 @@ type fakeTools struct {
 	sent       []string // "to: body"
 	mcpPlans   []string
 	mcpApplied []string
-
-	toggles        []protocol.ToolToggleRequest
-	newProjectIn   []protocol.ToolNewProjectsRequest
-	toggleErr      error
-	toggleConflict bool
-	applyErr       error
-	pending        map[string]fakeToolPlan
 
 	coveragePlans   []protocol.MCPCoverageRequest
 	coverageTargets []protocol.MCPCoverageTarget
@@ -181,13 +166,7 @@ func newToolsModel(w, h int) (Model, *fakeTools) {
 	}
 	base.snap.Agents = append(base.snap.Agents, protocol.AgentView{SessionID: "s_sovl", NodeID: toolNodeR, Hostname: "research", Harness: "claude", Online: true, Status: "idle",
 		Profile: protocol.Profile{Name: "sovl-agent"}, Repo: protocol.RepoInfo{Project: "sovl-clone", Root: "/src/sovl-clone"}})
-	items := toolFixtureItems()
-	var projects []string
-	for _, p := range base.snap.Projects {
-		projects = append(projects, p.Name)
-	}
-	src := &fakeTools{fakeSource: base, items: items, needs: []protocol.ToolNeed{{Node: "homelab", Text: "a deploy runbook skill", State: "unverified"}}}
-	src.states = toolFixtureStates(items, projects)
+	src := &fakeTools{fakeSource: base, items: toolFixtureItems(), needs: []protocol.ToolNeed{{Node: "homelab", Text: "a deploy runbook skill", State: "unverified"}}}
 	m := New(src)
 	m.loc = time.UTC
 	m.now = func() time.Time { return t0 }
@@ -196,195 +175,11 @@ func newToolsModel(w, h int) (Model, *fakeTools) {
 	return m, src
 }
 
-// toolFixtureStates builds the on/off table from the fixture's items. A user
-// copy is on everywhere, as the migration rule says; a project repo copy is on
-// there; a desired assignment wins over both.
-func toolFixtureStates(items []protocol.ToolItem, projects []string) []protocol.ToolProjectState {
-	var out []protocol.ToolProjectState
-	for _, it := range items {
-		if it.Kind != protocol.InventorySkill {
-			continue
-		}
-		row := protocol.ToolProjectState{Item: it.ID, Projects: map[string]bool{}}
-		on := map[string]bool{}
-		if it.Desired != nil {
-			a := it.Desired.Assignment
-			if a.Scope == "global" {
-				for _, p := range projects {
-					on[p] = true
-				}
-				row.NewProjects = true
-			}
-			for _, p := range a.Projects {
-				on[p] = true
-			}
-		} else {
-			for _, l := range it.Locations {
-				if l.Source == protocol.InventoryPlugin || l.Source == protocol.InventoryPackage || l.Source == protocol.InventorySystem {
-					continue
-				}
-				switch {
-				case l.Scope == protocol.InventoryUser:
-					for _, p := range projects {
-						on[p] = true
-					}
-					row.NewProjects = true
-				case l.Scope == protocol.InventoryProject && l.Tracked:
-					on[l.Project] = true
-					on[l.GraphNode] = true
-				}
-			}
-		}
-		for _, p := range projects {
-			row.Projects[p] = on[p]
-		}
-		out = append(out, row)
-	}
-	return out
-}
-
-// openTools presses 5 and lets the load finish on the MCP and all-tools list.
+// openTools presses 5 and lets the load finish.
 func openTools(m Model) Model { m = pressKey(m, "5"); m.tl.allTools = true; return m }
-
-// openTable presses 5 and leaves the skill table, which is the opening screen.
-func openTable(m Model) Model { return pressKey(m, "5") }
-
-// selectCell puts the table cursor on one skill and project.
-func selectCell(m Model, skill, project string) Model {
-	for i, r := range m.skillRows() {
-		if r.Name == skill {
-			m.tl.row = i
-		}
-	}
-	for i, p := range m.tl.projectCols {
-		if p == project {
-			m.tl.col, m.tl.costCol = i, i
-		}
-	}
-	m.tableClamp()
-	m.tableScrollIntoView()
-	return m
-}
-
-// fakeToolPlan is a plan the fixture has not applied yet.
-type fakeToolPlan struct {
-	assignment  protocol.ToolAssignment
-	item        string
-	project     string
-	on          bool
-	newProjects *bool
-}
 
 func (f *fakeTools) ToolsItems(context.Context) ([]protocol.ToolItem, error) {
 	return f.items, f.itemsErr
-}
-func (f *fakeTools) ToolsProjects(context.Context) ([]protocol.ToolProjectState, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make([]protocol.ToolProjectState, len(f.states))
-	copy(out, f.states)
-	return out, nil
-}
-
-func (f *fakeTools) stateFor(item string) *protocol.ToolProjectState {
-	for i := range f.states {
-		if f.states[i].Item == item {
-			return &f.states[i]
-		}
-	}
-	return nil
-}
-
-func (f *fakeTools) assignmentFor(st protocol.ToolProjectState) protocol.ToolAssignment {
-	var on []string
-	for p, v := range st.Projects {
-		if v {
-			on = append(on, p)
-		}
-	}
-	sort.Strings(on)
-	switch {
-	case len(on) == 0:
-		return protocol.ToolAssignment{Scope: "uninstalled"}
-	case len(on) == len(st.Projects) && st.NewProjects:
-		return protocol.ToolAssignment{Scope: "global"}
-	}
-	return protocol.ToolAssignment{Scope: "projects", Projects: on}
-}
-
-func (f *fakeTools) ToolsToggle(_ context.Context, req protocol.ToolToggleRequest) (protocol.ToolPlan, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.toggles = append(f.toggles, req)
-	if f.toggleErr != nil {
-		return protocol.ToolPlan{}, f.toggleErr
-	}
-	if f.toggleConflict {
-		return protocol.ToolPlan{ID: "tplan_conflict", Item: req.Item, Assignment: protocol.ToolAssignment{Scope: "projects", Projects: []string{req.Project}},
-			Conflicts: []string{"the files changed since the last scan"},
-			Targets:   []protocol.ToolPlanTarget{{NodeID: toolNodeR, Machine: "research", Project: req.Project, Action: "copy", State: "conflict", Conflict: "the files changed since the last scan"}}}, nil
-	}
-	st := f.stateFor(req.Item)
-	if st == nil {
-		return protocol.ToolPlan{}, fmt.Errorf("skill item not found")
-	}
-	before := f.assignmentFor(*st)
-	next := *st
-	next.Projects = map[string]bool{}
-	for p, v := range st.Projects {
-		next.Projects[p] = v
-	}
-	next.Projects[req.Project] = req.On
-	a := f.assignmentFor(next)
-	if f.pending == nil {
-		f.pending = map[string]fakeToolPlan{}
-	}
-	plan := protocol.ToolPlan{ID: fmt.Sprintf("tplan_%d", len(f.toggles)), Item: req.Item, Assignment: a, State: "pending", Actor: "owner"}
-	f.pending[plan.ID] = fakeToolPlan{assignment: a, item: req.Item, project: req.Project, on: req.On}
-	for _, n := range toolFixtureNodes() {
-		plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: n.NodeID, Machine: n.Hostname, Project: req.Project, Action: "copy", State: "pending"})
-	}
-	if before.Scope == "global" && a.Scope != "global" {
-		for _, v := range f.items {
-			if v.ID != req.Item {
-				continue
-			}
-			for _, l := range v.Locations {
-				if l.Scope == protocol.InventoryUser {
-					plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: l.NodeID, Machine: l.Machine, Source: l.Location, Action: "remove", State: "pending"})
-				}
-			}
-		}
-	}
-	return plan, nil
-}
-
-func (f *fakeTools) ToolsNewProjects(_ context.Context, req protocol.ToolNewProjectsRequest) (protocol.ToolPlan, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.newProjectIn = append(f.newProjectIn, req)
-	if f.toggleErr != nil {
-		return protocol.ToolPlan{}, f.toggleErr
-	}
-	st := f.stateFor(req.Item)
-	if st == nil {
-		return protocol.ToolPlan{}, fmt.Errorf("skill item not found")
-	}
-	// The gateway saves this setting immediately.
-	st.NewProjects = req.On
-	a := f.assignmentFor(*st)
-	on := req.On
-	plan := protocol.ToolPlan{ID: fmt.Sprintf("nplan_%d", len(f.newProjectIn)), Item: req.Item, Assignment: a, State: "pending", Actor: "owner"}
-	if f.pending == nil {
-		f.pending = map[string]fakeToolPlan{}
-	}
-	f.pending[plan.ID] = fakeToolPlan{assignment: a, item: req.Item, newProjects: &on}
-	if a.Scope != "uninstalled" {
-		for _, n := range toolFixtureNodes() {
-			plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: n.NodeID, Machine: n.Hostname, Action: "copy", State: "pending"})
-		}
-	}
-	return plan, nil
 }
 func (f *fakeTools) ToolsAccepted(context.Context) ([]string, error) { return f.accepted, nil }
 func (f *fakeTools) ToolsAccept(_ context.Context, key string, on bool) error {
@@ -419,25 +214,6 @@ func (f *fakeTools) ToolsApply(_ context.Context, id string) (protocol.ToolApply
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.applied = append(f.applied, id)
-	if f.applyErr != nil {
-		return protocol.ToolApplyResult{}, f.applyErr
-	}
-	if p, ok := f.pending[id]; ok {
-		if st := f.stateFor(p.item); st != nil {
-			if p.project != "" {
-				st.Projects[p.project] = p.on
-			}
-			if p.newProjects != nil {
-				st.NewProjects = *p.newProjects
-			}
-		}
-		for i := range f.items {
-			if f.items[i].ID == p.item {
-				f.items[i].Desired = &protocol.ToolRevision{Item: p.item, Assignment: p.assignment, State: "applied"}
-			}
-		}
-		return protocol.ToolApplyResult{Targets: []protocol.ToolTargetOutcome{{NodeID: toolNodeR, Machine: "research", State: "ok"}}}, nil
-	}
 	if len(f.plans) > 0 && f.plans[len(f.plans)-1].Operation == "repo_remove" {
 		return protocol.ToolApplyResult{Targets: []protocol.ToolTargetOutcome{{NodeID: toolNodeR, Machine: "research", Project: "sovl-clone", Action: "repo_remove", State: "ok", Branch: "agent-net/remove-deploy-test-server", Commit: strings.Repeat("a", 40)}}}, nil
 	}

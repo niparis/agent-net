@@ -39,7 +39,9 @@ func toolsBindingParts(ctx keyContext, include func(keyBinding) bool) []string {
 func (m Model) toolsKeyLines(w int) []string {
 	var parts []string
 	switch {
-	case m.tl.searching:
+	case m.tl.agentDiscard:
+		parts = toolsBindingParts(contextToolsDiscard, nil)
+	case m.tl.agentSearching || m.tl.searching:
 		parts = toolsBindingParts(contextToolsFilter, nil)
 		parts = append(parts, "text", "filter")
 	case m.tl.modal != nil:
@@ -93,12 +95,17 @@ func (m Model) toolsKeyLines(w int) []string {
 				}
 			}
 		}
+	case m.tl.projectsOpen && m.tl.allTools:
+		parts = toolsBindingParts(contextToolsCosts, nil)
 	case !m.tl.allTools:
-		parts = []string{"↑↓←→", "move", "space", "on/off", "enter", "new projects"}
-		if len(m.tl.projectCols) > 0 && m.tl.col < len(m.tl.projectCols) {
-			parts[5] = "actions"
+		parts = toolsBindingParts(m.agentToolsContext(), nil)
+		if m.tl.skillsFocus {
+			for i := 0; i+1 < len(parts); i += 2 {
+				if parts[i] == "enter" {
+					parts[i+1] = "review (" + nounCount(len(m.tl.agentPending[m.agentProject()]), "change", "changes") + ")"
+				}
+			}
 		}
-		parts = append(parts, "/", "filter", "i", "import", "d", "details", "m", "all tools", "R", "rescan", "?", "help")
 	default:
 		parts = toolsBindingParts(contextTools, nil)
 	}

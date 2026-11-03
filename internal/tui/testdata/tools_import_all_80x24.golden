@@ -1,16 +1,16 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
-╭─Switch off using-git-worktrees in homelab────────────────────────────────────╮
-│ Switch off using-git-worktrees in homelab.                                   │
-│ using-git-worktrees moves from every project to 12 projects                  │
-│ Copies to 1 project on laptop     .                                          │
-│ Copies to 1 project on research.                                             │
-│ Moves ~/.claude/skills/using-git-worktrees on research to agent-net's        │
-│   backup.                                                                    │
-│ Moves ~/.claude/skills/using-git-worktrees on laptop      to agent-net's     │
-│   backup.                                                                    │
+╭─Import all · 2 skills────────────────────────────────────────────────────────╮
+│ + Save found-skill from laptop in the agent-net store; keep its installed    │
+│   copies as they are                                                         │
+│ + Save outside-helper from research in the agent-net store; keep its         │
+│   installed copies as they are                                               │
+│   Backups kept in the store. Nothing is turned off.                          │
+│   Every installed copy stays where it is, on for the same sessions.          │
 │                                                                              │
-│ enter apply  d exact folders  esc cancel                                     │
+│ enter import  d exact folders  esc cancel                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter apply  esc cancel  ? help  ↑↓ scroll
+enter import  esc cancel  ? help  ↑↓ scroll  d exact folders

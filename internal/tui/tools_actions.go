@@ -864,17 +864,10 @@ func (m Model) submitToolAdd() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startNodeTools(name string) (tea.Model, tea.Cmd) {
-	m.tl.allTools = false
-	m.tl.search = ""
-	next, cmd := m.startTools()
-	mm := next.(Model)
-	for i, p := range mm.tl.projectCols {
-		if p == name {
-			mm.tl.col, mm.tl.costCol = i, i
-			mm.tableScrollIntoView()
-		}
-	}
-	return mm, cmd
+	m.tl.allTools = true
+	m.tl.search = "node:" + name
+	m.tl.row, m.tl.scroll = 0, 0
+	return m.startTools()
 }
 func (m Model) nodeToolsLine(name string) string {
 	skills, servers := 0, 0

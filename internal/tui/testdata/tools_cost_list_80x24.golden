@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
+╭─Tools · 40 tools─────────────────────────────────────────────────────────────╮
+│   NAME                          STATUS                              COST     │
+│ ! code-review                   v1 on Nicolas-MBP, v3 on research   ~130     │
+│ ! design-taste-frontend         2 different copies on research      ~130     │
+│ ! imnplementing-clean-architec… outside agent-net                   ~235     │
+│ ! web-design-guidelines         on for wbg-housing, sovl-clone      ~270     │
+│   clean-architecture-python     on everywhere                       ~200     │
+│ 40 tools · ! needs attention · enter opens actions                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─code-review──────────────────────────────────────────────────────────────────╮
+│ Description for code-review                                                  │
+│ ~130 tokens in every session                                                 │
+│ +~3.4k when the skill is used                                                │
+│ on: v1 on Nicolas-MBP, v3 on research                                        │
+│ ! v1 on Nicolas-MBP, v3 on research                                          │
+│ enter: make every machine use v3                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+tab skills per agent  ? help  ↑↓ move  / filter  t costs  esc clear  n add
+  enter actions  R rescan

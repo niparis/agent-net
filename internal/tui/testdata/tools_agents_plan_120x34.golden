@@ -1,14 +1,14 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
-╭─Switch off using-git-worktrees in homelab────────────────────────────────────────────────────────────────────────────╮
-│ Switch off using-git-worktrees in homelab.                                                                           │
-│ using-git-worktrees moves from every project to 12 projects                                                          │
-│ Copies to 1 project on laptop     .                                                                                  │
-│ Copies to 1 project on research.                                                                                     │
-│ Moves ~/.claude/skills/using-git-worktrees on research to agent-net's backup.                                        │
-│ Moves ~/.claude/skills/using-git-worktrees on laptop      to agent-net's backup.                                     │
+╭─Review 2 changes for homelab─────────────────────────────────────────────────────────────────────────────────────────╮
+│ - archify off for homelab (stays on for the 12 other projects)                                                       │
+│ + found-skill on for homelab                                                                                         │
+│   found-skill is saved in the store before applying                                                                  │
+│   the gateway makes the exact plan for each one when you press enter                                                 │
 │                                                                                                                      │
 │ enter apply  d exact folders  esc cancel                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter apply  esc cancel  ? help  ↑↓ scroll
+enter apply  esc cancel  ? help  ↑↓ scroll  d exact folders

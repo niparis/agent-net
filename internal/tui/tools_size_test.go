@@ -5,48 +5,85 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func oversizedToolsFixture(w, h int) (Model, *fakeTools) {
-	m, s := newToolsModel(w, h)
+	m, s := agentToolsFixture(w, h)
 	large := toolSkill("oversize-archify", "large", toolLoc(toolNodeR, "research", "/tmp/skills/oversize-archify", "user", "", "codex"))
 	large.StartTokens = 310
 	large.Locations[0].Manifest = &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 1 << 20}, {Path: "data.bin", Size: 10 << 20}}}
 	s.items = append(s.items, large)
 	m = pressKey(m, "5")
-	m = filterTable(m, "oversize")
 	return m, s
 }
 
-// filterTable types a skill name filter into the table.
-func filterTable(m Model, q string) Model {
-	m = pressKey(m, "esc")
-	m = pressKey(m, "/")
-	m = typeText(m, q)
-	return pressKey(m, "enter")
-}
-
-func TestTableOversizedSkillIsDimAndSpaceExplains(t *testing.T) {
+func TestToolsOversizedSkillLocked(t *testing.T) {
 	m, s := oversizedToolsFixture(120, 34)
+	m = pressKey(m, "right")
+	m = pressKey(m, "/")
+	m = typeText(m, "oversize")
+	m = pressKey(m, "enter")
 	reason := "too large to manage (11 MB, the limit is 2 MB)"
-	v := plain(m)
-	if !strings.Contains(v, "×") || !strings.Contains(v, reason) {
-		t.Fatalf("missing dim row and its reason:\n%s", v)
+	if !strings.Contains(plain(m), "×   ") || !strings.Contains(plain(m), reason) {
+		t.Fatal("missing size lock:\n" + plain(m))
 	}
 	m = pressKey(m, " ")
-	if len(s.toggles) != 0 || len(s.applied) != 0 {
-		t.Fatalf("a locked skill asked the gateway: %v %v", s.toggles, s.applied)
+	if len(m.tl.agentPending["homelab"]) != 0 || !strings.Contains(m.activeToast(), reason) {
+		t.Fatal("oversized skill must not queue a toggle")
 	}
-	if !strings.Contains(m.activeToast(), reason) {
-		t.Fatalf("space must explain the lock: %q", m.activeToast())
+	if len(s.imports) != 0 || len(s.applied) != 0 {
+		t.Fatal("locked skill changed state")
 	}
 }
 
-func TestTableOversizedGoldens(t *testing.T) {
+func TestToolsImportAllSkipsOversizedSkills(t *testing.T) {
+	m, s := oversizedToolsFixture(120, 34)
+	m = pressKey(m, "i")
+	for _, want := range []string{"1 skill skipped", "oversize-archify", "11 MB", "limit is 2 MB"} {
+		if !strings.Contains(plain(m), want) {
+			t.Errorf("missing %s: %s", want, plain(m))
+		}
+	}
+	if len(s.imports) != 0 || len(s.applied) != 0 {
+		t.Fatal("review applied a change")
+	}
+	m = pressKey(m, "enter")
+	if len(s.imports) != 1 || s.imports[0].Item == "skill:oversize-archify:large" || len(s.applied) != 0 {
+		t.Fatalf("imports %v applied %v", s.imports, s.applied)
+	}
+}
+
+func TestToolsUnstoredToggleReviewsBeforeImport(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
+	m = pressKey(m, "right")
+	m = pressKey(m, "down")
+	m = pressKey(m, "down")
+	m = pressKey(m, " ")
+	m = pressKey(m, "enter")
+	if m.tl.modal == nil || !strings.Contains(plain(m), "Review 1 change") {
+		t.Fatal("Enter must show a plan")
+	}
+	if len(s.imports) != 0 || len(s.plans) != 0 || len(s.applied) != 0 {
+		t.Fatal("review must not import, assign or apply")
+	}
+	m = pressKey(m, "enter")
+	if len(s.imports) != 1 || len(s.applied) != 1 {
+		t.Fatal("confirmation did not apply the reviewed toggle")
+	}
+}
+
+func TestToolsOversizedGoldens(t *testing.T) {
 	for _, size := range [][2]int{{120, 34}, {80, 24}} {
 		m, _ := oversizedToolsFixture(size[0], size[1])
-		golden(t, fmt.Sprintf("tools_table_oversized_%dx%d", size[0], size[1]), m.View())
+		m = pressKey(m, "right")
+		m = pressKey(m, "/")
+		m = typeText(m, "oversize")
+		m = pressKey(m, "enter")
+		golden(t, fmt.Sprintf("tools_oversized_%dx%d", size[0], size[1]), m.View())
+		m = pressKey(m, "i")
+		golden(t, fmt.Sprintf("tools_import_skip_%dx%d", size[0], size[1]), m.View())
 	}
 }
 
@@ -80,36 +117,81 @@ func TestToolsSkillSizeManifestRules(t *testing.T) {
 	}
 }
 
-// A big skill whose scan stopped listing files is still locked.
-func TestTableSkillMarkedTooLargeByTheScanIsLocked(t *testing.T) {
-	m, s := newToolsModel(120, 34)
+func TestToolsImportAllOnlyOversizedShowsExplanation(t *testing.T) {
+	m, s := oversizedToolsFixture(80, 24)
+	s.items = s.items[len(s.items)-1:]
+	m = pressKey(m, "5")
+	m = pressKey(m, "i")
+	if m.tl.modal == nil || !strings.Contains(plain(m), "1 skill skipped") {
+		t.Fatal(plain(m))
+	}
+	m = pressKey(m, "enter")
+	if len(s.imports) != 0 || len(s.plans) != 0 || len(s.applied) != 0 {
+		t.Fatal("oversized-only review performed a change")
+	}
+	m = pressKey(m, "esc")
+	if m.tl.modal != nil {
+		t.Fatal("cannot close oversized-only review")
+	}
+}
+
+func TestToolsOversizedRowOnlyMarkerAndCost(t *testing.T) {
+	for _, width := range []int{120, 80} {
+		m, s := oversizedToolsFixture(width, 34)
+		s.items[len(s.items)-1].StartTokens = 310
+		m = pressKey(m, "5")
+		m = pressKey(m, "right")
+		m = pressKey(m, "/")
+		m = typeText(m, "oversize")
+		m = pressKey(m, "enter")
+		text := plain(m)
+		if strings.Contains(text, "🔒") || !strings.Contains(text, "×   oversize-archify") {
+			t.Errorf("%d: need a one-column marker: %s", width, text)
+		}
+		if !strings.Contains(text, "~310") {
+			t.Errorf("%d: oversized skill must retain StartTokens: %s", width, text)
+		}
+		count := strings.Count(text, "too large to manage (11 MB, the limit is 2 MB)")
+		want := 1
+		if width == 80 {
+			want = 0
+		} // Narrow rows omit state text; Space still explains it.
+		if count != want {
+			t.Errorf("%d: size reason must only appear in the state column, got %d copies", width, count)
+		}
+		m.tl.agentFilter = ""
+		regular, oversized := -1, -1
+		for _, line := range strings.Split(plain(m), "\n") {
+			if at := strings.Index(line, "~120"); at >= 0 {
+				regular = ansi.StringWidth(line[:at])
+			}
+			if at := strings.Index(line, "~310"); at >= 0 {
+				oversized = ansi.StringWidth(line[:at])
+			}
+		}
+		if regular < 0 || regular != oversized {
+			t.Errorf("%d: cost columns differ: regular %d, oversized %d", width, regular, oversized)
+		}
+	}
+}
+
+// On a real machine a big skill's scan stops listing files (TooLarge, no
+// sizes), as for archify (11 MB, over 200 files). It must still be locked.
+func TestToolsSkillMarkedTooLargeByTheScanIsLocked(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
 	large := toolSkill("big-skill", "large", toolLoc(toolNodeR, "research", "/tmp/skills/big-skill", "user", "", "codex"))
 	large.Locations[0].Manifest = &protocol.SkillManifest{TooLarge: true}
 	s.items = append(s.items, large)
 	m = pressKey(m, "5")
-	m = filterTable(m, "big-skill")
+	m = pressKey(m, "right")
+	m = pressKey(m, "/")
+	m = typeText(m, "big-skill")
+	m = pressKey(m, "enter")
 	if !strings.Contains(plain(m), "too large to manage (over 200 files or 2 MB)") {
 		t.Fatal("missing lock for a skill the scan marked too large:\n" + plain(m))
 	}
 	m = pressKey(m, " ")
-	if len(s.toggles) != 0 {
-		t.Fatal("a skill marked too large asked the gateway")
-	}
-}
-
-// A plugin or system skill cannot be switched off either.
-func TestTablePluginSkillIsDim(t *testing.T) {
-	m, s := newToolsModel(120, 34)
-	plugin := toolSkill("plugin-skill", "plug", toolLoc(toolNodeR, "research", "/opt/plugin/plugin-skill", "user", "", "claude"))
-	plugin.Locations[0].Source = protocol.InventoryPlugin
-	s.items = append(s.items, plugin)
-	m = pressKey(m, "5")
-	m = filterTable(m, "plugin-skill")
-	if !strings.Contains(plain(m), "a plugin or system skill; agent-net leaves it alone") {
-		t.Fatalf("missing plugin reason:\n%s", plain(m))
-	}
-	m = pressKey(m, " ")
-	if len(s.toggles) != 0 {
-		t.Fatal("a plugin skill asked the gateway")
+	if len(m.tl.agentPending["homelab"]) != 0 {
+		t.Fatal("a skill marked too large queued a toggle")
 	}
 }

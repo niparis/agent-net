@@ -155,11 +155,8 @@ func TestToolsOwnerTasks(t *testing.T) {
 		m.mp.selected = "homelab"
 		m.mapOn = true
 		m = pressKey(m, "t")
-		if m.tab != toolsTab || m.mapOn || m.tl.allTools {
-			t.Fatalf("tab %d map %v list %v", m.tab, m.mapOn, m.tl.allTools)
-		}
-		if m.tl.projectCols[min(m.tl.col, len(m.tl.projectCols)-1)] != "homelab" {
-			t.Fatalf("graph shortcut selected %v", m.tl.projectCols)
+		if m.tab != toolsTab || m.mapOn || m.tl.search != "node:homelab" {
+			t.Fatalf("tab %d filter %s", m.tab, m.tl.search)
 		}
 	})
 }
@@ -204,7 +201,7 @@ func TestToolsListOnlyDocumentedKeys(t *testing.T) {
 	m, _ := newToolsModel(120, 34)
 	m = openTools(m)
 	before := plain(m)
-	for _, key := range []string{"h", "l", "x", ".", "r"} {
+	for _, key := range []string{"h", "l", "x", ".", "m", "r"} {
 		m = pressKey(m, key)
 		if plain(m) != before {
 			t.Fatalf("obsolete list key %q changed the screen", key)

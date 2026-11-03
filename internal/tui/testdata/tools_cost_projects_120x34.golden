@@ -1,17 +1,19 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
-╭─Skills by project / oversize · 1 skill · showing 1-6 of 13, ←→ scrolls───────────────────────────────────────────────╮
-│ SKILL                          TOKENS  a2a-ocs   cogforge  dotfiles  flood-wa… homelab   homelab-… NEW PROJECTS      │
-│ ▸ oversize-archify ×           ~310       [×]        ×         ×         ×         ×         ×           -           │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
+╭─Skill cost per project · tokens in every session─────────────────────────────────────────────────────────────────────╮
+│ PROJECT                  MACHINE                  SKILLS  EVERY SESSION   BIGGEST                                    │
+│ sovl-clone               research                 35      ~6.1k           deploy-test-server                         │
+│ wbg-housing              research                 35      ~6.1k           found-skill-04                             │
+│ homelab-portal           research                 34      ~5.8k           found-skill-04                             │
+│ wbg-worldview            research                 34      ~5.8k           found-skill-04                             │
+│ cogforge                 research                 34      ~5.6k           found-skill-04                             │
+│ tenebrae                 research                 34      ~5.6k           found-skill-04                             │
+│ homelab                  research                 34      ~5.6k           found-skill-04                             │
+│ a2a-ocs                  research                 33      ~5.5k           found-skill-04                             │
+│ dotfiles                 research                 33      ~5.5k           found-skill-04                             │
+│ flood-wargame            research                 33      ~5.5k           found-skill-04                             │
+│ infra-game               research                 33      ~5.5k           found-skill-04                             │
+│ strategies               research                 33      ~5.5k           found-skill-04                             │
+│ wbg-arch                 research                 33      ~5.5k           found-skill-04                             │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -23,12 +25,10 @@
 │                                                                                                                      │
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  oversize-archify cannot be switched: too large to manage (11 MB, the limit is 2 MB)
-  a2a-ocs loads 34 skills, about 6,890 tokens per session
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-↑↓←→ move  space on/off  enter actions  / filter  i import  d details  m all tools  R rescan  ? help
+↑↓ move  enter open  esc back

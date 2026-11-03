@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
+1 skill is installed outside agent-net. i imports them all (backups kept,
+  nothing is turned off)
+╭─Agents───────────╮╭─homelab · on research · 2 on · ~280/session──────────────╮
+│   a2a-ocs      1 ││ [x] archify → off                     ~120               │
+│   cogforge     1 ││ [x] estate-runbook                    ~160               │
+│   dotfiles     1 ││ [ ] found-skill → on                  ~200               │
+│   flood-war…   1 ││ [ ] react-best-practices              ~240               │
+│ ▸ homelab      2 ││                                                          │
+│   homelab-p…   1 ││                                                          │
+│   infra-game   1 ││                                                          │
+│   sovl-clone   1 ││                                                          │
+│   strategies   1 ││                                                          │
+│   tenebrae     2 ││                                                          │
+│   wbg-arch     1 ││                                                          │
+│   wbg-housi…   1 ││                                                          │
+│                  ││ skills per agent · tab: all tools                        │
+╰──────────────────╯╰──────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+i import all  ↑↓ move  tab all tools  / filter  ? help  esc back  ← agents
+  space on/off  enter review (2 changes)
