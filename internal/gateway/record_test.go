@@ -123,10 +123,11 @@ func TestMessageLogLines(t *testing.T) {
 		t.Fatalf("delivered line lacks the detail: %s", d[0])
 	}
 
-	// A failure and an expiry.
+	// A permanent failure and an expiry. A retryable failure (decision 0053)
+	// would be retried and then expire too, so use one that is not.
 	m2, _, _ := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "second", IdempotencyKey: "k2"})
-	s.ApplyDelivery(m2.ID, protocol.StateFailed, "no such local session")
-	if ls := lc.with("event=msg.failed", "msg="+m2.ID, `detail="no such local session"`); len(ls) != 1 {
+	s.ApplyDelivery(m2.ID, protocol.StateFailed, "plugin refused: busy")
+	if ls := lc.with("event=msg.failed", "msg="+m2.ID, `detail="plugin refused: busy"`); len(ls) != 1 {
 		t.Fatalf("failed lines: %v", lc.all())
 	}
 	m3, _, _ := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "third", IdempotencyKey: "k3"})
