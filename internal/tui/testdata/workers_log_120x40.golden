@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 sessions, 5 online · 1 busy     updated 00:00:00
-  Sessions    [ Workers log ]
+  Quotas    [ Workers log ]
 ╭─Workers log──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ▸ 11-14 22:13  test-model:high            normal      Review worker history and difficulty scores            running │
 │   11-14 22:11  test-model:high            normal      Review worker history and difficulty scores               done │
@@ -28,7 +28,7 @@
 │ Uncertainty: Known table schema.                                                                                     │
 │ Verification: Gateway and TUI tests.                                                                                 │
 │ Risk: Read only history.                                                                                             │
-│ Picker: normal                                                                                                       │
+│ Picker: codex test-model:high (34.5, good enough; eligible for this task and available on the chosen machine)        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -37,4 +37,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab Sessions  ↑↓ select run  ←→ details  ? help  q quit
+tab Quotas  ↑↓ select run  ←→ details  ? help  q quit

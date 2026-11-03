@@ -1619,12 +1619,12 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-Tab 1, Sessions, has two sub-tabs. Press `Tab` to switch between Sessions and
+Tab 3, Quotas, has two sub-tabs. Press `Tab` to switch between Quotas and
 Workers log. The log shows the last 200 worker runs, newest first, including
 running workers. Use `Up` / `Down` (or `j` / `k`) to select a run and `PgUp` /
 `PgDown` to move ten rows. Use `Left` / `Right` to scroll long details. The detail box below shows the difficulty scores,
-judge reasons, picker note, machine, project, harness, run time and any stored
-failure note. Missing assessments show `-`. Fields from removed sessions or
+judge reasons, stored picker model note, machine, project, harness, run time and any stored
+failure note. Missing assessments and picker notes show `-`. Fields from removed sessions or
 cleaned notices may be unavailable. The log has no row actions.
 `?` opens help.
 

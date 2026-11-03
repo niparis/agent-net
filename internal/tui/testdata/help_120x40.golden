@@ -1,6 +1,5 @@
 Keys · Sessions ────────────────────────────────────────────────────────────────────────────────────────────────────────
  Sessions
-  tab                    Sessions / Workers log
   pgup/pgdn              page
   home/g, end            first, last row
   enter                  go into the selected session on NAME, or open the delegation policy on DELEGATE
@@ -13,11 +12,6 @@ Keys · Sessions ─────────────────────
   v                      cycle the view: active only, all, all with offline, all with offline and hidden
   d                      show or hide the selected session details
 
- Workers log
-  tab                    Sessions
-  pgup                   ten runs up
-  pgdown                 ten runs down
-
  Global keys
   1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
   enter                  go into the selected thing
@@ -29,6 +23,12 @@ Keys · Sessions ─────────────────────
   C                      focus the CTO box
   ?                      help
   q, ctrl+c              quit
+
+
+
+
+
+
 
 
 

@@ -81,6 +81,8 @@ func (m Model) hints() []hint {
 		return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, actLast), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 	case m.tab == quotasTab && m.qualityDetail:
 		return []hint{bindingPairHint(contextQualityDetails, actUp, actDown), bindingPairHint(contextQualityDetails, actPageUp, actPageDown), bindingHint(contextQualityDetails, actClose)}
+	case m.tab == quotasTab && m.workersLog:
+		return []hint{{key: "tab", label: "Quotas"}, {key: "↑↓", label: "select run"}, {key: "←→", label: "details"}, sessionHelp, sessionQuit}
 	case m.tab == quotasTab:
 		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "quality details"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == settingsTab:
@@ -114,9 +116,7 @@ func (m Model) hints() []hint {
 			return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextHeld, "approve"), bindingHint(contextHeld, "refuse"), sessionHelp, sessionQuit}
 		}
 	}
-	if m.tab == sessionsTab && m.workersLog {
-		return []hint{{key: "tab", label: "Sessions"}, {key: "↑↓", label: "select run"}, {key: "←→", label: "details"}, sessionHelp, sessionQuit}
-	}
+
 	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
 			if m.sessionCell == 1 {
@@ -327,7 +327,7 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextCTO)
 	case m.open != nil:
 		return m.helpContextSection(contextBody)
-	case m.tab == sessionsTab && m.workersLog:
+	case m.tab == quotasTab && m.workersLog:
 		return m.helpContextSection(contextWorkersLog)
 	case m.mapOn:
 		return m.helpContextSection(contextCard)
@@ -362,9 +362,9 @@ func (m Model) toolsHelpSection() helpSection {
 
 func helpSections() []helpSection {
 	return []helpSection{
-		{"Sessions", []keyContext{contextSessions, contextWorkersLog}},
+		{"Sessions", []keyContext{contextSessions}},
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
-		{"Quotas", []keyContext{contextQuotas}},
+		{"Quotas", []keyContext{contextQuotas, contextWorkersLog}},
 		{"Messages", []keyContext{contextMessages}},
 		{"Tools", []keyContext{contextToolsAgents, contextToolsSkills, contextTools}},
 		{"Settings", []keyContext{contextSettings}},

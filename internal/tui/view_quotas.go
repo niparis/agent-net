@@ -10,7 +10,10 @@ import (
 )
 
 func (m Model) quotasView(w, h int) []string {
-	out := []string{m.titleLine(w)}
+	if m.workersLog {
+		return m.workersLogView(w, h)
+	}
+	out := []string{m.titleLine(w), m.quotasSubtabs(w)}
 	var subscription []string
 	protected := m.snap.ProtectedProviders
 	if len(protected.Providers) == 0 {
@@ -266,7 +269,7 @@ func (m Model) quotasView(w, h int) []string {
 
 	workers := m.quotaModelsView(w)
 	out = append(out, workers...)
-	out = append(out[:1], quotaPanelViewport(out[1:], w, max(h-1, 0), m.quotaScroll)...)
+	out = append(out[:2], quotaPanelViewport(out[2:], w, max(h-2, 0), m.quotaScroll)...)
 
 	for len(out) < h {
 		out = append(out, "")

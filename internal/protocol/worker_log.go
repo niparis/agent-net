@@ -10,6 +10,8 @@ type WorkerLogQuery struct {
 
 // WorkerLogEntry describes one start, including runs whose session has ended.
 type WorkerLogEntry struct {
+	// ModelNote is the stored picker explanation, when available.
+	ModelNote  string            `json:"model_note,omitempty"`
 	EndedAt    int64             `json:"ended_at"`
 	SessionID  string            `json:"session_id"`
 	NodeID     string            `json:"node_id"`

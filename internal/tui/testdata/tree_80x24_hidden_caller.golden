@@ -1,5 +1,4 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 10 sessions
-[ Sessions ]    Workers log
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
@@ -11,6 +10,7 @@
   ↳ backtest-b opencode idle   -     normal -            ?     ?
  build-vm 1 session ────────────────────────────────────────────────────────────
   ↳ backtest-… opencode idle   -     normal -            ?     ?
+
 
 
 

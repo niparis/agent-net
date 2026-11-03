@@ -113,7 +113,7 @@ const (
 )
 
 var keyBindings = []keyBinding{
-	bind(contextWorkersLog, "tab", "workers log", "Sessions", 0),
+	bind(contextWorkersLog, "tab", "workers log", "Quotas", 0),
 	bind(contextWorkersLog, "up|k", "up", "select run", 1),
 	bind(contextWorkersLog, "down|j", "down", "select run", 1),
 	bind(contextWorkersLog, "pgup", "page up", "ten runs up", 2),
@@ -122,7 +122,7 @@ var keyBindings = []keyBinding{
 	bind(contextWorkersLog, "right|l", "scroll details down", "scroll details down", 3),
 	bind(contextWorkersLog, "?", "help", "help", 4),
 	bind(contextWorkersLog, "q|ctrl+c", "quit", "quit", 5),
-	bind(contextSessions, "tab", "workers log", "Sessions / Workers log", 0),
+	bind(contextQuotas, "tab", "workers log", "Quotas / Workers log", 0),
 	bind(contextGlobal, "1", "sessions tab", "Sessions", -1),
 	bind(contextGlobal, "2", "graph tab", "Graph", -1),
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),

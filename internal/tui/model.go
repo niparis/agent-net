@@ -1257,6 +1257,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.settingsKey(k)
 	}
 	if m.tab == quotasTab {
+		if keyAction(contextQuotas, k.String()) == "workers log" {
+			m.workersLog = !m.workersLog
+			return m, nil
+		}
+		if m.workersLog {
+			return m.workersLogKey(k)
+		}
 		key := keyAction(contextQuotas, k.String())
 		switch key {
 		case "protect":
@@ -1311,15 +1318,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tab == inboxTab {
 		return m.inboxTabKey(k)
 	}
-	if m.tab == sessionsTab {
-		if keyAction(contextSessions, k.String()) == "workers log" {
-			m.workersLog = !m.workersLog
-			return m, nil
-		}
-		if m.workersLog {
-			return m.workersLogKey(k)
-		}
-	}
+
 	context := contextSessions
 	if m.tab == messagesTab {
 		context = contextMessages

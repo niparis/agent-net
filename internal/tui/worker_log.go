@@ -37,16 +37,16 @@ func (m Model) workersLogKey(k tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) sessionsSubtabs(w int) string {
-	sessions, workers := "  Sessions  ", "  Workers log  "
+func (m Model) quotasSubtabs(w int) string {
+	quotas, workers := "  Quotas  ", "  Workers log  "
 	if m.workersLog {
-		sessions = sDim.Render(sessions)
+		quotas = sDim.Render(quotas)
 		workers = sActiveTab.Render("[ Workers log ]")
 	} else {
-		sessions = sActiveTab.Render("[ Sessions ]")
+		quotas = sActiveTab.Render("[ Quotas ]")
 		workers = sDim.Render(workers)
 	}
-	return clip(sessions+"  "+workers, w)
+	return clip(quotas+"  "+workers, w)
 }
 
 // workerStatusStyle is shared with the worker threads in Messages.
@@ -78,7 +78,7 @@ func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool) string {
 }
 
 func (m Model) workersLogView(w, h int) []string {
-	out := []string{m.titleLine(w), m.sessionsSubtabs(w)}
+	out := []string{m.titleLine(w), m.quotasSubtabs(w)}
 	inner := max(w-4, 1)
 	selected := min(m.workerLogRow, max(len(m.snap.WorkerLog)-1, 0))
 	list := []string{}
@@ -106,15 +106,13 @@ func (m Model) workersLogView(w, h int) []string {
 					add(strings.ToUpper(key[:1]) + key[1:] + ": " + reason)
 				}
 			}
-			if a.PickerLabel != "" {
-				add("Picker: " + a.PickerLabel)
-			}
 			if a.Error != "" {
 				add("Assessment note: " + a.Error)
 			}
 		} else {
 			add("Assessment: -")
 		}
+		add("Picker: " + firstNonEmpty(r.ModelNote, "-"))
 		if r.Failure != "" {
 			add("Failure: " + r.Failure)
 		}

@@ -1,5 +1,4 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online · 1 busy · 1 worker
-[ Sessions ]    Workers log
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
@@ -16,6 +15,7 @@
   scratch            pi       -          -          shell  -     normal -            ?     ?
  old-box 1 session ─────────────────────────────────────────────────────────────────────────────────────────────────────
   old-session        claude   old        -          off    -     normal -        -     -
+
 
 
 
