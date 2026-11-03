@@ -206,7 +206,7 @@ func TestSetupFreshAndRerun(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.home, "cfg", "node.json")); err != nil {
 		t.Fatal("node.json missing")
 	}
-	ext, _ := os.ReadFile(filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net.ts"))
+	ext, _ := os.ReadFile(filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net", "index.ts"))
 	if !bytes.Equal(ext, pi.Extension) {
 		t.Error("pi extension content")
 	}
@@ -237,7 +237,7 @@ func TestSetupFreshAndRerun(t *testing.T) {
 	}
 
 	// An old extension is updated.
-	os.WriteFile(filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net.ts"), []byte("old"), 0o644)
+	os.WriteFile(filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net", "index.ts"), []byte("old"), 0o644)
 	if out = run(t, Options{Join: f.newJoin(t)}); !strings.Contains(out, "pi extension updated") {
 		t.Errorf("expected updated:\n%s", out)
 	}
@@ -260,11 +260,11 @@ func TestSetupSkipsWhatIsMissing(t *testing.T) {
 func TestSetupLeavesPiSymlink(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("PATH", t.TempDir())
-	extDir := filepath.Join(f.home, ".pi", "agent", "extensions")
+	extDir := filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net")
 	os.MkdirAll(extDir, 0o755)
 	target := filepath.Join(f.home, "repo-agent-net.ts")
 	os.WriteFile(target, []byte("repo copy"), 0o644)
-	os.Symlink(target, filepath.Join(extDir, "agent-net.ts"))
+	os.Symlink(target, filepath.Join(extDir, "index.ts"))
 	out := run(t, Options{Join: f.newJoin(t)})
 	if !strings.Contains(out, "pi extension skipped (symlink, left as is)") {
 		t.Errorf("output:\n%s", out)
@@ -277,7 +277,7 @@ func TestSetupLeavesPiSymlink(t *testing.T) {
 	if err := Uninstall(Options{Out: &buf, Exe: "/x"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Lstat(filepath.Join(extDir, "agent-net.ts")); err != nil {
+	if _, err := os.Lstat(filepath.Join(extDir, "index.ts")); err != nil {
 		t.Error("uninstall removed the symlink")
 	}
 }
@@ -287,11 +287,11 @@ func TestSetupLeavesPiSymlink(t *testing.T) {
 func TestUninstallRemovesOldAgentNetSymlinks(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("PATH", t.TempDir())
-	extDir := filepath.Join(f.home, ".pi", "agent", "extensions")
+	extDir := filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net")
 	os.MkdirAll(extDir, 0o755)
 	stale := filepath.Join(f.home, "old-agent-net.ts")
 	os.WriteFile(stale, []byte("// agent-net extension for Pi. old\n"), 0o644)
-	os.Symlink(stale, filepath.Join(extDir, "agent-net.ts"))
+	os.Symlink(stale, filepath.Join(extDir, "index.ts"))
 
 	ocDir := filepath.Join(f.home, ".config", "opencode", "plugins")
 	os.MkdirAll(ocDir, 0o755)
@@ -307,7 +307,7 @@ func TestUninstallRemovesOldAgentNetSymlinks(t *testing.T) {
 	if !strings.Contains(out, "pi extension ok (removed an agent-net symlink)") {
 		t.Errorf("output:\n%s", out)
 	}
-	if _, err := os.Lstat(filepath.Join(extDir, "agent-net.ts")); err == nil {
+	if _, err := os.Lstat(filepath.Join(extDir, "index.ts")); err == nil {
 		t.Error("uninstall kept the old agent-net symlink")
 	}
 	if b, _ := os.ReadFile(stale); string(b) != "// agent-net extension for Pi. old\n" {
@@ -385,7 +385,7 @@ func TestUninstall(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(f.home, ".pi", "agent", "AGENTS.md")); len(b) != 0 {
 		t.Errorf("AGENTS.md not empty: %q", b)
 	}
-	if _, err := os.Stat(filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net.ts")); err == nil {
+	if _, err := os.Stat(filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net", "index.ts")); err == nil {
 		t.Error("extension still there")
 	}
 	if _, err := os.Stat(filepath.Join(f.home, "cfg")); err == nil {
@@ -676,5 +676,31 @@ func TestUninstallRemovesCrashLeftovers(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("daemon.db must stay without --purge: %v", err)
+	}
+}
+
+func TestUninstallPiBothLayouts(t *testing.T) {
+	f := newFixture(t)
+	dir := filepath.Join(f.home, ".pi", "agent", "extensions")
+	paths := []string{filepath.Join(dir, "agent-net.ts"), filepath.Join(dir, "tools.gen.ts"), filepath.Join(dir, "agent-net", "index.ts"), filepath.Join(dir, "agent-net", "tools.gen.ts")}
+	for i, p := range paths {
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		data := pi.Extension
+		if i%2 == 1 {
+			data = pi.Tools
+		}
+		if err := os.WriteFile(p, data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	r := &runner{Options: Options{Out: &out}}
+	r.removePiExtension()
+	for _, p := range paths {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("remains: %s (%v)", p, err)
+		}
 	}
 }
