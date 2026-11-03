@@ -1,5 +1,11 @@
 # Security
 
+## Gateway exposure
+
+The gateway listens on `0.0.0.0:7420` by default, so it accepts connections on every network interface. These routes do not require a node token: `GET /v1/ca` serves the public CA certificate, `GET /install/bin/{os}/{arch}` serves the install binary, `GET /install/version` returns the release version, and `POST /v1/enroll` accepts a one-use enrollment code. `/install/checksums.txt` is also public, and `/install/{code}` is gated by the one-use install code rather than a node token. These routes support joining and updating machines. The enrollment code expires after 10 minutes and can be used once. The join flow also checks the CA fingerprint. The other operational API routes require an enrolled node token or the local admin token.
+
+This fits a LAN or tailnet where the gateway port is reachable only by machines you control. Do not expose port 7420 to the open internet. The public routes would be reachable by anyone, and the enrollment route could be probed or abused if an invite code leaked. Keep invite codes private.
+
 The daemon runs each installed harness's own update command as the current user, with input closed and a five-minute timeout. It does not run sudo. The commands can change the harness installation and may access the network. Busy harnesses are skipped and retried later. The owner can turn this off for the network with **Keep harnesses updated** in Settings under Integrations. Update results, including the last line of a failed command's output, are sent with the machine's harness inventory.
 
 Decision [0036](decisions/0036-primitives.md) distinguishes authority over actions from autonomy over decisions about work. An agent is a chartered identity; a session is its running process. The checks below describe current behavior, including the autonomy setting and its guard rails.
@@ -322,7 +328,9 @@ A critical repository should also have branch protection on its default branch: 
 
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. When the project policy sets no level, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers), but it is enforced only for Codex and Antigravity workers today. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude Code, OpenCode and Pi workers run with the owner's permissions. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`.
+
+The level definitions and limits below describe Codex's sandbox. Antigravity has separate behavior described in [Antigravity workers](antigravity.md#workers).
 
 | Level | Writes | Reads | Network |
 |---|---|---|---|
@@ -673,7 +681,7 @@ A timer deletes older data once at start and then every hour. A period of `0` ke
 
 **File modes.** `gateway.db` and the daemon's `daemon.db`, with their `-wal` and `-shm` files, are mode 0600. The gateway and the daemon create them with that mode and set it again at each start, so files made by an older version are fixed. The gateway creates its data folder with mode 0700.
 
-**Back up the gateway data folder.** It is the only copy of the CA, the server key and the database. If you lose it, every node has to join again (new invites, one for each machine), and all message history is gone. Copy the whole folder (`~/.local/state/agent-net/gateway/`) while the gateway is stopped, or use `sqlite3 gateway.db ".backup ..."` for the database, and keep the copy private: it holds `ca.key` and `server-key.pem`.
+**Back up the gateway data.** Run `agent-net gateway backup --out /absolute/new-directory` on the gateway machine. It writes a consistent SQLite snapshot and copies the skill repository and gateway keys while the gateway is running. Keep the copy private: it holds `ca.key` and `server-key.pem`. Without a backup, losing the gateway data means every node must join again and message history is lost.
 
 ## Project display names
 

@@ -9,7 +9,7 @@
 
 <p align="center">
   <b>Run all your coding agents, on all your machines, from one place.</b><br>
-  Claude Code, Codex, Pi and OpenCode sessions on your laptop and your VMs talk to each other,<br>
+  Claude Code, Codex, Pi, OpenCode and Antigravity sessions on your laptop and your VMs talk to each other,<br>
   hand work to cheaper workers, and wait for your decisions in one terminal view.
 </p>
 
@@ -48,7 +48,7 @@ One Go binary with SQLite built in. One line installs the first machine, one lin
 It fits when you:
 
 - keep several agent sessions open, each on its own project or machine, and copy text between them by hand today;
-- use more than one harness (Claude Code, Codex, Pi, OpenCode);
+- use more than one harness (Claude Code, Codex, Pi, OpenCode, Antigravity);
 - want agents to hand coding work to cheaper models, and get a checked report back without watching;
 - pay for several AI subscriptions and want them used evenly, not one exhausted while another sits idle.
 
@@ -91,7 +91,7 @@ Ask an agent to "do this with a worker". It calls `agent_worker_start` with a br
 
 1. **Scores the brief.** A cheap judge rates six things (reasoning, scope, coupling, uncertainty, verification, risk) from 1 to 5. A fixed formula turns them into a level, from `trivial` to `very_complex`. The agent tells you the result in one line, and the Claude workers panel shows it next to the worker.
 2. **Picks a model.** Among the worker profiles you registered, it keeps the ones good enough for that level, prefers providers that are behind their quota pace, keeps the protected ones (your orchestrator's subscription) for last, and rotates so no model takes every task.
-3. **Starts the worker** in its own git worktree, in a sandbox: it writes only in its worktree and needs no approvals.
+3. **Starts the worker** in its own git worktree by default. Only Codex workers and Antigravity workers are sandboxed today. Antigravity uses its own `--sandbox` flag. Claude, Pi and OpenCode workers run with the owner's permissions. See the roadmap for the planned sandbox for every worker.
 4. **Sends a notice** when the worker ends: status, run time, tokens, the branch and the diff stat, with the worker's report. The calling agent reviews the diff and runs the tests before it tells you the work is done.
 
 Each task's outcome is recorded: nudges, fixes, and bugs found later. The Quality panel (tab 3, `d` for details) shows how much of the orchestrator's time each model costs per task, by level.
@@ -149,7 +149,7 @@ Its tools appear in every session as `homelab__<tool>`. Details: [docs/mcp-regis
 
 - **One gateway** runs on one machine. It keeps the directory of sessions, the graph, the worker records and every message until it is delivered.
 - **One daemon** runs on each machine. It finds the local sessions, delivers messages into them, starts workers, runs the difficulty judge, and queues outgoing messages while the gateway is down.
-- **Every session gets the same `agent_*` tools**: to find sessions, machines and projects, send and reply, announce its task, ask you a question, start, find, stop and rate workers, and read the graph. Claude Code and Codex get them from `agent-net mcp`, Pi from an extension, OpenCode from a plugin.
+- **Every session gets the same `agent_*` tools**: to find sessions, machines and projects, send and reply, announce its task, ask you a question, start, find, stop and rate workers, and read the graph. Claude Code and Codex get them from `agent-net mcp`; Pi uses an extension; OpenCode and Antigravity use plugins.
 - **Connected apps** reach the gateway through a separate listener on `127.0.0.1:7422`, which is published on the internet only when you turn it on.
 
 ## Supported agents
@@ -160,6 +160,7 @@ Its tools appear in every session as `homelab__<tool>`. Details: [docs/mcp-regis
 | Codex | A stdio MCP server per thread (`agent-net mcp --codex`); messages go through the shared Codex app server ([decision 0012](docs/decisions/0012-codex-peers.md)) | 0.166.0 |
 | Pi | An extension that talks to the local daemon socket | 1.4.0 |
 | OpenCode | A plugin inside its v2 background service | 2.2.0 |
+| Antigravity (`agy`) | Plugin hooks and MCP for sessions, stream-json workers, and native skills | 1.4.12 |
 
 Platforms: Linux (systemd user services) and macOS (launchd), on amd64 and arm64.
 
@@ -194,14 +195,14 @@ To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to dele
 | A2A | A protocol for agent services to call each other | Between agent services |
 | MCP | A protocol for an agent to use tools | Agent to tools |
 | Claude Code `SendMessage` | Built-in messaging between Claude Code sessions | One machine, one harness |
-| agent-net | Messages into running interactive sessions, workers with model choice, and owner control | Your machines, four harnesses |
+| agent-net | Messages into running interactive sessions, workers with model choice, and owner control | Your machines, five harnesses |
 
 agent-net uses MCP to give agents their tools. It is not an implementation of A2A.
 
 ## Roadmap
 
 - **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
-- **An optional sandbox for every worker.** Today only Codex workers (and Antigravity with its own flag) are sandboxed. An OS-level wrapper (bubblewrap or Landlock on Linux, sandbox-exec on macOS) for every worker launcher, switched on per project. Plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
+- **An optional sandbox for every worker.** Today only Codex workers and Antigravity workers with its own `--sandbox` flag are sandboxed. An OS-level wrapper (bubblewrap or Landlock on Linux, sandbox-exec on macOS) for every worker launcher, switched on per project. Plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
 - **A modular agent-net:** sessions and work items as the foundation, modules you can switch, and the way of working as editable data. Plan: [docs/design/modularity.md](docs/design/modularity.md).
 - **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
 - **The phone app.**
