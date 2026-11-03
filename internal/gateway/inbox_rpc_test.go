@@ -111,3 +111,38 @@ func TestMaturityApprovalUsesInboxAndSharedNote(t *testing.T) {
 		}
 	}
 }
+
+// Dismissing an approval goes through the same frame as an answer, but it must
+// not need the session that asked: old approvals outlive their sessions.
+func TestInboxDismissGatewayNeedsNoSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	_, _ = s.UpsertSession(node, owner("test"))
+	agent, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]string{
+		"session_id": agent, "kind": "approval", "text": "merge abc", "recommendation": "yes",
+	})
+	g := &Gateway{store: s}
+	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "inbox.create", raw); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Kind != "approval" {
+		t.Fatalf("items: %+v, %v", items, err)
+	}
+	// The session that asked is gone, as an old procurement session is now.
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE id=?`, agent); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = json.Marshal(map[string]string{"id": items[0].ID, "answer": "dismiss"})
+	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "inbox.answer", raw); err != nil {
+		t.Fatal(err)
+	}
+	items, err = s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Status != "dismissed" {
+		t.Fatalf("items: %+v, %v", items, err)
+	}
+}

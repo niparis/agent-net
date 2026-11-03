@@ -182,8 +182,8 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		{"outcome", []string{"s let stand", "O overrule"}},
 		{"learned", []string{"a accept", "r reject"}},
 		{"proposal", []string{"a approve", "r refuse"}},
-		{"approval", []string{"a approve", "r refuse", "enter details"}},
-		{"question", []string{"t answer", "enter details"}},
+		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}},
+		{"question", []string{"t answer", "x dismiss", "enter details"}},
 		{"notice", []string{"x dismiss"}},
 	}
 	for _, tc := range cases {
@@ -312,7 +312,7 @@ func TestInboxDismissesANoticeWithX(t *testing.T) {
 	}
 	next = send(next, cmd())
 	call := src.method("inbox_answer")
-	if call == nil || !strings.Contains(fmt.Sprint(call.params), "i_notice") || !strings.Contains(fmt.Sprint(call.params), "seen") {
+	if call == nil || !strings.Contains(fmt.Sprint(call.params), "i_notice") || !strings.Contains(fmt.Sprint(call.params), "dismiss") {
 		t.Fatalf("dismiss call %+v", call)
 	}
 	if got := next.waitingCount(); got != 6 {
@@ -520,8 +520,8 @@ func TestInboxKeyBarFollowsTheSelection(t *testing.T) {
 		{"outcome", []string{"s let stand", "O overrule"}, []string{"a approve", "t answer"}},
 		{"learned", []string{"a accept", "r reject"}, []string{"enter details", "x dismiss"}},
 		{"proposal", []string{"a approve", "r refuse"}, []string{"t answer", "enter details", "A approve all"}},
-		{"approval", []string{"a approve", "r refuse", "enter details"}, []string{"s let stand", "t answer"}},
-		{"question", []string{"t answer", "enter details"}, []string{"a approve", "r refuse"}},
+		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}, []string{"s let stand", "t answer"}},
+		{"question", []string{"t answer", "x dismiss", "enter details"}, []string{"a approve", "r refuse"}},
 		{"notice", []string{"x dismiss"}, []string{"a approve", "t answer", "enter details"}},
 	}
 	for _, tc := range cases {
@@ -554,8 +554,8 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 	cases := []struct{ kind, item, bar string }{
 		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  ↑↓ select  ? help"},
 		{"waiting", "enter open session", "enter open session  ↑↓ select  ? help"},
-		{"question", "t answer  enter details", "t answer  enter details  ↑↓ select  ? help"},
-		{"approval", "a approve  r refuse  enter details", "a approve  r refuse  enter details  ↑↓ select  ? help"},
+		{"question", "t answer  x dismiss  enter details", "t answer  x dismiss  enter details  ↑↓ select  ? help"},
+		{"approval", "a approve  r refuse  x dismiss  enter details", "a approve  r refuse  x dismiss  enter details  ↑↓ select  ? help"},
 		{"proposal", "a approve  r refuse", "a approve  r refuse  ↑↓ select  ? help"},
 		{"learned", "a accept  r reject", "a accept  r reject  ↑↓ select  ? help"},
 		{"outcome", "s let stand  O overrule", "s let stand  O overrule  ↑↓ select  ? help"},
@@ -574,8 +574,10 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 			t.Errorf("%s key bar: got %q, want %q", tc.kind, got, tc.bar)
 		}
 		panel := ansi.Strip(strings.Join(m.inboxPanel(48, 12), "\n"))
-		if !strings.Contains(panel, tc.item) {
-			t.Errorf("%s panel lacks %q:\n%s", tc.kind, tc.item, panel)
+		for _, part := range strings.Split(tc.item, "  ") {
+			if !strings.Contains(panel, part) {
+				t.Errorf("%s panel lacks %q:\n%s", tc.kind, part, panel)
+			}
 		}
 	}
 }
@@ -651,5 +653,57 @@ func TestInboxPanelSitsOnTheRightOnAWideScreen(t *testing.T) {
 	box, panel := strings.Index(first, "Needs your answer"), strings.Index(first, "ci-runner asks")
 	if box < 0 || panel < 0 || panel <= box {
 		t.Fatalf("the panel is not to the right of the boxes: %q", first)
+	}
+}
+
+// The owner clears old approval items with x. The row goes as soon as the
+// gateway closes it, with the item ID the list showed.
+func TestInboxDismissesAnApprovalWithX(t *testing.T) {
+	m, src := inboxAllKindsModel(100, 30)
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "approval")
+	before := m.waitingCount()
+	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if cmd == nil {
+		t.Fatal("x did not dismiss the approval")
+	}
+	next = send(next, cmd())
+	call := src.method("inbox_answer")
+	if call == nil || !strings.Contains(fmt.Sprint(call.params), "i_app") || !strings.Contains(fmt.Sprint(call.params), "dismiss") {
+		t.Fatalf("dismiss call %+v", call)
+	}
+	if got := next.waitingCount(); got != before-1 {
+		t.Fatalf("%d waiting after the dismiss, want %d", got, before-1)
+	}
+}
+
+// A list row can outlive the gateway item, for example a notice the gateway
+// already closed. Dismissing it drops the row and says it is gone instead of
+// leaving it stuck with the raw error.
+func TestInboxDismissOfAGoneItemDropsItAndSaysAlreadyGone(t *testing.T) {
+	m, src := inboxAllKindsModel(100, 30)
+	src.callErr = fmt.Errorf("inbox item not found")
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "approval")
+	m.inboxError = "inbox item not found"
+	before := m.waitingCount()
+	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if cmd == nil {
+		t.Fatal("x did not try the dismiss")
+	}
+	next = send(next, cmd())
+	if next.inboxError != "" {
+		t.Fatalf("the error banner is still stuck: %q", next.inboxError)
+	}
+	if !strings.Contains(next.inboxNote, "already gone") {
+		t.Fatalf("no already gone note: %q", next.inboxNote)
+	}
+	if got := next.waitingCount(); got != before-1 {
+		t.Fatalf("%d waiting after the gone dismiss, want %d", got, before-1)
+	}
+	for _, item := range next.inboxItems {
+		if item.ID == "i_app" {
+			t.Fatal("the gone item is still in the list")
+		}
 	}
 }

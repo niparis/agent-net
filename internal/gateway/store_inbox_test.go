@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -113,5 +114,76 @@ func TestInboxAnswerRollsBackWhenDeliveryFails(t *testing.T) {
 	items, err := s.ListInbox()
 	if err != nil || len(items) != 1 || items[0].Status != "open" {
 		t.Fatalf("items: %+v, %v", items, err)
+	}
+}
+
+// The TUI dismisses an item with "dismiss". An approval from agent_owner_ask
+// names the session that asked, and that session may be gone by the time the
+// owner clears the old row. A dismissal closes the item without finding a
+// recipient or queueing a message.
+func TestInboxDismissClosesAnApprovalWhoseSessionIsGone(t *testing.T) {
+	s, _ := newTestStore(t)
+	item, err := s.CreateInboxItem(protocol.InboxItem{
+		Kind: "approval", SessionID: "s_gone", Node: "wbg-procurement",
+		Text: "merge the procurement branch", Recommendation: "yes",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dismissed, err := s.AnswerInbox(item.ID, "dismiss")
+	if err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+	if dismissed.Status != "dismissed" || dismissed.Answer != "" {
+		t.Fatalf("dismissed item: %+v", dismissed)
+	}
+	rows, err := s.ListInbox()
+	if err != nil || len(rows) != 1 || rows[0].Status != "dismissed" {
+		t.Fatalf("rows: %+v, %v", rows, err)
+	}
+	var messages int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&messages); err != nil || messages != 0 {
+		t.Fatalf("dismiss queued %d messages: %v", messages, err)
+	}
+}
+
+func TestInboxDismissOfAMissingItemSaysNotFound(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.AnswerInbox("i_gone", "dismiss"); err == nil || !strings.Contains(err.Error(), "inbox item not found") {
+		t.Fatalf("dismiss of a missing item: %v", err)
+	}
+}
+
+func TestInboxDismissTwiceSaysAlreadyAnswered(t *testing.T) {
+	s, _ := newTestStore(t)
+	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_gone", Text: "which branch?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInbox(item.ID, "dismiss"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInbox(item.ID, "dismiss"); err == nil || !strings.Contains(err.Error(), "inbox item already answered") {
+		t.Fatalf("second dismiss: %v", err)
+	}
+}
+
+// A dismissal clears the row and sends nothing to the session, unlike an
+// answer, which is delivered.
+func TestInboxDismissDoesNotMessageTheSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	_, _ = s.UpsertSession(node, owner("test"))
+	agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: agent, Text: "merge abc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInbox(item.ID, "dismiss"); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.Pending(node, false)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("dismiss queued %d messages: %v", len(pending), err)
 	}
 }

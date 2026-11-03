@@ -504,6 +504,9 @@ func (m Model) inboxTabView(w, h int) []string {
 	if m.inboxError != "" {
 		out = append(out, sBad.Render(clip("  "+m.inboxError, w)))
 	}
+	if m.inboxNote != "" {
+		out = append(out, sDim.Render(clip("  "+m.inboxNote, w)))
+	}
 	rows := m.inboxRows()
 	if len(rows) == 0 {
 		for len(out) < h {
@@ -1003,6 +1006,31 @@ func (m Model) inboxAnswer(id, answer string) tea.Cmd {
 	}
 }
 
+// inboxGone tells whether an Inbox action failed because the gateway no
+// longer has the item open. The item left the list while it waited, for
+// example a notice the gateway closed itself, so the row is dropped rather
+// than kept.
+func inboxGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "inbox item not found") || strings.Contains(text, "inbox item already answered")
+}
+
+// dropInboxItem removes an item the gateway no longer has open from the local
+// list, so the next draw cannot show a row whose action will never succeed.
+func (m *Model) dropInboxItem(id string) {
+	kept := make([]protocol.InboxItem, 0, len(m.inboxItems))
+	for _, item := range m.inboxItems {
+		if item.ID != id {
+			kept = append(kept, item)
+		}
+	}
+	m.inboxItems = kept
+	m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
+}
+
 // inboxTabKey handles the Inbox tab and its detail view.
 func (m Model) inboxTabKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.inboxRows()
@@ -1097,8 +1125,10 @@ func (m Model) inboxTabKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inboxEditing = true
 		}
 	case "dismiss":
-		if row.kind == "notice" {
-			return m, m.inboxAnswer(row.item.ID, "seen")
+		if row.kind == "notice" || row.kind == "approval" || row.kind == "question" {
+			m.inboxError = ""
+			m.inboxNote = ""
+			return m, m.inboxAnswer(row.item.ID, "dismiss")
 		}
 	}
 	return m, nil
@@ -1193,9 +1223,9 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 		open.label = "open session"
 		return []hint{open}
 	case "question":
-		return []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "details")}
+		return []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
 	case "approval":
-		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "details")}
+		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
 	case "proposal":
 		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse")}
 	case "outcome":

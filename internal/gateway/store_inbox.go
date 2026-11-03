@@ -99,6 +99,25 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 	if strings.TrimSpace(answer) == "" || len(answer) > protocol.MaxBodyBytes {
 		return item, reject("invalid answer")
 	}
+	// Dismissing closes the item without answering it. It needs no recipient:
+	// an old approval can outlive the session that asked for it, and the owner
+	// must still be able to clear it from the Inbox. "seen" is the older
+	// notice answer and means the same thing.
+	if answer == "dismiss" || answer == "seen" {
+		item.Status = "dismissed"
+		item.Answer = ""
+		item.AnsweredAt = s.now().UTC()
+		if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
+			return item, err
+		}
+		if len(validate) > 0 && validate[0] {
+			return item, nil
+		}
+		if err = tx.Commit(); err != nil {
+			return item, err
+		}
+		return item, nil
+	}
 	switch answer {
 	case "approve":
 		item.Status = "approved"
