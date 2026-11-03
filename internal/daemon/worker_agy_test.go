@@ -108,6 +108,24 @@ func TestAgyProcess(t *testing.T) {
 			fmt.Fprintln(os.Stderr, `AGY_ERROR: {"message":"local worker exploded"}`)
 			os.Exit(3)
 		}
+		if strings.Contains(body, "FAKE:edit") {
+			_ = os.WriteFile(filepath.Join(cwd, "agy-work.txt"), []byte("work\n"), 0644)
+		}
+		if strings.Contains(body, "FAKE:ignored") {
+			_ = os.WriteFile(filepath.Join(cwd, "ignored.txt"), []byte("ignored\n"), 0644)
+		}
+		if strings.Contains(body, "FAKE:selfcommit") {
+			cmd := exec.Command("git", "add", "agy-work.txt")
+			cmd.Dir = cwd
+			if err := cmd.Run(); err != nil {
+				os.Exit(3)
+			}
+			cmd = exec.Command("git", "commit", "-q", "-m", "worker commit")
+			cmd.Dir = cwd
+			if err := cmd.Run(); err != nil {
+				os.Exit(3)
+			}
+		}
 		partial := strings.Contains(r.Turns[0], "FAKE:partial")
 		if strings.Contains(body, "FAKE:handback") || partial {
 			conn, err := net.Dial("unix", r.Socket)
@@ -609,5 +627,86 @@ func TestAgyWorkerRestart(t *testing.T) {
 				t.Fatalf("duplicate notices: %+v", ns)
 			}
 		})
+	}
+}
+
+func TestAgyHandbackCommit(t *testing.T) {
+	w, _, repo := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Title: "Finish agy work", Task: "FAKE:edit FAKE:handback", Isolation: protocol.IsolationWorktree})
+	w.waitNotice(t, 1)
+	msg := gitOutT(t, repo, "log", "-1", "--format=%B", res.Branch)
+	if !strings.HasPrefix(msg, "Finish agy work\n") || !strings.Contains(msg, "Agent-Net-Harness: agy") || !strings.Contains(msg, "Agent-Net-Worker: "+res.SessionID) || !strings.Contains(msg, "Agent-Net-Model: gemini-3.8-flash-low") || !strings.Contains(msg, "Agent-Net-Caller:") || strings.Contains(strings.ToLower(msg), "co-authored-by:") {
+		t.Fatalf("commit message: %s", msg)
+	}
+	if got := gitOutT(t, repo, "show", res.Branch+":agy-work.txt"); got != "work" {
+		t.Fatal(got)
+	}
+}
+
+func TestAgyHandbackCommitScope(t *testing.T) {
+	w, _, repo := startAgyNode(t, shortSet)
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("ignored.txt\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "add", ".gitignore")
+	gitIn(t, repo, "commit", "-q", "-m", "ignore file")
+	if err := os.WriteFile(filepath.Join(repo, "outside.txt"), []byte("outside\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	base := gitOutT(t, repo, "rev-parse", "HEAD")
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:edit FAKE:ignored FAKE:handback", Isolation: protocol.IsolationWorktree})
+	w.waitNotice(t, 1)
+	if got := gitOutT(t, repo, "rev-list", "--count", base+".."+res.Branch); got != "1" {
+		t.Fatalf("commit count: %s", got)
+	}
+	files := gitOutT(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", res.Branch)
+	if files != "agy-work.txt" {
+		t.Fatalf("committed files: %q", files)
+	}
+	if got := gitOutT(t, repo, "rev-parse", "HEAD"); got != base {
+		t.Fatal("owner branch changed")
+	}
+	if got, err := os.ReadFile(filepath.Join(repo, "outside.txt")); err != nil || string(got) != "outside\n" {
+		t.Fatalf("outside file: %q %v", got, err)
+	}
+}
+
+func TestAgyHandbackNoWorktreeCommit(t *testing.T) {
+	w, _, repo := startAgyNode(t, shortSet)
+	base := gitOutT(t, repo, "rev-parse", "HEAD")
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:edit FAKE:handback", Isolation: protocol.IsolationNone})
+	w.waitNotice(t, 1)
+	if got := gitOutT(t, repo, "rev-parse", "HEAD"); got != base {
+		t.Fatal("owner branch changed")
+	}
+	if _, err := os.Stat(filepath.Join(repo, "agy-work.txt")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgyHandbackSelfCommit(t *testing.T) {
+	w, _, repo := startAgyNode(t, shortSet)
+	base := gitOutT(t, repo, "rev-parse", "HEAD")
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:edit FAKE:selfcommit FAKE:handback", Isolation: protocol.IsolationWorktree})
+	w.waitNotice(t, 1)
+	if got := gitOutT(t, repo, "rev-list", "--count", base+".."+res.Branch); got != "1" {
+		t.Fatalf("commit count: %s", got)
+	}
+	if got := gitOutT(t, repo, "log", "-1", "--format=%s", res.Branch); got != "worker commit" {
+		t.Fatalf("subject: %q", got)
+	}
+}
+
+func TestAgyUnfinishedCommitUsesTitle(t *testing.T) {
+	w, _, repo := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Title: "Finish unfinished work", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+	eventually(t, "fake agy writes work", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "agy-work.txt")); return err == nil })
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
+	notice := w.waitNotice(t, 1)[0]
+	if !strings.Contains(notice.Body, "unfinished changes were saved") {
+		t.Fatalf("notice: %s", notice.Body)
+	}
+	if got := gitOutT(t, repo, "log", "-1", "--format=%s", res.Branch); got != "Finish unfinished work" {
+		t.Fatalf("subject: %s", got)
 	}
 }

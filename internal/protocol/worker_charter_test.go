@@ -41,3 +41,10 @@ func TestWorkerBriefStatesTheNodesMaturityRules(t *testing.T) {
 		}
 	}
 }
+
+func TestAgyWorkerBriefCommitInstruction(t *testing.T) {
+	body := WorkerTaskBodyFor("agy", "work", "/tmp/wt", "agent-net/w1")
+	if !strings.Contains(body, "daemon commits your work") || strings.Contains(body, "Commit your work there") {
+		t.Fatalf("contradictory agy brief: %s", body)
+	}
+}

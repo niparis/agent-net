@@ -257,8 +257,12 @@ func first(a, b string) string {
 // author when there is one, and "agent-net" when not. It tells whether a
 // commit was made.
 func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
+	return d.saveWorkerChanges(w, unfinishedSubject(w.id, reason), reason, true)
+}
+
+func (d *Daemon) saveWorkerChanges(w *worker, subject, reason string, unfinished bool) bool {
 	d.wmu.Lock()
-	dir, id := w.worktree, w.id
+	dir, id, branch := w.worktree, w.id, w.branch
 	d.wmu.Unlock()
 	if dir == "" {
 		return false
@@ -267,6 +271,12 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 		return false
 	}
 	ctx := context.Background()
+	if branch != "" {
+		if current, err := gitOut(ctx, dir, "branch", "--show-current"); err != nil || current != branch {
+			d.Logf("worker %s: cannot save changes: worktree is not on worker branch", id)
+			return false
+		}
+	}
 	if st, err := gitOut(ctx, dir, "status", "--porcelain"); err != nil || st == "" {
 		return false
 	}
@@ -290,13 +300,13 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 	if v, _ := gitOut(ctx, dir, "config", "user.email"); v == "" {
 		args = append(args, "-c", "user.email=agent-net@localhost")
 	}
-	args = append(args, "commit", "-q", "--no-verify", "-m", unfinishedSubject(id, reason))
+	args = append(args, "commit", "-q", "--no-verify", "-m", subject)
 	if _, err := gitOutWithEnv(ctx, dir, d.workerGitEnv(w, nil, nil), args...); err != nil {
 		d.Logf("worker %s: keep unfinished work: %v", id, err)
 		return false
 	}
 	d.wmu.Lock()
-	w.unfinished = true
+	w.unfinished = unfinished
 	d.wmu.Unlock()
 	d.Logf("worker.unfinished_saved worker=%s reason=%s path=%s", id, reason, dir)
 	return true
@@ -577,6 +587,16 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	if req.Status == protocol.StatusDone && !req.IsComplete() && d.tryAutoContinue(ctx, w) {
 		d.Logf("worker.handback worker=%s session=%s status=%s complete=false auto_continue=1", w.id, sessionID, req.Status)
 		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: false, AutoContinued: true}, nil
+	}
+	if w.harness == "agy" {
+		d.wmu.Lock()
+		subject := strings.TrimSpace(w.title)
+		d.wmu.Unlock()
+		if subject == "" {
+			subject = strings.TrimSpace(strings.SplitN(req.Report, "\n", 2)[0])
+		}
+		complete := req.Status == protocol.StatusDone && req.IsComplete()
+		d.saveWorkerChanges(w, subject, "handback", !complete)
 	}
 	st := d.workerStats(w)
 	d.wmu.Lock()

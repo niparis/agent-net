@@ -913,7 +913,11 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 		en.end(d, w)
 	}
 	if !done && reason != protocol.StopHandback && reason != protocol.StopStartFails {
-		d.saveUnfinished(w, reason)
+		if harness == "agy" && w.title != "" {
+			d.saveWorkerChanges(w, strings.TrimSpace(strings.SplitN(w.title, "\n", 2)[0]), reason, true)
+		} else {
+			d.saveUnfinished(w, reason)
+		}
 	}
 	d.wmu.Lock()
 	row := d.rowLocked(w, reason)
