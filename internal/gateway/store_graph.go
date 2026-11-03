@@ -171,10 +171,26 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if err = graphRecord(tx, "node", name, "", "architect", "", actor, s.now().UnixNano()); err != nil {
 		return err
 	}
+	maturityChanged := false
+	for _, a := range attributes {
+		if a[0] == "maturity" {
+			maturityChanged = true
+			if err = bumpSettingsRevision(tx); err != nil {
+				return err
+			}
+			break
+		}
+	}
 	if len(validate) > 0 && validate[0] {
 		return nil
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if maturityChanged {
+		s.settingsNotify()
+	}
+	return nil
 }
 
 // SetCharter sets or clears one charter attribute, preserving its history.
@@ -184,10 +200,28 @@ func (s *Store) SetCharter(node, attr, value, actor string) error {
 		return err
 	}
 	defer tx.Rollback()
+	var before int64
+	if attr == "maturity" {
+		if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&before); err != nil {
+			return err
+		}
+	}
 	if err = setCharterTx(tx, node, attr, value, actor, s.now().UnixNano()); err != nil {
 		return err
 	}
-	return tx.Commit()
+	var after int64
+	if attr == "maturity" {
+		if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&after); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if attr == "maturity" && after != before {
+		s.settingsNotify()
+	}
+	return nil
 }
 
 func setCharterTx(tx *sql.Tx, node, attr, value, actor string, now int64) error {
@@ -218,7 +252,13 @@ func setCharterTx(tx *sql.Tx, node, attr, value, actor string, now int64) error 
 	if err != nil {
 		return err
 	}
-	return graphRecord(tx, "charter", node, attr, old, value, actor, now)
+	if err := graphRecord(tx, "charter", node, attr, old, value, actor, now); err != nil {
+		return err
+	}
+	if attr == "maturity" {
+		return bumpSettingsRevision(tx)
+	}
+	return nil
 }
 
 // SetNodeSetting sets or clears one node override of the maturity defaults
@@ -491,10 +531,22 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='undone',decided_at=? WHERE status='applied' AND id IN (SELECT suggestion_id FROM learned_suggestion_details WHERE history_id=?)`, now, id); err != nil {
 		return err
 	}
+	maturityChanged := typ == "charter" && attr == "maturity" && old != value
+	if maturityChanged {
+		if err = bumpSettingsRevision(tx); err != nil {
+			return err
+		}
+	}
 	if len(validate) > 0 && validate[0] {
 		return nil
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if maturityChanged {
+		s.settingsNotify()
+	}
+	return nil
 }
 
 // SetEdge validates and stores a directed graph edge.

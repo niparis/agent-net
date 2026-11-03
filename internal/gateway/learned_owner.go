@@ -92,6 +92,11 @@ func (s *Store) DecideLearned(id int64, action string) error {
 		return err
 	}
 	defer tx.Rollback()
+	var settingsRevisionBefore int64
+	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionBefore); err != nil {
+		return err
+	}
+
 	var v protocol.LearnedSuggestion
 	if err = tx.QueryRow(`SELECT node,field,edge_kind,kind,phrase FROM learned_suggestions WHERE id=? AND status='pending' AND severity='major' AND ready_at<=?`, id, s.now().UnixNano()).Scan(&v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase); err == sql.ErrNoRows {
 		return reject("ready major suggestion not found")
@@ -149,5 +154,15 @@ func (s *Store) DecideLearned(id int64, action string) error {
 	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='applied',decided_at=? WHERE id=?`, now, id); err != nil {
 		return err
 	}
-	return tx.Commit()
+	var settingsRevisionAfter int64
+	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionAfter); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if settingsRevisionAfter != settingsRevisionBefore {
+		s.settingsNotify()
+	}
+	return nil
 }

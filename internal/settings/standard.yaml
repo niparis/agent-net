@@ -1,0 +1,202 @@
+format: 1
+settings:
+  - key: workers.sandbox_level
+    rows: [52]
+    description: How far a worker's permissions are limited.
+    kind: rule
+    type: enum
+    values: [sandboxed, no-network, read-only]
+    levels: [network, repo]
+    default: sandboxed
+    by_maturity: {critical: no-network}
+    live: false
+  - key: delivery.merge_authority
+    rows: [128]
+    description: Who may approve a merge.
+    kind: rule
+    type: enum
+    values: [full, delegated, ask]
+    levels: [network, repo]
+    default: full
+    by_maturity: {mature: delegated, critical: ask}
+    live: false
+  - key: workers.auto_continue
+    rows: [64]
+    description: Whether an early worker stop is continued automatically.
+    kind: rule
+    type: bool
+    stricter: false
+    levels: [network, run]
+    default: true
+    live: false
+  - key: workers.auto_continue_max
+    rows: [65]
+    description: Maximum automatic continues after early worker stops.
+    kind: rule
+    type: int
+    levels: [network]
+    min: 0
+    default: 2
+    live: false
+  - key: guidance.peer_help_direct
+    rows: [3]
+    description: Tells sessions to answer peers directly.
+    kind: advice
+    type: text
+    levels: [network]
+    slots: [reply]
+    default: >-
+      - **When another agent messages you, help it.** Answering a peer's
+      question or request is part of your job. Reply directly {{reply}}. Do not
+      wait for me to approve a normal answer.
+    live: false
+ledger:
+  - {row: 1, keys: [guidance.sync_agent_files], step: 4}
+  - {row: 2, keys: [guidance.intro_text], step: 4}
+  - {row: 3, keys: [guidance.peer_help_direct], step: 4}
+  - {row: 4, keys: [guidance.decide_not_defer], step: 4}
+  - {row: 5, keys: [guidance.owner_check_triggers], step: 4}
+  - {row: 6, keys: [guidance.trusted_free_actions], step: 4}
+  - {row: 7, keys: [guidance.always_ask_actions], step: 4}
+  - {row: 8, keys: [guidance.cto_note_trust], step: 4}
+  - {row: 9, keys: [guidance.peer_contact_triggers], step: 4}
+  - {row: 10, keys: [guidance.ask_peer_after_tries], step: 4}
+  - {row: 11, keys: [guidance.relay_unedited], step: 4}
+  - {row: 12, keys: [guidance.message_style], step: 4}
+  - {row: 13, keys: [guidance.announce_task], step: 4}
+  - {row: 14, keys: [guidance.mcp_and_secret_hygiene], step: 4}
+  - {row: 15, keys: [guidance.register_projects_when_asked], step: 4}
+  - {row: 16, keys: [guidance.start_workers_when_asked], step: 4}
+  - {row: 17, keys: [guidance.worker_brief_style], step: 4}
+  - {row: 18, keys: [guidance.wait_for_worker_notice], step: 4}
+  - {row: 19, keys: [guidance.report_late_defects], step: 4}
+  - {row: 20, keys: [guidance.worker_brief_precedence], step: 4}
+  - {row: 21, keys: [delegation.mode]}
+  - {row: 22, keys: [delegation.native_unsupported_fallback]}
+  - {row: 23, keys: [delegation.max_failures_before_self_edit]}
+  - {row: 24, keys: [delegation.coder_subagent_prompt]}
+  - {row: 25, keys: [cto.brief_text]}
+  - {row: 26, keys: [cto.protected_provider_advice]}
+  - {row: 27, keys: [cto.repoint_unavailable_profile]}
+  - {row: 28, keys: [cto.charter_budget_advice]}
+  - {row: 29, keys: [cto.allowed_harnesses]}
+  - {row: 30, keys: [cto.title]}
+  - {row: 31, keys: [cto.compaction_policy]}
+  - {row: 32, keys: [cto.tool_classes]}
+  - {row: 33, keys: [cto.allowed_actions]}
+  - {row: 34, keys: [cto.graph_minor_rules]}
+  - {row: 35, keys: [cto.restriction_words]}
+  - {row: 36, keys: [cto.owner_window]}
+  - {row: 37, keys: [cto.proposal_expire_hours]}
+  - {row: 38, keys: [cto.proposal_max_open]}
+  - {row: 39, keys: [cto.learned_minor_daily_cap]}
+  - {row: 40, keys: [cto.learned_signal_windows]}
+  - {row: 41, code: "repo and agent split is an entity change"}
+  - {row: 42, keys: [charter.scope_and_escalation]}
+  - {row: 43, code: "maturity stays a charter fact"}
+  - {row: 44, keys: [delivery.tests_before_merge, delivery.merge_authority, workers.sandbox_level, charter.judge_consumers, delivery.deploy_rule], step: 6}
+  - {row: 45, keys: [charter.judge_consumers], step: 6}
+  - {row: 46, keys: [charter.autonomy_mode], step: 6}
+  - {row: 47, keys: [charter.size_budgets]}
+  - {row: 48, keys: [charter.context_template]}
+  - {row: 49, keys: [charter.neighbor_summary_limits]}
+  - {row: 50, keys: [relationships.edge_semantics]}
+  - {row: 51, keys: [workers.isolation_minimum], step: 7}
+  - {row: 52, keys: [workers.sandbox_level], step: 7}
+  - {row: 53, keys: [workers.max_age], step: 7}
+  - {row: 54, keys: [workers.idle_timeout], step: 7}
+  - {row: 55, keys: [workers.caller_gone_grace], step: 7}
+  - {row: 56, keys: [workers.queue_timeout], step: 7}
+  - {row: 57, keys: [workers.max_per_machine], step: 7}
+  - {row: 58, keys: [workers.cpu_admission_limits], step: 7}
+  - {row: 59, keys: [workers.memory_reserve], step: 7}
+  - {row: 60, keys: [workers.cost_model_defaults], step: 7}
+  - {row: 61, keys: [workers.start_gap], step: 7}
+  - {row: 62, keys: [workers.machine_placement_policy]}
+  - {row: 63, keys: [workers.run_model]}
+  - {row: 64, keys: [workers.auto_continue], step: 7}
+  - {row: 65, keys: [workers.auto_continue_max], step: 7}
+  - {row: 66, keys: [workers.continue_prompt_text], step: 7}
+  - {row: 67, keys: [workers.brief_preamble], step: 7}
+  - {row: 68, keys: [picker.difficulty_minimums]}
+  - {row: 69, keys: [picker.model_scores]}
+  - {row: 70, keys: [picker.fit_bands]}
+  - {row: 71, keys: [picker.max_level_gap]}
+  - {row: 72, keys: [picker.overqualified_scale]}
+  - {row: 73, keys: [picker.rotation_window]}
+  - {row: 74, keys: [picker.quota_max_percent]}
+  - {row: 75, keys: [picker.running_worker_penalty]}
+  - {row: 76, keys: [picker.quota_pace_curve]}
+  - {row: 77, keys: [picker.track_weights]}
+  - {row: 78, keys: [picker.poor_track_threshold]}
+  - {row: 79, keys: [picker.quality_weighting]}
+  - {row: 80, keys: [picker.rating_sampling]}
+  - {row: 81, keys: [picker.quality_estimator_priors]}
+  - {row: 82, keys: [picker.playbook_promotion]}
+  - {row: 83, keys: [picker.calibration_thresholds]}
+  - {row: 84, keys: [judge.ignore_caller_difficulty]}
+  - {row: 85, keys: [judge.primary_model]}
+  - {row: 86, keys: [judge.retry_model]}
+  - {row: 87, keys: [judge.timeout]}
+  - {row: 88, keys: [judge.analyzer_enabled]}
+  - {row: 89, keys: [judge.fallback_level]}
+  - {row: 90, keys: [judge.rubric_text]}
+  - {row: 91, keys: [judge.analyzer_prompt]}
+  - {row: 92, keys: [judge.weights_and_cut_points]}
+  - {row: 93, keys: [judge.bottleneck_floor]}
+  - {row: 94, keys: [providers.protected_list]}
+  - {row: 95, keys: [providers.protected_reason_text]}
+  - {row: 96, keys: [providers.pool_mapping]}
+  - {row: 97, keys: [providers.worker_allowlist]}
+  - {row: 98, keys: [providers.loose_match_order]}
+  - {row: 99, keys: [quotas.refuse_when_exhausted]}
+  - {row: 100, keys: [quotas.high_warning_percent]}
+  - {row: 101, keys: [quotas.poll_interval]}
+  - {row: 102, keys: [approvals.owner_only_actions]}
+  - {row: 103, keys: [intake.allowed_sources]}
+  - {row: 104, keys: [approvals.worker_max_nesting_depth]}
+  - {row: 105, keys: [approvals.worker_control_principals]}
+  - {row: 106, keys: [approvals.edge_request_rule]}
+  - {row: 107, keys: [inbox.outcome_escalation_rules]}
+  - {row: 108, keys: [inbox.ideas_backlog_enabled]}
+  - {row: 109, keys: [inbox.allowed_kinds_and_limits]}
+  - {row: 110, code: "approval binds one action"}
+  - {row: 111, keys: [inbox.idle_check_schedule]}
+  - {row: 112, keys: [inbox.autonomy_wake_daily_cap]}
+  - {row: 113, keys: [inbox.request_reminder_grace]}
+  - {row: 114, keys: [approvals.message_loop_and_rate_limits]}
+  - {row: 115, keys: [network.retention_periods]}
+  - {row: 116, keys: [inbox.notification_cooldown]}
+  - {row: 117, keys: [approvals.harness_integrations]}
+  - {row: 118, keys: [network.harness_auto_update]}
+  - {row: 119, keys: [approvals.connected_app_token_ttl]}
+  - {row: 120, keys: [skills.enabled_by_default]}
+  - {row: 121, keys: [skills.placement_strategy]}
+  - {row: 122, keys: [skills.project_roots]}
+  - {row: 123, code: "never overwrite tracked skills"}
+  - {row: 124, keys: [skills.worktree_copy_policy]}
+  - {row: 125, keys: [skills.backup_retention]}
+  - {row: 126, keys: [skills.mcp_server_attachment]}
+  - {row: 127, keys: [delivery.tests_before_merge], step: 6}
+  - {row: 128, keys: [delivery.merge_authority], step: 6}
+  - {row: 129, keys: [delivery.uncharted_merge_policy], step: 6}
+  - {row: 130, keys: [delivery.delegated_approver_modes], step: 6}
+  - {row: 131, keys: [delivery.caller_review_and_merge], step: 6}
+  - {row: 132, keys: [delivery.deploy_rule], step: 6}
+  - {row: 133, keys: [delivery.worker_branch_prefix], step: 6}
+  - {row: 134, keys: [delivery.worker_branch_prep], step: 6}
+  - {row: 135, keys: [delivery.worker_commit_and_trailers], step: 6}
+  - {row: 136, code: "worker rules stay in the repository"}
+  - {row: 137, keys: [delivery.worktree_cleanup_policy], step: 6}
+  - {row: 138, keys: [notices.untrusted_peer_framing]}
+  - {row: 139, keys: [notices.trusted_request_framing]}
+  - {row: 140, keys: [notices.owner_prompt_excerpt]}
+  - {row: 141, keys: [notices.owner_overrule_text]}
+  - {row: 142, keys: [notices.reply_no_ack_text]}
+  - {row: 143, keys: [notices.held_request_replies]}
+  - {row: 144, keys: [notices.worker_start_text]}
+  - {row: 145, keys: [notices.worker_completion_format]}
+  - {row: 146, keys: [notices.worker_rate_prompt_text]}
+  - {row: 147, keys: [notices.worker_idle]}
+  - {row: 148, keys: [notices.idle_check_and_wake_text]}
+  - {row: 149, keys: [notices.error_hint_limits]}

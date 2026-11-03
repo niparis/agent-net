@@ -246,6 +246,7 @@ func New(opts Options) (*Gateway, error) {
 	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*offlineTimer{},
 		enrollLimit: newEnrollLimiter(opts.Now)}
+	store.settingsHook = func() { go g.settingsChanged() }
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
@@ -662,6 +663,7 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 	}
 	if h.Type == "session.sync" && err == nil {
 		g.sendMCPSync(ctx, nc)
+		g.sendSettingsSync(ctx, nc)
 		g.dispatchPending(ctx, nc.id, true)
 	}
 	if h.Type == "session.upsert" && err == nil {
