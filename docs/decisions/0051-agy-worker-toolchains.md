@@ -1,4 +1,4 @@
-# 0050 - Expose toolchains to Antigravity workers
+# 0051 - Expose toolchains to Antigravity workers
 
 **Date:** 2026-11-03
 **Status:** Accepted by the owner.
