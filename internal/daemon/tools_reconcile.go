@@ -155,14 +155,14 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 			_ = j.finish()
 		}
 	}()
-	cur, closeRoot, err := openSkillRoot(root, rel)
+	cur, err := makeSkillRoot(root, rel)
 	if err != nil {
 		return fail("conflict", "skill root cannot be opened safely")
 	}
-	defer closeRoot()
-	dest := filepath.Join(cur, t.Name)
-	if _, err = os.Lstat(dest); err == nil {
-		hash, e := inventory.SkillHash(dest)
+	defer cur.Close()
+	dest := skillPath{cur, t.Name}
+	if _, err = dest.lstat(); err == nil {
+		hash, e := skillHashAt(dest)
 		if e != nil || hash != t.Revision.Version {
 			return fail("conflict", "destination differs")
 		}
@@ -174,24 +174,24 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 		return fail("failed", "cannot inspect destination")
 	}
 	stageName := skillStagePrefix + filepath.Base(j.path)
-	stage := filepath.Join(cur, stageName)
+	stage := skillPath{cur, stageName}
 	j.record.Stage = filepath.Join(root, rel, stageName)
 	if err = j.advance("staging"); err != nil {
 		retain = true
 		return fail("failed", "cannot update skill journal")
 	}
-	if err = os.Mkdir(stage, 0700); err != nil {
+	if err = stage.mkdir(); err != nil {
 		return fail("failed", "cannot create staging directory")
 	}
 	defer func() {
 		if !retain {
-			_ = os.RemoveAll(stage)
+			_ = stage.removeAll()
 		}
 	}()
-	if err = inventory.UnpackSkill(bundle, stage); err != nil {
+	if err = unpackSkillAt(bundle, stage); err != nil {
 		return fail("failed", "invalid skill bundle")
 	}
-	hash, err := inventory.SkillHash(stage)
+	hash, err := skillHashAt(stage)
 	if err != nil || hash != t.Revision.Version {
 		return fail("failed", "skill hash mismatch")
 	}
@@ -199,7 +199,7 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 		retain = true
 		return fail("failed", "skill operation interrupted")
 	}
-	if err = renameSkillNoReplace(stage, dest); err != nil {
+	if err = renameSkillAt(stage, dest, true); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fail("conflict", "destination appeared during copy")
 		}

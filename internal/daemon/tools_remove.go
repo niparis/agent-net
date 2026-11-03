@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -87,13 +86,13 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if err != nil || !filepath.IsAbs(root) || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return fail("conflict", "source outside authorized root")
 	}
-	parent, closeParent, err := openSkillRoot(root, filepath.Dir(rel))
+	parent, err := makeSkillRoot(root, filepath.Dir(rel))
 	if err != nil {
 		return fail("conflict", "source path is unsafe")
 	}
-	defer closeParent()
-	anchored := filepath.Join(parent, t.Name)
-	info, err := os.Lstat(anchored)
+	defer parent.Close()
+	anchored := skillPath{parent, t.Name}
+	info, err := anchored.lstat()
 	if os.IsNotExist(err) {
 		if err = d.forgetSkill(source); err != nil {
 			return fail("failed", "cannot update skill manifest or Git exclude")
@@ -127,7 +126,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 			return fail("conflict", "not installed by agent-net")
 		}
 	}
-	if err = filepath.WalkDir(anchored, func(_ string, e fs.DirEntry, err error) error {
+	if err = walkSkillAt(anchored, func(_ string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -159,12 +158,12 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		if e != nil {
 			return fail("failed", "cannot inspect Git worktree")
 		}
-		gitPath, closeGit, e := openSkillRoot(strings.TrimSpace(string(gitDir)), ".")
+		gitPath, e := makeSkillRoot(strings.TrimSpace(string(gitDir)), ".")
 		if e != nil {
 			return fail("conflict", "Git worktree directory is unsafe")
 		}
-		defer closeGit()
-		release, busy, e := j.acquireIndexLock(filepath.Join(strings.TrimSpace(string(gitDir)), "index.lock"), filepath.Join(gitPath, "index.lock"))
+		defer gitPath.Close()
+		release, busy, e := j.acquireIndexLock(filepath.Join(strings.TrimSpace(string(gitDir)), "index.lock"), skillPath{gitPath, "index.lock"})
 		if busy {
 			return fail("pending", "Git index is locked")
 		}
@@ -183,7 +182,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	} else if t.Target.Checkout != "" {
 		return fail("failed", "cannot inspect tracked paths")
 	}
-	hash, err := inventory.SkillHash(anchored)
+	hash, err := skillHashAt(anchored)
 	if err != nil || hash != t.Revision.Version {
 		return fail("conflict", "changed since plan")
 	}
@@ -195,36 +194,35 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 // backupAndForget moves a verified source directory into the private backup
 // folder and drops its manifest entry. The caller has already written the
 // journal record and must keep it when keep is true.
-func (d *Daemon) backupAndForget(j *skillJournal, anchored, source, item, version string) (state, reason string, keep bool) {
+func (d *Daemon) backupAndForget(j *skillJournal, anchored skillPath, source, item, version string) (state, reason string, keep bool) {
 	fail := func(state, reason string) (string, string, bool) { return state, reason, keep }
 	sum := sha256.Sum256([]byte(item))
 	itemDir := hex.EncodeToString(sum[:])
-	backups, closeBackups, err := openSkillRoot(d.cfg.StateDir, filepath.Join("skill-backups", itemDir))
+	backups, err := makeSkillRoot(d.cfg.StateDir, filepath.Join("skill-backups", itemDir))
 	if err != nil {
 		return fail("failed", "cannot open backup folder")
 	}
-	defer closeBackups()
-	stamp, err := os.MkdirTemp(backups, time.Now().UTC().Format("20060102T150405.000000000Z")+"-")
+	defer backups.Close()
+	stamp, err := skillTempDir(backups, time.Now().UTC().Format("20060102T150405.000000000Z")+"-")
 	if err != nil {
 		return fail("failed", "cannot create backup")
 	}
 	// Keep the full source path beneath the unique backup directory.
-	dest := filepath.Join(stamp, strings.TrimPrefix(source, string(os.PathSeparator)))
-	if err = os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-		os.RemoveAll(stamp)
+	dest := stamp.join(strings.TrimPrefix(source, string(os.PathSeparator)))
+	if err = (skillPath{dest.root, filepath.Dir(dest.name)}).mkdirAll(); err != nil {
+		stamp.removeAll()
 		return fail("failed", "cannot create backup")
 	}
-	// The opened backup directory can be a descriptor path. Store the stable
-	// path in the journal so a later daemon can find the preimage.
-	j.record.Backup = filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp), strings.TrimPrefix(source, string(os.PathSeparator)))
+	// Store the stable path so a later daemon can find the preimage.
+	j.record.Backup = filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp.name), strings.TrimPrefix(source, string(os.PathSeparator)))
 	if err = j.advance("backing_up"); err != nil {
 		keep = true
 		return fail("failed", "skill operation interrupted")
 	}
-	stableStamp := filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp))
+	stableStamp := filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp.name))
 	if err = skillRename(anchored, dest); err != nil {
 		if !errors.Is(err, syscall.EXDEV) {
-			os.RemoveAll(stamp)
+			stamp.removeAll()
 			return fail("failed", "cannot move source to backup")
 		}
 		switch st, rs := d.moveAcrossFilesystems(j, anchored, dest, stamp, stableStamp, version); st {
@@ -234,7 +232,7 @@ func (d *Daemon) backupAndForget(j *skillJournal, anchored, source, item, versio
 			return fail("failed", "skill operation interrupted")
 		default:
 			if st == "conflict" {
-				os.RemoveAll(stamp)
+				stamp.removeAll()
 			}
 			return fail(st, rs)
 		}
@@ -243,15 +241,15 @@ func (d *Daemon) backupAndForget(j *skillJournal, anchored, source, item, versio
 	if err = j.advance("backed_up"); err != nil {
 		return fail("failed", "skill operation interrupted")
 	}
-	hash, err := inventory.SkillHash(dest)
+	hash, err := skillHashAt(dest)
 	if err != nil || hash != version {
-		if e := restoreSkillBackup(dest, anchored); e == nil {
-			os.RemoveAll(stamp)
+		if e := renameSkillAt(dest, anchored, true); e == nil {
+			stamp.removeAll()
 			keep = false
 		}
 		return fail("conflict", "changed since plan")
 	}
-	lockdownSkillBackup(stamp)
+	lockdownSkillBackupAt(stamp)
 	d.pruneSkillBackups()
 	if err = d.forgetSkill(source); err != nil {
 		return fail("failed", "cannot update skill manifest or Git exclude")
@@ -269,50 +267,50 @@ func restoreSkillBackup(backup, source string) error {
 
 // skillRename moves a source directory into the backup folder. Tests replace
 // it to simulate a backup folder on another filesystem.
-var skillRename = os.Rename
+var skillRename = func(from, to skillPath) error { return renameSkillAt(from, to, false) }
 
 // moveAcrossFilesystems backs up a source that cannot be renamed into the
 // backup folder: copy to a staging folder beside the destination, verify the
 // hash, rename into place, then remove the source only if it is unchanged.
 // Every step is journaled. It returns an empty state on success.
-func (d *Daemon) moveAcrossFilesystems(j *skillJournal, source, dest, stamp, stableStamp, hash string) (state, reason string) {
-	bundle, err := inventory.PackSkill(source)
+func (d *Daemon) moveAcrossFilesystems(j *skillJournal, source, dest, stamp skillPath, stableStamp, hash string) (state, reason string) {
+	bundle, err := packSkillAt(source)
 	if err != nil {
-		os.RemoveAll(stamp)
+		stamp.removeAll()
 		return "failed", "cannot copy source to backup"
 	}
-	stage := filepath.Join(stamp, skillStagePrefix+filepath.Base(j.path))
+	stage := stamp.join(skillStagePrefix + filepath.Base(j.path))
 	j.record.Stage = filepath.Join(stableStamp, skillStagePrefix+filepath.Base(j.path))
 	if err = j.advance("copying"); err != nil {
 		return "interrupted", ""
 	}
-	if err = os.Mkdir(stage, 0700); err == nil {
-		err = inventory.UnpackSkill(bundle, stage)
+	if err = stage.mkdir(); err == nil {
+		err = unpackSkillAt(bundle, stage)
 	}
 	if err != nil {
-		os.RemoveAll(stamp)
+		stamp.removeAll()
 		return "failed", "cannot copy source to backup"
 	}
-	if got, e := inventory.SkillHash(stage); e != nil || got != hash {
-		os.RemoveAll(stamp)
+	if got, e := skillHashAt(stage); e != nil || got != hash {
+		stamp.removeAll()
 		return "conflict", "changed since plan"
 	}
 	if err = j.advance("copied"); err != nil {
 		return "interrupted", ""
 	}
-	if err = os.Rename(stage, dest); err != nil {
-		os.RemoveAll(stamp)
+	if err = renameSkillAt(stage, dest, false); err != nil {
+		stamp.removeAll()
 		return "failed", "cannot move source to backup"
 	}
 	if err = j.advance("backup_copied"); err != nil {
 		return "interrupted", ""
 	}
 	// Guarded removal: the source must still be what the backup holds.
-	if got, e := inventory.SkillHash(source); e != nil || got != hash {
-		os.RemoveAll(stamp)
+	if got, e := skillHashAt(source); e != nil || got != hash {
+		stamp.removeAll()
 		return "conflict", "changed since plan"
 	}
-	if err = os.RemoveAll(source); err != nil {
+	if err = source.removeAll(); err != nil {
 		return "interrupted", ""
 	}
 	return "", ""

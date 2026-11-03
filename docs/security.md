@@ -547,6 +547,7 @@ A plan changes nothing. It lists the machines, harnesses, checkouts, sources, de
 When a daemon applies a target:
 
 - It fetches the stored bundle and checks its hash before it writes.
+- The daemon anchors skill copy and removal paths in Go `os.Root` directories on Linux and macOS. Opened roots stay anchored when a parent is moved and refuse symlink escapes. Git index locks are created exclusively through the opened Git root.
 - It stages the copy beside the destination and renames it into place without replacing anything. A different existing destination is a conflict. A symlinked parent is refused.
 - It records path, hash, revision and whether it created the folder in the owner-only `skill-manifest.json`. A matching folder that was already there is recorded as not owned and never removed.
 - It places project copies in `.claude/skills` and `.agents/skills`, and global copies in `~/.claude/skills`, `~/.agents/skills` and, only if `~/.gemini` exists, `~/.gemini/config/skills`. It refuses other sources that may shadow these paths, and refuses to remove the last copy of a skill that was never imported. Project `.agent/skills`, system and plugin skills are observed without being managed.

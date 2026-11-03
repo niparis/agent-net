@@ -94,13 +94,13 @@ func (d *Daemon) undoCopySkill(t protocol.ToolTarget, targets []protocol.ToolTar
 		}
 		return fail("applied", "")
 	}
-	parent, closeParent, err := openSkillRoot(root, filepath.Dir(rel))
+	parent, err := makeSkillRoot(root, filepath.Dir(rel))
 	if err != nil {
 		return fail("conflict", "destination path is unsafe")
 	}
-	defer closeParent()
-	anchored := filepath.Join(parent, t.Name)
-	info, err := os.Lstat(anchored)
+	defer parent.Close()
+	anchored := skillPath{parent, t.Name}
+	info, err := anchored.lstat()
 	if os.IsNotExist(err) {
 		if err = d.forgetSkill(dest); err != nil {
 			return fail("failed", "cannot update skill manifest or Git exclude")
@@ -117,7 +117,7 @@ func (d *Daemon) undoCopySkill(t protocol.ToolTarget, targets []protocol.ToolTar
 	if !owned {
 		return fail("conflict", "not installed by agent-net")
 	}
-	if skillTreeHasSymlink(anchored) {
+	if skillTreeHasSymlinkAt(anchored) {
 		return fail("conflict", "changed since apply")
 	}
 	if top, e := projectGit(filepath.Dir(dest), "rev-parse", "--show-toplevel"); e == nil {
@@ -128,7 +128,7 @@ func (d *Daemon) undoCopySkill(t protocol.ToolTarget, targets []protocol.ToolTar
 			}
 		}
 	}
-	if h, e := inventory.SkillHash(anchored); e != nil || h != t.Revision.Version {
+	if h, e := skillHashAt(anchored); e != nil || h != t.Revision.Version {
 		return fail("conflict", "changed since apply")
 	}
 	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "remove", Target: dest, BeforeHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
@@ -185,37 +185,37 @@ func (d *Daemon) undoRemoveSkill(t protocol.ToolTarget) protocol.ToolResult {
 			_ = j.finish()
 		}
 	}()
-	parent, closeParent, err := openSkillRoot(root, filepath.Dir(rel))
+	parent, err := makeSkillRoot(root, filepath.Dir(rel))
 	if err != nil {
 		return fail("conflict", "source path is unsafe")
 	}
-	defer closeParent()
+	defer parent.Close()
 	stageName := skillStagePrefix + filepath.Base(j.path)
-	stage := filepath.Join(parent, stageName)
+	stage := skillPath{parent, stageName}
 	j.record.Stage = filepath.Join(filepath.Dir(source), stageName)
 	if err = j.advance("staging"); err != nil {
 		retain = true
 		return fail("failed", "skill operation interrupted")
 	}
-	if err = os.Mkdir(stage, 0700); err != nil {
+	if err = stage.mkdir(); err != nil {
 		return fail("failed", "cannot create staging directory")
 	}
 	defer func() {
 		if !retain {
-			_ = os.RemoveAll(stage)
+			_ = stage.removeAll()
 		}
 	}()
-	if err = inventory.UnpackSkill(bundle, stage); err != nil {
+	if err = unpackSkillAt(bundle, stage); err != nil {
 		return fail("failed", "invalid local backup")
 	}
-	if h, e := inventory.SkillHash(stage); e != nil || h != t.Revision.Version {
+	if h, e := skillHashAt(stage); e != nil || h != t.Revision.Version {
 		return fail("failed", "local backup does not match")
 	}
 	if err = j.advance("staged"); err != nil {
 		retain = true
 		return fail("failed", "skill operation interrupted")
 	}
-	if err = renameSkillNoReplace(stage, filepath.Join(parent, t.Name)); err != nil {
+	if err = renameSkillAt(stage, skillPath{parent, t.Name}, true); err != nil {
 		if os.IsExist(err) {
 			return fail("conflict", "changed since apply")
 		}

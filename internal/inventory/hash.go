@@ -39,7 +39,10 @@ func SkillHash(root string) (string, error) {
 	return skillHashRoot(dir)
 }
 
-func skillHashRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, false) }
+func skillHashRoot(dir *os.Root) (string, error) { return SkillHashRoot(dir) }
+
+// SkillHashRoot hashes a skill through an already opened directory.
+func SkillHashRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, false) }
 
 func skillContentFingerprintRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, true) }
 

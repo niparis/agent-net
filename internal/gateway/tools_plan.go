@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -460,7 +461,7 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	var logPlan protocol.ToolPlan
 	skippedCount := 0
 	defer func() {
-		g.logToolOperation("tools.apply", logPlan.Item, strings.Join(logPlan.Assignment.Projects, ","), len(logPlan.Targets), skippedCount, start, err)
+		g.logToolOperation("tools.apply", logPlan.Item, strings.Join(logPlan.Assignment.Projects, ","), len(logPlan.Targets), skippedCount, start, err, out.Targets...)
 	}()
 	var r protocol.ToolRevision
 	checked := false
@@ -755,12 +756,21 @@ func (g *Gateway) probeToolBatch(ctx context.Context, host *nodeConn, probes []p
 }
 
 // logToolOperation records metadata and redacts secret-shaped text from errors.
-func (g *Gateway) logToolOperation(event, item, project string, targets, skipped int, start time.Time, err error) {
+func (g *Gateway) logToolOperation(event, item, project string, targets, skipped int, start time.Time, err error, outcomes ...protocol.ToolTargetOutcome) {
 	var name string
 	if item != "" {
 		_ = g.store.db.QueryRow(`SELECT name FROM tool_identities WHERE id=?`, item).Scan(&name)
 	}
+	failed := 0
+	for _, target := range outcomes {
+		if target.State != "ok" && target.State != "applied" && target.State != "pending" {
+			failed++
+		}
+	}
 	result := "ok"
+	if failed > 0 {
+		result = fmt.Sprintf("%d targets failed", failed)
+	}
 	if err != nil {
 		result = redact.Secrets(err.Error())
 	}

@@ -124,10 +124,10 @@ func syncSkillJournalDir(dir string) error {
 }
 
 // acquireIndexLock records the lock in the journal, then creates it with a
-// private token. stable is the durable path stored in the journal; lock is the
-// descriptor-anchored path used to create it. busy is true when the lock already exists. After an error
+// private token. stable is the durable path stored in the journal; lock is
+// relative to an opened Git root. busy is true when the lock already exists. After an error
 // that is not busy the caller must keep the journal record.
-func (j *skillJournal) acquireIndexLock(stable, lock string) (release func(), busy bool, err error) {
+func (j *skillJournal) acquireIndexLock(stable string, lock skillPath) (release func(), busy bool, err error) {
 	raw := make([]byte, 16)
 	if _, err = rand.Read(raw); err != nil {
 		return nil, false, err
@@ -137,7 +137,7 @@ func (j *skillJournal) acquireIndexLock(stable, lock string) (release func(), bu
 	if err = j.advance("locking"); err != nil {
 		return nil, false, err
 	}
-	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	f, err := lock.root.OpenFile(lock.name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		if os.IsExist(err) {
 			return nil, true, err
@@ -148,7 +148,7 @@ func (j *skillJournal) acquireIndexLock(stable, lock string) (release func(), bu
 	if e := f.Close(); err == nil {
 		err = e
 	}
-	release = func() { removeOwnedIndexLock(lock, token) }
+	release = func() { removeOwnedIndexLockAt(lock, token) }
 	if err != nil {
 		release()
 		return nil, false, err
@@ -165,9 +165,25 @@ func removeOwnedIndexLock(lock, token string) bool {
 	if lock == "" || token == "" {
 		return false
 	}
-	b, err := os.ReadFile(lock)
+	root, err := makeSkillRoot(filepath.Dir(lock), ".")
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	return removeOwnedIndexLockAt(skillPath{root, filepath.Base(lock)}, token)
+}
+
+func removeOwnedIndexLockAt(lock skillPath, token string) bool {
+	if token == "" {
+		return false
+	}
+	info, err := lock.lstat()
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	b, err := lock.root.ReadFile(lock.name)
 	if err != nil || string(b) != token {
 		return false
 	}
-	return os.Remove(lock) == nil
+	return lock.root.Remove(lock.name) == nil
 }
