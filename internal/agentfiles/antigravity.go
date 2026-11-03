@@ -22,6 +22,9 @@ func antigravityFiles(exe string) map[string][]byte {
 	for _, event := range []string{"SessionStart", "PreInvocation", "Stop"} {
 		hooks[event] = []any{map[string]any{"type": "command", "command": quote + " hook antigravity " + event, "timeout": 5}}
 	}
+	// agy routes every MCP call through call_mcp_tool; the hook approves only
+	// calls to agent-net's own server and leaves every other tool to agy.
+	hooks["PreToolUse"] = []any{map[string]any{"matcher": "^call_mcp_tool$", "hooks": []any{map[string]any{"type": "command", "command": quote + " hook antigravity PreToolUse", "timeout": 5}}}}
 	return map[string][]byte{
 		"plugin.json":     marshal(map[string]any{"name": "agent-net", "description": "agent-net guidance, tools and hooks"}),
 		"mcp_config.json": marshal(map[string]any{"mcpServers": map[string]any{"agent-net": map[string]any{"command": exe, "args": []string{"mcp", "--antigravity"}, "env": map[string]string{}}}}),

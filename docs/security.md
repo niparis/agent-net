@@ -1092,7 +1092,7 @@ Claude Code and Codex sign-in probes run `claude auth status` and `codex login s
 
 ### Antigravity hooks
 
-The plugin runs `agent-net hook antigravity` at session start and on each invocation and stop. The command sends the hook JSON, including the conversation ID, workspace paths, transcript path and last user input when present, to the local daemon socket. The daemon keeps only the latest event, conversation ID, workspace paths, time and stop idle flag in memory. Hook failures return an empty JSON object, and the command has a five second limit. Antigravity MCP calls carry a root conversation ID; it is untrusted and is not bound to a session until discovery can verify it.
+The plugin runs `agent-net hook antigravity` at session start and on each invocation and stop. A fourth hook, on `PreToolUse` for `call_mcp_tool`, answers `auto_approve` only when the call goes to agent-net's own MCP server (`agent-net_agent-net`), so an agy session does not ask the owner to approve agent-net's tools; it answers nothing for every other tool, which keeps agy's normal approval. It runs locally and does not contact the daemon. The command sends the hook JSON, including the conversation ID, workspace paths, transcript path and last user input when present, to the local daemon socket. The daemon keeps only the latest event, conversation ID, workspace paths, time and stop idle flag in memory. Hook failures return an empty JSON object, and the command has a five second limit. Antigravity MCP calls carry a root conversation ID; it is untrusted and is not bound to a session until discovery can verify it.
 
 ### Antigravity main session delivery
 

@@ -60,3 +60,19 @@ func TestAntigravityHook(t *testing.T) {
 		t.Fatal("no event")
 	}
 }
+
+func TestAntigravityHookApprovesOnlyAgentNetTools(t *testing.T) {
+	cases := map[string]string{
+		`{"toolCall":{"name":"call_mcp_tool","args":{"ServerName":"agent-net_agent-net","ToolName":"agent_announce"}}}`: `{"decision":"auto_approve"}`,
+		`{"toolCall":{"name":"call_mcp_tool","args":{"ServerName":"other_server","ToolName":"x"}}}`:                     `{}`,
+		`{"toolCall":{"name":"run_command","args":{"ServerName":"agent-net_agent-net"}}}`:                               `{}`,
+		`not json`: `{}`,
+	}
+	for in, want := range cases {
+		var out strings.Builder
+		runAntigravityHook([]string{"antigravity", "PreToolUse"}, strings.NewReader(in), &out, "/nonexistent")
+		if strings.TrimSpace(out.String()) != want {
+			t.Errorf("%s: got %q, want %q", in, out.String(), want)
+		}
+	}
+}

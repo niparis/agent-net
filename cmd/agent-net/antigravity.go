@@ -19,7 +19,36 @@ func cmdAntigravityHook(args []string) error {
 	return nil
 }
 
+// agentNetMCPServer is how agy names agent-net's MCP server: the plugin name,
+// an underscore, then the server name.
+const agentNetMCPServer = "agent-net_agent-net"
+
+// antigravityToolApproval answers a PreToolUse hook: auto_approve for calls to
+// agent-net's own MCP server, nothing for any other tool.
+func antigravityToolApproval(in io.Reader) string {
+	var p struct {
+		ToolCall struct {
+			Name string `json:"name"`
+			Args struct {
+				ServerName string `json:"ServerName"`
+			} `json:"args"`
+		} `json:"toolCall"`
+	}
+	b, err := io.ReadAll(io.LimitReader(in, 1<<20))
+	if err != nil || json.Unmarshal(b, &p) != nil {
+		return `{}`
+	}
+	if p.ToolCall.Name == "call_mcp_tool" && p.ToolCall.Args.ServerName == agentNetMCPServer {
+		return `{"decision":"auto_approve"}`
+	}
+	return `{}`
+}
+
 func runAntigravityHook(args []string, in io.Reader, out io.Writer, socket string) {
+	if len(args) == 2 && args[0] == "antigravity" && args[1] == "PreToolUse" {
+		fmt.Fprintln(out, antigravityToolApproval(in))
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan json.RawMessage, 1)
