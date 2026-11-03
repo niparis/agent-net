@@ -501,7 +501,7 @@ func planPaths(plan protocol.ToolPlan) []string {
 // ---- applying ----
 
 func outcomeLines(name string, res protocol.ToolApplyResult) []string {
-	var ok, pending int
+	var ok, pending, failed int
 	var out []string
 	for _, t := range res.Targets {
 		switch t.State {
@@ -515,12 +515,17 @@ func outcomeLines(name string, res protocol.ToolApplyResult) []string {
 			}
 			out = append(out, tsWarn.Render("◐ ")+name+" on "+who+" is pending: "+orStr(t.Reason, "it applies when the machine is back"))
 		case "conflict":
+			failed++
 			out = append(out, tsErr.Render("! ")+name+" on "+t.Machine+" has a conflict: "+sanitize(t.Reason)+". Fix that, then plan the change again.")
 		default:
+			failed++
 			out = append(out, tsErr.Render("! ")+name+" on "+t.Machine+" failed: "+sanitize(t.Reason)+". Check the machine, then plan the change again.")
 		}
 	}
 	head := tsGood.Render("✓ ") + name + ": " + nounCount(ok, "target done", "targets done")
+	if failed > 0 {
+		head = tsErr.Render("! ") + name + ": " + nounCount(ok, "target done", "targets done") + ", " + fmt.Sprint(failed) + " failed"
+	}
 	if pending > 0 {
 		head += ", " + fmt.Sprint(pending) + " pending"
 	}

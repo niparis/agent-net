@@ -120,12 +120,12 @@ func removeOwnedExclude(path, line string) error {
 	if !filepath.IsAbs(path) || filepath.Base(path) != "exclude" || filepath.Base(filepath.Dir(path)) != "info" {
 		return errors.New("unsafe exclude path")
 	}
-	root, closeRoot, err := openSkillRoot(filepath.Dir(path), ".")
+	root, err := makeSkillRoot(filepath.Dir(path), ".")
 	if err != nil {
 		return err
 	}
-	defer closeRoot()
-	safe := filepath.Join(root, "exclude")
+	defer root.Close()
+	safe := skillPath{root, "exclude"}
 	unlock, err := lockSkillExclude(safe)
 	if err != nil {
 		return err
@@ -151,13 +151,12 @@ func removeOwnedExclude(path, line string) error {
 			after = append(after, entry...)
 		}
 	}
-	f, err := os.CreateTemp(root, ".agent-net-exclude-")
+	f, tmp, err := skillTempFile(root, ".agent-net-exclude-")
 	if err != nil {
 		return err
 	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	info, err := os.Stat(safe)
+	defer root.Remove(tmp)
+	info, err := safe.root.Stat(safe.name)
 	if err == nil {
 		err = f.Chmod(info.Mode().Perm())
 	}
@@ -180,5 +179,5 @@ func removeOwnedExclude(path, line string) error {
 	if !bytes.Equal(current, before) {
 		return errors.New("exclude changed")
 	}
-	return os.Rename(tmp, safe)
+	return root.Rename(tmp, safe.name)
 }

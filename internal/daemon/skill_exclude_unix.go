@@ -8,23 +8,22 @@ import (
 	"os"
 )
 
-func lockSkillExclude(path string) (func(), error) {
-	fd, err := unix.Open(path+".agent-net.lock", unix.O_CREAT|unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
+func lockSkillExclude(path skillPath) (func(), error) {
+	f, err := path.root.OpenFile(path.name+".agent-net.lock", os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW, 0600)
 	if err != nil {
 		return nil, err
 	}
-	if err = unix.Flock(fd, unix.LOCK_EX); err != nil {
-		unix.Close(fd)
+	if err = unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+		f.Close()
 		return nil, err
 	}
-	return func() { unix.Flock(fd, unix.LOCK_UN); unix.Close(fd) }, nil
+	return func() { unix.Flock(int(f.Fd()), unix.LOCK_UN); f.Close() }, nil
 }
-func appendSkillExclude(path string, data []byte) error {
-	fd, err := unix.Open(path, unix.O_WRONLY|unix.O_APPEND|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+func appendSkillExclude(path skillPath, data []byte) error {
+	f, err := path.root.OpenFile(path.name, os.O_WRONLY|os.O_APPEND|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return err
 	}
-	f := os.NewFile(uintptr(fd), path)
 	_, err = f.Write(data)
 	if err == nil {
 		err = f.Sync()
@@ -35,12 +34,11 @@ func appendSkillExclude(path string, data []byte) error {
 	return err
 }
 
-func readSkillExclude(path string) ([]byte, error) {
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+func readSkillExclude(path skillPath) ([]byte, error) {
+	f, err := path.root.OpenFile(path.name, os.O_RDONLY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, err
 	}
-	f := os.NewFile(uintptr(fd), path)
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {

@@ -212,7 +212,7 @@ func TestRecoverKeepsForeignIndexLock(t *testing.T) {
 	}
 }
 
-func exdev(string, string) error {
+func exdev(skillPath, skillPath) error {
 	return &os.LinkError{Op: "rename", Err: syscall.EXDEV}
 }
 
@@ -230,7 +230,9 @@ func TestRemoveSkillAcrossFilesystems(t *testing.T) {
 	skillRename = exdev
 	var steps []string
 	skillJournalHook = func(s string) error { steps = append(steps, s); return nil }
-	defer func() { skillRename, skillJournalHook = os.Rename, nil }()
+	defer func() {
+		skillRename, skillJournalHook = func(from, to skillPath) error { return renameSkillAt(from, to, false) }, nil
+	}()
 	if r := d.removeSkill(target); r.State != "applied" {
 		t.Fatalf("remove: %+v", r)
 	}
@@ -265,7 +267,9 @@ func TestRemoveSkillAcrossFilesystemsKeepsChangedSource(t *testing.T) {
 		}
 		return nil
 	}
-	defer func() { skillRename, skillJournalHook = os.Rename, nil }()
+	defer func() {
+		skillRename, skillJournalHook = func(from, to skillPath) error { return renameSkillAt(from, to, false) }, nil
+	}()
 	if r := d.removeSkill(target); r.State != "conflict" {
 		t.Fatalf("remove: %+v", r)
 	}
@@ -289,11 +293,13 @@ func TestRecoverFinishesRemovalAfterCopiedBackup(t *testing.T) {
 		}
 		return nil
 	}
-	defer func() { skillRename, skillJournalHook = os.Rename, nil }()
+	defer func() {
+		skillRename, skillJournalHook = func(from, to skillPath) error { return renameSkillAt(from, to, false) }, nil
+	}()
 	if r := d.removeSkill(target); r.State != "failed" {
 		t.Fatalf("crash: %+v", r)
 	}
-	skillRename, skillJournalHook = os.Rename, nil
+	skillRename, skillJournalHook = func(from, to skillPath) error { return renameSkillAt(from, to, false) }, nil
 	if !skillHashIs(source, hash) {
 		t.Fatal("source should still exist after the crash")
 	}

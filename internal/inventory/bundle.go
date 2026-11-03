@@ -33,11 +33,16 @@ func PackSkill(root string) ([]byte, error) {
 		return nil, err
 	}
 	defer dir.Close()
+	return PackSkillRoot(dir)
+}
+
+// PackSkillRoot packs a skill through an already opened directory.
+func PackSkillRoot(dir *os.Root) ([]byte, error) {
 	var out bytes.Buffer
 	tw := tar.NewWriter(&out)
 	count := 0
 	var total int64
-	err = fs.WalkDir(dir.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
+	err := fs.WalkDir(dir.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -133,6 +138,14 @@ func UnpackSkill(data []byte, dest string) error {
 		return err
 	}
 	defer root.Close()
+	return UnpackSkillRoot(data, root)
+}
+
+// UnpackSkillRoot extracts into an already opened empty private directory.
+func UnpackSkillRoot(data []byte, root *os.Root) error {
+	if len(data) > MaxBundleBytes {
+		return errors.New("skill exceeds bundle limit")
+	}
 	tr := tar.NewReader(bytes.NewReader(data))
 	seen := map[string]bool{}
 	var links []string
@@ -197,7 +210,7 @@ func UnpackSkill(data []byte, dest string) error {
 		}
 	}
 	for _, name := range links {
-		if _, err = root.Stat(name); err != nil {
+		if _, err := root.Stat(name); err != nil {
 			return errors.New("invalid or escaping symlink")
 		}
 	}

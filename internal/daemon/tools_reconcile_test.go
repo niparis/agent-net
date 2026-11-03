@@ -144,11 +144,11 @@ func TestGlobalSkillReconcilesThroughGateway(t *testing.T) {
 func TestSkillRootStaysAnchoredAfterParentSwap(t *testing.T) {
 	home := t.TempDir()
 	outside := t.TempDir()
-	path, closeRoot, err := openSkillRoot(home, ".claude/skills")
+	root, err := makeSkillRoot(home, ".claude/skills")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeRoot()
+	defer root.Close()
 	original := filepath.Join(home, ".claude", "skills")
 	if err = os.Rename(original, filepath.Join(home, "moved")); err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestSkillRootStaysAnchoredAfterParentSwap(t *testing.T) {
 	if err = os.Symlink(outside, original); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(path, "fixture"), []byte("x"), 0600); err != nil {
+	if err = root.WriteFile("fixture", []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(filepath.Join(outside, "fixture")); !os.IsNotExist(err) {

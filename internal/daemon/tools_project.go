@@ -217,11 +217,11 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 	if e != nil || gitRel == ".." || strings.HasPrefix(gitRel, ".."+string(os.PathSeparator)) {
 		return fail("conflict", "Git worktree directory is unsafe")
 	}
-	gitRoot, closeGit, e := openSkillRoot(common, gitRel)
+	gitRoot, e := makeSkillRoot(common, gitRel)
 	if e != nil {
 		return fail("conflict", "Git worktree directory is unsafe")
 	}
-	defer closeGit()
+	defer gitRoot.Close()
 	rel := filepath.Join(root, t.Name)
 	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "project-copy", Target: filepath.Join(checkout, rel), AfterHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
 	if err != nil {
@@ -233,7 +233,7 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 			_ = j.finish()
 		}
 	}()
-	release, busy, err := j.acquireIndexLock(filepath.Join(gitDir, "index.lock"), filepath.Join(gitRoot, "index.lock"))
+	release, busy, err := j.acquireIndexLock(filepath.Join(gitDir, "index.lock"), skillPath{gitRoot, "index.lock"})
 	if busy {
 		return fail("pending", "Git index is locked")
 	}
@@ -294,12 +294,12 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 	if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fail("conflict", "Git exclude directory is unsafe")
 	}
-	anchored, closeInfo, e := openSkillRoot(common, "info")
+	anchored, e := makeSkillRoot(common, "info")
 	if e != nil {
 		return fail("conflict", "Git exclude directory is unsafe")
 	}
-	defer closeInfo()
-	safeExclude := filepath.Join(anchored, "exclude")
+	defer anchored.Close()
+	safeExclude := skillPath{anchored, "exclude"}
 	unlock, err := lockSkillExclude(safeExclude)
 	if err != nil {
 		return fail("pending", "cannot lock Git exclude")
