@@ -131,13 +131,16 @@ func TestDeliveryGraphOwnerUpdatesSettingsSnapshot(t *testing.T) {
 
 func TestDeliveryShorthandReplacesGraphApproverAndUndoRestoresIt(t *testing.T) {
 	r := newDeliveryRig(t)
+	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "initial"); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: "approves"}, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	result, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"full"`)}}, "owner", "use full authority")
+	result, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"full"`), Expect: json.RawMessage(`"ask"`)}}, "owner", "use full authority")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,13 +155,9 @@ func TestDeliveryShorthandReplacesGraphApproverAndUndoRestoresIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err = r.s.deliveryPipeline("demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	step, _ := p.Find(protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge})
-	if step.Owner.Kind != protocol.OwnerNode || step.Owner.Node != "reviewer" {
-		t.Fatalf("undo did not restore approver: %+v", step.Owner)
+	var restored int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM graph_edges WHERE source='reviewer' AND target='demo' AND kind='approves'`).Scan(&restored); err != nil || restored != 1 {
+		t.Fatalf("undo did not restore edge: %d, %v", restored, err)
 	}
 	if _, err := r.s.UndoSettings(undo.Revision, "owner"); err != nil {
 		t.Fatal(err)
@@ -190,5 +189,91 @@ func TestDeliveryPipelineMigratesLegacyShorthand(t *testing.T) {
 	var count int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_settings_legacy WHERE key='delivery.tests_before_merge' AND scope='demo'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("legacy backup = %d, %v", count, err)
+	}
+}
+
+func TestDeliverySettingsSameApproverKeepsEdge(t *testing.T) {
+	for _, tc := range []struct{ key, value, kind string }{{"delivery.merge_authority", `"full"`, "approves"}, {"delivery.deploy_rule", `"brief"`, "approves_deploy"}} {
+		t.Run(tc.kind, func(t *testing.T) {
+			r := newDeliveryRig(t)
+			c := SettingsChange{Key: tc.key, Level: "repo", Scope: "demo", Value: json.RawMessage(tc.value)}
+			if _, err := r.s.WriteSettings([]SettingsChange{c}, "owner", "initial"); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: tc.kind}, "owner"); err != nil {
+				t.Fatal(err)
+			}
+			c.Expect = c.Value
+			before, err := r.s.SettingsSnapshot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := r.s.WriteSettings([]SettingsChange{c}, "owner", "same")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Revision != before.Revision {
+				t.Fatalf("no-op changed revision: %d -> %d", before.Revision, result.Revision)
+			}
+			var count int
+			if err := r.s.db.QueryRow(`SELECT count(*) FROM graph_edges WHERE source='reviewer' AND target='demo' AND kind=?`, tc.kind).Scan(&count); err != nil || count != 1 {
+				t.Fatalf("edge count = %d, %v", count, err)
+			}
+		})
+	}
+}
+
+func TestDeliverySettingsImplicitApproverNoChange(t *testing.T) {
+	for _, tc := range []struct{ key, value, kind string }{{"delivery.merge_authority", `"full"`, "approves"}, {"delivery.deploy_rule", `"brief"`, "approves_deploy"}} {
+		t.Run(tc.kind, func(t *testing.T) {
+			r := newDeliveryRig(t)
+			if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: tc.kind}, "owner"); err != nil {
+				t.Fatal(err)
+			}
+			before, err := r.s.SettingsSnapshot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := r.s.WriteSettings([]SettingsChange{{Key: tc.key, Level: "repo", Scope: "demo", Value: json.RawMessage(tc.value)}}, "owner", "same default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Revision != before.Revision {
+				t.Fatalf("no-op changed revision: %d -> %d", before.Revision, result.Revision)
+			}
+			var n int
+			if err := r.s.db.QueryRow(`SELECT count(*) FROM graph_edges WHERE source='reviewer' AND target='demo' AND kind=?`, tc.kind).Scan(&n); err != nil || n != 1 {
+				t.Fatalf("edge count %d: %v", n, err)
+			}
+		})
+	}
+}
+
+func TestDeliverySettingsRealDeployApproverChangeRemovesEdge(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := SettingsChange{Key: "delivery.deploy_rule", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}
+	if _, err := r.s.WriteSettings([]SettingsChange{c}, "owner", "initial"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: "approves_deploy"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	c.Expect = c.Value
+	c.Value = json.RawMessage(`"brief"`)
+	if _, err := r.s.WriteSettings([]SettingsChange{c}, "owner", "change"); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM graph_edges WHERE target='demo' AND kind='approves_deploy'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("edge count = %d, %v", count, err)
 	}
 }

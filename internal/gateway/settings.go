@@ -357,6 +357,13 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		if c.Level != "repo" || (alias != "delivery.merge_authority" && alias != "delivery.deploy_rule") {
 			continue
 		}
+		// Preserve explicit assignments when the underlying approver rule is unchanged.
+		oldRule, oldErr := before.Resolve(c.Key, settings.Where{Repo: c.Scope})
+		newSnap := settings.Snapshot{Maturity: before.Maturity, DeliveryPipelineCutover: true}
+		for a, v := range staged {
+			newSnap.Values = append(newSnap.Values, settings.Value{Key: a.key, Level: a.level, Scope: a.scope, Item: a.item, Value: v})
+		}
+		newRule, newErr := newSnap.Resolve(c.Key, settings.Where{Repo: c.Scope})
 		kind := "approves"
 		if alias == "delivery.deploy_rule" {
 			kind = "approves_deploy"
@@ -366,6 +373,14 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		err := tx.QueryRow(`SELECT source,mode,rule FROM graph_edges WHERE target=? AND kind=?`, c.Scope, kind).Scan(&e.From, &e.Mode, &e.Rule)
 		if err != nil && err != sql.ErrNoRows {
 			return result, err
+		}
+		if err == nil && oldErr == nil && newErr == nil && bytes.Equal(oldRule.Value, newRule.Value) {
+			if current[address(c)] == nil {
+				delete(staged, address(c))
+			} else {
+				staged[address(c)] = current[address(c)]
+			}
+			continue
 		}
 		if err == nil {
 			graphChanges = append(graphChanges, settingGraphChange{address: address(c), edge: e})

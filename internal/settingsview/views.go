@@ -88,7 +88,7 @@ func ViewsWithWhere(snapshot settings.Snapshot, history []protocol.SettingsHisto
 			return nil, err
 		}
 		var sources []string
-		keys := []string{"delivery.pipeline.merge.requires", "delivery.pipeline.merge.approver", "delivery.pipeline.deploy.approver"}
+		keys := []string{"delivery.pipeline.review.required_from", "delivery.pipeline.review.independent", "delivery.pipeline.review.requires", "delivery.pipeline.merge.requires", "delivery.pipeline.merge.approver", "delivery.pipeline.deploy.approver"}
 		if !snap.DeliveryPipelineCutover {
 			keys = []string{"delivery.tests_before_merge", "delivery.merge_authority", "delivery.deploy_rule"}
 		}

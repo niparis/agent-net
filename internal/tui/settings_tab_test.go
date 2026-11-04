@@ -304,6 +304,9 @@ func TestSettingsDeliveryNodeOwnerEdit(t *testing.T) {
 		if row.Key == "delivery.owner.approve" && !strings.Contains(row.Description, "approval rule") {
 			t.Fatal("approval assignment did not explain its existing approval rule")
 		}
+		if row.Key == "delivery.owner.deploy" && !strings.Contains(row.Description, "when the pipeline has a deploy step") {
+			t.Fatal("deploy owner does not explain when it applies")
+		}
 		if row.Key == "delivery.owner.review" {
 			index = i
 			if string(row.Value) != `"reviewer"` {

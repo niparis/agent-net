@@ -50,7 +50,8 @@ func PipelineFromSettings(snap settings.Snapshot, repo string) (Pipeline, error)
 			req := Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{}}
 			if set["test:tests_added"] {
 				req.Fields[FieldTestsAdded] = FieldYes
-			} else {
+			}
+			if set["test:suite"] {
 				req.Fields[FieldSuite] = FieldAny
 			}
 			requires = append(requires, req)

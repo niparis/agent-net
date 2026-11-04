@@ -8,7 +8,8 @@ import (
 )
 
 // cutoverDeliveryPipelineTx moves explicit legacy shorthand rows to ordered
-// pipeline components. A backup retains even invalid legacy values.
+// pipeline components. The backup retains even invalid values for inspection;
+// older binaries do not read it.
 func (s *Store) cutoverDeliveryPipelineTx(tx *sql.Tx) error {
 	rows, err := tx.Query(`SELECT key,level,scope,item,value,revision FROM setting_values WHERE key IN
 		('delivery.tests_before_merge','delivery.merge_authority','delivery.deploy_rule') ORDER BY key,level,scope,item`)
