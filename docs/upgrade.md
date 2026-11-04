@@ -113,7 +113,7 @@ OpenCode watches `~/.config/opencode/plugins/` and reloads a changed plugin file
 
 ## Notes
 
-- A dev build (version `dev`) refuses to upgrade without `--force`, and never upgrades automatically.
+- A dev build (version `dev`) refuses to upgrade without `--force`, and never upgrades automatically. Manual and pushed downgrades also require `--force`; automatic upgrades only move forward.
 - `AGENT_NET_RELEASE_BASE_URL` replaces `https://github.com/niparis/agent-net/releases`. Tests use it.
 - With `AGENT_NET_NO_SERVICE=1` there is no service manager, so the gateway and the daemons restart themselves in place. `scripts/e2e-upgrade.sh` uses this to test the whole flow, including automatic catch-up, with real binaries and throwaway state. It also sets `AGENT_NET_AUTO_UPGRADE_MAX_DELAY` (like `1s`) to shorten the random wait.
 - Machines that run a version from before this feature cannot be upgraded from the gateway. They show up as "too old to upgrade remotely". Run `agent-net upgrade` or the install line there once.

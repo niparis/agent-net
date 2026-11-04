@@ -30,7 +30,7 @@ Use a tag that starts with `v`. The release workflow (`.github/workflows/release
 
 1. runs `go vet ./...` and `scripts/test.sh -- -timeout 30m` only when the tagged commit has no green CI run,
 2. builds `agent-net-{linux,darwin}-{amd64,arm64}` with `CGO_ENABLED=0 go build -trimpath` and sets the version from the tag (`-X main.version=<tag>`),
-3. writes `checksums.txt` (SHA-256 of the four binaries), signs its exact bytes with the `RELEASE_SIGNING_KEY` Actions secret, and independently verifies both signatures against the tagged public keys,
+3. writes `checksums.txt` (SHA-256 of the four binaries and `install.sh`), signs its exact bytes with the `RELEASE_SIGNING_KEY` Actions secret, and independently verifies both signatures against the tagged public keys,
 4. creates a GitHub release with generated notes and attaches the binaries, checksum file, both signatures and `install.sh`,
 5. dispatches the Pages workflow to publish the latest release installer.
 
@@ -40,13 +40,13 @@ The workflow refuses to publish if the secret is missing, signing fails, or the 
 
 ## The install line
 
-`https://niparis.github.io/agent-net/install` serves `install.sh` from the latest published GitHub release. The Pages workflow runs on a published release or by manual dispatch. A release created with the Actions `GITHUB_TOKEN` does not trigger release workflows, so the release workflow also dispatches Pages explicitly. Pages downloads the latest release's installer and checks its syntax before publishing. Merging an installer change alone does not publish it.
+`https://niparis.github.io/agent-net/install` serves `install.sh` from the latest published GitHub release. The Pages workflow runs on a published release or by manual dispatch. A release created with the Actions `GITHUB_TOKEN` does not trigger release workflows, so the release workflow also dispatches Pages explicitly. Pages downloads the latest release's installer and signed checksum files, verifies both signatures and the installer checksum against the public key in the checked-out source, and checks the installer syntax before publishing. Merging an installer change alone does not publish it.
 
 ## Release signing key
 
 The release public key is in `internal/upgrade/release.go` and `install.sh`. The matching private key is in the repository Actions secret `RELEASE_SIGNING_KEY`. The key was put in place on 2026-11-04. Do not generate a new key for an ordinary release.
 
-For the first signed release, follow the release steps above. After Pages publishes the new installer, run the install line on the gateway, then upgrade the other machines. Wait until the Pages workflow has deployed: release creation and Pages deployment are separate steps. The old `agent-net upgrade` cannot copy the new manifest and signature to the gateway dist directory; if it was used, run the install line on the gateway afterward to put them there. Older binaries and the previously published installer do not check signatures while moving to this first release. Once the new code is installed, later unsigned or incorrectly signed releases are refused. A signed client also refuses upgrades from an older gateway that lacks the signed manifest.
+For the first signed release, follow the release steps above. After Pages publishes the new installer, run the install line on the gateway, then upgrade the other machines. Wait until the Pages workflow has deployed: release creation and Pages deployment are separate steps. The old `agent-net upgrade` cannot copy the new manifest and signature to the gateway dist directory; if it was used, run the install line on the gateway afterward to put them there. Older binaries and the previously published installer do not check signatures while moving to this first release. Once the new code is installed, later unsigned or incorrectly signed releases are refused. A signed client also refuses upgrades from an older gateway that lacks the signed manifest. The gateway still chooses which signed release it serves to joined machines. Manual and pushed downgrades require `--force`; automatic upgrades only move forward. A gateway invite install trusts the pinned gateway to provide the binary, not the release signature.
 
 ### Rotate the key
 

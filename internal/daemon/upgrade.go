@@ -43,7 +43,12 @@ var errUpgradeBusy = errors.New("an upgrade is already running")
 // the restart), the caller joins it: it gets that install's result and joined
 // is true, so it must not restart the daemon a second time. This is what
 // happens when an automatic upgrade and the gateway's request meet.
-func (d *Daemon) upgradeTo(ctx context.Context, target string) (res protocol.NodeUpgradeResult, joined bool, err error) {
+func (d *Daemon) upgradeTo(ctx context.Context, target string, force bool) (res protocol.NodeUpgradeResult, joined bool, err error) {
+	if target != "" {
+		if err := upgrade.CheckDowngrade(d.helloVersion(), target, force); err != nil {
+			return protocol.NodeUpgradeResult{From: d.helloVersion()}, false, err
+		}
+	}
 	if !d.upg.running.CompareAndSwap(false, true) {
 		d.upg.mu.Lock()
 		same, done := d.upg.target == target, d.upg.done
@@ -64,7 +69,7 @@ func (d *Daemon) upgradeTo(ctx context.Context, target string) (res protocol.Nod
 	d.upg.mu.Lock()
 	d.upg.target, d.upg.done = target, done
 	d.upg.mu.Unlock()
-	res, err = d.doUpgrade(ctx, target)
+	res, err = d.doUpgrade(ctx, target, force)
 	d.upg.mu.Lock()
 	d.upg.res, d.upg.err = res, err
 	d.upg.mu.Unlock()
@@ -72,7 +77,7 @@ func (d *Daemon) upgradeTo(ctx context.Context, target string) (res protocol.Nod
 	return res, false, err
 }
 
-func (d *Daemon) doUpgrade(ctx context.Context, target string) (protocol.NodeUpgradeResult, error) {
+func (d *Daemon) doUpgrade(ctx context.Context, target string, force bool) (protocol.NodeUpgradeResult, error) {
 	cur := d.helloVersion()
 	if cur == "dev" {
 		d.upg.running.Store(false)
@@ -82,7 +87,7 @@ func (d *Daemon) doUpgrade(ctx context.Context, target string) (protocol.NodeUpg
 		d.upg.running.Store(false)
 		return protocol.NodeUpgradeResult{From: cur}, errors.New("no version given")
 	}
-	_, to, err := d.install(ctx, target)
+	_, to, err := d.install(ctx, target, force)
 	if err != nil {
 		d.upg.running.Store(false)
 		return protocol.NodeUpgradeResult{From: cur}, err
@@ -97,13 +102,13 @@ func (d *Daemon) doUpgrade(ctx context.Context, target string) (protocol.NodeUpg
 // onUpgrade handles the gateway's node.upgrade request: install the version,
 // answer the gateway, then restart. The answer goes out before the restart so
 // the gateway learns the result; the new version shows up in the next hello.
-func (d *Daemon) onUpgrade(ctx context.Context, l *link, id, target string) {
+func (d *Daemon) onUpgrade(ctx context.Context, l *link, id, target string, force bool) {
 	reply := func(res protocol.NodeUpgradeResult, err error) {
 		if frame, e := protocol.EncodeResult(id, res, err); e == nil {
 			l.write(ctx, frame)
 		}
 	}
-	res, joined, err := d.upgradeTo(ctx, target)
+	res, joined, err := d.upgradeTo(ctx, target, force)
 	if err != nil {
 		if !errors.Is(err, errUpgradeBusy) {
 			d.Logf("upgrade to %s failed: %v", target, err)
@@ -123,7 +128,7 @@ func (d *Daemon) onUpgrade(ctx context.Context, l *link, id, target string) {
 
 // install puts the target version on disk. If the daemon already runs it,
 // nothing is downloaded.
-func (d *Daemon) install(ctx context.Context, target string) (from, to string, err error) {
+func (d *Daemon) install(ctx context.Context, target string, force bool) (from, to string, err error) {
 	if d.cfg.Upgrade != nil {
 		return d.cfg.Upgrade(ctx, target)
 	}
@@ -132,7 +137,7 @@ func (d *Daemon) install(ctx context.Context, target string) (from, to string, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	res, err := upgrade.FromGateway(ctx, d.client, d.cfg.GatewayURL, d.cfg.Exe, d.helloVersion(), target)
+	res, err := upgrade.FromGatewayWithForce(ctx, d.client, d.cfg.GatewayURL, d.cfg.Exe, d.helloVersion(), target, force)
 	return res.From, res.To, err
 }
 

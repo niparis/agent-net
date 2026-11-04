@@ -491,6 +491,7 @@ type (
 	// and restart. The daemon answers with NodeUpgradeResult before it restarts.
 	NodeUpgrade struct {
 		Version string `json:"version"`
+		Force   bool   `json:"force,omitempty"`
 	}
 	NodeUpgradeResult struct {
 		From       string `json:"from"`

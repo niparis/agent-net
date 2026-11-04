@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -265,11 +267,23 @@ func TestVerifyReleaseSignatures(t *testing.T) {
 			return installer
 		}, true},
 		{"wrong installer key", func(_ *testing.T, _ string) []byte { return []byte("  RELEASE_SSH_PUBLIC_KEY=\"ssh-ed25519 wrong\"\n") }, true},
+		{"installer omitted from signed manifest", func(t *testing.T, p string) []byte {
+			if err := os.WriteFile(p, []byte("no installer\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := signFile(keyPEM, p, goKey, installer); err != nil {
+				t.Fatal(err)
+			}
+			return installer
+		}, true},
+		{"tampered installer", func(_ *testing.T, _ string) []byte {
+			return append(append([]byte(nil), installer...), []byte("# altered\n")...)
+		}, true},
 		{"missing verifier", func(t *testing.T, _ string) []byte { t.Setenv("PATH", t.TempDir()); return installer }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sums := filepath.Join(t.TempDir(), "checksums.txt")
-			if err := os.WriteFile(sums, []byte("checksums\n"), 0o600); err != nil {
+			if err := os.WriteFile(sums, []byte(fmt.Sprintf("%x  install.sh\n", sha256.Sum256(installer))), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if err := signFile(keyPEM, sums, goKey, installer); err != nil {
@@ -284,5 +298,24 @@ func TestVerifyReleaseSignatures(t *testing.T) {
 				t.Fatalf("verifyFile error = %v, want error %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestReleaseWorkflowsCoverInstaller(t *testing.T) {
+	release, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := os.ReadFile("../../.github/workflows/pages.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(release), "sha256sum agent-net-* install.sh > checksums.txt") {
+		t.Error("installer is not included in the release checksums")
+	}
+	for _, want := range []string{"checksums.txt", "checksums.txt.sig", "checksums.txt.sshsig", "scripts/release-key verify"} {
+		if !strings.Contains(string(pages), want) {
+			t.Errorf("Pages does not verify %s", want)
+		}
 	}
 }

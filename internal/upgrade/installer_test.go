@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -92,7 +93,7 @@ func TestInstallerSignedRelease(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			hits := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
+				switch strings.TrimPrefix(r.URL.Path, "/download/v1.2.3") {
 				case "/checksums.txt":
 					w.Write(tc.sums)
 				case "/checksums.txt.sshsig":
@@ -110,7 +111,7 @@ func TestInstallerSignedRelease(t *testing.T) {
 			}))
 			defer srv.Close()
 			home := t.TempDir()
-			cmd := exec.Command("sh", script, "--binary-only")
+			cmd := exec.Command("sh", script, "--binary-only", "--version", "v1.2.3")
 			cmd.Env = append(os.Environ(), "HOME="+home, "AGENT_NET_BASE_URL="+srv.URL, "TMPDIR="+t.TempDir())
 			if tc.name == "missing verifier" {
 				path := t.TempDir()
@@ -161,7 +162,7 @@ func TestInstallerGatewayCarriesSignedManifest(t *testing.T) {
 	sshSig := sshSign(t, key, sums)
 	rawSig := []byte("raw signature for nodes")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
+		switch strings.TrimPrefix(r.URL.Path, "/download/v1.2.3") {
 		case "/checksums.txt":
 			w.Write(sums)
 		case "/checksums.txt.sshsig":
@@ -174,7 +175,7 @@ func TestInstallerGatewayCarriesSignedManifest(t *testing.T) {
 	}))
 	defer srv.Close()
 	home := t.TempDir()
-	cmd := exec.Command("sh", script, "--gateway")
+	cmd := exec.Command("sh", script, "--gateway", "--version", "v1.2.3")
 	cmd.Env = append(os.Environ(), "HOME="+home, "AGENT_NET_BASE_URL="+srv.URL, "TMPDIR="+t.TempDir(), "AGENT_NET_NO_SERVICE=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("gateway install: %v: %s", err, out)
@@ -183,6 +184,111 @@ func TestInstallerGatewayCarriesSignedManifest(t *testing.T) {
 		got, err := os.ReadFile(filepath.Join(home, ".local/share/agent-net/dist", name))
 		if err != nil || string(got) != string(want) {
 			t.Errorf("dist %s: %q, %v", name, got, err)
+		}
+	}
+}
+
+// The latest tag must be resolved once, before any release assets are fetched.
+func TestInstallerPinsLatestAndChecksVersion(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen unavailable")
+	}
+	key, pub := sshTestKey(t)
+	script := filepath.Join(t.TempDir(), "install.sh")
+	if err := os.WriteFile(script, testInstaller(t, pub), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, binVersion string
+		wantError        bool
+	}{{"matching", "v1.2.3", false}, {"wrong version", "v1.2.4", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := fakeBinary(tc.binVersion)
+			sums := []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset()))
+			sig := sshSign(t, key, sums)
+			var latestHits atomic.Int32
+			wrongPath := make(chan string, 10)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasPrefix(r.URL.Path, "/latest/") {
+					count := latestHits.Add(1)
+					tag := "v1.2.3"
+					if count > 1 {
+						tag = "v1.2.4"
+					}
+					http.Redirect(w, r, "/download/"+tag+"/checksums.txt", http.StatusFound)
+					return
+				}
+				switch r.URL.Path {
+				case "/download/v1.2.3/checksums.txt":
+					w.Write(sums)
+				case "/download/v1.2.3/checksums.txt.sshsig":
+					w.Write(sig)
+				case "/download/v1.2.3/" + ThisAsset():
+					w.Write(bin)
+				default:
+					wrongPath <- r.URL.Path
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			home := t.TempDir()
+			cmd := exec.Command("sh", script, "--binary-only")
+			cmd.Env = append(os.Environ(), "HOME="+home, "AGENT_NET_BASE_URL="+srv.URL, "TMPDIR="+t.TempDir())
+			out, err := cmd.CombinedOutput()
+			if (err != nil) != tc.wantError {
+				t.Fatalf("install error %v: %s", err, out)
+			}
+			if latestHits.Load() != 1 {
+				t.Errorf("latest requested %d times", latestHits.Load())
+			}
+			select {
+			case path := <-wrongPath:
+				t.Errorf("unexpected path %s", path)
+			default:
+			}
+			if tc.wantError {
+				if _, err := os.Stat(filepath.Join(home, ".local/bin/agent-net")); !os.IsNotExist(err) {
+					t.Fatal("mismatched binary installed")
+				}
+			}
+		})
+	}
+}
+
+func TestInstallerBadSSHSignatureLeavesGatewayDistAlone(t *testing.T) {
+	key, pub := sshTestKey(t)
+	_ = key
+	script := filepath.Join(t.TempDir(), "install.sh")
+	if err := os.WriteFile(script, testInstaller(t, pub), 0755); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "checksums.txt") {
+			w.Write([]byte("bad manifest"))
+		} else {
+			w.Write([]byte("bad signature"))
+		}
+	}))
+	defer srv.Close()
+	home := t.TempDir()
+	dist := filepath.Join(home, ".local/share/agent-net/dist")
+	if err := os.MkdirAll(dist, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"checksums.txt", "checksums.txt.sig"} {
+		if err := os.WriteFile(filepath.Join(dist, name), []byte("previous"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("sh", script, "--gateway", "--version", "v1.2.3")
+	cmd.Env = append(os.Environ(), "HOME="+home, "AGENT_NET_BASE_URL="+srv.URL, "TMPDIR="+t.TempDir())
+	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "signature") {
+		t.Fatalf("bad SSH signature: %v %s", err, out)
+	}
+	for _, name := range []string{"checksums.txt", "checksums.txt.sig"} {
+		b, err := os.ReadFile(filepath.Join(dist, name))
+		if err != nil || string(b) != "previous" {
+			t.Fatalf("dist %s changed: %q %v", name, b, err)
 		}
 	}
 }

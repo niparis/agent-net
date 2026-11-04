@@ -118,7 +118,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if json.Unmarshal(raw, &p) != nil {
 				continue
 			}
-			go d.onUpgrade(ctx, l, h.ID, p.Version)
+			go d.onUpgrade(ctx, l, h.ID, p.Version, p.Force)
 		case "msg.deliver":
 			var p protocol.MsgDeliver
 			if json.Unmarshal(raw, &p) != nil {

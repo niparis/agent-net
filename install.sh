@@ -21,7 +21,7 @@
 #   --no-accept-peer-messages  passed to setup: do not set it and do not ask
 #   --version vX.Y.Z   install this release (default: latest)
 #
-# AGENT_NET_BASE_URL overrides the download base URL (used by tests).
+# AGENT_NET_BASE_URL overrides the release root URL (used by tests).
 # AGENT_NET_NO_SERVICE=1 is passed on to setup: no service files, nothing started.
 
 # Everything is inside main, called on the last line, so a truncated download
@@ -108,13 +108,21 @@ main() {
     *) die "unsupported CPU: $(uname -m)" ;;
   esac
 
-  if [ -n "${AGENT_NET_BASE_URL:-}" ]; then
-    BASE="${AGENT_NET_BASE_URL%/}"
-  elif [ -n "$VERSION" ]; then
-    BASE="https://github.com/$REPO/releases/download/$VERSION"
-  else
-    BASE="https://github.com/$REPO/releases/latest/download"
+  RELEASES="${AGENT_NET_BASE_URL:-https://github.com/$REPO/releases}"
+  RELEASES="${RELEASES%/}"
+  if [ -z "$VERSION" ]; then
+    # Read GitHub's one redirect without following it. Every asset then comes
+    # from that tag, even if a new latest release appears during the install.
+    location="$(curl -fsSI -o /dev/null -w '%{redirect_url}' "$RELEASES/latest/download/checksums.txt")" || die "cannot find the latest release"
+    case "$location" in
+      */download/*/checksums.txt) VERSION="${location%/checksums.txt}"; VERSION="${VERSION##*/download/}" ;;
+      *) die "cannot read the latest release tag from $location" ;;
+    esac
   fi
+  case "$VERSION" in
+    ''|*[!A-Za-z0-9._-]*) die "invalid release tag: $VERSION" ;;
+  esac
+  BASE="$RELEASES/download/$VERSION"
 
   BIN_DIR="$HOME/.local/bin"
   DIST_DIR="$HOME/.local/share/agent-net/dist"
@@ -153,23 +161,35 @@ main() {
   }
 
   if [ "$MODE" = gateway ]; then
-    mkdir -p "$DIST_DIR" || die "cannot create $DIST_DIR"
     for o in linux darwin; do
       for a in amd64 arm64; do
         echo "downloading agent-net-$o-$a"
         fetch "agent-net-$o-$a"
+      done
+    done
+  else
+    echo "downloading agent-net-$OS-$ARCH"
+    fetch "agent-net-$OS-$ARCH"
+  fi
+  chmod 755 "$WORK/agent-net-$OS-$ARCH" || die "cannot run downloaded binary"
+  got_version="$("$WORK/agent-net-$OS-$ARCH" version)" || die "downloaded binary cannot report its version"
+  [ "$got_version" = "$VERSION" ] || die "release $VERSION binary reports version $got_version"
+
+  if [ "$MODE" = gateway ]; then
+    mkdir -p "$DIST_DIR" || die "cannot create $DIST_DIR"
+    # Invalidate the previous signed dist before changing any binary, so an
+    # interrupted refresh cannot leave a trusted manifest for mixed files.
+    rm -f "$DIST_DIR/checksums.txt.sig" "$DIST_DIR/checksums.txt" || die "cannot invalidate signed dist"
+    for o in linux darwin; do
+      for a in amd64 arm64; do
         place "$WORK/agent-net-$o-$a" "$DIST_DIR" "agent-net-$o-$a"
       done
     done
     place "$WORK/checksums.txt" "$DIST_DIR" checksums.txt
     place "$WORK/checksums.txt.sig" "$DIST_DIR" checksums.txt.sig
-    place "$WORK/agent-net-$OS-$ARCH" "$BIN_DIR" agent-net
-  else
-    echo "downloading agent-net-$OS-$ARCH"
-    fetch "agent-net-$OS-$ARCH"
-    place "$WORK/agent-net-$OS-$ARCH" "$BIN_DIR" agent-net
   fi
-  echo "installed $BIN_DIR/agent-net ($("$BIN_DIR/agent-net" version))"
+  place "$WORK/agent-net-$OS-$ARCH" "$BIN_DIR" agent-net
+  echo "installed $BIN_DIR/agent-net ($got_version)"
 
   case ":${PATH:-}:" in
     *":$BIN_DIR:"*) ;;

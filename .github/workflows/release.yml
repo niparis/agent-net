@@ -61,7 +61,7 @@ jobs:
           fi
           cp install.sh dist/install.sh
           cd dist
-          sha256sum agent-net-* > checksums.txt
+          sha256sum agent-net-* install.sh > checksums.txt
           cat checksums.txt
       - name: sign checksums
         env:
