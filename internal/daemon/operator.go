@@ -368,7 +368,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		task = ans.Task // a continued worker gets the old first task
 	}
 	charter := d.charterBrief(ctx, ans.Project)
-	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
+	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest, WorkerTask: true, WorkerTaskRef: ans.StartRef,
 		Body: protocol.WorkerTaskBodyOS(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project)})
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)

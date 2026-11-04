@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -440,5 +441,32 @@ func TestConversationAgeUsesLastMessageTime(t *testing.T) {
 	v := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 80, false))
 	if !strings.Contains(v, "1m ago") {
 		t.Fatal(v)
+	}
+}
+
+func TestMessageWorkerTaskFieldSeparatesQuotedBrief(t *testing.T) {
+	m := newModel(120, 34)
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "quote", Time: t0}, From: "owner", To: "ordinary", Type: protocol.TypeRequest},
+		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "task", Time: t0}, From: "owner", To: "worker", Type: protocol.TypeRequest},
+	})
+	var quote, task protocol.Message
+	if err := json.Unmarshal([]byte(`{"worker_task":false}`), &quote); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(`{"worker_task":true}`), &task); err != nil {
+		t.Fatal(err)
+	}
+	quote.Body = protocol.WorkerTaskBody("quoted", "", "")
+	task.Body = protocol.WorkerTaskBody("real", "", "")
+	m.applySnippet(snippetMsg{id: "quote", msg: quote})
+	m.applySnippet(snippetMsg{id: "task", msg: task})
+	workers := m.feedWorkers()
+	if _, ok := workers["ordinary"]; ok {
+		t.Fatal("quoted brief made a worker")
+	}
+	if workers["worker"] != "owner" {
+		t.Fatalf("marked worker absent: %v", workers)
 	}
 }

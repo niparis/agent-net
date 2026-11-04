@@ -1304,3 +1304,9 @@ A queued message is returned in a Stop continuation or a PreInvocation user-mess
 The `worker_log` operator method is owner only. It reads at most 200 recent
 worker runs, including assessments and stored notice facts. Agent connections
 are refused by the same local owner gate as conversation history.
+
+Worker task messages carry a gateway-checked marker. The worker's host may mark
+a task from its owner. When the owner is on another machine, the gateway accepts
+the marker only for a start it tracked for that host, owner and worker. Other
+markers are stripped. Daemons before 0.4.130 use the worker brief prefix for
+compatibility; that older format cannot distinguish a quoted prefix.

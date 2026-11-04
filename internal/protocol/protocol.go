@@ -51,14 +51,17 @@ const (
 )
 
 type Message struct {
-	Overruled      bool      `json:"overruled,omitempty"`
-	ID             string    `json:"message_id"`
-	ConversationID string    `json:"conversation_id"`
-	ParentID       string    `json:"parent_message_id,omitempty"`
-	From           string    `json:"sender_session_id"`
-	To             string    `json:"recipient_session_id"`
-	Type           string    `json:"message_type"`
-	Body           string    `json:"body"`
+	Overruled      bool   `json:"overruled,omitempty"`
+	ID             string `json:"message_id"`
+	ConversationID string `json:"conversation_id"`
+	ParentID       string `json:"parent_message_id,omitempty"`
+	From           string `json:"sender_session_id"`
+	To             string `json:"recipient_session_id"`
+	Type           string `json:"message_type"`
+	Body           string `json:"body"`
+	// WorkerTask is set by the gateway for a worker's initial brief. Nil
+	// means the message predates this field.
+	WorkerTask     *bool     `json:"worker_task,omitempty"`
 	Hop            int       `json:"hop"`
 	IdempotencyKey string    `json:"idempotency_key"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -96,6 +99,15 @@ type Message struct {
 	// and hands it to the receiving daemon, which collects the bytes before
 	// it delivers the message. Empty for a message without files.
 	Files []FileEntry `json:"files,omitempty"`
+}
+
+// IsWorkerTask identifies a stored initial brief. Older gateways and stored
+// messages have no marker, so their original prefix remains the fallback.
+func IsWorkerTask(m Message) bool {
+	if m.WorkerTask != nil {
+		return *m.WorkerTask
+	}
+	return (m.Type == "" || m.Type == TypeRequest) && m.ParentID == "" && strings.HasPrefix(m.Body, "[agent-net worker brief]")
 }
 
 // SessionInfo is what a daemon reports about one local session.
@@ -427,7 +439,11 @@ type (
 	}
 	MsgSend struct {
 		ReplyOutcome
-		FromCTO bool `json:"sender_cto,omitempty"`
+		// WorkerTask is set only by the daemon that builds a worker brief.
+		WorkerTask bool `json:"worker_task,omitempty"`
+		// WorkerTaskRef identifies the gateway-tracked start for a remote relay.
+		WorkerTaskRef string `json:"worker_task_ref,omitempty"`
+		FromCTO       bool   `json:"sender_cto,omitempty"`
 		// OwnerApproved says the owner approved this exact text as their own
 		// words. Only the CTO proposal runner sets it, and only together with
 		// FromCTO. The gateway refuses it from any other sender.

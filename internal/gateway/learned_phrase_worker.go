@@ -87,7 +87,7 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 	if err != nil {
 		return "", err
 	}
-	m, created, err := w.g.store.StoreMessage(protocol.MsgSend{Sender: owner.SessionID, Recipient: started.SessionID, Body: body, Type: protocol.TypeRequest})
+	m, created, err := w.g.store.StoreMessage(protocol.MsgSend{Sender: owner.SessionID, Recipient: started.SessionID, Body: body, Type: protocol.TypeRequest, WorkerTask: true})
 	if err != nil {
 		return "", err
 	}

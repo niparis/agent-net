@@ -142,3 +142,28 @@ func (s *Store) OpenStarts() (int, error) {
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE state='open'`).Scan(&n)
 	return n, err
 }
+
+// authorizeWorkerTask accepts a marker from the worker's machine, or from
+// the owner's machine relaying a start the gateway gave that worker's host.
+func (s *Store) authorizeWorkerTask(senderNode string, p protocol.MsgSend) (bool, error) {
+	var host, owner string
+	err := s.db.QueryRow(`SELECT node_id, CASE WHEN json_valid(worker) THEN COALESCE(json_extract(worker,'$.owner'),'') ELSE '' END FROM sessions WHERE id=? AND worker<>''`, p.Recipient).Scan(&host, &owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if owner != p.Sender {
+		return false, nil
+	}
+	if host == senderNode {
+		return true, nil
+	}
+	if p.WorkerTaskRef == "" {
+		return false, nil
+	}
+	var n int
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE ref=? AND node_id=? AND owner=? AND session_id=?`, p.WorkerTaskRef, host, owner, p.Recipient).Scan(&n)
+	return n != 0, err
+}

@@ -22,7 +22,7 @@ func TestWorkerLateTaskStore(t *testing.T) {
 				}
 			}
 			if state == "ended" {
-				if _, err := s.db.Exec(`INSERT INTO worker_runs(node_id,session_id,harness,outcome,ended_at) VALUES(?,?,?,'stopped',1)`, node, id, "opencode"); err != nil {
+				if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: id, Harness: "opencode", Outcome: protocol.OutcomeStopped}); err != nil {
 					t.Fatal(err)
 				}
 			}

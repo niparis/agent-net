@@ -55,6 +55,7 @@ type feedItem struct {
 	Parent           string // the message this one answers
 	State            string
 	FromCTO          bool
+	WorkerTask       *bool
 	OwnerInstruction string
 	Detail           string
 	Host             string // machine of a node event
@@ -274,6 +275,7 @@ func (m *Model) applySnippet(r snippetMsg) {
 		it.ConversationID = r.msg.ConversationID
 	}
 	it.FromCTO = it.FromCTO || r.msg.FromCTO
+	it.WorkerTask = r.msg.WorkerTask
 	it.OwnerInstruction = sanitizeBody(r.msg.OwnerInstruction)
 	it.Body = sanitizeBody(r.msg.Body)
 	it.Snippet = firstLine(r.msg.Body)

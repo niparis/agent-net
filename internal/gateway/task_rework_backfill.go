@@ -75,14 +75,15 @@ func (s *Store) backfillTaskRework() error {
 	var briefs []brief
 	links := map[string]string{}
 	linkAt := map[string]int64{}
-	rows, err = tx.Query(`SELECT created_at,sender,recipient,type,body FROM messages ORDER BY created_at,rowid`)
+	rows, err = tx.Query(`SELECT created_at,sender,recipient,type,body,worker_task FROM messages ORDER BY created_at,rowid`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var at int64
 		var from, to, typ, body string
-		if err := rows.Scan(&at, &from, &to, &typ, &body); err != nil {
+		var workerTask sql.NullBool
+		if err := rows.Scan(&at, &from, &to, &typ, &body, &workerTask); err != nil {
 			rows.Close()
 			return err
 		}
@@ -104,7 +105,7 @@ func (s *Store) backfillTaskRework() error {
 				r.notice = true
 			}
 		}
-		if typ != protocol.TypeRequest || !strings.HasPrefix(body, "[agent-net worker brief]") {
+		if typ != protocol.TypeRequest || !protocol.IsWorkerTask(protocol.Message{Type: typ, Body: body, WorkerTask: nullableWorkerTask(workerTask)}) {
 			continue
 		}
 		_, task, ok := strings.Cut(body, "\nTask:\n")
@@ -189,4 +190,11 @@ func (s *Store) backfillTaskRework() error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func nullableWorkerTask(v sql.NullBool) *bool {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Bool
 }

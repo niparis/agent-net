@@ -528,12 +528,12 @@ func (c *codexAdapter) deliverWorker(w *worker, m protocol.Message) Result {
 func codexWorkerText(m protocol.Message) string {
 	text := m.Body
 	const brief = "[agent-net worker brief]"
-	if strings.HasPrefix(text, brief) {
+	if protocol.IsWorkerTask(m) && strings.HasPrefix(text, brief) {
 		text = brief + protocol.NeutralizeMarkers(strings.TrimPrefix(text, brief))
 	} else {
 		text = protocol.NeutralizeMarkers(text)
 	}
-	if m.FromHarness == protocol.OwnerHarness && !strings.HasPrefix(text, "[agent-net worker brief]") {
+	if m.FromHarness == protocol.OwnerHarness && !protocol.IsWorkerTask(m) {
 		text = "Message from your user, in person:\n" + text
 	}
 	if m.ApprovalNote != "" {

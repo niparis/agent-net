@@ -799,7 +799,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	g.logLine(event, "node", pick.NodeID, "host", pick.Hostname, "session", launched.SessionID,
 		"worker", launched.WorkerID, "project", pick.Name, "path", pick.Path, "harness", p.Harness, "model", p.Model,
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch)
-	return protocol.WorkerStartAnswer{Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
+	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
 		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books}, nil
@@ -1212,7 +1212,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	g.logLine(event, "node", old.NodeID, "host", old.Hostname, "session", c.SessionID,
 		"worker", c.WorkerID, "project", c.Project, "path", c.Path, "harness", c.Harness, "model", c.Model,
 		"owner", p.Owner, "from_node", nc.id, "continues", old.SessionID, "worktree", c.Worktree, "branch", c.Branch)
-	return protocol.WorkerStartAnswer{Starting: c.Starting, SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
+	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: c.Starting, SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
 		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model, ModelNote: modelNote, Title: c.Title,
 		Worktree: c.Worktree, Branch: c.Branch, ProjectRules: c.ProjectRules, Task: c.Task,
 		Permissions: old.Worker.Permissions, OSSandbox: c.OSSandbox, Track: c.Track, Playbooks: c.Playbooks}, nil
@@ -1313,6 +1313,23 @@ func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.
 	if !ok || w.NodeID != nc.id || w.Worker == nil || w.Worker.Owner != p.Owner {
 		return reject("session %q is not a worker of this node with that owner", p.SessionID)
 	}
+	// Older worker daemons did not carry a start reference. Give this relay
+	// its own tracked reference before asking the owner's daemon to send it.
+	syntheticRef := p.Ref == ""
+	if syntheticRef {
+		p.Ref = protocol.NewID("q")
+	}
+	if err := g.store.trackWorkerStart(p.Ref, nc.id, p.Owner, p.Project, p.Harness, p.Permissions); err != nil {
+		return err
+	}
+	if syntheticRef {
+		// The old host does not know this reference, so it cannot close it on
+		// failure. Abandon it unless the relay closes it successfully.
+		defer g.abandon(nc.id, p.Ref)
+	}
+	if err := g.store.startSession(nc.id, p.Ref, p.SessionID); err != nil {
+		return err
+	}
 	ownerNode, err := g.store.SessionNode(p.Owner)
 	if err != nil {
 		return err
@@ -1327,6 +1344,9 @@ func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.
 	defer cancel()
 	if _, err := target.call(cctx, "worker.task", p); err != nil {
 		return reject("the owner's machine did not send the task: %v", err)
+	}
+	if syntheticRef {
+		return g.store.closeStart(nc.id, p.Ref, p.SessionID)
 	}
 	return nil
 }

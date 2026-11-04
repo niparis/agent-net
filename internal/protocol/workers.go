@@ -286,6 +286,8 @@ type (
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {
+		// StartRef lets the gateway recognize its own remote task relay.
+		StartRef  string `json:"start_ref,omitempty"`
 		Starting  bool   `json:"starting,omitempty"`
 		SessionID string `json:"session_id"`
 		NodeID    string `json:"node_id"`
