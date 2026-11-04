@@ -201,14 +201,77 @@ func TestAssessDifficultyFallsBackToCodexJudgeWhenOpenCodeMissing(t *testing.T) 
 	}
 }
 
-func TestExtractDifficultyJudgeReplyFromNoisyOutput(t *testing.T) {
-	got := extractDifficultyJudgeReply("> build · model\n\x1b[32mnoise {\"bad\": {\"x\": 1}}\n" + difficultyScoresJSON + "\x1b[0m")
-	if got != difficultyScoresJSON {
-		t.Fatalf("reply = %q, want last JSON object", got)
+func TestParseJudgeReplyFindsScoresInNoisyOutput(t *testing.T) {
+	for name, raw := range map[string]string{
+		"progress and ANSI":   "> build · model\n\x1b[32mnoise {\"bad\": {\"x\": 1}}\n" + difficultyScoresJSON + "\x1b[0m",
+		"code fence":          "```json\n" + difficultyScoresJSON + "\n```",
+		"after text":          "Here are the scores:\n" + difficultyScoresJSON,
+		"unclosed prose {":    "Note: the brief has a stray { in it.\n```json\n" + difficultyScoresJSON + "\n```",
+		"object after scores": difficultyScoresJSON + "\n{\"note\":\"done\"}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			scores, insufficient, err := parseJudgeReply(raw)
+			if err != nil || len(insufficient) != 0 || scores.Reasoning != 4 || scores.Risk != 4 {
+				t.Fatalf("scores %+v, insufficient %v, err %v", scores, insufficient, err)
+			}
+		})
 	}
-	insufficient := "INSUFFICIENT_EVIDENCE: risk - inspect the migration"
-	if got := extractDifficultyJudgeReply("> judge\n" + insufficient); got != insufficient {
-		t.Fatalf("insufficient answer = %q", got)
+	_, insufficient, err := parseJudgeReply("> judge\nINSUFFICIENT_EVIDENCE: risk - inspect the migration")
+	if err != nil || len(insufficient) != 1 || insufficient[0] != "risk" {
+		t.Fatalf("insufficient %v, err %v", insufficient, err)
+	}
+}
+
+// The real retry judge failed with "decode scores: unexpected end of JSON
+// input", which says nothing about the reply. Each failure names what was
+// wrong and the reply size.
+func TestParseJudgeReplyFailuresAreClear(t *testing.T) {
+	for name, tc := range map[string]struct{ raw, want string }{
+		"empty":       {"  \x1b[0m\n", "the reply is empty"},
+		"cut off":     {`{"reasoning":2,"scope":1,"coupling":`, "no complete JSON object in the 36-byte reply (it may be cut off)"},
+		"no object":   {"I cannot score this brief.", "no JSON object in the 26-byte reply"},
+		"wrong shape": {`{"reasoning":2}`, `missing score`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := parseJudgeReply(tc.raw)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), "unexpected end of JSON input") {
+				t.Fatalf("err = %v, want a clear reason", err)
+			}
+		})
+	}
+}
+
+func TestJudgeBriefTrimsLongTask(t *testing.T) {
+	short := "Goal: rename a flag.\n\nEvidence:\n- one file"
+	if got := judgeTaskText(short); got != short {
+		t.Fatalf("short task changed: %q", got)
+	}
+	var b strings.Builder
+	b.WriteString("Goal: make the judge fast.\n\n")
+	for b.Len() < 5000 {
+		b.WriteString("Background line that the judge does not need to score the task.\n")
+	}
+	evidence := "Evidence (2026-11-04, research):\n- the flash judge timed out at 39s\n- the retry got 21s\n"
+	b.WriteString("\n" + evidence + "\n")
+	for b.Len() < 12000 {
+		b.WriteString("Rules line that repeats what AGENTS.md says about tests.\n")
+	}
+	b.WriteString("Report: the cause, the fix, the tests.")
+	long := b.String()
+	got := judgeTaskText(long)
+	if len(got) > judgeTaskLimit+200 {
+		t.Fatalf("trimmed task is %d bytes, cap %d", len(got), judgeTaskLimit)
+	}
+	for _, want := range []string{"Goal: make the judge fast.", strings.TrimSpace(evidence), "Report: the cause, the fix, the tests.", "bytes of the brief cut"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("trimmed task lacks %q:\n%s", want, got)
+		}
+	}
+	if brief := judgeBriefForTask(long); !strings.Contains(brief, got) || strings.Contains(brief, long) {
+		t.Fatal("the judge brief does not use the trimmed task")
 	}
 }
 
