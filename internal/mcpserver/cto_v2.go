@@ -128,6 +128,10 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 	required := []string{}
 	example := actionExampleFor(tool, action)
 	switch tool {
+	case "session_change":
+		if action == "merger_start" || action == "merger_stop" {
+			required = []string{"project"}
+		}
 	case "answer":
 		switch action {
 		case "held":

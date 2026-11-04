@@ -1328,3 +1328,26 @@ a task from its owner. When the owner is on another machine, the gateway accepts
 the marker only for a start it tracked for that host, owner and worker. Other
 markers are stripped. Daemons before 0.4.130 use the worker brief prefix for
 compatibility; that older format cannot distinguish a quoted prefix.
+
+### Merger registration
+
+Only the owner through the TUI/CLI owner gate, or an approved CTO proposal,
+may register a project's merger. Ordinary agent sessions and workers cannot
+call the owner-only `merger_set` operation. A session cannot become a merger
+by announcing a type. The gateway derives that type from its registration.
+A registration must name a non-worker Claude session of the same project on
+the named machine. Removing that session clears the record.
+
+`@merger` is a reserved delivery owner for test and merge. Tasks go only to
+the registered session for the change's project and machine. Claim and report
+check that registration, the authenticated reporting machine, and that the
+session is online. Other sessions of the same project cannot take over.
+Offline tasks wait. Stopping merger routing removes unfinished claims and
+queued notices before returning those owners to the caller. Completed step
+evidence remains tied to its recorded revision and commit.
+
+A CTO `merger_start` proposal pins the registered project and machine before
+approval. Approval starts Claude there, registers the session, and assigns
+test and merge. The built-in brief requires its own merge worktree, excludes
+build outputs, binaries and secrets, and tells it to report failures without
+fixing code. These are session instructions, not a git permission boundary.

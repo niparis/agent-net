@@ -2522,3 +2522,46 @@ compatible Claude Code version and restart the daemon to check again. Do not
 send test user frames to a working session just to test the transport.
 
 The workers panel shows "agent-net panel is out of date: run /reload-plugins or restart Claude Code" when its loaded build differs from the installed build; run /reload-plugins or restart Claude Code to load the update.
+
+### Project mergers
+
+Ask the CTO to "set up a merger for garden". If a project lives on more than
+one machine, name the machine too. The CTO proposes `session_change` action
+`merger_start` with `project`, optional `node_id`, and optional `model`.
+Approve one dialog. It starts a separate Claude session in the project's
+registered folder on that machine, with model `claude-opus-5-5` by default.
+It does not open a view. Enter on its Sessions row opens it as usual.
+
+The session is named `<project> merger`. Its type is `merger`; other types are
+`agent` (the default), `worker`, `cto`, `owner`, and `bot`. Session info and
+`agent_sessions_find` and `agent_session_get` include `type`. The read tools
+also use it as `kind`. The Sessions table shows TYPE after NAME.
+
+Setup assigns accept to the caller and test and merge to `@merger` in one
+transaction with registration. If testing was optional, setup makes a test
+suite required before merge and says "Enables the default pipeline" in the
+approval line. Every project already has a default pipeline in this version;
+there is no separate pipeline on/off switch. Existing review and approval
+requirements remain in force.
+
+A merger registration maps a project and machine to one session. Only that
+session receives, claims, and reports `@merger` steps for changes on that
+machine. While it is offline, tasks stay queued and Delivery says "waiting
+for merger". Removing the session clears its registration. Registrations
+are stored in the gateway's `project_mergers` table.
+
+The merger reads the project's own instructions and build files, tests the
+changed parts, reads CI results where available, and merges in its own merge
+worktree. It reports each step with commit hashes read from git. It reports
+failures without fixing code or writing features. Git itself is not blocked.
+
+To stop routing to it, ask the CTO for `session_change` action `merger_stop`
+with `project` and optional `node_id`. Approval clears the registration and
+returns test and merge to the caller. The Claude conversation stays available.
+The owner can also register an existing project Claude session with
+`agent-net merger set <project> <node-id> <session-id>`, or clear that record
+with `agent-net merger clear <project> <node-id>`. These commands only change
+the registration; use the Settings delivery owner rows to assign `@merger`.
+The local owner operation is `merger_set` with `project`, `node_id`, and
+`session_id` (empty clears). Its `configure: true` option also applies the
+start/stop delivery assignments, as the approved CTO action does.

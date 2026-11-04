@@ -2,9 +2,10 @@ package gateway
 
 import (
 	"context"
-	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestMergerRoutingAndRegistration(t *testing.T) {
@@ -24,6 +25,25 @@ func TestMergerRoutingAndRegistration(t *testing.T) {
 	a, _, err := r.s.Agent(r.sonnet)
 	if err != nil || a.Type != "merger" {
 		t.Fatalf("type=%q err=%v", a.Type, err)
+	}
+
+	page, err := r.s.FindSessions(protocol.SessionsFindRequest{Kind: []string{"merger"}})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Type != "merger" {
+		t.Fatalf("find=%+v err=%v", page, err)
+	}
+	detail, err := r.s.GetSession(protocol.SessionGetRequest{Session: r.sonnet})
+	if err != nil || detail.Session.Type != "merger" {
+		t.Fatalf("get=%+v err=%v", detail, err)
+	}
+	synced, err := r.s.SyncSessions(r.a, []protocol.SessionInfo{{Harness: "claude", NativeID: "sonnet", Repo: protocol.RepoInfo{Project: "demo"}}})
+	if err != nil || len(synced) != 1 || synced[0].Type != "merger" {
+		t.Fatalf("sync=%+v err=%v", synced, err)
+	}
+	// Keep the caller and worker online after exercising the complete sync.
+	for _, native := range []string{"caller", "worker"} {
+		if _, err := r.s.db.Exec(`UPDATE sessions SET online=1 WHERE node_id=? AND native_id=?`, r.a, native); err != nil {
+			t.Fatal(err)
+		}
 	}
 	c := r.submit(r.a, r.workerSubmit("feature", commitA)).Change.Change
 	r.g.dispatchStepTasks(context.Background())
@@ -69,6 +89,31 @@ func TestMergerRoutingAndRegistration(t *testing.T) {
 	claim.SessionID = r.sonnet
 	if _, err := deliveryCall[protocol.StepClaimResult](r, r.a, protocol.FrameStepClaim, claim); err == nil {
 		t.Fatal("offline merger claimed")
+	}
+	if _, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "claude", NativeID: "sonnet", Repo: protocol.RepoInfo{Project: "demo"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deliveryCall[protocol.StepClaimResult](r, r.a, protocol.FrameStepClaim, claim); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.s.SetSessionOffline(r.a, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	view, err = r.s.GetChange(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range view.Steps {
+		if st.StepRef == claim.StepRef && !strings.Contains(st.Note, "waiting for merger") {
+			t.Fatalf("claimed offline merger state=%s note=%s", st.State, st.Note)
+		}
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET online=1 WHERE id=?`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: claim.StepRef, Commit: commitA, Result: "pass", Fields: map[string]string{"suite": "changed"}}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := r.s.db.Exec(`DELETE FROM sessions WHERE id=?`, r.sonnet); err != nil {
 		t.Fatal(err)

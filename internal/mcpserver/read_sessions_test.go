@@ -191,7 +191,7 @@ func TestReadToolsForwardFilters(t *testing.T) {
 		t.Fatalf("schema defaults not applied: %+v", p)
 	}
 	kind, _ := p["kind"].([]any)
-	if len(kind) != 2 || kind[0] != "agent" || kind[1] != "worker" {
+	if len(kind) != 4 || kind[0] != "agent" || kind[1] != "worker" || kind[2] != "merger" || kind[3] != "cto" {
 		t.Fatalf("kind default: %+v", p["kind"])
 	}
 

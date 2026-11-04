@@ -19,7 +19,7 @@ import (
 // addOwnerSession registers the owner pseudo-session: the person at this
 // machine, as a sender and a recipient. It is created here and nowhere else.
 func (d *Daemon) addOwnerSession() {
-	info := protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID,
+	info := protocol.SessionInfo{Type: "owner", Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID,
 		Name: protocol.OwnerName(d.cfg.Hostname), Status: "idle", Delivery: "owner", Mode: protocol.ModeForeground}
 	d.sessions[key(info.Harness, info.NativeID)] = &localSession{info: info}
 }

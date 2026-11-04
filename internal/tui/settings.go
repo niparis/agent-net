@@ -611,7 +611,7 @@ func deliveryOwnerViews(graph protocol.Graph, repo string) []protocol.SettingVie
 			source = "graph assignment"
 		}
 		value, _ := json.Marshal(owner)
-		description := "Enter a node name or @caller, @owner, @github, @delegate or @none as a JSON string; empty uses the default."
+		description := "Enter a node name or @caller, @owner, @github, @merger, @delegate or @none as a JSON string; empty uses the default."
 		if step == protocol.StepDeploy {
 			description += " Takes effect when the pipeline has a deploy step."
 		}
