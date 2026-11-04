@@ -320,6 +320,31 @@ func TestInboxDismissesANoticeWithX(t *testing.T) {
 	}
 }
 
+func TestInboxOwnerStepAsksForEvidenceFields(t *testing.T) {
+	m, src := inboxAllKindsModel(100, 30)
+	for i := range m.inboxItems {
+		if m.inboxItems[i].ID == "i_app" {
+			m.inboxItems[i].Delivery = &protocol.InboxDelivery{ChangeID: "ch_1", StepRef: protocol.StepRef{Step: protocol.StepMerge}, ReportFields: []string{protocol.FieldMergedCommit}}
+		}
+	}
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "approval")
+	next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if !next.inboxEditing {
+		t.Fatal("owner merge did not ask for the merged commit")
+	}
+	next.inboxInput.SetValue(`{"merged_commit":"` + strings.Repeat("a", 40) + `"}`)
+	next, cmd := press(next, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("evidence was not sent")
+	}
+	send(next, cmd())
+	call := src.method("inbox_answer")
+	if call == nil || !strings.Contains(fmt.Sprint(call.params), "approve {") {
+		t.Fatalf("answer with evidence: %+v", call)
+	}
+}
+
 func TestInboxEnterOnHeldRequestEntersTheSession(t *testing.T) {
 	m, src := inboxAllKindsModel(100, 30)
 	m = openInbox(m)

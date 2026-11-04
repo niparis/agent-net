@@ -360,3 +360,10 @@ func (s *Store) ExpireStarts(unknownTimeout, legacyTimeout time.Duration) ([]pro
 
 	return notices, nil
 }
+
+// resetStartingStarts resets any starts left in 'starting' state back to 'open'
+// when the gateway restarts.
+func (s *Store) resetStartingStarts() error {
+	_, err := s.db.Exec(`UPDATE worker_starts SET state='open' WHERE state='starting'`)
+	return err
+}

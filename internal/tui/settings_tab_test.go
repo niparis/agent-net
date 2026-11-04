@@ -261,8 +261,10 @@ func TestSettingsValuesRenderAndSave(t *testing.T) {
 
 type settingsValuesTestSource struct {
 	*fakeSource
-	write protocol.SettingsWrite
-	undo  protocol.SettingsUndo
+	write      protocol.SettingsWrite
+	undo       protocol.SettingsUndo
+	graph      protocol.Graph
+	ownerWrite protocol.DeliveryOwnerSetRequest
 }
 
 func (s *settingsValuesTestSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -274,7 +276,69 @@ func (s *settingsValuesTestSource) Call(_ context.Context, method string, params
 		s.write = params.(protocol.SettingsWrite)
 		return json.RawMessage(`{"revision":2}`), nil
 	}
+	if method == "graph_get" {
+		return json.Marshal(s.graph)
+	}
+	if method == "delivery_owner_set" {
+		s.ownerWrite = params.(protocol.DeliveryOwnerSetRequest)
+		return json.RawMessage(`{"ok":true}`), nil
+	}
 	return json.RawMessage(`[]`), nil
+}
+
+func TestSettingsDeliveryNodeOwnerEdit(t *testing.T) {
+	src := &settingsValuesTestSource{fakeSource: &fakeSource{snap: fakeSnapshot()}, graph: protocol.Graph{Edges: []protocol.Edge{{From: "reviewer", To: "alpha", Kind: "reviews"}, {From: "/delivery/github", To: "alpha", Kind: "tests_after_merge"}}}}
+	m := New(src)
+	m.settingRepo = "alpha"
+	msg := m.loadSettingValues()().(settingValuesMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	m.settingValues = msg.rows
+	index := -1
+	afterTest := false
+	for i, row := range m.settingValues {
+		if row.Key == "delivery.owner.test.after_merge" && string(row.Value) == `"@github"` {
+			afterTest = true
+		}
+		if row.Key == "delivery.owner.approve" && !strings.Contains(row.Description, "approval rule") {
+			t.Fatal("approval assignment did not explain its existing approval rule")
+		}
+		if row.Key == "delivery.owner.deploy" && !strings.Contains(row.Description, "when the pipeline has a deploy step") {
+			t.Fatal("deploy owner does not explain when it applies")
+		}
+		if row.Key == "delivery.owner.review" {
+			index = i
+			if string(row.Value) != `"reviewer"` {
+				t.Fatalf("owner = %s", row.Value)
+			}
+		}
+	}
+	if index < 0 {
+		t.Fatal("review owner is missing from Settings")
+	}
+	if !afterTest {
+		t.Fatal("post-merge test owner is missing from Settings")
+	}
+	m, _ = m.startSettingValueEdit(index)
+	m.rename.SetValue(`true`)
+	invalid, invalidCmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if invalidCmd != nil || invalid.(Model).mode != modeSettingValue {
+		t.Fatal("invalid owner value did not keep the editor open")
+	}
+	m = invalid.(Model)
+	m.rename.SetValue(`"other"`)
+	_, cmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("owner assignment was not sent")
+	}
+	if msg := cmd().(settingValuesMsg); msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	want := protocol.DeliveryOwnerSetRequest{Project: "alpha", Step: "review", Node: "other", Expect: "reviewer"}
+	if src.ownerWrite != want {
+		t.Fatalf("owner write = %+v, want %+v", src.ownerWrite, want)
+	}
 }
 
 func TestSettingsRepoEditUsesRepoAddress(t *testing.T) {

@@ -998,6 +998,59 @@ export const TOOL_CATALOG = [
     "method": "settings_read"
   },
   {
+    "name": "agent_step_claim",
+    "description": "Claim a ready node-owned delivery step before starting it. The first eligible session to claim or report it takes it. Name the exact commit in the task.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "change": {
+          "type": "string",
+          "description": "Change ID from the step task."
+        },
+        "step": {
+          "type": "string",
+          "enum": [
+            "accept",
+            "review",
+            "test",
+            "approve",
+            "merge",
+            "release",
+            "deploy",
+            "verify"
+          ]
+        },
+        "for": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "deploy"
+          ],
+          "description": "Approval target, for approve only."
+        },
+        "after_merge": {
+          "type": "boolean",
+          "default": false
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+          "description": "Full commit hash from the task."
+        }
+      },
+      "required": [
+        "change",
+        "step",
+        "commit"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "step_claim"
+  },
+  {
     "name": "agent_step_report",
     "description": "Report the result of a delivery step you own for one change: pass, fail with findings, needs_owner, or close without merge. Name the exact commit you checked; a report for any other commit is refused.",
     "inputSchema": {
@@ -1060,7 +1113,7 @@ export const TOOL_CATALOG = [
         },
         "done_by": {
           "type": "string",
-          "description": "Session ID of a worker you started that did the work. Default: you."
+          "description": "Session ID of a worker you started, or owner for direct approval in a delegated approval step. Default: you."
         },
         "note": {
           "type": "string",

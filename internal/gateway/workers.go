@@ -246,12 +246,20 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			if !won {
 				return nil, reject("start %s is not open", p.Ref)
 			}
-		}
-		if err := g.relayQueuedTask(ctx, nc, p); err != nil {
-			if p.Ref != "" {
-				_ = g.store.unclaimStart(nc.id, p.Ref)
+			claimed := true
+			defer func() {
+				if claimed {
+					_ = g.store.unclaimStart(nc.id, p.Ref)
+				}
+			}()
+			if err := g.relayQueuedTask(ctx, nc, p); err != nil {
+				return nil, err
 			}
-			return nil, err
+			claimed = false
+		} else {
+			if err := g.relayQueuedTask(ctx, nc, p); err != nil {
+				return nil, err
+			}
 		}
 		// The task was sent: the start is closed, and no one can say it never began.
 		if p.Ref != "" {

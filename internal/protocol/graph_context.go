@@ -77,14 +77,14 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 	if !charterSet(node.Charter) && NodeDefaultsWithSettings(node.Charter.Maturity, node.Settings, snap, node.Name).RulesText() == "" {
 		needsDeployApproval := false
 		for _, edge := range g.Edges {
-			if edge.Kind == "deploys" && edge.From == name {
-				if target := nodeNamed(g, edge.To); target != nil && NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name).DeployRule == DeployOwner {
+			if (edge.Kind == "deploys" || edge.Kind == "delivery_deploys") && edge.From == name {
+				if target := nodeNamed(g, edge.To); target != nil && NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name).DeployRule == DeployOwner || target != nil && NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name).DeployRule == ShorthandCustom {
 					needsDeployApproval = true
 					break
 				}
 			}
 		}
-		if !needsDeployApproval && NeighborCharters(g, name) == "" {
+		if !needsDeployApproval && NeighborCharters(g, name) == "" && DeliveryAssignmentRules(g, name) == "" {
 			return ""
 		}
 	}
@@ -117,7 +117,7 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 			fmt.Fprintf(&b, "%s depends on your node.\n", e.From)
 		case e.Kind == "governs" && e.From == name:
 			fmt.Fprintf(&b, "You govern %s as %s.\n", e.To, e.Mode)
-		case e.Kind == "deploys" && e.From == name:
+		case (e.Kind == "deploys" || e.Kind == "delivery_deploys") && e.From == name:
 			// A deployer applies the target's rule, not its own (0022).
 			if target := nodeNamed(g, e.To); target != nil {
 				td := NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name)
@@ -129,6 +129,9 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 			}
 		}
 	}
+	if assignments := DeliveryAssignmentRules(g, name); assignments != "" {
+		b.WriteString(assignments + "\n")
+	}
 	if neighbors := NeighborCharters(g, name); neighbors != "" {
 		b.WriteString(neighbors + "\n")
 	}
@@ -136,6 +139,51 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 		b.WriteString(DecideRule)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// DeliveryProjectOwners describes the assigned owners of a project's steps.
+// It is also included in worker briefs, whose workers cannot own a step.
+func DeliveryProjectOwners(g Graph, project string) string {
+	var lines []string
+	for _, edge := range g.Edges {
+		step := DeliveryEdgeStep(edge.Kind)
+		if step != "" && edge.Kind != "deploys" && edge.To == project {
+			label := DeliveryEdgeRef(edge.Kind).String()
+			if DeliveryOwnerFromSource(edge.From).Kind == OwnerNone {
+				continue
+			}
+			owner := edge.From
+			if assignment := DeliveryOwnerFromSource(edge.From); assignment.Kind != OwnerNode {
+				owner = assignment.String()
+			}
+			if step == StepApprove {
+				lines = append(lines, fmt.Sprintf("%s is assigned %s for your project, subject to the approval rule.", owner, label))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s owns %s for your project.", owner, label))
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// DeliveryAssignmentRules describes delivery assignments that concern a node.
+func DeliveryAssignmentRules(g Graph, name string) string {
+	var lines []string
+	if project := DeliveryProjectOwners(g, name); project != "" {
+		lines = append(lines, project)
+	}
+	for _, edge := range g.Edges {
+		step := DeliveryEdgeStep(edge.Kind)
+		if step != "" && edge.Kind != "deploys" && edge.From == name {
+			label := DeliveryEdgeRef(edge.Kind).String()
+			if step == StepApprove {
+				lines = append(lines, fmt.Sprintf("You are assigned %s for %s, subject to its approval rule.", label, edge.To))
+			} else {
+				lines = append(lines, fmt.Sprintf("You own %s for %s.", label, edge.To))
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // RelationText says how the sender's node relates to the recipient's node, for
@@ -167,7 +215,7 @@ func WorkerDeployApprovalRules(g Graph, name string) string {
 func WorkerDeployApprovalRulesWithSettings(g Graph, name string, snap settings.Snapshot) string {
 	var lines []string
 	for _, edge := range g.Edges {
-		if edge.Kind != "deploys" || edge.From != name {
+		if (edge.Kind != "deploys" && edge.Kind != "delivery_deploys") || edge.From != name {
 			continue
 		}
 		target := nodeNamed(g, edge.To)
@@ -175,7 +223,7 @@ func WorkerDeployApprovalRulesWithSettings(g Graph, name string, snap settings.S
 			continue
 		}
 		defaults := NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name)
-		if defaults.DeployRule == DeployOwner {
+		if defaults.DeployRule == DeployOwner || defaults.DeployRule == ShorthandCustom {
 			lines = append(lines, fmt.Sprintf("You deploy %s: %s.", target.Name, defaults.DeployText()))
 		}
 	}

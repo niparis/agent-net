@@ -119,7 +119,7 @@ func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
 		return "normal", nil
 	}
 	var rule string
-	err = s.db.QueryRow(`SELECT rule FROM graph_edges WHERE target=? AND (source=? OR source='*') ORDER BY CASE WHEN source=? THEN 0 ELSE 1 END, kind LIMIT 1`, target, source, source).Scan(&rule)
+	err = s.db.QueryRow(`SELECT rule FROM graph_edges WHERE target=? AND (source=? OR source='*') AND kind IN ('depends','governs','deploys') ORDER BY CASE WHEN source=? THEN 0 ELSE 1 END, kind LIMIT 1`, target, source, source).Scan(&rule)
 	if err == sql.ErrNoRows {
 		return "normal", nil
 	}
@@ -160,6 +160,9 @@ func (s *Store) MergeRuleForSession(session string) (string, string, error) {
 	authority, err := deliveryValue(snap, "delivery.merge_authority", project)
 	if err != nil {
 		return "", "", err
+	}
+	if authority == protocol.ShorthandCustom && project != "" {
+		return authority, protocol.NodeDefaultsWithSettings(snap.Maturity[project], nil, snap, project).MergeText(), nil
 	}
 	return authority, protocol.MergeTextWithSettings(authority, snap), nil
 }

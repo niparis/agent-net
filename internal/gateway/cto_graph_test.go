@@ -27,7 +27,7 @@ func TestCTOGraphClass(t *testing.T) {
 		{"edge_set", `{"from":"app","to":"ops","kind":"depends"}`, "minor"},
 		{"edge_remove", `{"from":"app","to":"ops","kind":"depends"}`, "minor"},
 		{"edge_set", `{"from":"app","to":"ops","kind":"governs","mode":"owner"}`, "major"},
-		{"edge_set", `{"from":"app","to":"ops","kind":"deploys"}`, "major"},
+		{"edge_set", `{"from":"app","to":"ops","kind":"deploys"}`, "rule"},
 	} {
 		t.Run(c.tool+c.args, func(t *testing.T) {
 			got, err := s.CTOGraphClass(c.tool, json.RawMessage(c.args))

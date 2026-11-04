@@ -1,7 +1,7 @@
 # Delivery pipeline: steps done by nodes
 
 **Date:** 2026-11-04
-**Status:** First draft for the owner. Nothing built. Checked against the code on 2026-11-04: see [Checked against the code](#checked-against-the-code).
+**Status:** The pipeline settings, shorthand cutover, owner controls, node task queue and Inbox approvals are built. See [Checked against the code](#checked-against-the-code) for implementation details.
 **Context:** [modularity.md](modularity.md) (objective, recipes, the "merge gate" gap), [settings-layer.md](settings-layer.md) (settings, levels, rules and advice).
 
 ## The problem
@@ -196,6 +196,13 @@ The owner changes a step owner (a rule change: from the TUI, or a CTO proposal a
 - The CTO reads all of it and proposes pipeline and owner changes.
 
 ## Gaps the code shows
+
+### Independence can be attributed to the wrong worker
+
+A caller can report a step it did itself with `done_by` set to a worker it
+started. The gateway then treats that worker as the doer and may mark the
+evidence independent. Step 3 must verify who did the work before using that
+field to satisfy an independence requirement.
 
 ### What the head is at hand-back
 

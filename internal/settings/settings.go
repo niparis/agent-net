@@ -449,6 +449,12 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 		}
 		seen := map[string]bool{}
 		for _, x := range a {
+			if d.Key == "delivery.pipeline.merge.requires" && !contains([]string{"accept", "review", "review:findings_open=0", "test:suite", "test:tests_added"}, x) {
+				return nil, fmt.Errorf("unknown delivery requirement %q", x)
+			}
+			if d.Key == "delivery.pipeline.review.requires" && !contains([]string{"accept", "test"}, x) {
+				return nil, fmt.Errorf("unknown review requirement %q", x)
+			}
 			if seen[x] {
 				return nil, fmt.Errorf("duplicate set item")
 			}
@@ -593,12 +599,14 @@ type Value struct {
 	Value json.RawMessage `json:"value"`
 }
 type Snapshot struct {
-	DeliveryCutover      bool              `json:"delivery_cutover,omitempty"`
-	WorkerSandboxCutover bool              `json:"worker_sandbox_cutover,omitempty"`
-	Revision             int64             `json:"revision"`
-	Recipe               string            `json:"recipe"`
-	Values               []Value           `json:"values"`
-	Maturity             map[string]string `json:"maturity"`
+	DeliveryCutover         bool                 `json:"delivery_cutover,omitempty"`
+	DeliveryPipelineCutover bool                 `json:"delivery_pipeline_cutover,omitempty"`
+	DeliveryAssignments     []DeliveryAssignment `json:"delivery_assignments,omitempty"`
+	WorkerSandboxCutover    bool                 `json:"worker_sandbox_cutover,omitempty"`
+	Revision                int64                `json:"revision"`
+	Recipe                  string               `json:"recipe"`
+	Values                  []Value              `json:"values"`
+	Maturity                map[string]string    `json:"maturity"`
 }
 type Host struct{ RAMBytes int64 }
 type Where struct {
@@ -620,6 +628,19 @@ func (s Snapshot) Clone() Snapshot {
 	return c
 }
 func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
+	if s.DeliveryPipelineCutover {
+		if canonical := DeliveryCanonicalKey(key); canonical != "" {
+			e, err := s.Resolve(canonical, w)
+			if err != nil {
+				return Effective{}, err
+			}
+			e.Value, err = DeliveryShorthandValue(key, e.Value)
+			if err == nil && w.Repo != "" && (key == "delivery.merge_authority" || key == "delivery.deploy_rule") {
+				e.Value = deliveryApproverShorthand(key, e.Value, w.Repo, s.DeliveryAssignments)
+			}
+			return e, err
+		}
+	}
 	d, ok := standard.Definition(key)
 	if !ok {
 		return Effective{}, fmt.Errorf("unknown setting %s", key)

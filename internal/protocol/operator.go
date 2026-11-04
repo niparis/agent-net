@@ -116,17 +116,18 @@ const (
 
 // Graph operator methods are available only to the owner.
 const (
-	OpHeldList       = "held_list"
-	OpHeldAnswer     = "held_answer"
-	OpGraphGet       = "graph_get"
-	OpCharterSet     = "charter_set"
-	OpCharterHistory = "charter_history"
-	OpNodeAdd        = "node_add"
-	OpNodeRemove     = "node_remove"
-	OpEdgeSet        = "edge_set"
-	OpEdgeRemove     = "edge_remove"
-	OpEdgeHistory    = "edge_history"
-	OpGraphUndo      = "graph_undo"
+	OpHeldList         = "held_list"
+	OpHeldAnswer       = "held_answer"
+	OpGraphGet         = "graph_get"
+	OpCharterSet       = "charter_set"
+	OpCharterHistory   = "charter_history"
+	OpNodeAdd          = "node_add"
+	OpNodeRemove       = "node_remove"
+	OpEdgeSet          = "edge_set"
+	OpEdgeRemove       = "edge_remove"
+	OpEdgeHistory      = "edge_history"
+	OpDeliveryOwnerSet = "delivery_owner_set"
+	OpGraphUndo        = "graph_undo"
 	// OpNodeSettingsGet and OpNodeSettingsSet read and change a node's
 	// overrides of its maturity defaults (decision 0022). Owner only, no
 	// agent tool.
@@ -137,7 +138,7 @@ const (
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
-	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
+	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect}
 

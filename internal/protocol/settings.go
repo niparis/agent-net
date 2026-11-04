@@ -53,17 +53,18 @@ type SettingsReadRequest struct {
 	Repo string `json:"repo,omitempty"`
 }
 type SettingView struct {
-	Key         string            `json:"key"`
-	Description string            `json:"description"`
-	Kind        string            `json:"kind"`
-	Type        string            `json:"type"`
-	Levels      []string          `json:"levels"`
-	Values      []string          `json:"values,omitempty"`
-	Live        bool              `json:"live"`
-	Value       json.RawMessage   `json:"value"`
-	Source      string            `json:"source"`
-	Revision    int64             `json:"revision"`
-	Explicit    json.RawMessage   `json:"explicit,omitempty"`
-	Actor       string            `json:"actor,omitempty"`
-	History     []SettingsHistory `json:"history"`
+	Key          string            `json:"key"`
+	Description  string            `json:"description"`
+	Kind         string            `json:"kind"`
+	Type         string            `json:"type"`
+	Levels       []string          `json:"levels"`
+	Values       []string          `json:"values,omitempty"`
+	Live         bool              `json:"live"`
+	Value        json.RawMessage   `json:"value"`
+	Source       string            `json:"source"`
+	Revision     int64             `json:"revision"`
+	Explicit     json.RawMessage   `json:"explicit,omitempty"`
+	Actor        string            `json:"actor,omitempty"`
+	History      []SettingsHistory `json:"history"`
+	DeliveryStep *StepRef          `json:"delivery_step,omitempty"`
 }

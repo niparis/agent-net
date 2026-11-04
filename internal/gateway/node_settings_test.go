@@ -70,7 +70,7 @@ func TestNodeSettingsUndoAndNodeRemoval(t *testing.T) {
 	if err := s.SetNodeSetting("shop", protocol.SettingDeployRule, protocol.DeployOwner, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.db.Query(`SELECT revision FROM setting_history WHERE key='delivery.deploy_rule' AND scope='shop' ORDER BY revision DESC LIMIT 1`)
+	rows, err := s.db.Query(`SELECT revision FROM setting_history WHERE key='delivery.pipeline.deploy.approver' AND scope='shop' ORDER BY revision DESC LIMIT 1`)
 	if err != nil {
 		t.Fatal(err)
 	}

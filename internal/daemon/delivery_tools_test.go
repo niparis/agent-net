@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -58,6 +59,55 @@ func (f *fakeDeliveryGateway) frames(typ string) []json.RawMessage {
 
 func deliveryTestView(c protocol.Change) protocol.ChangeView {
 	return protocol.ChangeView{Change: c, Steps: protocol.PipelineToday().Status(c, nil)}
+}
+
+func TestDeliveryDiffStatBoundedAndSafe(t *testing.T) {
+	in := "good\x00name\n" + strings.Repeat("é", protocol.MaxDiffStatBytes)
+	got := deliveryDiffStat(in)
+	if len(got) > protocol.MaxDiffStatBytes || !utf8.ValidString(got) || strings.ContainsRune(got, '\x00') || !strings.Contains(got, "truncated") {
+		t.Fatalf("unsafe diff stat: bytes=%d valid=%v", len(got), utf8.ValidString(got))
+	}
+}
+
+func TestDeliverySubmitSummarizesTargetBranchDiff(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	lc, _ := helloDelivery(t, n, "stat-submitter", wt, "claude-opus-5-5")
+	lc.mustCall(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Branch: "feat/x", TargetBranch: "main"})
+	sent := f.frames(protocol.FrameChangeSubmit)
+	if len(sent) != 1 {
+		t.Fatalf("submit frames: %d", len(sent))
+	}
+	var q protocol.ChangeSubmitRequest
+	if err := json.Unmarshal(sent[0], &q); err != nil {
+		t.Fatal(err)
+	}
+	if !protocol.ValidCommit(q.BaseCommit) || !strings.Contains(q.DiffStat, "a.txt") {
+		t.Fatalf("missing target diff: %+v", q)
+	}
+}
+
+func TestDeliveryDirectOwnerReportRoutes(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	lc, sid := helloDelivery(t, n, "owner-reporter", wt, "claude-opus-5-5")
+	f.answer(protocol.FrameStepReport, func(raw json.RawMessage) (any, error) {
+		return protocol.StepReportResult{Change: deliveryTestView(protocol.Change{ID: "ch_1"})}, nil
+	})
+	q := protocol.StepReportArgs{Change: "ch_1", StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: strings.Repeat("a", 40), DoneBy: protocol.EvidenceByOwner}
+	lc.mustCall(protocol.OpStepReport, q)
+	frames := f.frames(protocol.FrameStepReport)
+	if len(frames) != 1 {
+		t.Fatalf("report frames: %d", len(frames))
+	}
+	var sent protocol.StepReportRequest
+	if err := json.Unmarshal(frames[0], &sent); err != nil || sent.SessionID != sid || sent.DoneBy != protocol.EvidenceByOwner {
+		t.Fatalf("owner report: %+v, %v", sent, err)
+	}
+	q.Step, q.For = protocol.StepTest, ""
+	if _, err := lc.call(protocol.OpStepReport, q); err == nil {
+		t.Fatal("owner attribution accepted for a non-approval step")
+	}
 }
 
 // startDeliveryNode starts a daemon whose delivery frames go to a fake
@@ -235,7 +285,7 @@ func TestChangeSubmitRefusedForWorkers(t *testing.T) {
 		}
 	}
 	n.d.mu.Unlock()
-	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepReport} {
+	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport} {
 		_, err := lc.call(op, map[string]any{"branch": "feat/x"})
 		if err == nil || !strings.Contains(err.Error(), "worker") {
 			t.Errorf("%s from a worker: %v", op, err)
@@ -454,7 +504,7 @@ func TestChangesFindForTheOwnersTUI(t *testing.T) {
 	if _, err := lc.call(protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
 		t.Fatalf("an agent session called the owner read: %v", err)
 	}
-	for _, method := range []string{protocol.OpChangeSubmit, protocol.OpStepReport, protocol.OpChangesFind} {
+	for _, method := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind} {
 		if _, err := cli.call(method, map[string]any{}); err == nil || !strings.Contains(err.Error(), "not available to cli clients") {
 			t.Fatalf("%s from the owner's TUI: %v", method, err)
 		}

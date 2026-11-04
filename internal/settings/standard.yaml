@@ -1,5 +1,65 @@
 format: 1
 settings:
+  - key: delivery.pipeline.review.required_from
+    rows: [127]
+    description: The lowest difficulty that requires review.
+    kind: rule
+    type: enum
+    values: [very_complex, hard, normal, simple, trivial]
+    levels: [network, repo]
+    default: hard
+    live: true
+  - key: delivery.pipeline.review.independent
+    rows: [127]
+    description: How independent review evidence must be.
+    kind: rule
+    type: enum
+    values: [none, session, family]
+    levels: [network, repo]
+    default: family
+    live: true
+  - key: delivery.pipeline.review.requires
+    rows: [127]
+    description: Steps that must pass before review.
+    kind: rule
+    type: set
+    stricter: more
+    levels: [network, repo]
+    default: []
+    live: true
+  - key: delivery.pipeline.merge.requires
+    rows: [127]
+    description: Evidence required before merge.
+    kind: rule
+    type: set
+    stricter: more
+    levels: [network, repo]
+    default: [accept, review, 'test:suite']
+    by_maturity:
+      early: [accept, review]
+      mature: [accept, review, 'test:suite', 'test:tests_added']
+      critical: [accept, review, 'test:suite', 'test:tests_added', 'review:findings_open=0']
+    live: true
+  - key: delivery.pipeline.merge.approver
+    rows: [128]
+    description: Who approves the merge step.
+    kind: rule
+    type: enum
+    values: [none, delegate, owner]
+    levels: [network, repo]
+    default: none
+    by_maturity: {mature: delegate, critical: owner}
+    live: true
+  - key: delivery.pipeline.deploy.approver
+    rows: [132]
+    description: Who approves the deploy step.
+    kind: rule
+    type: enum
+    values: [none, delegate, owner]
+    levels: [network, repo]
+    default: none
+    by_maturity: {mature: delegate, critical: owner}
+    live: true
   - key: workers.sandbox_level
     rows: [52]
     description: How far a worker's permissions are limited.

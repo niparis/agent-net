@@ -216,8 +216,8 @@ func TestChangePipelineFollowsDeliverySettings(t *testing.T) {
 	if _, has := r.get(webID).Pipeline.Find(protocol.StepRef{Step: protocol.StepDeploy, AfterMerge: true}); has {
 		t.Fatal("a project with no graph node got the repo's deploy step")
 	}
-	// The approval for merge is a step now, so its report is stored.
-	approve := protocol.StepReportRequest{SessionID: r.caller, ChangeID: demo, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA}
+	// The owner can approve directly in the caller's session under delegated.
+	approve := protocol.StepReportRequest{SessionID: r.caller, ChangeID: demo, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, DoneBy: protocol.EvidenceByOwner}
 	if res := r.mustReport(r.a, approve); res.Evidence.Step != protocol.StepApprove || res.Evidence.For != protocol.StepMerge {
 		t.Fatalf("approve %+v", res.Evidence)
 	}
@@ -413,11 +413,9 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 		by, reportedBy, model       string
 		family, independent         string
 	}{
-		{"the author", r.a, r.worker, "", r.worker, "", "claude-opus-5-5", "anthropic", protocol.IndependentNone},
-		{"another Anthropic model", r.a, r.sonnet, "", r.sonnet, "", "claude-sonnet-5-5", "anthropic", protocol.IndependentSession},
-		{"another maker", r.b, r.deepseek, "", r.deepseek, "", "deepseek/deepseek-v4-pro", "deepseek", protocol.IndependentFamily},
-		{"a review worker of the caller", r.a, r.caller, r.reviewer, r.reviewer, r.caller, "gpt-5.5", "openai", protocol.IndependentFamily},
+		{"the author", r.a, r.caller, r.worker, r.worker, r.caller, "claude-opus-5-5", "anthropic", protocol.IndependentNone},
 		{"the reporter itself as done_by", r.a, r.caller, r.caller, r.caller, "", "claude-opus-5-5", "anthropic", protocol.IndependentSession},
+		{"a review worker of the caller", r.a, r.caller, r.reviewer, r.reviewer, r.caller, "gpt-5.5", "openai", protocol.IndependentFamily},
 	} {
 		e := report(tc.node, tc.session, tc.doneBy)
 		if e.By != tc.by || e.ReportedBy != tc.reportedBy || e.ByModel != tc.model || e.ByModelFamily != tc.family || e.Fields[protocol.FieldIndependent] != tc.independent {
@@ -425,6 +423,21 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 		}
 		if e.Revision != 1 || e.Commit != commitA || e.Note != "looks right" || e.Fields[protocol.FieldFindingsOpen] != "0" || e.At == 0 {
 			t.Errorf("%s: evidence %+v", tc.name, e)
+		}
+	}
+	// Unrelated sessions cannot be named as done_by; test their classification
+	// with the same author and session metadata directly.
+	origin := r.get(id).Change.Origin
+	for _, tc := range []struct{ name, session, model, family, independent string }{
+		{"another Anthropic model", r.sonnet, "claude-sonnet-5-5", "anthropic", protocol.IndependentSession},
+		{"another maker", r.deepseek, "deepseek/deepseek-v4-pro", "deepseek", protocol.IndependentFamily},
+	} {
+		maker, ok, err := r.s.deliverySession(tc.session)
+		if err != nil || !ok || maker.model != tc.model || maker.family() != tc.family {
+			t.Fatalf("%s: maker %+v, %v", tc.name, maker, err)
+		}
+		if got := protocol.IndependenceOf(origin, tc.session, maker.family()); got != tc.independent {
+			t.Errorf("%s: independence %s, want %s", tc.name, got, tc.independent)
 		}
 	}
 	// done_by must be a worker the reporter started.
@@ -435,8 +448,8 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 	}
 	// The review step needs another maker: only the latest such pass counts.
 	v := r.get(id)
-	if len(v.Evidence) != 5 {
-		t.Fatalf("evidence %d, want 5", len(v.Evidence))
+	if len(v.Evidence) != 3 {
+		t.Fatalf("evidence %d, want 3", len(v.Evidence))
 	}
 	for _, st := range v.Steps {
 		if st.Step == protocol.StepReview && (st.State != protocol.StepStatePassed || st.Evidence == nil || st.Evidence.Fields[protocol.FieldIndependent] != protocol.IndependentFamily) {
@@ -451,6 +464,13 @@ func TestStepReportMovesChangeThroughMerge(t *testing.T) {
 	pass := func(ref protocol.StepRef, commit string, fields map[string]string) protocol.Change {
 		t.Helper()
 		return r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields}).Change.Change
+	}
+	merge := protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}}
+	if _, err := r.report(r.a, merge); err == nil || !strings.Contains(err.Error(), "accept: no pass") || !strings.Contains(err.Error(), "test(suite=*): no pass") {
+		t.Fatalf("premature merge: %v", err)
+	}
+	if got := r.get(id).Change.State; got != protocol.ChangeOpen {
+		t.Fatalf("premature merge changed state to %s", got)
 	}
 	pass(stepAccept, commitA, nil)
 	pass(protocol.StepRef{Step: protocol.StepTest}, commitA, map[string]string{protocol.FieldSuite: protocol.SuiteChanged})
@@ -499,6 +519,8 @@ func TestChangeListFiltersAndPages(t *testing.T) {
 	}
 	c1 := sub("demo", "b1")
 	c2 := sub("demo", "b2")
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldSuite: protocol.SuiteChanged}})
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}})
 	c3 := sub("demo", "b3")
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c3, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA})
@@ -580,7 +602,7 @@ func TestDeliveryChangesSurviveRestart(t *testing.T) {
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultFail, Commit: commitA, Note: "missing test"})
 	r.submit(r.a, r.workerSubmit("agent-net/w_1", commitB))
-	r.mustReport(r.b, protocol.StepReportRequest{SessionID: r.deepseek, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepReview}, Result: protocol.StepResultPass, Commit: commitB, Fields: map[string]string{protocol.FieldFindingsOpen: "0"}})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepReview}, Result: protocol.StepResultPass, Commit: commitB, Fields: map[string]string{protocol.FieldFindingsOpen: "0"}})
 	before, _ := json.Marshal(r.get(id))
 	if err := s.Close(); err != nil {
 		t.Fatal(err)

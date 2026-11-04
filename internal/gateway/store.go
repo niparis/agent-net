@@ -694,6 +694,45 @@ CREATE TABLE IF NOT EXISTS worker_starts (
  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed', 'not_started')),
  created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0);
 `, `
+-- A node-owned step survives the owner's sessions going offline. The owner
+-- and the revision are captured when the step becomes ready.
+CREATE TABLE IF NOT EXISTS delivery_step_tasks (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0,
+ owner_node TEXT NOT NULL, claimed_by TEXT NOT NULL DEFAULT '',
+ completed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge));
+CREATE TABLE IF NOT EXISTS delivery_step_messages (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL, after_merge INTEGER NOT NULL, session_id TEXT NOT NULL,
+ message_id TEXT NOT NULL,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge, session_id));
+`, `
+-- A diff stat belongs to the revision named by its head commit.
+CREATE TABLE IF NOT EXISTS delivery_revision_stats (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, diff_stat TEXT NOT NULL,
+ PRIMARY KEY(change_id, revision));
+`, `
+-- Inbox approvals refer to an exact change revision and commit.
+CREATE TABLE IF NOT EXISTS delivery_step_inbox (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0,
+ commit_hash TEXT NOT NULL, item_id TEXT NOT NULL UNIQUE,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge));
+`, `
+-- Delegates are resolved when an approval step starts.
+CREATE TABLE IF NOT EXISTS delivery_step_delegates (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0,
+ node TEXT NOT NULL,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge, node));
+`, `
+-- delivery pipeline settings cutover: retain old values for downgrade.
+CREATE TABLE IF NOT EXISTS delivery_settings_legacy (
+ key TEXT NOT NULL, level TEXT NOT NULL, scope TEXT NOT NULL,
+ item TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, revision INTEGER NOT NULL,
+ PRIMARY KEY(key, level, scope, item));
+`, `
 SELECT 1 /* worker start tracking: legacy daemon references and launch timeout tracking */;
 CREATE INDEX IF NOT EXISTS worker_starts_legacy_ref ON worker_starts(legacy_ref) WHERE legacy_ref <> '';
 `, `
@@ -731,6 +770,10 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := s.resetStartingStarts(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("reset starting starts: %w", err)
+	}
 	if err := s.backfillRework(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("rework backfill: %w", err)
@@ -738,6 +781,10 @@ func OpenStore(path string) (*Store, error) {
 	if err := s.backfillTaskRework(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("task rework backfill: %w", err)
+	}
+	if err := s.backfillDeliveryTasks(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("delivery task backfill: %w", err)
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
@@ -1123,6 +1170,12 @@ func (s *Store) migrate() error {
 		}
 		if strings.Contains(migrations[i], "delivery settings cutover") {
 			if err := s.cutoverDeliveryTx(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "delivery pipeline settings cutover") {
+			if err := s.cutoverDeliveryPipelineTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -2177,6 +2230,20 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown recipient session %q", p.Recipient)
 	}
+	// Initial worker briefs must not revive or reach a worker that has ended.
+	// Check in the message transaction: worker.stopped can record the run
+	// before its separate session-offline update reaches the database.
+	if isWorkerTask(p) {
+		var stopped int
+		err := tx.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE s.id=? AND s.worker<>''
+			AND (s.online=0 OR EXISTS (SELECT 1 FROM worker_runs r WHERE r.session_id=s.id))`, p.Recipient).Scan(&stopped)
+		if err != nil {
+			return msg, false, err
+		}
+		if stopped != 0 {
+			return msg, false, reject("worker %s is offline or has ended; its task cannot be sent", p.Recipient)
+		}
+	}
 	if !s.allow(p.Sender) {
 		return msg, false, reject("rate limit: at most %d messages per minute per session", protocol.RatePerMinute)
 	}
@@ -2256,6 +2323,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
 			WHERE e.target=CASE WHEN dst.harness='cto' THEN ? ELSE COALESCE(NULLIF(dst.repo_project,''),dp.project,'') END
 			AND e.target<>'' AND (e.source=CASE WHEN src.harness='cto' THEN ? ELSE COALESCE(NULLIF(src.repo_project,''),sp.project,'') END OR e.source='*')
+			AND e.kind IN ('depends','governs','deploys')
 			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To, protocol.CTONodeName, protocol.CTONodeName).Scan(&rule)
 		if err != nil && err != sql.ErrNoRows {
 			return msg, false, err
@@ -3036,4 +3104,9 @@ func graphExclusion(excluded, checked bool) int {
 		return 2
 	}
 	return 0
+}
+
+// isWorkerTask identifies the initial brief, which must never resume a worker.
+func isWorkerTask(p protocol.MsgSend) bool {
+	return (p.Type == "" || p.Type == protocol.TypeRequest) && p.ParentID == "" && strings.HasPrefix(p.Body, "[agent-net worker brief]")
 }

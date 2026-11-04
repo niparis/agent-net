@@ -513,3 +513,66 @@ func TestQueuedStartIdempotentWhenAlreadyClosed(t *testing.T) {
 		t.Fatalf("relayed count after different session = %d, want 1", relayed.Load())
 	}
 }
+
+// A start stuck in 'starting': if the gateway restarts during relayQueuedTask,
+// OpenStore sets every 'starting' row back to 'open' so ExpireStarts / a not-started
+// report can end it with exactly one notice.
+func TestReopenStoreResetsStartingStarts(t *testing.T) {
+	dbPath := seededStorePath(t, "restart.db")
+	s, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &clock{t: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
+	s.now = c.now
+	a, b := twoSessions(t, s)
+	nodeA := mustNode(t, s, a)
+
+	if err := s.trackWorkerStart("q_stuck", nodeA, b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.markStartUnknown(nodeA, "q_stuck"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claim the start so its state becomes 'starting'.
+	won, err := s.claimStart(nodeA, "q_stuck")
+	if err != nil || !won {
+		t.Fatalf("claimStart failed: won=%v err=%v", won, err)
+	}
+
+	var state string
+	s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_stuck'`).Scan(&state)
+	if state != "starting" {
+		t.Fatalf("state before reopen = %q, want starting", state)
+	}
+
+	// Gateway restarts: close and reopen store.
+	s.Close()
+	s2, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	s2.now = c.now
+
+	// The row must be reset to 'open'.
+	s2.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_stuck'`).Scan(&state)
+	if state != "open" {
+		t.Fatalf("state after reopen = %q, want open", state)
+	}
+
+	// ExpireStarts can now end it with exactly one notice.
+	c.t = c.t.Add(15 * time.Minute)
+	notices, err := s2.ExpireStarts(10*time.Minute, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notices) != 1 {
+		t.Fatalf("expected 1 notice, got %d", len(notices))
+	}
+	s2.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_stuck'`).Scan(&state)
+	if state != "not_started" {
+		t.Fatalf("state after expire = %q, want not_started", state)
+	}
+}

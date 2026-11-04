@@ -51,6 +51,85 @@ func ValidStep(step string) bool {
 	return false
 }
 
+// DeliveryEdgeStep maps a graph assignment edge to the step it assigns.
+func DeliveryEdgeStep(kind string) string {
+	switch kind {
+	case "accepts":
+		return StepAccept
+	case "reviews":
+		return StepReview
+	case "tests", "tests_after_merge":
+		return StepTest
+	case "approves", "approves_deploy":
+		return StepApprove
+	case "merges":
+		return StepMerge
+	case "releases":
+		return StepRelease
+	case "deploys", "delivery_deploys":
+		return StepDeploy
+	case "verifies":
+		return StepVerify
+	}
+	return ""
+}
+
+// DeliveryEdgeRef identifies the exact phase and target of an assignment.
+func DeliveryEdgeRef(kind string) StepRef {
+	r := StepRef{Step: DeliveryEdgeStep(kind)}
+	switch kind {
+	case "tests_after_merge", "releases", "deploys", "delivery_deploys", "verifies":
+		r.AfterMerge = true
+	case "approves":
+		r.For = StepMerge
+	case "approves_deploy":
+		r.For, r.AfterMerge = StepDeploy, true
+	}
+	return r
+}
+
+// DeliveryRefEdge maps an editable step to its graph assignment edge.
+func DeliveryRefEdge(step, target string, after bool) string {
+	switch step {
+	case StepTest:
+		if after {
+			return "tests_after_merge"
+		}
+		return "tests"
+	case StepApprove:
+		if target == StepDeploy {
+			return "approves_deploy"
+		}
+		if target == "" || target == StepMerge {
+			return "approves"
+		}
+		return ""
+	default:
+		return DeliveryStepEdge(step)
+	}
+}
+
+// DeliveryStepEdge is the graph assignment for a step.
+func DeliveryStepEdge(step string) string {
+	for _, kind := range []string{"accepts", "reviews", "tests", "approves", "merges", "releases", "delivery_deploys", "verifies"} {
+		if DeliveryEdgeStep(kind) == step {
+			return kind
+		}
+	}
+	return ""
+}
+
+// DeliveryOwnerSetRequest changes one graph assignment. Node is empty to
+// clear it; Expect is the assignment the owner saw when opening the editor.
+type DeliveryOwnerSetRequest struct {
+	Project    string `json:"project"`
+	Step       string `json:"step"`
+	For        string `json:"for,omitempty"`
+	AfterMerge bool   `json:"after_merge,omitempty"`
+	Node       string `json:"node"`
+	Expect     string `json:"expect"`
+}
+
 // The result a step owner reports. close closes the change without merge (its
 // user does not want it); the gateway then stops the change.
 const (
@@ -164,6 +243,7 @@ const (
 	MaxEvidenceFields     = 16
 	MaxEvidenceFieldBytes = 200
 	MaxEvidenceNoteBytes  = 8 * 1024
+	MaxDiffStatBytes      = 8 * 1024
 	MaxBranchBytes        = 255
 	MaxChangeTitleBytes   = 200
 	maxNameBytes          = 120
@@ -211,6 +291,45 @@ func (r StepRef) Validate() error {
 type StepOwner struct {
 	Kind string `json:"kind"`
 	Node string `json:"node,omitempty"`
+}
+
+const deliveryOwnerPrefix = "/delivery/"
+
+// DeliveryOwnerSource translates a Settings value into its graph source.
+// The reserved source cannot be a graph node name because names cannot
+// contain slashes. Empty removes the explicit assignment.
+func DeliveryOwnerSource(value, step string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	for _, kind := range []string{OwnerCaller, OwnerGitHub, OwnerPerson, OwnerDelegate, OwnerNone} {
+		if value == "@"+kind {
+			if err := (StepOwner{Kind: kind}).validateFor(step); err != nil {
+				return "", err
+			}
+			return deliveryOwnerPrefix + kind, nil
+		}
+	}
+	if strings.HasPrefix(value, "/") {
+		return "", errors.New("invalid owner node")
+	}
+	return value, nil
+}
+
+// DeliveryOwnerFromSource interprets a graph source as a step owner.
+func DeliveryOwnerFromSource(source string) StepOwner {
+	if strings.HasPrefix(source, deliveryOwnerPrefix) {
+		return StepOwner{Kind: strings.TrimPrefix(source, deliveryOwnerPrefix)}
+	}
+	return StepOwner{Kind: OwnerNode, Node: source}
+}
+
+// DeliveryOwnerSetting is the editable value of a graph source.
+func DeliveryOwnerSetting(source string) string {
+	if strings.HasPrefix(source, deliveryOwnerPrefix) {
+		return "@" + strings.TrimPrefix(source, deliveryOwnerPrefix)
+	}
+	return source
 }
 
 func (o StepOwner) String() string {
@@ -394,6 +513,7 @@ const (
 	StepStateSkipped    = "skipped"     // left out: owner none, or below required_from and not run
 	StepStateWaiting    = "waiting"     // a requirement does not hold yet
 	StepStateReady      = "ready"       // may start now
+	StepStateRunning    = "running"     // a session claimed the task
 	StepStatePassed     = "passed"      // its latest counted result is pass
 	StepStateFailed     = "failed"      // its latest counted result is fail
 	StepStateNeedsOwner = "needs_owner" // its latest counted result is needs_owner
@@ -1049,8 +1169,7 @@ func (p Pipeline) NextSteps(c Change, evidence []Evidence) []StepRef {
 // Accepts checks a step report before the gateway stores it: the evidence is
 // valid, for this change, for a step of the pipeline that is not left out,
 // on the change's current revision and on the commit that step runs on. It
-// does not check Ready (a step may be reported before the merge check
-// enforces anything) or independence (a pass that is not independent enough
+// does not check Ready (the gateway checks it for merge passes) or independence (a pass that is not independent enough
 // is kept, and Status says it does not count).
 func (p Pipeline) Accepts(c Change, e Evidence) error {
 	if err := e.Validate(); err != nil {
@@ -1134,7 +1253,7 @@ func PipelineFromShorthand(tests, merge, deploy string) (Pipeline, error) {
 	case TestsSuite:
 		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldSuite: FieldAny}}
 	case TestsSuiteNewTests, TestsSuiteNewTestsReview:
-		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldTestsAdded: FieldYes}}
+		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldSuite: FieldAny, FieldTestsAdded: FieldYes}}
 		if tests == TestsSuiteNewTestsReview {
 			review.RequiredFrom = ""
 			reviewReq.Fields = map[string]string{FieldFindingsOpen: "0"}
@@ -1274,18 +1393,30 @@ func sortedKeys(m map[string]string) []string {
 // sends step tasks, as for the idle check, so edge request rules do not hold
 // them.
 const (
-	FrameChangeSubmit = "change.submit"
-	FrameChangeGet    = "change.get"
-	FrameChangeList   = "change.list"
-	FrameStepReport   = "step.report"
-	FrameStepTask     = "step.task"
+	FrameChangeSubmit      = "change.submit"
+	FrameChangeGet         = "change.get"
+	FrameChangeList        = "change.list"
+	FrameStepClaim         = "step.claim"
+	FrameStepReport        = "step.report"
+	FrameStepTask          = "step.task"
+	FrameDeliveryNeedsPush = "delivery.needs_push"
 )
+
+type DeliveryNeedsPushRequest struct {
+	Project         string `json:"project"`
+	CallerSessionID string `json:"caller_session_id,omitempty"`
+}
+
+type DeliveryNeedsPushResult struct {
+	NeedsPush bool `json:"needs_push"`
+}
 
 // Daemon methods behind the MCP tools agent_change_submit, agent_step_report
 // and agent_changes_find.
 const (
 	OpChangeSubmit = "change_submit"
 	OpStepReport   = "step_report"
+	OpStepClaim    = "step_claim"
 	OpChangesFind  = "changes_find"
 )
 
@@ -1312,6 +1443,7 @@ type ChangeSubmitRequest struct {
 	Origin       ChangeOrigin `json:"origin"`
 	Difficulty   string       `json:"difficulty,omitempty"`
 	Title        string       `json:"title,omitempty"`
+	DiffStat     string       `json:"diff_stat,omitempty"`
 }
 
 // Validate checks a submit before it is sent.
@@ -1322,6 +1454,14 @@ func (q ChangeSubmitRequest) Validate() error {
 	if q.ChangeID != "" {
 		if err := validChangeID(q.ChangeID); err != nil {
 			return err
+		}
+	}
+	if len(q.DiffStat) > MaxDiffStatBytes {
+		return fmt.Errorf("diff stat is longer than %d bytes", MaxDiffStatBytes)
+	}
+	for _, r := range q.DiffStat {
+		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+			return errors.New("diff stat holds a control character")
 		}
 	}
 	return Change{Project: q.Project, Branch: q.Branch, TargetBranch: q.TargetBranch, BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Origin: q.Origin, Difficulty: q.Difficulty, Title: q.Title}.validateWork()
@@ -1369,12 +1509,42 @@ type ChangeListResult struct {
 	Next    string       `json:"next,omitempty"`
 }
 
+// StepClaimRequest is step.claim: one session takes a ready node-owned step.
+// Commit ties the claim to the change revision the session saw.
+type StepClaimRequest struct {
+	SessionID string `json:"session_id"`
+	ChangeID  string `json:"change_id"`
+	StepRef
+	Commit string `json:"commit"`
+}
+
+func (q StepClaimRequest) Validate() error {
+	if q.SessionID == "" {
+		return errors.New("session_id is empty")
+	}
+	if err := validChangeID(q.ChangeID); err != nil {
+		return err
+	}
+	if err := q.StepRef.Validate(); err != nil {
+		return err
+	}
+	if !ValidCommit(q.Commit) {
+		return errors.New("commit must be the full hash of the exact commit to claim")
+	}
+	return nil
+}
+
+type StepClaimResult struct {
+	Claimed   bool   `json:"claimed"`
+	SessionID string `json:"session_id"`
+}
+
 // StepReportRequest is step.report: a step owner reports a result from its own
 // session. SessionID is the reporting session (the daemon fills it). DoneBy,
 // when set, is a worker the reporter started that did the work (a review
-// worker on another model family); it becomes the evidence's By and decides
-// independence. The gateway fills the revision, the model and the independent
-// field, then checks the report with Pipeline.Accepts.
+// worker on another model family), or owner for direct approval of a delegated
+// step. It becomes the evidence's By and decides independence. The gateway
+// fills the revision, the model and independent field, then checks the report.
 type StepReportRequest struct {
 	SessionID string `json:"session_id"`
 	ChangeID  string `json:"change_id"`

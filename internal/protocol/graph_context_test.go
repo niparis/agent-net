@@ -76,6 +76,39 @@ func TestNodeContextIsEmptyWithoutACharter(t *testing.T) {
 	}
 }
 
+func TestDeliveryAssignmentsAppearInNodeContext(t *testing.T) {
+	g := Graph{Nodes: []Node{{Name: "demo", Kind: "component"}, {Name: "merger", Kind: "architect"}},
+		Edges: []Edge{{From: "merger", To: "demo", Kind: "reviews"}, {From: "merger", To: "demo", Kind: "merges"}}}
+	for name, wants := range map[string][]string{
+		"merger": {"You own review for demo.", "You own merge for demo."},
+		"demo":   {"merger owns review for your project.", "merger owns merge for your project."},
+	} {
+		text := NodeContext(g, name)
+		for _, want := range wants {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s context lacks %q: %s", name, want, text)
+			}
+		}
+	}
+}
+
+func TestDeliveryAssignmentContextNamesPhase(t *testing.T) {
+	g := Graph{Nodes: []Node{{Name: "demo"}, {Name: "runner"}}, Edges: []Edge{{From: "runner", To: "demo", Kind: "tests_after_merge"}}}
+	if text := NodeContext(g, "runner"); !strings.Contains(text, "test after merge") {
+		t.Fatalf("missing phase in assignment: %q", text)
+	}
+}
+
+func TestDeliveryAssignedDeployerGetsTargetApprovalRule(t *testing.T) {
+	g := Graph{Nodes: []Node{{Name: "deployer", Kind: "architect"}, {Name: "app", Kind: "component", Charter: Charter{Maturity: "critical"}}},
+		Edges: []Edge{{From: "deployer", To: "app", Kind: "delivery_deploys"}}}
+	for _, text := range []string{NodeContext(g, "deployer"), WorkerDeployApprovalRules(g, "deployer")} {
+		if !strings.Contains(text, "app") || !strings.Contains(text, "agent_owner_ask") {
+			t.Fatalf("assigned deployer does not get target's approval rule: %q", text)
+		}
+	}
+}
+
 func TestCharterBriefHasTheWholeCharter(t *testing.T) {
 	node := contextGraph().Nodes[0]
 	got := CharterBrief(node)

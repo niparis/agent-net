@@ -16,6 +16,7 @@ const deliveryCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 var deliveryCalls = map[string]string{
 	"agent_change_submit": `{"branch":"agent-net/w_1","commit":"` + deliveryCommit + `"}`,
+	"agent_step_claim":    `{"change":"ch_1","step":"test","commit":"` + deliveryCommit + `"}`,
 	"agent_step_report":   `{"change":"ch_1","step":"test","result":"pass","commit":"` + deliveryCommit + `","fields":{"suite":"changed"}}`,
 	"agent_changes_find":  `{"state":"active"}`,
 }
@@ -53,6 +54,7 @@ func TestDeliveryToolsCallTheDaemon(t *testing.T) {
 	ev := protocol.Evidence{ChangeID: "ch_1", Revision: 1, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: deliveryCommit, By: "s_me", At: 2}
 	results := map[string]any{
 		protocol.OpChangeSubmit: protocol.ChangeSubmitResult{Change: view},
+		protocol.OpStepClaim:    protocol.StepClaimResult{Claimed: true, SessionID: "s_me"},
 		protocol.OpStepReport:   protocol.StepReportResult{Evidence: ev, Change: view},
 		protocol.OpChangesFind:  protocol.ChangesFindResult{Items: []protocol.ChangeView{view}, Total: 1, NextCursor: "ch_1"},
 	}
@@ -72,7 +74,7 @@ func TestDeliveryToolsCallTheDaemon(t *testing.T) {
 		return json.Marshal(res)
 	})
 	listed := listedCatalogNames(t, cs)
-	ops := map[string]string{"agent_change_submit": protocol.OpChangeSubmit, "agent_step_report": protocol.OpStepReport, "agent_changes_find": protocol.OpChangesFind}
+	ops := map[string]string{"agent_change_submit": protocol.OpChangeSubmit, "agent_step_claim": protocol.OpStepClaim, "agent_step_report": protocol.OpStepReport, "agent_changes_find": protocol.OpChangesFind}
 	for name, args := range deliveryCalls {
 		if !deliveryHas(listed, name) {
 			t.Errorf("agent does not see %s", name)
@@ -139,7 +141,7 @@ func TestDeliveryToolsReturnDaemonErrors(t *testing.T) {
 
 func TestDeliveryToolsForWorkerAndCTO(t *testing.T) {
 	worker := listedCatalogNames(t, connectWorker(t))
-	if !deliveryHas(worker, "agent_changes_find") || deliveryHas(worker, "agent_change_submit") || deliveryHas(worker, "agent_step_report") {
+	if !deliveryHas(worker, "agent_changes_find") || deliveryHas(worker, "agent_change_submit") || deliveryHas(worker, "agent_step_claim") || deliveryHas(worker, "agent_step_report") {
 		t.Errorf("worker delivery tools = %v", worker)
 	}
 	// The CTO's tool list is at its schema budget, so it has none of them yet.
@@ -165,6 +167,7 @@ func TestDeliveryOutputSchemasMatchProtocol(t *testing.T) {
 		Revisions: []protocol.Revision{{ChangeID: "ch_1", Number: 1, Branch: c.Branch, Commit: deliveryCommit, Uncommitted: true, At: 1}}, Evidence: []protocol.Evidence{ev}}
 	for name, value := range map[string]any{
 		"agent_change_submit": protocol.ChangeSubmitResult{Change: view, Bumped: true},
+		"agent_step_claim":    protocol.StepClaimResult{Claimed: true, SessionID: "s_2"},
 		"agent_step_report":   protocol.StepReportResult{Evidence: ev, Change: view},
 		"agent_changes_find":  map[string]any{"items": []protocol.ChangeView{view, {Change: c, Steps: steps}}, "total": 2, "next_cursor": "x"},
 	} {

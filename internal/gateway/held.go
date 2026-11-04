@@ -62,7 +62,7 @@ func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol
 		}
 		var old protocol.Edge
 		old.From, old.To = from, to
-		err = tx.QueryRow(`SELECT kind,mode,rule FROM graph_edges WHERE source=? AND target=? ORDER BY kind LIMIT 1`, from, to).Scan(&old.Kind, &old.Mode, &old.Rule)
+		err = tx.QueryRow(`SELECT kind,mode,rule FROM graph_edges WHERE source=? AND target=? AND kind IN ('depends','governs','deploys') ORDER BY kind LIMIT 1`, from, to).Scan(&old.Kind, &old.Mode, &old.Rule)
 		previous := ""
 		e := old
 		if err == nil {

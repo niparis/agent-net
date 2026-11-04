@@ -130,7 +130,7 @@ func deliveryMarks(steps []protocol.StepStatus) []stripState {
 				passed++
 			case protocol.StepStateFailed, protocol.StepStateClosed:
 				failed = true
-			case protocol.StepStateNeedsOwner:
+			case protocol.StepStateNeedsOwner, protocol.StepStateRunning:
 				needsOwner = true
 			}
 			active++
@@ -161,8 +161,8 @@ func hasStep(steps []protocol.StepStatus, name string) bool {
 }
 
 // currentStep is the step the change is in: the first step that may start now.
-// With none, the step that needs the owner, else one that failed, else one that
-// waits.
+// With none, a running step, then the step that needs the owner, else one that
+// failed, else one that waits.
 func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, bool) {
 	ownerOf := func(r protocol.StepRef) protocol.StepOwner {
 		for _, st := range v.Steps {
@@ -175,7 +175,7 @@ func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, b
 	if len(v.Next) > 0 {
 		return v.Next[0], ownerOf(v.Next[0]), true
 	}
-	for _, state := range []string{protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateWaiting} {
+	for _, state := range []string{protocol.StepStateRunning, protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateWaiting} {
 		for _, st := range v.Steps {
 			if st.State == state {
 				return st.StepRef, st.Owner, true
@@ -192,6 +192,9 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 	c := v.Change
 	out := deliveryChange{ID: c.ID, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
 		Marks: deliveryMarks(v.Steps), Full: v.Pipeline != nil}
+	for _, st := range v.Steps {
+		out.Steps = append(out.Steps, deliveryStep{Name: st.StepRef.String(), Owner: deliveryOwnerLabel(st.Owner), State: st.State, Note: st.Note})
+	}
 	if r, owner, ok := currentStep(v); ok {
 		out.Step, out.StepOwner = r.Step, deliveryOwnerLabel(owner)
 	}

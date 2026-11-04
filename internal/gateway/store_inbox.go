@@ -67,20 +67,74 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	items := []protocol.InboxItem{}
 	for rows.Next() {
 		item, err := scanInbox(rows)
 		if err != nil {
+			rows.Close()
 			return nil, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	byID := map[string]int{}
+	for i := range items {
+		byID[items[i].ID] = i
+	}
+	rows, err = s.db.Query(`SELECT d.item_id,d.change_id,d.step,d.for_step,d.after_merge,d.commit_hash,c.project
+		FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id`)
+	if err != nil {
+		return nil, err
+	}
+	type deliveryItem struct {
+		id, project string
+		delivery    protocol.InboxDelivery
+	}
+	var deliveries []deliveryItem
+	for rows.Next() {
+		var d deliveryItem
+		var after int
+		if err := rows.Scan(&d.id, &d.delivery.ChangeID, &d.delivery.Step, &d.delivery.For, &after, &d.delivery.Commit, &d.project); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		d.delivery.AfterMerge = after != 0
+		deliveries = append(deliveries, d)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	pipelines := map[string]protocol.Pipeline{}
+	for _, d := range deliveries {
+		i, ok := byID[d.id]
+		if !ok {
+			continue
+		}
+		p, ok := pipelines[d.project]
+		if !ok {
+			p, err = s.deliveryPipeline(d.project)
+			if err != nil {
+				return nil, err
+			}
+			pipelines[d.project] = p
+		}
+		d.delivery.ReportFields = p.ReportFields(d.delivery.StepRef)
+		items[i].Delivery = &d.delivery
+	}
+	return items, nil
 }
 
 // AnswerInbox records an answer and queues its delivery in one transaction.
 func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.InboxItem, error) {
+	if item, handled, err := s.answerDeliveryApproval(id, answer, validate...); handled || err != nil {
+		return item, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.InboxItem{}, err

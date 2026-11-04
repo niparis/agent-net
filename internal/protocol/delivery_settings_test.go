@@ -93,3 +93,29 @@ func TestWorkerSandboxCutoverFlag(t *testing.T) {
 		t.Fatalf("cutover = %s", got)
 	}
 }
+
+func TestDeliveryCustomDeployContextIncludesLegacyEdges(t *testing.T) {
+	snap := settings.Snapshot{DeliveryPipelineCutover: true, DeliveryAssignments: []settings.DeliveryAssignment{{Project: "app", Step: "approve", For: "deploy", AfterMerge: true, Node: "reviewer", Kind: "approves_deploy"}}}
+	for _, kind := range []string{"deploys", "delivery_deploys"} {
+		g := Graph{Nodes: []Node{{Name: "deployer"}, {Name: "app"}}, Edges: []Edge{{From: "deployer", To: "app", Kind: kind}}}
+		text := NodeContextWithSettings(g, "deployer", snap)
+		if !strings.Contains(text, "reviewer") {
+			t.Errorf("%s context: %q", kind, text)
+		}
+	}
+}
+
+func TestDeliveryNoneAssignmentIsNotAnOwner(t *testing.T) {
+	g := Graph{Edges: []Edge{{From: "/delivery/none", To: "app", Kind: "approves"}}}
+	if text := DeliveryProjectOwners(g, "app"); strings.Contains(text, "none") {
+		t.Fatal(text)
+	}
+}
+
+func TestDeliverySuiteNewTestsRuleText(t *testing.T) {
+	snap := settings.Snapshot{DeliveryPipelineCutover: true, Values: []settings.Value{{Key: "delivery.pipeline.merge.requires", Level: "repo", Scope: "demo", Value: json.RawMessage(`["accept","review","test:suite","test:tests_added"]`)}}}
+	text := NodeDefaultsWithSettings("", nil, snap, "demo").TestText()
+	if !strings.Contains(text, "suite") || !strings.Contains(text, "tests") {
+		t.Fatalf("rule omits a requirement: %q", text)
+	}
+}
