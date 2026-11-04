@@ -1,4 +1,4 @@
-# 0056 - Delivery pipeline: git holds the work, agent-net routes the steps
+# 0057 - Delivery pipeline: git holds the work, agent-net routes the steps
 
 Date: 2026-11-04
 

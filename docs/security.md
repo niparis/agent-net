@@ -391,7 +391,7 @@ A critical repository should also have branch protection on its default branch: 
 
 ### Delivery steps and evidence
 
-The delivery pipeline (decision [0056](decisions/0056-delivery-pipeline.md)) records each step's result as evidence. Only the contract is built so far: the tools `agent_change_submit`, `agent_step_report` and `agent_changes_find` check their arguments and answer "not built yet", and nothing is stored, routed or refused.
+The delivery pipeline (decision [0056](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. Only the contract is built so far: the tools `agent_change_submit`, `agent_step_report` and `agent_changes_find` check their arguments and answer "not built yet", and nothing is stored, routed or refused.
 
 - **Evidence names one exact commit.** A commit must be a full 40 or 64 character lowercase hash; a short hash or a ref name is refused. A report for a commit that is not the change's head (or, after merge, its merged commit), or for an older revision, is refused (`Pipeline.Accepts`). Evidence of an older revision does not count.
 - **The reporter cannot claim independence.** The `independent` field is set by agent-net from the reporter's session and model maker, compared with the change's author. A report that sets it is refused.
