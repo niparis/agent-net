@@ -71,12 +71,15 @@ type Config struct {
 	// daemons set it, because their fake harnesses cannot answer the judge;
 	// the assessment tests turn it off again.
 	testNoDifficulty bool
-	InventoryHome    string // Empty disables tools inventory (used by tests).
-	GatewayURL       string
-	NodeID           string
-	Token            string
-	NodeConfigDir    string // node.json directory; empty uses ConfigDir().
-	CAPEM            []byte // pinned CA; nil means the system roots (plain http in tests)
+	// testOSSandboxReady replaces the check that the OS sandbox can run on
+	// this machine (bubblewrap installed, user namespaces on).
+	testOSSandboxReady func() error
+	InventoryHome      string // Empty disables tools inventory (used by tests).
+	GatewayURL         string
+	NodeID             string
+	Token              string
+	NodeConfigDir      string // node.json directory; empty uses ConfigDir().
+	CAPEM              []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.
 	GatewayData string

@@ -73,6 +73,10 @@ type NodeWorkers struct {
 	QueueTimeout           string  `json:"queue_timeout,omitempty"`
 	BackgroundStartTimeout string  `json:"background_start_timeout,omitempty"`
 	StartGap               string  `json:"start_gap,omitempty"`
+	// OSSandbox lists the projects whose Pi and OpenCode workers run in the
+	// OS sandbox (bubblewrap on Linux); "*" means every project. Edited by
+	// hand. See docs/design/worker-os-sandbox.md.
+	OSSandbox projectList `json:"os_sandbox,omitempty"`
 }
 
 // parseSize reads a size such as "2GB", "1536MB" or "1.5GiB" into bytes.
@@ -145,6 +149,12 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 	}
 	if s.Max < 0 {
 		return s, errors.New("node.json: workers.max must not be negative")
+	}
+	for _, p := range nc.Workers.OSSandbox {
+		if strings.TrimSpace(p) == "" {
+			return s, errors.New(`node.json: workers.os_sandbox must list project names, or "*" for every project`)
+		}
+		s.OSSandbox = append(s.OSSandbox, strings.TrimSpace(p))
 	}
 	return s, nil
 }

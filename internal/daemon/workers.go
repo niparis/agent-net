@@ -71,6 +71,9 @@ type WorkerSettings struct {
 	// that are past the longest run time, and the gateway's copy of them.
 	// Default 10 minutes. Tests shorten it.
 	Cleanup time.Duration
+	// OSSandbox lists the projects whose Pi and OpenCode workers run in the
+	// OS sandbox ("*" is every project): workers.os_sandbox of node.json.
+	OSSandbox []string
 }
 
 func (s WorkerSettings) filled() WorkerSettings {
@@ -192,6 +195,9 @@ type worker struct {
 	leftAsIs bool
 	// permissions is the level the worker was started with (decision 0020).
 	permissions string
+	// osSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
+	// (docs/design/worker-os-sandbox.md). Kept in its folder (osSandboxMarker).
+	osSandbox string
 	// toolchainDirs are the extra writable folders passed to agy.
 	toolchainDirs []string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
@@ -556,6 +562,11 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	if l.Owner == "" {
 		return refuse("a worker needs an owner")
 	}
+	// The OS sandbox is checked before the queue too, so a start that cannot
+	// run in it is refused now, not after the wait.
+	if _, err := d.osSandboxChoice(l.Project, l.Harness, l.Permissions, false); err != nil {
+		return refuse("%v", err)
+	}
 	// No room now: the start waits in the queue (decision 0018).
 	if q := d.admitOrQueue(l); q != nil {
 		if !q.Queued {
@@ -601,8 +612,12 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	if ln == nil {
 		return refuse("this daemon cannot start %q workers", l.Harness)
 	}
+	sandbox, err := d.osSandboxChoice(l.Project, l.Harness, l.Permissions, false)
+	if err != nil {
+		return refuse("%v", err)
+	}
 	rules := projectWorkerRules(l.Path)
-	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
+	w := &worker{id: protocol.NewID("w"), harness: l.Harness, osSandbox: sandbox, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
 		title:       l.Title,
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
@@ -735,6 +750,22 @@ func (d *Daemon) spawnWorkerIO(w *worker, bin string, args []string, env []strin
 	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
+	}
+	// The OS sandbox: a Pi or OpenCode worker of a project that has it on
+	// never starts without it.
+	d.wmu.Lock()
+	sandbox := w.osSandbox
+	d.wmu.Unlock()
+	if sandbox == "" && (w.harness == "pi" || w.harness == "opencode") && d.cfg.Workers.osSandboxOn(w.project) {
+		logf.Close()
+		return errors.New("the OS sandbox is on for this project (workers.os_sandbox in node.json), but this start did not apply it")
+	}
+	if sandbox != "" {
+		var werr error
+		if bin, args, env, werr = d.osSandboxWrap(w, bin, args, env); werr != nil {
+			logf.Close()
+			return werr
+		}
 	}
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = w.path
@@ -1113,6 +1144,12 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	if !ok {
 		return fmt.Errorf("a %s worker cannot be started again: %s", row.Harness, cannotResumeReason(row.Harness))
 	}
+	// A follow-up stays in the OS sandbox the worker started in, and goes in
+	// it when the switch is on now.
+	sandbox, err := d.osSandboxChoice(row.Project, row.Harness, row.Permissions, readOSSandboxMarker(filepath.Join(d.cfg.StateDir, "workers", row.ID)) != "")
+	if err != nil {
+		return err
+	}
 	d.wmu.Lock()
 	if len(d.workers) >= set.Max {
 		n := len(d.workers)
@@ -1126,7 +1163,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
 		taskID: row.TaskID, midrunCount: row.MidrunCount, noticeSinceRequest: row.NoticeSinceRequest, midrunSeen: row.MidrunSeen,
 		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
-		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, ready: make(chan struct{})}
+		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, ready: make(chan struct{}), osSandbox: sandbox}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
 	row.EndedReason, row.Reported, row.Resumable = "", false, false
@@ -1525,6 +1562,7 @@ func (d *Daemon) adoptWorkers() {
 			autoContinue: r.AutoContinue, autoContinueCount: r.AutoContinueCount, autoContinueRun: r.AutoContinueRun,
 			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed, touches: r.Touches}
 		w.logPath = filepath.Join(w.dir, "worker.log")
+		w.osSandbox = readOSSandboxMarker(w.dir)
 		if since, key, report, sent, err := d.st.loadWorkerIdleNotice(w.id); err == nil {
 			w.idleNoticeSince, w.idleNoticeKey, w.idleNoticeReport, w.idleNoticeSent = since, key, report, sent
 		} else {

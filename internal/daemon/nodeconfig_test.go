@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 
 func TestNodeWorkerSettings(t *testing.T) {
 	var nc NodeConfig
-	if s, err := nc.WorkerSettings(); err != nil || s != (WorkerSettings{}) {
+	if s, err := nc.WorkerSettings(); err != nil || !reflect.DeepEqual(s, WorkerSettings{}) {
 		t.Fatalf("absent: %+v %v", s, err)
 	}
 	f := (WorkerSettings{}).filled()
