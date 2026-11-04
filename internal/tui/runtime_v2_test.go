@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"bytes"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
+	"github.com/niparis/agent-net/internal/tui/palette"
 	"image/color"
 	"strings"
 	"testing"
@@ -122,5 +125,106 @@ func TestV2SemanticColorsMatchOriginalTrueColor(t *testing.T) {
 		if got := lipgloss.NewStyle().Foreground(tc.col).Render("x"); !strings.Contains(got, tc.want) {
 			t.Errorf("%s color: %q, want %s", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestV2ColorProfilesPreserveOriginalPalette(t *testing.T) {
+	defer palette.SetProfile(colorprofile.TrueColor)
+	for _, tc := range []struct {
+		profile colorprofile.Profile
+		want    string
+	}{
+		{colorprofile.ANSI256, "38;5;59"},
+		{colorprofile.ANSI, "90m"},
+	} {
+		m := newModel(80, 24)
+		_, _ = m.Update(tea.ColorProfileMsg{Profile: tc.profile})
+		var output bytes.Buffer
+		writer := colorprofile.NewWriter(&output, nil)
+		writer.Profile = tc.profile
+		_, _ = writer.WriteString(lipgloss.NewStyle().Foreground(roleFaint).Render("x"))
+		if !strings.Contains(output.String(), tc.want) {
+			t.Errorf("%v: got %q, want %s", tc.profile, output.String(), tc.want)
+		}
+	}
+}
+
+func TestV2PasteUsesOnlyTheActiveEditor(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = settingsTab
+	m.apps.stage = "rename"
+	m.apps.input = newTextInput()
+	m.apps.input.Focus()
+	next, _ := m.Update(tea.PasteMsg{Content: "new name"})
+	m = next.(Model)
+	if got := m.apps.input.Value(); got != "new name" {
+		t.Errorf("settings rename paste: %q", got)
+	}
+
+	m = newModel(80, 24)
+	m.focus = focusCTO
+	m.filtering = true
+	m.input.Focus()
+	next, _ = m.Update(tea.PasteMsg{Content: "hidden"})
+	m = next.(Model)
+	if m.filter != "" {
+		t.Errorf("paste changed hidden filter: %q", m.filter)
+	}
+
+	m = newModel(80, 24)
+	m.tab = toolsTab
+	m.tl.searching, m.tl.search = true, "keep"
+	m.tl.modal = &toolsModal{}
+	next, _ = m.Update(tea.PasteMsg{Content: "hidden"})
+	m = next.(Model)
+	if m.tl.search != "keep" {
+		t.Errorf("paste changed filter behind modal: %q", m.tl.search)
+	}
+}
+
+func TestV2PasteIntoToolsEditors(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab, m.tl.allTools, m.tl.searching = toolsTab, true, true
+	next, _ := m.Update(tea.PasteMsg{Content: "hello q"})
+	m = next.(Model)
+	if m.tl.search != "hello q" || m.quitting {
+		t.Errorf("tools search: %q", m.tl.search)
+	}
+
+	m = newModel(80, 24)
+	m.tab, m.tl.agentSearching = toolsTab, true
+	next, _ = m.Update(tea.PasteMsg{Content: "skills"})
+	m = next.(Model)
+	if m.tl.agentFilter != "skills" {
+		t.Errorf("skills search: %q", m.tl.agentFilter)
+	}
+
+	m.tl.modal = &toolsModal{picker: &projPicker{filtering: true}}
+	next, _ = m.Update(tea.PasteMsg{Content: "project"})
+	m = next.(Model)
+	if m.tl.modal.picker.filter != "project" || m.tl.agentFilter != "skills" {
+		t.Errorf("picker: %+v", m.tl.modal.picker)
+	}
+
+	m.tl.modal = &toolsModal{form: &toolAddForm{values: []string{""}}}
+	next, _ = m.Update(tea.PasteMsg{Content: "a path"})
+	m = next.(Model)
+	if m.tl.modal.form.values[0] != "a path" {
+		t.Errorf("form: %+v", m.tl.modal.form.values)
+	}
+}
+
+func TestV2ProfileChangeRebuildsPixelGraphLabels(t *testing.T) {
+	palette.SetProfile(colorprofile.TrueColor)
+	defer palette.SetProfile(colorprofile.TrueColor)
+	m := idleGraphModel(80, 24)
+	m = renderGraphFrame(t, m)
+	if m.graphPixel.rendering {
+		t.Fatal("frame still rendering")
+	}
+	next, _ := m.Update(tea.ColorProfileMsg{Profile: colorprofile.ANSI256})
+	m = next.(Model)
+	if !m.graphPixel.rendering {
+		t.Fatal("profile change did not rebuild cached pixel labels")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/tui/graphview"
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 var graphSelectionStyle = lipgloss.NewStyle().Bold(true).Foreground(graphview.AccentColor)
@@ -157,6 +158,9 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 		stillScene(&scene)
 	}
 	key := graphview.HashScene(scene, size)
+	// Pixel labels are cached with their terminal colors. Rebuild them if the
+	// runtime upgrades or changes its output profile.
+	key[0] ^= byte(palette.Profile())
 	if g.ready && g.lines != nil && g.key == key && g.size == size {
 		return nil
 	}

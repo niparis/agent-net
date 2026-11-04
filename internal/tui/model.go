@@ -15,6 +15,7 @@ import (
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // RefreshEvery is how often the screen asks the daemon for news.
@@ -456,6 +457,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.graphMouse(msg), nil
 	case tea.PasteMsg:
 		return m.paste(msg)
+	case tea.ColorProfileMsg:
+		palette.SetProfile(msg.Profile)
+		return m, nil
 	case protocol.UIRequest:
 		return m.applyCTOUI(msg)
 	case tea.WindowSizeMsg:

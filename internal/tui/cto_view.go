@@ -200,7 +200,7 @@ func (c *ctoState) renderMessage(text string, width int) []string {
 	if !strings.HasPrefix(text, "cto: ") {
 		return wrapCTOLine(text, width)
 	}
-	key := ctoRenderKey{text, width, palette.IsDark(), termenv.TrueColor}
+	key := ctoRenderKey{text, width, palette.IsDark(), palette.GlamourProfile()}
 	if lines, ok := c.renderCache[key]; ok {
 		return lines
 	}

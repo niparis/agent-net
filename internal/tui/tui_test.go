@@ -20,6 +20,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files")
@@ -33,7 +34,17 @@ func TestMain(m *testing.M) {
 
 var testColorProfile = termenv.Ascii
 
-func setTestColorProfile(p termenv.Profile) { testColorProfile = p }
+func setTestColorProfile(p termenv.Profile) {
+	testColorProfile = p
+	switch p {
+	case termenv.ANSI:
+		palette.SetProfile(colorprofile.ANSI)
+	case termenv.ANSI256:
+		palette.SetProfile(colorprofile.ANSI256)
+	default:
+		palette.SetProfile(colorprofile.TrueColor)
+	}
+}
 
 var sgrPattern = regexp.MustCompile(`\x1b\[[0-9;:]*m`)
 
