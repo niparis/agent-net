@@ -1,10 +1,30 @@
 package protocol
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestWorkerHandbackFilesRoundTrip(t *testing.T) {
+	want := WorkerHandbackRequest{Report: "done", Files: []string{"/work/report.txt", "/work/image.png"}}
+	b, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got WorkerHandbackRequest
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip = %+v, want %+v", got, want)
+	}
+	if !strings.Contains(string(b), `"files":[`) {
+		t.Fatalf("files missing from JSON: %s", b)
+	}
+}
 
 func TestHandbackCompleteDefaultsToTrue(t *testing.T) {
 	if !(WorkerHandbackRequest{Report: "done"}).IsComplete() {

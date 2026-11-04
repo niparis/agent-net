@@ -72,7 +72,7 @@ func (r ChangeRange) check(ctx context.Context) (gitIn, error) {
 	if err := checkCommitID("head", r.HeadSHA); err != nil {
 		return g, err
 	}
-	return g, checkHistory(ctx, g)
+	return g, checkRepo(ctx, g)
 }
 
 // diffArgs are the options every diff of a change uses, so the lists agree

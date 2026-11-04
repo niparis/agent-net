@@ -71,6 +71,14 @@ func TestAntigravityPlugin(t *testing.T) {
 		}
 	}
 	gotRules, err := os.ReadFile(filepath.Join(AntigravityPluginDir(), "rules/AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *update {
+		if err := os.WriteFile("testdata/antigravity.golden", gotRules, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	wantRules, fixtureErr := os.ReadFile("testdata/antigravity.golden")
 	if err != nil || fixtureErr != nil || string(gotRules) != string(wantRules) {
 		t.Fatal("antigravity fixture mismatch")

@@ -116,5 +116,5 @@ func (s *Store) reminderCounts(c *protocol.SessionCounts) error {
 	return s.db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(EXISTS(
  SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type='reply'
  AND r.sender=q.recipient AND r.recipient=q.sender AND r.created_at>=n.created_at AND r.created_at<=n.created_at+?
- )),0) FROM messages n JOIN messages q ON q.id=n.parent_id WHERE n.sender='agent-net'`, int64(30*time.Minute)).Scan(&c.PendingReminders, &c.PendingAnsweredAfterReminder)
+ )),0) FROM messages n JOIN messages q ON q.id=n.parent_id WHERE n.sender='agent-net' AND n.idem_key LIKE 'reminder:%'`, int64(30*time.Minute)).Scan(&c.PendingReminders, &c.PendingAnsweredAfterReminder)
 }

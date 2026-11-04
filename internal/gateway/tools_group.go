@@ -73,7 +73,7 @@ func (g *Gateway) toggleSkillGroup(ctx context.Context, p protocol.ToolToggleReq
 		return protocol.ToolPlan{}, false, nil
 	}
 	ctx = context.WithValue(ctx, skillGroupKey{}, true)
-	group := protocol.ToolPlan{ID: protocol.NewID("plan"), Item: p.Item, Operation: "skill_group", Actor: actor, State: "pending", At: g.store.now().UnixNano()}
+	group := protocol.ToolPlan{ToggleProject: p.Project, ToggleOn: p.On, ID: protocol.NewID("plan"), Item: p.Item, Operation: "skill_group", Actor: actor, State: "pending", At: g.store.now().UnixNano()}
 	projects, err := g.store.Projects("")
 	if err != nil {
 		return group, true, err

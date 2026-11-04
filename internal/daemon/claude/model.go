@@ -61,10 +61,11 @@ type modelReader struct {
 
 	mu    sync.Mutex
 	cache map[string]modelEntry // session ID -> last result
+	waits map[string]waitEntry  // session ID -> last pending tool call (wait.go)
 }
 
 func newModelReader(projectsDir string) *modelReader {
-	return &modelReader{projects: projectsDir, cache: map[string]modelEntry{}}
+	return &modelReader{projects: projectsDir, cache: map[string]modelEntry{}, waits: map[string]waitEntry{}}
 }
 
 // transcript returns the path of the session's transcript, or "".
@@ -152,6 +153,11 @@ func (r *modelReader) forget(keep map[string]bool) {
 			delete(r.cache, id)
 		}
 	}
+	for id := range r.waits {
+		if !keep[id] {
+			delete(r.waits, id)
+		}
+	}
 }
 
 // lastModel reads path from the end and returns the "model" of the newest
@@ -161,11 +167,26 @@ func lastModel(path string, size int64) (string, bool) {
 	return lastTranscriptMatch(path, size, modelOfLine)
 }
 
-// lastTranscriptMatch scans complete lines backwards with a bounded read.
+// lastTranscriptMatch returns the first match, newest line first.
 func lastTranscriptMatch(path string, size int64, match func([]byte) (string, bool)) (string, bool) {
+	var out string
+	found := scanTail(path, size, func(line []byte) bool {
+		m, ok := match(line)
+		if ok {
+			out = m
+		}
+		return ok
+	})
+	return out, found
+}
+
+// scanTail reads path from the end, in blocks of growing size, and gives each
+// complete line to visit, newest first, until visit returns true (scanTail
+// then returns true) or tailMaxBytes were read.
+func scanTail(path string, size int64, visit func(line []byte) bool) bool {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return false
 	}
 	defer f.Close()
 	// tail holds the bytes from offset to the end of what has been read. The
@@ -179,7 +200,7 @@ func lastTranscriptMatch(path string, size int64, match func([]byte) (string, bo
 		block *= 2 // a long line needs fewer rounds
 		buf := make([]byte, end-start)
 		if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
-			return "", false
+			return false
 		}
 		read += int64(len(buf))
 		tail = append(buf, tail...)
@@ -190,8 +211,8 @@ func lastTranscriptMatch(path string, size int64, match func([]byte) (string, bo
 			first = 1 // lines[0] may be cut off; the next block completes it
 		}
 		for i := len(lines) - 1; i >= first; i-- {
-			if m, ok := match(lines[i]); ok {
-				return m, true
+			if visit(lines[i]) {
+				return true
 			}
 		}
 		if end > 0 {
@@ -199,7 +220,7 @@ func lastTranscriptMatch(path string, size int64, match func([]byte) (string, bo
 			tail = lines[0]
 		}
 	}
-	return "", false
+	return false
 }
 
 var assistantMark = []byte(`"assistant"`)

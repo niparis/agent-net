@@ -138,15 +138,18 @@ type worker struct {
 	id, harness, project, path, model, owner string
 	// ownerName is the caller's name when the gateway knows it, for the
 	// commit trailers.
-	ownerName                         string
-	nativeID, sessionID               string
-	pid, pgid                         int
-	token                             string
-	startedAt, lastActive             time.Time
-	savedAt                           time.Time // when lastActive was last written
-	ownerGoneSince                    time.Time
-	ownerChecked                      time.Time
-	stopping                          bool
+	ownerName             string
+	nativeID, sessionID   string
+	pid, pgid             int
+	token                 string
+	startedAt, lastActive time.Time
+	savedAt               time.Time // when lastActive was last written
+	ownerGoneSince        time.Time
+	ownerChecked          time.Time
+	stopping              bool
+	handingBack           bool // from the hand-back notice until the worker has ended
+	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
+	endedCh                           chan struct{}
 	turnActive                        bool
 	turnHandbackIdle                  bool
 	turnAwaitingStart                 bool
@@ -696,15 +699,17 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				err = fmt.Errorf("the gateway did not reserve worker session %s", sid)
 				d.endWorker(w, protocol.StopStartFails)
 			}
-			e := queuedStart{Owner: l.Owner, Project: l.Project, Harness: l.Harness, Model: l.Model, Task: l.Task, Permissions: l.Permissions, FromCTO: l.FromCTO, QueuedAt: w.startedAt}
+			e := queuedStart{ID: l.StartRef, Owner: l.Owner, Project: l.Project, Harness: l.Harness, Model: l.Model, Task: l.Task, Permissions: l.Permissions, FromCTO: l.FromCTO, QueuedAt: w.startedAt}
 			if err != nil {
 				d.clearStartReservation()
 				d.notStarted(d.ctoCtx, e, err.Error())
 				return
 			}
-			cctx, cancel := context.WithTimeout(d.ctoCtx, 30*time.Second)
-			_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, OSSandbox: out.OSSandbox, FromCTO: l.FromCTO})
-			cancel()
+			err = d.sendQueuedStart(d.ctoCtx, w, protocol.WorkerQueuedStart{Ref: l.StartRef, Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, OSSandbox: out.OSSandbox, FromCTO: l.FromCTO})
+			if errors.Is(err, errWorkerEnded) {
+				d.notStarted(d.ctoCtx, e, "the worker ended before its task was sent")
+				return
+			}
 			if err != nil {
 				d.endWorker(w, protocol.StopStartFails)
 				d.notStarted(d.ctoCtx, e, "the worker started, but its task could not be sent: "+err.Error())
@@ -930,6 +935,28 @@ func (d *Daemon) killGroup(w *worker) {
 // endWorker stops a worker and forgets it. It is safe to call twice.
 // A worker that ends after its hand-back keeps its row and folder, so a
 // message from its owner starts the harness session again (W10).
+// workerEnded returns a channel that is closed when the worker starts to end.
+func (d *Daemon) workerEnded(w *worker) <-chan struct{} {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	if w.endedCh == nil {
+		w.endedCh = make(chan struct{})
+		if w.stopping {
+			close(w.endedCh)
+		}
+	}
+	return w.endedCh
+}
+
+// closeEndedLocked closes the ended channel. The caller holds wmu and has just
+// set stopping, which only one caller does.
+func (d *Daemon) closeEndedLocked(w *worker) {
+	if w.endedCh == nil {
+		w.endedCh = make(chan struct{})
+	}
+	close(w.endedCh)
+}
+
 func (d *Daemon) endWorker(w *worker, reason string) {
 	d.wmu.Lock()
 	if w.stopping {
@@ -937,6 +964,7 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 		return
 	}
 	w.stopping = true
+	d.closeEndedLocked(w)
 	if err := d.st.deleteWorkerIdleNotice(w.id); err != nil {
 		d.Logf("worker %s: remove idle notice: %v", w.id, err)
 	}

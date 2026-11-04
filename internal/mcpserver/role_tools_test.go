@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
@@ -102,17 +103,23 @@ func TestCatalogToolsHaveNoOutputSchema(t *testing.T) {
 func TestWorkerHandbackTool(t *testing.T) {
 	t.Setenv("AGENT_NET_WORKER", "1")
 	var method string
-	cs := connectServer(t, func(_ context.Context, m string, _ any) (json.RawMessage, error) {
+	var input protocol.WorkerHandbackRequest
+	cs := connectServer(t, func(_ context.Context, m string, p any) (json.RawMessage, error) {
 		method = m
+		b, _ := json.Marshal(p)
+		_ = json.Unmarshal(b, &input)
 		return json.RawMessage(`{"sent":true,"status":"done","complete":true,"queued":false}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_handback",
-		Arguments: map[string]any{"report": "done", "status": "done", "complete": true}})
+		Arguments: map[string]any{"report": "done", "status": "done", "complete": true, "files": []string{"/work/result.txt"}}})
 	if err != nil || res.IsError {
 		t.Fatalf("agent_handback: %v %+v", err, res)
 	}
 	if method != "worker_handback" {
 		t.Fatalf("agent_handback called %q", method)
+	}
+	if len(input.Files) != 1 || input.Files[0] != "/work/result.txt" {
+		t.Fatalf("files lost: %+v", input)
 	}
 	if res.StructuredContent == nil {
 		t.Fatal("agent_handback has no structured result")

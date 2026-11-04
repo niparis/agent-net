@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -35,15 +36,26 @@ const (
 	// runMaxLine is the longest output line that is looked at for fields
 	// and URLs. Longer lines are only kept in the tail.
 	runMaxLine = 8 * 1024
-	// runWaitDelay is how long to wait for the output pipes after the
-	// command exited or was killed, in case a child that left the process
-	// group still holds them.
+	// runWaitDelay is how long the output drain waits for more data after
+	// the command exited. It exists because a child that left the process
+	// group can hold the output pipe open. The drain reads once more after
+	// a silent delay, so a reader that the scheduler held back still gets
+	// the bytes that are already in the pipe; after a second silent delay
+	// it stops.
 	runWaitDelay = time.Second
 	// runFieldPrefix starts an evidence line in the command's output.
 	runFieldPrefix = "agent-net: "
 	// runRedacted replaces a line that looks like it holds a secret.
 	runRedacted = "[redacted]"
 )
+
+// runDrainMax bounds the whole drain after the command exited, so a child
+// that the command left behind and that keeps writing cannot hold the step.
+// The command's own bytes are already in the pipe and drain in a moment; this
+// limit is only for a child that is still running. It is well above
+// runWaitDelay so a late reader never loses what the command wrote. It is a
+// variable so a test can shorten it.
+var runDrainMax = 5 * time.Second
 
 // Step names the runner accepts.
 const (
@@ -125,7 +137,7 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 		return StepRun{}, err
 	}
 	g := gitIn{gitPath: cmd.GitPath, dir: cmd.Dir}
-	if err := checkHistory(ctx, g); err != nil {
+	if err := checkRepo(ctx, g); err != nil {
 		return StepRun{}, err
 	}
 	head, err := revCommit(ctx, g, "HEAD")
@@ -149,12 +161,28 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 
 	red := newRunRedactor(cmd.Env)
 	col := newRunCollector(red)
+	// The runner owns the output pipe. With an io.Writer, os/exec copies
+	// the output in a goroutine of its own, and WaitDelay abandons that
+	// goroutine one second after the process exits, dropping the bytes
+	// still in the pipe. That is how a step lost the end of its output
+	// under load. Reading the pipe here keeps every byte the command wrote.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return StepRun{}, fmt.Errorf("capture output: %w", err)
+	}
+	defer pr.Close()
+	var exited atomic.Bool
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		runReadOutput(pr, col, &exited)
+	}()
 	var killed atomic.Bool
 	c := exec.CommandContext(runCtx, cmd.Argv[0], cmd.Argv[1:]...)
 	c.Dir = cmd.Dir
 	c.Env = runEnv(cmd, head)
-	c.Stdout = col
-	c.Stderr = col
+	c.Stdout = pw
+	c.Stderr = pw
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	c.Cancel = func() error {
 		// Called only while the command still runs. Setpgid makes the
@@ -170,6 +198,21 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 	start := time.Now()
 	runErr := c.Run()
 	dur := time.Since(start)
+
+	// The command is gone, but what it wrote may still be in the pipe.
+	// Close the runner's end and wait for the reader to drain it before
+	// building the result.
+	pw.Close()
+	exited.Store(true)
+	_ = pr.SetReadDeadline(time.Now().Add(runWaitDelay))
+	select {
+	case <-readDone:
+	case <-time.After(runDrainMax):
+		// A child the command left behind is still writing. Stop reading;
+		// the step must not wait on it for as long as it runs.
+		_ = pr.Close()
+		<-readDone
+	}
 
 	if c.ProcessState == nil {
 		if ctx.Err() != nil {
@@ -296,6 +339,38 @@ func runEnv(cmd StepCommand, head string) []string {
 		env = append(env, k+"="+cmd.Env[k])
 	}
 	return append(env, "AGENT_NET_STEP="+cmd.Step, "AGENT_NET_COMMIT="+head)
+}
+
+// runReadOutput copies the command's output from r into w until the pipe is
+// closed. Once the command has exited (exited is set), it gives up after two
+// delays in a row with no data, so a child the command left behind cannot
+// hold the step open. It tries twice because the scheduler can hold this
+// goroutine past the first delay while the bytes wait in the pipe, and a read
+// whose deadline has expired returns no bytes even when data is ready.
+func runReadOutput(r *os.File, w io.Writer, exited *atomic.Bool) {
+	buf := make([]byte, 32<<10)
+	stalled := false
+	for {
+		if exited.Load() {
+			_ = r.SetReadDeadline(time.Now().Add(runWaitDelay))
+		}
+		n, err := r.Read(buf)
+		if n > 0 {
+			_, _ = w.Write(buf[:n])
+			stalled = false
+			continue
+		}
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, os.ErrDeadlineExceeded) {
+			return // EOF, or the pipe was closed under us
+		}
+		if stalled {
+			return
+		}
+		stalled = true
+	}
 }
 
 // runCollected is what a runCollector learned from the output.

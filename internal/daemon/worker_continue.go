@@ -9,6 +9,47 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// continueEndWait is how long a continue waits for a worker that has sent its
+// hand-back notice to finish ending before it is refused.
+const continueEndWait = 10 * time.Second
+
+// awaitWorkerEnd waits until a worker that handed back has left the running
+// set, and returns the record as the end left it. endWorker saves the record
+// before it unregisters the worker, so a record read after the wait has its
+// ended reason.
+func (d *Daemon) awaitWorkerEnd(ctx context.Context, id, session string) (*workerRow, error) {
+	deadline := time.Now().Add(continueEndWait)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		d.wmu.Lock()
+		w := d.workers[id]
+		handingBack := w != nil && w.handingBack
+		d.wmu.Unlock()
+		if !handingBack {
+			break
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("worker %s is still running: wait for it to end, or stop it first", session)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	rows, err := d.st.workers()
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		if rows[i].ID == id {
+			return &rows[i], nil
+		}
+	}
+	return nil, fmt.Errorf("this machine has no record of worker %s any more", session)
+}
+
 // continueWorker handles "worker.continue" from the gateway: it starts a new
 // worker from an ended one of this machine. The new worker has the same
 // project, harness and model unless the caller says otherwise, a new worktree
@@ -32,8 +73,24 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	if r.Owner != p.Requester {
 		return none, fmt.Errorf("worker %s ended, and only the session that started it can continue it", p.Session)
 	}
+	// A hand-back sends its notice to the owner before the worker is ended, and
+	// the notice says that a message from the owner starts the worker again. A
+	// continue that arrives with the notice waits for the end, and for its
+	// worktree and branch to be settled, instead of being refused. A worker
+	// that is still working is refused at once.
 	d.wmu.Lock()
-	running := d.workers[r.ID] != nil
+	w := d.workers[r.ID]
+	running, handingBack := w != nil, w != nil && w.handingBack
+	d.wmu.Unlock()
+	if handingBack || (r.EndedReason == "" && !running) {
+		ended, err := d.awaitWorkerEnd(ctx, r.ID, p.Session)
+		if err != nil {
+			return none, err
+		}
+		r = ended
+	}
+	d.wmu.Lock()
+	running = d.workers[r.ID] != nil
 	d.wmu.Unlock()
 	if running || r.EndedReason == "" {
 		return none, fmt.Errorf("worker %s is still running: wait for it to end, or stop it first", p.Session)
@@ -49,7 +106,7 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	if p.Model != "" {
 		model = p.Model
 	}
-	l := protocol.WorkerLaunch{Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner, OwnerName: r.OwnerName,
+	l := protocol.WorkerLaunch{StartRef: p.StartRef, Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner, OwnerName: r.OwnerName,
 		Title:       first(p.Title, r.Title),
 		Permissions: r.Permissions, FromCTO: p.FromCTO, // the old worker's level, not the project's current one
 		DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches),

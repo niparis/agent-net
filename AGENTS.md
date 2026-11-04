@@ -26,6 +26,8 @@ bash -n scripts/test.sh
 plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
 ```
 
+If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update).
+
 CI runs `gofmt`, `go vet`, `scripts/test.sh` for the daemon shards and other packages, and `sh -n install.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
 
 ## Layout

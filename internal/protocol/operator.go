@@ -304,9 +304,10 @@ type WorkerStartRequest struct {
 	Harness string `json:"harness"`
 	// Model is a model ID, loose name or profile. Legacy provider prefixes and
 	// effort suffixes are accepted; new callers use Provider and Effort.
-	Model    string `json:"model,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Effort   string `json:"effort,omitempty"`
+	Model     string   `json:"model,omitempty"`
+	NotFamily []string `json:"not_family,omitempty"`
+	Provider  string   `json:"provider,omitempty"`
+	Effort    string   `json:"effort,omitempty"`
 	// Difficulty selects the minimum score for automatic model choice.
 	Difficulty string   `json:"difficulty,omitempty"`
 	Touches    []string `json:"touches,omitempty"`
@@ -413,6 +414,8 @@ type WorkerHandbackRequest struct {
 	// Complete is false when the worker hands back partial work. It is absent
 	// in a request from an older worker or tool and then means true.
 	Complete *bool `json:"complete,omitempty"`
+	// Files are absolute paths in the worker's own worktree.
+	Files []string `json:"files,omitempty"`
 }
 
 // IsComplete tells whether the hand-back reports the whole task done.

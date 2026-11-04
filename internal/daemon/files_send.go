@@ -24,13 +24,14 @@ const (
 // machine. AllowSecrets sends a text file the secret scanner flagged; only
 // the owner may set it.
 type FileSend struct {
-	From, To       string
-	Body           string
-	Type           string
-	ParentID       string
-	IdempotencyKey string
-	Paths          []string
-	AllowSecrets   bool
+	From, To        string
+	Body            string
+	Type            string
+	ParentID        string
+	IdempotencyKey  string
+	Paths           []string
+	AllowSecrets    bool
+	ConfineSymlinks bool
 }
 
 // FileSent says how one file left this machine. Note explains a change of
@@ -62,11 +63,19 @@ func (d *Daemon) SendFiles(ctx context.Context, req FileSend) (FileSendResult, e
 	if err != nil {
 		return res, err
 	}
+	rules.ConfineSymlinks = req.ConfineSymlinks
 	out, err := PrepareFiles(req.Paths, rules, filepath.Join(d.cfg.StateDir, fileOutgoingFolder))
 	if err != nil {
 		return res, err
 	}
 	defer out.Remove()
+	return d.sendPreparedFiles(ctx, req, out)
+}
+
+// sendPreparedFiles sends the checked snapshots, including their manifest in
+// the original message. Handbacks prepare before changing worker state.
+func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *OutgoingFiles) (FileSendResult, error) {
+	var res FileSendResult
 	if req.IdempotencyKey == "" {
 		req.IdempotencyKey = protocol.NewID("k")
 	}

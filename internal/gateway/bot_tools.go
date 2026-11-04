@@ -164,6 +164,9 @@ type botReceipt struct {
 	MessageID string `json:"message_id"`
 	To        botRef `json:"to"`
 	State     string `json:"state"`
+	// Note says that the recipient waits for its user. A bot has no queue of
+	// its own, so the receipt tells it instead of a stored notice.
+	Note string `json:"note,omitempty"`
 }
 
 func (g *Gateway) botMessageSend(ctx context.Context, sid, tool string, in map[string]any) (any, error) {
@@ -231,7 +234,10 @@ func (g *Gateway) botMessageSend(ctx context.Context, sid, tool string, in map[s
 	if name == "" {
 		name = recipient
 	}
-	receipt := botReceipt{msg.ID, botRef{recipient, name}, msg.State}
+	receipt := botReceipt{MessageID: msg.ID, To: botRef{recipient, name}, State: msg.State}
+	if msg.Type == protocol.TypeRequest {
+		receipt.Note = g.store.waitingReceiptNote(recipient)
+	}
 	if tool == "agent_message_reply" {
 		return receipt, nil
 	}

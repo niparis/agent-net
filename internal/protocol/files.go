@@ -128,3 +128,25 @@ func ValidateFiles(files []FileEntry) error {
 	}
 	return nil
 }
+
+// FileSendRequest is a session's request to send local files to one peer.
+type FileSendRequest struct {
+	To    string   `json:"to"`
+	Paths []string `json:"paths"`
+	Note  string   `json:"note"`
+}
+
+// FileSendDestination names a file's destination relative to the receiving
+// machine's agent-net state directory. Delivery may still be pending.
+type FileSendDestination struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// FileSendResult identifies the message and its planned destinations. Error
+// reports a transfer failure after the message was stored, if any.
+type FileSendResult struct {
+	MessageID string                `json:"message_id"`
+	Files     []FileSendDestination `json:"files"`
+	Error     string                `json:"error,omitempty"`
+}

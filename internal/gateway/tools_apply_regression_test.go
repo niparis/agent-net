@@ -13,7 +13,7 @@ func TestToolApplyLogsFailedTargets(t *testing.T) {
 	g, n, _ := toggleFixture(t)
 	id, bundle := toggleBundle(t, g, n, "# Demo\nFixture.\n")
 	toggleFakeNode(t, g, n, bundle, nil)
-	p, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+	p, err := g.planSkillAssignment(t.Context(), id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"two"}, Machines: []string{n}}, "owner")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +99,157 @@ func TestPrepareFilesManifestHashing(t *testing.T) {
 	}
 	if _, err := os.Stat(out.Dir); !os.IsNotExist(err) {
 		t.Fatalf("the snapshot folder was not removed: %v", err)
+	}
+}
+
+func TestPrepareFilesRejectsSwappedFile(t *testing.T) {
+	for _, tc := range []struct {
+		swap     string
+		confined bool
+	}{
+		{"symlink", false}, {"replacement", false}, {"parent symlink", false},
+		{"symlink", true}, {"replacement", true}, {"parent symlink", true},
+		{"moved parent", false}, {"moved parent", true},
+	} {
+		t.Run(fmt.Sprintf("%s/confined=%t", tc.swap, tc.confined), func(t *testing.T) {
+			e := newFileTestEnv(t)
+			sub := filepath.Join(e.project, "sub")
+			source := writeTestFile(t, filepath.Join(sub, "result.txt"), []byte("safe"))
+			outsideDir := filepath.Join(e.home, "outside")
+			outside := writeTestFile(t, filepath.Join(outsideDir, "result.txt"), []byte("outside contents"))
+			rules := e.rules()
+			rules.ConfineSymlinks = tc.confined
+			out, err := prepareFiles([]string{source}, rules, e.snapshots, func() {
+				switch tc.swap {
+				case "symlink":
+					if err := os.Rename(source, source+".old"); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(outside, source); err != nil {
+						t.Fatal(err)
+					}
+				case "replacement":
+					if err := os.Rename(outside, source); err != nil {
+						t.Fatal(err)
+					}
+				case "parent symlink":
+					if err := os.Rename(sub, sub+".old"); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(outsideDir, sub); err != nil {
+						t.Fatal(err)
+					}
+				case "moved parent":
+					moved := filepath.Join(e.home, "moved")
+					if err := os.Rename(sub, moved); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(moved, sub); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(moved, "result.txt"), []byte("outside contents"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+			if err == nil {
+				defer out.Remove()
+				content, _ := os.ReadFile(out.Files[0].Copy)
+				t.Fatalf("accepted swapped file with snapshot %q", content)
+			}
+			entries, _ := os.ReadDir(e.snapshots)
+			if len(entries) != 0 {
+				t.Fatalf("refusal left snapshots: %v", entries)
+			}
+		})
+	}
+}
+
+func TestPrepareFilesRejectsConfinedHardlinks(t *testing.T) {
+	e := newFileTestEnv(t)
+	outside := writeTestFile(t, filepath.Join(e.home, "outside.txt"), []byte("outside"))
+	linked := filepath.Join(e.project, "linked.txt")
+	if err := os.Link(outside, linked); err != nil {
+		t.Fatal(err)
+	}
+	rules := e.rules()
+	rules.ConfineSymlinks = true
+	if _, err := PrepareFiles([]string{linked}, rules, e.snapshots); err == nil || !strings.Contains(strings.ToLower(err.Error()), "hard link") {
+		t.Fatalf("confined hard link: %v", err)
+	}
+	rules.ConfineSymlinks = false
+	out, err := PrepareFiles([]string{linked}, rules, e.snapshots)
+	if err != nil {
+		t.Fatalf("unconfined hard link: %v", err)
+	}
+	out.Remove()
+
+	// The link count must come from the open descriptor, after the path
+	// check: another link can be created in between.
+	fresh := writeTestFile(t, filepath.Join(e.project, "fresh.txt"), []byte("safe"))
+	rules.ConfineSymlinks = true
+	_, err = prepareFiles([]string{fresh}, rules, e.snapshots, func() {
+		if err := os.Link(fresh, filepath.Join(e.home, "late-link.txt")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "hard link") {
+		t.Fatalf("link added after path check: %v", err)
+	}
+}
+
+func TestPrepareFilesSymlinkedRoot(t *testing.T) {
+	e := newFileTestEnv(t)
+	file := writeTestFile(t, filepath.Join(e.project, "result.txt"), []byte("ok"))
+	alias := filepath.Join(e.home, "alias")
+	if err := os.Symlink(e.project, alias); err != nil {
+		t.Fatal(err)
+	}
+	rules := e.rules()
+	rules.Roots, rules.ConfineSymlinks = []string{alias}, true
+	for _, path := range []string{file, filepath.Join(alias, "result.txt")} {
+		out, err := PrepareFiles([]string{path}, rules, e.snapshots)
+		if err != nil {
+			t.Errorf("%s: %v", path, err)
+			continue
+		}
+		out.Remove()
+	}
+	outside := writeTestFile(t, filepath.Join(e.home, "outside.txt"), []byte("outside"))
+	link := filepath.Join(e.project, "escape.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{link, filepath.Join(alias, "escape.txt")} {
+		if out, err := PrepareFiles([]string{path}, rules, e.snapshots); err == nil {
+			out.Remove()
+			t.Errorf("accepted escape %s", path)
+		}
+	}
+}
+
+func TestPrepareFilesSymlinkedWorkerRootInState(t *testing.T) {
+	e := newFileTestEnv(t)
+	worktree := filepath.Join(e.state, "worktrees", "w_1")
+	file := writeTestFile(t, filepath.Join(worktree, "result.txt"), []byte("ok"))
+	alias := filepath.Join(e.state, "worker-link")
+	if err := os.Symlink(worktree, alias); err != nil {
+		t.Fatal(err)
+	}
+	rules := e.rules()
+	rules.Roots, rules.ConfineSymlinks = []string{alias}, true
+	for _, path := range []string{file, filepath.Join(alias, "result.txt")} {
+		out, err := PrepareFiles([]string{path}, rules, e.snapshots)
+		if err != nil {
+			t.Errorf("%s: %v", path, err)
+			continue
+		}
+		out.Remove()
+	}
+	other := writeTestFile(t, filepath.Join(e.state, "secret"), []byte("private"))
+	if out, err := PrepareFiles([]string{other}, rules, e.snapshots); err == nil {
+		out.Remove()
+		t.Fatal("accepted a file outside the worker root")
 	}
 }
 

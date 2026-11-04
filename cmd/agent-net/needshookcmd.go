@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/claude"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -30,17 +31,6 @@ type needsHookInput struct {
 	ToolInput        map[string]any `json:"tool_input"`
 }
 
-// toolSummary is the short form of a tool call for the "Needs you" line: the
-// command of a shell call, the path of a file call, or the first text field.
-func toolSummary(in map[string]any) string {
-	for _, key := range []string{"command", "file_path", "path", "url", "pattern", "query", "description", "prompt"} {
-		if s, ok := in[key].(string); ok && strings.TrimSpace(s) != "" {
-			return strings.Join(strings.Fields(s), " ")
-		}
-	}
-	return ""
-}
-
 // needsText cleans the generic wording around a notification so the TUI line
 // says what is needed, for example "permission: Bash" instead of "permission:
 // Claude needs your permission to use Bash".
@@ -52,11 +42,8 @@ func needsText(in needsHookInput) (kind, text string) {
 		// notification arrives seconds later and is often vaguer.
 		kind = protocol.WaitingPermission
 		if in.EventName == "PermissionRequest" && strings.TrimSpace(in.ToolName) != "" {
-			text = strings.TrimSpace(in.ToolName)
-			if summary := toolSummary(in.ToolInput); summary != "" {
-				text += "(" + summary + ")"
-			}
-			return kind, text
+			w := claude.WaitFor(in.ToolName, in.ToolInput)
+			return w.Kind, w.Text
 		}
 		for _, prefix := range []string{"Claude needs your permission to use ", "Claude needs your permission"} {
 			if rest, ok := strings.CutPrefix(text, prefix); ok {
@@ -75,6 +62,9 @@ func needsText(in needsHookInput) (kind, text string) {
 	return kind, text
 }
 
+// asksTheUser says whether a Claude Code tool always stops for the user.
+func asksTheUser(tool string) bool { return tool == "AskUserQuestion" || tool == "ExitPlanMode" }
+
 // runNeedsHook is `agent-net needs-hook`: a Claude Code Notification hook that
 // reports a waiting session, and a UserPromptSubmit hook that clears it. It
 // reads the hook input on stdin, talks to the local daemon and prints nothing.
@@ -91,10 +81,17 @@ func runNeedsHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	}
 	req := protocol.WaitingRequest{Harness: "claude", NativeID: in.SessionID}
 	switch {
-	case in.EventName == "UserPromptSubmit", in.EventName == "PreToolUse":
+	case (in.EventName == "PreToolUse" || in.EventName == "PermissionRequest") && asksTheUser(in.ToolName):
+		// AskUserQuestion and ExitPlanMode always stop for the user. PreToolUse
+		// fires just before the dialog, with the question (decision 0057).
+		w := claude.WaitFor(in.ToolName, in.ToolInput)
+		req.Kind, req.Text, req.Options = w.Kind, w.Text, w.Options
+	case in.EventName == "UserPromptSubmit", in.EventName == "PreToolUse",
+		in.EventName == "PostToolUse", in.EventName == "PostToolUseFailure":
 		// A prompt, or a tool that ran after an approval, means the session
 		// moved on. A denied permission sends the model on, and its next call
-		// clears too.
+		// clears too. The result of a question or a plan approval is the
+		// answer.
 		req.Clear = true
 	case in.EventName == "PermissionRequest" || in.EventName == "Notification" || in.NotificationType != "":
 		req.Kind, req.Text = needsText(in)

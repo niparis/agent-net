@@ -56,7 +56,7 @@ func TestToolToggleAssignments(t *testing.T) {
 		{"remove", protocol.ToolAssignment{Scope: "projects", Projects: []string{"one", "two"}}, "one", false, false, protocol.ToolAssignment{Scope: "projects", Projects: []string{"two"}}},
 		{"last off", protocol.ToolAssignment{Scope: "projects", Projects: []string{"one"}}, "one", false, false, protocol.ToolAssignment{Scope: "uninstalled"}},
 		{"uninstalled on", protocol.ToolAssignment{Scope: "uninstalled"}, "one", true, false, protocol.ToolAssignment{Scope: "projects", Projects: []string{"one"}}},
-		{"all global", protocol.ToolAssignment{Scope: "projects", Projects: []string{"one"}}, "two", true, true, protocol.ToolAssignment{Scope: "global"}},
+		{"all projects", protocol.ToolAssignment{Scope: "projects", Projects: []string{"one"}}, "two", true, true, protocol.ToolAssignment{Scope: "projects", Projects: []string{"one", "two"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g, n, id := toggleFixture(t)
@@ -587,5 +587,52 @@ func TestToolPlanBatchFortyDestinations(t *testing.T) {
 	}
 	if count != 40 {
 		t.Fatalf("copies %d, targets %+v", count, targets)
+	}
+}
+
+func TestToolToggleOnlyTouchesSelectedProjectWithUserCopies(t *testing.T) {
+	g, n, _ := toggleFixture(t)
+	id, bundle := toggleBundle(t, g, n, "# Demo\nFixture.\n")
+	var hash string
+	if err := g.store.db.QueryRow(`SELECT hash FROM tool_identities WHERE id=?`, id).Scan(&hash); err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := g.store.CreateNode("other", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range []string{n, other} {
+		items := []protocol.InventoryItem{
+			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/home/skills/demo"},
+			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "one", ProjectRoot: "/repo/one", Location: "/repo/one/.claude/skills/demo"},
+			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "two", ProjectRoot: "/repo/two", Location: "/repo/two/.claude/skills/demo"},
+		}
+		if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+			t.Fatal(err)
+		}
+		toggleFakeNode(t, g, node, bundle, nil)
+	}
+	plan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Targets) == 0 {
+		t.Fatal("missing project removal")
+	}
+	for _, target := range plan.Targets {
+		if target.Project != "one" || target.Action != "remove" {
+			t.Fatalf("unexpected target: %+v", target)
+		}
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	applied, err := g.applyTool(ctx, plan.ID, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range applied.Targets {
+		if target.Project != "one" || target.Action != "remove" {
+			t.Fatalf("unexpected applied target: %+v", target)
+		}
 	}
 }

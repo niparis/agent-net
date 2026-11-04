@@ -54,6 +54,12 @@ If the download fails, the shell receives an empty script and exits with 0. Look
 
 The first-machine line (`curl ... niparis.github.io/agent-net/install | sh`) does not have this problem. It runs nothing unless the whole script arrived.
 
+## A release checksum signature is missing or invalid
+
+An install or upgrade stops with `release checksums signature is missing or invalid` when the signed checksum file cannot be verified. Do not bypass the check. For the install line, check that `ssh-keygen` is on `PATH` and that OpenSSH is version 8.1 or newer (`ssh -V`). Check that the release has its checksum file and signatures, and that the installer and binary trust the current release key; a key rotation requires the new installer on each machine.
+
+For a joined machine, check the gateway first. A gateway rollback, a local build, or an older gateway may have no signed manifest. Restore a complete signed release on the gateway using the published install line, then retry. Automatic upgrades remember a failure and retry after one hour or when the gateway serves a different version. If a current signed release still fails verification, investigate corruption or compromise before retrying. See [Releasing](../RELEASING.md#release-signing-key).
+
 ## A joined machine keeps its first gateway URL
 
 A machine saves the address it joined with in `~/.config/agent-net/node.json`. If the gateway's address changes, the daemon keeps trying the old one. To switch:

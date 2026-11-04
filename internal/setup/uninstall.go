@@ -21,7 +21,8 @@ import (
 // stopWorkers is a variable so a test can look at the call.
 var stopWorkers = daemon.StopRecordedWorkers
 
-// Uninstall undoes Setup. It leaves the binary and the gateway data alone.
+// Uninstall undoes Setup. It leaves the binary, gateway dist (including any
+// signed manifest) and the gateway data alone.
 func Uninstall(o Options) error {
 	r, err := newRunner(o)
 	if err != nil {
@@ -115,6 +116,8 @@ func Uninstall(o Options) error {
 		r.step("skill state", "", err)
 	}
 
+	// The saved auto-upgrade choice lives in node.json: keep it by default,
+	// and remove it with the rest of the node configuration on purge.
 	if r.Purge {
 		worktrees, _ := os.ReadDir(filepath.Join(daemon.StateDir(), "worktrees"))
 		for _, dir := range []string{daemon.ConfigDir(), daemon.StateDir()} {
@@ -174,6 +177,7 @@ func (r *runner) removePiExtension() {
 	case st.Mode()&os.ModeSymlink != 0:
 		if !agentfiles.SymlinkTargetIsAgentNet(path) {
 			r.step("pi extension", "skipped (symlink, left as is)", nil)
+			removePiExtensionDir(r, path)
 			return
 		}
 		if err := os.Remove(path); err != nil {
@@ -187,6 +191,25 @@ func (r *runner) removePiExtension() {
 			return
 		}
 		r.step("pi extension", "ok (removed)", nil)
+	}
+	removePiExtensionDir(r, path)
+}
+
+func removePiExtensionDir(r *runner, path string) {
+	dir := filepath.Dir(path)
+	err := os.Remove(dir)
+	switch {
+	case err == nil:
+		r.step("pi extension directory", "removed", nil)
+	case errors.Is(err, os.ErrNotExist):
+		return
+	default:
+		entries, readErr := os.ReadDir(dir)
+		if readErr == nil && len(entries) > 0 {
+			r.step("pi extension directory", "kept (not empty)", nil)
+			return
+		}
+		r.step("pi extension directory", "", fmt.Errorf("remove directory: %w", err))
 	}
 }
 

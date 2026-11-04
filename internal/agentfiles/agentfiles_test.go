@@ -3,6 +3,7 @@ package agentfiles
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/niparis/agent-net/internal/settings"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"github.com/niparis/agent-net/plugins/opencode"
 	"github.com/niparis/agent-net/plugins/pi"
 )
+
+var update = flag.Bool("update", false, "rewrite the golden files")
 
 // fakeHome points HOME at a temp dir and clears XDG_CONFIG_HOME.
 func fakeHome(t *testing.T) string {
@@ -357,6 +360,11 @@ func TestSyncGuidanceSharedSymlinkTarget(t *testing.T) {
 		}
 	}
 	got := read(t, target)
+	if *update {
+		if err := os.WriteFile("testdata/shared.golden", []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	wantFixture, err := os.ReadFile("testdata/shared.golden")
 	if err != nil || got != string(wantFixture) {
 		t.Fatalf("shared fixture mismatch: %v", err)

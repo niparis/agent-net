@@ -144,3 +144,20 @@ func TestBrokenStateFileIsEmpty(t *testing.T) {
 		t.Fatalf("got %+v", st)
 	}
 }
+
+func TestCheckDowngradeUnknownVersions(t *testing.T) {
+	for _, tc := range []struct {
+		current, target string
+		force, wantErr  bool
+	}{
+		{"v2.0.0-rc.1", "v1.0.0", false, true},
+		{"v2.0.0", "v1.0.0-rc.1", false, true},
+		{"v2.0.0-rc.1", "v2.0.0-rc.1", false, false},
+		{"v2.0.0-rc.1", "v1.0.0", true, false},
+		{"v2", "v1", false, true},
+	} {
+		if err := CheckDowngrade(tc.current, tc.target, tc.force); (err != nil) != tc.wantErr {
+			t.Errorf("%s to %s force=%v: %v", tc.current, tc.target, tc.force, err)
+		}
+	}
+}

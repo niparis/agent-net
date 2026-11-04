@@ -101,6 +101,9 @@ func TestClaudeCTOPrivateToolsAndSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	if rec.MCPClient != "cto-mcp" {
+		t.Fatalf("CTO MCP client = %q, want private cto-mcp", rec.MCPClient)
+	}
 	toolsOff, privateSources := false, false
 	for i, arg := range rec.Args {
 		if arg == "--setting-sources" && i+1 < len(rec.Args) && rec.Args[i+1] == "" {

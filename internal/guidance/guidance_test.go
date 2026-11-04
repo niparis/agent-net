@@ -30,6 +30,20 @@ func TestVariantsDifferOnlyInReplyLine(t *testing.T) {
 	}
 }
 
+func TestGuidanceExplainsWorkerFileHandback(t *testing.T) {
+	for _, variant := range []string{Claude, Other, Combined} {
+		b := Block(variant)
+		for _, want := range []string{"agent_file_send", "agent_handback", "files", "worktree"} {
+			if !strings.Contains(b, want) {
+				t.Errorf("%s guidance lacks %q", variant, want)
+			}
+		}
+		if !strings.Contains(b, "workers send files from their own worktree") {
+			t.Errorf("%s guidance does not limit worker files to their worktree", variant)
+		}
+	}
+}
+
 // Announcing the task is a rule, not a hint, for every variant.
 func TestAnnounceRuleIsMandatory(t *testing.T) {
 	for _, v := range []string{Claude, Other} {
@@ -213,5 +227,14 @@ func TestWorkerHandbackGuidanceUsesFixedToolAndKeepsCustomText(t *testing.T) {
 	}
 	if got := Block(Other); !strings.Contains(got, "`agent_handback`") || strings.Contains(got, "{{handback}}") {
 		t.Fatalf("tool was not rendered: %s", got)
+	}
+}
+
+func TestGuidanceNamesMCPFileSend(t *testing.T) {
+	for _, variant := range []string{Claude, Other, Combined} {
+		b := Block(variant)
+		if !strings.Contains(b, "agent_file_send") || !strings.Contains(b, "absolute paths") {
+			t.Errorf("%s block lacks file send guidance", variant)
+		}
 	}
 }

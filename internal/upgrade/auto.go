@@ -2,11 +2,13 @@ package upgrade
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -46,6 +48,44 @@ func IsNewer(a, b string) bool {
 		}
 	}
 	return false
+}
+
+// CheckDowngrade refuses an older release unless the owner explicitly forces it.
+// Versions that cannot be ordered are refused too, except for the existing
+// dev-build handling and a request to stay on the exact running version.
+func CheckDowngrade(current, target string, force bool) error {
+	if force || current == "dev" || current == target {
+		return nil
+	}
+	parse := func(v string) ([3]int, bool) {
+		// v1 and v1.2 are valid shortened version forms.
+		if strings.HasPrefix(v, "v") && !strings.ContainsAny(v, "-+") {
+			switch strings.Count(v, ".") {
+			case 0:
+				v += ".0.0"
+			case 1:
+				v += ".0"
+			}
+		}
+		return ParseRelease(v)
+	}
+	from, ok := parse(current)
+	if !ok {
+		return fmt.Errorf("cannot compare current version %q; use --force to install %s", current, target)
+	}
+	to, ok := parse(target)
+	if !ok {
+		return fmt.Errorf("cannot compare version %q with %s; use --force to install it", target, current)
+	}
+	for i := range from {
+		if from[i] > to[i] {
+			return errors.New("refusing to downgrade from " + current + " to " + target + "; use --force to install it")
+		}
+		if from[i] < to[i] {
+			return nil
+		}
+	}
+	return nil
 }
 
 // AutoFailure remembers a failed automatic upgrade.

@@ -19,6 +19,8 @@ import (
 //   - runs the git binary found on GitPath (or on this process's PATH), with an
 //     explicit argument list and no shell;
 //   - switches off hooks, the fsmonitor hook, automatic gc and maintenance;
+//   - runs only in a repository whose own config names no program and no
+//     rewrite of the remote (checkRepo, in config.go);
 //   - ignores replace refs (GIT_NO_REPLACE_OBJECTS=1), so a commit ID always
 //     names the content that was checked;
 //   - drops inherited GIT_* variables, except a few that say how to reach a
@@ -48,6 +50,9 @@ var gitFixedArgs = []string{
 	"-c", "core.fsmonitor=false",
 	"-c", "gc.auto=0",
 	"-c", "maintenance.auto=false",
+	// Command line config beats every file, so this one cannot be undone by
+	// the repository: the ext:: transport runs a program named in the URL.
+	"-c", "protocol.ext.allow=never",
 }
 
 // gitEnvKeep lists the GIT_* variables a call inherits: how to reach a remote
@@ -302,12 +307,13 @@ func checkRefName(ctx context.Context, g gitIn, what, name string) error {
 	return nil
 }
 
-// fetchRefspec fetches one refspec from remote. It never fetches tags or
+// fetchRefspec fetches one refspec from remote, a remote name or a URL. It
+// removes remote-tracking refs the remote no longer has, inside the refspec. It never fetches tags or
 // submodules and does not write FETCH_HEAD.
 func fetchRefspec(ctx context.Context, g gitIn, remote, refspec string) error {
 	if _, err := g.run(ctx, "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head", "--quiet",
-		remote, refspec); err != nil {
-		return fmt.Errorf("fetch %s: %w", remote, err)
+		"--prune", remote, refspec); err != nil {
+		return fmt.Errorf("fetch %s: %w", redactURL(remote), err)
 	}
 	return nil
 }

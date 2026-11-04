@@ -60,11 +60,16 @@ type Installed struct {
 }
 
 // FromGateway downloads this machine's binary from the gateway over c (which
-// must trust only the gateway CA), verifies it against the gateway's
+// must trust only the gateway CA), verifies it against the signed release
 // checksums, and replaces exe, keeping exe.prev. want, when set, is the
 // version the new binary must report. current is the version that runs now.
 // Nothing changes unless every check passes.
 func FromGateway(ctx context.Context, c *http.Client, gatewayURL, exe, current, want string) (Installed, error) {
+	return FromGatewayWithForce(ctx, c, gatewayURL, exe, current, want, false)
+}
+
+// FromGatewayWithForce permits an explicit downgrade when force is true.
+func FromGatewayWithForce(ctx context.Context, c *http.Client, gatewayURL, exe, current, want string, force bool) (Installed, error) {
 	res := Installed{From: current}
 	dir, err := os.MkdirTemp("", "agent-net-upgrade.")
 	if err != nil {
@@ -87,6 +92,9 @@ func FromGateway(ctx context.Context, c *http.Client, gatewayURL, exe, current, 
 	if want != "" && to != want {
 		return res, fmt.Errorf("the gateway serves %s but %s was asked for", to, want)
 	}
+	if err := CheckDowngrade(current, to, force); err != nil {
+		return res, err
+	}
 	if disk, err := BinaryVersion(ctx, exe); err == nil && disk == to {
 		return res, nil
 	}
@@ -104,16 +112,7 @@ func downloadGatewayAsset(ctx context.Context, c *http.Client, installURL, asset
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	sumsPath := dir + "/checksums.txt"
-	if err := get(ctx, c, installURL+"/checksums.txt", sumsPath); err != nil {
-		return fmt.Errorf("cannot get the checksum from the gateway: %w", err)
-	}
-	f, err := os.Open(sumsPath)
-	if err != nil {
-		return err
-	}
-	want, err := ParseChecksums(f)
-	f.Close()
+	want, err := signedChecksums(ctx, c, installURL, dir)
 	if err != nil {
 		return err
 	}

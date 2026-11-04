@@ -287,7 +287,8 @@ func (w *workerNode) workerStopped(t *testing.T, g *testGateway, reason string) 
 	})
 }
 
-var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
+// Fake workers need no production-length grace period before SIGKILL.
+var shortSet = WorkerSettings{KillGrace: 100 * time.Millisecond, Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
 
 // ---- the lifecycle ----
 
