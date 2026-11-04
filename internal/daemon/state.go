@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS workers (
 		_, err = db.Exec(queueSchema)
 	}
 	if err == nil {
+		_, err = db.Exec(claudeDeliveriesSchema)
+	}
+	if err == nil {
 		var has int
 		err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto_proposals') WHERE name = 'note_delivered'`).Scan(&has)
 		if err == nil && has == 0 {

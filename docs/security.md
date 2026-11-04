@@ -321,6 +321,7 @@ only after the turn has started. See
 - The daemon never sends the Claude session token. It does not need it, and it does not read it.
 - The message arrives as a user turn, in a `<cross-session-message>` block with the sender's name and ID. The sender's name is cut to letters, digits, `_`, `.` and `-` (40 characters at most). If the message body contains the wrapper tags, they are broken up, so a message cannot close the block early and fake a second one. The marker `[agent-net` is broken up in the body too, so a body cannot imitate agent-net's own details.
 - The agent-net details (sender, message ID, session ID) follow the body, as plain text in the same turn.
+- Claude's answer comes back on a reply socket (mode 0600, in the daemon's socket folder) for one sender and conversation. The daemon forwards it only when it comes from the inbox address of a Claude session it knows. A reply threaded to a conversation without a parent message is stored by the gateway only when the recipient has written to the sender in that conversation, so a session cannot post into a conversation it is not part of. See [Claude replies](reference.md#claude-replies).
 - Claude Code treats the message as a request from another session. In our tests Claude asks its user before acting on a peer message that is outside the current task (see [step 2 results](step2-e2e.md)). Claude Code's own permission rules still apply to everything the agent does next.
 
 ### Accepting peer messages in Claude Code
@@ -747,7 +748,7 @@ A registered project is a folder where workers may start sessions (see [decision
 | Registered projects | until you remove them | none |
 | Nodes and their token hashes | until you delete them | none |
 
-A timer deletes older data once at start and then every hour. A period of `0` keeps the data controlled by that flag for ever. Messages and worker runs default to `0`, so they stay until you set a period with `--keep-messages` or `--keep-worker-runs`, or delete them by hand. Instruction signals have a fixed 90-day retention. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` keeps delivered message IDs, its outbox and pending worker assessments until the gateway accepts them.
+A timer deletes older data once at start and then every hour. A period of `0` keeps the data controlled by that flag for ever. Messages and worker runs default to `0`, so they stay until you set a period with `--keep-messages` or `--keep-worker-runs`, or delete them by hand. Instruction signals have a fixed 90-day retention. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` keeps delivered message IDs, its outbox and pending worker assessments until the gateway accepts them, and the IDs of messages delivered to Claude sessions until a day after they expire.
 
 **File modes.** `gateway.db` and the daemon's `daemon.db`, with their `-wal` and `-shm` files, are mode 0600. The gateway and the daemon create them with that mode and set it again at each start, so files made by an older version are fixed. The gateway creates its data folder with mode 0700.
 

@@ -60,6 +60,9 @@ type Host interface {
 	// Send posts a message to the network as the given sender session.
 	Send(ctx context.Context, p protocol.MsgSend) error
 	Logf(format string, args ...any)
+	// Replies is the daemon.db record that matches a Claude reply to the
+	// request it answers.
+	Replies() ReplyBook
 }
 
 type Config struct {
@@ -595,6 +598,8 @@ func (d *Daemon) goBackground(fn func()) {
 }
 
 func (d *Daemon) Logf(format string, args ...any) { d.log.Printf(format, args...) }
+
+func (d *Daemon) Replies() ReplyBook { return d.st }
 
 // ---- registry ----
 

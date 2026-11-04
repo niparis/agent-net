@@ -630,7 +630,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 |---|---|---|
 | Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). Optional `"quota_axi"` is an absolute path to quota-axi when it is not on `PATH` or in `~/.local/bin`. |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
-| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivery records (for duplicates and interrupted writes), the outbox for sends made while the gateway is away, the `settings_snapshot` table (the last validated settings snapshot for offline use), and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. A delivery record is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
+| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivery records (for duplicates and interrupted writes), the `claude_deliveries` table (the messages delivered to Claude sessions, to match their replies, see [Claude replies](#claude-replies)), the outbox for sends made while the gateway is away, the `settings_snapshot` table (the last validated settings snapshot for offline use), and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. A delivery record is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its private data and state folders and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. Kept after hand-back for resume, otherwise deleted when the worker ends. OpenCode configuration remains shared. At each start OpenCode credentials are exported and imported through memory into the private database (mode 0600); OAuth token refresh in the copy may affect the original login. |
 | Worker worktrees | `~/.local/state/agent-net/daemon/worktrees/<worker id>/` | The default in a git repository (not with `--isolation none`). Eligible for the worker cleanup described below as soon as the worker ends. The default branch name is `agent-net/<worker id>` in the project; `delivery.worker_branch_prefix` sets the prefix. |
 | Owner session worktrees | Next to the project, `<project>.worktrees/<branch>/`, for example `~/code/agent-net.worktrees/agent-net/agent-net-1/` | A New session start with Folder `new worktree`. The branch is what the Branch line says, by default `agent-net/<project>-<n>` with the lowest free number. The worktree and its branch are yours: agent-net never removes them, and worker cleanup never touches them. |
@@ -653,7 +653,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | MCP config backups | `~/.local/state/agent-net/daemon/mcp-backups/<item hash>/<time>-<id>/` | The whole native MCP config file (`preimage`) as it was before the daemon removed an entry or added one for a project coverage row, and `meta.json` (file path, hashes, entry name). A backup can hold secrets: local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. Uninstall removes them. |
 | MCP coverage undo record | `~/.local/state/agent-net/daemon/mcp-coverage-undo-<plan id>.json` | The files one applied coverage plan wrote, their before and after hashes, the backup IDs, and whether the file was created. Mode 0600. Removed when the owner undoes the plan. It never holds a declaration or an environment value. Uninstall removes it with the state folder. |
 | Skill journal | `~/.local/state/agent-net/daemon/skill-journal/*.json` | One small record per skill operation that is running. Written before the first change and deleted when the operation ends. Mode 0600, folder 0700. A record left after a crash is read at the next daemon start. Uninstall removes the folder. |
-| Reply sockets | `<socket directory>/r/<session id>.sock` | One per sending session, used to catch Claude Code's native replies. |
+| Reply sockets | `<socket directory>/r/<session id>.<conversation id>.sock` and `<socket directory>/r/<session id>.sock` | One per sending session and conversation, used to catch Claude Code's native replies (see [Claude replies](#claude-replies)). The socket of a conversation is closed when its rows leave `daemon.db`. The one per sending session is for messages without a conversation and for frames from an older daemon. Mode 0600. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the tools inventory, assignments, plans, audit, MCP registry, and the `setting_revision`, `setting_values` and append-only `setting_history` tables), `admin.json` (mode 0600: the local admin URL and token) and `skills.git` (mode 0700: the private bare Git repository of imported skills, which can hold secrets from skill files). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
 | Gateway transfer parts | `~/.local/state/agent-net/gateway/transfers/<upload id>/` | One file per part of an upload between machines, named by its part number. Folders 0700, files 0600. At most 100 MB per upload and 1 GB staged for each sending machine. A part file is deleted when the receiving machine confirms the whole file, or 7 days after the upload began. A `gateway backup` does not copy parts that are still in flight. Uninstall keeps them with the rest of the gateway data. See [security.md](security.md#files-between-machines). |
 | Gateway binaries | `~/.local/share/agent-net/dist/agent-net-<os>-<arch>` | The four binaries the gateway hands out to new machines. |
@@ -727,10 +727,49 @@ one. The owner and connected apps get no notice: the TUI and the app already
 show the failed or expired state. An expired held request gets its own reply
 instead (see [Peer trust and hints](#peer-trust-and-hints)).
 
+## Claude replies
+
+A Claude Code session answers a peer with its own SendMessage tool. The
+answer names the reply address from the message's frame, not the message it
+answers. The daemon matches it as follows.
+
+- Each message delivered to a Claude session names a reply socket for its
+  sender and conversation. So an answer tells the sender and the
+  conversation it belongs to.
+- Before the frame is written, the daemon saves a row in the
+  `claude_deliveries` table of `daemon.db`: message ID, conversation ID,
+  sender, recipient, type, delivered at, expires at, answered at, and how it
+  was answered. No message text is kept. A refused inbox connection removes
+  the row, because the session never saw the message.
+- A request is open until it is answered or its message expires (24 hours).
+- An answer with one open request from that sender in that conversation is
+  the reply to that request.
+- With several open requests there, a body that names exactly one of their
+  message IDs is the reply to that one. Otherwise the answer is a reply in
+  the conversation with no parent message. It closes every open request
+  there, with the answer `conversation` in the row, and the daemon logs
+  `threaded to conversation <id>`. The gateway marks those requests as
+  replied.
+- An answer with no open request stays in its conversation, with no parent.
+- An answer to a sender's own socket (no conversation) uses the open
+  requests from that sender in any conversation. If they are in several
+  conversations and none is named, it goes out as a notification in a new
+  conversation, as before.
+- At start the daemon listens again on the reply socket of every
+  conversation in the table, so an answer written after a restart still
+  finds its request.
+
+The gateway accepts a `msg.send` with `conversation_id` and no
+`parent_message_id` only when the recipient has written to the sender in
+that conversation. An older gateway ignores the field and starts a new
+conversation. If the gateway refuses it, the daemon sends the answer again
+as a notification in a new conversation, so it is not lost.
+
 ## Housekeeping
 
 agent-net keeps message bodies as long as possible. These jobs only remove bookkeeping rows and free space.
 
+- **Daemon Claude reply rows.** The same hourly job deletes `claude_deliveries` rows 24 hours after their message expired. The reply socket of a conversation with no rows left is closed within ten minutes. Until then a late answer still arrives, and goes to the conversation.
 - **Daemon duplicate check.** `daemon.db` has a `delivered` table with one delivery record per message ID. It stops duplicate or uncertain writes and holds no message text. Once an hour the daemon deletes rows older than the message expiry (24 hours) plus 7 days, so a message that is still alive can never be delivered twice. The first run is about a minute after start, so an upgrade does not postpone it.
 - **Gateway database.** `gateway.db` is vacuumed at most once a week, and only when more than 20% of its pages are free (deleted rows or events). The hourly maintenance runs the check; the vacuum rewrites the file and can make it much smaller. Nothing is deleted: messages, events and sessions follow the `--keep-*` retention settings, and the defaults keep messages for ever. A vacuum writes one `db.vacuum` line with the size before and after.
 - **Gateway transfer parts.** The parts of an upload between machines (see [Files](#files)) are deleted as soon as the receiving machine confirms the whole file. Every upload is also deleted 7 days after it began, downloaded or not. The hourly maintenance deletes expired parts even when no transfer runs. A failed removal keeps the row, so the next run tries again and the bytes keep counting against the sender's 1 GB cap.

@@ -2080,6 +2080,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
 		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO,
 	}
+	threaded := false
 	if p.ParentID != "" {
 		parent, ok, err := s.message(tx, "m.id = ?", p.ParentID)
 		if err != nil {
@@ -2110,6 +2111,23 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		m.ParentID = parent.ID
 		m.ConversationID = parent.ConversationID
 		m.Hop = parent.Hop + 1
+		if m.Type == "" {
+			m.Type = protocol.TypeReply
+		}
+	} else if p.ConversationID != "" {
+		// Threaded into a conversation without a parent (W4.4): only by a
+		// session that the recipient wrote to in that conversation.
+		var hop sql.NullInt64
+		if err := tx.QueryRow(`SELECT MAX(hop) FROM messages WHERE conversation_id=? AND sender=? AND recipient=?`,
+			p.ConversationID, p.Recipient, p.Sender).Scan(&hop); err != nil {
+			return msg, false, err
+		}
+		if !hop.Valid {
+			return msg, false, reject("conversation %q has no message from the recipient to the sender", p.ConversationID)
+		}
+		m.ConversationID = p.ConversationID
+		m.Hop = int(hop.Int64) + 1
+		threaded = true
 		if m.Type == "" {
 			m.Type = protocol.TypeReply
 		}
@@ -2157,7 +2175,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err != nil {
 		return msg, false, err
 	}
-	if m.ParentID == "" && !m.FromCTO {
+	if m.ParentID == "" && !threaded && !m.FromCTO {
 		if err := s.signalRequest(tx, m); err != nil {
 			return msg, false, err
 		}
@@ -2196,6 +2214,19 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			return msg, false, err
 		}
 		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
+			return msg, false, err
+		}
+	}
+	if threaded && m.Type == protocol.TypeReply {
+		// A reply to the conversation answers every open request there from
+		// its recipient, as the reminder check already counts it.
+		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state IN (?,?,?)`,
+			protocol.StateReplied, m.ConversationID, m.To, m.From, protocol.TypeRequest,
+			protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+			return msg, false, err
+		}
+		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state = ?)`,
+			m.ConversationID, m.To, m.From, protocol.TypeRequest, protocol.StateReplied); err != nil {
 			return msg, false, err
 		}
 	}
