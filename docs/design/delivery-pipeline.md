@@ -281,16 +281,16 @@ These were open questions in the first draft; each has an obvious answer, so the
 4. **Changes from outside a worker:** any agent in the repo may submit one with `agent_change_submit`.
 5. **GitHub only at first:** the design does not depend on GitHub, so other hosts can be added when a recipe needs one.
 
-## Open questions
+## More decisions (from the check against the code)
 
-These are the owner's choice. Each has a recommendation.
+The owner took each recommendation on 2026-11-04.
 
-1. **Where step owners and the pipeline live.** The settings layer resolves only ordered rules. Options: (a) a new setting type for the whole pipeline, with "stricter" defined for it; (b) step owners as graph edges, like `deploys` today (for example a `merges` edge from the merger node to the repo), and the step rules as ordered settings: `requires` lists as sets (more is stricter), approvers as an enum ordered none, delegate, owner. **Recommendation: (b).** Ownership is a relation between two nodes, the graph already shows, audits and undoes edge changes, `deploys` is the precedent, and (b) needs no new setting type.
-2. **Commit at hand-back.** Options: (a) the daemon commits leftover changes at every complete hand-back, as it does for Antigravity, with the trailers and the title as the subject; (b) refuse a complete hand-back with uncommitted changes and tell the worker to commit; (c) record the change as "uncommitted" and let the caller commit. **Recommendation: (a).** Evidence must name a commit, `continue` already commits the same changes later under a misleading subject, and (b) cannot work for Codex, which has no tools.
-3. **Worker branches on other machines.** Options: (a) the daemon pushes a change's branch to `origin` at hand-back; (b) steps run on the machine that holds the branch. Workers never push today, and a push is outward-facing. **Recommendation: (b) until a merger on another machine is wanted;** then (a), only for repos whose pipeline has a step owner on another machine.
-4. **A direct owner approval under `delegated`.** Today's text lets the owner approve "directly", in the session. agent-net cannot see that; only the session's transcript holds it. Options: (a) count it, recorded as "approved by the owner, reported by session X"; (b) only Inbox approvals count. **Recommendation: (a)**, because it is today's rule; `ask` stays written only.
-5. **Who approves a deploy under `ask`.** "Ask before deploying" names no one today. **Recommendation:** approver `delegate` (the owner or a governing architect), the same as merge `delegated`, which `mature` pairs it with.
-6. **What "model family" means for `independent`.** The only family in the code is the Quality cards' grouping, where sonnet and opus are two families, and so are terra and sol. **Recommendation:** compare the model maker (Anthropic, OpenAI, DeepSeek and so on), so a Sonnet review of an Opus change is not independent.
+7. **Where step owners and the pipeline live:** step owners are graph edges, like `deploys` today (for example a `merges` edge from the merger node to the repo); the step rules are ordered settings: `requires` lists as sets (more is stricter), approvers as an enum ordered none, delegate, owner. No new setting type.
+8. **Commit at hand-back:** the daemon commits leftover changes at every complete hand-back, as it does for Antigravity, with the trailers and the title as the subject.
+9. **Worker branches on other machines:** steps run on the machine that holds the branch, until a merger on another machine is wanted; then the daemon pushes the change branch to `origin` at hand-back, only for repos whose pipeline has a step owner on another machine.
+10. **A direct owner approval under `delegated`** counts, recorded as "approved by the owner, reported by session X"; `ask` stays written only.
+11. **Who approves a deploy under `ask`:** approver `delegate` (the owner or a governing architect).
+12. **"Model family" for `independent`:** the model maker (Anthropic, OpenAI, Google, DeepSeek and so on), so a Sonnet review of an Opus change is not independent.
 
 ## Checked against the code
 
