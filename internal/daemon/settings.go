@@ -42,11 +42,12 @@ func (d *Daemon) loadSettingsSnapshot() error {
 }
 func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 	var wire struct {
-		Revision        *int64            `json:"revision"`
-		Recipe          string            `json:"recipe"`
-		DeliveryCutover bool              `json:"delivery_cutover"`
-		Values          []settings.Value  `json:"values"`
-		Maturity        map[string]string `json:"maturity"`
+		Revision             *int64            `json:"revision"`
+		Recipe               string            `json:"recipe"`
+		DeliveryCutover      bool              `json:"delivery_cutover"`
+		WorkerSandboxCutover bool              `json:"worker_sandbox_cutover"`
+		Values               []settings.Value  `json:"values"`
+		Maturity             map[string]string `json:"maturity"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return settings.Snapshot{}, err
@@ -54,7 +55,7 @@ func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 	if wire.Revision == nil || *wire.Revision < 0 {
 		return settings.Snapshot{}, fmt.Errorf("invalid revision")
 	}
-	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, Values: []settings.Value{}, Maturity: wire.Maturity}
+	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, WorkerSandboxCutover: wire.WorkerSandboxCutover, Values: []settings.Value{}, Maturity: wire.Maturity}
 	recipe := settings.Standard()
 	seen := map[string]bool{}
 	for _, v := range wire.Values {

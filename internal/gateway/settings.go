@@ -50,7 +50,7 @@ func (s *Store) SettingsSnapshot() (settings.Snapshot, error) {
 	return out, err
 }
 func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
-	out := settings.Snapshot{DeliveryCutover: true, Recipe: settings.RecipeHash(), Values: []settings.Value{}, Maturity: map[string]string{}}
+	out := settings.Snapshot{DeliveryCutover: true, WorkerSandboxCutover: true, Recipe: settings.RecipeHash(), Values: []settings.Value{}, Maturity: map[string]string{}}
 	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&out.Revision); err != nil {
 		return out, err
 	}

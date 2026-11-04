@@ -10,6 +10,7 @@ import (
 )
 
 var deliveryNodeKeys = map[string]string{
+	protocol.SettingWorkerSandbox:    "workers.sandbox_level",
 	protocol.SettingTestsBeforeMerge: "delivery.tests_before_merge",
 	protocol.SettingMergeAuthority:   "delivery.merge_authority",
 	protocol.SettingJudgeConsumers:   "charter.judge_consumers",
@@ -80,7 +81,7 @@ func nodeEffectiveSettings(snap settings.Snapshot, name, maturity string, existi
 		existing = map[string]string{}
 	}
 	defaults := protocol.DefaultsForMaturity(maturity)
-	base := map[string]string{protocol.SettingTestsBeforeMerge: defaults.TestsBeforeMerge, protocol.SettingMergeAuthority: defaults.MergeAuthority, protocol.SettingJudgeConsumers: defaults.JudgeConsumers, protocol.SettingDeployRule: defaults.DeployRule, protocol.SettingAutonomy: protocol.AutonomyOff}
+	base := map[string]string{protocol.SettingTestsBeforeMerge: defaults.TestsBeforeMerge, protocol.SettingMergeAuthority: defaults.MergeAuthority, protocol.SettingJudgeConsumers: defaults.JudgeConsumers, protocol.SettingDeployRule: defaults.DeployRule, protocol.SettingAutonomy: protocol.AutonomyOff, protocol.SettingWorkerSandbox: defaults.WorkerSandbox}
 	for old, key := range deliveryNodeKeys {
 		e, err := snap.Resolve(key, settings.Where{Repo: name})
 		if err != nil {

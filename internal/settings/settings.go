@@ -577,11 +577,12 @@ type Value struct {
 	Value json.RawMessage `json:"value"`
 }
 type Snapshot struct {
-	DeliveryCutover bool              `json:"delivery_cutover,omitempty"`
-	Revision        int64             `json:"revision"`
-	Recipe          string            `json:"recipe"`
-	Values          []Value           `json:"values"`
-	Maturity        map[string]string `json:"maturity"`
+	DeliveryCutover      bool              `json:"delivery_cutover,omitempty"`
+	WorkerSandboxCutover bool              `json:"worker_sandbox_cutover,omitempty"`
+	Revision             int64             `json:"revision"`
+	Recipe               string            `json:"recipe"`
+	Values               []Value           `json:"values"`
+	Maturity             map[string]string `json:"maturity"`
 }
 type Host struct{ RAMBytes int64 }
 type Where struct {

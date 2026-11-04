@@ -24,17 +24,14 @@ func TestWorkerSandboxBaseline(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, policy := range []string{"", protocol.WorkersSandboxed, protocol.WorkersNoNetwork, protocol.WorkersReadOnly} {
-				if _, err := s.db.Exec(`DELETE FROM project_policies WHERE node_id='n_test' AND project='shop'`); err != nil {
-					t.Fatal(err)
-				}
+				// Project policy and graph writes now address the same repo
+				// setting; reproduce the old winner for each fixture case.
+				winner := override
 				if policy != "" {
-					b, err := json.Marshal(protocol.DelegationPolicy{Workers: policy})
-					if err != nil {
-						t.Fatal(err)
-					}
-					if _, err := s.db.Exec(`INSERT INTO project_policies(node_id,project,policy,updated_at) VALUES('n_test','shop',?,0)`, string(b)); err != nil {
-						t.Fatal(err)
-					}
+					winner = policy
+				}
+				if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, winner, "owner"); err != nil {
+					t.Fatal(err)
 				}
 				got, err := s.WorkerPermissions("n_test", "shop")
 				if err != nil {

@@ -9,7 +9,7 @@ settings:
     levels: [network, repo]
     default: sandboxed
     by_maturity: {critical: no-network}
-    live: false
+    live: true
   - key: delivery.merge_authority
     rows: [128]
     description: Who may approve a merge.

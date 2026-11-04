@@ -233,12 +233,12 @@ func TestWorkerPermissionsAreAProjectSetting(t *testing.T) {
 			t.Errorf("level %q, want %q", got, l)
 		}
 	}
-	// Another project and another machine keep the default.
+	// The repo value applies on every machine; another project keeps the default.
 	s.SetDelegation(oc1, protocol.ScopeProject, protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly})
 	if got := level("other"); got != protocol.WorkersSandboxed {
 		t.Errorf("another project got %q", got)
 	}
-	if got, _ := s.WorkerPermissions("n_elsewhere", "cogforge"); got != protocol.WorkersSandboxed {
+	if got, _ := s.WorkerPermissions("n_elsewhere", "cogforge"); got != protocol.WorkersReadOnly {
 		t.Errorf("another machine got %q", got)
 	}
 	ps, err := s.Projects("cogforge")
