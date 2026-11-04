@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -96,7 +97,7 @@ func (f *mergeFx) originMain() string {
 func (f *mergeFx) req(branch, head, mode string) MergeRequest {
 	return MergeRequest{
 		RepoDir: f.repo, WorktreeDir: f.wt, Remote: "origin",
-		TargetBranch: "main", ChangeBranch: branch, HeadSHA: head, Mode: mode,
+		TargetBranch: "main", ChangeBranch: branch, BaseSHA: f.base, HeadSHA: head, Mode: mode,
 		Message:  "Merge " + branch,
 		Identity: MergeIdentity{Name: "Merger", Email: "merger@example.com"},
 		Push:     true, Timeout: 30 * time.Second,
@@ -193,7 +194,9 @@ func TestMergeHeadOnRemoteOnly(t *testing.T) {
 
 func TestMergeChangeBranchMissing(t *testing.T) {
 	f := newMergeFx(t)
-	_, err := Merge(context.Background(), f.req("nope", f.base, MergeModeFFOnly))
+	head := f.branch("gone", f.base, "a.txt", "a\n")
+	mergeGit(t, f.repo, "branch", "-q", "-D", "gone")
+	_, err := Merge(context.Background(), f.req("gone", head, MergeModeFFOnly))
 	if !errors.Is(err, ErrChangeBranchMissing) {
 		t.Fatalf("err = %v", err)
 	}
@@ -302,7 +305,9 @@ func TestMergeConflictLeavesCleanWorktree(t *testing.T) {
 	}
 }
 
-func TestMergeDirtyWorktreeRefused(t *testing.T) {
+// S7: the merge worktree belongs to Merge. Whatever a stopped run or a
+// stray process left in it is cleaned at the start of the next call.
+func TestMergeCleansOwnedWorktree(t *testing.T) {
 	f := newMergeFx(t)
 	h1 := f.branch("one", f.base, "one.txt", "1\n")
 	req := f.req("one", h1, MergeModeFFOnly)
@@ -312,27 +317,282 @@ func TestMergeDirtyWorktreeRefused(t *testing.T) {
 	}
 	h2 := f.branch("two", f.base, "two.txt", "2\n")
 
-	cases := map[string]func(){
-		"untracked": func() { f.write(f.wt, "scratch.txt", "x\n") },
-		"modified":  func() { f.write(f.wt, "README", "edited\n") },
+	f.write(f.wt, "scratch.txt", "x\n")
+	f.write(f.wt, "README", "edited\n")
+	f.write(f.wt, "one.txt", "staged\n")
+	mergeGit(t, f.wt, "add", "one.txt")
+	if err := os.MkdirAll(filepath.Join(f.wt, "build"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	for name, dirty := range cases {
-		t.Run(name, func(t *testing.T) {
-			dirty()
-			before := mergeGit(t, f.wt, "rev-parse", "HEAD")
-			_, err := Merge(context.Background(), f.req("two", h2, MergeModeFFOnly))
-			if !errors.Is(err, ErrDirtyWorktree) {
-				t.Fatalf("err = %v, want ErrDirtyWorktree", err)
+	f.write(f.wt, "build/out.o", "x\n")
+
+	res, err := Merge(context.Background(), f.req("two", h2, MergeModeCommit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.assertClean()
+	for _, n := range []string{"scratch.txt", "build/out.o", "one.txt"} {
+		if _, err := os.Stat(filepath.Join(f.wt, n)); err == nil {
+			t.Errorf("%s survived the cleanup", n)
+		}
+	}
+	if got := mergeGit(t, f.origin, "show", res.MergedSHA+":README"); got != "base" {
+		t.Fatalf("README in the merge = %q: the stray edit was merged", got)
+	}
+}
+
+// S7: a run that stopped in the middle of a conflict left MERGE_HEAD behind.
+func TestMergeRecoversInterruptedMerge(t *testing.T) {
+	f := newMergeFx(t)
+	h1 := f.branch("one", f.base, "README", "one\n")
+	req := f.req("one", h1, MergeModeFFOnly)
+	req.Push = false
+	if _, err := Merge(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	other := f.branch("other", f.base, "README", "other\n")
+	cmd := exec.Command("git", "-c", "user.name=T", "-c", "user.email=t@example.com", "merge", "--no-ff", "-q", "-m", "x", other)
+	cmd.Dir = f.wt
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("control: the merge did not conflict:\n%s", out)
+	}
+	mergeGit(t, f.wt, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+
+	h2 := f.branch("two", f.base, "two.txt", "2\n")
+	if _, err := Merge(context.Background(), f.req("two", h2, MergeModeCommit)); err != nil {
+		t.Fatal(err)
+	}
+	f.assertClean()
+}
+
+// S7: the cleanup after a conflict runs even when the caller's context ended.
+func TestMergeConflictCleanupSurvivesCancel(t *testing.T) {
+	f := newMergeFx(t)
+	head := f.branch("feat", f.base, "README", "feature side\n")
+	f.advanceOrigin("README", "main side\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := &mergeRunner{afterMerge: cancel}
+	if _, err := m.merge(ctx, f.req("feat", head, MergeModeCommit)); err == nil {
+		t.Fatal("expected an error")
+	}
+	f.assertClean()
+}
+
+// S4: Merge works only in a worktree it created.
+func TestMergeRefusesUnmarkedWorktree(t *testing.T) {
+	f := newMergeFx(t)
+	head := f.branch("feat", f.base, "a.txt", "a\n")
+	mergeGit(t, f.repo, "worktree", "add", "-q", "--detach", f.wt, f.base)
+	f.write(f.wt, "precious.txt", "keep\n")
+
+	_, err := Merge(context.Background(), f.req("feat", head, MergeModeFFOnly))
+	if !errors.Is(err, ErrNotOwnedWorktree) {
+		t.Fatalf("err = %v, want ErrNotOwnedWorktree", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.wt, "precious.txt")); err != nil {
+		t.Fatal("a file in a worktree Merge does not own was removed")
+	}
+	if got := f.originMain(); got != f.base {
+		t.Fatalf("origin moved to %s", got)
+	}
+}
+
+func TestMergeRefusesWorktreeOnBranch(t *testing.T) {
+	f := newMergeFx(t)
+	h1 := f.branch("one", f.base, "one.txt", "1\n")
+	req := f.req("one", h1, MergeModeFFOnly)
+	req.Push = false
+	if _, err := Merge(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	mergeGit(t, f.wt, "checkout", "-q", "-b", "someones-work")
+	f.write(f.wt, "precious.txt", "keep\n")
+	h2 := f.branch("two", f.base, "two.txt", "2\n")
+
+	_, err := Merge(context.Background(), f.req("two", h2, MergeModeFFOnly))
+	if !errors.Is(err, ErrNotOwnedWorktree) {
+		t.Fatalf("err = %v, want ErrNotOwnedWorktree", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.wt, "precious.txt")); err != nil {
+		t.Fatal("a file on a branch checkout was removed")
+	}
+}
+
+func TestMergeRefusesSymlinkWorktree(t *testing.T) {
+	f := newMergeFx(t)
+	h1 := f.branch("one", f.base, "one.txt", "1\n")
+	req := f.req("one", h1, MergeModeFFOnly)
+	req.Push = false
+	if _, err := Merge(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	h2 := f.branch("two", f.base, "two.txt", "2\n")
+	link := filepath.Join(f.root, "link-wt")
+	if err := os.Symlink(f.wt, link); err != nil {
+		t.Fatal(err)
+	}
+	r := f.req("two", h2, MergeModeFFOnly)
+	r.WorktreeDir = link
+	if _, err := Merge(context.Background(), r); !errors.Is(err, ErrNotOwnedWorktree) {
+		t.Fatalf("err = %v, want ErrNotOwnedWorktree", err)
+	}
+	if got := f.originMain(); got != f.base {
+		t.Fatalf("origin moved to %s", got)
+	}
+}
+
+// S6: one Merge at a time per worktree.
+func TestMergeLockBlocksSecondMerge(t *testing.T) {
+	f := newMergeFx(t)
+	head := f.branch("feat", f.base, "a.txt", "a\n")
+	lf, err := os.OpenFile(f.wt+".lock", os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lf.Close()
+	if err := syscall.Flock(int(lf.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	req := f.req("feat", head, MergeModeFFOnly)
+	req.Timeout = 300 * time.Millisecond
+	if _, err := Merge(context.Background(), req); !errors.Is(err, ErrMergeBusy) {
+		t.Fatalf("err = %v, want ErrMergeBusy", err)
+	}
+	if got := f.originMain(); got != f.base {
+		t.Fatalf("origin moved to %s while another merge held the lock", got)
+	}
+	if err := syscall.Flock(int(lf.Fd()), syscall.LOCK_UN); err != nil {
+		t.Fatal(err)
+	}
+	req.Timeout = 30 * time.Second
+	if _, err := Merge(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S5: the push is a compare-and-swap on the remote tip the merge started
+// from. A remote rewound to an older commit must not be fast-forwarded past.
+func TestMergePushIsCompareAndSwap(t *testing.T) {
+	f := newMergeFx(t)
+	moved := f.advanceOrigin("o.txt", "o\n")
+	mergeGit(t, f.repo, "fetch", "-q", "origin")
+	head := f.branch("feat", "origin/main", "a.txt", "a\n")
+
+	m := &mergeRunner{beforePush: func() { mergeGit(t, f.origin, "update-ref", "refs/heads/main", f.base) }}
+	_, err := m.merge(context.Background(), f.req("feat", head, MergeModeFFOnly))
+	if !errors.Is(err, ErrRemoteMoved) {
+		t.Fatalf("err = %v, want ErrRemoteMoved", err)
+	}
+	if got := f.originMain(); got != f.base {
+		t.Fatalf("origin main = %s, want the rewound %s (merge started from %s)", got, f.base, moved)
+	}
+}
+
+// S5: the tip comes from the remote, not from the local ref store, which a
+// worker can write.
+func TestMergeTipComesFromRemote(t *testing.T) {
+	f := newMergeFx(t)
+	moved := f.advanceOrigin("o.txt", "o\n")
+	mergeGit(t, f.repo, "fetch", "-q", "origin")
+	head := f.branch("feat", "origin/main", "a.txt", "a\n")
+
+	m := &mergeRunner{afterFetch: func() { mergeGit(t, f.repo, "update-ref", "refs/remotes/origin/main", f.base) }}
+	res, err := m.merge(context.Background(), f.req("feat", head, MergeModeFFOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.TargetBefore != moved {
+		t.Fatalf("TargetBefore = %s, want the remote tip %s", res.TargetBefore, moved)
+	}
+	if got := f.originMain(); got != head {
+		t.Fatalf("origin main = %s", got)
+	}
+}
+
+// S8: a change whose head is its base has nothing to merge.
+func TestMergeRefusesEmptyChange(t *testing.T) {
+	f := newMergeFx(t)
+	mergeGit(t, f.repo, "branch", "feat", f.base)
+	_, err := Merge(context.Background(), f.req("feat", f.base, MergeModeFFOnly))
+	if !errors.Is(err, ErrEmptyChange) {
+		t.Fatalf("err = %v, want ErrEmptyChange", err)
+	}
+}
+
+// S9: a missing target branch (a release branch) is created from CreateFrom.
+func TestMergeCreatesMissingTarget(t *testing.T) {
+	for _, mode := range []string{MergeModeFFOnly, MergeModeCommit} {
+		t.Run(mode, func(t *testing.T) {
+			f := newMergeFx(t)
+			head := f.branch("feat", f.base, "a.txt", "a\n")
+			req := f.req("feat", head, mode)
+			req.TargetBranch = "release/1"
+			req.CreateFrom = f.base
+			res, err := Merge(context.Background(), req)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if got := mergeGit(t, f.wt, "rev-parse", "HEAD"); got != before {
-				t.Fatal("dirty worktree was moved")
+			if !res.Created || !res.Pushed || res.TargetBefore != f.base || res.AlreadyMerged {
+				t.Fatalf("result = %+v", res)
+			}
+			if got := mergeGit(t, f.origin, "rev-parse", "refs/heads/release/1"); got != res.TargetAfter {
+				t.Fatalf("release/1 = %s, want %s", got, res.TargetAfter)
 			}
 			if got := f.originMain(); got != f.base {
-				t.Fatalf("origin changed to %s", got)
+				t.Fatalf("main moved to %s", got)
 			}
-			mergeGit(t, f.wt, "checkout", "-q", "--", ".")
-			mergeGit(t, f.wt, "clean", "-fdq")
+			// The second call merges into the branch that now exists.
+			again, err := Merge(context.Background(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !again.AlreadyMerged || again.Created {
+				t.Fatalf("second result = %+v", again)
+			}
 		})
+	}
+}
+
+func TestMergeTargetMissingWithoutCreateFrom(t *testing.T) {
+	f := newMergeFx(t)
+	head := f.branch("feat", f.base, "a.txt", "a\n")
+	req := f.req("feat", head, MergeModeFFOnly)
+	req.TargetBranch = "release/1"
+	if _, err := Merge(context.Background(), req); !errors.Is(err, ErrTargetMissing) {
+		t.Fatalf("err = %v, want ErrTargetMissing", err)
+	}
+}
+
+// S9: the branch is created with a lease that it does not exist, so a branch
+// someone else created in the meantime is not overwritten.
+func TestMergeCreateLosesRace(t *testing.T) {
+	f := newMergeFx(t)
+	head := f.branch("feat", f.base, "a.txt", "a\n")
+	theirs := f.advanceOrigin("o.txt", "o\n")
+	req := f.req("feat", head, MergeModeFFOnly)
+	req.TargetBranch = "release/1"
+	req.CreateFrom = f.base
+	m := &mergeRunner{beforePush: func() { mergeGit(t, f.origin, "update-ref", "refs/heads/release/1", theirs) }}
+	if _, err := m.merge(context.Background(), req); !errors.Is(err, ErrRemoteMoved) {
+		t.Fatalf("err = %v, want ErrRemoteMoved", err)
+	}
+	if got := mergeGit(t, f.origin, "rev-parse", "refs/heads/release/1"); got != theirs {
+		t.Fatalf("release/1 = %s, want theirs %s", got, theirs)
+	}
+}
+
+func TestMergeCreateFromIgnoredWhenTargetExists(t *testing.T) {
+	f := newMergeFx(t)
+	head := f.branch("feat", f.base, "a.txt", "a\n")
+	req := f.req("feat", head, MergeModeFFOnly)
+	req.CreateFrom = head
+	res, err := Merge(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created || res.TargetBefore != f.base {
+		t.Fatalf("result = %+v", res)
 	}
 }
 
@@ -424,6 +684,9 @@ func TestMergeRejectsBadRequests(t *testing.T) {
 	cases := map[string]func(r *MergeRequest){
 		"mode":            func(r *MergeRequest) { r.Mode = "squash" },
 		"short sha":       func(r *MergeRequest) { r.HeadSHA = head[:10] },
+		"no base":         func(r *MergeRequest) { r.BaseSHA = "" },
+		"short base":      func(r *MergeRequest) { r.BaseSHA = f.base[:10] },
+		"bad create-from": func(r *MergeRequest) { r.CreateFrom = "main" },
 		"option as sha":   func(r *MergeRequest) { r.HeadSHA = "--upload-pack=x" },
 		"option as ref":   func(r *MergeRequest) { r.TargetBranch = "--force" },
 		"bad ref":         func(r *MergeRequest) { r.ChangeBranch = "a..b" },
@@ -452,8 +715,8 @@ func TestMergeRefusesForeignDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.write(f.wt, "precious.txt", "keep\n")
-	if _, err := Merge(context.Background(), f.req("feat", head, MergeModeFFOnly)); err == nil {
-		t.Fatal("expected an error for a non-worktree directory")
+	if _, err := Merge(context.Background(), f.req("feat", head, MergeModeFFOnly)); !errors.Is(err, ErrNotOwnedWorktree) {
+		t.Fatalf("err = %v, want ErrNotOwnedWorktree", err)
 	}
 	if _, err := os.Stat(filepath.Join(f.wt, "precious.txt")); err != nil {
 		t.Fatal("foreign file was touched")
