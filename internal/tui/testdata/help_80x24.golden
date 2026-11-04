@@ -3,14 +3,14 @@ Keys · Sessions ─────────────────────
  Sessions
   pgup/pgdn              page
   home/g, end            first, last row
-  enter                  go into the selected session on NAME, or open the
-                         delegation policy on DELEGATE
+  enter                  open the selected session; details show trust, request
+                         rule and delegation policy
   m                      send a message to the session as yourself
   n                      start a session in herdr: project, harness, model,
                          folder and first message (a form)
   x                      stop the selected worker or session
   h                      hide or unhide the selected session
-  left, right            move between NAME, RULE and DELEGATE cells
+  left, right            move between session actions
   space                  cycle the request rule: normal, ask, auto
   v                      cycle the view: active only, all, all with offline, all
                          with offline and hidden

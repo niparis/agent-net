@@ -176,7 +176,7 @@ func TestPolicyShowsInTheTableAndDetailAndHelp(t *testing.T) {
 	m = refresh(m, src)
 	m = selectID(m, target)
 	screen := strings.Join(lines(m.testView()), "\n") + "\n" + detailText(m)
-	for _, want := range []string{"DELEGATE", "native", "native -> deepseek/deepseek-v4.1-flash (project)", "sol/sol-6.1"} {
+	for _, want := range []string{"delegate", "native", "native -> deepseek/deepseek-v4.1-flash (project)", "sol/sol-6.1"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("screen lacks %q:\n%s", want, screen)
 		}

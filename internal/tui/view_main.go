@@ -949,126 +949,45 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 	return columnsForProject(avail, nameWant, 0, policy)
 }
 
-// columnsNarrow is the 80 column table. TRUST and RULE almost always hold the
-// defaults there, so the room goes to the agent, the project and the task.
+// Every width keeps the owner's columns. Give spare room to names and
+// projects before the task, so task text is the first thing to shrink.
 func columnsNarrow(avail, nameWant, projectWant int) []column {
-	cols := []column{
-		{name: "NAME", min: 10, max: 20},
-		{name: "AGENT", min: 6, max: 8},
-		{name: "PROJECT", min: 8, max: 14},
-		{name: "STATUS", min: 6, max: 6},
-		{name: "CPU", min: 5, max: 5, right: true},
-		{name: "RAM", min: 5, max: 5, right: true},
-		{name: "TASK", min: 1, max: 4000},
-	}
-	for _, drop := range []string{"CPU", "RAM", "PROJECT", "AGENT"} {
-		if sumMin(cols) <= avail {
-			break
-		}
-		for i, c := range cols {
-			if c.name == drop {
-				cols = append(cols[:i], cols[i+1:]...)
-				break
-			}
-		}
-	}
-	for i := range cols {
-		cols[i].width = cols[i].min
-	}
-	extra := avail - sumMin(cols)
-	for _, name := range []string{"NAME", "PROJECT", "TASK"} {
-		for i := range cols {
-			if cols[i].name != name || extra <= 0 {
-				continue
-			}
-			want := cols[i].max
-			switch name {
-			case "NAME":
-				want = max(min(nameWant, cols[i].max), cols[i].min)
-			case "PROJECT":
-				want = max(min(projectWant, cols[i].max), cols[i].min)
-			}
-			add := min(extra, want-cols[i].width)
-			cols[i].width += add
-			extra -= add
-		}
-	}
-	for i := range cols {
-		if cols[i].name == "TASK" && extra > 0 {
-			cols[i].width += extra
-		}
-	}
-	return cols
+	return sessionColumns(avail, nameWant, projectWant, true)
 }
-
 func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
+	return sessionColumns(avail, nameWant, projectWant, false)
+}
+func sessionColumns(avail, nameWant, projectWant int, narrow bool) []column {
 	cols := []column{
-		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
+		{name: "NAME", min: 4, max: min(max(nameWant, 18), 32)},
 		{name: "TYPE", min: 6, max: 6},
-		{name: "AGENT", min: 8, max: 8},
-		{name: "PROJECT", min: 9, max: 16},
-		{name: "MODEL", min: 10, max: 18},
+		{name: "PROJECT", min: 7, max: min(max(projectWant, 9), 16)},
+		{name: "MODEL", min: 18, max: 24},
 		{name: "STATUS", min: 6, max: 6},
-		{name: "TRUST", min: 5, max: 5},
-		{name: "RULE", min: 6, max: 6},
-		{name: "DELEGATE", min: 8, max: 8},
 		{name: "CPU", min: 5, max: 5, right: true},
 		{name: "RAM", min: 5, max: 5, right: true},
-		{name: "TASK", min: 1, max: 4000},
+		{name: "TASK", min: 4, max: 4000},
 	}
-	for _, drop := range []string{"TASK", "MODEL", "PROJECT", "AGENT", "CPU", "RAM"} {
-		if sumMin(cols) <= avail {
-			break
-		}
-		for i, c := range cols {
-			if c.name == drop {
-				cols = append(cols[:i], cols[i+1:]...)
-				break
-			}
-		}
-	}
-	if deficit := sumMin(cols) - avail; deficit > 0 {
-		cols[0].min = max(5, cols[0].min-deficit)
+	if narrow {
+		cols[0].max = min(cols[0].max, 14)
+		cols[3].min, cols[3].max = 16, 16
 	}
 	for i := range cols {
 		cols[i].width = cols[i].min
 	}
-	if hasColumn(cols, "TASK") {
-		// Grow NAME to what it needs, then PROJECT to the longest project
-		// name, then give every other column to TASK.
-		extra := avail - sumMin(cols)
-		for _, name := range []string{"NAME", "PROJECT", "TASK"} {
-			for i := range cols {
-				if cols[i].name != name {
-					continue
-				}
-				switch name {
-				case "NAME":
-					add := min(extra, cols[i].max-cols[i].min)
-					cols[i].width += add
-					extra -= add
-				case "PROJECT":
-					add := min(extra, max(min(projectWant, cols[i].max)-cols[i].min, 0))
-					cols[i].width += add
-					extra -= add
-				case "TASK":
-					cols[i].width += extra
-					extra = 0
-				}
-			}
-		}
-		return cols
+	// Below the normal minimum, clip project and name before model text.
+	deficit := max(0, sumMin(cols)-avail)
+	for _, i := range []int{2, 0, 3, 1, 4, 5, 6, 7} {
+		cut := min(deficit, cols[i].min-1)
+		cols[i].min -= cut
+		cols[i].width -= cut
+		deficit -= cut
 	}
-	// Without TASK the room goes to the name and the project columns.
-	extra := avail - sumMin(cols)
-	for _, name := range []string{"NAME", "PROJECT", "MODEL"} {
-		for i := range cols {
-			if cols[i].name == name && extra > 0 {
-				add := min(extra, cols[i].max-cols[i].min)
-				cols[i].width += add
-				extra -= add
-			}
-		}
+	extra := max(0, avail-sumMin(cols))
+	for _, i := range []int{0, 2, 3, 7} {
+		add := min(extra, cols[i].max-cols[i].min)
+		cols[i].width += add
+		extra -= add
 	}
 	return cols
 }
@@ -1131,7 +1050,13 @@ func (m Model) sessionsTable(w, n int) []string {
 	if w > 80 {
 		indicator += "  (v)"
 	}
-	avail := w - 2 - ansi.StringWidth(indicator) - 2 // marker and view indicator
+	if w <= 80 {
+		indicator = ""
+	}
+	avail := w - 2
+	if indicator != "" {
+		avail -= ansi.StringWidth(indicator) + 2
+	}
 	statusWidth := 6
 	if m.anySessionWaiting() {
 		statusWidth = 9
@@ -1146,23 +1071,6 @@ func (m Model) sessionsTable(w, n int) []string {
 	for i := range cols {
 		if cols[i].name == "STATUS" {
 			cols[i].width = statusWidth
-		}
-	}
-	wanted := 5
-	for _, g := range m.groups() {
-		for _, a := range g.agents {
-			wanted = max(wanted, utf8.RuneCountInString(m.requestRuleBadge(a)))
-		}
-	}
-	for i := range cols {
-		if cols[i].name == "TRUST" && wanted > cols[i].width {
-			for j := range cols {
-				if cols[j].name == "TASK" {
-					delta := min(wanted-cols[i].width, max(0, cols[j].width-cols[j].min))
-					cols[i].width += delta
-					cols[j].width -= delta
-				}
-			}
 		}
 	}
 	head := "  "
@@ -1391,7 +1299,10 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		case "PROJECT":
 			v = m.agentProjectName(a)
 		case "MODEL":
-			v = shortModel(a.Model)
+			v = a.Harness
+			if model := shortModel(a.Model); model != "" {
+				v += " · " + model
+			}
 		case "STATUS":
 			if m.hiddenSessions[a.SessionID] && m.showHiddenSessions {
 				v = "hidden"
@@ -1416,7 +1327,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
 		}
-		if c.name == "TASK" {
+		if c.name == "TASK" || c.name == "NAME" || c.name == "PROJECT" || c.name == "MODEL" {
 			v = cellDots(v, c.width)
 		} else {
 			v = cell(v, c.width)

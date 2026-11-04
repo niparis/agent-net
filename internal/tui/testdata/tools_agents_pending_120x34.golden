@@ -14,6 +14,7 @@
 │   tenebrae         2 ││                                                                                              │
 │   wbg-arch         1 ││                                                                                              │
 │   wbg-housing      1 ││                                                                                              │
+│   wbg-worldview    1 ││                                                                                              │
 ╰──────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Skill information────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ found-skill · ~200 tokens per session                                                                                │
@@ -30,5 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-i import all  ↑↓ move  tab switches  / filter  ? help  q quit  esc back  ← projects  space on/off
-  enter review (2 changes)
+i import  ↑↓ move  tab switches  / filter  ? help  q quit  esc back  ← projects  space on/off  enter review (2 changes)

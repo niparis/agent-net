@@ -10,6 +10,7 @@
 │ ▸ homelab            2 ││                                                    │
 │   homelab-portal     1 ││                                                    │
 │   infra-game         1 ││                                                    │
+│   sovl-clone         1 ││                                                    │
 ╰────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─Project information──────────────────────────────────────────────────────────╮
 │ homelab                                                                      │
@@ -20,5 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-i import all  ↑↓ move  tab switches  / filter  ? help  q quit  esc back
-  → skills
+i import  ↑↓ move  tab switches  / filter  ? help  q quit  esc back  → skills

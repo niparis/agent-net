@@ -20,5 +20,5 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-i import all  ↑↓ move  tab switches  / filter  ? help  q quit  esc back
-  ← projects  space on/off  enter review (2 changes)
+i import  ↑↓ move  tab switches  / filter  ? help  q quit  esc back  ← projects
+  space on/off  enter review (2 changes)

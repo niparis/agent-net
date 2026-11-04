@@ -173,9 +173,14 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if a.Profile.Expertise != "" {
 		out = append(out, kv("expert", a.Profile.Expertise))
 	}
-	if a.PeerTrust {
-		out = append(out, kv("trust", "acts on peer requests without asking (t: off)"))
+	out = append(out, kv("trust", m.requestRuleBadge(a)))
+	out = append(out, kv("rule", m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project))))
+	delegate := "-"
+	if a.Delegation != nil {
+		delegate = a.Delegation.Delegate
 	}
+	out = append(out, kv("delegate", dashIfEmpty(delegate)))
+
 	if a.Worker != nil && a.Worker.Permissions != "" {
 		note := ""
 		switch {
@@ -187,7 +192,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		out = append(out, kv("sandbox", a.Worker.Permissions+note))
 	}
 	if a.Delegation != nil {
-		out = append(out, kv("policy", policySummary(a.Delegation)+"  (edit in DELEGATE)"))
+		out = append(out, kv("policy", policySummary(a.Delegation)+""))
 		if a.Delegation.Main() != "" {
 			out = append(out, kv("main", a.Delegation.Main()))
 		}
@@ -208,7 +213,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		out = append(out, kv("worktree", tailCell(a.Repo.Worktree, w-12)))
 	}
 	if src := m.projectSource(a); src != "" {
-		out = append(out, clip("  "+sDim.Render("project source: ")+sourceText(src), w))
+		out = append(out, kv("source", sourceText(src)))
 	}
 
 	msgs := m.feed.messagesOf(a.SessionID, 8)
