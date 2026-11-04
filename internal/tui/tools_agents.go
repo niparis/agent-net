@@ -241,6 +241,9 @@ func (m Model) agentToolsView(w, h int) []string {
 	info := m.agentInfoView(w)
 	h = max(3, h-len(info))
 	left := min(25, max(20, w/5))
+	if w < 100 {
+		left = min(26, max(20, w/3))
+	}
 	right := w - left
 	project := m.agentProject()
 	title := "Skills · " + project

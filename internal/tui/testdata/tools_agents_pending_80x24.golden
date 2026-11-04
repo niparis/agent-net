@@ -2,11 +2,11 @@
 [ Skills per project ]    All tools
 1 skill is installed outside agent-net. i imports them all (backups kept,
   nothing is turned off)
-╭─Projects─────────╮╭─Skills · homelab─────────────────────────────────────────╮
-│   dotfiles     1 ││   [x] archify → off                   ~120               │
-│   flood-war…   1 ││   [x] estate-runbook                  ~160               │
-│ ▸ homelab      2 ││ ▸ [ ] found-skill → on                ~200               │
-╰──────────────────╯╰──────────────────────────────────────────────────────────╯
+╭─Projects───────────────╮╭─Skills · homelab───────────────────────────────────╮
+│   dotfiles           1 ││   [x] archify → off                   ~120         │
+│   flood-wargame      1 ││   [x] estate-runbook                  ~160         │
+│ ▸ homelab            2 ││ ▸ [ ] found-skill → on                ~200         │
+╰────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─Skill information────────────────────────────────────────────────────────────╮
 │ found-skill · ~200 tokens per session                                        │
 │ Read the project layout and explain its architecture before planning a       │
