@@ -929,6 +929,58 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 	return columnsForProject(avail, nameWant, 0, policy)
 }
 
+// columnsNarrow is the 80 column table. TRUST and RULE almost always hold the
+// defaults there, so the room goes to the agent, the project and the task.
+func columnsNarrow(avail, nameWant, projectWant int) []column {
+	cols := []column{
+		{name: "NAME", min: 10, max: 20},
+		{name: "AGENT", min: 6, max: 8},
+		{name: "PROJECT", min: 8, max: 14},
+		{name: "STATUS", min: 6, max: 6},
+		{name: "CPU", min: 5, max: 5, right: true},
+		{name: "RAM", min: 5, max: 5, right: true},
+		{name: "TASK", min: 1, max: 4000},
+	}
+	for _, drop := range []string{"CPU", "RAM", "PROJECT", "AGENT"} {
+		if sumMin(cols) <= avail {
+			break
+		}
+		for i, c := range cols {
+			if c.name == drop {
+				cols = append(cols[:i], cols[i+1:]...)
+				break
+			}
+		}
+	}
+	for i := range cols {
+		cols[i].width = cols[i].min
+	}
+	extra := avail - sumMin(cols)
+	for _, name := range []string{"NAME", "PROJECT", "TASK"} {
+		for i := range cols {
+			if cols[i].name != name || extra <= 0 {
+				continue
+			}
+			want := cols[i].max
+			switch name {
+			case "NAME":
+				want = max(min(nameWant, cols[i].max), cols[i].min)
+			case "PROJECT":
+				want = max(min(projectWant, cols[i].max), cols[i].min)
+			}
+			add := min(extra, want-cols[i].width)
+			cols[i].width += add
+			extra -= add
+		}
+	}
+	for i := range cols {
+		if cols[i].name == "TASK" && extra > 0 {
+			cols[i].width += extra
+		}
+	}
+	return cols
+}
+
 func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 	cols := []column{
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
@@ -1051,14 +1103,22 @@ func (m Model) sessionsTable(w, n int) []string {
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 		}
 	}
-	indicator := "view: " + m.sessionViewName() + "  (v)"
+	indicator := "view: " + m.sessionViewName()
+	if w > 80 {
+		indicator += "  (v)"
+	}
 	avail := w - 2 - ansi.StringWidth(indicator) - 2 // marker and view indicator
 	statusWidth := 6
 	if m.anySessionWaiting() {
 		statusWidth = 9
 	}
 	avail -= statusWidth - 6
-	cols := columnsForProject(avail, nameWant, projectWant, false)
+	var cols []column
+	if w <= 80 {
+		cols = columnsNarrow(avail, nameWant, projectWant)
+	} else {
+		cols = columnsForProject(avail, nameWant, projectWant, false)
+	}
 	for i := range cols {
 		if cols[i].name == "STATUS" {
 			cols[i].width = statusWidth

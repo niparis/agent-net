@@ -70,8 +70,14 @@ func TestPendingTaskAndLayout(t *testing.T) {
 			}
 		}
 		after := m.sessionsTable(width, 12)
-		if before[0] != after[0] || !strings.Contains(after[0], "RULE") {
+		if before[0] != after[0] {
 			t.Fatalf("width %d: headers %q vs %q", width, before[0], after[0])
+		}
+		if width >= 120 && !strings.Contains(after[0], "RULE") {
+			t.Fatalf("width %d: header lost RULE: %q", width, after[0])
+		}
+		if width == 80 && (!strings.Contains(after[0], "AGENT") || !strings.Contains(after[0], "PROJECT")) {
+			t.Fatalf("width %d: header lost AGENT or PROJECT: %q", width, after[0])
 		}
 		for i := range before {
 			if strings.Contains(before[i], "strategies") {

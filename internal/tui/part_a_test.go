@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -298,5 +299,35 @@ func TestListUsesItsHeightWithoutAGapBeforeTheDetail(t *testing.T) {
 	l := m.layout()
 	if l.sessions < len(m.tableRows()) {
 		t.Fatalf("table has only %d rows", l.sessions)
+	}
+}
+
+func TestSessionsTableAt80ShowsAgentProjectAndTask(t *testing.T) {
+	m := newModel(80, 24)
+	table := ansi.Strip(strings.Join(m.sessionsTable(80, 12), "\n"))
+	header := strings.Split(table, "\n")[0]
+	for _, want := range []string{"NAME", "AGENT", "PROJECT", "STATUS", "CPU", "RAM", "TASK", "view: all"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("80 column header is missing %q: %q", want, header)
+		}
+	}
+	for _, gone := range []string{"TRUST", "RULE", "DLG", "DELEGATE"} {
+		if strings.Contains(header, gone) {
+			t.Errorf("80 column header still has %q: %q", gone, header)
+		}
+	}
+	for _, want := range []string{"tenebrae-53", "claude", "tenebrae"} {
+		if !strings.Contains(table, want) {
+			t.Errorf("80 column table is missing %q:\n%s", want, table)
+		}
+	}
+	for _, line := range strings.Split(table, "\n") {
+		if ansi.StringWidth(line) > 80 {
+			t.Errorf("line is %d wide: %q", ansi.StringWidth(line), line)
+		}
+	}
+	wide := ansi.Strip(strings.Join(m.sessionsTable(120, 12), "\n"))
+	if !strings.Contains(strings.Split(wide, "\n")[0], "TRUST") {
+		t.Error("the 120 column header lost TRUST")
 	}
 }
