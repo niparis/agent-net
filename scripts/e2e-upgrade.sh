@@ -62,11 +62,23 @@ say "build $V1, $V2 and $V3"
 REL="$T/releases"
 # $V1 embeds old agent files: go build -overlay swaps the embedded sources.
 mkdir -p "$T/old"
+# The test uses a new disposable key and builds binaries with its public key.
+# No production key, user setup, or external release server is used.
+"$GO" run ./scripts/release-key generate "$T/release-key.pem" > "$T/public-keys"
+TEST_GO_PUBLIC="$(awk '/^Go public key/ {print $NF}' "$T/public-keys")"
+TEST_SSH_PUBLIC="$(awk '/^SSH public key/ {print $NF}' "$T/public-keys")"
+sed "s@REPLACE_WITH_RELEASE_PUBLIC_KEY@$TEST_GO_PUBLIC@" internal/upgrade/release.go > "$T/release.go"
+sed "s@REPLACE_WITH_RELEASE_SSH_PUBLIC_KEY@$TEST_SSH_PUBLIC@" install.sh > "$T/install.sh"
+cat > "$T/overlay.json" <<EOF2
+{"Replace": {"$ROOT/internal/upgrade/release.go": "$T/release.go"}}
+EOF2
+"$GO" build -overlay "$T/overlay.json" -o "$T/sign-release" ./scripts/release-key || exit 1
 echo "// old pi extension" > "$T/old/pi.ts"
 echo "// old opencode plugin" > "$T/old/opencode.ts"
 printf '## agent-net: OLD GUIDANCE\n\nold text {{reply}}\n' > "$T/old/guidance.md"
 cat > "$T/old/overlay.json" <<EOF2
 {"Replace": {
+  "$ROOT/internal/upgrade/release.go": "$T/release.go",
   "$ROOT/plugins/pi/agent-net.ts": "$T/old/pi.ts",
   "$ROOT/plugins/opencode/agent-net.ts": "$T/old/opencode.ts",
   "$ROOT/internal/guidance/guidance.md": "$T/old/guidance.md"
@@ -74,7 +86,7 @@ cat > "$T/old/overlay.json" <<EOF2
 EOF2
 for v in $V1 $V2 $V3; do
   mkdir -p "$REL/download/$v"
-  OVERLAY=()
+  OVERLAY=(-overlay "$T/overlay.json")
   if [ "$v" = "$V1" ]; then OVERLAY=(-overlay "$T/old/overlay.json"); fi
   for os in linux darwin; do
     for arch in amd64 arm64; do
@@ -83,6 +95,7 @@ for v in $V1 $V2 $V3; do
     done
   done
   (cd "$REL/download/$v" && sha256sum agent-net-* > checksums.txt)
+  RELEASE_SIGNING_KEY="$(cat "$T/release-key.pem")" "$T/sign-release" sign "$REL/download/$v/checksums.txt" "$T/install.sh" || exit 1
 done
 echo "$V2" > "$REL/LATEST"
 
@@ -206,6 +219,7 @@ offline() { local m; for m in "$@"; do node_line "$m" | grep -q false || return 
 say "start from $V1: gateway host, B, C and D"
 for m in gw b c d; do install_v $m $V1; done
 cp "$REL/download/$V1"/agent-net-* "$T/gw/dist/"
+cp "$REL/download/$V1/checksums.txt" "$REL/download/$V1/checksums.txt.sig" "$T/gw/dist/"
 bg gw gateway gateway --listen "127.0.0.1:$GP" --data "$T/gw/data" --dist "$T/gw/dist"
 wait_for "gateway" 15 test -f "$T/gw/data/admin.json"
 machine gw setup --gateway --no-service --port "$GP" --data "$T/gw/data" --dist "$T/gw/dist" | sed 's/^/  gw setup: /'

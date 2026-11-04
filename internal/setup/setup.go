@@ -32,27 +32,29 @@ const GatewayPort = "7420"
 
 // Options configure Setup and Uninstall.
 type Options struct {
-	Join         string        // join string; empty means keep the current credentials
-	Gateway      bool          // also install and start the gateway on this machine
-	NoService    bool          // do not write or start services
-	NoLaunch     bool          // refuse workers on this machine (saved in node.json)
-	Launch       bool          // accept workers again after --no-launch
-	Purge        bool          // uninstall only: also remove credentials and state
-	Data         string        // gateway data dir
-	FunnelRunner funnel.Runner // optional Tailscale runner
-	Dist         string        // gateway dist dir
-	Port         string        // gateway port (default 7420)
-	Exe          string        // path of the agent-net binary; default: this binary
-	All          string        // "" ask; AllYes or AllNo answer every integration without a prompt
-	PeerMessages string        // "" leave to All/network; PeerMessagesAccept or PeerMessagesNo is a local answer
-	CodexTools   string        // "" leave; CodexToolsApprove or CodexToolsNo is a local answer
-	HintHook     string        // "" leave; HintHookYes or HintHookNo is a local answer
-	PolicyHook   string        // "" leave; PolicyHookYes or PolicyHookNo is a local answer
-	NeedsHook    string        // "" leave; NeedsHookYes or NeedsHookNo is a local answer
-	WorkersMod   string        // "" leave; WorkersModYes or WorkersModNo is a local answer
-	QuotaOnly    bool          // run only the quota setup step
-	QuotaAXI     string        // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
-	Out          io.Writer
+	Join          string        // join string; empty means keep the current credentials
+	Gateway       bool          // also install and start the gateway on this machine
+	NoService     bool          // do not write or start services
+	NoAutoUpgrade bool          // save automatic upgrade opt-out in node.json
+	AutoUpgrade   bool          // clear the saved opt-out
+	NoLaunch      bool          // refuse workers on this machine (saved in node.json)
+	Launch        bool          // accept workers again after --no-launch
+	Purge         bool          // uninstall only: also remove credentials and state
+	Data          string        // gateway data dir
+	FunnelRunner  funnel.Runner // optional Tailscale runner
+	Dist          string        // gateway dist dir
+	Port          string        // gateway port (default 7420)
+	Exe           string        // path of the agent-net binary; default: this binary
+	All           string        // "" ask; AllYes or AllNo answer every integration without a prompt
+	PeerMessages  string        // "" leave to All/network; PeerMessagesAccept or PeerMessagesNo is a local answer
+	CodexTools    string        // "" leave; CodexToolsApprove or CodexToolsNo is a local answer
+	HintHook      string        // "" leave; HintHookYes or HintHookNo is a local answer
+	PolicyHook    string        // "" leave; PolicyHookYes or PolicyHookNo is a local answer
+	NeedsHook     string        // "" leave; NeedsHookYes or NeedsHookNo is a local answer
+	WorkersMod    string        // "" leave; WorkersModYes or WorkersModNo is a local answer
+	QuotaOnly     bool          // run only the quota setup step
+	QuotaAXI      string        // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
+	Out           io.Writer
 }
 
 // DefaultDist is where the gateway serves binaries from.
@@ -149,6 +151,9 @@ func (r *runner) hint(format string, a ...any) {
 // Setup makes this machine part of the network, prints its setup steps, and
 // finishes with a summary when the setup is not quota-only.
 func Setup(ctx context.Context, o Options) error {
+	if o.NoAutoUpgrade && o.AutoUpgrade {
+		return errors.New("--no-auto-upgrade and --auto-upgrade cannot be used together")
+	}
 	r, err := newRunner(o)
 	if err != nil {
 		return err
@@ -171,6 +176,12 @@ func Setup(ctx context.Context, o Options) error {
 		return r.failed
 	}
 	r.workersSetting()
+	if r.NoAutoUpgrade || r.AutoUpgrade {
+		if err := daemon.SetNoAutoUpgrade(daemon.ConfigDir(), r.NoAutoUpgrade); err != nil {
+			r.step("auto-upgrade", "", err)
+			return r.failed
+		}
+	}
 	r.daemonService()
 	r.chooseIntegrations(ctx)
 	r.askCTOTitle(ctx)

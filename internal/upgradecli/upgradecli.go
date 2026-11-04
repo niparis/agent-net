@@ -40,6 +40,7 @@ type Options struct {
 	GatewayData string // gateway data dir; ca.pem there means this is the gateway host
 	Base        string // release base URL; default: upgrade.ReleaseBase()
 	Out         io.Writer
+	download    func(context.Context, *http.Client, string, []string, string) error // test seam
 }
 
 // sessionsNotes tells what a running agent session needs after an upgrade.
@@ -432,7 +433,11 @@ func (r *run) installRelease(ctx context.Context, tag string) error {
 	defer os.RemoveAll(tmp)
 	r.say("downloading %s", tag)
 	hc := &http.Client{Timeout: 10 * time.Minute}
-	if err := upgrade.Download(ctx, hc, upgrade.TagURL(r.Base, tag), upgrade.AllAssets(), tmp); err != nil {
+	download := r.download
+	if download == nil {
+		download = upgrade.Download
+	}
+	if err := download(ctx, hc, upgrade.TagURL(r.Base, tag), upgrade.AllAssets(), tmp); err != nil {
 		return fmt.Errorf("nothing changed: %w", err)
 	}
 	mine := filepath.Join(tmp, upgrade.ThisAsset())
@@ -453,7 +458,7 @@ func (r *run) installRelease(ctx context.Context, tag string) error {
 	// The binary is replaced: the person chose to move on. Clear the hold now,
 	// so a later failure (setup, restarts, a cancelled context) cannot leave it.
 	r.clearHold()
-	for _, name := range upgrade.AllAssets() {
+	for _, name := range append(upgrade.AllAssets(), upgrade.ReleaseMetadata...) {
 		if err := upgrade.PlaceFile(filepath.Join(tmp, name), filepath.Join(dist, name)); err != nil {
 			return fmt.Errorf("the binary is replaced but the dist dir is not refreshed: %w", err)
 		}

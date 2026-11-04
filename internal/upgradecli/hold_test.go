@@ -104,14 +104,24 @@ func TestManualUpgradeClearsTheHold(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out bytes.Buffer
-	Run(ctx, Options{Current: "v0.0.1", Exe: exe, GatewayData: gatewayDataDir(t), Version: "v0.0.3", Base: srv.URL, Out: &out})
+	Run(ctx, Options{Current: "v0.0.1", Exe: exe, GatewayData: gatewayDataDir(t), Version: "v0.0.3", Base: srv.URL, Out: &out,
+		download: func(_ context.Context, _ *http.Client, _ string, _ []string, dir string) error {
+			for name, data := range files {
+				if err := os.WriteFile(filepath.Join(dir, name), data, 0o755); err != nil {
+					return err
+				}
+			}
+			return os.WriteFile(filepath.Join(dir, "checksums.txt.sig"), []byte("test signature"), 0o644)
+		}})
 	if v, _ := upgrade.BinaryVersion(context.Background(), exe); v != "v0.0.3" {
 		t.Fatalf("the binary is %s, the upgrade did not run:\n%s", v, out.String())
 	}
 	if h := upgrade.LoadAuto(state).Hold; h != "" {
 		t.Fatalf("hold = %q after a manual upgrade", h)
 	}
-	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".local", "share", "agent-net", "dist", "agent-net-linux-amd64")); err != nil {
-		t.Errorf("dist was not written under the test HOME: %v", err)
+	for _, name := range []string{"agent-net-linux-amd64", "checksums.txt", "checksums.txt.sig"} {
+		if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".local", "share", "agent-net", "dist", name)); err != nil {
+			t.Errorf("%s was not written under the test HOME: %v", name, err)
+		}
 	}
 }

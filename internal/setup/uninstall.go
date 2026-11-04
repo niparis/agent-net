@@ -95,6 +95,8 @@ func Uninstall(o Options) error {
 		r.step("skill state", "", err)
 	}
 
+	// The saved auto-upgrade choice lives in node.json: keep it by default,
+	// and remove it with the rest of the node configuration on purge.
 	if r.Purge {
 		worktrees, _ := os.ReadDir(filepath.Join(daemon.StateDir(), "worktrees"))
 		for _, dir := range []string{daemon.ConfigDir(), daemon.StateDir()} {

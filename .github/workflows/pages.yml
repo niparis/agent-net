@@ -4,9 +4,8 @@ name: pages
 # (and /install.sh) so the first install is one short line.
 
 on:
-  push:
-    branches: [main]
-    paths: [install.sh, .github/workflows/pages.yml]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -25,7 +24,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - name: Download the latest release installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo "${{ github.repository }}" --pattern install.sh --dir .
       - name: Build site
         run: |
           sh -n install.sh

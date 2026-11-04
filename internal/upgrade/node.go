@@ -60,7 +60,7 @@ type Installed struct {
 }
 
 // FromGateway downloads this machine's binary from the gateway over c (which
-// must trust only the gateway CA), verifies it against the gateway's
+// must trust only the gateway CA), verifies it against the signed release
 // checksums, and replaces exe, keeping exe.prev. want, when set, is the
 // version the new binary must report. current is the version that runs now.
 // Nothing changes unless every check passes.
@@ -104,16 +104,7 @@ func downloadGatewayAsset(ctx context.Context, c *http.Client, installURL, asset
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	sumsPath := dir + "/checksums.txt"
-	if err := get(ctx, c, installURL+"/checksums.txt", sumsPath); err != nil {
-		return fmt.Errorf("cannot get the checksum from the gateway: %w", err)
-	}
-	f, err := os.Open(sumsPath)
-	if err != nil {
-		return err
-	}
-	want, err := ParseChecksums(f)
-	f.Close()
+	want, err := signedChecksums(ctx, c, installURL, dir)
 	if err != nil {
 		return err
 	}

@@ -15,6 +15,8 @@ func cmdSetup(ctx context.Context, args []string) error {
 	join := fs.String("join", "", "join string from `agent-net invite` or `agent-net enroll`")
 	gw := fs.Bool("gateway", false, "also install and start the gateway on this machine")
 	noService := fs.Bool("no-service", false, "do not write or start services")
+	noAuto := fs.Bool("no-auto-upgrade", false, "disable automatic daemon upgrades on this machine")
+	auto := fs.Bool("auto-upgrade", false, "re-enable automatic daemon upgrades")
 	noLaunch := fs.Bool("no-launch", false, "refuse workers on this machine: other sessions cannot start agent sessions here")
 	launch := fs.Bool("launch", false, "accept workers again after --no-launch")
 	data := fs.String("data", defaultGatewayData(), "gateway data directory (with --gateway)")
@@ -110,7 +112,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{QuotaOnly: *quotaOnly, All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{QuotaOnly: *quotaOnly, All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoAutoUpgrade: *noAuto, AutoUpgrade: *auto, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

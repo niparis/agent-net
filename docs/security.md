@@ -33,7 +33,7 @@ marker is fixed framing, separate from editable advice.
 
 ## Gateway exposure
 
-The gateway listens on `0.0.0.0:7420` by default, so it accepts connections on every network interface. These routes do not require a node token: `GET /v1/ca` serves the public CA certificate, `GET /install/bin/{os}/{arch}` serves the install binary, `GET /install/version` returns the release version, and `POST /v1/enroll` accepts a one-use enrollment code. `/install/checksums.txt` is also public, and `/install/{code}` is gated by the one-use install code rather than a node token. These routes support joining and updating machines. The enrollment code expires after 10 minutes and can be used once. The join flow also checks the CA fingerprint. The other operational API routes require an enrolled node token or the local admin token.
+The gateway listens on `0.0.0.0:7420` by default, so it accepts connections on every network interface. These routes do not require a node token: `GET /v1/ca` serves the public CA certificate, `GET /install/bin/{os}/{arch}` serves the install binary, `GET /install/version` returns the release version, and `POST /v1/enroll` accepts a one-use enrollment code. `/install/checksums.txt` and `/install/checksums.txt.sig` are also public, and `/install/{code}` is gated by the one-use install code rather than a node token. These routes support joining and updating machines. The enrollment code expires after 10 minutes and can be used once. The join flow also checks the CA fingerprint. The other operational API routes require an enrolled node token or the local admin token.
 
 This fits a LAN or tailnet where the gateway port is reachable only by machines you control. Do not expose port 7420 to the open internet. The public routes would be reachable by anyone, and the enrollment route could be probed or abused if an invite code leaked. Keep invite codes private.
 
@@ -226,8 +226,14 @@ A machine joins with a one-time code.
 - The invite line is `curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://HOST:7420/install/CODE' | sh`. The `-k` flag turns off certificate checking, so the pin does the checking instead: curl compares the SHA-256 of the gateway's public key with the pin and aborts if they differ. This is what makes `-k` safe here. A machine in the middle cannot present a different key.
 - The pin covers the server key, and that key is saved in `server-key.pem` in the gateway data dir. The certificate is re-issued on every start, but the key is not, so an old invite line still matches after a gateway restart.
 - The script served at `/install/CODE` carries the gateway address, the code, the CA fingerprint and the pin. The gateway refuses to render it for an unknown, used or expired code, and for a `Host` header that is not a plain host name or IP address with a port.
-- The script downloads the binary from the gateway (`/install/bin/<os>/<arch>`) over the same pinned connection, then runs `agent-net setup --join`. Note that this binary is not signed. You trust the gateway machine to hand out the right one. The `curl | sh` install on the first machine, in contrast, checks the SHA-256 of the release binary against `checksums.txt` from the same GitHub release.
+- The script downloads the binary from the gateway (`/install/bin/<os>/<arch>`) over the same pinned connection, then runs `agent-net setup --join`. Note that this binary is not signed. You trust the gateway machine to hand out the right one. The `curl | sh` installer verifies the release checksum file with the public key embedded in the installer, then checks each binary against that file.
+
+
 - `agent-net join` fetches the gateway CA without verifying TLS, and does not trust it until its SHA-256 equals the fingerprint in the join string. A mismatch stops the join and nothing is saved. After that, the machine trusts only that CA.
+
+## Signed releases
+
+Release upgrades verify the exact `checksums.txt` bytes with the Ed25519 public key embedded in the running binary before reading any checksum. They then check each binary's SHA-256 before executing or installing it. The gateway stores and serves the original manifest and raw `checksums.txt.sig`, so the same check applies to manual, pushed and automatic node upgrades. An absent or invalid signature is refused. The public installer uses `ssh-keygen -Y verify` with its embedded copy of the same public key and the SSHSIG `checksums.txt.sshsig`. It fails closed if verification is unavailable. This authenticates release binaries, not the initially downloaded installer itself: the install line still trusts HTTPS and the published Pages script. The gateway invite flow above still trusts the pinned gateway rather than this release signature. Older installed versions do not gain signature checks until they are upgraded. Locally built dist binaries are unsigned and cannot be auto-upgraded by signed clients. See [RELEASING.md](../RELEASING.md) for key custody and rotation.
 
 ## Transport
 
