@@ -216,10 +216,12 @@ Each step ships alone. Step 1 keeps today's behaviour exactly.
 
 The first real use: a merger node for agent-net, after step 5.
 
-## Open questions for the owner
+## Decisions
 
-1. **Where the merge runs.** The merger node needs a checkout with push rights. On research only, or on whichever machine the merger runs? (Recommendation: the merger's own machine, its own worktree, like today's merge worktree.)
-2. **Small changes.** Should a review be required for every change, or may the recipe set a size or difficulty below which review is skipped? (Recommendation: a rule using the judge's difficulty label, default "review from hard up".)
-3. **Batching.** Today several workers' branches are merged and released together. Is a release a step on one change, or on a batch? (Recommendation: merge per change, release per batch, a batch being "everything merged since the last release".)
-4. **Who may submit a change** outside a worker (an agent's own commits)? (Recommendation: any agent in the repo, through `agent_change_submit`.)
-5. **GitHub only?** Support only GitHub at first, not GitLab or Gitea? (Recommendation: yes; the design does not depend on GitHub, so others can be added.)
+These were open questions in the first draft; each has an obvious answer, so they are settled here. Each is a setting where it may vary later.
+
+1. **Where the merge runs:** on the merge step owner's own machine, in its own worktree, like today's merge worktree.
+2. **Small changes:** review is required from difficulty "hard" up, using the judge's label for the run. A rule (`review.required_from`), so a repo can require it always.
+3. **Batching:** merge each change on its own; release a batch, which is everything merged since the last release.
+4. **Changes from outside a worker:** any agent in the repo may submit one with `agent_change_submit`.
+5. **GitHub only at first:** the design does not depend on GitHub, so other hosts can be added when a recipe needs one.
