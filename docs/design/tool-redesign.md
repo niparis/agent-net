@@ -1,6 +1,13 @@
 # Tool redesign specification
 
-Status: proposed design for owner decisions. No product changes are implemented.
+Status: implemented in v0.4.71 to v0.4.74. The old agent names were removed
+after the compatibility release. On 2026-11-04 the 16 old CTO names (`overview`,
+`sessions`, `session`, `proposals`, `feed`, `messages`, `graph`, `machines`,
+`projects`, `workers`, `tools`, `settings`, `message`, `ask_owner`, `learn`,
+`ui`) were removed too. The CTO now lists only its 29 catalog tools, and its
+tool list fell from 32,751 to 27,090 bytes. A call with any old name returns one
+line that names the new tool (`internal/toolcatalog/renamed.go`). The alias
+inventory below is history. The text below is the design as proposed.
 The schema and semantic checks below are normative for an implementation. Client
 compatibility evidence is version-specific; the matrix records its limits.
 
