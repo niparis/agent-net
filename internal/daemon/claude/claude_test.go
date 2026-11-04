@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -22,6 +23,7 @@ type fakeHost struct {
 	ids      map[string]string
 	sent     chan protocol.MsgSend
 	logs     []string
+	book     *memBook
 }
 
 func (h *fakeHost) SetSessions(harness string, infos []protocol.SessionInfo) {
@@ -39,6 +41,7 @@ func (h *fakeHost) Send(ctx context.Context, p protocol.MsgSend) error {
 	h.sent <- p
 	return nil
 }
+func (h *fakeHost) Replies() daemon.ReplyBook { return h.book }
 func (h *fakeHost) Logf(format string, args ...any) {
 	h.mu.Lock()
 	h.logs = append(h.logs, fmt.Sprintf(format, args...))
@@ -62,6 +65,8 @@ type rig struct {
 	inbox     net.Listener
 	inboxPath string
 	lines     chan string
+	book      *memBook
+	stop      context.CancelFunc
 }
 
 // newRig makes a sessions dir with one live fake Claude session whose inbox
@@ -90,9 +95,11 @@ func newRig(t *testing.T) *rig {
 	}()
 	// The test process is the "Claude" process, so the PID is alive.
 	r.writeSession("sess-1", "busy")
-	r.host = &fakeHost{ids: map[string]string{"sess-1": "s_claude"}, sent: make(chan protocol.MsgSend, 4)}
+	r.book = &memBook{}
+	r.host = &fakeHost{ids: map[string]string{"sess-1": "s_claude"}, sent: make(chan protocol.MsgSend, 4), book: r.book}
 	r.a = New(Config{SessionsDir: r.sessions, ReplyDir: filepath.Join(dir, "r"), PollInterval: 20 * time.Millisecond})
 	ctx, cancel := context.WithCancel(context.Background())
+	r.stop = cancel
 	t.Cleanup(cancel)
 	if err := r.a.Start(ctx, r.host); err != nil {
 		t.Fatal(err)
@@ -198,8 +205,11 @@ func TestSanitizeAndNeutralize(t *testing.T) {
 func TestReplyCapture(t *testing.T) {
 	r := newRig(t)
 	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
-	r.a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "sess-1", SessionID: "s_claude"}, msg)
+	req := msg
+	req.Type = protocol.TypeRequest
+	r.a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "sess-1", SessionID: "s_claude"}, req)
 	<-r.lines
+	// A message without a conversation uses the sender's own reply socket.
 	reply := filepath.Join(filepath.Dir(r.inboxPath), "r", "s_bob.sock")
 
 	// Claude answers with its own SendMessage: a frame to our reply socket, from its inbox.

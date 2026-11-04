@@ -56,11 +56,16 @@ type Adapter struct {
 	// broken delivery checks (health.go).
 	healthWarning string
 	healthBroken  int
-	byNative      map[string]found        // native_id -> session
-	bySock        map[string]string       // inbox socket -> native_id
-	replies       map[string]net.Listener // sender session id -> reply listener
-	last          map[string]string       // sender+"|"+recipient -> last message_id delivered
+	byNative      map[string]found          // native_id -> session
+	bySock        map[string]string         // inbox socket -> native_id
+	replies       map[replyKey]net.Listener // reply address -> its listener
+	ctx           context.Context           // from Start; reply listeners run under it
+	lastSweep     time.Time                 // when sweepReplies last ran
 }
+
+// replyKey is one reply address: a sender, and a conversation or "" for the
+// sender's own socket (messages without a conversation, and older frames).
+type replyKey struct{ sender, conv string }
 
 func New(cfg Config) *Adapter {
 	if cfg.SessionsDir == "" {
@@ -76,7 +81,7 @@ func New(cfg Config) *Adapter {
 		cfg.ProjectsDir = filepath.Join(filepath.Dir(cfg.SessionsDir), "projects")
 	}
 	return &Adapter{cfg: cfg, models: newModelReader(cfg.ProjectsDir), byNative: map[string]found{}, bySock: map[string]string{},
-		replies: map[string]net.Listener{}, last: map[string]string{}}
+		replies: map[replyKey]net.Listener{}, ctx: context.Background()}
 }
 
 func (a *Adapter) Harness() string { return "claude" }
@@ -92,7 +97,11 @@ func (a *Adapter) EnterRef(nativeID string) (kind, job string) {
 
 func (a *Adapter) Start(ctx context.Context, h daemon.Host) error {
 	a.host = h
+	a.mu.Lock()
+	a.ctx = ctx
+	a.mu.Unlock()
 	a.poll()
+	a.reopenReplies()
 	go func() {
 		t := time.NewTicker(a.cfg.PollInterval)
 		defer t.Stop()
@@ -103,6 +112,12 @@ func (a *Adapter) Start(ctx context.Context, h daemon.Host) error {
 				return
 			case <-t.C:
 				a.poll()
+				a.mu.Lock()
+				due := time.Since(a.lastSweep) >= replySweepEvery
+				a.mu.Unlock()
+				if due {
+					a.sweepReplies()
+				}
 			}
 		}
 	}()
@@ -382,19 +397,31 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 	if err := checkSocket(f.sock); err != nil {
 		return daemon.Result{Detail: "inbox socket refused: " + err.Error()}
 	}
-	replySock, err := a.replySocket(ctx, m.From)
+	// The record that matches Claude's answer to this message is written
+	// before the session can see the message (W4.4), and before its reply
+	// socket exists, so a sweep never closes that socket.
+	book := a.host.Replies()
+	if err := book.SaveDelivery(daemon.ClaudeDelivery{MessageID: m.ID, Recipient: target.SessionID, Sender: m.From,
+		ConversationID: m.ConversationID, Type: m.Type, DeliveredAt: time.Now(), ExpiresAt: m.ExpiresAt}); err != nil {
+		a.host.Logf("claude: cannot record delivery %s for reply matching: %v", m.ID, err)
+	}
+	forget := func() {
+		if err := book.ForgetDelivery(m.ID); err != nil {
+			a.host.Logf("claude: cannot forget undelivered %s: %v", m.ID, err)
+		}
+	}
+	replySock, err := a.replySocket(m.From, m.ConversationID)
 	if err != nil {
 		a.host.Logf("claude: no reply socket for %s, sending without a reply address: %v", m.From, err)
 	}
 	line, err := BuildFrame(m, replySock)
 	if err != nil {
+		forget()
 		return daemon.Result{Detail: err.Error()}
 	}
-	a.mu.Lock()
-	a.last[m.From+"|"+m.To] = m.ID
-	a.mu.Unlock()
 	conn, err := net.DialTimeout("unix", f.sock, 2*time.Second)
 	if err != nil {
+		forget()
 		return daemon.Result{Detail: "connect to inbox failed: " + err.Error()}
 	}
 	defer conn.Close()
@@ -407,11 +434,46 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 
 // ---- reply capture ----
 
-func (a *Adapter) replySocket(ctx context.Context, sender string) (string, error) {
-	path := filepath.Join(a.cfg.ReplyDir, sender+".sock")
+// replySweepEvery is how often the adapter closes the reply sockets whose
+// conversation has no row left in daemon.db (pruned by housekeeping).
+const replySweepEvery = 10 * time.Minute
+
+// maxSocketPath keeps a reply socket path under the Unix limit (104 bytes on
+// macOS, with its final zero byte).
+const maxSocketPath = 100
+
+var replyID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// replySocket returns the reply address for a message from sender in conv.
+// Each conversation has its own socket, so an answer tells which conversation
+// it belongs to. The sender's own socket is kept for messages without a
+// conversation and for frames delivered by an older daemon.
+func (a *Adapter) replySocket(sender, conv string) (string, error) {
+	if !replyID.MatchString(sender) {
+		return "", fmt.Errorf("sender %q cannot name a socket", sender)
+	}
+	own, err := a.listenReply(replyKey{sender, ""})
+	if err != nil || conv == "" {
+		return own, err
+	}
+	if !replyID.MatchString(conv) || len(a.replyPath(replyKey{sender, conv})) > maxSocketPath {
+		return own, nil
+	}
+	return a.listenReply(replyKey{sender, conv})
+}
+
+func (a *Adapter) replyPath(k replyKey) string {
+	if k.conv == "" {
+		return filepath.Join(a.cfg.ReplyDir, k.sender+".sock")
+	}
+	return filepath.Join(a.cfg.ReplyDir, k.sender+"."+k.conv+".sock")
+}
+
+func (a *Adapter) listenReply(k replyKey) (string, error) {
+	path := a.replyPath(k)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if _, ok := a.replies[sender]; ok {
+	if _, ok := a.replies[k]; ok {
 		return path, nil
 	}
 	if err := os.MkdirAll(a.cfg.ReplyDir, 0o700); err != nil {
@@ -423,25 +485,66 @@ func (a *Adapter) replySocket(ctx context.Context, sender string) (string, error
 		return "", err
 	}
 	os.Chmod(path, 0o600)
-	a.replies[sender] = ln
+	a.replies[k] = ln
+	ctx := a.ctx
 	go func() {
 		for {
 			c, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			go a.readReply(ctx, sender, c)
+			go a.readReply(ctx, k, c)
 		}
 	}()
 	return path, nil
 }
 
+// reopenReplies listens again on the reply address of every conversation
+// that daemon.db still has, so an answer to a message delivered before a
+// restart arrives.
+func (a *Adapter) reopenReplies() {
+	addrs, err := a.host.Replies().ReplyAddresses()
+	if err != nil {
+		a.host.Logf("claude: cannot read reply addresses: %v", err)
+		return
+	}
+	for _, ad := range addrs {
+		if _, err := a.replySocket(ad.Sender, ad.ConversationID); err != nil {
+			a.host.Logf("claude: cannot reopen reply socket for %s in %s: %v", ad.Sender, ad.ConversationID, err)
+		}
+	}
+}
+
+// sweepReplies closes the conversation sockets that daemon.db no longer has.
+func (a *Adapter) sweepReplies() {
+	a.mu.Lock()
+	a.lastSweep = time.Now()
+	a.mu.Unlock()
+	addrs, err := a.host.Replies().ReplyAddresses()
+	if err != nil {
+		a.host.Logf("claude: cannot read reply addresses: %v", err)
+		return
+	}
+	keep := map[replyKey]bool{}
+	for _, ad := range addrs {
+		keep[replyKey{ad.Sender, ad.ConversationID}] = true
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for k, ln := range a.replies {
+		if k.conv != "" && !keep[k] {
+			ln.Close()
+			delete(a.replies, k)
+		}
+	}
+}
+
 func (a *Adapter) closeReplies() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	for id, ln := range a.replies {
+	for k, ln := range a.replies {
 		ln.Close()
-		delete(a.replies, id)
+		delete(a.replies, k)
 	}
 }
 
@@ -478,7 +581,7 @@ func contentText(raw json.RawMessage) string {
 	return ""
 }
 
-func (a *Adapter) readReply(ctx context.Context, sender string, c net.Conn) {
+func (a *Adapter) readReply(ctx context.Context, k replyKey, c net.Conn) {
 	defer c.Close()
 	c.SetReadDeadline(time.Now().Add(10 * time.Second))
 	sc := bufio.NewScanner(c)
@@ -495,11 +598,12 @@ func (a *Adapter) readReply(ctx context.Context, sender string, c net.Conn) {
 		if in.Type != "user" {
 			continue
 		}
-		a.handleReply(ctx, sender, in)
+		a.handleReply(ctx, k, in)
 	}
 }
 
-func (a *Adapter) handleReply(ctx context.Context, sender string, in inbound) {
+func (a *Adapter) handleReply(ctx context.Context, k replyKey, in inbound) {
+	sender := k.sender
 	sock := strings.TrimPrefix(in.From, "uds:")
 	a.mu.Lock()
 	native, ok := a.bySock[sock]
@@ -527,13 +631,86 @@ func (a *Adapter) handleReply(ctx context.Context, sender string, in inbound) {
 	if in.MsgID != "" {
 		p.IdempotencyKey = "claude:" + in.MsgID
 	}
-	a.mu.Lock()
-	p.ParentID = a.last[sender+"|"+replier]
-	a.mu.Unlock()
-	if p.ParentID == "" {
+	book := a.host.Replies()
+	open, err := book.OpenRequests(replier, sender, k.conv, time.Now())
+	if err != nil {
+		a.host.Logf("claude: cannot read open requests for a reply from %s to %s: %v", replier, sender, err)
+	}
+	m := matchReply(k.conv, body, open)
+	if p.ParentID = m.parent; p.ParentID == "" {
+		p.ConversationID = m.conv
+	}
+	if p.ParentID == "" && p.ConversationID == "" {
+		// Nothing tells where it belongs: a new conversation, as before.
 		p.Type = protocol.TypeNotification
+		if len(open) > 1 {
+			a.host.Logf("claude: reply from %s to %s sent alone: %d open requests in several conversations, none named", replier, sender, len(open))
+		}
 	}
-	if err := a.host.Send(ctx, p); err != nil {
+	if m.match == daemon.ReplyMatchConversation {
+		a.host.Logf("claude: reply from %s to %s threaded to conversation %s: %d open requests, none named", replier, sender, m.conv, len(m.closes))
+	}
+	err = a.host.Send(ctx, p)
+	if err != nil && p.ParentID == "" && p.ConversationID != "" {
+		// An older gateway, or one that no longer has the conversation:
+		// the answer must still arrive.
+		a.host.Logf("claude: reply from %s to %s refused in conversation %s, sending it alone: %v", replier, sender, p.ConversationID, err)
+		p.ConversationID, p.Type = "", protocol.TypeNotification
+		err = a.host.Send(ctx, p)
+	}
+	if err != nil {
 		a.host.Logf("claude: could not forward reply: %v", err)
+		return
 	}
+	if err := book.CloseRequests(m.closes, m.match, time.Now()); err != nil {
+		a.host.Logf("claude: cannot close answered requests %v: %v", m.closes, err)
+	}
+}
+
+// replyMatch is where a Claude answer goes: the request it answers, or only
+// its conversation, and the open requests it closes.
+type replyMatch struct {
+	parent, conv string
+	match        string
+	closes       []string
+}
+
+// matchReply picks the request a Claude answer belongs to (W4.4). open holds
+// the open requests from the sender to the replier in conv (any conversation
+// when conv is ""), newest first. One open request is the answer's parent.
+// With several, a body that names exactly one of them chooses it; otherwise
+// the answer goes to the conversation with no parent, and closes them all.
+// With none, the answer stays in its conversation.
+func matchReply(conv, body string, open []daemon.ClaudeDelivery) replyMatch {
+	if len(open) == 1 {
+		return replyMatch{parent: open[0].MessageID, conv: open[0].ConversationID, match: daemon.ReplyMatchExact, closes: []string{open[0].MessageID}}
+	}
+	var named []daemon.ClaudeDelivery
+	for _, r := range open {
+		if strings.Contains(body, r.MessageID) {
+			named = append(named, r)
+		}
+	}
+	if len(named) == 1 {
+		r := named[0]
+		return replyMatch{parent: r.MessageID, conv: r.ConversationID, match: daemon.ReplyMatchExact, closes: []string{r.MessageID}}
+	}
+	if len(open) == 0 {
+		return replyMatch{conv: conv}
+	}
+	if conv == "" {
+		// An older reply address without a conversation: use the one
+		// conversation of the open requests, if they share one.
+		conv = open[0].ConversationID
+		for _, r := range open {
+			if r.ConversationID != conv {
+				return replyMatch{}
+			}
+		}
+	}
+	out := replyMatch{conv: conv, match: daemon.ReplyMatchConversation}
+	for _, r := range open {
+		out.closes = append(out.closes, r.MessageID)
+	}
+	return out
 }

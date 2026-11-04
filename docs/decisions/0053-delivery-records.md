@@ -50,3 +50,23 @@ It retries an allowlist of known temporary failures at 30 seconds, 2 minutes,
 saying the message may have arrived are not retried. Success and expiry clear
 the schedule. Held requests keep their existing path. W4.3 remains responsible
 for final failure and expiry notices.
+
+## W4.4 update (2026-11-04)
+
+A Claude session's SendMessage answer names a reply address, not a message.
+The old in-memory map from sender and recipient to the last message
+delivered was lost on restart and sent two open requests' answers to the
+same one. Now each frame names a reply socket per sender and conversation,
+and daemon.db keeps a `claude_deliveries` row per message delivered to a
+Claude session. A separate table, not more columns on `delivered`, because
+the rows are needed for every Claude delivery, with fields (sender,
+conversation, answered) that other harnesses do not use.
+
+An answer with one open request from that sender in that conversation is
+the reply to it. With several, a body naming exactly one of their IDs
+chooses it; otherwise the answer is stored in the conversation with no
+parent, and closes all of them. Guessing would mark the wrong request
+answered and tell the sender something false. This needs a
+`conversation_id` on `msg.send`; the gateway accepts it only when the
+recipient wrote to the sender in that conversation. Rows are kept until 24
+hours after their message expired, so a late answer still has its socket.
