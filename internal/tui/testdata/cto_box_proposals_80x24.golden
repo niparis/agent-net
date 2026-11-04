@@ -5,15 +5,15 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 2 waiting in Inbox (7)
-  NAME               TYPE   PROJECT   MODEL              STATUS   CPU   RAM TASK
+  NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
-▸ tenebrae-53        agent  tenebrae  claude · opus-5-5  busy     38%  1.2G
-  Atlas              cto    -         cto ·              idle       ?     ?
-  strategies         agent  strategi… claude · sonnet-5… idle    240%  4.6G bac…
-  web                agent  shop      opencode · sonnet… idle       ?     ?
+▸ tenebrae-53    agent  tenebrae   claude · opus-5… busy     38%  1.2G
+  Atlas          cto    -          cto              idle       ?     ?
+  strategies     agent  strategies claude · sonnet… idle    240%  4.6G backtest…
+  web            agent  shop       opencode · sonn… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner          agent  agent-net pi · gpt-6         idle      5%  300M
-  scratch            agent  -         pi ·               shell    <1%   80M
+  ci-runner      agent  agent-net  pi · gpt-6       idle      5%  300M
+  scratch        agent  -          pi               shell    <1%   80M
 
 
 

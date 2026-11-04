@@ -287,7 +287,7 @@ func TestProjectSourceReadsAsWords(t *testing.T) {
 	m := newModel(120, 40)
 	m.selected = "s_0000000000000001" // tenebrae: a project both registered and seen
 	v := detailText(m)
-	if !strings.Contains(v, "project source: seen in a session and registered") {
+	if !strings.Contains(v, "source   seen in a session and registered") {
 		t.Fatalf("the project source does not read as words:\n%s", v)
 	}
 }

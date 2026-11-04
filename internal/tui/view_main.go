@@ -952,9 +952,12 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 // Every width keeps the owner's columns. Give spare room to names and
 // projects before the task, so task text is the first thing to shrink.
 func columnsNarrow(avail, nameWant, projectWant int) []column {
-	return columnsForProject(avail, nameWant, projectWant, false)
+	return sessionColumns(avail, nameWant, projectWant, true)
 }
 func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
+	return sessionColumns(avail, nameWant, projectWant, false)
+}
+func sessionColumns(avail, nameWant, projectWant int, narrow bool) []column {
 	cols := []column{
 		{name: "NAME", min: 4, max: min(max(nameWant, 18), 32)},
 		{name: "TYPE", min: 6, max: 6},
@@ -964,6 +967,10 @@ func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 		{name: "CPU", min: 5, max: 5, right: true},
 		{name: "RAM", min: 5, max: 5, right: true},
 		{name: "TASK", min: 4, max: 4000},
+	}
+	if narrow {
+		cols[0].max = min(cols[0].max, 14)
+		cols[3].min, cols[3].max = 16, 16
 	}
 	for i := range cols {
 		cols[i].width = cols[i].min
@@ -1292,7 +1299,10 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		case "PROJECT":
 			v = m.agentProjectName(a)
 		case "MODEL":
-			v = a.Harness + " · " + shortModel(a.Model)
+			v = a.Harness
+			if model := shortModel(a.Model); model != "" {
+				v += " · " + model
+			}
 		case "STATUS":
 			if m.hiddenSessions[a.SessionID] && m.showHiddenSessions {
 				v = "hidden"

@@ -1196,9 +1196,9 @@ func TestColourOutputIsWellFormed(t *testing.T) {
 func TestDetailShowsTheProjectSource(t *testing.T) {
 	m := newModel(100, 30)
 	want := map[string]string{
-		"s_0000000000000002": "project source: registered",
-		"s_0000000000000001": "project source: seen in a session and registered",
-		"s_0000000000000003": "project source: seen in a session", // an older gateway sends no source
+		"s_0000000000000002": "source   registered",
+		"s_0000000000000001": "source   seen in a session and registered",
+		"s_0000000000000003": "source   seen in a session", // an older gateway sends no source
 	}
 	for id, text := range want {
 		m.selected = id
@@ -1208,7 +1208,7 @@ func TestDetailShowsTheProjectSource(t *testing.T) {
 	}
 	// A session in a folder with no project entry shows no source.
 	m.selected = "s_0000000000000004"
-	if v := detailText(m); strings.Contains(v, "project source: ") {
+	if v := detailText(m); strings.Contains(v, "source   ") {
 		t.Errorf("a source for an unknown project:\n%s", v)
 	}
 }

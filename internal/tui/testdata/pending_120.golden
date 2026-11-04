@@ -11,7 +11,7 @@
   web                agent  shop       opencode · sonnet-5      owes       ?     ? owes reply to a… · 3m
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner          agent  agent-net  pi · gpt-6               idle      5%  300M
-  scratch            agent  -          pi ·                     shell    <1%   80M
+  scratch            agent  -          pi                       shell    <1%   80M
 
 
 

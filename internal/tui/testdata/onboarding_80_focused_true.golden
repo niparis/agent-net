@@ -4,14 +4,14 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   PROJECT   MODEL              STATUS   CPU   RAM TASK
+  NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-  tenebrae-53        agent  tenebrae  claude · opus-5-5  busy       ?     ?
-  strategies         agent  strategi… claude · sonnet-5… idle       ?     ? bac…
-  web                agent  shop      opencode · sonnet… idle       ?     ?
+  tenebrae-53    agent  tenebrae   claude · opus-5… busy       ?     ?
+  strategies     agent  strategies claude · sonnet… idle       ?     ? backtest…
+  web            agent  shop       opencode · sonn… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner          agent  agent-net pi · gpt-6         idle       ?     ?
-  scratch            agent  -         pi ·               shell      ?     ?
+  ci-runner      agent  agent-net  pi · gpt-6       idle       ?     ?
+  scratch        agent  -          pi               shell      ?     ?
 
 
 

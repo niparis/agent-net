@@ -4,18 +4,18 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME                 TYPE   PROJECT MODEL              STATUS   CPU   RAM TASK
+  NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
  Mac (here) 7 sessions ─────────────────────────────────────────────────────────
-  ↳ tenebrae           worker tenebr… opencode · haiku-… busy       ?     ?
-  tenebrae-53          agent  tenebr… claude · opus-5-5  busy       ?     ?
-  strategies           agent  strate… claude · sonnet-5… idle       ?     ? bac…
-  ├─ backtest-a        worker -       opencode · haiku-… idle       ?     ? pro…
-▸ ├─ backtest-b        worker -       opencode · haiku-… idle       ?     ? pro…
-  └─ backte… @build-vm worker -       opencode · haiku-… idle       ?     ? pro…
-  web                  agent  shop    opencode · sonnet… idle       ?     ?
+  ↳ tenebrae     worker tenebrae   opencode · haik… busy       ?     ?
+  tenebrae-53    agent  tenebrae   claude · opus-5… busy       ?     ?
+  strategies     agent  strategies claude · sonnet… idle       ?     ? backtest…
+  ├─ backtest-a  worker -          opencode · haik… idle       ?     ? probe
+▸ ├─ backtest-b  worker -          opencode · haik… idle       ?     ? probe
+  └─ backtest-o… worker -          opencode · haik… idle       ?     ? probe
+  web            agent  shop       opencode · sonn… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner            agent  agent-… pi · gpt-6         idle       ?     ?
-  scratch              agent  -       pi ·               shell      ?     ?
+  ci-runner      agent  agent-net  pi · gpt-6       idle       ?     ?
+  scratch        agent  -          pi               shell      ?     ?
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

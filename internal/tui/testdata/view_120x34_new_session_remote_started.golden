@@ -12,7 +12,7 @@
   web                agent  shop       opencode · sonnet-5      idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
 ▸ ci-runner          agent  agent-net  pi · gpt-6               idle       ?     ?
-  scratch            agent  -          pi ·                     shell      ?     ?
+  scratch            agent  -          pi                       shell      ?     ?
 
 
 

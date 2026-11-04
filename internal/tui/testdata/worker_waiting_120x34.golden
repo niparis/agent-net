@@ -6,7 +6,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               TYPE   PROJECT   MODEL                    STATUS   CPU   RAM TASK                    view: all  (v)
  Mac (here) 1 session ──────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ blocked-worker   worker -         opencode ·               busy       ?     ?
+  ↳ blocked-worker   worker -         opencode                 busy       ?     ?
 
 
 
