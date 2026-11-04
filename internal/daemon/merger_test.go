@@ -106,3 +106,11 @@ func TestMergerStartStopProposal(t *testing.T) {
 		})
 	}
 }
+
+func TestMergerCTORecipe(t *testing.T) {
+	for _, text := range []string{"merger_start", "tester-merger", "a session that tests and merges", "ask which project"} {
+		if !strings.Contains(ctoBrief, text) {
+			t.Errorf("CTO recipe lacks %q", text)
+		}
+	}
+}
