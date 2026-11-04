@@ -31,7 +31,7 @@ const closedStartKeep = 30 * 24 * time.Hour
 const workerStartMinVersion = "0.4.127"
 
 // workerStartBindingMinVersion is the first release that binds worker starts to sessions via StartRef.
-const workerStartBindingMinVersion = "0.4.130"
+const workerStartBindingMinVersion = "0.4.131"
 
 func daemonVersionGTE(version, minVersion string) bool {
 	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
@@ -115,7 +115,7 @@ func (s *Store) markStartUnknown(nodeID, ref string) error {
 // owner or another worker than the one the call names. A reference from an
 // older daemon (before start tracking) falls back to untracked if not found.
 // A node whose daemon tracks starts must provide a valid tracked reference.
-// A node whose daemon tracks session binding (>= 0.4.130) must provide a reference
+// A node whose daemon tracks session binding (>= 0.4.131) must provide a reference
 // that is bound to this worker session. A start whose state is not open is refused.
 // If the start is already closed with the same session, it returns alreadyClosed=true.
 func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) (bool, error) {
