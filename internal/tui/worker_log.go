@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -91,39 +92,13 @@ func (m Model) workersLogView(w, h int) []string {
 	detail := []string{sDim.Render("Select a worker run")}
 	if len(m.snap.WorkerLog) > 0 {
 		r := m.snap.WorkerLog[selected]
-		detail = nil
-		addTitle := "Title: " + firstNonEmpty(r.Title, "-")
-		add := func(s string) { detail = append(detail, wrap(sanitize(s), inner)...) }
-		add(addTitle)
-		caller := firstNonEmpty(r.Caller, "-")
-		if r.CallerHost != "" {
-			caller += " (" + r.CallerHost + ")"
-		}
-		add("Caller: " + caller)
-		add("Model: " + firstNonEmpty(r.Model, "-"))
-		add("Machine: " + firstNonEmpty(r.Hostname, firstNonEmpty(r.NodeID, "-")) + "   Project: " + firstNonEmpty(r.Project, "-") + "   Harness: " + firstNonEmpty(r.Harness, "-"))
-		add(fmt.Sprintf("Run time: %s", (time.Duration(r.RunSeconds) * time.Second).String()))
-		if a := r.Assessment; a != nil {
-			add(a.DifficultyLine())
-			add("Judge: " + firstNonEmpty(a.JudgeModel, "-"))
-			for _, key := range []string{"reasoning", "scope", "coupling", "uncertainty", "verification", "risk"} {
-				if reason := a.Reasons[key]; reason != "" {
-					add(strings.ToUpper(key[:1]) + key[1:] + ": " + reason)
-				}
-			}
-			if a.Error != "" {
-				add("Assessment note: " + a.Error)
-			}
-		} else {
-			add("Assessment: -")
-		}
-		add("Picker: " + firstNonEmpty(r.ModelNote, "-"))
+		detail = workerLogDetails(r, inner)
 		if r.Failure != "" {
 			label := "Note: "
 			if r.Status == "failed" || r.Status == "timed out" {
 				label = "Failure: "
 			}
-			add(label + r.Failure)
+			detail = append(detail, wrapHanging(label, sanitize(r.Failure), inner)...)
 		}
 	}
 	available := max(h-6, 0)
@@ -131,5 +106,176 @@ func (m Model) workersLogView(w, h int) []string {
 	lh := max(available-dh, 0)
 	out = append(out, panel("Workers log", messageFit(list, lh, selected), w, roleAccent)...)
 	out = append(out, panel("Difficulty details", messageFit(detail, dh, min(max(dh-1, 0)+m.workerLogDetail, max(len(detail)-1, 0))), w, roleAccent)...)
+	return out
+}
+
+func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
+	var detail []string
+	labels := []string{"Title", "Caller", "Model", "Where", "Run time"}
+	labelWidth := 0
+	for _, label := range labels {
+		labelWidth = max(labelWidth, len(label))
+	}
+	addFact := func(label, value string) {
+		detail = appendWorkerLogFact(detail, label, value, labelWidth, width)
+	}
+	addFact("Title", r.Title)
+	caller := r.Caller
+	if r.CallerHost != "" {
+		caller += " (" + r.CallerHost + ")"
+	}
+	addFact("Caller", caller)
+	addFact("Model", workerLogModel(r.Harness, r.Model))
+	where := strings.Join(nonEmpty(r.Hostname, r.Project), " / ")
+	if where == "" {
+		where = strings.Join(nonEmpty(r.NodeID, r.Project), " / ")
+	}
+	addFact("Where", where)
+	if r.RunSeconds > 0 {
+		addFact("Run time", (time.Duration(r.RunSeconds) * time.Second).String())
+	}
+
+	if a := r.Assessment; a != nil {
+		if len(detail) > 0 {
+			detail = append(detail, "")
+		}
+		level := strings.TrimSpace(a.Label)
+		if level == "" {
+			level = protocol.WorkerLevel(a)
+		}
+		levelText := workerDifficultyStyle(level).Render(level)
+		summary := levelText + "  D " + fmt.Sprintf("%.2f", a.D)
+		if a.JudgeModel != "" {
+			summary += sDim.Render("  ·  " + sanitize(a.JudgeModel))
+		}
+		detail = append(detail, clip(summary, width))
+		if a.Error != "" {
+			detail = append(detail, wrapHanging("Judge error: ", sanitize(a.Error), width)...)
+		} else {
+			detail = append(detail, "")
+			dimensions := []struct {
+				name, key string
+				score     int
+			}{{"Reasoning", "reasoning", a.Reasoning}, {"Scope", "scope", a.Scope}, {"Coupling", "coupling", a.Coupling}, {"Uncertainty", "uncertainty", a.Uncertainty}, {"Verification", "verification", a.Verification}, {"Risk", "risk", a.Risk}}
+			nameWidth := len("Verification")
+			for _, d := range dimensions {
+				name := fmt.Sprintf("%-*s", nameWidth, d.name)
+				score := fmt.Sprintf("%d/5 %s", d.score, difficultyBar(d.score))
+				prefix := name + "  " + score + "  "
+				reason := strings.TrimSpace(a.Reasons[d.key])
+				if reason == "" {
+					reason = "No explanation provided"
+				}
+				for _, line := range wrapHanging(prefix, sanitize(reason), width) {
+					if strings.HasPrefix(line, prefix) {
+						detail = append(detail, sDim.Render(name)+"  "+sBold.Render(score)+"  "+strings.TrimPrefix(line, prefix))
+					} else {
+						detail = append(detail, line)
+					}
+				}
+			}
+		}
+	}
+	picker := r.ModelNote
+	if picker == "" && r.Assessment != nil {
+		picker = r.Assessment.PickerNote
+	}
+	picker = workerPickerNote(picker, r.Assessment)
+	if strings.TrimSpace(picker) != "" {
+		if len(detail) > 0 {
+			detail = append(detail, "")
+		}
+		detail = appendWorkerLogFact(detail, "Picker", picker, labelWidth, width)
+	}
+	return detail
+}
+
+func appendWorkerLogFact(detail []string, label, value string, labelWidth, width int) []string {
+	if strings.TrimSpace(value) == "" {
+		return detail
+	}
+	prefix := fmt.Sprintf("%-*s  ", labelWidth, label)
+	for _, line := range wrapHanging(prefix, sanitize(value), width) {
+		if strings.HasPrefix(line, prefix) {
+			detail = append(detail, sDim.Render(prefix)+strings.TrimPrefix(line, prefix))
+		} else {
+			detail = append(detail, line)
+		}
+	}
+	return detail
+}
+
+func workerPickerNote(note string, assessment *protocol.WorkerAssessment) string {
+	if assessment == nil {
+		return note
+	}
+	prefix := "difficulty " + assessment.DifficultyLine() + " -> "
+	return strings.TrimPrefix(note, prefix)
+}
+
+func nonEmpty(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func workerLogModel(harness, model string) string {
+	if model == "" {
+		return harness
+	}
+	provider := protocol.WorkerProvider(harness, model)
+	modelName, effort := model, ""
+	if i := strings.LastIndex(model, ":"); i > 0 && i < len(model)-1 {
+		modelName, effort = model[:i], model[i+1:]
+	}
+	if provider == harness {
+		provider = ""
+	}
+	if strings.HasPrefix(modelName, provider+"/") && provider != "" {
+		modelName = strings.TrimPrefix(modelName, provider+"/")
+	}
+	parts := nonEmpty(harness, provider, modelName, effort)
+	return strings.Join(parts, " · ")
+}
+
+func workerDifficultyStyle(level string) lipgloss.Style {
+	switch strings.ToLower(level) {
+	case "easy", "trivial", "simple":
+		return lipgloss.NewStyle().Foreground(roleGood)
+	case "hard":
+		return lipgloss.NewStyle().Foreground(roleWarning)
+	case "very hard", "extreme", "very_complex":
+		return sBad
+	default:
+		return sAccent
+	}
+}
+
+func difficultyBar(score int) string {
+	score = min(max(score, 0), 5)
+	return strings.Repeat("#", score) + strings.Repeat(".", 5-score)
+}
+
+func wrapHanging(prefix, text string, width int) []string {
+	if width < 8 {
+		width = 8
+	}
+	indent := ansi.StringWidth(prefix)
+	if indent > width-8 {
+		indent = max(width-8, 1)
+	}
+	firstWidth := max(width-indent, 1)
+	lines := wrap(text, firstWidth)
+	if len(lines) == 0 {
+		return []string{prefix}
+	}
+	out := []string{prefix + lines[0]}
+	for _, line := range lines[1:] {
+		out = append(out, strings.Repeat(" ", indent)+line)
+	}
 	return out
 }
