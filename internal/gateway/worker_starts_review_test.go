@@ -149,6 +149,71 @@ func TestLegacyDaemonQueueMappingAndReconciliation(t *testing.T) {
 	}
 }
 
+// Legacy starts expiry based on semver vs lexicographical string comparison.
+// Node versions v0.4.99 and 0.4.120 expire after the legacy timeout without a notice,
+// while v0.4.127 does not.
+func TestLegacyStartsVersionExpiry(t *testing.T) {
+	f := newStartsFixture(t)
+	node99, _, err := f.s.CreateNode("h99", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SetNodeHello(node99, "h99", "v0.4.99"); err != nil {
+		t.Fatal(err)
+	}
+
+	node120, _, err := f.s.CreateNode("h120", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SetNodeHello(node120, "h120", "0.4.120"); err != nil {
+		t.Fatal(err)
+	}
+
+	node127, _, err := f.s.CreateNode("h127", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SetNodeHello(node127, "h127", "v0.4.127"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.s.trackWorkerStart("q_99", node99, f.a, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.trackWorkerStart("q_120", node120, f.a, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.trackWorkerStart("q_127", node127, f.a, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	f.clock.t = f.clock.t.Add(25 * time.Hour)
+	notices, err := f.s.ExpireStarts(0, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notices) != 0 {
+		t.Fatalf("unexpected notices: %v", notices)
+	}
+
+	stateOf := func(ref string) string {
+		var st string
+		f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref=?`, ref).Scan(&st)
+		return st
+	}
+
+	if st := stateOf("q_99"); st != "not_started" {
+		t.Errorf("q_99 state = %q, want not_started", st)
+	}
+	if st := stateOf("q_120"); st != "not_started" {
+		t.Errorf("q_120 state = %q, want not_started", st)
+	}
+	if st := stateOf("q_127"); st != "open" {
+		t.Errorf("q_127 state = %q, want open", st)
+	}
+}
+
 // Finding 4: Launch timeout = refusal.
 // A launch call that fails by deadline or disconnect leaves the record open as "unknown"
 // until a started or not-started report arrives, or until bounded timeout closes it with one notice.

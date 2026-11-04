@@ -271,21 +271,24 @@ func (s *Store) ExpireStarts(unknownTimeout, legacyTimeout time.Duration) ([]pro
 
 	// 2. Unmatched legacy starts
 	legacyCutoff := now.Add(-legacyTimeout).UnixNano()
-	rows, err = s.db.Query(`SELECT ref, node_id FROM worker_starts WHERE state='open' AND (legacy_ref <> '' OR (SELECT version FROM nodes WHERE id=worker_starts.node_id) < '0.4.127') AND created_at < ?`, legacyCutoff)
+	rows, err = s.db.Query(`SELECT ws.ref, ws.node_id, ws.legacy_ref, COALESCE(n.version, '') FROM worker_starts ws LEFT JOIN nodes n ON n.id = ws.node_id WHERE ws.state='open' AND ws.created_at < ?`, legacyCutoff)
 	if err != nil {
 		return notices, err
 	}
-	var legacys []target
+	type legacyTarget struct{ ref, nodeID, legacyRef, version string }
+	var candidates []legacyTarget
 	for rows.Next() {
-		var t target
-		if err := rows.Scan(&t.ref, &t.nodeID); err == nil {
-			legacys = append(legacys, t)
+		var lt legacyTarget
+		if err := rows.Scan(&lt.ref, &lt.nodeID, &lt.legacyRef, &lt.version); err == nil {
+			candidates = append(candidates, lt)
 		}
 	}
 	rows.Close()
 
-	for _, l := range legacys {
-		_ = s.abandonStart(l.nodeID, l.ref)
+	for _, c := range candidates {
+		if c.legacyRef != "" || !daemonTracksStarts(c.version) {
+			_ = s.abandonStart(c.nodeID, c.ref)
+		}
 	}
 
 	return notices, nil
