@@ -532,14 +532,24 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				}
 				return none, reject("%s", reason)
 			}
+			candidates, familyNote, err := filterWorkerFamilies(candidates, p.NotFamily)
+			if err != nil {
+				return none, reject("%v", err)
+			}
 			choice, protectionNote, err := g.chooseAutomaticWorker(candidates, difficulty, scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
 			if err != nil {
+				if familyNote != "" {
+					return none, reject("%v; %s", err, familyNote)
+				}
 				return none, reject("%v", err)
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = "(" + workerChoiceNote(difficulty, choice, candidates, scores, minimums)
 			if note := resolutionNotes[p.Harness+"\x00"+p.Model]; note != "" {
 				automaticNote += "; " + note
+			}
+			if familyNote != "" {
+				automaticNote += "; " + familyNote
 			}
 			if protectionNote != "" {
 				automaticNote += "; " + protectionNote
@@ -592,6 +602,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, err
 		}
 		modelNote = appendModelNote(appendModelNote(lead, harnessNote), resolveNote)
+	}
+	if !automatic && len(p.NotFamily) > 0 {
+		if _, _, err := filterWorkerFamilies([]protocol.WorkerModelCandidate{{Harness: p.Harness, Model: p.Model}}, p.NotFamily); err != nil {
+			return none, reject("%v", err)
+		}
 	}
 	selected := protocol.ParseModelSelection(p.Harness, "", p.Model, p.Effort)
 	p.Provider, p.Effort, p.Model = selected.Provider, selected.Effort, selected.LegacyModel()
@@ -969,6 +984,9 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 // The machine holds the old task and branch and checks the owner again.
 func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, validate ...bool) (protocol.WorkerStartAnswer, error) {
 	var none protocol.WorkerStartAnswer
+	if len(p.NotFamily) > 0 {
+		return none, reject("not_family cannot be used with continue; start a new worker for a different family")
+	}
 	if p.Machine != "" || p.Base != "" || p.Isolation != "" {
 		return none, reject("a continued worker keeps the machine, the branch and the isolation of the old one")
 	}
@@ -1508,4 +1526,48 @@ func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandida
 		err = g.store.saveWorkerRotation(rotation)
 	}
 	return choice, note, err
+}
+
+// filterWorkerFamilies removes excluded makers before scoring and rotation.
+func filterWorkerFamilies(candidates []protocol.WorkerModelCandidate, excluded []string) ([]protocol.WorkerModelCandidate, string, error) {
+	if len(excluded) == 0 {
+		return candidates, "", nil
+	}
+	deny := map[string]bool{}
+	for _, family := range excluded {
+		if f := strings.ToLower(strings.TrimSpace(family)); f != "" {
+			deny[f] = true
+		}
+	}
+	var kept []protocol.WorkerModelCandidate
+	var skipped []string
+	families := map[string]bool{}
+	for _, c := range candidates {
+		family := protocol.ModelFamily(c.Harness, c.Model)
+		if family == "" {
+			family = "unknown"
+		}
+		families[family] = true
+		if deny[family] {
+			skipped = append(skipped, c.Harness+" "+c.Model+" ("+family+")")
+		} else {
+			kept = append(kept, c)
+		}
+	}
+	if len(kept) == 0 && len(candidates) > 0 {
+		var denied, available []string
+		for f := range deny {
+			denied = append(denied, f)
+		}
+		for f := range families {
+			available = append(available, f)
+		}
+		sort.Strings(denied)
+		sort.Strings(available)
+		return nil, "", fmt.Errorf("no models remain after excluding families %s; available families: %s", strings.Join(denied, ", "), strings.Join(available, ", "))
+	}
+	if len(skipped) == 0 {
+		return kept, "", nil
+	}
+	return kept, "skipped for family rule: " + strings.Join(skipped, ", "), nil
 }
