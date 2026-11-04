@@ -478,6 +478,11 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 	if strings.Contains(body, "FAKE:edit") {
 		fakeEdit(cwd)
 	}
+	if strings.Contains(body, "FAKE:dirty") {
+		// Work left uncommitted, and a file that .gitignore may match.
+		os.WriteFile(filepath.Join(cwd, "dirty.txt"), []byte("dirty\n"), 0o644)
+		os.WriteFile(filepath.Join(cwd, "ignored.txt"), []byte("ignored\n"), 0o644)
+	}
 	status := ""
 	if strings.Contains(body, "FAKE:blocked") {
 		status = "blocked"

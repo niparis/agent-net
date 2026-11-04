@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -63,11 +64,20 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		where = "folder"
 	default:
 		l.Isolation = protocol.IsolationWorktree
-		// A worker that handed back keeps its changes uncommitted: commit them
-		// now, so the new branch has them. For any other ended worker this is
-		// a no-op, the changes are already committed.
-		d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
-			owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}, r.EndedReason)
+		// Leftover changes (a partial hand-back, or an end with
+		// delivery.save_unfinished off) are committed on the old branch now,
+		// whatever that setting says, so the new branch has them. Complete
+		// work gets the title as its subject, other work the unfinished
+		// subject. When everything is committed already this does nothing.
+		subject := unfinishedSubject(r.ID, r.EndedReason)
+		title := strings.TrimSpace(strings.SplitN(r.Title, "\n", 2)[0])
+		complete := title != "" && r.DoneStatus == protocol.StatusDone && !r.DonePartial
+		if complete {
+			subject = title
+		}
+		old := &worker{id: r.ID, worktree: r.Worktree, branch: r.Branch, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
+			owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
+		d.saveWorkerChanges(old, subject, r.EndedReason, !complete)
 		// The branch is kept when the old worker left changes. If it is gone,
 		// the new worker starts from the project's current commit.
 		// Cleanup removes an unchanged worker branch, even when its starting

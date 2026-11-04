@@ -411,3 +411,20 @@ func TestBuildFrameFollowUpRequestAsksForAnAnswer(t *testing.T) {
 		t.Fatalf("the follow-up request frame: %q", f.Message.Content)
 	}
 }
+
+// The adapter frames a request to a worker session (target.Worker set) with
+// agent_handback as the answer tool.
+func TestDeliverToWorkerNamesHandback(t *testing.T) {
+	r := newRig(t)
+	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
+	m := msg
+	m.Type = protocol.TypeRequest
+	res := r.a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "sess-1", SessionID: "s_claude", Worker: &protocol.WorkerInfo{ID: "w_1"}}, m)
+	if !res.Delivered {
+		t.Fatalf("result %+v", res)
+	}
+	got := <-r.lines
+	if !strings.Contains(got, "agent_handback") || strings.Contains(got, "SendMessage") {
+		t.Fatalf("the frame to a worker does not name agent_handback: %s", got)
+	}
+}
