@@ -147,6 +147,7 @@ const (
 // (delivery.delegated_approver_modes), or the owner, resolved when the step
 // starts; none leaves the approval out.
 const (
+	OwnerMerger   = "merger"
 	OwnerCaller   = "caller"
 	OwnerNode     = "node"
 	OwnerGitHub   = "github"
@@ -302,7 +303,7 @@ func DeliveryOwnerSource(value, step string) (string, error) {
 	if value == "" {
 		return "", nil
 	}
-	for _, kind := range []string{OwnerCaller, OwnerGitHub, OwnerPerson, OwnerDelegate, OwnerNone} {
+	for _, kind := range []string{OwnerMerger, OwnerCaller, OwnerGitHub, OwnerPerson, OwnerDelegate, OwnerNone} {
 		if value == "@"+kind {
 			if err := (StepOwner{Kind: kind}).validateFor(step); err != nil {
 				return "", err
@@ -347,16 +348,16 @@ func (o StepOwner) validateFor(step string) error {
 		}
 		return validText("owner node name", o.Node, maxNameBytes)
 	case OwnerCaller, OwnerPerson:
-	case OwnerGitHub:
+	case OwnerGitHub, OwnerMerger:
 		if step != StepTest && step != StepMerge {
-			return fmt.Errorf("owner github is only for test and merge, not %s", step)
+			return fmt.Errorf("owner %s is only for test and merge, not %s", o.Kind, step)
 		}
 	case OwnerDelegate, OwnerNone:
 		if step != StepApprove {
 			return fmt.Errorf("owner %s is only for approve, not %s", o.Kind, step)
 		}
 	default:
-		return fmt.Errorf("unknown owner kind %q; kinds are caller, node, github, owner, delegate, none", o.Kind)
+		return fmt.Errorf("unknown owner kind %q; kinds are caller, node, merger, github, owner, delegate, none", o.Kind)
 	}
 	if o.Node != "" {
 		return fmt.Errorf("owner %s takes no node name", o.Kind)

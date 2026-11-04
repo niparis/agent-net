@@ -17,3 +17,18 @@ func TestSessionType(t *testing.T) {
 		}
 	}
 }
+
+func TestMergerDeliveryOwner(t *testing.T) {
+	for _, step := range []string{StepTest, StepMerge} {
+		source, err := DeliveryOwnerSource("@merger", step)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := DeliveryOwnerFromSource(source); got.Kind != "merger" {
+			t.Fatalf("owner: %+v", got)
+		}
+	}
+	if _, err := DeliveryOwnerSource("@merger", StepAccept); err == nil {
+		t.Fatal("merger accepted accept")
+	}
+}
