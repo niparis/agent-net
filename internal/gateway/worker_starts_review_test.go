@@ -11,12 +11,12 @@ import (
 )
 
 // Finding 1: Unbound queued start.
-// verifyStart with an unbound tracked Ref must not accept an arbitrary session for daemons that track binding (>= v0.4.129).
+// verifyStart with an unbound tracked Ref must not accept an arbitrary session for daemons that track binding (>= v0.4.130).
 func TestUnboundQueuedStartRefused(t *testing.T) {
 	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
 		return func(h protocol.Header, raw []byte) error { return nil }
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.130"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -77,6 +77,43 @@ func TestQueuedStartAcceptedForV04127DaemonWithoutStartRef(t *testing.T) {
 	}
 }
 
+// A v0.4.129 daemon has no StartRef on WorkerInfo and queued launch answers have an empty SessionID.
+// verifyStart must accept the start on v0.4.129 when rs=="" and close it.
+func TestQueuedStartAcceptedForV04129DaemonWithoutStartRef(t *testing.T) {
+	relayed := false
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			relayed = true
+			return nil
+		}
+	})
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Gateway tracks a queued start (session_id is empty).
+	if err := f.s.trackWorkerStart("q_129", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// v0.4.129 daemon sends worker.queued_start with tracked Ref and worker session ID.
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_129")); err != nil {
+		t.Fatalf("v0.4.129 queued_start refused: %v", err)
+	}
+	if !relayed {
+		t.Fatalf("task was not relayed")
+	}
+
+	var state, sessID string
+	f.s.db.QueryRow(`SELECT state, session_id FROM worker_starts WHERE ref='q_129'`).Scan(&state, &sessID)
+	if state != "closed" {
+		t.Errorf("start q_129 state = %q, want closed", state)
+	}
+	if sessID != worker {
+		t.Errorf("start q_129 session_id = %q, want %q", sessID, worker)
+	}
+}
+
 // Finding 2: Untracked Ref fallback.
 // A node whose daemon version tracks Refs must not use the untracked fallback.
 func TestNewDaemonCannotUseUntrackedRefFallback(t *testing.T) {
@@ -85,6 +122,11 @@ func TestNewDaemonCannotUseUntrackedRefFallback(t *testing.T) {
 	})
 	// New daemon version that tracks starts
 	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.127"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Gateway tracks an open start for this machine and owner.
+	if err := f.s.trackWorkerStart("q_open", f.nodeA, f.b, "shop", "codex", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -332,7 +374,7 @@ func TestExpiredUnknownStartRefusesQueuedStart(t *testing.T) {
 			return nil
 		}
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.130"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -397,7 +439,7 @@ func TestQueuedStartRaceWithExpireStarts(t *testing.T) {
 			return nil
 		}
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.130"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -467,7 +509,7 @@ func TestQueuedStartIdempotentWhenAlreadyClosed(t *testing.T) {
 			return nil
 		}
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.130"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -586,7 +628,7 @@ func TestStartingStartReportNotStartedThenRelayFails(t *testing.T) {
 			return nil
 		}
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.130"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -653,7 +695,7 @@ func TestStartingStartReportNotStartedThenRelaySucceeds(t *testing.T) {
 			return nil
 		}
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.130"); err != nil {
 		t.Fatal(err)
 	}
 
