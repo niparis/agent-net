@@ -91,6 +91,11 @@ type Message struct {
 	// body, and a sender cannot set it.
 	RecipientRelation string `json:"recipient_relation,omitempty"`
 	OwnerInstruction  string `json:"owner_instruction,omitempty"`
+	// Files is the manifest of the files that come with the message
+	// (decision 0054). The sending daemon builds it; the gateway stores it
+	// and hands it to the receiving daemon, which collects the bytes before
+	// it delivers the message. Empty for a message without files.
+	Files []FileEntry `json:"files,omitempty"`
 }
 
 // SessionInfo is what a daemon reports about one local session.
@@ -363,6 +368,9 @@ type (
 		// Launch says whether this machine accepts workers. Nil means "not
 		// reported" (an older daemon): the gateway then refuses workers there.
 		Launch *bool `json:"launch,omitempty"`
+		// TailscaleIP is the machine's Tailscale address, or empty when it has
+		// none. A sending daemon uses it to push files over Taildrop.
+		TailscaleIP string `json:"tailscale_ip,omitempty"`
 	}
 	// NodeHarnesses is the "node.harnesses" request: a new inventory.
 	NodeHarnesses struct {
@@ -410,6 +418,9 @@ type (
 		Body           string `json:"body"`
 		ParentID       string `json:"parent_message_id,omitempty"`
 		IdempotencyKey string `json:"idempotency_key"`
+		// Files is the manifest of the files that come with the message. Only
+		// the daemon sets it, after its path checks and secret scan.
+		Files []FileEntry `json:"files,omitempty"`
 	}
 	DeliveryUpdate struct {
 		MessageID string `json:"message_id"`
@@ -490,8 +501,11 @@ type NodeView struct {
 	// TimeZone is the IANA time zone this machine reported, for example
 	// Europe/Paris. Empty from an older daemon.
 	TimeZone string `json:"time_zone,omitempty"`
-	Online   bool   `json:"online"`
-	LastSeen int64  `json:"last_seen"`
+	// TailscaleIP is the Tailscale address this machine last reported, empty
+	// when it has none or runs an older daemon.
+	TailscaleIP string `json:"tailscale_ip,omitempty"`
+	Online      bool   `json:"online"`
+	LastSeen    int64  `json:"last_seen"`
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`

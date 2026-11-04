@@ -434,6 +434,9 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 		if err := del(&res.Messages, `DELETE FROM messages WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored') AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (messages.id=o.message_id OR messages.id=o.reply_id))`, cut); err != nil {
 			return res, err
 		}
+		if err := del(new(int), `DELETE FROM message_files WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.id=message_files.message_id)`); err != nil {
+			return res, err
+		}
 	}
 	if r.Sessions > 0 {
 		cut := now.Add(-r.Sessions).UnixNano()

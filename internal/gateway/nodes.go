@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -114,11 +115,26 @@ ON CONFLICT(node_id) DO UPDATE SET zone=excluded.zone,updated_at=excluded.update
 	return err
 }
 
+// SetNodeTailscaleIP records the Tailscale address from a machine's hello. An
+// empty or malformed address clears the stored one: the machine has no
+// Tailscale now, or runs a daemon that does not report it, and a sender then
+// uses the gateway for files.
+func (s *Store) SetNodeTailscaleIP(nodeID, ip string) error {
+	addr, err := netip.ParseAddr(strings.TrimSpace(ip))
+	if err != nil {
+		_, err := s.db.Exec(`DELETE FROM node_tailscale WHERE node_id=?`, nodeID)
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO node_tailscale(node_id,ip,updated_at) VALUES(?,?,?)
+ON CONFLICT(node_id) DO UPDATE SET ip=excluded.ip,updated_at=excluded.updated_at`, nodeID, addr.String(), s.now().UnixNano())
+	return err
+}
+
 // Nodes lists every node that has connected at least once. Online is left
 // false; the gateway fills it from its live connections.
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, COALESCE(z.zone,'')
-FROM nodes n LEFT JOIN node_time_zones z ON z.node_id=n.id
+	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, COALESCE(z.zone,''), COALESCE(ts.ip,'')
+FROM nodes n LEFT JOIN node_time_zones z ON z.node_id=n.id LEFT JOIN node_tailscale ts ON ts.node_id=n.id
 WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
 	if err != nil {
 		return nil, err
@@ -130,7 +146,7 @@ WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
 		var seen int64
 		var hs string
 		var launch int
-		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch, &n.DisplayName, &n.Reported, &n.TimeZone); err != nil {
+		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch, &n.DisplayName, &n.Reported, &n.TimeZone, &n.TailscaleIP); err != nil {
 			return nil, err
 		}
 		n.Launch = launchValue(launch)

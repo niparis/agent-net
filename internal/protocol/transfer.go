@@ -21,6 +21,7 @@ type TransferBegin struct {
 // missing ones. ExpiresAt is a Unix time in seconds.
 type TransferState struct {
 	UploadID  string `json:"upload_id"`
+	Name      string `json:"name,omitempty"`
 	Receiver  string `json:"receiver"`
 	PartSize  int    `json:"part_size"`
 	Parts     int    `json:"parts"`
@@ -94,4 +95,18 @@ type TransferConfirm struct {
 type TransferConfirmed struct {
 	UploadID string `json:"upload_id"`
 	Deleted  bool   `json:"deleted"`
+}
+
+// TransferFind asks for the finished uploads addressed to this machine under
+// the given names. A file message names each upload with the file's unique
+// name (TaildropName), so the receiver finds the bytes without an upload ID.
+// At most MaxFilesPerMessage names.
+type TransferFind struct {
+	Names []string `json:"names"`
+}
+
+// TransferFound is the answer to xfer.find: the finished uploads addressed to
+// the calling machine whose name is one of the names asked for.
+type TransferFound struct {
+	Uploads []TransferState `json:"uploads"`
 }

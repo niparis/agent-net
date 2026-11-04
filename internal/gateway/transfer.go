@@ -134,6 +134,7 @@ func (s *Store) transferState(row transferRow) (protocol.TransferState, error) {
 	}
 	return protocol.TransferState{
 		UploadID:  row.id,
+		Name:      row.name,
 		Receiver:  row.receiver,
 		PartSize:  row.partSize,
 		Parts:     row.parts,
@@ -270,6 +271,16 @@ func (g *Gateway) handleTransfer(nc *nodeConn, typ string, raw []byte) (any, err
 		}
 		return g.getTransferPart(nc.id, p)
 
+	case "xfer.find":
+		p, err := decode[protocol.TransferFind](raw)
+		if err != nil {
+			return nil, reject("bad xfer.find")
+		}
+		if len(p.Names) == 0 || len(p.Names) > protocol.MaxFilesPerMessage {
+			return nil, reject("xfer.find takes 1 to %d names", protocol.MaxFilesPerMessage)
+		}
+		return g.findTransfers(nc.id, p.Names)
+
 	case "xfer.confirm":
 		p, err := decode[protocol.TransferConfirm](raw)
 		if err != nil || p.UploadID == "" {
@@ -289,6 +300,44 @@ func (g *Gateway) handleTransfer(nc *nodeConn, typ string, raw []byte) (any, err
 		return protocol.TransferConfirmed{UploadID: row.id, Deleted: true}, nil
 	}
 	return nil, reject("unknown frame type %q", typ)
+}
+
+// findTransfers lists the finished uploads addressed to the calling machine
+// under the given names. Only the receiver sees them, as with xfer.get.
+func (g *Gateway) findTransfers(nodeID string, names []string) (protocol.TransferFound, error) {
+	out := protocol.TransferFound{Uploads: []protocol.TransferState{}}
+	args := []any{nodeID}
+	marks := make([]string, 0, len(names))
+	for _, n := range names {
+		args = append(args, n)
+		marks = append(marks, "?")
+	}
+	rows, err := g.store.db.Query(`SELECT `+transferColumns+` FROM transfers
+		WHERE receiver = ? AND finished_at <> 0 AND name IN (`+strings.Join(marks, ",")+`) ORDER BY created_at`, args...)
+	if err != nil {
+		return out, err
+	}
+	var found []transferRow
+	for rows.Next() {
+		row, err := scanTransfer(rows)
+		if err != nil {
+			rows.Close()
+			return out, err
+		}
+		found = append(found, row)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	for _, row := range found {
+		st, err := g.store.transferState(row)
+		if err != nil {
+			return out, err
+		}
+		out.Uploads = append(out.Uploads, st)
+	}
+	return out, nil
 }
 
 // transferOf loads one upload and checks that this machine may act on it. The

@@ -643,6 +643,12 @@ CREATE TABLE IF NOT EXISTS quota_blocks (
  PRIMARY KEY (node_id, provider));
 `, `
 SELECT 1 /* worker sandbox cutover */;
+`, `
+-- The manifest of the files that come with a message (decision 0054), and the
+-- Tailscale address each machine reported, so a sender can push the bytes
+-- over Taildrop. Separate tables so the migration can run again.
+CREATE TABLE IF NOT EXISTS message_files (message_id TEXT PRIMARY KEY, files TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS node_tailscale (node_id TEXT PRIMARY KEY, ip TEXT NOT NULL, updated_at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1963,14 +1969,21 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),'')
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
+	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),'')
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
+	var files string
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files)
+	if err == nil && files != "" {
+		if jerr := json.Unmarshal([]byte(files), &m.Files); jerr != nil {
+			err = fmt.Errorf("message %s: stored files: %w", m.ID, jerr)
+		}
+	}
 	if m.FromCTO {
 		m.FromHarness = "cto"
 	}
@@ -2040,6 +2053,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	}
 	if p.Sender == p.Recipient {
 		return msg, false, reject("cannot send a message to yourself")
+	}
+	if err := protocol.ValidateFiles(p.Files); err != nil {
+		return msg, false, reject("files: %v", err)
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -2156,6 +2172,16 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved)
 	if err != nil {
 		return msg, false, err
+	}
+	if len(p.Files) > 0 {
+		raw, err := json.Marshal(p.Files)
+		if err != nil {
+			return msg, false, err
+		}
+		if _, err := tx.Exec(`INSERT INTO message_files (message_id, files) VALUES (?,?)`, m.ID, string(raw)); err != nil {
+			return msg, false, err
+		}
+		m.Files = p.Files
 	}
 	if m.ParentID == "" && !m.FromCTO {
 		if err := s.signalRequest(tx, m); err != nil {
