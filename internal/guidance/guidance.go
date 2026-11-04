@@ -29,7 +29,7 @@ var reply = map[string]string{
 	Combined: "as follows: Claude Code: use `SendMessage` to the sender; Pi, OpenCode, Codex: use `agent_message_reply` with the message ID",
 }
 
-const fileSendGuidance = "- **Send files to a peer:** when your session has `agent_file_send`, give a session ID, absolute paths and a note."
+const fileSendGuidance = "- **Send files to a peer:** use `agent_file_send` with a session ID, absolute paths and a note; workers send files from their own worktree in the `files` list on `agent_handback`."
 
 // Block returns the default marked block for a variant.
 func Block(variant string) string { return BlockWithSnapshot(variant, settings.Snapshot{}) }
