@@ -61,10 +61,15 @@ func TestNewCommitsRefusesReplaceRef(t *testing.T) {
 	b := r.commit("plain")
 	r.git("checkout", "-q", "--detach", a)
 	fake := r.commit("fake\n\nAgent-Net-Worker: w_fake\n")
+	r.git("checkout", "-q", "-b", "fake")
 	r.git("checkout", "-q", "main")
-	r.git("replace", b, fake)
+	if _, err := r.watch(a); err != nil {
+		t.Fatal(err)
+	}
+	r.gitIn(r.watcher, "fetch", "-q", "origin", "+refs/heads/fake:refs/remotes/origin/fake")
+	r.gitIn(r.watcher, "replace", b, fake)
 
-	res, err := NewCommits(context.Background(), r.dir, "main", a)
+	res, err := r.watch(a)
 	if !errors.Is(err, ErrAlteredHistory) {
 		t.Fatalf("err = %v, want ErrAlteredHistory (result %+v)", err, res)
 	}
