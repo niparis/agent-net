@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
+	"golang.org/x/sys/unix"
 )
 
 // Files between machines (decision 0054, hardening plan W5 step T3).
@@ -171,17 +173,25 @@ func (o *OutgoingFiles) Remove() error {
 // from the copies and calls Remove when done. On a refusal nothing is left
 // behind.
 func PrepareFiles(paths []string, rules FileRules, snapshots string) (*OutgoingFiles, error) {
+	return prepareFiles(paths, rules, snapshots, nil)
+}
+
+// afterCheck lets tests replace a checked path before the snapshot opens it.
+func prepareFiles(paths []string, rules FileRules, snapshots string, afterCheck func()) (*OutgoingFiles, error) {
 	if len(paths) == 0 {
 		return nil, errors.New("no files to send")
 	}
 	if len(paths) > protocol.MaxFilesPerMessage {
 		return nil, fmt.Errorf("%d files: at most %d files per message", len(paths), protocol.MaxFilesPerMessage)
 	}
-	type checked struct{ source, real, name string }
+	type checked struct {
+		source, real, name string
+		info               os.FileInfo
+	}
 	var list []checked
 	names := map[string]string{}
 	for _, p := range paths {
-		real, name, err := checkSendPath(p, rules)
+		real, name, info, err := checkSendPath(p, rules)
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +199,10 @@ func PrepareFiles(paths []string, rules FileRules, snapshots string) (*OutgoingF
 			return nil, fmt.Errorf("%s and %s are both named %q; one message cannot hold two files with one name", first, p, name)
 		}
 		names[name] = p
-		list = append(list, checked{source: p, real: real, name: name})
+		list = append(list, checked{source: p, real: real, name: name, info: info})
+	}
+	if afterCheck != nil {
+		afterCheck()
 	}
 	if err := os.MkdirAll(snapshots, 0o700); err != nil {
 		return nil, err
@@ -202,7 +215,7 @@ func PrepareFiles(paths []string, rules FileRules, snapshots string) (*OutgoingF
 	for i, c := range list {
 		entry := protocol.FileEntry{ID: fmt.Sprintf("f%d", i+1), Name: c.name}
 		copyPath := filepath.Join(dir, entry.ID)
-		size, sum, text, err := snapshotFile(c.real, copyPath)
+		size, sum, text, err := snapshotFile(c.real, copyPath, c.info, rules.ConfineSymlinks)
 		if err == nil && text && !rules.AllowSecrets {
 			err = scanForSecrets(copyPath, c.name)
 		}
@@ -221,39 +234,50 @@ func PrepareFiles(paths []string, rules FileRules, snapshots string) (*OutgoingF
 }
 
 // checkSendPath applies the path rules to one file. It returns the resolved
-// path and the name the receiver sees (the name the caller used).
-func checkSendPath(p string, rules FileRules) (real, name string, err error) {
+// path, the name the receiver sees, and the identity of the checked file.
+func checkSendPath(p string, rules FileRules) (real, name string, info os.FileInfo, err error) {
 	if !filepath.IsAbs(p) {
-		return "", "", fmt.Errorf("%s: give the full path of the file", p)
+		return "", "", nil, fmt.Errorf("%s: give the full path of the file", p)
 	}
 	clean := filepath.Clean(p)
 	name = filepath.Base(clean)
 	if err := protocol.CheckFileName(name); err != nil {
-		return "", "", fmt.Errorf("%s: %v", p, err)
+		return "", "", nil, fmt.Errorf("%s: %v", p, err)
 	}
 	real, err = filepath.EvalSymlinks(clean)
 	if err != nil {
-		return "", "", fmt.Errorf("cannot read %s: %w", p, err)
+		return "", "", nil, fmt.Errorf("cannot read %s: %w", p, err)
 	}
-	info, err := os.Lstat(real)
+	info, err = os.Lstat(real)
 	if err != nil {
-		return "", "", fmt.Errorf("%s: cannot read it: %v", p, err)
+		return "", "", nil, fmt.Errorf("%s: cannot read it: %v", p, err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", "", fmt.Errorf("%s is not a regular file", p)
+		return "", "", nil, fmt.Errorf("%s is not a regular file", p)
 	}
 	if info.Size() > protocol.MaxFileBytes {
-		return "", "", fmt.Errorf("%s is %d MB; the limit is %d MB per file", p, info.Size()>>20, protocol.MaxFileBytes>>20)
+		return "", "", nil, fmt.Errorf("%s is %d MB; the limit is %d MB per file", p, info.Size()>>20, protocol.MaxFileBytes>>20)
 	}
 	if rules.ConfineSymlinks {
 		if err := checkFileRoot(clean, real, rules); err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 	}
 	roots := resolvedRoots(rules.Roots)
+	// A worktree under a private folder can itself be named through a
+	// symlink. Check both the named and canonical root against private paths.
+	privateRoots := append([]string{}, roots...)
+	for _, r := range rules.Roots {
+		if !filepath.IsAbs(r) || filepath.Clean(r) == string(filepath.Separator) {
+			continue
+		}
+		if canonical, err := filepath.EvalSymlinks(r); err == nil && filepath.Clean(canonical) != string(filepath.Separator) {
+			privateRoots = append(privateRoots, filepath.Clean(r))
+		}
+	}
 	for _, candidate := range []string{clean, real} {
-		if why := forbiddenPath(candidate, rules, roots); why != "" {
-			return "", "", fmt.Errorf("%s: agent-net never sends files from %s", p, why)
+		if why := forbiddenPath(candidate, rules, privateRoots); why != "" {
+			return "", "", nil, fmt.Errorf("%s: agent-net never sends files from %s", p, why)
 		}
 	}
 	allowed := false
@@ -268,9 +292,9 @@ func checkSendPath(p string, rules FileRules) (real, name string, err error) {
 		}
 	}
 	if !allowed {
-		return "", "", fmt.Errorf("%s is outside the session's project and /tmp; agent-net sends only files from there", p)
+		return "", "", nil, fmt.Errorf("%s is outside the session's project and /tmp; agent-net sends only files from there", p)
 	}
-	return real, name, nil
+	return real, name, info, nil
 }
 
 // checkFileRoot uses the most specific allowed root that contains the named
@@ -280,22 +304,29 @@ func checkFileRoot(clean, real string, rules FileRules) error {
 	if temp == nil {
 		temp = []string{"/tmp"}
 	}
-	var root string
+	var root, resolved string
+	matchLen := 0
 	for _, r := range append(append([]string{}, rules.Roots...), temp...) {
 		if !filepath.IsAbs(r) || filepath.Clean(r) == string(filepath.Separator) {
 			continue
 		}
 		r = filepath.Clean(r)
-		if within(clean, r) && len(r) > len(root) {
-			root = r
+		canonical, err := filepath.EvalSymlinks(r)
+		if err != nil {
+			continue
+		}
+		canonical = filepath.Clean(canonical)
+		if canonical == string(filepath.Separator) {
+			continue
+		}
+		for _, spelling := range []string{r, canonical} {
+			if within(clean, spelling) && len(spelling) > matchLen {
+				root, resolved, matchLen = spelling, canonical, len(spelling)
+			}
 		}
 	}
 	if root == "" {
 		return fmt.Errorf("%s is outside the session's project and /tmp", clean)
-	}
-	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return fmt.Errorf("cannot resolve source folder %s: %w", root, err)
 	}
 	if !within(real, resolved) {
 		return fmt.Errorf("%s: a symlink points outside the source folder %s", clean, root)
@@ -374,14 +405,57 @@ func within(p, dir string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
+// openSnapshotSource opens the already resolved path without following any
+// symlink. A checked directory may itself have been moved and replaced by a
+// symlink, even when the final file still has the same device and inode.
+func openSnapshotSource(path string) (*os.File, error) {
+	dir, err := unix.Open(string(filepath.Separator), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	parts := strings.Split(strings.TrimPrefix(filepath.Clean(path), string(filepath.Separator)), string(filepath.Separator))
+	for i, part := range parts {
+		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_CLOEXEC
+		if i == len(parts)-1 {
+			// Opening a substituted FIFO must not block before fstat.
+			flags |= unix.O_NONBLOCK
+		} else {
+			flags |= unix.O_DIRECTORY
+		}
+		next, openErr := unix.Openat(dir, part, flags, 0)
+		_ = unix.Close(dir)
+		if openErr != nil {
+			return nil, &os.PathError{Op: "open", Path: path, Err: openErr}
+		}
+		dir = next
+	}
+	return os.NewFile(uintptr(dir), path), nil
+}
+
 // snapshotFile copies src to dst while hashing it, and tells whether the
 // bytes look like text. It refuses a file that grew past the limit.
-func snapshotFile(src, dst string) (size int64, sum string, text bool, err error) {
-	in, err := os.Open(src)
+func snapshotFile(src, dst string, checked os.FileInfo, confined bool) (size int64, sum string, text bool, err error) {
+	in, err := openSnapshotSource(src)
 	if err != nil {
 		return 0, "", false, err
 	}
 	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return 0, "", false, err
+	}
+	if !info.Mode().IsRegular() || !os.SameFile(checked, info) {
+		return 0, "", false, fmt.Errorf("%s changed after its path was checked", src)
+	}
+	if confined {
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return 0, "", false, fmt.Errorf("%s: cannot check hard links", src)
+		}
+		if stat.Nlink > 1 {
+			return 0, "", false, fmt.Errorf("%s has multiple hard links; confined files must have only one", src)
+		}
+	}
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return 0, "", false, err

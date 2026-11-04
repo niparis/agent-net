@@ -413,6 +413,8 @@ type WorkerHandbackRequest struct {
 	// Complete is false when the worker hands back partial work. It is absent
 	// in a request from an older worker or tool and then means true.
 	Complete *bool `json:"complete,omitempty"`
+	// Files are absolute paths in the worker's own worktree.
+	Files []string `json:"files,omitempty"`
 }
 
 // IsComplete tells whether the hand-back reports the whole task done.

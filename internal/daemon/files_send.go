@@ -69,6 +69,13 @@ func (d *Daemon) SendFiles(ctx context.Context, req FileSend) (FileSendResult, e
 		return res, err
 	}
 	defer out.Remove()
+	return d.sendPreparedFiles(ctx, req, out)
+}
+
+// sendPreparedFiles sends the checked snapshots, including their manifest in
+// the original message. Handbacks prepare before changing worker state.
+func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *OutgoingFiles) (FileSendResult, error) {
+	var res FileSendResult
 	if req.IdempotencyKey == "" {
 		req.IdempotencyKey = protocol.NewID("k")
 	}

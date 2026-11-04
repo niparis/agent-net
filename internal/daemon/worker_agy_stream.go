@@ -78,9 +78,11 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 	d, w := c.d, c.w
 	c.mu.Lock()
 	key := c.pendingKey
+	files := c.pendingFiles
+	c.pendingFiles = nil
 	c.mu.Unlock()
 	d.goBackground(func() {
-		if out, err := d.handbackTo(context.Background(), w, req, "", ""); err != nil {
+		if out, err := d.handbackToNoteWithFiles(context.Background(), w, req, "", "", "", true, files); err != nil {
 			d.Logf("worker %s: Antigravity handback: %v", w.id, err)
 		} else {
 			c.mu.Lock()
@@ -211,4 +213,10 @@ func (c *agyConn) closeStream() {
 		c.stopOnce.Do(func() { close(c.stop) })
 		<-c.stopped
 	}
+	c.mu.Lock()
+	handbackFiles, pendingFiles := c.handbackFiles, c.pendingFiles
+	c.handbackFiles, c.pendingFiles = nil, nil
+	c.mu.Unlock()
+	handbackFiles.Remove()
+	pendingFiles.Remove()
 }

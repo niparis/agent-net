@@ -1040,14 +1040,31 @@ await test("agent_handback reaches the daemon", async () => {
   }
   const before = calls.length;
   if (!("complete" in hb.input.properties)) throw new Error("agent_handback has no complete");
-  const out = (await hb.execute({ report: "all done", status: "blocked", complete: false }, { sessionID: "ses_h" })).content;
+  if (!("files" in hb.input.properties)) throw new Error("agent_handback has no files");
+  const out = (await hb.execute({ report: "all done", status: "blocked", complete: false, files: ["/work/result.txt"] }, { sessionID: "ses_h" })).content;
   const [method, params] = calls[before];
-  if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || params.complete !== false || !out.includes("Handed back (blocked, partial)")) {
+  if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || params.complete !== false || params.files?.[0] !== "/work/result.txt" || !out.includes("Handed back (blocked, partial)")) {
     throw new Error("handback: " + JSON.stringify(calls[before]) + " " + out);
   }
   stop();
   delete process.env.AGENT_NET_WORKER;
   delete process.env.AGENT_NET_WORKER_SESSION_FILE;
+});
+
+await test("agent_file_send reaches the daemon", async () => {
+  freshHub();
+  const sessions = new Map([["ses_file", session("ses_file", "/work/file")]]);
+  let tools;
+  const c = makeContext("/work/file", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_file", () => registered("ses_file"));
+  const send = tools.find((t) => t.name === "agent_file_send");
+  if (!send || !("paths" in send.input.properties)) throw new Error("missing file send tool or schema");
+  const before = calls.length;
+  await send.execute({ to: "s_b", paths: ["/work/a.txt"], note: "read" }, { sessionID: "ses_file" });
+  const [method, params] = calls[before];
+  if (method !== "file_send" || params.to !== "s_b" || params.paths?.[0] !== "/work/a.txt" || params.note !== "read") throw new Error("file send: " + JSON.stringify(calls[before]));
+  stop();
 });
 
 await test("agent_worker_start can ask for a worktree", async () => {

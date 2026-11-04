@@ -149,7 +149,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if v, ok := a["complete"].(bool); ok {
 			complete = &v
 		}
-		m, err := handbackCall(ctx, run, protocol.WorkerHandbackRequest{Report: str("report"), Status: str("status"), Complete: complete})
+		m, err := handbackCall(ctx, run, protocol.WorkerHandbackRequest{Report: str("report"), Status: str("status"), Complete: complete, Files: stringSlice(a["files"])})
 		if err != nil {
 			return nil, err
 		}
