@@ -118,11 +118,40 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 	return nil, err
 }
 
+// ctoOwnerProjectAnswer accepts only an owner message for the pending project.
+func (d *Daemon) ctoOwnerProjectAnswer(ctx context.Context, text string, owner bool) (string, bool, error) {
+	if !owner {
+		return "", false, nil
+	}
+	d.mu.Lock()
+	id := d.ctoPendingProject
+	d.ctoPendingProject = ""
+	d.mu.Unlock()
+	if id == "" || !strings.EqualFold(strings.TrimSpace(text), "yes") {
+		return "", false, nil
+	}
+	if err := d.proposalRunner().decide(ctx, id, true); err != nil {
+		return "", true, err
+	}
+	items, err := d.proposalRunner().list()
+	if err != nil {
+		return "", true, err
+	}
+	for _, item := range items {
+		if item.ID != id {
+			continue
+		}
+		var start protocol.StartedSession
+		if item.Status == "applied" && json.Unmarshal(item.Result, &start) == nil && start.ID != "" {
+			return d.ctoProjectStartOutcome(ctx, start), true, nil
+		}
+		return item.Note, true, nil
+	}
+	return "", true, errors.New("project proposal not found")
+}
+
 // ctoProjectStartOutcome waits for the registered session before reporting it ready.
 func (d *Daemon) ctoProjectStartOutcome(ctx context.Context, start protocol.StartedSession) string {
-	if start.NodeID != "" && start.NodeID != d.cfg.NodeID {
-		return "Project creation was approved; check the remote session in Sessions."
-	}
 	ctx, cancel := context.WithTimeout(ctx, d.workerSettings("").StartTimeout)
 	defer cancel()
 	ticker := time.NewTicker(25 * time.Millisecond)

@@ -57,6 +57,11 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 	}
 	id, err := d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
 	if err == nil {
+		if tool == "project_change" && action == "create" {
+			d.mu.Lock()
+			d.ctoPendingProject = id
+			d.mu.Unlock()
+		}
 		if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
 			*dest = id
 		}

@@ -205,3 +205,29 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 		t.Fatalf("outcome: %v", out)
 	}
 }
+
+func TestCTOProjectOwnerChatApproval(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	path := filepath.Join(home, "code", "company-rag")
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
+	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+		t.Fatal(err)
+	}
+	if _, handled, err := c.d.ctoOwnerProjectAnswer(context.Background(), "yes", false); err != nil || handled {
+		t.Fatalf("peer approved: %v %v", handled, err)
+	}
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 || items[0].Status != "open" {
+		t.Fatalf("proposal before owner: %v %v", items, err)
+	}
+	c.d.cfg.HarnessPaths["opencode"] = os.Args[0]
+	c.cli.mustCall("cto_send", map[string]string{"text": "yes"})
+
+	items, err = c.d.proposalRunner().list()
+	if err != nil || items[0].Status != "applied" {
+		t.Fatalf("proposal after owner: %v %v", items, err)
+	}
+}
