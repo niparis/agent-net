@@ -2,11 +2,11 @@
 [ Quotas ]    Workers log      Delivery
 ╭─Subscriptions · read on research · read 40s ago──────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
-│ PROVIDER PLAN  RESEAR… WINDOW   LEFT                 PACE      RESETS        │
-│ > claude max   live    session  █████████─  88%      -         -             │
-│                        week     ████──────  40%      -         -             │
-│                        Fable w… ██████████  95%      -         -             │
-│   codex  prol… live    week     █─────────   8%      -         -             │
+│ PROVIDER         PLAN  WINDOW   USAGE              PACE      RESETS          │
+│ > claude (resea… max   session  ███████─  88%      -         -               │
+│                        week     ███─────  40%      -         -               │
+│                        Fable w… ████████  95%      -         -               │
+│   codex (resear… prol… week     █───────   8%      -         -               │
 │ 19 other subscriptions · s to show                                           │
 │ laptop: exit status 2                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
