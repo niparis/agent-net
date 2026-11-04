@@ -2137,6 +2137,20 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown recipient session %q", p.Recipient)
 	}
+	// Initial worker briefs must not revive or reach a worker that has ended.
+	// Check in the message transaction: worker.stopped can record the run
+	// before its separate session-offline update reaches the database.
+	if isWorkerTask(p) {
+		var stopped int
+		err := tx.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE s.id=? AND s.worker<>''
+			AND (s.online=0 OR EXISTS (SELECT 1 FROM worker_runs r WHERE r.session_id=s.id))`, p.Recipient).Scan(&stopped)
+		if err != nil {
+			return msg, false, err
+		}
+		if stopped != 0 {
+			return msg, false, reject("worker %s is offline or has ended; its task cannot be sent", p.Recipient)
+		}
+	}
 	if !s.allow(p.Sender) {
 		return msg, false, reject("rate limit: at most %d messages per minute per session", protocol.RatePerMinute)
 	}
@@ -2996,4 +3010,9 @@ func graphExclusion(excluded, checked bool) int {
 		return 2
 	}
 	return 0
+}
+
+// isWorkerTask identifies the initial brief, which must never resume a worker.
+func isWorkerTask(p protocol.MsgSend) bool {
+	return (p.Type == "" || p.Type == protocol.TypeRequest) && p.ParentID == "" && strings.HasPrefix(p.Body, "[agent-net worker brief]")
 }
