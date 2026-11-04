@@ -186,7 +186,9 @@ func objectSchema(raw json.RawMessage) any {
 
 // Watch refreshes on every trigger and every interval, until ctx ends. After
 // a failed refresh (the daemon is down, or has not found this session yet) it
-// retries sooner, with a growing delay.
+// retries sooner, with a growing delay. A trigger (the registry changed, or a
+// server changed its resources or prompts) also tells the client to list
+// resources and prompts again.
 func (d *Dynamic) Watch(ctx context.Context, trigger <-chan struct{}, every time.Duration) {
 	retry := time.Second
 	wait := time.Duration(0)
@@ -197,6 +199,7 @@ func (d *Dynamic) Watch(ctx context.Context, trigger <-chan struct{}, every time
 			t.Stop()
 			return
 		case <-trigger:
+			notifyFeaturesChanged(d.s)
 		case <-t.C:
 		}
 		t.Stop()

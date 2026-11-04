@@ -138,7 +138,7 @@ agent-net mcp add homelab --url http://10.0.0.5:8000/mcp \
 agent-net mcp list
 ```
 
-Its tools appear in every session as `homelab__<tool>`. Details: [docs/mcp-registry.md](docs/mcp-registry.md).
+Its tools appear in every session as `homelab__<tool>`, its prompts as `homelab__<prompt>`, and its resources as `agent-net://homelab/<uri>` (in Claude Code: `ListMcpResources`). Details: [docs/mcp-registry.md](docs/mcp-registry.md).
 
 ## How it works
 
@@ -207,7 +207,7 @@ agent-net uses MCP to give agents their tools. It is not an implementation of A2
 - **A named model is the exception.** When a session asks for a worker by model name instead of letting the picker choose, agent-net replies with a reminder that naming a model should be exceptional, and why the picker is the default.
 - **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
 - **The phone app.**
-- MCP resources, prompts and OAuth logins in the registry.
+- **OAuth logins for registry MCP servers.** Resources and prompts already pass through; a server that needs an OAuth login cannot be added yet. What it needs: [docs/mcp-registry.md](docs/mcp-registry.md#oauth-logins-not-built).
 
 ## Development
 
