@@ -1,8 +1,9 @@
 # 0054 - Files between machines
 
 **Date:** 2026-11-03
-**Status:** Accepted. The gateway transfer in parts is built. Taildrop send and
-receive and the session tools come in later steps.
+**Status:** Accepted. The gateway transfer in parts (T2) and the daemon's
+send and receive (T3) are built. The session tools (T4) and the owner flow
+(T5) come in later steps.
 
 ## Context
 
@@ -109,6 +110,47 @@ message store.
 T3 adds the path checks, the manifest, Taildrop, the inbox folder and the
 "delivered only when every file is in" rule. T4 adds the tools. T5 adds the
 owner flow.
+
+## T3: send and receive (2026-11-04)
+
+- **The manifest is a field, not text.** `files` is a field of `msg.send` and
+  of the message. The gateway stores it in its own table, `message_files`,
+  checks it again with the same limits, and hands it over with every push. A
+  sender reads the stored message back: a gateway that dropped the field is
+  too old, and the send says so.
+- **The message goes first, then the bytes.** The unique name holds the
+  message ID, which only the gateway assigns. So the daemon stores the message
+  and then pushes the files. A message with files is never queued in the
+  outbox.
+- **The receiver finds uploads by name.** Every file travels under its unique
+  name on both paths; the gateway upload is named the same way. A new frame,
+  `xfer.find`, lists the finished uploads addressed to the calling machine
+  with given names. So a Taildrop that fails after the message was sent falls
+  back to the gateway with no second message, and the receiver looks in every
+  place on each pass. The manifest carries no upload ID.
+- **Same tailnet means a peer in `tailscale status`.** Each daemon reports its
+  Tailscale address in `hello` (`tailscale_ip`, read from the network
+  interfaces). The sender uses Taildrop only when that address is an online
+  peer of its own tailnet. The gateway keeps the address in its own table,
+  `node_tailscale`.
+- **Same machine.** Between two sessions of one machine the copy moves through
+  a local folder; neither Taildrop (which cannot send to itself) nor the
+  gateway carries it.
+- **A held message keeps its files on the gateway.** If the owner refuses it,
+  the gateway deletes the bytes after 7 days; a Taildrop would leave them in
+  the receiver's Downloads.
+- **Snapshots.** The sender copies each file while hashing it and sends the
+  copy, so a file that changes after the check cannot fail the receiver's
+  hash.
+- **Half-written files.** A copy that fails its hash is refused only when the
+  same copy (same size and time) fails twice in a row, so a Taildrop still
+  being written is not taken for a bad file.
+- **Waiting.** The receiver waits until the message expires (24 hours), and
+  the sender sees `waiting for files: n of total in`. A message with files can
+  reach its agent after a later message without files.
+- **A worker's worktree.** It lives in agent-net's state folder, which is
+  otherwise closed. A root inside that folder opens only itself, so a worker
+  can send what it built.
 
 ## Left out
 

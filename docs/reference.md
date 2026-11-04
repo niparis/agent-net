@@ -663,6 +663,10 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Reply sockets | `<socket directory>/r/<session id>.<conversation id>.sock` and `<socket directory>/r/<session id>.sock` | One per sending session and conversation, used to catch Claude Code's native replies (see [Claude replies](#claude-replies)). The socket of a conversation is closed when its rows leave `daemon.db`. The one per sending session is for messages without a conversation and for frames from an older daemon. Mode 0600. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the tools inventory, assignments, plans, audit, MCP registry, and the `setting_revision`, `setting_values` and append-only `setting_history` tables), `admin.json` (mode 0600: the local admin URL and token) and `skills.git` (mode 0700: the private bare Git repository of imported skills, which can hold secrets from skill files). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
 | Gateway transfer parts | `~/.local/state/agent-net/gateway/transfers/<upload id>/` | One file per part of an upload between machines, named by its part number. Folders 0700, files 0600. At most 100 MB per upload and 1 GB staged for each sending machine. A part file is deleted when the receiving machine confirms the whole file, or 7 days after the upload began. A `gateway backup` does not copy parts that are still in flight. Uninstall keeps them with the rest of the gateway data. See [security.md](security.md#files-between-machines). |
+| Received files | `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>` | The files that came with a message to a session of this machine (see [Files between machines](#files-between-machines)). Folders 0700, files 0600. The daemon deletes a message's folder 7 days after its last file arrived. Uninstall keeps them with the state folder; `--purge` removes them. |
+| File send snapshots | `~/.local/state/agent-net/daemon/files/outgoing/o_*/` | A copy of each file being sent, taken while hashing, so the bytes sent match the manifest. Deleted when the send ends; a crash leftover is deleted after a day. |
+| Same-machine file handoff | `~/.local/state/agent-net/daemon/files/local/` | A file sent between two sessions of this machine waits here, under its unique name, until the receiving side takes it into the inbox. Deleted after 7 days if nobody takes it. |
+| Taildrop staging (Linux) | `~/.local/state/agent-net/daemon/files/taildrop/` | `tailscale file get` writes here while the daemon collects files. Announced files go to the inbox; every other file goes to `~/Downloads` at once. |
 | Gateway binaries | `~/.local/share/agent-net/dist/agent-net-<os>-<arch>` | The four binaries the gateway hands out to new machines. |
 | Binary | `~/.local/bin/agent-net` | |
 | Claude Code sessions (read) | `~/.claude/sessions/` | The daemon reads one file per live session. It never writes here. |
@@ -672,6 +676,43 @@ machine reconnects first. A reconnect syncs the sessions again.
 | macOS logs | `~/Library/Logs/agent-net-daemon.log`, `agent-net-gateway.log` | launchd does not rotate them, so each process rotates its own file at 10 MB and keeps `agent-net-daemon.log.1` to `.5` (see [Housekeeping](#housekeeping)). |
 
 **Machine name.** Each daemon reports a name for its machine on every start. If `node.json` has `"hostname": "mac-mini"`, that name is used. Otherwise, on macOS it is the first of these that is set, cut at the first dot: `scutil --get HostName`, `scutil --get LocalHostName` (System Settings, Sharing), then `os.Hostname()`. macOS changes `os.Hostname()` with the network (`Laptop-1.local`, `Laptop1`), so it is not used while a setting exists. On Linux it is `os.Hostname()` as it is. To show a shorter name, rename the machine once from the TUI (`N`) or with `agent-net nodes rename`: nothing needs to change on the machine itself (see [machine names](#machine-names)). `enter_ssh_hosts` keys match the name the machine is listed under. The gateway's own TLS and URL host (`enroll --host`, `invite`) is a network address and still comes from `os.Hostname()`.
+
+## Files between machines
+
+A message can carry files (decision [0054](decisions/0054-files-between-machines.md)). The message holds a manifest, `files`: for each file its `id`, `name`, `size` and `sha256`. The bytes travel apart from the message. The daemon side is built; the session tools (`agent_file_send`, `files` on `agent_handback`) and the TUI's Send file come in later steps.
+
+**Sending.** The daemon of the sending session:
+
+1. checks each path: an absolute path to a regular file, in the session's project or worktree or in `/tmp`, after symlinks are resolved, never in a credential folder or an agent-net folder (the list is in [security.md](security.md#files-between-machines)); at most 100 MB per file and 10 files per message; no two files with one name;
+2. copies each file into `files/outgoing/` while it computes the SHA-256, and runs the secret scanner on text files;
+3. sends the message with the manifest. The gateway stores the manifest with the message and checks it again. Files need a live connection: a message with files is never put in the outbox;
+4. pushes each file under its unique name `agent-net-<message id>-<file id>-<name>`:
+   - to a session on the same machine: through `files/local/`;
+   - over Taildrop (`tailscale file cp <file> <address>:`) when the receiving machine reported a Tailscale address and `tailscale status --json` lists it as an online peer;
+   - else through the gateway in parts (`xfer.begin`, `xfer.part`, `xfer.finish`), with the unique name as the upload name.
+
+A Taildrop that fails (for example a receiver that is offline) falls back to the gateway, which holds the bytes until the receiver comes online or 7 days pass. A message held for the owner's approval sends its files through the gateway, not over Taildrop. An empty file carries no bytes: the receiver writes it from the manifest. The daemon finds `tailscale` on `PATH`, then on macOS at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. With no Tailscale, files go through the gateway.
+
+**Receiving.** When a message with a manifest arrives, the daemon of the receiving session collects every file before it delivers the message. It looks, in this order:
+
+- in the inbox folder, for a file already there (after a restart, or when the gateway pushes the message again);
+- in `files/local/`, for a sender on the same machine;
+- on Linux, it runs `tailscale file get files/taildrop/`, and looks in that folder and in `~/Downloads` (in case you collected the file yourself). Files nobody announced go to `~/Downloads` at once, under a free name such as `scan (1).pdf`;
+- on macOS, it looks in `~/Downloads`, where the Tailscale app saves Taildrops. Files nobody announced stay where they are;
+- on the gateway, with `xfer.find` for the unique names of the missing files. It downloads a matching upload with `xfer.get`, checks it, and confirms it with `xfer.confirm`, so the gateway frees the space.
+
+A file is taken only when its size and SHA-256 match the manifest. It is copied into `inbox/<session>/<message>/<name>` and then removed from where it arrived. The daemon looks again after 2 seconds, doubling the wait up to 30 seconds while nothing arrives. Until every file is in, the sender sees `waiting for files: <n> of <total> in`. Then the agent gets the message, with a note at the end:
+
+```
+[agent-net] This message came with 2 files. They are in /home/you/.local/state/agent-net/daemon/inbox/s_.../m_.../:
+- report.html (90.0 KB)
+- data.csv (1.2 MB)
+agent-net deletes them after 7 days.
+```
+
+The delivery detail ends with the path: `files via Taildrop`, `files via the gateway`, `files via the local handoff on this machine`, or several joined with `and`. A file whose copy fails its hash twice in a row fails the message (`... arrived, but its sha256 does not match the file list`). Files that have not arrived when the message expires (24 hours) fail it with their names. A message delivered to the agent earlier is not collected again.
+
+**Frames.** `msg.send` and `msg.deliver` carry `files` on the message. `xfer.find` takes `names` (1 to 10) and returns `uploads`: the finished uploads addressed to the calling machine with one of those names, each with `upload_id`, `name`, `size`, `sha256` and its part layout. Every transfer state now also carries the upload `name`.
 
 ## Dependencies on harness internals
 
@@ -772,6 +813,13 @@ that conversation. An older gateway ignores the field and starts a new
 conversation. If the gateway refuses it, the daemon sends the answer again
 as a notification in a new conversation, so it is not lost.
 
+A message with files stays `dispatched` until every file is in the receiving
+machine's inbox, with the detail `waiting for files: <n> of <total> in`. Then
+it is delivered as usual, and the detail ends with the path the files took,
+for example `files via Taildrop` or `files via the gateway`. A file that fails
+its hash, or files that do not arrive before the message expires, fail the
+message with the file names (see [Files between machines](#files-between-machines)).
+
 ## Housekeeping
 
 agent-net keeps message bodies as long as possible. These jobs only remove bookkeeping rows and free space.
@@ -780,6 +828,7 @@ agent-net keeps message bodies as long as possible. These jobs only remove bookk
 - **Daemon duplicate check.** `daemon.db` has a `delivered` table with one delivery record per message ID. It stops duplicate or uncertain writes and holds no message text. Once an hour the daemon deletes rows older than the message expiry (24 hours) plus 7 days, so a message that is still alive can never be delivered twice. The first run is about a minute after start, so an upgrade does not postpone it.
 - **Gateway database.** `gateway.db` is vacuumed at most once a week, and only when more than 20% of its pages are free (deleted rows or events). The hourly maintenance runs the check; the vacuum rewrites the file and can make it much smaller. Nothing is deleted: messages, events and sessions follow the `--keep-*` retention settings, and the defaults keep messages for ever. A vacuum writes one `db.vacuum` line with the size before and after.
 - **Gateway transfer parts.** The parts of an upload between machines (see [Files](#files)) are deleted as soon as the receiving machine confirms the whole file. Every upload is also deleted 7 days after it began, downloaded or not. The hourly maintenance deletes expired parts even when no transfer runs. A failed removal keeps the row, so the next run tries again and the bytes keep counting against the sender's 1 GB cap.
+- **Received files.** Once an hour (the first run about a minute after start) the daemon deletes each message folder under `inbox/` whose last file arrived more than 7 days ago, and an empty session folder after it. Send snapshots left by a crash go after a day; files in the same-machine handoff and the Taildrop staging folder that nobody took go after 7 days.
 - **Log files.** On Linux the services write to journald, which rotates its own journal; agent-net does nothing. On macOS launchd sends stdout and stderr to `~/Library/Logs/agent-net-daemon.log` and `agent-net-gateway.log` and never rotates them. The daemon and gateway open their own log file, and when a write would pass 10 MB they rename the current file (`agent-net-daemon.log.1`) and start a new one. Five old files are kept (`.1` to `.5`); the oldest is removed at the next rotation. A process started by hand in a terminal, or in a test, writes to that terminal and does not rotate anything.
 
 ## Gateway log format
@@ -917,6 +966,8 @@ Each daemon checks installed harnesses daily, starting 10 minutes after it start
 Each daemon sends two kinds of facts about its machine to the gateway. Agents and the CLI can read them.
 
 **Time zone in `hello`.** Every `hello` carries `time_zone`, the machine's IANA zone (`Europe/Paris`), read without sudo: the target of `/etc/localtime` on macOS, then `/etc/timezone`, then `timedatectl show -p Timezone --value`, then `systemsetup -gettimezone` on macOS, then `TZ`. An empty value from an older daemon leaves the stored one alone. The gateway keeps it on the node, `nodes` gives it as `time_zone`, and the owner's display setting uses it (see [Display time zone](#display-time-zone)). It is a fact about the machine, not a change to its clock.
+
+**Tailscale address in `hello`.** Every `hello` carries `tailscale_ip`, the machine's address in `100.64.0.0/10`, read from its network interfaces (no command runs). An empty value clears the stored one. `nodes` gives it as `tailscale_ip`. A daemon that sends files reads it to push them over Taildrop (see [Files between machines](#files-between-machines)).
 
 **Repo info for each session.** When the daemon finds a session (any harness), it runs `git` in the session's folder (with a 3 second limit for all commands) and sends:
 

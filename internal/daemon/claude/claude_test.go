@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -237,7 +238,7 @@ func TestReplyCapture(t *testing.T) {
 	case p := <-r.host.sent:
 		want := protocol.MsgSend{Sender: "s_claude", Recipient: "s_bob", Type: protocol.TypeReply, Body: "all done",
 			ParentID: "m_0123456789abcdef", IdempotencyKey: "claude:uuid-1"}
-		if p != want {
+		if !reflect.DeepEqual(p, want) {
 			t.Fatalf("forwarded %+v, want %+v", p, want)
 		}
 	case <-time.After(5 * time.Second):

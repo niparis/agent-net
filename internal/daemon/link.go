@@ -128,6 +128,11 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if res, err := protocol.EncodeResult(h.ID, map[string]bool{"accepted": true}, nil); err == nil {
 				l.write(ctx, res)
 			}
+			if len(p.Message.Files) > 0 {
+				// Delivered only when every file is in (decision 0054).
+				d.receiveFiles(p.Message)
+				continue
+			}
 			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
 		case "node.name":
 			var p protocol.NodeName
@@ -289,7 +294,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
 	inv, gen := d.inventory()
-	hello, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, TimeZone: machineTimeZone(), Harnesses: inv, Launch: d.launchFlag()})
+	hello, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, TimeZone: machineTimeZone(), Harnesses: inv, Launch: d.launchFlag(), TailscaleIP: d.fileConfig().TailscaleIP()})
 	if err != nil {
 		return false, err
 	}

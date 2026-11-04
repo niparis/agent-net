@@ -728,6 +728,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.SetNodeTimeZone(nc.id, p.TimeZone); err != nil {
 			return nil, err
 		}
+		if err := st.SetNodeTailscaleIP(nc.id, p.TailscaleIP); err != nil {
+			return nil, err
+		}
 		// The daemon uses the name the gateway lists (the owner's display name
 		// when there is one) where it compares host names.
 		return map[string]string{"node_id": nc.id, "hostname": st.hostname(nc.id)}, nil

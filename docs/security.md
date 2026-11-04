@@ -237,7 +237,32 @@ A machine joins with a one-time code.
 
 ## Files between machines
 
-Files do not travel in messages. A message carries only a manifest: name, size, SHA-256 and an ID per file. The bytes go over Taildrop on the same tailnet, or through the gateway in parts when Taildrop is not available. The gateway transfer in parts is built; the Taildrop path and the session tools are later steps (decision [0054](decisions/0054-files-between-machines.md)).
+Files do not travel in messages. A message carries only a manifest: name, size, SHA-256 and an ID per file. The bytes go over Taildrop on the same tailnet, or through the gateway in parts when Taildrop is not available. The gateway transfer in parts and the daemon's send and receive are built; the session tools and the TUI flow are later steps (decision [0054](decisions/0054-files-between-machines.md)).
+
+What the sending daemon checks, before the message is stored:
+
+- **Limits.** At most 100 MB per file and 10 files per message. The gateway checks the manifest again when it stores the message: a file name is a plain name of at most 200 bytes (no `/`, `\`, control character, `.` or `..`), the IDs and names are unique, and each hash is a SHA-256.
+- **Allowed folders.** Only files in the sending session's project or worktree, or in `/tmp`. Symlinks are resolved first, so a link in the project that points elsewhere is judged by its target. A path must be absolute and name a regular file. The file system root never counts as a project.
+- **Never sent, whatever the project.** The credential folders and files under the home folder: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, `~/.pki`, `~/.password-store`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.config/gcloud`, `~/.config/gh`, `~/.config/hub`, `~/.local/share/keyrings`, `~/Library/Keychains`, and the harness logins `~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.local/share/opencode/auth.json`, `~/.pi/agent/auth.json`, `~/.gemini/oauth_creds.json`. Also agent-net's own folders: the daemon state folder, the config folder, the gateway data folder, `~/.local/state/agent-net`, `~/.local/share/agent-net` and `~/.config/agent-net`. One exception: a worker's worktree lives in the state folder, and it is that worker's project, so the worker may send files from its own worktree, and nothing else there.
+- **Secret scan.** Every text file (no NUL byte and valid UTF-8 in its first 8000 bytes) goes through the same scanner that keeps secrets out of skills. A hit refuses the file. The refusal names the file but never repeats the text. Only the owner can send such a file anyway (a flag the owner flow sets; no agent tool sets it). Binary files are not scanned.
+- **A snapshot is sent.** The daemon copies each file into `<state>/files/outgoing/` while it hashes it, and sends from the copy. A file that changes after the check cannot reach the receiver under the old hash. The copies are deleted when the send ends, and a crash leftover after a day.
+
+How the bytes travel:
+
+- **Unique names.** Every file travels as `agent-net-<message id>-<file id>-<name>`, over Taildrop and through the gateway. The receiving daemon takes a file only when its name is announced by a message it is collecting and its size and SHA-256 match the manifest. It never follows a symlink left under an announced name.
+- **Taildrop** is used only when the receiving machine reported a Tailscale address that this machine's `tailscale status` lists as an online peer, so both machines are on one tailnet. A Taildrop that fails falls back to the gateway. A message held for the owner's approval keeps its files on the gateway, which deletes them after 7 days if nobody approves.
+- **The gateway** stores the parts (below). The receiver finds an upload by its unique name with `xfer.find`, which lists only finished uploads addressed to the calling machine.
+- **Same machine.** Between two sessions of one machine the copy moves through `<state>/files/local/`, never through the network.
+
+What the receiving daemon does:
+
+- **Inbox.** Each file goes to `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>`, folders 0700, files 0600. Only the receiving session's folder gets the files. The message is delivered to the agent only when every file is in; its text then says where the files are.
+- **Hash mismatch.** A file that fails its size or hash is not taken. When the same copy fails twice in a row (so a file still being written is not refused), the message fails with the file's name, and nothing reaches the agent.
+- **Files nobody announced are not taken.** On macOS the Tailscale app saves Taildrops straight into `~/Downloads`; the daemon picks up only announced names there and leaves everything else, including a bad copy. On Linux the daemon runs `tailscale file get` into `<state>/files/taildrop/` only while it collects files, and moves every file nobody announced (and a bad copy) to `~/Downloads` under a free name, never over an existing file, so the owner's own Taildrops still arrive.
+- **Retention.** The daemon deletes a message's inbox folder 7 days after its last file arrived.
+- **What the log holds.** The daemon logs the message ID, file IDs, sizes and paths. It never logs file contents.
+
+The gateway transfer in parts:
 
 - **The gateway stores parts, not a trusted file.** Each part is 1 MB and carries its own SHA-256. The gateway checks the part hash, the length and, at the end, the whole SHA-256. It does not scan the bytes for secrets; the daemon does that before it sends.
 - **Who may act.** Only an enrolled machine with a valid node token can use the frames at all. Only the sending machine may begin, upload or resume an upload. Only the machine the sender named as receiver may download or confirm it. Any other enrolled machine is refused, and so is the sender.
