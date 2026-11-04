@@ -72,6 +72,9 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 					}
 				}
 			}
+			if item.Call.Tool == "session_change" && (item.Call.Action == "merger_start" || item.Call.Action == "merger_stop") {
+				message = item.Reason
+			}
 			return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": message}, nil
 		}
 	}

@@ -171,7 +171,7 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdWorkers(ctx, args)
 	case "cto":
 		err = cmdCTO(ctx, args)
-	case "charter", "graph", "node", "edge":
+	case "charter", "graph", "node", "edge", "merger":
 		err = cmdGraph(ctx, cmd, args)
 	case "send":
 		err = cmdSend(ctx, args)

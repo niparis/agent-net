@@ -5,14 +5,14 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
+  NAME           TYPE   STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-▸ tenebrae-53  claude   busy   -     normal -          38%  1.2G
-  strategies   claude   idle   -     normal -         240%  4.6G
-  web          opencode idle   -     normal -            ?     ?
+▸ tenebrae-53    agent  busy   -     normal -          38%  1.2G
+  strategies     agent  idle   -     normal -         240%  4.6G
+  web            agent  idle   -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner    pi       idle   -     normal -           5%  300M
-  scratch      pi       shell  -     normal -          <1%   80M
+  ci-runner      agent  idle   -     normal -           5%  300M
+  scratch        agent  shell  -     normal -          <1%   80M
 
 
 

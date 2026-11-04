@@ -197,6 +197,13 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 		}
 		_, err := gateway.ServerPin(d.cfg.GatewayData)
 		return err
+	case "merger_start", "merger_stop":
+		var p protocol.SessionStartRequest
+		if err := json.Unmarshal(call.Args, &p); err != nil {
+			return err
+		}
+		_, _, err := d.mergerProject(ctx, p)
+		return err
 	case "session_start", "project_create":
 		var p protocol.SessionStartRequest
 		if err := json.Unmarshal(call.Args, &p); err != nil {
@@ -327,6 +334,28 @@ func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor strin
 // Only the approved proposal runner may attach the CTO owner-instruction flag.
 // The immediate tool path always builds an unflagged peer message.
 func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "merger_start" || name == "merger_stop" {
+		if proposalActor(ctx) == "" {
+			return nil, errors.New("merger requires an approved proposal")
+		}
+		var p protocol.SessionStartRequest
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		project, node, err := d.mergerProject(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		if name == "merger_stop" {
+			return d.call(ctx, "merger.set", map[string]any{"project": project.Name, "node_id": node, "session_id": "", "configure": true, "by": proposalActor(ctx)})
+		}
+		p.Project, p.NodeID, p.Harness, p.Merger, p.CTOProposal = project.Name, node, "claude", true, true
+		p.FirstMessage = MergerFirstMessage
+		if p.Model == "" {
+			p.Model = "claude-opus-5-5"
+		}
+		return d.sessionStart(ctx, p)
+	}
 	if name == "session_start" || name == "project_create" {
 		if proposalActor(ctx) == "" {
 			return nil, errors.New("session start requires an approved proposal")

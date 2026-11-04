@@ -58,7 +58,7 @@ var ctoChangeActions = map[string]map[string]string{
 		"edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set",
 		"undo": "graph_undo",
 	},
-	"session_change": {"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start"},
+	"session_change": {"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"},
 	"worker_change":  {"start": "worker_start", "stop": "worker_stop"},
 	"answer":         {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
 	"tools_change": {
@@ -80,7 +80,7 @@ var ctoChangeActions = map[string]map[string]string{
 var ctoActions = map[string]map[string][]string{
 	"message":         {"action": {"send", "reply"}},
 	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"}},
-	"session_change":  {"action": {"rename", "trust", "policy", "session_start"}},
+	"session_change":  {"action": {"rename", "trust", "policy", "session_start", "merger_start", "merger_stop"}},
 	"worker_change":   {"action": {"start", "stop"}},
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"tools_change":    {"action": {"toggle", "new_projects", "plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},

@@ -33,6 +33,8 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 
 	startFields := map[string]ctoField{"project": s("Project."), "path": s("Path."), "node_id": s("Machine."), "harness": harness, "model": model, "folder": en("Folder.", "project", "worktree"), "branch": s("Branch."), "first_message": s("First message."), "create": b("Create.")}
 	add("session_start", "Start an owner session.", startFields)
+	add("merger_start", "Start the project merger.", map[string]ctoField{"project": s("Project."), "node_id": s("Machine."), "model": model})
+	add("merger_stop", "Stop routing to the project merger.", map[string]ctoField{"project": s("Project."), "node_id": s("Machine.")})
 	createFields := map[string]ctoField{}
 	for k, v := range startFields {
 		if k != "project" && k != "create" {

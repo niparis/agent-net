@@ -4,14 +4,14 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               AGENT    PROJECT    MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK         view: all  (v)
+  NAME               TYPE   AGENT    PROJECT    MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK  view: all  (v)
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  tenebrae-53        claude   tenebrae   opus-5-5   busy   -     normal -            ?     ?
-  strategies         claude   strategies sonnet-5-5 idle   -     normal -            ?     ? backtest v2
-  web                opencode shop       sonnet-5   idle   -     normal -            ?     ?
+  tenebrae-53        agent  claude   tenebrae   opus-5-5   busy   -     normal -            ?     ?
+  strategies         agent  claude   strategies sonnet-5-5 idle   -     normal -            ?     ? bac…
+  web                agent  opencode shop       sonnet-5   idle   -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net  gpt-6      idle   -     normal -            ?     ?
-  scratch            pi       -          -          shell  -     normal -            ?     ?
+  ci-runner          agent  pi       agent-net  gpt-6      idle   -     normal -            ?     ?
+  scratch            agent  pi       -          -          shell  -     normal -            ?     ?
 
 
 

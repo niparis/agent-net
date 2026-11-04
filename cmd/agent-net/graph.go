@@ -30,6 +30,15 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 		return fmt.Errorf("usage: agent-net charter show|set|history ...; graph [undo [id]]; node add-architect|remove <name>|settings <name> [setting value...]; edge set|remove <from> <kind> <to> [mode] [rule]")
 	}
 	switch cmd {
+	case "merger":
+		if (len(args) != 4 || args[0] != "set") && (len(args) != 3 || args[0] != "clear") {
+			return fmt.Errorf("usage: agent-net merger set <project> <node-id> <session-id> | merger clear <project> <node-id>")
+		}
+		q := protocol.MergerSetRequest{Project: args[1], NodeID: args[2]}
+		if args[0] == "set" {
+			q.SessionID = args[3]
+		}
+		method, params = protocol.OpMergerSet, q
 	case "charter":
 		if len(args) < 2 {
 			return usage()

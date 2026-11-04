@@ -3,6 +3,8 @@ Evidence API  early  autonomy: off
 Tools: 0 skills, 0 MCP servers · t open
 Document and evidence API.
 ○ no live sessions
+accept: caller
+test, merge: caller
 governed by: trading-architect (owner)
 
 IN 1                                                         OUT 1
@@ -22,8 +24,6 @@ worker_sandbox     sandboxed              maturity default
 judge_consumers    free                   maturity default
 deploy_rule        brief                  maturity default
 autonomy           off                    default
-
-
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

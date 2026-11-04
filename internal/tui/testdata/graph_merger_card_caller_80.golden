@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 15 nodes
+project-03  autonomy: off
+Tools: 0 skills, 0 MCP servers · t open
+no purpose set
+○ no live sessions
+accept: caller
+test, merge: caller
+
+IN 2                                     OUT 1
+all projects ──▶ depends                 ──▶ project-04 depends
+project-02 ──▶ deploys
+Card ───────────────────────────────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────
+no charter set
+Rules ──────────────────────────────────────────────────────────────────────────
+tests_before_merge suite                  default
+merge_authority    full                   default
+worker_sandbox     sandboxed              default
+judge_consumers    charter                default
+deploy_rule        brief                  default
+autonomy           off                    default
+
+
+
+
+
+RECENT  no changes yet
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit

@@ -681,6 +681,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			infos[i].Mode = protocol.ModeBackground
 			infos[i].Name = ""
 		}
+		infos[i].Type = protocol.SessionType(harness, infos[i].Worker, infos[i].Type)
 		// A session whose process asks to stay off the network is not
 		// registered at all. A worker started by this daemon is always
 		// registered: its caller waits for it.

@@ -23,6 +23,48 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 		return "", err
 	}
 	defer d.ctoDispatchMu.unlock()
+	if tool == "session_change" && (action == "merger_start" || action == "merger_stop") {
+		var p protocol.SessionStartRequest
+		if err := json.Unmarshal(args, &p); err != nil {
+			return "", err
+		}
+		project, node, err := d.mergerProject(ctx, p)
+		if err != nil {
+			return "", err
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(args, &fields); err != nil {
+			return "", err
+		}
+		fields["project"], _ = json.Marshal(project.Name)
+		fields["node_id"], _ = json.Marshal(node)
+		args, err = json.Marshal(fields)
+		if err != nil {
+			return "", err
+		}
+		if action == "merger_start" {
+			reason = project.Name + " merger: Claude Opus session in " + project.Name + " on " + project.Hostname + ", owns test and merge."
+			if p.Model != "" && p.Model != "claude-opus-5-5" {
+				reason = project.Name + " merger: Claude session (" + p.Model + ") in " + project.Name + " on " + project.Hostname + ", owns test and merge."
+			}
+			raw, err := d.call(ctx, "merger.plan", map[string]string{"project": project.Name})
+			if err != nil {
+				return "", err
+			}
+			var plan struct {
+				NeedsDefault bool `json:"needs_default"`
+			}
+			if err := json.Unmarshal(raw, &plan); err != nil {
+				return "", err
+			}
+			if plan.NeedsDefault {
+				reason += " Enables the default pipeline."
+			}
+			reason += " OK?"
+		} else {
+			reason = project.Name + " merger: clear registration on " + project.Hostname + " and return test and merge to the caller. OK?"
+		}
+	}
 	if (tool == "session_change" && action == "session_start") || (tool == "project_change" && action == "create") {
 		var fields map[string]json.RawMessage
 		var req protocol.SessionStartRequest

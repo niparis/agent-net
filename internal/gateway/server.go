@@ -1402,6 +1402,23 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			g.dispatchStepTasks(ctx)
 		}
 		return map[string]bool{"ok": true}, err
+	case "merger.plan":
+		p, err := decode[protocol.MergerSetRequest](raw)
+		if err != nil || p.Project == "" {
+			return nil, reject("merger needs project")
+		}
+		needs, err := st.MergerNeedsDefault(p.Project)
+		return map[string]bool{"needs_default": needs}, err
+	case "merger.set":
+		p, err := decode[protocol.MergerSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad merger request")
+		}
+		err = st.SetMerger(p, graphActor(raw))
+		if err == nil {
+			g.dispatchStepTasks(ctx)
+		}
+		return map[string]bool{"ok": err == nil}, err
 	case "delivery.owner.set":
 		p, err := decode[protocol.DeliveryOwnerSetRequest](raw)
 		if err != nil {

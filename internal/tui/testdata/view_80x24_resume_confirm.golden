@@ -4,17 +4,17 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME              STATUS TRUST RULE   DLG        CPU   RAM  view: offline  (v)
+  NAME             TYPE   STATUS TRUST RULE   DLG        RAM  view: offline  (v)
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
-  ↳ tenebrae        busy   -     normal -            ?     ?
-▸ tenebrae          off    -     normal -        -     -
-  strategies        idle   -     normal -            ?     ?
-  web               idle   -     normal -            ?     ?
+  ↳ tenebrae       worker busy   -     normal -            ?
+▸ tenebrae         agent  off    -     normal -        -
+  strategies       agent  idle   -     normal -            ?
+  web              agent  idle   -     normal -            ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner         idle   -     normal -            ?     ?
-  scratch           shell  -     normal -            ?     ?
+  ci-runner        agent  idle   -     normal -            ?
+  scratch          agent  shell  -     normal -            ?
  old-box 1 session ─────────────────────────────────────────────────────────────
-  old-session       off    -     normal -        -     -
+  old-session      agent  off    -     normal -        -
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

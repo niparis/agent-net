@@ -56,3 +56,15 @@ func TestCharterSetWarnsAboutDetailedValueAndStillSucceeds(t *testing.T) {
 		t.Fatalf("charter set did not print the warning: %q", out.String())
 	}
 }
+
+func TestMergerOwnerCLI(t *testing.T) {
+	for _, args := range [][]string{{"set", "garden", "machine", "s_merger"}, {"clear", "garden", "machine"}} {
+		f := &graphFake{}
+		if err := runGraphCommand(context.Background(), f, &bytes.Buffer{}, "merger", args); err != nil {
+			t.Fatal(err)
+		}
+		if f.method != "merger_set" {
+			t.Fatalf("method=%q", f.method)
+		}
+	}
+}

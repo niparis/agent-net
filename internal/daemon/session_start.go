@@ -222,6 +222,9 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		}
 	}
 	r := protocol.StartedSession{Background: p.CTOProposal && p.Harness == "claude", ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
+	if p.Merger {
+		r.Type = "merger"
+	}
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
@@ -250,7 +253,11 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Harness == "pi" {
 		return d.launchOwnerPi(r, p.FirstMessage, "", p.HerdrSocket, p.HerdrPaneID, notify)
 	}
-	args := []string{"--bg", "--name", r.Project}
+	name := r.Project
+	if p.Merger {
+		name += " merger"
+	}
+	args := []string{"--bg", "--name", name}
 	if p.Model != "" {
 		args = append(args, "--model", p.Model)
 	}
@@ -287,9 +294,9 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, target), socket, pane)
 	res = d.remoteStartResult(ctx, res, socket, pane)
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
-	if p.CTOProposal && !remoteOwner && res.Status == "starting" {
+	if p.CTOProposal && !p.Merger && !remoteOwner && res.Status == "starting" {
 		d.watchApprovedSessionStart(ctx, res.ID)
-	} else if p.CTOProposal && !remoteOwner && res.Status == "started" {
+	} else if p.CTOProposal && !p.Merger && !remoteOwner && res.Status == "started" {
 		d.notifyApprovedSessionStart(ctx, res)
 	}
 	return res, nil
@@ -325,7 +332,7 @@ func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) 
 // remoteStartResult fills the fields that only the owner's machine can know:
 // the other machine's host name, the ssh note, and a remote Codex plan.
 func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSession, socket, pane string) protocol.StartedSession {
-	if res.Background {
+	if res.Background || res.Type == "merger" {
 		res.EnterPlan = nil
 		res.EnterNote = "Enter opens it."
 		return res
@@ -489,9 +496,14 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 				}
 			}
 		}
+		if err == nil && r.Type == "merger" {
+			_, err = d.call(cctx, "merger.set", map[string]any{"project": r.Project, "node_id": d.cfg.NodeID, "session_id": r.SessionID, "configure": true, "by": "owner"})
+		}
 		if err != nil {
 			r.Status = "failed"
 			r.Error = err.Error()
+		} else if r.Type == "merger" {
+			r.Status = "started"
 		} else {
 			job := r.JobID
 			if job == "" && len(r.NativeID) >= 8 {

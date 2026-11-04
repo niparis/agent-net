@@ -95,6 +95,9 @@ func (m Model) mapEdgeEntry(e protocol.Edge, incoming bool) string {
 func (m Model) mapEdgeColumns(node string, w, room int) []string {
 	var in, out []protocol.Edge
 	for _, e := range m.mp.edges {
+		if protocol.DeliveryOwnerFromSource(e.From).Kind != protocol.OwnerNode {
+			continue
+		}
 		switch {
 		case e.To == node && e.Kind != "governs":
 			in = append(in, e)
@@ -456,6 +459,9 @@ func (m Model) mapFocusView(w, h int) []string {
 			shown = append(shown[:12:12], sDim.Render("+"))
 		}
 		head = append(head, strings.Join(shown, "")+" "+sDim.Render(text))
+	}
+	for _, line := range m.graphDeliveryOwners(node.Name) {
+		head = append(head, sDim.Render(clip(line, w)))
 	}
 	var gov []string
 	for _, e := range m.mp.edges {

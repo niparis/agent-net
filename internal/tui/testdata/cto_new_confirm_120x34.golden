@@ -2,7 +2,7 @@
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   no machines yet                                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK          view: all  (v)
+  NAME               TYPE   AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK   view: all  (v)
   waiting for the daemon...
 
 

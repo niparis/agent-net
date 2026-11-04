@@ -4,17 +4,17 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               AGENT    PROJECT    MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK     view: offline  (v)
+  NAME               TYPE   AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM …  view: offline  (v)
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ tenebrae         opencode tenebrae   haiku-4-5  busy   -     normal -            ?     ?
-▸ tenebrae           claude   tenebrae   opus-5-5   off    -     normal -        -     -
-  strategies         claude   strategies sonnet-5-5 idle   -     normal -            ?     ? backte…
-  web                opencode shop       sonnet-5   idle   -     normal -            ?     ?
+  ↳ tenebrae         worker opencode tenebrae  haiku-4-5  busy   -     normal -            ?     ?
+▸ tenebrae           agent  claude   tenebrae  opus-5-5   off    -     normal -        -     -
+  strategies         agent  claude   strategi… sonnet-5-5 idle   -     normal -            ?     ? b
+  web                agent  opencode shop      sonnet-5   idle   -     normal -            ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net  gpt-6      idle   -     normal -            ?     ?
-  scratch            pi       -          -          shell  -     normal -            ?     ?
+  ci-runner          agent  pi       agent-net gpt-6      idle   -     normal -            ?     ?
+  scratch            agent  pi       -         -          shell  -     normal -            ?     ?
  old-box 1 session ─────────────────────────────────────────────────────────────────────────────────────────────────────
-  old-session        claude   old        -          off    -     normal -        -     -
+  old-session        agent  claude   old       -          off    -     normal -        -     -
 
 
 

@@ -3,7 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
-	"github.com/niparis/agent-net/internal/protocol"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,6 +11,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
@@ -213,7 +215,7 @@ func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [3
 func (m Model) graphSize() (int, int) {
 	w, h := max(m.width, 40), max(m.height, 10)
 	box := m.ctoBoxHeight(graphTab)
-	return max(w-4, 1), max(h-1-box-5, 1)
+	return max(w-4, 1), max(h-1-box-7, 1)
 }
 
 // startGraph opens the network and refreshes its data without losing the selection.
@@ -347,7 +349,7 @@ func (m Model) graphView(w, h int) []string {
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
-	gw, gh := max(w-4, 1), max(h-5, 1)
+	gw, gh := max(w-4, 1), max(h-7, 1)
 	smooth := m.graphPixel.enabled() && m.graphPixel.motion
 	m.graphState.Smooth = smooth
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
@@ -378,6 +380,14 @@ func (m Model) graphView(w, h int) []string {
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
 	out = append(out, sDim.Render(graphLegend(w)))
 	out = append(out, graphStatusLine(w, scene))
+	owners := m.graphDeliveryOwners(m.graphState.Graph.Selected())
+	for i := 0; i < 2; i++ {
+		line := ""
+		if i < len(owners) {
+			line = "  " + owners[i]
+		}
+		out = append(out, sDim.Render(clip(line, w)))
+	}
 	out = append(out, sDim.Render(graphHintLine(w)))
 	return out
 }
@@ -580,4 +590,53 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 		m.graphLastNode = ""
 	}
 	return m
+}
+
+// graphDeliveryOwners is shared by the selected project and its details card.
+func (m Model) graphDeliveryOwners(project string) []string {
+	node, ok := m.mapNode(project)
+	if !ok || node.Kind != "component" {
+		return nil
+	}
+	owner := func(step string) string {
+		source := ""
+		for _, edge := range m.mp.edges {
+			if edge.To == project && edge.Kind == protocol.DeliveryStepEdge(step) {
+				source = edge.From
+			}
+		}
+		if source == "" {
+			return "caller"
+		}
+		assignment := protocol.DeliveryOwnerFromSource(source)
+		if assignment.Kind != protocol.OwnerMerger {
+			if assignment.Kind == protocol.OwnerNode {
+				return sanitize(assignment.Node)
+			}
+			return assignment.Kind
+		}
+		var mergers []string
+		for _, a := range m.snap.Agents {
+			if protocol.SessionType(a.Harness, a.Worker, a.Type) != "merger" || firstNonEmpty(a.Repo.Project, a.Profile.Project) != project {
+				continue
+			}
+			status := "offline, tasks wait"
+			if a.Online {
+				status = "online"
+			}
+			name := firstNonEmpty(a.Profile.Name, project+" merger")
+			mergers = append(mergers, sanitize(name)+" ("+status+")")
+		}
+		sort.Strings(mergers)
+		if len(mergers) == 0 {
+			return sanitize(project) + " merger (offline, tasks wait)"
+		}
+		return strings.Join(mergers, ", ")
+	}
+	test, merge := owner(protocol.StepTest), owner(protocol.StepMerge)
+	steps := "test, merge: " + test
+	if test != merge {
+		steps = "test: " + test + "; merge: " + merge
+	}
+	return []string{"accept: " + owner(protocol.StepAccept), steps}
 }
