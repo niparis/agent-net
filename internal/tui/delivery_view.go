@@ -210,6 +210,11 @@ func (m Model) deliveryView(w, h int) []string {
 		}
 	}
 	sel := min(max(d.row, 0), max(len(d.changes)-1, 0))
+	if d.detail && d.detailErr != "" {
+		for _, l := range wrap("Could not load change: "+sanitize(d.detailErr), inner) {
+			errLine = append(errLine, sBad.Render(l))
+		}
+	}
 	if d.detail && len(d.changes) > 0 {
 		return append(out, m.deliveryDetail(d.changes[sel], errLine, w, room)...)
 	}
@@ -272,7 +277,7 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	if ch.Revision > 0 {
 		revision = "r" + strconv.Itoa(ch.Revision)
 	}
-	facts := "head: " + firstNonEmpty(sanitize(ch.Head), "-") + "  revision: " + revision + "  step: " + firstNonEmpty(sanitize(ch.Step), "-") + "  owner: " + firstNonEmpty(sanitize(ch.StepOwner), "-") + "  waiting: " + deliveryWaitText(ch.Waiting)
+	facts := "head: " + firstNonEmpty(sanitize(ch.Head[:min(len(ch.Head), 12)]), "-") + "  revision: " + revision + "  step: " + firstNonEmpty(sanitize(ch.Step), "-") + "  owner: " + firstNonEmpty(sanitize(ch.StepOwner), "-") + "  waiting: " + deliveryWaitText(ch.Waiting)
 	for _, l := range wrap(facts, inner) {
 		head = append(head, sDim.Render(l))
 	}
@@ -293,7 +298,10 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	} else {
 		lines = append(lines, sDim.Render(strings.Join([]string{cell("STEP", stepW), cell("RESULT", resultW), cell("COMMIT", commitW), cell("BY", byW), cell("TIME", timeW)}, gap)))
 	}
-	if len(evidence) == 0 {
+	switch {
+	case m.delivery.detailLoading:
+		lines = append(lines, sDim.Render("Loading all evidence..."))
+	case len(evidence) == 0:
 		lines = append(lines, sDim.Render("No evidence yet."))
 	}
 	for _, e := range evidence {

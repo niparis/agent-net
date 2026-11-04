@@ -1,0 +1,652 @@
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+func hash(c byte) string { return strings.Repeat(string(c), 40) }
+
+func pev(change string, rev int, ref protocol.StepRef, result, commit, by, model string, at time.Time, fields map[string]string) protocol.Evidence {
+	return protocol.Evidence{ChangeID: change, Revision: rev, StepRef: ref, Result: result, Commit: commit, By: by, ByModel: model, Fields: fields, At: at.Unix()}
+}
+
+func ref(step string) protocol.StepRef { return protocol.StepRef{Step: step} }
+
+func status(r protocol.StepRef, owner protocol.StepOwner, state string, e *protocol.Evidence) protocol.StepStatus {
+	return protocol.StepStatus{StepRef: r, Owner: owner, State: state, Evidence: e}
+}
+
+var (
+	ownCaller = protocol.StepOwner{Kind: protocol.OwnerCaller}
+	ownGitHub = protocol.StepOwner{Kind: protocol.OwnerGitHub}
+	ownPerson = protocol.StepOwner{Kind: protocol.OwnerPerson}
+	ownNone   = protocol.StepOwner{Kind: protocol.OwnerNone}
+	ownNode   = protocol.StepOwner{Kind: protocol.OwnerNode, Node: "merger"}
+)
+
+// Each state of a step is one mark of the strip.
+func TestDeliveryMarksMapEveryStepState(t *testing.T) {
+	steps := []protocol.StepStatus{
+		status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, nil),
+		status(ref(protocol.StepReview), ownNode, protocol.StepStateFailed, nil),
+		status(ref(protocol.StepTest), ownGitHub, protocol.StepStateReady, nil),
+		status(protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, ownNone, protocol.StepStateSkipped, nil),
+		status(ref(protocol.StepMerge), ownCaller, protocol.StepStateWaiting, nil),
+		status(protocol.StepRef{Step: protocol.StepRelease, AfterMerge: true}, ownCaller, protocol.StepStateNeedsOwner, nil),
+		status(protocol.StepRef{Step: protocol.StepDeploy, AfterMerge: true}, ownCaller, protocol.StepStateClosed, nil),
+	}
+	got := deliveryMarks(steps)
+	want := map[string]stripState{
+		"accept": stripPassed, "review": stripFailed, "test": stripWaiting, "approve": stripNotNeeded,
+		"merge": stripWaiting, "release": stripRunning, "deploy": stripFailed, "verify": stripWaiting,
+	}
+	if len(got) != len(deliverySteps) {
+		t.Fatalf("%d marks", len(got))
+	}
+	for i, step := range deliverySteps {
+		if got[i] != want[step] {
+			t.Errorf("%s: mark %v, want %v", step, got[i], want[step])
+		}
+	}
+}
+
+// A step name that sits on both sides of merge, or twice for approve, is one
+// mark: a failure shows, all passed passes, some passed is under way.
+func TestDeliveryMarksJoinStepsWithTheSameName(t *testing.T) {
+	post := func(s string) protocol.StepRef { return protocol.StepRef{Step: s, AfterMerge: true} }
+	steps := []protocol.StepStatus{
+		status(ref(protocol.StepTest), ownGitHub, protocol.StepStatePassed, nil),
+		status(post(protocol.StepTest), ownCaller, protocol.StepStateWaiting, nil),
+		status(protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, ownPerson, protocol.StepStatePassed, nil),
+		status(protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepDeploy}, ownPerson, protocol.StepStatePassed, nil),
+		status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, nil),
+		status(ref(protocol.StepReview), ownNode, protocol.StepStateSkipped, nil),
+	}
+	got := deliveryMarks(steps)
+	if got[2] != stripRunning || got[3] != stripPassed || got[0] != stripPassed || got[1] != stripNotNeeded {
+		t.Errorf("marks %v", got)
+	}
+}
+
+func TestDeliveryStripUsesMarksWhenTheSourceGivesThem(t *testing.T) {
+	c := deliveryChange{Head: "abc", Marks: deliveryMarks([]protocol.StepStatus{status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, nil)}),
+		Evidence: []deliveryEvidence{dEv("review", "passed", "abc", "x", "", t0, nil)}}
+	got := deliveryStripStates(c)
+	if got[0] != stripPassed || got[1] != stripWaiting {
+		t.Errorf("the strip followed the evidence list, not the step states: %v", got)
+	}
+}
+
+func TestDeliveryResultWords(t *testing.T) {
+	for in, want := range map[string]string{
+		protocol.StepResultPass: "passed", protocol.StepResultFail: "failed",
+		protocol.StepResultNeedsOwner: "needs you", protocol.StepResultClose: "closed",
+	} {
+		if got := deliveryResultText(in); got != want {
+			t.Errorf("deliveryResultText(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// The words the strip knows still map to a mark.
+	if normalResult("needs you") != stripRunning || normalResult("closed") != stripFailed || normalResult("passed") != stripPassed {
+		t.Error("normalResult does not know the mapped words")
+	}
+}
+
+func TestDeliveryOwnerLabels(t *testing.T) {
+	for in, want := range map[protocol.StepOwner]string{
+		ownCaller: "caller", ownGitHub: "github", ownPerson: "owner", ownNode: "merger", ownNone: "none",
+		{Kind: protocol.OwnerDelegate}: "delegate", {Kind: protocol.OwnerNode}: "node",
+	} {
+		if got := deliveryOwnerLabel(in); got != want {
+			t.Errorf("deliveryOwnerLabel(%+v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// listView is a change as change.list answers it: steps and next only.
+func listView(now time.Time) protocol.ChangeView {
+	head := hash('a')
+	c := protocol.Change{ID: "ch_5", Project: "agent-net", Branch: "agent-net/w_0123456789abcdef", HeadCommit: head, Revision: 2,
+		State: protocol.ChangeOpen, CreatedAt: now.Add(-5 * time.Hour).Unix(), UpdatedAt: now.Add(-3 * time.Hour).Unix()}
+	acc := pev("ch_5", 2, ref(protocol.StepAccept), protocol.StepResultPass, head, "s_caller", "", now.Add(-2*time.Hour), nil)
+	return protocol.ChangeView{Change: c,
+		Steps: []protocol.StepStatus{
+			status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, &acc),
+			status(ref(protocol.StepReview), ownNode, protocol.StepStateReady, nil),
+			status(ref(protocol.StepTest), ownGitHub, protocol.StepStateReady, nil),
+			status(ref(protocol.StepMerge), ownCaller, protocol.StepStateWaiting, nil),
+		},
+		Next: []protocol.StepRef{ref(protocol.StepReview), ref(protocol.StepTest)}}
+}
+
+func TestDeliveryChangeFromAListView(t *testing.T) {
+	got := deliveryChangeFromView(listView(t0), t0)
+	if got.ID != "ch_5" || got.Repo != "agent-net" || got.Branch != "agent-net/w_0123456789abcdef" || got.Head != hash('a') || got.Revision != 2 {
+		t.Errorf("identity %+v", got)
+	}
+	// The current step is the first of next, owned by that step's owner.
+	if got.Step != "review" || got.StepOwner != "merger" {
+		t.Errorf("step %q owner %q", got.Step, got.StepOwner)
+	}
+	// Waiting counts from the last evidence (2 h ago), which is newer than updated_at.
+	if got.Waiting != 2*time.Hour {
+		t.Errorf("waiting %v", got.Waiting)
+	}
+	if got.Full {
+		t.Error("a list view is not the full change")
+	}
+	if len(got.Evidence) != 1 || got.Evidence[0].Step != "accept" || got.Evidence[0].Result != "passed" || got.Evidence[0].By != "s_caller" {
+		t.Errorf("evidence %+v", got.Evidence)
+	}
+	if st := deliveryStripStates(got); st[0] != stripPassed || st[1] != stripWaiting {
+		t.Errorf("strip %v", st)
+	}
+}
+
+func TestDeliveryWaitingStartsAtTheNewerOfEvidenceAndUpdate(t *testing.T) {
+	v := listView(t0)
+	v.Change.UpdatedAt = t0.Add(-10 * time.Minute).Unix() // a new revision came after the evidence
+	if got := deliveryChangeFromView(v, t0).Waiting; got != 10*time.Minute {
+		t.Errorf("waiting %v, want 10m", got)
+	}
+	v.Change.UpdatedAt = 0
+	v.Steps[0].Evidence = nil
+	v.Change.CreatedAt = t0.Add(-90 * time.Minute).Unix()
+	if got := deliveryChangeFromView(v, t0).Waiting; got != 90*time.Minute {
+		t.Errorf("waiting %v, want 90m", got)
+	}
+	v.Change.CreatedAt = t0.Add(time.Hour).Unix() // a clock that is behind never gives a negative wait
+	if got := deliveryChangeFromView(v, t0).Waiting; got != 0 {
+		t.Errorf("waiting %v, want 0", got)
+	}
+}
+
+func TestDeliveryCurrentStepFallbacks(t *testing.T) {
+	v := listView(t0)
+	// No next step: a step that needs the owner comes first, then a failed one, then a waiting one.
+	v.Next = nil
+	v.Steps[1] = status(ref(protocol.StepReview), ownNode, protocol.StepStateFailed, nil)
+	v.Steps[2] = status(ref(protocol.StepTest), ownGitHub, protocol.StepStatePassed, nil)
+	if got := deliveryChangeFromView(v, t0); got.Step != "review" || got.StepOwner != "merger" {
+		t.Errorf("failed: %q %q", got.Step, got.StepOwner)
+	}
+	v.Steps[3] = status(ref(protocol.StepMerge), ownPerson, protocol.StepStateNeedsOwner, nil)
+	if got := deliveryChangeFromView(v, t0); got.Step != "merge" || got.StepOwner != "owner" {
+		t.Errorf("needs owner: %q %q", got.Step, got.StepOwner)
+	}
+	v.Steps[1] = status(ref(protocol.StepReview), ownNode, protocol.StepStatePassed, nil)
+	v.Steps[3] = status(ref(protocol.StepMerge), ownCaller, protocol.StepStateWaiting, nil)
+	if got := deliveryChangeFromView(v, t0); got.Step != "merge" || got.StepOwner != "caller" {
+		t.Errorf("waiting: %q %q", got.Step, got.StepOwner)
+	}
+	v.Steps = v.Steps[:3]
+	if got := deliveryChangeFromView(v, t0); got.Step != "" || got.StepOwner != "" {
+		t.Errorf("nothing left: %q %q", got.Step, got.StepOwner)
+	}
+}
+
+// fullView is a change as change.get answers it: every revision's evidence,
+// the pipeline and the revisions.
+func fullView(now time.Time) protocol.ChangeView {
+	v := listView(now)
+	old, head := hash('b'), hash('a')
+	p := protocol.PipelineToday()
+	v.Pipeline = &p
+	v.Revisions = []protocol.Revision{{ChangeID: "ch_5", Number: 1, Branch: v.Change.Branch, Commit: old, At: now.Add(-6 * time.Hour).Unix()}, {ChangeID: "ch_5", Number: 2, Branch: v.Change.Branch, Commit: head, At: now.Add(-3 * time.Hour).Unix()}}
+	v.Change.Caller = "s_caller"
+	v.Evidence = []protocol.Evidence{
+		pev("ch_5", 1, ref(protocol.StepAccept), protocol.StepResultPass, old, "s_caller", "", now.Add(-5*time.Hour), nil),
+		pev("ch_5", 1, ref(protocol.StepReview), protocol.StepResultFail, old, "s_rev", "claude-opus-5-5", now.Add(-4*time.Hour), map[string]string{"findings_open": "2"}),
+		pev("ch_5", 2, ref(protocol.StepAccept), protocol.StepResultPass, head, "s_caller", "", now.Add(-2*time.Hour), nil),
+		pev("ch_5", 2, ref(protocol.StepTest), protocol.StepResultPass, head, protocol.EvidenceByGitHub, "", now.Add(-time.Hour), map[string]string{"suite": "ci"}),
+		pev("ch_5", 2, protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, protocol.StepResultNeedsOwner, head, protocol.EvidenceByOwner, "", now.Add(-30*time.Minute), nil),
+		pev("ch_5", 2, protocol.StepRef{Step: protocol.StepTest, AfterMerge: true}, protocol.StepResultPass, head, "s_x", "", now.Add(-20*time.Minute), nil),
+	}
+	// The step states agree with the evidence: tests passed, the owner is asked to approve.
+	v.Steps = []protocol.StepStatus{
+		v.Steps[0],
+		status(ref(protocol.StepReview), ownNode, protocol.StepStateReady, nil),
+		status(ref(protocol.StepTest), ownGitHub, protocol.StepStatePassed, &v.Evidence[3]),
+		status(protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, ownPerson, protocol.StepStateNeedsOwner, &v.Evidence[4]),
+		status(ref(protocol.StepMerge), ownCaller, protocol.StepStateWaiting, nil),
+	}
+	return v
+}
+
+func TestDeliveryChangeFromAFullView(t *testing.T) {
+	got := deliveryChangeFromView(fullView(t0), t0)
+	if !got.Full || len(got.Evidence) != 6 {
+		t.Fatalf("full %v, %d evidence", got.Full, len(got.Evidence))
+	}
+	byKey := map[string]deliveryEvidence{}
+	for _, e := range got.Evidence {
+		after := ""
+		if e.Fields["after_merge"] != "" {
+			after = "/after"
+		}
+		byKey[e.Step+"/"+e.Commit[:1]+"/"+e.Result+after] = e
+	}
+	// Evidence of revision 1 sits on the old commit, so the detail marks it old.
+	oldFail, ok := byKey["review/b/failed"]
+	if !ok || oldFail.Commit != hash('b') || oldFail.Model != "claude-opus-5-5" || oldFail.Fields["findings_open"] != "2" || oldFail.By != "s_rev" {
+		t.Fatalf("old review %+v (%v)", oldFail, ok)
+	}
+	if !oldFail.At.Equal(t0.Add(-4 * time.Hour)) {
+		t.Errorf("time %v", oldFail.At)
+	}
+	// The session of the change's caller is named "caller"; owner and github stay as they are.
+	if e := byKey["accept/a/passed"]; e.By != "caller" {
+		t.Errorf("by %q", e.By)
+	}
+	if e := byKey["test/a/passed"]; e.By != "github" || e.Fields["suite"] != "ci" {
+		t.Errorf("github evidence %+v", e)
+	}
+	if e := byKey["approve/a/needs you"]; e.By != "owner" || e.Fields["for"] != "merge" {
+		t.Errorf("approve %+v", e)
+	}
+	// Steps after merge say so.
+	post := false
+	for _, e := range got.Evidence {
+		if e.Step == "test" && e.Fields["after_merge"] == "yes" {
+			post = true
+		}
+	}
+	if !post {
+		t.Error("evidence after merge is not marked")
+	}
+	// The old review failure does not count against the strip; only the step states do.
+	if st := deliveryStripStates(got); st[1] != stripWaiting {
+		t.Errorf("review mark %v", st[1])
+	}
+	// The detail view shows the old commit as old.
+	m := deliveryModel(&fakeDelivery{changes: []deliveryChange{got}}, 120, 30)
+	m = openDelivery(t, m)
+	m.delivery.detail = true
+	text := deliveryText(m, 120, 40)
+	if !strings.Contains(text, shortCommit(hash('b'))+" old") {
+		t.Errorf("old evidence is not marked old: %s", text)
+	}
+	if strings.Contains(text, shortCommit(hash('a'))+" old") {
+		t.Errorf("head evidence is marked old: %s", text)
+	}
+}
+
+func TestDeliveryEvidenceTextIsKeptSafe(t *testing.T) {
+	v := fullView(t0)
+	v.Change.Project = "pro\x1b[31mject"
+	v.Evidence[0].ByModel = "mo\ndel"
+	got := deliveryChangeFromView(v, t0)
+	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{got}}, 120, 30))
+	m.delivery.detail = true
+	for _, l := range append(m.deliveryView(120, 30), m.deliveryView(80, 30)...) {
+		if strings.Contains(ansi.Strip(l), "\x1b") || strings.Contains(l, "\n") {
+			t.Fatalf("unsafe line %q", l)
+		}
+	}
+}
+
+// ---- the source ----
+
+type deliveryCaller struct {
+	mu    sync.Mutex
+	calls []protocol.ChangesFindArgs
+	ops   []string
+	pages []protocol.ChangesFindResult
+	get   protocol.ChangeView
+	err   error
+}
+
+func (f *deliveryCaller) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ops = append(f.ops, method)
+	a, _ := params.(protocol.ChangesFindArgs)
+	f.calls = append(f.calls, a)
+	if f.err != nil {
+		return nil, f.err
+	}
+	if a.Change != "" {
+		return json.Marshal(protocol.ChangesFindResult{Items: []protocol.ChangeView{f.get}, Total: 1})
+	}
+	page := f.pages[min(len(f.calls)-1, len(f.pages)-1)]
+	return json.Marshal(page)
+}
+
+func TestGatewayDeliveryPagesThroughEveryOpenChange(t *testing.T) {
+	a, b := listView(t0), listView(t0)
+	b.Change.ID, b.Change.Project = "ch_4", "voicemechs"
+	f := &deliveryCaller{pages: []protocol.ChangesFindResult{
+		{Items: []protocol.ChangeView{a}, Total: 1, NextCursor: "ch_5"},
+		{Items: []protocol.ChangeView{b}, Total: 1},
+	}}
+	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
+	got, err := src.Changes(context.Background(), "")
+	if err != nil || len(got) != 2 || got[0].ID != "ch_5" || got[1].ID != "ch_4" || got[1].Repo != "voicemechs" {
+		t.Fatalf("changes %+v: %v", got, err)
+	}
+	if len(f.calls) != 2 || f.ops[0] != protocol.OpChangesOwnerFind {
+		t.Fatalf("ops %v", f.ops)
+	}
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize}); f.calls[0] != want {
+		t.Errorf("first call %+v, want %+v", f.calls[0], want)
+	}
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: "ch_5"}); f.calls[1] != want {
+		t.Errorf("second call %+v, want %+v", f.calls[1], want)
+	}
+	// A repo filter is the project filter.
+	f.calls, f.pages = nil, f.pages[1:]
+	if _, err := src.Changes(context.Background(), "voicemechs"); err != nil || f.calls[0].Project != "voicemechs" {
+		t.Errorf("repo filter %+v: %v", f.calls, err)
+	}
+}
+
+func TestGatewayDeliveryStopsAtItsCap(t *testing.T) {
+	v := listView(t0)
+	items := make([]protocol.ChangeView, deliveryPageSize)
+	for i := range items {
+		items[i] = v
+	}
+	f := &deliveryCaller{pages: []protocol.ChangesFindResult{{Items: items, NextCursor: "more"}}}
+	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
+	got, err := src.Changes(context.Background(), "")
+	if err != nil || len(got) != deliveryMaxChanges || len(f.calls) != deliveryMaxChanges/deliveryPageSize {
+		t.Fatalf("%d changes after %d calls: %v", len(got), len(f.calls), err)
+	}
+}
+
+func TestGatewayDeliveryReadsOneChangeInFull(t *testing.T) {
+	f := &deliveryCaller{get: fullView(t0)}
+	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
+	got, err := src.Change(context.Background(), "ch_5")
+	if err != nil || !got.Full || len(got.Evidence) != 6 || f.calls[0].Change != "ch_5" || f.ops[0] != protocol.OpChangesOwnerFind {
+		t.Fatalf("change %+v: %v (%+v)", got, err, f.calls)
+	}
+	f.get = protocol.ChangeView{}
+	f.pages = nil
+}
+
+func TestGatewayDeliveryErrors(t *testing.T) {
+	f := &deliveryCaller{err: errors.New(`unknown method "changes_owner_find"`)}
+	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
+	_, err := src.Changes(context.Background(), "")
+	if err == nil || !strings.Contains(err.Error(), "restart the daemon") {
+		t.Errorf("old daemon: %v", err)
+	}
+	f.err = errors.New("the gateway did not answer in time")
+	if _, err = src.Change(context.Background(), "ch_1"); err == nil || err.Error() != "the gateway did not answer in time" {
+		t.Errorf("gateway error changed: %v", err)
+	}
+}
+
+// ---- the view with a live source ----
+
+// detailSource is a fake that also reads one change in full.
+type detailSource struct {
+	fakeDelivery
+	full  map[string]deliveryChange
+	reads []string
+	err   error
+}
+
+func (d *detailSource) Change(_ context.Context, id string) (deliveryChange, error) {
+	d.reads = append(d.reads, id)
+	if d.err != nil {
+		return deliveryChange{}, d.err
+	}
+	return d.full[id], nil
+}
+
+func fullScenes() (*detailSource, []deliveryChange) {
+	list := deliveryScenes()
+	src := &detailSource{fakeDelivery: fakeDelivery{changes: list}, full: map[string]deliveryChange{}}
+	for _, c := range list {
+		c.Full = true
+		c.Evidence = append([]deliveryEvidence(nil), c.Evidence...)
+		c.Evidence = append(c.Evidence, dEv("verify", "passed", c.Head, "caller", "", t0, nil))
+		src.full[c.ID] = c
+		// the list copy has less evidence
+		_ = c
+	}
+	for i := range src.changes {
+		src.changes[i].Evidence = src.changes[i].Evidence[:1]
+	}
+	return src, src.changes
+}
+
+func dpress(m Model, k tea.KeyMsg) (Model, tea.Cmd) {
+	next, cmd := m.Update(k)
+	return next.(Model), cmd
+}
+
+func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
+	src, _ := fullScenes()
+	m := openDelivery(t, deliveryModel(src, 120, 30))
+	m, _ = dpress(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, cmd := dpress(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.delivery.detail || cmd == nil {
+		t.Fatal("enter should open the detail and fetch the change")
+	}
+	// Until the answer comes, the detail says the evidence is loading.
+	if got := deliveryText(m, 120, 30); !strings.Contains(got, "Loading") {
+		t.Errorf("no loading line: %s", got)
+	}
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if len(src.reads) != 1 || src.reads[0] != "c_2" {
+		t.Fatalf("reads %v", src.reads)
+	}
+	if got := m.delivery.changes[1]; !got.Full || len(got.Evidence) != 5 {
+		t.Fatalf("the list did not take the full change: %+v", got)
+	}
+	if got := deliveryText(m, 120, 30); strings.Contains(got, "Loading") || !strings.Contains(got, "verify") {
+		t.Errorf("detail after the answer: %s", got)
+	}
+	// An error shows above the detail and keeps what is there.
+	src.err = errors.New("no such change")
+	m, cmd = dpress(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, cmd = dpress(m, tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if got := deliveryText(m, 120, 30); !strings.Contains(got, "Could not load change: no such change") || !strings.Contains(got, "verify") {
+		t.Errorf("detail error: %s", got)
+	}
+}
+
+func TestDeliveryReloadKeepsTheSelectionAndTheFullDetail(t *testing.T) {
+	src, _ := fullScenes()
+	m := openDelivery(t, deliveryModel(src, 120, 30))
+	m, _ = dpress(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, cmd := dpress(m, tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	// A newer change arrives on top: the selected change moves down one row, and stays selected.
+	fresh := deliveryChange{ID: "c_9", Repo: "new", Branch: "b", Head: "f00", Revision: 1, Step: "accept", StepOwner: "caller"}
+	list := append([]deliveryChange{fresh}, deliveryScenes()...)
+	for i := range list[1:] {
+		list[i+1].Evidence = list[i+1].Evidence[:1]
+	}
+	src.changes = list
+	next, cmd = m.Update(m.deliveryLoad()())
+	m = next.(Model)
+	if m.delivery.row != 2 || m.delivery.changes[m.delivery.row].ID != "c_2" || !m.delivery.detail {
+		t.Fatalf("row %d detail %v", m.delivery.row, m.delivery.detail)
+	}
+	if got := m.delivery.changes[2]; !got.Full || len(got.Evidence) != 5 {
+		t.Errorf("the full evidence flickered away: %+v", got)
+	}
+	if cmd == nil {
+		t.Fatal("an open detail should be fetched again after a reload")
+	}
+	// The selected change closed: the detail closes.
+	src.changes = list[:1]
+	next, _ = m.Update(m.deliveryLoad()())
+	m = next.(Model)
+	if m.delivery.detail || m.delivery.row != 0 {
+		t.Errorf("detail %v row %d after the change left the list", m.delivery.detail, m.delivery.row)
+	}
+}
+
+func TestDeliveryRefreshesEvery30SecondsWhileOpen(t *testing.T) {
+	src := &fakeDelivery{changes: deliveryScenes()}
+	clock := t0
+	m := deliveryModel(src, 120, 30)
+	m.now = func() time.Time { return clock }
+	m, cmd := m.startDeliveryLoad()
+	if cmd == nil || !m.delivery.loading {
+		t.Fatal("start did not load")
+	}
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	m.delivery.on = true
+	tick := func() tea.Cmd {
+		var c tea.Cmd
+		m, c = m.deliveryTick()
+		return c
+	}
+	if tick() != nil {
+		t.Fatal("refreshed at once")
+	}
+	clock = t0.Add(29 * time.Second)
+	if tick() != nil {
+		t.Fatal("refreshed before 30 s")
+	}
+	clock = t0.Add(30 * time.Second)
+	c := tick()
+	if c == nil {
+		t.Fatal("no refresh after 30 s")
+	}
+	// A load that is still out is not asked again.
+	clock = t0.Add(70 * time.Second)
+	if tick() != nil {
+		t.Fatal("asked again while loading")
+	}
+	next, _ = m.Update(c())
+	m = next.(Model)
+	if src.calls != 2 {
+		t.Fatalf("%d loads", src.calls)
+	}
+	// Away from the sub-tab or the Quotas tab, nothing refreshes.
+	clock = t0.Add(5 * time.Minute)
+	m.delivery.on = false
+	if tick() != nil {
+		t.Fatal("refreshed with the sub-tab closed")
+	}
+	m.delivery.on, m.tab = true, 2
+	if m.tab == quotasTab {
+		t.Skip("tab numbering changed")
+	}
+	if tick() != nil {
+		t.Fatal("refreshed on another tab")
+	}
+}
+
+func TestDeliveryTickMessageRefreshes(t *testing.T) {
+	src := &fakeDelivery{changes: deliveryScenes()}
+	clock := t0
+	m := openDelivery(t, deliveryModel(src, 120, 30))
+	m.now = func() time.Time { return clock }
+	m.delivery.loadedAt = t0
+	m.fetching = true // the tick must not start a snapshot fetch of its own
+	clock = t0.Add(31 * time.Second)
+	next, cmd := m.Update(tickMsg{})
+	m = next.(Model)
+	if cmd == nil || !m.delivery.loading {
+		t.Fatalf("the tick did not start a delivery load (loading %v)", m.delivery.loading)
+	}
+}
+
+func TestDeliveryRefreshKeyAndOpenStartALoad(t *testing.T) {
+	src := &fakeDelivery{changes: deliveryScenes()}
+	m := deliveryModel(src, 120, 30)
+	m, cmd := m.nextQuotasSubtab() // Quotas -> Workers log
+	m, cmd = m.nextQuotasSubtab()  // -> Delivery
+	if !m.delivery.on || cmd == nil || !m.delivery.loading {
+		t.Fatalf("opening the sub-tab: on %v loading %v cmd %v", m.delivery.on, m.delivery.loading, cmd != nil)
+	}
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if m.delivery.loading || !m.delivery.loaded {
+		t.Fatal("the answer did not end the load")
+	}
+	m, cmd = dpress(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	if cmd == nil || !m.delivery.loading {
+		t.Fatal("R did not reload")
+	}
+	// R asks again even when a load is out; the timer does not (see the tick test).
+	if _, again := dpress(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")}); again == nil {
+		t.Fatal("R did nothing while a load was out")
+	}
+}
+
+func TestNewWiresTheGatewaySourceOnlyForADaemon(t *testing.T) {
+	if m := New(&fakeSource{snap: fakeSnapshot()}); m.deliverySrc != nil {
+		t.Error("a source with no Call got a delivery source")
+	}
+	type callerSource struct {
+		*fakeSource
+		*deliveryCaller
+	}
+	m := New(callerSource{&fakeSource{snap: fakeSnapshot()}, &deliveryCaller{}})
+	if m.deliverySrc == nil {
+		t.Error("a daemon source got no delivery source")
+	}
+}
+
+// ---- golden scene from real-shaped data ----
+
+func TestDeliveryGoldenFromGatewayData(t *testing.T) {
+	now := t0
+	a := fullView(now)
+	b := listView(now)
+	b.Change.ID, b.Change.Project, b.Change.Branch, b.Change.Revision = "ch_6", "voicemechs", "feature/deploy-gate", 1
+	b.Change.HeadCommit = hash('c')
+	b.Steps = []protocol.StepStatus{
+		status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, nil),
+		status(ref(protocol.StepReview), ownNode, protocol.StepStateFailed, nil),
+		status(ref(protocol.StepTest), ownGitHub, protocol.StepStatePassed, nil),
+		status(protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, ownNone, protocol.StepStateSkipped, nil),
+		status(ref(protocol.StepMerge), ownCaller, protocol.StepStateWaiting, nil),
+	}
+	b.Next = nil
+	b.Change.UpdatedAt = now.Add(-26*time.Hour - 5*time.Minute).Unix()
+	b.Steps[0].Evidence = nil
+	c := listView(now)
+	c.Change.ID, c.Change.Project, c.Change.Branch, c.Change.Revision = "ch_7", "agent-net", "delivery-pipeline", 1
+	c.Change.HeadCommit = hash('d')
+	c.Steps = []protocol.StepStatus{
+		status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, nil),
+		status(ref(protocol.StepReview), ownNode, protocol.StepStatePassed, nil),
+		status(ref(protocol.StepTest), ownGitHub, protocol.StepStatePassed, nil),
+		status(protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, ownPerson, protocol.StepStateNeedsOwner, nil),
+		status(ref(protocol.StepMerge), ownCaller, protocol.StepStateWaiting, nil),
+	}
+	c.Next = nil
+	c.Change.UpdatedAt = now.Add(-6 * time.Minute).Unix()
+	c.Steps[0].Evidence = nil
+	var list []deliveryChange
+	for _, v := range []protocol.ChangeView{c, b, listView(now)} {
+		list = append(list, deliveryChangeFromView(v, now))
+	}
+	full := deliveryChangeFromView(a, now)
+	for _, size := range [][2]int{{80, 24}, {120, 24}} {
+		m := openDelivery(t, deliveryModel(&fakeDelivery{changes: list}, size[0], size[1]))
+		golden(t, fmt.Sprintf("delivery_gateway_list_%dx%d", size[0], size[1]), m.View())
+		list2 := append([]deliveryChange(nil), list...)
+		list2[2] = full
+		m = openDelivery(t, deliveryModel(&fakeDelivery{changes: list2}, size[0], size[1]))
+		m.delivery.row, m.delivery.detail = 2, true
+		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), m.View())
+	}
+}

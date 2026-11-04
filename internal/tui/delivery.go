@@ -33,6 +33,13 @@ type deliveryChange struct {
 	StepOwner string // who owns that step: a node, "caller", "owner", "github"
 	Waiting   time.Duration
 	Evidence  []deliveryEvidence
+	// Marks is the strip as the source worked it out from the step states. A
+	// source that has no step states leaves it empty, and the strip follows
+	// the evidence.
+	Marks []stripState
+	// Full says the evidence covers every revision, not only the latest
+	// counted result of each step.
+	Full bool
 }
 
 // deliveryEvidence is one step report, tied to one commit.
@@ -51,8 +58,18 @@ type deliverySource interface {
 	Changes(ctx context.Context, repo string) ([]deliveryChange, error)
 }
 
+// deliveryDetailSource is a source that can read one change in full. The list
+// holds only the latest counted result of each step; the detail needs all of
+// the evidence.
+type deliveryDetailSource interface {
+	Change(ctx context.Context, id string) (deliveryChange, error)
+}
+
 // deliveryLoadTimeout is how long the view waits for the source.
 const deliveryLoadTimeout = 5 * time.Second
+
+// deliveryRefreshEvery is how often the open sub-tab loads again.
+const deliveryRefreshEvery = 30 * time.Second
 
 // deliveryState is everything the view keeps. It sits in the Model by value
 // and is replaced, never shared.
@@ -64,6 +81,11 @@ type deliveryState struct {
 	loaded  bool
 	changes []deliveryChange
 	err     string
+
+	loading       bool      // a list load is out
+	loadedAt      time.Time // when the last load started
+	detailLoading bool      // the full change is out
+	detailErr     string
 }
 
 // deliveryLoadedMsg is the answer of one load.
@@ -93,20 +115,112 @@ func (m Model) deliveryLoad() tea.Cmd {
 	}
 }
 
-// deliveryLoaded takes an answer. A failed load keeps the last list on screen
-// and shows the error above it.
-func (m Model) deliveryLoaded(msg deliveryLoadedMsg) Model {
+// deliveryDetailMsg is the answer of one read of a change in full.
+type deliveryDetailMsg struct {
+	id     string
+	change deliveryChange
+	err    error
+}
+
+// startDeliveryLoad marks a load as out and returns the command. A load that
+// is already out is not asked again.
+func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
+	if m.deliverySrc == nil || m.delivery.loading {
+		return m, nil
+	}
+	m.delivery.loading, m.delivery.loadedAt = true, m.now()
+	return m, m.deliveryLoad()
+}
+
+// deliveryTick loads again when the sub-tab has been open for deliveryRefreshEvery
+// since the last load.
+func (m Model) deliveryTick() (Model, tea.Cmd) {
 	d := m.delivery
-	d.loaded = true
+	if !d.on || m.tab != quotasTab || d.loading || m.now().Sub(d.loadedAt) < deliveryRefreshEvery {
+		return m, nil
+	}
+	return m.startDeliveryLoad()
+}
+
+// selectedChange is the change under the cursor.
+func (d deliveryState) selectedChange() (deliveryChange, bool) {
+	if len(d.changes) == 0 {
+		return deliveryChange{}, false
+	}
+	return d.changes[min(max(d.row, 0), len(d.changes)-1)], true
+}
+
+// deliveryDetailCmd reads one change in full. A source that cannot do it
+// leaves the list's evidence on screen.
+func (m Model) deliveryDetailCmd(id string) tea.Cmd {
+	src, ok := m.deliverySrc.(deliveryDetailSource)
+	if !ok || id == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), deliveryLoadTimeout)
+		defer cancel()
+		c, err := src.Change(ctx, id)
+		return deliveryDetailMsg{id: id, change: c, err: err}
+	}
+}
+
+// deliveryLoaded takes an answer. A failed load keeps the last list on screen
+// and shows the error above it. The cursor stays on the same change when the
+// list changes under it, and an open detail keeps its full evidence until the
+// fresh one arrives.
+func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
+	d := m.delivery
+	d.loaded, d.loading = true, false
 	if msg.err != nil {
 		d.err = msg.err.Error()
 	} else {
 		d.err = ""
-		d.changes = msg.changes
+		prev, had := d.selectedChange()
+		changes := msg.changes
+		found := false
+		for i := range changes {
+			if had && changes[i].ID == prev.ID {
+				found, d.row = true, i
+				if prev.Full && !changes[i].Full && prev.Revision == changes[i].Revision && sameCommit(prev.Head, changes[i].Head) {
+					changes[i].Evidence, changes[i].Full = prev.Evidence, true
+				}
+			}
+		}
+		if had && !found {
+			d.detail = false
+		}
+		d.changes = changes
 	}
 	d.row = min(max(d.row, 0), max(len(d.changes)-1, 0))
 	if len(d.changes) == 0 {
 		d.detail = false
+	}
+	m.delivery = d
+	if sel, ok := d.selectedChange(); ok && d.detail && msg.err == nil {
+		m.delivery.detailLoading = true
+		return m, m.deliveryDetailCmd(sel.ID)
+	}
+	return m, nil
+}
+
+// deliveryDetailLoaded puts the full change into the list, in the place of the
+// change with the same ID.
+func (m Model) deliveryDetailLoaded(msg deliveryDetailMsg) Model {
+	d := m.delivery
+	if sel, ok := d.selectedChange(); ok && sel.ID == msg.id {
+		d.detailLoading = false
+	}
+	if msg.err != nil {
+		d.detailErr = msg.err.Error()
+		m.delivery = d
+		return m
+	}
+	d.detailErr = ""
+	for i := range d.changes {
+		if d.changes[i].ID == msg.id {
+			d.changes[i] = msg.change
+		}
 	}
 	m.delivery = d
 	return m
@@ -121,7 +235,7 @@ func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 	case m.workersLog:
 		m.workersLog = false
 		m.delivery.on = true
-		return m, m.deliveryLoad()
+		return m.startDeliveryLoad()
 	default:
 		m.workersLog = true
 	}
@@ -157,14 +271,20 @@ func (m Model) deliveryKey(k tea.KeyMsg) (Model, tea.Cmd) {
 			d.row = min(d.row+10, last)
 		}
 	case "open":
-		if !d.detail && len(d.changes) > 0 {
-			d.detail, d.scroll = true, 0
+		if sel, ok := d.selectedChange(); ok && !d.detail {
+			d.detail, d.scroll, d.detailErr = true, 0, ""
+			cmd := m.deliveryDetailCmd(sel.ID)
+			d.detailLoading = cmd != nil
+			m.delivery = d
+			return m, cmd
 		}
 	case "back":
-		d.detail = false
+		d.detail, d.detailErr, d.detailLoading = false, "", false
 	case "refresh":
+		// R is the owner asking: it loads even when an earlier load is out.
+		d.loading = false
 		m.delivery = d
-		return m, m.deliveryLoad()
+		return m.startDeliveryLoad()
 	case "help":
 		m.delivery = d
 		m.openHelp()
@@ -194,9 +314,9 @@ func normalResult(result string) stripState {
 	switch strings.ToLower(strings.TrimSpace(strings.ReplaceAll(result, "_", " "))) {
 	case "passed", "pass", "ok", "accepted", "approved", "done":
 		return stripPassed
-	case "failed", "fail", "refused", "rejected", "sent back":
+	case "failed", "fail", "refused", "rejected", "sent back", "closed":
 		return stripFailed
-	case "running", "started", "in progress":
+	case "running", "started", "in progress", "needs you":
 		return stripRunning
 	case "not needed", "skipped", "none":
 		return stripNotNeeded
@@ -211,11 +331,16 @@ func sameCommit(a, b string) bool {
 	return a != "" && b != "" && (strings.HasPrefix(a, b) || strings.HasPrefix(b, a))
 }
 
-// deliveryStripStates gives one state per step. Only evidence for the
+// deliveryStripStates gives one state per step. A source that worked the marks
+// out from the step states gives them as they are. Otherwise only evidence for the
 // change's head counts: a pass for an older revision is waiting again. The
 // newest evidence for a step wins.
 func deliveryStripStates(c deliveryChange) []stripState {
 	out := make([]stripState, len(deliverySteps))
+	if len(c.Marks) == len(deliverySteps) {
+		copy(out, c.Marks)
+		return out
+	}
 	for i, step := range deliverySteps {
 		var newest *deliveryEvidence
 		for j := range c.Evidence {
