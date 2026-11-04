@@ -96,6 +96,7 @@ Legend ────────────────────────�
   tab                    Quotas
   pgup                   ten changes up
   pgdown                 ten changes down
+  a                      show all
 
  Messages
   left/right             select the previous or next message
