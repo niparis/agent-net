@@ -10,7 +10,7 @@ import (
 
 // Owner dismisses a merge approval, then the caller reports an unrelated step on
 // the same revision. Does the dismissed item stay dismissed?
-func TestDeliveryRegressionDismissedApprovalReopens(t *testing.T) {
+func TestDeliveryDismissedApprovalPersistsOnRefresh(t *testing.T) {
 	r := newDeliveryRig(t)
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestDeliveryRegressionDismissedApprovalReopens(t *testing.T) {
 }
 
 // A change closed while an owner approval is open: what happens to the item?
-func TestDeliveryRegressionClosedChangeLeavesApprovalItem(t *testing.T) {
+func TestDeliveryClosedChangeClosesApprovalItem(t *testing.T) {
 	r := newDeliveryRig(t)
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestDeliveryRegressionClosedChangeLeavesApprovalItem(t *testing.T) {
 
 // A session that is not the caller reports a caller-owned step in a pipeline
 // with no node-owned step (so no durable task row exists).
-func TestDeliveryRegressionPeerReportsCallerStep(t *testing.T) {
+func TestDeliveryPeerCannotReportCallerStep(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("feature/peer", commitA)).Change.Change.ID
 	res, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
@@ -69,7 +69,7 @@ func TestDeliveryRegressionPeerReportsCallerStep(t *testing.T) {
 }
 
 // An unclaimed task for a step whose owner is reassigned: does the task move?
-func TestDeliveryRegressionUnclaimedTaskKeepsOldOwner(t *testing.T) {
+func TestDeliveryUnclaimedTaskMovesToNewOwner(t *testing.T) {
 	r := newDeliveryRig(t)
 	for _, node := range []string{"first", "second"} {
 		if err := r.s.AddArchitect(node, "owner"); err != nil {
@@ -99,7 +99,7 @@ func TestDeliveryRegressionUnclaimedTaskKeepsOldOwner(t *testing.T) {
 }
 
 // A new revision of the same change: does the old revision's open approval stay?
-func TestDeliveryRegressionStaleRevisionApprovalStaysOpen(t *testing.T) {
+func TestDeliveryNewRevisionClosesOldApproval(t *testing.T) {
 	r := newDeliveryRig(t)
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestDeliveryRegressionStaleRevisionApprovalStaysOpen(t *testing.T) {
 
 // A node task queued, then the step is reassigned to the person. Does the old
 // node keep the step?
-func TestDeliveryRegressionPersonReassignmentBypassedByQueuedTask(t *testing.T) {
+func TestDeliveryPersonReassignmentRetiresQueuedTask(t *testing.T) {
 	r := newDeliveryRig(t)
 	if err := r.s.AddArchitect("first", "owner"); err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestDeliveryRegressionPersonReassignmentBypassedByQueuedTask(t *testing.T) 
 }
 
 // The caller owns the steps but runs on another machine than the worker.
-func TestDeliveryRegressionRemoteCallerNotInPushPlan(t *testing.T) {
+func TestDeliveryRemoteCallerRequiresPush(t *testing.T) {
 	r := newDeliveryRig(t)
 	callerB, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "claude", NativeID: "caller-b", Model: "claude-opus-5-5", Repo: protocol.RepoInfo{Project: "demo"}})
 	if err != nil {
@@ -182,7 +182,7 @@ func TestDeliveryRegressionRemoteCallerNotInPushPlan(t *testing.T) {
 }
 
 // The restart path: backfill runs at every OpenStore.
-func TestDeliveryRegressionDismissedApprovalReopensOnBackfill(t *testing.T) {
+func TestDeliveryDismissedApprovalPersistsOnBackfill(t *testing.T) {
 	r := newDeliveryRig(t)
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
 		t.Fatal(err)
@@ -209,7 +209,7 @@ func TestDeliveryRegressionDismissedApprovalReopensOnBackfill(t *testing.T) {
 
 // A node reports needs_owner, then the owner's decision comes back to the same
 // node on the same commit. Can the step be reported again?
-func TestDeliveryRegressionNeedsOwnerStepCannotBeReportedAgain(t *testing.T) {
+func TestDeliveryNeedsOwnerStepAcceptsOwnerFollowUp(t *testing.T) {
 	r := newDeliveryRig(t)
 	if err := r.s.AddArchitect("merger", "owner"); err != nil {
 		t.Fatal(err)
@@ -226,13 +226,109 @@ func TestDeliveryRegressionNeedsOwnerStepCannotBeReportedAgain(t *testing.T) {
 	if _, err := r.report(r.b, protocol.StepReportRequest{SessionID: sid, ChangeID: id, StepRef: ref, Result: protocol.StepResultNeedsOwner, Commit: commitA, Note: "is this in scope?"}); err != nil {
 		t.Fatal(err)
 	}
+	other, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "other-merger", Repo: protocol.RepoInfo{Project: "merger"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.report(r.b, protocol.StepReportRequest{SessionID: other, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commitA}); err == nil {
+		t.Fatal("another session reported a claimed needs_owner step")
+	}
 	if _, err := r.report(r.b, protocol.StepReportRequest{SessionID: sid, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commitA}); err != nil {
 		t.Fatalf("follow-up pass refused: %v", err)
 	}
-	// Is the step offered again, or does it wait for a new revision forever?
-	for _, step := range r.get(id).Steps {
-		if step.StepRef == ref {
-			t.Logf("step %s state %s note %q", ref, step.State, step.Note)
+}
+
+func TestDeliveryReassignmentPreservesClaim(t *testing.T) {
+	r := newDeliveryRig(t)
+	for _, node := range []string{"first", "second"} {
+		if err := r.s.AddArchitect(node, "owner"); err != nil {
+			t.Fatal(err)
 		}
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "accept", Node: "first"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	sid, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "first", Repo: protocol.RepoInfo{Project: "first"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := r.submit(r.a, r.workerSubmit("feature/claimed", commitA)).Change.Change.ID
+	if _, err := r.s.ClaimStep(r.b, protocol.StepClaimRequest{SessionID: sid, ChangeID: id, StepRef: stepAccept, Commit: commitA}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "accept", Node: "second", Expect: "first"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.report(r.b, protocol.StepReportRequest{SessionID: sid, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeliveryReassignmentBackToNode(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.AddArchitect("first", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	q := protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "accept", Node: "first"}
+	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	id := r.submit(r.a, r.workerSubmit("feature/return", commitA)).Change.Change.ID
+	q.Node, q.Expect = "@owner", "first"
+	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	q.Node, q.Expect = "first", "@owner"
+	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND completed=0 AND owner_node='first'`, id).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("active node task = %d, %v", count, err)
+	}
+}
+
+func TestDeliveryReassignApprovalToNoneClosesInbox(t *testing.T) {
+	r := newDeliveryRig(t)
+	q := protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "approve", For: "merge", Node: "@owner"}
+	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	r.submit(r.a, r.workerSubmit("feature/none", commitA))
+	q.Node, q.Expect = "@none", "@owner"
+	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := r.s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Status != "dismissed" {
+		t.Fatalf("obsolete approval: %+v, %v", items, err)
+	}
+}
+
+func TestDeliveryDismissedApprovalReopensWhenRuleReenabled(t *testing.T) {
+	r := newDeliveryRig(t)
+	q := protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "approve", For: "merge", Node: "@owner"}
+	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	r.submit(r.a, r.workerSubmit("feature/reenable", commitA))
+	items, err := r.s.ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items: %+v, %v", items, err)
+	}
+	if _, err = r.s.AnswerInbox(items[0].ID, "dismiss"); err != nil {
+		t.Fatal(err)
+	}
+	q.Node, q.Expect = "@none", "@owner"
+	if err = r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	q.Node, q.Expect = "@owner", "@none"
+	if err = r.s.SetDeliveryOwner(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	items, err = r.s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Status != "open" {
+		t.Fatalf("re-enabled approval: %+v, %v", items, err)
 	}
 }

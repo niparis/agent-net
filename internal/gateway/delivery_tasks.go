@@ -92,7 +92,7 @@ func retireStepMessages(tx *sql.Tx, change string) error {
 }
 
 func dismissStepInbox(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, at int64) error {
-	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='rule_disabled',answered_at=? WHERE status='open' AND id IN (
+	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='rule_disabled',answered_at=? WHERE (status='open' OR (status='dismissed' AND answer='')) AND id IN (
 		SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
 		at, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
 	return err
@@ -244,7 +244,7 @@ func checkApprovalTaskPolicy(tx *sql.Tx, c protocol.Change, p protocol.Pipeline,
 // dispatchStepTasks writes one system notification per eligible session. The
 // task itself remains in the gateway until a session reports it.
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
-	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,COALESCE(NULLIF(s.repo_project,''),p.project,''),s.id
+	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
@@ -349,10 +349,10 @@ func (s *Store) storeStepTaskMessage(t nodeTaskTarget) (protocol.Message, error)
 	}
 	res, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
 		SELECT change_id,revision,step,for_step,after_merge,?,? FROM delivery_step_tasks
-		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0 AND claimed_by=''
+		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0 AND claimed_by='' AND owner_node=?
 		AND EXISTS(SELECT 1 FROM delivery_changes c WHERE c.id=delivery_step_tasks.change_id AND c.revision=delivery_step_tasks.revision
 		AND ((delivery_step_tasks.after_merge=0 AND c.state='open') OR (delivery_step_tasks.after_merge=1 AND c.state='merged')))`,
-		t.session, m.ID, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge))
+		t.session, m.ID, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner)
 	if err != nil {
 		return protocol.Message{}, err
 	}
@@ -376,6 +376,13 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 	evidence, err := changeEvidence(tx, c.ID)
 	if err != nil {
 		return err
+	}
+	for _, step := range p.Steps {
+		if step.Step == protocol.StepApprove && step.Owner.Kind == protocol.OwnerNone {
+			if err := dismissStepInbox(tx, c, step.StepRef, s.now().UnixNano()); err != nil {
+				return err
+			}
+		}
 	}
 	shared := false
 	for _, step := range p.Steps {
@@ -411,6 +418,15 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			ownerNode = callerTaskOwner
 		} else if step.Owner.Kind != protocol.OwnerNode {
 			continue
+		}
+		var retired int
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=1 AND claimed_by='')`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&retired); err != nil {
+			return err
+		}
+		if retired != 0 {
+			if err := discardCompletedStepTask(tx, c, ref); err != nil {
+				return err
+			}
 		}
 		if ref.Step == protocol.StepApprove {
 			if err := dismissStepInbox(tx, c, ref, s.now().UnixNano()); err != nil {
@@ -568,6 +584,9 @@ func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	if completed != 0 {
 		var result string
 		err := tx.QueryRow(`SELECT result FROM delivery_evidence WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? ORDER BY seq DESC LIMIT 1`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&result)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return true, err
+		}
 		if err == nil && result == string(protocol.StepResultNeedsOwner) && claimed == session {
 			completed = 0
 		}

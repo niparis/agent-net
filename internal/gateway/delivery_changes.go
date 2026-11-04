@@ -97,12 +97,17 @@ func (s *Store) DeliveryNeedsPush(project, machine string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var remoteCaller int
-	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_changes c JOIN sessions s ON s.id=c.caller WHERE c.project=? AND s.node_id<>?)`, project, machine).Scan(&remoteCaller); err != nil {
-		return false, err
-	}
-	if remoteCaller != 0 {
-		return true, nil
+	for _, step := range p.Steps {
+		if step.Owner.Kind == protocol.OwnerCaller {
+			var remoteCaller int
+			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE COALESCE(NULLIF(s.repo_project,''),p.project,'')=? AND s.node_id<>? AND s.worker='' AND s.harness NOT IN ('owner','bot','cto'))`, project, machine).Scan(&remoteCaller); err != nil {
+				return false, err
+			}
+			if remoteCaller != 0 {
+				return true, nil
+			}
+			break
+		}
 	}
 	seen := map[string]bool{}
 	for _, step := range p.Steps {

@@ -595,8 +595,8 @@ func TestDeliveryPushPlanFindsRemoteOwner(t *testing.T) {
 		t.Fatalf("remote owner plan = %t, %v", plan, err)
 	}
 	plan, err = r.s.DeliveryNeedsPush("demo", r.b)
-	if err != nil || plan {
-		t.Fatalf("local owner plan = %t, %v", plan, err)
+	if err != nil || !plan {
+		t.Fatalf("remote caller plan = %t, %v", plan, err)
 	}
 }
 
@@ -1057,8 +1057,15 @@ func TestDeliveryStaleOwnerApprovalCannotApproveNewRevision(t *testing.T) {
 	if len(v.Evidence) != 0 {
 		t.Fatalf("stale approval recorded: %+v", v.Evidence)
 	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "dismiss"); err != nil {
-		t.Fatalf("could not dismiss stale approval: %v", err)
+	oldID := items[0].ID
+	items, err = r.s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ID == oldID && item.Status != "dismissed" {
+			t.Fatalf("stale approval was not closed: %+v", item)
+		}
 	}
 }
 
