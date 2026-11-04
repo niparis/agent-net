@@ -139,6 +139,8 @@ playbook notes in `agent_machines_find` remain public; the owner-only full playb
 view is removed. No ordinary agent read is widened for the CTO, except where
 the owner widened it for every agent.
 
+**Project layout read.** The CTO read tool `projects_layout` scans disk under the home folder on online machines to report repository root locations, group folders, and origin remotes. The CTO can read folder names and remotes under the home folder on every machine. It is read-only: it does not register projects, execute scripts, or change files. It drops worktrees, caches, dependency folders, hidden folders, and temp folders, and is bounded by depth (at most 4 levels under home), result caps, and a 15-second timeout. Results are cached per machine for 10 minutes.
+
 **Charters and rules are public.** The owner decided, twice, that every agent
 may read the whole graph, read-only. `agent_graph_read` returns every node's charter
 fields and maturity, every node's rules with name and value, and every edge's

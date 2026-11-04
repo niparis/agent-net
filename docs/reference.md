@@ -333,6 +333,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `agent_graph_read` | The public graph: nodes with their full charters, maturity and rules (name and value), and edges with kind, mode and request rule. `node` reads one node. `view: "guide"` returns the charter guide in `note`. |
 | `agent_mcp_servers_find` | Shared MCP servers |
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
+| `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
 | `cto_proposals_find` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
@@ -908,6 +909,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_STATE_DIR` | daemon | Directory for `daemon.db`. |
 | `AGENT_NET_SOCKET` | daemon, CLI, `agent-net mcp`, Pi extension | Path of the daemon socket. |
 | `AGENT_NET_CLAUDE_SESSIONS_DIR` | daemon | Where to look for Claude Code session files. For tests. |
+| `AGENT_NET_HOME_DIR` | daemon | User home directory to scan for projects layout. For tests. |
 | `AGENT_NET_GRAPH` | `agent-net tui` | Graph renderer: `auto` (default), `pixel` or `braille`. See the Graph tab. |
 | `AGENT_NET_GRAPH_MOTION` | `agent-net tui` | `1` turns on the animated pixel graph (moving message dots, busy pulse, eased camera). Off by default: the pixel graph is still and changes only when the graph does. |
 | `AGENT_NET_NO_BAR` | `agent-net tui` | `1` turns off the agent-net row at the bottom of a session entered in the TUI terminal. For a terminal that mishandles the reserved row. See [Enter a session](#enter-a-session). |
@@ -1759,6 +1761,8 @@ On upgrade, the gateway uses stored origin URLs to move old folder-based project
 - the answer lists what was added, what already existed and what was skipped, each with a reason. `--dry-run` (or `dry_run`) makes the same list and changes nothing.
 
 **Agent tools** (Claude Code, Pi, OpenCode): `agent_project_add` (`paths`, or `dir` with `scan`, plus `depth` and `dry_run`) and `agent_projects_find` (optional `name`). There is no tool to remove a project: removing is only done with `agent-net projects remove`. An agent that calls the remove method gets an error that tells it to ask you. The guidance text tells agents to register projects only when you ask.
+
+**Project layout scan (`projects_layout`).** The CTO can query `projects_layout` (with optional `machine`) to inspect how repositories are structured across machines without manual configuration. The daemon on each machine scans disk under the user's home folder up to depth 4 for git repositories (folders with a `.git` directory). It is strictly read-only and never registers, writes, or modifies projects. Results are cached per machine for 10 minutes. Folders that hold 2 or more repositories at depth 1 or 2 become roots, categorized as `flat` (repos directly at depth 1) or `grouped` (repos at depth 2 under group folders, with loose depth-1 repos in `projects`). When the home folder directly holds 2 or more repositories, the home folder itself (`~`) acts as a flat root. Repositories not claimed by any root are listed in a per-machine `loose` list. Repositories and groups report newest commit timestamps, and groups report remote owners with project counts. Noise is dropped: the home folder itself as a repository (`~/.git`), git worktrees (a `.git` file), agent-net worker worktrees (`~/.local/state/agent-net/daemon/worktrees`), `.claude/worktrees`, `~/code/isolated-worktrees`, `node_modules`, `vendor`, caches, hidden folders, and temp folders.
 
 **Agent graph read.** `agent_graph_read` (Claude Code, Pi and OpenCode) returns the graph that every agent may read, read-only: every node's charter fields with its maturity, every node's rules with name and value, and every edge with its kind, mode and request rule. The rules are the six node settings resolved against the node's maturity (`tests_before_merge`, `merge_authority`, `worker_sandbox`, `judge_consumers`, `deploy_rule`, `autonomy` (`off` or `wake`)) and the delegation policies the owner set for the node's project on each machine. `node` returns that one node's full charter, its rules and the edges that touch it. Without `node`, `offset` and `limit` page the list (default 20, at most 50), `total` counts the matching nodes, `next` is the next page offset, and `edge_total` counts the edges. Charters and rules are public; only changes are owner-gated. Secrets and tokens, machine paths and locations, learned-change history with evidence, hidden items and sessions stay hidden. The CTO's `graph` view uses this same read with the CTO caller.
 

@@ -9,6 +9,9 @@ import (
 )
 
 func (d *Daemon) ctoSessionID() string {
+	if d.st == nil || d.st.db == nil {
+		return ""
+	}
 	var id string
 	_ = d.st.db.QueryRow(`SELECT session_id FROM cto_network WHERE id=1`).Scan(&id)
 	return id

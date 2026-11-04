@@ -5,3 +5,6 @@ node_modules/
 .claude/worktrees/
 
 /screens/
+
+# the binary built by "go build -o agent-net ./cmd/agent-net"
+/agent-net

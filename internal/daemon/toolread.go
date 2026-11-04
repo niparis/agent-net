@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -69,6 +70,28 @@ func (lc *localConn) dispatchToolRead(ctx context.Context, client, method string
 		}
 		p.Caller = lc.toolReadCaller()
 		return lc.forwardToolRead(ctx, "query.projects_find", p)
+
+	case "projects_layout":
+		var p protocol.ProjectsLayoutRequest
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errBadToolRead("projects_layout")
+		}
+		p.Caller = lc.toolReadCaller()
+		if !lc.d.Connected() {
+			if p.Machine != "" && !strings.EqualFold(p.Machine, lc.d.hostName()) {
+				return nil, true, fmt.Errorf("unknown machine %q; known machines: %s", p.Machine, lc.d.hostName())
+			}
+			layout, err := lc.d.ProjectsLayoutLocal(ctx)
+			if err != nil {
+				return nil, true, err
+			}
+			return protocol.ProjectsLayoutResult{
+				Machines: []protocol.MachineLayout{layout},
+				Skipped:  []protocol.SkippedMachine{},
+			}, true, nil
+		}
+		res, handled, err := lc.forwardToolRead(ctx, "query.projects_layout", p)
+		return res, handled, err
 	}
 	return nil, false, nil
 }

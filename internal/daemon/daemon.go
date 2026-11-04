@@ -88,6 +88,7 @@ type Config struct {
 	// never sees the frame.
 	testGatewayCall func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error)
 	InventoryHome   string // Empty disables tools inventory (used by tests).
+	HomeDir         string // Optional override for user home directory (used by tests).
 	GatewayURL      string
 	NodeID          string
 	Token           string
@@ -294,6 +295,9 @@ type Daemon struct {
 	herdrOpened         map[string]herdrOpenedPane
 	cto                 ctoRuntime
 	claudeCTO           claudeCTOState
+	layoutMu            sync.Mutex
+	layoutCache         *protocol.MachineLayout
+	layoutTime          time.Time
 	cfg                 Config
 	log                 *log.Logger
 	st                  *state

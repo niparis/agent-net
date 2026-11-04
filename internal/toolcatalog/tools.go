@@ -47,4 +47,5 @@ var Tools = []Tool{
 	toolEntry("mcp_call", "Propose a call to a tool on a shared MCP server; it runs after the owner approves. Credentials never appear in the call.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("proposal_ask", "Open the approval dialog in the chat for an open proposal that is already waiting.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("cto_new", "Propose starting a new CTO conversation. The timeline and proposals stay.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
+	toolEntry("projects_layout", "Read-only project layout of online machines: roots, groups, remotes and newest commits.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 }

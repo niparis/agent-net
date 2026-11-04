@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -848,7 +849,7 @@ func (s *Store) FindProjects(p protocol.ProjectsFindRequest) (protocol.ProjectsP
 
 // handleToolRead serves the read tools of the tool redesign. The second value
 // says whether this hook handled the frame type.
-func (g *Gateway) handleToolRead(nc *nodeConn, typ string, raw []byte) (data any, ok bool, err error) {
+func (g *Gateway) handleToolRead(ctx context.Context, nc *nodeConn, typ string, raw []byte) (data any, ok bool, err error) {
 	switch typ {
 	case "query.sessions_find":
 		p, err := decode[protocol.SessionsFindRequest](raw)
@@ -884,6 +885,13 @@ func (g *Gateway) handleToolRead(nc *nodeConn, typ string, raw []byte) (data any
 			return nil, true, reject("bad query.projects_find")
 		}
 		out, err := g.store.FindProjects(p)
+		return out, true, err
+	case "query.projects_layout":
+		p, err := decode[protocol.ProjectsLayoutRequest](raw)
+		if err != nil {
+			return nil, true, reject("bad query.projects_layout")
+		}
+		out, err := g.ProjectsLayout(ctx, p)
 		return out, true, err
 	}
 	return nil, false, nil

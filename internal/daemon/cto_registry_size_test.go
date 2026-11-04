@@ -78,7 +78,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		"agent_projects_find": {}, "agent_workers_find": {},
 		"agent_messages_find": {}, "agent_message_get": {"message": ctoMessage.ID},
 		"agent_graph_read": {}, "agent_settings_read": {"key": "workers.auto_continue"}, "agent_mcp_servers_find": {},
-		"agent_worker_profiles_find": {},
+		"agent_worker_profiles_find": {}, "projects_layout": {},
 	}
 	_ = localID
 

@@ -160,6 +160,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onSessionOwnerFrame(ctx, l, h, raw)
 			}()
+		case "node.projects_layout":
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onProjectsLayout(ctx, l, h.ID)
+			}()
 		case "node.tools_changed":
 			d.wakeTools()
 		case "node.tool_plan_scan":

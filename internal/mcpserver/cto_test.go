@@ -236,13 +236,13 @@ func TestCTOParityTools(t *testing.T) {
 		got[tool.Name] = true
 	}
 	for _, name := range []string{"cto_proposals_find", "cto_ui_show", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new",
-		"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_message_send", "agent_message_reply", "agent_owner_ask", "agent_learn"} {
+		"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_message_send", "agent_message_reply", "agent_owner_ask", "agent_learn", "projects_layout"} {
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
 		}
 	}
-	if len(got) != 29 {
-		t.Errorf("CTO exposes %d tools, want 29: %v", len(got), got)
+	if len(got) != 30 {
+		t.Errorf("CTO exposes %d tools, want 30: %v", len(got), got)
 	}
 	for _, name := range []string{"overview", "sessions", "session", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings", "message", "ask_owner", "learn", "ui", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
 		if got[name] {
@@ -419,5 +419,41 @@ func TestCTOWorkerStartWithoutTouches(t *testing.T) {
 		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err != nil {
 			t.Errorf("%s %s: %v", tc.name, tc.args, err)
 		}
+	}
+}
+
+func TestProjectsLayoutOutputSchemaValidation(t *testing.T) {
+	// A machine with nil roots (the bug) must fail schema validation.
+	badRes := protocol.ProjectsLayoutResult{
+		Machines: []protocol.MachineLayout{
+			{
+				Machine:   "box-bad",
+				Home:      "/home/test",
+				Roots:     nil,
+				ScannedAt: 123456,
+				Truncated: false,
+			},
+		},
+	}
+	if res, err := catalogResult("projects_layout", badRes); err == nil && !res.IsError {
+		t.Fatalf("expected catalogResult to fail on MachineLayout with nil Roots")
+	}
+
+	// Valid result with non-nil roots (e.g. one-repo machine or top-level repos machine before roots qualifying)
+	goodRes := protocol.ProjectsLayoutResult{
+		Machines: []protocol.MachineLayout{
+			{
+				Machine:   "box-solo",
+				Home:      "/home/test",
+				Roots:     []protocol.LayoutRoot{},
+				Loose:     []protocol.LayoutProject{},
+				ScannedAt: 123456,
+				Truncated: false,
+			},
+		},
+		Skipped: []protocol.SkippedMachine{},
+	}
+	if res, err := catalogResult("projects_layout", goodRes); err != nil || res.IsError {
+		t.Fatalf("catalogResult failed for non-nil empty roots: %v (res=%+v)", err, res)
 	}
 }
