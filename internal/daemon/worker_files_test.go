@@ -24,23 +24,29 @@ func TestWorkerHandbackFilesAcrossNodes(t *testing.T) {
 	eventually(t, "remote caller", func() bool { caller = remote.host.SessionID("fake", "caller"); return caller != "" })
 	repo := newRepo(t, "shop")
 	a.register(t, repo)
-	res := a.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:ignore wait", Isolation: protocol.IsolationWorktree})
-	w := a.d.workerBySession(res.SessionID)
-	if w == nil {
-		t.Fatal("worker missing")
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(30*time.Second))
+	defer cancel()
+	res, err := b.d.workerStartCall(ctx, caller, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:ignore wait", Isolation: protocol.IsolationWorktree}, false, "")
+	if err != nil {
+		t.Fatalf("remote worker start: %v", err)
 	}
-	a.d.wmu.Lock()
-	w.owner, w.taskMsg = caller, ""
-	a.d.wmu.Unlock()
+	eventually(t, "remote worker ready", func() bool {
+		w := a.d.workerBySession(res.SessionID)
+		if w == nil {
+			return false
+		}
+		a.d.wmu.Lock()
+		defer a.d.wmu.Unlock()
+		return w.owner == caller && w.taskMsg != "" && w.startDone != nil && isClosed(w.startDone)
+	})
 	inside := writeTestFile(t, filepath.Join(res.Worktree, "result.txt"), []byte("worker result\n"))
 	outside := writeTestFile(t, filepath.Join(t.TempDir(), "outside.txt"), []byte("outside\n"))
 	link := filepath.Join(res.Worktree, "link.txt")
 	if err := os.Symlink(outside, link); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), scaled(30*time.Second))
-	defer cancel()
-	for _, p := range []string{outside, link} {
+	secret := writeTestFile(t, filepath.Join(res.Worktree, "secret.txt"), []byte("OPENAI=sk-"+strings.Repeat("a1", 12)+"\n"))
+	for _, p := range []string{outside, link, secret} {
 		if _, err := a.d.handback(ctx, res.SessionID, protocol.WorkerHandbackRequest{Report: "done", Files: []string{p}}); err == nil {
 			t.Errorf("handback accepted outside path %s", p)
 		}
@@ -64,5 +70,27 @@ func TestWorkerHandbackFilesAcrossNodes(t *testing.T) {
 	})
 	if got := string(mustReadFile(t, dest)); got != "worker result\n" {
 		t.Fatalf("file contents = %q", got)
+	}
+}
+
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestWorkerHandbackFilesRequireWorktree(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	a := startWorkerNode(t, g, shortSet, func(c *Config) { c.Files.Home = t.TempDir() })
+	repo := newRepo(t, "shop")
+	a.register(t, repo)
+	res := a.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:ignore wait", Isolation: protocol.IsolationNone})
+	file := filepath.Join(repo, "README.md")
+	_, err := a.d.handback(context.Background(), res.SessionID, protocol.WorkerHandbackRequest{Report: "done", Files: []string{file}})
+	if err == nil || !strings.Contains(err.Error(), "worktree") {
+		t.Fatalf("handback without worktree: %v", err)
 	}
 }

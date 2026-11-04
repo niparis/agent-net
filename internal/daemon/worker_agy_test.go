@@ -163,7 +163,15 @@ func TestAgyProcess(t *testing.T) {
 					r.MCPError += " rejected worker conversation"
 				}
 				complete := !partial
-				if !call("handback", protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: "finished agy task", Complete: &complete}) {
+				var files []string
+				if strings.Contains(body, "FAKE:filehandback") {
+					file := filepath.Join(cwd, "agy-result.txt")
+					if err := os.WriteFile(file, []byte("agy file\n"), 0600); err != nil {
+						os.Exit(3)
+					}
+					files = []string{file}
+				}
+				if !call("handback", protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: "finished agy task", Complete: &complete, Files: files}) {
 					r.MCPError += " rejected handback"
 				}
 				conn.Close()
@@ -203,6 +211,17 @@ func TestAgyProcess(t *testing.T) {
 	r.InputClosed = true
 	save()
 	os.Exit(0)
+}
+
+func TestAgyWorkerHandbackFiles(t *testing.T) {
+	w, _, _ := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback FAKE:filehandback", Isolation: protocol.IsolationWorktree})
+	n := w.waitNotice(t, 1)[0]
+	if n.From != res.SessionID || len(n.Files) != 1 || n.Files[0].Name != "agy-result.txt" {
+		t.Fatalf("notice: %+v", n)
+	}
+	path := filepath.Join(w.cfg.StateDir, "inbox", w.ownerID(), n.ID, "agy-result.txt")
+	eventually(t, "Antigravity handback file", func() bool { b, err := os.ReadFile(path); return err == nil && string(b) == "agy file\n" })
 }
 
 func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string) {
