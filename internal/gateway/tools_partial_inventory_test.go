@@ -141,3 +141,18 @@ func TestSkillImportSecretReasonNamesFile(t *testing.T) {
 		t.Fatalf("unsafe secret error: %v", err)
 	}
 }
+
+func TestSkillImportFailedObservationNamesCause(t *testing.T) {
+	g, node, _ := toggleFixture(t)
+	report := protocol.InventoryReport{State: "error", Reason: "one or more sources could not be scanned", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
+		{Kind: "skill", Name: "good", Hash: "abc", State: "ok"},
+		{Kind: "skill", Name: "bad", State: "error", Project: "demo", Location: "/repo/.agents/skills/bad", Reason: "absolute symlink (link)"},
+	}}
+	if err := g.store.SetInventory(node, report); err != nil {
+		t.Fatal(err)
+	}
+	err := g.ensureSkillImported(t.Context(), `["skill","bad",""]`)
+	if err == nil || !strings.Contains(err.Error(), "bad (demo) cannot be read safely: absolute symlink (link)") {
+		t.Fatalf("lost failure cause: %v", err)
+	}
+}
