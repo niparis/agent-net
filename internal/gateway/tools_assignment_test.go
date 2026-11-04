@@ -129,7 +129,7 @@ func TestToolTargetsIncludeSeenProjectCheckout(t *testing.T) {
 	if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
-	targets, err := g.toolTargets(context.Background(), `["skill","sample","abc"]`, protocol.ToolAssignment{Scope: "projects", Projects: []string{"seen"}}, map[string]bool{})
+	targets, err := g.toolTargets(context.Background(), `["skill","sample","abc"]`, protocol.ToolAssignment{Scope: "projects", Projects: []string{"seen"}}, map[string]string{})
 	if err != nil {
 		t.Fatal(err)
 	}

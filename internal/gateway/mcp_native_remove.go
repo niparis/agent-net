@@ -71,7 +71,7 @@ func sameServer(a, b protocol.MCPServer) bool {
 
 // nativeRemoveChecks says what stops the removal of this native entry. It
 // returns plain reasons; none holds a value from the file.
-func (g *Gateway) nativeRemoveChecks(ctx context.Context, e nativeMCP, failed map[string]bool) (server string, conflicts []string, err error) {
+func (g *Gateway) nativeRemoveChecks(ctx context.Context, e nativeMCP, failed map[string]string) (server string, conflicts []string, err error) {
 	c := e.candidate
 	name := protocol.MCPServerName(c.Name)
 	imports, err := g.store.MCPImports()
@@ -96,8 +96,8 @@ func (g *Gateway) nativeRemoveChecks(ctx context.Context, e nativeMCP, failed ma
 	case len(srv.Tools) == 0:
 		conflicts = append(conflicts, "the federated server reports no tools")
 	}
-	if failed[c.NodeID] {
-		conflicts = append(conflicts, "fresh inventory scan unavailable on "+c.Machine)
+	if reason := failed[c.NodeID]; reason != "" {
+		conflicts = append(conflicts, c.Machine+": "+reason)
 	}
 	if found {
 		spec, err := g.importSpec(ctx, c)

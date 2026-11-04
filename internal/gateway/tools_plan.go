@@ -18,7 +18,7 @@ import (
 	"github.com/niparis/agent-net/internal/redact"
 )
 
-func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolAssignment, failed map[string]bool) ([]protocol.ToolPlanTarget, error) {
+func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolAssignment, failed map[string]string) ([]protocol.ToolPlanTarget, error) {
 	var kind, name, hash string
 	if err := g.store.db.QueryRow(`SELECT kind,name,hash FROM tool_identities WHERE id=?`, item).Scan(&kind, &name, &hash); err != nil {
 		return nil, errors.New("tool item not found")
@@ -56,8 +56,12 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				hasReport = true
 			}
 		}
-		if failed[node.NodeID] || !hasReport {
-			targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "inspect", State: "conflict", Conflict: "fresh inventory scan unavailable"})
+		problem := failed[node.NodeID]
+		if !hasReport && problem == "" {
+			problem = "machine has no inventory report; rescan the machine"
+		}
+		if problem != "" {
+			targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "inspect", State: "conflict", Conflict: problem})
 		}
 	}
 	source := ""
@@ -743,15 +747,15 @@ func (s *Store) toolPlanNodes() ([]protocol.NodeView, error) {
 	return nodes, rows.Err()
 }
 
-func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]bool, error) {
+func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]string, error) {
 	if validatingProposal(ctx) {
-		return map[string]bool{}, nil
+		return map[string]string{}, nil
 	}
 	nodes, err := g.store.toolPlanNodes()
 	if err != nil {
 		return nil, err
 	}
-	failed := map[string]bool{}
+	failed := map[string]string{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 16)
@@ -767,14 +771,14 @@ func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]bool,
 			case sem <- struct{}{}:
 			case <-ctx.Done():
 				mu.Lock()
-				failed[id] = true
+				failed[id] = "inventory scan canceled"
 				mu.Unlock()
 				return
 			}
 			defer func() { <-sem }()
 			if _, err := host.request(ctx, "node.tool_plan_scan", struct{}{}, 30*time.Second); err != nil {
 				mu.Lock()
-				failed[id] = true
+				failed[id] = redact.Secrets(err.Error())
 				mu.Unlock()
 			}
 		}(node.NodeID)

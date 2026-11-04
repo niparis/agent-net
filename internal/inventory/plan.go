@@ -32,10 +32,12 @@ func PlanReportProblem(r protocol.InventoryReport) string {
 			}
 		}
 	}
-	if r.Reason != "" {
-		return "inventory scan incomplete: " + r.Reason
+	for _, item := range r.Items {
+		if reason := PlanItemProblem(r, item.Kind, item.Name, item.Location); reason != "" {
+			return "inventory scan incomplete: " + reason
+		}
 	}
-	return "inventory scan incomplete"
+	return "inventory scan incomplete: " + r.Reason
 }
 
 // PlanItemProblem refuses the same name, any unknown source root that could
@@ -63,6 +65,8 @@ func PlanItemProblem(r protocol.InventoryReport, kind, name string, sources ...s
 			}
 			if item.Project != "" {
 				label += " (" + item.Project + ")"
+			} else if item.Name != "" && item.Location != "" {
+				label += " (" + item.Location + ")"
 			}
 			reason := item.Reason
 			if reason == "" {

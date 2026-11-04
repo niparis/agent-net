@@ -10,6 +10,13 @@ import (
 )
 
 func (d *Daemon) scanTools(ctx context.Context) protocol.InventoryReport {
+	report, _ := d.scanToolsWithUpload(ctx)
+	return report
+}
+
+// Keep upload acknowledgement separate from the merged local report. The
+// gateway accepts fresh ok/error scans, never a locally merged stale report.
+func (d *Daemon) scanToolsWithUpload(ctx context.Context) (protocol.InventoryReport, error) {
 	d.toolsMu.Lock()
 	defer d.toolsMu.Unlock()
 	var projects []protocol.ProjectEntry
@@ -50,10 +57,10 @@ func (d *Daemon) scanTools(ctx context.Context) protocol.InventoryReport {
 	d.toolsReport = report
 	// Send the scan as it came so the gateway applies the same merge to its
 	// own stored report.
-	_, _ = d.call(ctx, "node.inventory", fresh)
+	_, uploadErr := d.call(ctx, "node.inventory", fresh)
 	result := d.toolsReport
 	result.Items = append([]protocol.InventoryItem{}, result.Items...)
-	return result
+	return result, uploadErr
 }
 
 func (d *Daemon) toolsLoop(ctx context.Context) {

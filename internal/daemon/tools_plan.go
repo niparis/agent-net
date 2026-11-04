@@ -282,10 +282,10 @@ func (d *Daemon) onToolPlanScan(ctx context.Context, l *link, h protocol.Header)
 	if d.cfg.InventoryHome == "" {
 		err = errors.New("inventory scanner unavailable")
 	} else {
-		report := d.scanTools(ctx)
+		report, uploadErr := d.scanToolsWithUpload(ctx)
 		if reason := inventory.PlanReportProblem(report); reason != "" {
 			err = errors.New(reason)
-		} else if _, e := d.call(ctx, "node.inventory", report); e != nil {
+		} else if uploadErr != nil {
 			err = errors.New("inventory upload unavailable")
 		}
 	}

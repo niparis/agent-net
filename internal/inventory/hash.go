@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -50,7 +51,7 @@ func hashSkillRoot(dir *os.Root, contentOnly bool) (string, error) {
 	var paths []string
 	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return skillReadError(path, err)
 		}
 		if path == "." {
 			return nil
@@ -82,34 +83,34 @@ func hashSkillRoot(dir *os.Root, contentOnly bool) (string, error) {
 	for _, path := range paths {
 		info, err := dir.Lstat(path)
 		if err != nil {
-			return "", err
+			return "", skillReadError(path, err)
 		}
 		write([]byte(path))
 		switch {
 		case info.Mode().IsRegular():
 			total += info.Size()
 			if total > maxBytes || info.Size() < 0 {
-				return "", fmt.Errorf("skill exceeds size limit")
+				return "", skillSizeError(path, info.Size(), total)
 			}
 			f, err := dir.Open(path)
 			if err != nil {
-				return "", err
+				return "", skillReadError(path, err)
 			}
 			opened, err := f.Stat()
 			if err != nil || !os.SameFile(info, opened) {
 				f.Close()
-				return "", fmt.Errorf("skill changed during scan")
+				return "", fmt.Errorf("skill changed during scan (%s)", path)
 			}
 			data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
 			closeErr := f.Close()
 			if err != nil {
-				return "", err
+				return "", skillReadError(path, err)
 			}
 			if closeErr != nil {
 				return "", closeErr
 			}
 			if int64(len(data)) != info.Size() {
-				return "", fmt.Errorf("skill changed during scan")
+				return "", fmt.Errorf("skill changed during scan (%s)", path)
 			}
 			write([]byte("file"))
 			if !contentOnly {
@@ -121,18 +122,18 @@ func hashSkillRoot(dir *os.Root, contentOnly bool) (string, error) {
 		case info.Mode()&os.ModeSymlink != 0:
 			target, err := dir.Readlink(path)
 			if err != nil {
-				return "", err
+				return "", skillReadError(path, err)
 			}
 			if filepath.IsAbs(target) {
-				return "", fmt.Errorf("absolute symlink")
+				return "", fmt.Errorf("absolute symlink (%s)", path)
 			}
 			if _, err = dir.Stat(path); err != nil {
-				return "", fmt.Errorf("invalid or escaping symlink")
+				return "", fmt.Errorf("invalid or escaping symlink (%s)", path)
 			}
 			write([]byte("symlink"))
 			write([]byte(filepath.ToSlash(target)))
 		default:
-			return "", fmt.Errorf("special file in skill")
+			return "", fmt.Errorf("special file in skill (%s)", path)
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
@@ -143,7 +144,7 @@ func skillFilesRoot(dir *os.Root) ([]string, error) {
 	var paths []string
 	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return skillReadError(path, err)
 		}
 		if path == "." {
 			return nil
@@ -167,4 +168,22 @@ func skillFilesRoot(dir *os.Root) ([]string, error) {
 
 func skillNoise(name string) bool {
 	return name == ".DS_Store" || name == "Thumbs.db" || strings.HasSuffix(name, "~") || strings.HasSuffix(name, ".swp") || strings.HasSuffix(name, ".swo")
+}
+
+// Errors name relative files and rules, never file contents or symlink targets.
+func skillReadError(path string, err error) error {
+	if errors.Is(err, os.ErrPermission) {
+		return fmt.Errorf("unreadable file (%s): permission denied", path)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("unreadable file (%s): file disappeared during scan", path)
+	}
+	return fmt.Errorf("unreadable file (%s): cannot read safely", path)
+}
+
+func skillSizeError(path string, size, total int64) error {
+	if size > maxBytes {
+		return fmt.Errorf("a file is larger than the 64 MiB scan limit (%s, %.0f MB)", path, float64(size)/1e6)
+	}
+	return fmt.Errorf("skill exceeds the 64 MiB total file-data limit (%s, %.0f MB total)", path, float64(total)/1e6)
 }

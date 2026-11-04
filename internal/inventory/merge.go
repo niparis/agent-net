@@ -25,18 +25,27 @@ func MergeReports(previous, fresh protocol.InventoryReport) protocol.InventoryRe
 		}
 	}
 	if okItems == 0 {
-		if len(previous.Items) == 0 {
-			return fresh
-		}
-		out := previous
-		out.Items = append([]protocol.InventoryItem(nil), previous.Items...)
-		for i := range out.Items {
-			out.Items[i].State = protocol.InventoryStale
-			out.Items[i].Reason = "latest scan failed"
-		}
+		out := fresh
+		out.Items = append([]protocol.InventoryItem(nil), fresh.Items...)
 		out.State = protocol.InventoryStale
-		out.Reason = "latest scan failed"
-		out.ScannedAt = fresh.ScannedAt
+		if out.Reason == "" {
+			out.Reason = "latest scan failed"
+		}
+		for _, old := range previous.Items {
+			found := false
+			for i, failed := range out.Items {
+				if itemKey(old) == itemKey(failed) {
+					old.State, old.Reason = protocol.InventoryStale, failed.Reason
+					out.Items[i] = old
+					found = true
+					break
+				}
+			}
+			if !found {
+				old.State, old.Reason = protocol.InventoryStale, out.Reason
+				out.Items = append(out.Items, old)
+			}
+		}
 		return out
 	}
 	out := fresh
@@ -55,7 +64,7 @@ func MergeReports(previous, fresh protocol.InventoryReport) protocol.InventoryRe
 					if itemKey(out.Items[i]) == itemKey(failed) {
 						out.Items[i] = old
 						out.Items[i].State = protocol.InventoryStale
-						out.Items[i].Reason = "latest scan failed"
+						out.Items[i].Reason = failed.Reason
 					}
 				}
 			}
@@ -78,7 +87,7 @@ func MergeReports(previous, fresh protocol.InventoryReport) protocol.InventoryRe
 			}
 			seen[key] = true
 			old.State = protocol.InventoryStale
-			old.Reason = "latest scan failed"
+			old.Reason = failed.Reason
 			out.Items = append(out.Items, old)
 		}
 	}
