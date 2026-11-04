@@ -436,7 +436,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			return nil, errors.New("peer check failed: native_id does not match the Claude session of the parent process")
 		}
 		var ls *localSession
-		deadline := time.Now().Add(3 * time.Second)
+		deadline := time.Now().Add(d.cfg.ClaudeDiscoveryGrace)
 		for {
 			d.mu.Lock()
 			ls = d.sessions[key("claude", p.NativeID)]

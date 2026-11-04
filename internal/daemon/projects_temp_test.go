@@ -22,6 +22,7 @@ func daemonSession(t *testing.T, n *node, harness, native string) *protocol.Sess
 
 // A session in /tmp is a session, but its folder is not a project.
 func TestSessionInTempFolderHasNoProject(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	adapter := &fakeAdapter{harness: "claude"}
 	n := startNode(t, g, nodeOpts{adapter: adapter, cfg: func(c *Config) {
@@ -69,6 +70,7 @@ func TestSessionUnderTMPDIRHasNoProject(t *testing.T) {
 
 // A session in a normal folder still makes a project.
 func TestSessionInNormalFolderHasProject(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	adapter := &fakeAdapter{harness: "claude"}
 	n := startNode(t, g, nodeOpts{adapter: adapter})

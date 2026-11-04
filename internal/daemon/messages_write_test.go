@@ -33,6 +33,7 @@ func groupReceipts(t *testing.T, raw json.RawMessage) groupResult {
 
 // A normal agent may not send to a group even when it bypasses the MCP server.
 func TestGroupSendRefusedForNormalAgent(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "pi"})
@@ -53,6 +54,7 @@ func TestGroupSendRefusedForNormalAgent(t *testing.T) {
 
 // Exactly one of to and to_set is allowed.
 func TestSendRefusesToAndToSetTogether(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, _ := helloPi(t, n, "sender", "/w/sender", true)
@@ -68,6 +70,7 @@ func TestSendRefusesToAndToSetTogether(t *testing.T) {
 
 // A CTO session sends a group message to every matching online session once.
 func TestCTOGroupSendReachesEveryRecipientOnce(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "pi"})
@@ -115,6 +118,7 @@ func TestCTOGroupSendReachesEveryRecipientOnce(t *testing.T) {
 
 // An advisor node is the source of a governs edge in mode advisor.
 func TestAdvisorGroupSendReachesEveryRecipientOnce(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "pi"})
@@ -147,6 +151,7 @@ func TestAdvisorGroupSendReachesEveryRecipientOnce(t *testing.T) {
 
 // as_owner is CTO only.
 func TestAsOwnerRefusedForNormalAgent(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "pi"})
@@ -161,6 +166,7 @@ func TestAsOwnerRefusedForNormalAgent(t *testing.T) {
 
 // as_owner from the CTO becomes an owner proposal.
 func TestCTOAsOwnerBecomesAProposal(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "pi"})
@@ -187,6 +193,7 @@ func TestCTOAsOwnerBecomesAProposal(t *testing.T) {
 
 // One send returns one receipt with the recipient's id and name.
 func TestSendReturnsOneReceipt(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "pi"})
@@ -208,6 +215,7 @@ func TestSendReturnsOneReceipt(t *testing.T) {
 
 // A reply returns one receipt for the peer, and keeps the outcome rules.
 func TestReplyReturnsOneReceiptAndKeepsOutcomeRules(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "pi"})

@@ -10,6 +10,7 @@ import (
 
 // Joining again keeps a host name that was set by hand in node.json.
 func TestJoinKeepsPinnedHostname(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "node.json"), []byte(`{"hostname":"mac-mini"}`), 0o600); err != nil {

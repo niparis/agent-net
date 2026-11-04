@@ -10,6 +10,7 @@ import (
 )
 
 func TestCTOProjectDisplayOwnerGateAndListings(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	agent, _ := helloPi(t, n, "display-agent", "/w/peer", true)

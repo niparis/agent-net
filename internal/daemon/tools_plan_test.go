@@ -32,6 +32,7 @@ func TestToolPlanDestinationAndCollision(t *testing.T) {
 }
 
 func TestToolsPlanAndApplyOwnerGate(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -90,6 +91,7 @@ func TestToolsPlanAndApplyOwnerGate(t *testing.T) {
 }
 
 func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -188,6 +190,7 @@ func TestToolPlanDestinationFingerprintChanges(t *testing.T) {
 }
 
 func TestToolApplyRejectsChangedDestination(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -313,6 +316,7 @@ func TestToolPlanRefusesNonProjectFolders(t *testing.T) {
 }
 
 func TestToolApplyRejectsUnscannedShadow(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {

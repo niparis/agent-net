@@ -155,6 +155,7 @@ func TestCTOReadCanary(t *testing.T) {
 }
 
 func TestCTOAgentReadCanary(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	caller, _ := helloPi(t, n, "reader", "/fixture", true)
@@ -171,6 +172,7 @@ func TestCTOAgentReadCanary(t *testing.T) {
 }
 
 func TestCTOReadParity(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	_, id := helloPi(t, w.node, "parity", "/fixture", true)
@@ -185,13 +187,15 @@ func TestCTOReadParity(t *testing.T) {
 			t.Errorf("%s has a source the allowlist does not pin", view)
 		}
 	}
-	got, ge := w.d.runCTOToolRaw(context.Background(), "agent_session_get", args)
-	want, we := w.d.ctoReadConn().dispatch(context.Background(), "session_get", args)
-	gb, _ := json.Marshal(got)
-	wb, _ := json.Marshal(want)
-	if string(gb) != string(wb) || fmt.Sprint(ge) != fmt.Sprint(we) {
-		t.Fatalf("session %s %v; agent %s %v", gb, ge, wb, we)
-	}
+	// Both reads include last_seen_ago. Retry a pair that straddles a
+	// relative-time boundary, while still requiring exact response parity.
+	eventually(t, "exact session read parity", func() bool {
+		got, ge := w.d.runCTOToolRaw(context.Background(), "agent_session_get", args)
+		want, we := w.d.ctoReadConn().dispatch(context.Background(), "session_get", args)
+		gb, _ := json.Marshal(got)
+		wb, _ := json.Marshal(want)
+		return string(gb) == string(wb) && fmt.Sprint(ge) == fmt.Sprint(we)
+	})
 
 	if _, err := w.d.readCTOTool(context.Background(), "unsourced_read", nil); err == nil {
 		t.Fatal("read without source ran")
@@ -204,6 +208,7 @@ func TestCTOReadParity(t *testing.T) {
 }
 
 func TestCTOOutcomeCanary(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"applied", "failed", "declined", "expired"} {
 		t.Run(status, func(t *testing.T) {
 			state, err := openState(seededStateDir(t))

@@ -19,6 +19,7 @@ func ruleValue(rules []protocol.PublicRule, name string) string {
 }
 
 func TestAutonomyIsOwnerOnlyAndEveryAgentCanReadIt(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	agent, session := helloPi(t, n, "autonomy-agent", "/w/shop", true)
@@ -66,6 +67,7 @@ func TestAutonomyIsOwnerOnlyAndEveryAgentCanReadIt(t *testing.T) {
 }
 
 func TestAutonomyCTOChangeIsAProposal(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	helloPi(t, n, "proposal-shop", "/w/shop", true)

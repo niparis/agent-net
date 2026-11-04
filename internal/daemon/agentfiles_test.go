@@ -9,6 +9,7 @@ import (
 
 // Start runs the agent files hook once, and it logs through the daemon logger.
 func TestStartRefreshesAgentFiles(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	d, err := New(Config{
 		StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"),

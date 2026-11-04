@@ -32,6 +32,7 @@ func TestAgyPeerKeepsStartWorkspace(t *testing.T) {
 }
 
 func TestAgyPeerEnterArgv(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "agy")
 	cwd := t.TempDir()
@@ -44,6 +45,7 @@ func TestAgyPeerEnterArgv(t *testing.T) {
 }
 
 func TestAgyPeerDiscoveryAndHooks(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	summaryPath := fakeAgySummaries(t)
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.AgySummaries = summaryPath }})
@@ -106,6 +108,7 @@ func TestAgyPeerDiscoveryAndHooks(t *testing.T) {
 }
 
 func TestAgyPeerMCPBinding(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cwd := t.TempDir()
@@ -133,6 +136,7 @@ func TestAgyPeerMCPBinding(t *testing.T) {
 }
 
 func TestAgyPeerDeliveryHooks(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cwd := t.TempDir()
@@ -246,6 +250,7 @@ esac
 }
 
 func TestAgyPeerDeliveryStateEndToEnd(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cwd := t.TempDir()
@@ -281,10 +286,12 @@ func TestAgyPeerDeliveryStateEndToEnd(t *testing.T) {
 	if n.d.st.isDelivered(sent.ID) {
 		t.Fatal("queued message was marked delivered")
 	}
-	out := hook("Stop")
-	if out["decision"] != "continue" || !strings.Contains(fmt.Sprint(out["reason"]), "queued body") {
-		t.Fatalf("hook: %v", out)
-	}
+	// A duplicate gateway delivery can still hold the delivery intent. The
+	// hook leaves the message queued in that case, for the next turn.
+	eventually(t, "the stop hook receives the queued message", func() bool {
+		out := hook("Stop")
+		return out["decision"] == "continue" && strings.Contains(fmt.Sprint(out["reason"]), "queued body")
+	})
 	eventually(t, "delivered receipt", func() bool { m, _, _ := g.gw.Store().Message(sent.ID); return m.State == protocol.StateDelivered })
 }
 
@@ -309,6 +316,7 @@ func TestAgyPeerEnterHerdrCases(t *testing.T) {
 }
 
 func TestAgyPeerMCPDescendantAndSpoofedHook(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cwd := t.TempDir()
@@ -364,6 +372,7 @@ func TestAgyPeerMCPDescendantAndSpoofedHook(t *testing.T) {
 }
 
 func TestAgyPeerHookKeepsOversizedQueueForNextInvocation(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cwd := t.TempDir()
@@ -401,6 +410,7 @@ func TestAgyPeerHookKeepsOversizedQueueForNextInvocation(t *testing.T) {
 }
 
 func TestAgyPeerDeliveryRecordFailureDoesNotReturnMessage(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cwd := t.TempDir()
@@ -436,6 +446,7 @@ func TestAgyPeerDeliveryRecordFailureDoesNotReturnMessage(t *testing.T) {
 }
 
 func TestAgyPeerDeliveryHookWaitsForReplyWrite(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cwd := t.TempDir()

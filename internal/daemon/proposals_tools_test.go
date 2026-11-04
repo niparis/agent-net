@@ -27,6 +27,7 @@ var ctoProposalFixtures = map[string]string{
 }
 
 func TestProposalEveryChangeRunsStoredCallOnce(t *testing.T) {
+	t.Parallel()
 	for name, class := range ctoToolClasses {
 		if class != ctoProposal && name != "message" {
 			continue
@@ -191,6 +192,7 @@ func TestCTOChangeUnknownActionFailsClosed(t *testing.T) {
 }
 
 func TestCTOChangeProposalsValidateAndApply(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
@@ -261,6 +263,7 @@ func approveCTOToolResult(t *testing.T, d *Daemon, value any) json.RawMessage {
 }
 
 func TestCTOConcreteValidatorCoverage(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	for name, args := range ctoProposalFixtures {
@@ -283,6 +286,7 @@ func TestCTOConcreteValidatorCoverage(t *testing.T) {
 }
 
 func TestCTOProposalQueuedStopDoesNotCancelUntilApproval(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
@@ -310,6 +314,7 @@ func TestCTOProposalQueuedStopDoesNotCancelUntilApproval(t *testing.T) {
 }
 
 func TestCTOProposalTrustHistoryActor(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	_, sid := helloPi(t, n, "trust", "/work/project", true)
@@ -330,6 +335,7 @@ func TestCTOProposalTrustHistoryActor(t *testing.T) {
 }
 
 func TestCTOProposalMessageRequiresActionBeforeStoring(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	_, sid := helloPi(t, n, "recipient", "/work/project", true)

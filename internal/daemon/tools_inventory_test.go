@@ -33,6 +33,7 @@ func TestToolsInventoryScanFakeHome(t *testing.T) {
 }
 
 func TestInventoryGatewayAndOwnerGate(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -65,6 +66,7 @@ func TestInventoryGatewayAndOwnerGate(t *testing.T) {
 }
 
 func TestInventoryRescansAfterVersionChange(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -109,6 +111,7 @@ func TestInventoryRescansAfterVersionChange(t *testing.T) {
 }
 
 func TestPartialScanKeepsFreshManifests(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	good := filepath.Join(home, ".claude/skills/good")
 	if err := os.MkdirAll(good, 0700); err != nil {
@@ -170,6 +173,7 @@ func TestPartialScanKeepsFreshManifests(t *testing.T) {
 }
 
 func TestToolsSkillDetailsRefreshesOneCopy(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -218,6 +222,7 @@ func TestToolsSkillDetailsRefreshesOneCopy(t *testing.T) {
 }
 
 func TestToolsItemsOwnerGate(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/demo")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -256,6 +261,7 @@ func TestFederationAppearsInInventory(t *testing.T) {
 }
 
 func TestProjectRegistrationRefreshesTools(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	root := filepath.Join(t.TempDir(), "demo")
 	dir := filepath.Join(root, ".agents/skills/example")
@@ -278,6 +284,7 @@ func TestProjectRegistrationRefreshesTools(t *testing.T) {
 }
 
 func TestToolsImportFromOwnerPreservesSource(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/import-me")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -323,6 +330,7 @@ func TestToolsImportFromOwnerPreservesSource(t *testing.T) {
 }
 
 func TestToolsVersionsAndExport(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/versioned")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -381,6 +389,7 @@ func TestToolsVersionsAndExport(t *testing.T) {
 }
 
 func TestGatewayBackupOwnerGate(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	cli := cliClient(t, n)
@@ -401,6 +410,7 @@ func TestGatewayBackupOwnerGate(t *testing.T) {
 }
 
 func TestToolsReadFileOwnerAndPaths(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills/read-me")
 	if err := os.MkdirAll(dir, 0700); err != nil {

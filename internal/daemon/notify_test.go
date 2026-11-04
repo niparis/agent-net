@@ -33,6 +33,7 @@ func TestNotifyNewAskAndRateLimit(t *testing.T) {
 }
 
 func TestNotifySettingIsOwnerOnlyAndPersists(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, _ := helloPi(t, n, "nb", "/work/bob", false)
@@ -54,6 +55,7 @@ func TestNotifySettingIsOwnerOnlyAndPersists(t *testing.T) {
 }
 
 func TestNotifyRemoteAskOnTUIRefresh(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	sender := startNode(t, g, nodeOpts{cmdline: "pi"})
 	receiver := startNode(t, g, nodeOpts{cmdline: "pi"})
@@ -79,6 +81,7 @@ func TestNotifyRemoteAskOnTUIRefresh(t *testing.T) {
 }
 
 func TestNotifyRateLimitSurvivesStateReopen(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := openState(dir)
 	if err != nil {

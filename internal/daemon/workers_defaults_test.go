@@ -14,6 +14,7 @@ import (
 // The defaults of a short request (decision 0002, W17): a repository gets a
 // worktree, "none" opts out, and the notice ends with agent-net's checklist.
 func TestWorkerDefaultsToAWorktreeInARepository(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -41,6 +42,7 @@ func TestWorkerDefaultsToAWorktreeInARepository(t *testing.T) {
 }
 
 func TestWorkerSandboxFollowsTheNodesMaturity(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -59,6 +61,7 @@ func TestWorkerSandboxFollowsTheNodesMaturity(t *testing.T) {
 }
 
 func TestWorkerIsolationNoneWorksInTheProjectFolder(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -99,6 +102,7 @@ func TestIsGitRepo(t *testing.T) {
 // and the result says how. The provider is subscription-backed (openai maps to
 // the Codex quota), because a loose name never resolves to a pay-per-use one.
 func TestWorkerModelIsResolved(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"openai/m1", "openai/m2"}), nil)
 	repo := newRepo(t, "shop")
@@ -132,6 +136,7 @@ func TestWorkerModelIsResolved(t *testing.T) {
 // With no project, the worker starts in the project of the calling session. The
 // command line has none and must name one.
 func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -168,6 +173,7 @@ func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
 // When the caller's project is on two machines, the caller's own machine wins,
 // and else the one that has the harness. A named project is still ambiguous.
 func TestWorkerCallerProjectPicksTheMachine(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startWorkerNode(t, g, shortSet, nil)
 	b := startWorkerNode(t, g, shortSet, nil)

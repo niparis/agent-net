@@ -103,6 +103,7 @@ func enterRequest(t *testing.T, n *node, q protocol.EnterRequest) protocol.Enter
 }
 
 func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "claude")
 	cwd := t.TempDir()
@@ -213,6 +214,7 @@ func TestEnterWithoutAWayGivesANote(t *testing.T) {
 }
 
 func TestEnterOpenCodeSessionAndWorker(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "opencode")
 	cwd := t.TempDir()
@@ -241,6 +243,7 @@ func TestEnterOpenCodeSessionAndWorker(t *testing.T) {
 }
 
 func TestEnterCodexWorker(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "codex")
 	n, _, id := enterNode(t, g, "codex", protocol.SessionInfo{NativeID: "thr_1", PID: 1, Cwd: t.TempDir(), Name: "cx", Status: "idle"}, bins, nil)
@@ -269,6 +272,7 @@ func TestEnterCodexWorker(t *testing.T) {
 }
 
 func TestEnterRefusesTheOwnerAndUnknownSessions(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	eventually(t, "owner", func() bool { return n.d.ownerSessionID() != "" })
@@ -285,6 +289,7 @@ func TestEnterRefusesTheOwnerAndUnknownSessions(t *testing.T) {
 }
 
 func TestEnterOnAnotherMachineUsesSSHByDefault(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "claude")
 	cwd := t.TempDir()
@@ -373,6 +378,7 @@ func TestSSHHelpers(t *testing.T) {
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
 func TestEnterClaudeExitedBackgroundRefusesAttach(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "claude")
 	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "bg", job: "abcd1234"}

@@ -10,6 +10,7 @@ import (
 // A worker's task reaches the agent list on every machine, so a status view can
 // name the worker after it instead of its worker ID (decision 0017, part A).
 func TestWorkerTaskReachesTheAgentList(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))

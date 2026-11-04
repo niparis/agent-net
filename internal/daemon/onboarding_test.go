@@ -9,6 +9,7 @@ import (
 )
 
 func TestCTOOnboardingSharedAndOwnerOnly(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n1 := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n1, "onboarding-agent", "/w/onboarding", true)

@@ -16,6 +16,7 @@ import (
 )
 
 func TestMachineTokenAtomicSave(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "node.json")
 	if err := os.WriteFile(path, []byte(`{"node_id":"n_test","token":"old","extra":true}`), 0644); err != nil {
@@ -40,6 +41,7 @@ func TestMachineTokenAtomicSave(t *testing.T) {
 }
 
 func TestMachineActionsLinkAndCTOProposal(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	owner := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	logs := &logBuf{}
@@ -103,6 +105,7 @@ func TestMachineActionsLinkAndCTOProposal(t *testing.T) {
 }
 
 func TestMachineActionsOwnNode(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)

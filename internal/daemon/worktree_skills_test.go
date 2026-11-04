@@ -11,6 +11,7 @@ import (
 )
 
 func TestWorkerWorktreeSkills(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	repo := newRepo(t, "skills")
 	var entries []skillManifestEntry

@@ -11,6 +11,7 @@ import (
 
 // Sessions in the main tree and in a worktree are one project in `projects`.
 func TestProjectsOneEntryForWorktrees(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	base, _ := filepath.EvalSymlinks(t.TempDir())
 	main := filepath.Join(base, "tenebrae")

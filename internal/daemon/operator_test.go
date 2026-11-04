@@ -135,6 +135,7 @@ func getUsage(t *testing.T, cli *localClient) usageAnswer {
 // ---- CPU and memory ----
 
 func TestUsageReachesTheGatewayAndTheTopLists(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, withSampler(os.Getpid()))
 	_, sid := helloPi(t, n, "p1", "/w/p", false)
@@ -194,6 +195,7 @@ func TestUsageReachesTheGatewayAndTheTopLists(t *testing.T) {
 }
 
 func TestOpenCodeServiceIsReportedOnceAsShared(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{exe: "/opt/opencode"}, withSampler(os.Getpid()))
 	ids := map[string]bool{}
@@ -230,6 +232,7 @@ func TestOpenCodeServiceIsReportedOnceAsShared(t *testing.T) {
 }
 
 func TestUsageIsOffWithoutASampler(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	helloPi(t, n, "p1", "/w/p", false)
@@ -246,6 +249,7 @@ func TestUsageIsOffWithoutASampler(t *testing.T) {
 // ---- who may ask ----
 
 func TestAgentConnectionsCannotCallOwnerData(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/opencode"}, withSampler(os.Getpid()))
 	pi, sid := helloPi(t, n, "p1", "/w/p", false)
@@ -287,6 +291,7 @@ func TestToolsDifferencesIsOwnerOnly(t *testing.T) {
 }
 
 func TestCLIInsideASessionIsRefused(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, realGate: true})
@@ -407,6 +412,7 @@ func getText(t *testing.T, cli *localClient, q map[string]any) (protocol.TextPag
 }
 
 func TestSessionTextFromAPluginIsMaskedCutAndLimited(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	long := strings.Repeat("z", 5000)
@@ -467,6 +473,7 @@ func TestSessionTextFromAPluginIsMaskedCutAndLimited(t *testing.T) {
 }
 
 func TestSessionTextPassesThePagingToThePlugin(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{exe: "/opt/opencode"}, nil)
 	pl, sid := dialFakePlugin(t, n.sock, "opencode", "o1", func(q map[string]any) map[string]any {
@@ -486,6 +493,7 @@ func TestSessionTextPassesThePagingToThePlugin(t *testing.T) {
 }
 
 func TestSessionTextErrors(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, func(c *Config) { c.TextTimeout = 150 * time.Millisecond })
 	cli := cliClient(t, n)
@@ -519,6 +527,7 @@ func (a *textAdapter) Text(ctx context.Context, info protocol.SessionInfo, q pro
 }
 
 func TestSessionTextFromAnAdapterIsMasked(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &textAdapter{fakeAdapter: fakeAdapter{harness: "fake"}}
 	n := startNodeCfg(t, g, nodeOpts{}, func(c *Config) { c.Adapters = []Adapter{fa} })
@@ -552,6 +561,7 @@ func TestSessionTextFromAnAdapterIsMasked(t *testing.T) {
 // Another machine's owner asks through the gateway. The text is read on the
 // machine that holds the session. The gateway keeps no trace of it.
 func TestSessionTextAndTopRelayThroughTheGatewayWithoutATrace(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	holder := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, withSampler(os.Getpid()))
 	asker := startNodeCfg(t, g, nodeOpts{}, nil)
@@ -606,6 +616,7 @@ func TestSessionTextAndTopRelayThroughTheGatewayWithoutATrace(t *testing.T) {
 }
 
 func TestCountsComeFromTheGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNodeCfg(t, g, nodeOpts{adapter: fa}, nil)
@@ -626,6 +637,7 @@ func TestCountsComeFromTheGateway(t *testing.T) {
 
 // A plugin that does not say its mode is reported as "unknown", not as nothing.
 func TestPluginWithoutAModeIsUnknown(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{exe: "/opt/opencode"}, nil)
 	lc := dialLocal(t, n.sock)

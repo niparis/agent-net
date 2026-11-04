@@ -16,6 +16,7 @@ import (
 // the gateway in parts, which is what a file between machines and a skill
 // above the 2 MB frame limit will use.
 func TestTransferClientRoundTrip(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	sender := startNode(t, g, nodeOpts{})
 	receiver := startNode(t, g, nodeOpts{})

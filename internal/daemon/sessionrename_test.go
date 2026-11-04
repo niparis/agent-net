@@ -13,6 +13,7 @@ import (
 // agent connection is refused. The name survives reports and an empty name
 // returns to the automatic project name (decision 0033).
 func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	agent, sid := helloPi(t, n, "rename-agent", "/code/shop", true)

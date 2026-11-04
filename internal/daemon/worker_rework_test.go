@@ -32,6 +32,7 @@ func reworkRow(t *testing.T, w *workerNode, session string) workerRow {
 // A follow-up from the owner after a hand-back with complete:no counts one
 // continue, and the facts reach the notice, the queries and the track record.
 func TestWorkerFollowUpAfterPartialHandbackCountsContinue(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -111,6 +112,7 @@ func TestWorkerFollowUpAfterPartialHandbackCountsContinue(t *testing.T) {
 
 // A follow-up after a hand-back with complete:yes counts one fix.
 func TestWorkerFollowUpAfterCompleteHandbackCountsFix(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -139,6 +141,7 @@ func TestWorkerFollowUpAfterCompleteHandbackCountsFix(t *testing.T) {
 // Only a message from the work's owner counts: another session and a notice
 // are ignored.
 func TestWorkerReworkIgnoresOtherSessionsAndNotices(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	d := w.d
@@ -185,6 +188,7 @@ func TestWorkerReworkIgnoresOtherSessionsAndNotices(t *testing.T) {
 
 // The counters and the pending hand-back survive a daemon restart.
 func TestWorkerReworkCountersSurviveDaemonRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -224,6 +228,7 @@ func TestWorkerReworkCountersSurviveDaemonRestart(t *testing.T) {
 // message. That message counts as a continue: the worker stopped early
 // without saying so.
 func TestWorkerFollowUpAfterIdleNoticeCountsContinue(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	d := w.d
@@ -251,6 +256,7 @@ func TestWorkerFollowUpAfterIdleNoticeCountsContinue(t *testing.T) {
 // The routed path does the same: an owner message after the idle notice of an
 // OpenCode worker that never handed back counts one continue.
 func TestWorkerIdleFollowUpCountsContinue(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = 200 * time.Millisecond

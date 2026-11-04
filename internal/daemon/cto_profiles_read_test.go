@@ -12,6 +12,7 @@ import (
 // Worker profiles are public: the CTO reads them before it proposes a new one,
 // so it can say whether one with that name or model already exists.
 func TestCTOReadsWorkerProfiles(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra:high", AddedBy: w.ownerID()}); err != nil {

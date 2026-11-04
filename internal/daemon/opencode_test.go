@@ -51,6 +51,7 @@ func onlineOpenCode(t *testing.T, lc *localClient) map[string]bool {
 // One OpenCode service process opens one connection per session. The
 // sessions are registered, routed and removed separately.
 func TestOpenCodeSessionsOnOneService(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{exe: "/opt/x/node_modules/@opencode/cli/bin/opencode.exe"})
 
@@ -81,6 +82,7 @@ func TestOpenCodeSessionsOnOneService(t *testing.T) {
 }
 
 func TestOpenCodePeerCheck(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{exe: "/usr/bin/bash"})
 	lc := dialLocal(t, n.sock)
@@ -98,6 +100,7 @@ func TestOpenCodePeerCheck(t *testing.T) {
 // A plugin can name its session, and report it dormant and active again. The
 // gateway keeps the status as given, and a dormant session still receives.
 func TestOpenCodeNameAndDormantStatus(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{exe: "/opt/x/node_modules/@opencode/cli/bin/opencode.exe"})
 	cli := cliClient(t, n)

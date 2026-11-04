@@ -15,6 +15,7 @@ import (
 // of `agent-net mcp`, marks the session when the tools are older than the
 // daemon, and hands the process a note to show once.
 func TestMCPHelloMarksOldTools(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	sessDir := t.TempDir()
 	// The test process stands in for `agent-net mcp`; its parent for Claude Code.
@@ -90,6 +91,7 @@ func TestMCPHelloMarksOldTools(t *testing.T) {
 // An agent that runs an owner-only command is told what to use instead, and
 // that a missing tool means old tools.
 func TestInsideSessionAdvice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, realGate: true})

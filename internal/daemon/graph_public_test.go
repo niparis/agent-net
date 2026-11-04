@@ -38,6 +38,7 @@ func injectNodeSetting(t *testing.T, gatewayDir, node, setting, value string) {
 }
 
 func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	cli := cliClient(t, n)
@@ -125,6 +126,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 }
 
 func TestAgentGraphPagesWithTotals(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	cli := cliClient(t, n)
@@ -154,6 +156,7 @@ func TestAgentGraphPagesWithTotals(t *testing.T) {
 // A secret stored under a setting name that is not a rule is never returned.
 // The rule settings are returned, with name and value.
 func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	if err := w.d.registerCTOSession(context.Background()); err != nil {
@@ -243,6 +246,7 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 // The delegation policy the owner set for a project is a rule, so the public
 // graph shows it read-only, per machine.
 func TestAgentGraphShowsDelegationPolicy(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	cli := cliClient(t, n)
@@ -273,6 +277,7 @@ func TestAgentGraphShowsDelegationPolicy(t *testing.T) {
 
 // agent_get shows a session's node rules, so a session can check its own rules.
 func TestAgentGetShowsSessionNodeRules(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	cli := cliClient(t, n)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestToolToggleOperatorGateAndRead(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory})
 	agent, _ := helloPi(t, n, "toggle-agent", "/work", true)

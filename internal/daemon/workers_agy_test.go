@@ -18,6 +18,7 @@ func agyInventory(ctx context.Context) []protocol.HarnessInfo {
 }
 
 func TestAgyProfileIsAccepted(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNodeWithDetect(t, g, shortSet, agyInventory, nil)
 	w.register(t, newRepo(t, "shop"))

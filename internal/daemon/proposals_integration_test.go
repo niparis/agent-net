@@ -11,6 +11,7 @@ import (
 )
 
 func TestProposalConcreteValidationAndRemoteApproval(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	holder := startNode(t, g, nodeOpts{})
 	other := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
@@ -73,6 +74,7 @@ func TestProposalConcreteValidationAndRemoteApproval(t *testing.T) {
 }
 
 func TestProposalChecksMachineEnrollment(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	_, err := n.d.Propose(context.Background(), "node_rename", "", json.RawMessage(`{"node_id":"missing-machine","name":"test"}`), "")
@@ -82,6 +84,7 @@ func TestProposalChecksMachineEnrollment(t *testing.T) {
 }
 
 func TestProposalGraphEdge(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
@@ -100,6 +103,7 @@ func TestProposalGraphEdge(t *testing.T) {
 }
 
 func TestProposalApproveAllAcrossMachines(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startNode(t, g, nodeOpts{})
 	b := startNode(t, g, nodeOpts{})
@@ -122,6 +126,7 @@ func TestProposalApproveAllAcrossMachines(t *testing.T) {
 }
 
 func TestProposalApprovalConfirmMustMatch(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)

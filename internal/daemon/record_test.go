@@ -45,6 +45,7 @@ func onlineAgents(t *testing.T, lc *localClient) []protocol.AgentView {
 // and branch, the gateway logs session.new with them, and the branch follows
 // the repository when the session updates.
 func TestSessionRepoInfoReachesGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	repo, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -138,6 +139,7 @@ func TestPluginSessionRepoInfo(t *testing.T) {
 
 // The full message trail in the gateway log: one line per step, never the body.
 func TestMessageTrailInGatewayLog(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	startNode(t, g, nodeOpts{adapter: fa})
@@ -186,6 +188,7 @@ func TestMessageTrailInGatewayLog(t *testing.T) {
 }
 
 func TestHarnessInventoryReachesGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	var mu sync.Mutex
 	current := []protocol.HarnessInfo{{Name: "claude", Path: "/u/claude", Version: "2.1.0 (Claude Code)"}}
@@ -242,6 +245,7 @@ func TestHarnessInventoryReachesGateway(t *testing.T) {
 // Detection can take seconds. A daemon that connects before it ends sends an
 // empty hello and the inventory follows as an update.
 func TestHarnessInventoryAfterSlowDetection(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	release := make(chan struct{})
 	detect := func(ctx context.Context) []protocol.HarnessInfo {
@@ -267,6 +271,7 @@ func TestHarnessInventoryAfterSlowDetection(t *testing.T) {
 }
 
 func TestEmptyInventoryMeansNoneInstalled(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: func(context.Context) []protocol.HarnessInfo { return nil }})
 	cli := cliClient(t, n)
@@ -278,6 +283,7 @@ func TestEmptyInventoryMeansNoneInstalled(t *testing.T) {
 }
 
 func TestDaemonDatabaseIsPrivate(t *testing.T) {
+	t.Parallel()
 	old := syscall.Umask(0o022)
 	defer syscall.Umask(old)
 	dir := t.TempDir()

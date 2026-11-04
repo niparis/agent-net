@@ -119,6 +119,7 @@ func drainPushes(lc *localClient) {
 // server's list_changed reaches the session at once, not only when the
 // host's short cache runs out.
 func TestMCPFeaturesEndToEnd(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	// The host's list cache lasts longer than the test: a list that changes
 	// proves the notification.
@@ -211,6 +212,7 @@ func TestMCPFeaturesEndToEnd(t *testing.T) {
 // A disabled server is refused. An offline host is named in the list and in
 // the error, and the other servers still list.
 func TestMCPFeaturesAccessAndOffline(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	host := startNode(t, g, nodeOpts{cmdline: "pi"})
 	work := startNode(t, g, nodeOpts{cmdline: "pi"})

@@ -12,6 +12,7 @@ import (
 // graph_view is one read through the gateway: the daemon adds nothing and
 // changes nothing.
 func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	eventually(t, "connected", func() bool { return n.d.Connected() })
@@ -66,6 +67,7 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 }
 
 func TestGraphTalkOwnerGate(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n, "talk-agent", "/w/talk", true)

@@ -143,6 +143,7 @@ func TestSessionResumeAndStopRelayToAnotherMachine(t *testing.T) {
 }
 
 func TestSessionRelayRefusesAnAgentSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startWorkerNode(t, g, shortSet, nil)
 	b := startWorkerNode(t, g, shortSet, nil)
@@ -170,6 +171,7 @@ func TestSessionRelayRefusesAnAgentSession(t *testing.T) {
 }
 
 func TestSessionRelayRefusesAnOfflineMachine(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startWorkerNode(t, g, shortSet, nil)
 	b := startWorkerNode(t, g, shortSet, nil)
@@ -185,6 +187,7 @@ func TestSessionRelayRefusesAnOfflineMachine(t *testing.T) {
 }
 
 func TestSessionRelayRefusesAnOldMachine(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startWorkerNode(t, g, shortSet, nil)
 	b := startWorkerNode(t, g, shortSet, func(c *Config) { c.Version = "0.4.45" })
@@ -199,6 +202,7 @@ func TestSessionRelayRefusesAnOldMachine(t *testing.T) {
 // Codex has no background start: on another machine the plan must run ssh to
 // that machine, in the owner's terminal, not a local Codex.
 func TestSessionStartRelaysCodexThroughSSH(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startWorkerNode(t, g, shortSet, nil)
 	bins := fakeBin(t, "codex")

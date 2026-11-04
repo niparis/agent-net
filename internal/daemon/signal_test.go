@@ -8,6 +8,7 @@ import (
 )
 
 func TestSignalPolicyHookAndSend(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/claude", interval: time.Hour}, nil)
 	n.d.SetSessions("claude", []protocol.SessionInfo{{NativeID: "owner-turn", Name: "sovl", Repo: protocol.RepoInfo{Project: "sovl-clone"}}})

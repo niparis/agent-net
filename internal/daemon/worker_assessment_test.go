@@ -106,6 +106,7 @@ func TestWorkerResumedRunGetsNewAssessment(t *testing.T) {
 }
 
 func TestWorkerAssessmentQueueSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := openState(dir)
 	if err != nil {

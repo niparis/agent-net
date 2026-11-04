@@ -164,6 +164,7 @@ func TestWorkerStartReturnsStartingThroughGateway(t *testing.T) {
 }
 
 func TestWorkerContinuedStartRetainsCTOAttribution(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

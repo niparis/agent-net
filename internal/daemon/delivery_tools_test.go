@@ -124,6 +124,7 @@ func deliveryWorktree(t *testing.T) (repo, wt string) {
 // changes that are not committed. The session and its model come from the
 // daemon, never from the arguments.
 func TestChangeSubmitFromWorktreeSession(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)
 	lc, sid := helloDelivery(t, n, "np-submit", wt, "claude-opus-5-5")
@@ -174,6 +175,7 @@ func TestChangeSubmitFromWorktreeSession(t *testing.T) {
 // A submit for a branch checked out in another worktree takes that branch's
 // head, and the changes of that worktree, not of the session's folder.
 func TestChangeSubmitOtherBranchOfTheRepository(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	repo, wt := deliveryWorktree(t)
 	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("new\n"), 0o644); err != nil {
@@ -191,6 +193,7 @@ func TestChangeSubmitOtherBranchOfTheRepository(t *testing.T) {
 // A submit that git cannot back is refused before the gateway sees it, with a
 // reason the agent can act on.
 func TestChangeSubmitRefusals(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	repo, wt := deliveryWorktree(t)
 	lc, _ := helloDelivery(t, n, "np-refuse", wt, "claude-opus-5-5")
@@ -225,6 +228,7 @@ func TestChangeSubmitRefusals(t *testing.T) {
 
 // A worker does not submit changes itself: its hand-back does.
 func TestChangeSubmitRefusedForWorkers(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)
 	lc, _ := helloDelivery(t, n, "np-worker", wt, "claude-opus-5-5")
@@ -249,6 +253,7 @@ func TestChangeSubmitRefusedForWorkers(t *testing.T) {
 // A report names the reporting session; done_by is accepted only for a worker
 // that session started, as the gateway's session record says.
 func TestStepReportDoneBy(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)
 	lc, sid := helloDelivery(t, n, "np-report", wt, "claude-opus-5-5")
@@ -330,6 +335,7 @@ func TestStepReportDoneBy(t *testing.T) {
 // changes_find passes its filters to change.list, with caller "me" as the
 // caller's own session, and reads one change with change.get.
 func TestChangesFindPassesFilters(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)
 	lc, sid := helloDelivery(t, n, "np-find", wt, "claude-opus-5-5")
@@ -381,6 +387,7 @@ func TestChangesFindPassesFilters(t *testing.T) {
 // An error of the gateway reaches the agent as it is, and a gateway without
 // the delivery frames is named as too old.
 func TestDeliveryGatewayErrorsReachTheAgent(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)
 	lc, _ := helloDelivery(t, n, "np-errors", wt, "claude-opus-5-5")
@@ -420,6 +427,7 @@ func deliveryJSON(v any) string {
 // and may not ask for "me" (the owner has no session whose changes those are).
 // The write methods stay closed to it.
 func TestChangesFindForTheOwnersTUI(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	c := protocol.Change{ID: "ch_7", Project: "demo", Branch: "feat/x", HeadCommit: strings.Repeat("a", 40), Revision: 1,
 		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: "s_other"}, State: protocol.ChangeOpen, CreatedAt: 1}

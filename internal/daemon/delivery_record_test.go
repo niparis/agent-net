@@ -69,6 +69,7 @@ func recordState(d *Daemon, id string) string {
 // harness. After a restart, the same message is not written again, and the
 // sender learns that it may have arrived.
 func TestDeliveryCrashWhileInjectingIsNotReinjected(t *testing.T) {
+	t.Parallel()
 	fb := &fakeAdapter{crash: true}
 	r := newDeliveryRig(t, fb)
 	m := r.store(t, "crash")
@@ -116,6 +117,7 @@ func TestDeliveryCrashWhileInjectingIsNotReinjected(t *testing.T) {
 // (b) A write that fails after connecting is failed, not delivered, and the
 // message is not written again on a second push.
 func TestDeliveryWriteErrorAfterConnectingIsFailed(t *testing.T) {
+	t.Parallel()
 	fb := &fakeAdapter{uncertain: "write failed after connecting; the message may have arrived"}
 	r := newDeliveryRig(t, fb)
 	m := r.store(t, "write-error")
@@ -140,6 +142,7 @@ func TestDeliveryWriteErrorAfterConnectingIsFailed(t *testing.T) {
 // A known failure (nothing reached the harness) is recorded as failed, and a
 // later push may try again.
 func TestDeliveryKnownFailureIsRecordedAndMayBeTriedAgain(t *testing.T) {
+	t.Parallel()
 	fb := &fakeAdapter{fail: "socket missing"}
 	r := newDeliveryRig(t, fb)
 	m := r.store(t, "known-failure")
@@ -166,6 +169,7 @@ func TestDeliveryKnownFailureIsRecordedAndMayBeTriedAgain(t *testing.T) {
 // (c) A normal delivery ends delivered, and a second push of the same message
 // is answered "duplicate" without a second write.
 func TestDeliveryNormalEndsDeliveredAndDuplicateStaysDuplicate(t *testing.T) {
+	t.Parallel()
 	fb := &fakeAdapter{}
 	r := newDeliveryRig(t, fb)
 	m := r.store(t, "normal")
@@ -192,6 +196,7 @@ func TestDeliveryNormalEndsDeliveredAndDuplicateStaysDuplicate(t *testing.T) {
 
 // (d) Rows written before the state column existed still count as delivered.
 func TestDeliveredRowsFromBeforeTheMigrationStayDelivered(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.db")
 	old, err := sql.Open("sqlite", "file:"+path)
@@ -243,6 +248,7 @@ INSERT INTO delivered (message_id, at) VALUES ('m_old', ?)`, time.Now().Unix());
 // (e) The hourly prune removes old records in every state and keeps recent
 // ones, so an injecting record of a live message keeps blocking a re-write.
 func TestPruneDeliveredRemovesOldRecordsInEveryState(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -282,6 +288,7 @@ func TestPruneDeliveredRemovesOldRecordsInEveryState(t *testing.T) {
 // The record goes from injecting to delivered, never back: a late failure
 // report cannot undo a delivered record.
 func TestDeliveryRecordNeverLeavesDelivered(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -307,6 +314,7 @@ func TestDeliveryRecordNeverLeavesDelivered(t *testing.T) {
 }
 
 func TestDeliveryCannotWriteWithoutDurableIntent(t *testing.T) {
+	t.Parallel()
 	r := newDeliveryRig(t, &fakeAdapter{})
 	m := r.store(t, "storage-failure")
 	if _, err := r.recv.d.st.db.Exec(`CREATE TRIGGER reject_delivery BEFORE INSERT ON delivered BEGIN SELECT RAISE(FAIL, 'disk failure'); END`); err != nil {
@@ -322,6 +330,7 @@ func TestDeliveryCannotWriteWithoutDurableIntent(t *testing.T) {
 }
 
 func TestDeliveryQueuedWorkerWaitsForHarnessConfirmation(t *testing.T) {
+	t.Parallel()
 	r := newDeliveryRig(t, &fakeAdapter{})
 	m := r.store(t, "queued-worker")
 	w := &worker{id: "w_test", harness: "opencode", sessionID: r.to, owner: r.sender, turnActive: true}
@@ -359,6 +368,7 @@ func TestDeliveryQueuedWorkerWaitsForHarnessConfirmation(t *testing.T) {
 }
 
 func TestDeliveryConfirmationStorageFailureKeepsIntent(t *testing.T) {
+	t.Parallel()
 	r := newDeliveryRig(t, &fakeAdapter{})
 	m := r.store(t, "confirmation-storage-failure")
 	if _, err := r.recv.d.st.db.Exec(`CREATE TRIGGER reject_confirmation BEFORE UPDATE ON delivered WHEN NEW.state = 'delivered' BEGIN SELECT RAISE(FAIL, 'disk failure'); END`); err != nil {
@@ -378,6 +388,7 @@ func TestDeliveryConfirmationStorageFailureKeepsIntent(t *testing.T) {
 }
 
 func TestDeliveryDuplicateWhileQueuedTurnIsStarting(t *testing.T) {
+	t.Parallel()
 	r := newDeliveryRig(t, &fakeAdapter{})
 	m := r.store(t, "queued-start-duplicate")
 	d := r.recv.d

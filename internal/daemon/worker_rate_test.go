@@ -12,6 +12,7 @@ import (
 // The 5th finished worker of a caller gets a one-line rating ask in its end
 // notice. The first three of a little-rated model ask too; the 4th does not.
 func TestWorkerRateAskEveryFifth(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.StartGap = -time.Second // five starts in a row: the gap is not under test
@@ -40,6 +41,7 @@ func TestWorkerRateAskEveryFifth(t *testing.T) {
 // owner path. It is one operator call and reaches the gateway as the owner
 // session, not as a score.
 func TestWorkerDefectOwnerPath(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	owner := w.ownerID()
@@ -87,6 +89,7 @@ func TestWorkerDefectOwnerPath(t *testing.T) {
 
 // A rating comes from an agent session, never the command line.
 func TestWorkerRateIsForAgentSessions(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	if _, err := w.cli.call("agent_rate", protocol.RateRequest{Worker: "s_w", Score: 4}); err == nil ||

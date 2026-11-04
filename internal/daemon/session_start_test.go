@@ -416,6 +416,7 @@ func TestSessionStartOpenCodeRejectsUnsafeServiceAddress(t *testing.T) {
 }
 
 func TestSessionStartCodexPlan(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "codex")
 	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })

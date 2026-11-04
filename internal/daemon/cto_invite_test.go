@@ -8,6 +8,7 @@ import (
 )
 
 func TestCTOInviteReturnsInstallLineOnGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{}, func(c *Config) { c.GatewayData = g.dir })
 	raw, err := n.d.runCTOToolRaw(context.Background(), "settings_change", json.RawMessage(`{"area":"invite"}`))
@@ -37,6 +38,7 @@ func TestCTOInviteReturnsInstallLineOnGateway(t *testing.T) {
 }
 
 func TestCTOInviteOnlyWorksOnTheGatewayMachine(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{}, nil)
 	_, err := n.d.runCTOToolRaw(context.Background(), "settings_change", json.RawMessage(`{"area":"invite"}`))

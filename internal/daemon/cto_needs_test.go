@@ -52,6 +52,7 @@ func TestCTONeedsYouCompact(t *testing.T) {
 }
 
 func TestCTONeedsYouThroughGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	eventually(t, "connected", func() bool { return n.d.Connected() })

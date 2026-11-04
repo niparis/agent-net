@@ -220,6 +220,7 @@ func codexAgents(t *testing.T, lc *localClient) map[string]protocol.AgentView {
 }
 
 func TestCodexDiscovery(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	f.set(fakeThread{ID: "t-open", Cwd: "/work/api", Name: "api work", Model: "gpt-x", Status: "idle", Source: "cli"})
@@ -257,6 +258,7 @@ func TestCodexDiscovery(t *testing.T) {
 }
 
 func TestCodexKeepsWorkerSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	n := codexNode(t, g, f)
@@ -280,6 +282,7 @@ func TestCodexKeepsWorkerSession(t *testing.T) {
 }
 
 func TestCodexDeliveryQueuesFramedMessage(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	f.set(fakeThread{ID: "t1", Cwd: "/work/a", Name: "alpha", Status: "idle", Source: "cli"})
@@ -420,6 +423,7 @@ func (s *codexShim) tool(thread, name string, args any) (text string, isErr bool
 }
 
 func TestCodexShimSendsAsItsThread(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	f.set(fakeThread{ID: "t1", Cwd: "/work/a", Name: "alpha", Status: "idle", Source: "cli"})
@@ -465,6 +469,7 @@ func TestCodexShimSendsAsItsThread(t *testing.T) {
 }
 
 func TestCodexHelloPeerChecks(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	f.set(fakeThread{ID: "t1", Cwd: "/work/a", Status: "idle", Source: "cli"})
@@ -493,6 +498,7 @@ func TestCodexHelloPeerChecks(t *testing.T) {
 }
 
 func TestCodexDiscoveryWaitsForServer(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	home := shortDir(t)
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.CodexHome = home; c.CodexInterval = 50 * time.Millisecond }})

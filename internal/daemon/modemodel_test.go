@@ -22,6 +22,7 @@ func agentByID(t *testing.T, lc *localClient, id string) protocol.AgentView {
 // An adapter's mode and model reach the gateway, and a change of model is
 // pushed again.
 func TestAdapterModeAndModelReachTheGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa})
@@ -44,6 +45,7 @@ func TestAdapterModeAndModelReachTheGateway(t *testing.T) {
 
 // Plugins say their mode and model in hello and change them with status.
 func TestPluginReportsModeAndModel(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	lc := dialLocal(t, n.sock)
@@ -97,6 +99,7 @@ func TestPluginReportsModeAndModel(t *testing.T) {
 // is "unknown": the daemon is new enough to say so, and an empty mode is kept
 // for a machine on an older agent-net.
 func TestPluginWithoutModeAndModel(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	_, id := helloPi(t, n, "old", "/w/old", false)
@@ -121,6 +124,7 @@ func queryFeed(t *testing.T, lc *localClient, afterID int64) ([]protocol.FeedEve
 // Any node can read the event feed. It names both ends of a message, never its
 // body, and a cursor returns only newer events.
 func TestEventFeed(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	na := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	nb := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
@@ -192,6 +196,7 @@ func TestEventFeed(t *testing.T) {
 }
 
 func TestMessageBodyOwnerRelay(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	holder := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	a, _ := helloPi(t, holder, "relay-a", "/w/a", true)

@@ -272,6 +272,7 @@ func TestRefreshQuotaKeepsTheLastGoodReading(t *testing.T) {
 }
 
 func TestReadQuotaAXIStopsAtTheTimeout(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	script := filepath.Join(dir, "slow")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {

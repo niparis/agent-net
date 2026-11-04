@@ -25,6 +25,7 @@ func TestProjectWorkerRulesBoundedAndClean(t *testing.T) {
 }
 
 func TestWorkerBaseAndProjectRules(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, WorkerSettings{}, nil)
 	repo := newRepo(t, "shop")

@@ -66,7 +66,10 @@ type Host interface {
 }
 
 type Config struct {
-	testFreePort func() (int, error) // deterministic collision tests
+	// ClaudeDiscoveryGrace is how long an MCP hello waits for session discovery.
+	// Zero uses the production default of three seconds.
+	ClaudeDiscoveryGrace time.Duration
+	testFreePort         func() (int, error) // deterministic collision tests
 	// testDeliveryRecordTimeout replaces deliveryRecordTimeout, how long a
 	// hand-back waits for the gateway to record its change.
 	testDeliveryRecordTimeout time.Duration
@@ -426,6 +429,9 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	if cfg.KeepaliveTimeout <= 0 {
 		cfg.KeepaliveTimeout = linkkeepalive.DefaultTimeout
+	}
+	if cfg.ClaudeDiscoveryGrace <= 0 {
+		cfg.ClaudeDiscoveryGrace = 3 * time.Second
 	}
 	if cfg.PluginAckTimeout == 0 {
 		cfg.PluginAckTimeout = 10 * time.Second

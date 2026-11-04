@@ -10,6 +10,7 @@ import (
 )
 
 func TestInboxApprovalDismissOperatorLink(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa})

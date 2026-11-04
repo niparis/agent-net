@@ -109,6 +109,7 @@ func TestCodexRecentSuccessBreaksTheTie(t *testing.T) {
 // a failure, and a later loose name does not rank the model last or say that it
 // failed a worker.
 func TestStopOnRequestIsNotAModelFailure(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"openai/m1", "openai/m2"}), nil)
 	repo := newRepo(t, "shop")
@@ -171,6 +172,7 @@ func TestFailedStartDoesNotHoldTheGap(t *testing.T) {
 
 // A worker that ended within the first 30 seconds does not hold the gap.
 func TestShortWorkerDoesNotHoldTheGap(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := queueSet
 	set.StartGap = 5 * time.Second

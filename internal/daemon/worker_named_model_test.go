@@ -12,6 +12,7 @@ const namedModelKey = "workers.named_model_reminder"
 // A caller that names a model gets the reminder; the picker's own choice,
 // a harness alone and a continue do not.
 func TestNamedModelReminder(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -56,6 +57,7 @@ func TestNamedModelReminderNotForPickerChoice(t *testing.T) {
 
 // The text is the setting's, and a changed setting changes it.
 func TestNamedModelReminderComesFromTheSetting(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))

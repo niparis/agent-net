@@ -49,6 +49,7 @@ func TestCopyGlobalSkillAndRefuseChanges(t *testing.T) {
 }
 
 func TestCopyGlobalSkillRejectsSymlinkParentAndBadBundle(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	state := t.TempDir()
 	outside := t.TempDir()

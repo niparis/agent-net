@@ -12,6 +12,7 @@ import (
 // its gateway record is old-style (no start time) and offline at the first
 // cleanup, and even when the gateway lost the record.
 func TestAdoptedWorkerKeepsItsSessionID(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.MaxAge = time.Hour

@@ -8,6 +8,7 @@ import (
 )
 
 func TestHeldOwnerActionsThroughGateway(t *testing.T) {
+	t.Parallel()
 	for _, action := range []string{"a", "A", "r", "R"} {
 		t.Run(action, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")

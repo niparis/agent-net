@@ -77,6 +77,7 @@ func TestMain(m *testing.M) {
 	// The race runtime has already initialized in this process. Child test
 	// binaries do not need its one-second exit delay.
 	os.Setenv("GORACE", "atexit_sleep_ms=0")
+	os.Setenv(envFakeOpenCode, "1")
 	quotaaxi.SetDiscoveryRootForTesting(os.TempDir())
 	quotaaxi.SetSystemNodeDirsForTesting(nil)
 	hideRealHerdr()
@@ -436,6 +437,7 @@ func bearerServer(t *testing.T, token string) *httptest.Server {
 // A streamable HTTP server with a bearer token read from a file on the host.
 // A wrong token gives a clear error that holds no secret, before and after saving.
 func TestMCPHTTPBearerFromFile(t *testing.T) {
+	t.Parallel()
 	const token, wrong = "right-token-abcdef", "wrong-token-zzzzzz"
 	ts := bearerServer(t, token)
 	g := startGateway(t, t.TempDir(), "")

@@ -34,6 +34,7 @@ func sendResult(t *testing.T, raw json.RawMessage) protocol.Message {
 // A fake-adapter session on node A and a Pi plugin client on node B exchange
 // a request and a reply through a real gateway over TLS.
 func TestSendDeliverReply(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	a := startNode(t, g, nodeOpts{adapter: fa})
@@ -80,6 +81,7 @@ func TestSendDeliverReply(t *testing.T) {
 // Two live sessions with the same folder get numbered names, so an exact name
 // finds exactly one of them (decision 0024).
 func TestDuplicateNamesAreNumberedAndResolvable(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa})
@@ -111,6 +113,7 @@ func TestDuplicateNamesAreNumberedAndResolvable(t *testing.T) {
 }
 
 func TestRecipientOfflineThenBack(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	startNode(t, g, nodeOpts{adapter: fa})
@@ -159,6 +162,7 @@ func TestRecipientOfflineThenBack(t *testing.T) {
 }
 
 func TestGatewayRestartLosesNothing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	g := startGateway(t, dir, "")
 	fa := &fakeAdapter{harness: "fake"}
@@ -229,6 +233,7 @@ func TestDuplicateDeliverOnce(t *testing.T) {
 // arrived, so the sender sees failed with that detail, and it is not pushed
 // again.
 func TestUnconfirmedPluginDeliveryFailsAndIsNotRetried(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	startNode(t, g, nodeOpts{adapter: fa})
@@ -258,6 +263,7 @@ func TestUnconfirmedPluginDeliveryFailsAndIsNotRetried(t *testing.T) {
 }
 
 func TestFailedDeliveryIsReported(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake", fail: "socket missing"}
 	startNode(t, g, nodeOpts{adapter: fa})
@@ -272,6 +278,7 @@ func TestFailedDeliveryIsReported(t *testing.T) {
 // ---- local socket ----
 
 func TestPeerCheckAndBoundSender(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	sessDir := t.TempDir()
 	// The test process stands in for `agent-net mcp`; its parent stands in for Claude Code.
@@ -347,6 +354,7 @@ func TestPeerCheckAndBoundSender(t *testing.T) {
 }
 
 func TestAnnounceAndList(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, bobID := helloPi(t, b, "nb", "/work/bob", true)
@@ -377,6 +385,7 @@ func listAgents(t *testing.T, lc *localClient, p map[string]any) []protocol.Agen
 // ---- enrollment ----
 
 func TestJoinRefusesWrongFingerprint(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	code, _ := g.gw.Store().CreateEnrollCode(10 * time.Minute)
 	bad := strings.Repeat("ab", 32)
@@ -403,6 +412,7 @@ func TestJoinRefusesWrongFingerprint(t *testing.T) {
 }
 
 func TestJoinCodeExpires(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	code, _ := g.gw.Store().CreateEnrollCode(time.Millisecond)
 	time.Sleep(20 * time.Millisecond)
@@ -412,6 +422,7 @@ func TestJoinCodeExpires(t *testing.T) {
 }
 
 func TestBadTokenRefused(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	cfgDir := t.TempDir()
 	nc, err := Join(context.Background(), g.joinString(), cfgDir)
@@ -439,6 +450,7 @@ type writerFunc func([]byte) (int, error)
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 func TestOutcomeOverruleEndToEnd(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	startNode(t, g, nodeOpts{adapter: fa})

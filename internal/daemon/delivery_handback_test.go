@@ -161,9 +161,11 @@ func TestCompleteHandbackRecordsAChange(t *testing.T) {
 	if strings.Contains(n.Body, "delivery record:") {
 		t.Errorf("the notice has a delivery error:\n%s", n.Body)
 	}
-	if row, ok, err := c.d.st.workerBySession(res.SessionID); err != nil || !ok || row.ChangeID != ch.ID {
-		t.Errorf("the worker row does not keep the change: %+v %v", row.ChangeID, err)
-	}
+	// The gateway publishes the notice before the local acknowledgement is saved.
+	eventually(t, "the worker row keeps the change", func() bool {
+		row, ok, err := c.d.st.workerBySession(res.SessionID)
+		return err == nil && ok && row.ChangeID == ch.ID
+	})
 	stored, err := g.gw.Store().GetChange(ch.ID)
 	if err != nil || len(stored.Revisions) != 1 || stored.Revisions[0].Commit != head {
 		t.Errorf("gateway revisions: %+v %v", stored.Revisions, err)
@@ -203,7 +205,10 @@ func TestCompleteHandbackRecordsAChange(t *testing.T) {
 
 	// The worker ended after its hand-back. A continue makes a new branch;
 	// its hand-back moves the same change there as revision 2.
-	eventually(t, "the worker ended", func() bool { return c.d.workerCount() == 0 })
+	eventually(t, "the worker ended and its row was saved", func() bool {
+		row, ok, err := c.d.st.workerBySession(res.SessionID)
+		return c.d.workerCount() == 0 && err == nil && ok && row.EndedReason != ""
+	})
 	var next protocol.WorkerStartResult
 	if err := json.Unmarshal(caller.mustCall("worker_start", protocol.WorkerStartRequest{Continue: res.SessionID, Task: "FAKE:edit"}), &next); err != nil || next.SessionID == "" {
 		t.Fatalf("continue: %+v %v", next, err)
@@ -397,6 +402,7 @@ func TestFixByMessageIsTheNextRevision(t *testing.T) {
 // The change a continue carries is kept through the start queue and on the
 // worker record.
 func TestChangeIDIsKeptInTheQueueAndTheWorkerRow(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

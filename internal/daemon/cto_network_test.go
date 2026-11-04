@@ -99,6 +99,7 @@ func TestCTONetworkMessages(t *testing.T) {
 }
 
 func TestCTONetworkRefusesOlderGateway(t *testing.T) {
+	t.Parallel()
 	for _, caps := range []map[string]bool{nil, {"attribution": true}} {
 		t.Run(fmt.Sprint(caps), func(t *testing.T) {
 			url, _ := fakeOldGateway(t, caps)

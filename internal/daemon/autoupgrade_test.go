@@ -54,6 +54,7 @@ func nodeVersion(g *testGateway, id string) string {
 }
 
 func TestAutoUpgradeNewer(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n, calls := autoNode(t, g, "v0.1.0", installOK, served(servedValue("v0.2.0")))
 	eventually(t, "the gateway sees the new version", func() bool { return nodeVersion(g, n.cfg.NodeID) == "v0.2.0" })
@@ -68,6 +69,7 @@ func TestAutoUpgradeNewer(t *testing.T) {
 }
 
 func TestAutoUpgradeDoesNothing(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	for _, c := range []struct {
 		name, version, served string
@@ -95,6 +97,7 @@ func TestAutoUpgradeDoesNothing(t *testing.T) {
 }
 
 func TestAutoUpgradeFailureIsRemembered(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	sv := servedValue("v0.2.0")
 	n, calls := autoNode(t, g, "v0.1.0", func(string) (string, error) {
@@ -143,6 +146,7 @@ func TestAutoUpgradeFailureIsRemembered(t *testing.T) {
 }
 
 func TestAutoUpgradeHold(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	sv := servedValue("v0.2.0")
 	n, calls := autoNode(t, g, "v0.1.0", installOK, served(sv), func(c *Config) {
@@ -171,6 +175,7 @@ func TestAutoUpgradeHold(t *testing.T) {
 // The gateway's node.upgrade request and the automatic upgrade share one
 // guard: while one install runs, the other does not start a second one.
 func TestAutoUpgradeSharesTheInstallGuard(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 2)
@@ -194,6 +199,7 @@ func TestAutoUpgradeSharesTheInstallGuard(t *testing.T) {
 // are only reconnecting. They must be reported ok, not offline: both a node
 // that waits to be asked, and one that catches up by itself on reconnect.
 func TestNodesReconnectingAfterGatewayRestartAreNotOffline(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	g := startGateway(t, dir, "")
 	addr := g.addr
@@ -235,6 +241,7 @@ func TestNodesReconnectingAfterGatewayRestartAreNotOffline(t *testing.T) {
 // The gateway's request for the version an automatic upgrade is already
 // installing joins it: one install, and the gateway sees ok.
 func TestPushJoinsARunningAutoUpgrade(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 2)

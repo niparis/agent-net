@@ -13,6 +13,7 @@ import (
 // A project on two machines goes to the one with more room, and the result
 // says why. The machines tell the gateway their room with their usage report.
 func TestStartPicksTheMachineWithMoreRoom(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	node := func(l MachineLoad) *workerNode {
 		fl := &fakeLoad{l: l}

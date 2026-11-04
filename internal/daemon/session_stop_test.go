@@ -26,6 +26,7 @@ func TestSessionStopOwnerGate(t *testing.T) {
 }
 
 func TestSessionStopClaudeBackground(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	args := filepath.Join(t.TempDir(), "args")
 	bins := fakeBin(t, "claude")
@@ -50,6 +51,7 @@ func TestSessionStopClaudeBackground(t *testing.T) {
 }
 
 func TestSessionStopTerminalRefusal(t *testing.T) {
+	t.Parallel()
 	for _, h := range []string{"claude", "codex", "pi"} {
 		t.Run(h, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -113,6 +115,7 @@ func TestSessionStopPiPrivateWindow(t *testing.T) {
 }
 
 func TestSessionStopUnknownSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n, _, _ := enterNode(t, g, "codex", protocol.SessionInfo{NativeID: "thread", Name: "shop", Status: "idle"}, nil, nil)
 	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": "s_elsewhere"})

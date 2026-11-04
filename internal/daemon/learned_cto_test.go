@@ -12,6 +12,7 @@ import (
 )
 
 func TestLearnedCTOSuggestionsIncludesReadyMajor(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	s := g.gw.Store()
@@ -61,6 +62,7 @@ func TestLearnedCTOSuggestionsIncludesReadyMajor(t *testing.T) {
 }
 
 func TestLearnedLocalMethodsAreOwnerOnly(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n, "learning-agent", "/w/learning", true)

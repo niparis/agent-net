@@ -21,6 +21,7 @@ func twoShops(t *testing.T) (w *workerNode, r1, r2 string, pi *localClient, piID
 }
 
 func TestWorkerRegisteredFolderWinsOverSeenOnly(t *testing.T) {
+	t.Parallel()
 	w, r1, _, _, _ := twoShops(t)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if res.Path != r1 {
@@ -29,6 +30,7 @@ func TestWorkerRegisteredFolderWinsOverSeenOnly(t *testing.T) {
 }
 
 func TestWorkerAmbiguityListsPathsAndHints(t *testing.T) {
+	t.Parallel()
 	w, r1, r2, _, _ := twoShops(t)
 	w.register(t, r2)
 	_, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
@@ -44,6 +46,7 @@ func TestWorkerAmbiguityListsPathsAndHints(t *testing.T) {
 }
 
 func TestWorkerSeenOnlyFoldersStayAmbiguous(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	r1, r2 := newRepo(t, "shop"), newRepo(t, "shop")
@@ -58,6 +61,7 @@ func TestWorkerSeenOnlyFoldersStayAmbiguous(t *testing.T) {
 // An empty project means the caller's own folder, found by path, even when a
 // registered folder with the same name exists.
 func TestWorkerEmptyProjectUsesTheCallersFolderExactly(t *testing.T) {
+	t.Parallel()
 	_, _, r2, pi, piID := twoShops(t)
 	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Touches: []string{"other"}, Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
 	if res.Path != r2 || res.Task == nil || res.Task.From != piID {
@@ -66,6 +70,7 @@ func TestWorkerEmptyProjectUsesTheCallersFolderExactly(t *testing.T) {
 }
 
 func TestWorkerProjectAsPath(t *testing.T) {
+	t.Parallel()
 	w, _, r2, _, _ := twoShops(t)
 	// A seen-only folder by path.
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: r2, Harness: "opencode", Task: "x"})

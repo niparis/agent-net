@@ -178,6 +178,7 @@ func groupMembers(pgid int) []int {
 // Without --die-with-parent and --new-session, the harness and its children
 // stay in bubblewrap's process group: the daemon's stop reaches all of them.
 func TestOSSandboxGroupStopReachesTheHarness(t *testing.T) {
+	t.Parallel()
 	requireBwrap(t)
 	d, w, _ := sandboxWorker(t, protocol.WorkersSandboxed)
 	if err := d.spawnWorker(w, "/bin/sh", []string{"-c", "sleep 60 & wait"}, os.Environ()); err != nil {
@@ -272,6 +273,7 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 // private server over loopback (the network level keeps the host network),
 // its plugin registers through the bound socket, and it answers.
 func TestOSSandboxOpenCodeWorkerEndToEnd(t *testing.T) {
+	t.Parallel()
 	requireBwrap(t)
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet

@@ -183,6 +183,7 @@ func TestContinueKeepsWorkWithSaveUnfinishedOff(t *testing.T) {
 // The merge line belongs to one hand-back. A Codex worker keeps its record
 // across turns, so a merge at one turn must not mark the next one.
 func TestMergeLineIsOnlyForItsHandback(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	w.leftAsIs = true // from an earlier turn, in a merge that is now finished

@@ -13,6 +13,7 @@ import (
 )
 
 func TestCTOWindowOwnerGate(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
 	cli := cliClient(t, n)
@@ -94,6 +95,7 @@ func ctoGraphArgs(action, args string) json.RawMessage {
 }
 
 func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
@@ -290,6 +292,7 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 }
 
 func TestCTOGraphWindowStillProposesMovedNodeRule(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()

@@ -11,6 +11,7 @@ import (
 // is no one to send a "not started" message to. The gateway records an event
 // so the TUI feed shows it.
 func TestNotStartedByTheLocalOwnerIsAnEvent(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
 	set := queueSet

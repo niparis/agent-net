@@ -18,6 +18,7 @@ func nodeList(t *testing.T, lc *localClient) []protocol.NodeView {
 }
 
 func TestNodeRenameIsOwnerOnlyAndEveryMachineSeesTheName(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	b := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)

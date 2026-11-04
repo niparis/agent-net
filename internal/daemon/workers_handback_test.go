@@ -49,6 +49,7 @@ func gitOutT(t *testing.T, dir string, args ...string) string {
 // report with the facts and the diff stat. The worker ends; a follow-up starts
 // the same session again, and its worktree is kept because it has changes.
 func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -158,6 +159,7 @@ func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 
 // A worktree with no changes remains until it is old enough for cleanup.
 func TestWorkerWorktreeWithoutChangesIsRetained(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -188,6 +190,7 @@ func TestWorkerWorktreeWithoutChangesIsRetained(t *testing.T) {
 
 // A worker that times out without handing back sends a "timed out" notice.
 func TestWorkerTimedOutSendsANotice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Idle = 400 * time.Millisecond
@@ -224,6 +227,7 @@ func TestWorkerTimedOutSendsANotice(t *testing.T) {
 // with a "failed" notice that carries the cleaned error text. Without this it
 // sat idle until the idle limit and its owner waited for nothing.
 func TestWorkerModelFailureSendsANotice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Idle = time.Hour // the failure must not wait for the idle limit
@@ -267,6 +271,7 @@ func TestWorkerModelFailureSendsANotice(t *testing.T) {
 }
 
 func TestWorkerLocalFailureDoesNotDemote(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -285,6 +290,7 @@ func TestWorkerLocalFailureDoesNotDemote(t *testing.T) {
 
 // A worker whose process dies sends a "failed" notice.
 func TestWorkerCrashSendsANotice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -301,6 +307,7 @@ func TestWorkerCrashSendsANotice(t *testing.T) {
 
 // A worker may hand back blocked.
 func TestWorkerHandbackBlocked(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -313,6 +320,7 @@ func TestWorkerHandbackBlocked(t *testing.T) {
 
 // Only a worker's own session can hand back.
 func TestHandbackIsOnlyForWorkers(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	pi, _ := helloPi(t, w.node, "pi-x", "/work/x", true)
@@ -326,6 +334,7 @@ func TestHandbackIsOnlyForWorkers(t *testing.T) {
 }
 
 func TestWorkerIsolationIsChecked(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -359,6 +368,7 @@ func mustJSON(t *testing.T, raw json.RawMessage, v any) {
 }
 
 func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = 200 * time.Millisecond

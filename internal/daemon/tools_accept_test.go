@@ -8,6 +8,7 @@ import (
 )
 
 func TestToolsAcceptIsOwnerOnlyAndDurable(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory})
 	cli := cliClient(t, n)

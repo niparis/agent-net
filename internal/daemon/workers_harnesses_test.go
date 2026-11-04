@@ -960,6 +960,7 @@ func TestAdoptedCodexCompletesOriginalTurn(t *testing.T) {
 }
 
 func TestAdoptedOpenCodeStartsTurn(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
