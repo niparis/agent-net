@@ -39,18 +39,18 @@ Rule of thumb: **git holds the work; agent-net decides who does each step and ke
 | The work itself | git: a branch and its head commit | Already the unit everyone uses. A commit hash names exactly what was reviewed and tested. |
 | Integration (merge, fast-forward) | git, run by the merge step's node | No reason to reimplement. |
 | Releases | git tags and the repo's own release command | Each repo already has one (agent-net: `release.sh`, a tag, a workflow). |
-| CI | the forge (GitHub Actions) when the repo has it; otherwise a test step run by a node | agent-net must not build a CI runner. |
-| Hard enforcement | the forge's branch protection and required checks, when the repo has a forge | The only gate an agent with write access cannot step around. |
+| CI | GitHub Actions when the repo is on GitHub; otherwise a test step run by a node | agent-net must not build a CI runner. |
+| Hard enforcement | GitHub's branch protection and required checks, when the repo is on GitHub | The only gate an agent with write access cannot step around. |
 | Which node owns which step, per repo | agent-net | Git has no idea of nodes, roles or machines. |
 | Routing the change to that node, hand-over when the owner changes | agent-net | Cross-machine, cross-session. |
 | The state of each change | agent-net (gateway database) | One view across machines; survives restarts. |
-| Evidence (who passed which step on which commit) | agent-net, keyed by repo and commit hash; optionally mirrored to the forge as commit statuses | Must not change the commit (so not trailers or amended messages). |
+| Evidence (who passed which step on which commit) | agent-net, keyed by repo and commit hash; optionally posted to GitHub as checks on the commit | Must not change the commit (so not trailers or amended messages). |
 | Approvals, notices to the owner, model choice for step workers | agent-net | Already built (proposals, Inbox, picker). |
-| Detecting work that skipped the pipeline | agent-net watches the default branch | The fallback when there is no forge to enforce. |
+| Detecting work that skipped the pipeline | agent-net watches the default branch | The fallback when the repo is not on GitHub. |
 
-What agent-net does **not** build: a CI runner, a review UI, a merge queue for repos whose forge already has one.
+What agent-net does **not** build: a CI runner, a review UI, a merge queue for repos where GitHub already has one.
 
-**The limit, stated plainly.** On a local repo with no forge, nothing can stop an agent with write access from pushing to main. agent-net makes the pipeline the easy path and makes a skip visible: a commit on the default branch with no recorded evidence becomes an Inbox item for the owner at once. Where the forge exists, agent-net posts commit statuses and the forge refuses the merge.
+**The limit, stated plainly.** On a repo that lives only on our machines (no GitHub copy), nothing can stop an agent with write access from pushing to main. agent-net makes the pipeline the easy path and makes a skip visible: a commit on the default branch with no recorded evidence becomes an Inbox item for the owner at once. Where the repo is on GitHub, agent-net posts its evidence as checks on the commit, and GitHub's branch protection refuses a merge without them.
 
 ## Concepts
 
@@ -68,7 +68,7 @@ A kind of work in the pipeline, from a fixed list that agent-net knows how to ro
 |---|---|---|
 | `check` | the caller (today's "read the report and diff") | accepted or sent back, with a note |
 | `review` | a node, which may start review workers | pass, or findings by severity |
-| `test` | a node, or the forge's CI | pass or fail, the command or CI run link, the commit |
+| `test` | a node, or GitHub's CI | pass or fail, the command or CI run link, the commit |
 | `merge` | a node, in its own worktree | the merged commit on the target branch |
 | `release` | a node, running the repo's release command | the tag, the release run link |
 | `verify` | a node | what was checked live, pass or fail |
@@ -80,7 +80,7 @@ A recipe may leave steps out (a solo repo: `test`, `merge`). The list grows only
 Per repo, each step has an owner: a **role**, which the repo's settings map to a node. Default for every step: the caller, which is today's behaviour. An owner may be:
 
 - a node (an agent session with that role in its charter);
-- `forge` (only for `test`: agent-net reads the CI result for the commit; no session works);
+- `github` (only for `test`, and for `merge` with GitHub's merge queue: agent-net reads the result for the commit; no session works);
 - `owner` (the person; the step becomes an Inbox approval).
 
 ### Rules on steps
@@ -132,7 +132,7 @@ The owner changes a step owner (a rule change: from the TUI, or a CTO proposal a
 | check | caller | |
 | review | caller | independent: family (steps 5 to 7 tonight); optional for small changes |
 | merge | caller | requires check, review when present |
-| test | forge (CI on the release branch) | |
+| test | github (CI on the release branch) | |
 | release | caller | requires test on the exact commit; runs `release.sh` |
 | verify | caller | after release |
 
@@ -143,9 +143,9 @@ The owner changes a step owner (a rule change: from the TUI, or a CTO proposal a
 | Step | Owner | Rules |
 |---|---|---|
 | review | owner (a person, on the pull request) | |
-| test | forge | required status check |
-| merge | forge (merge queue) or a merger node | requires review, test |
-| release | forge | on tag |
+| test | github | required check |
+| merge | github (merge queue) or a merger node | requires review, test |
+| release | github (workflow on tag) | |
 
 **Solo, minimal:** test by the worker's own node, merge by the caller. No review.
 
@@ -156,7 +156,7 @@ Each step ships alone. Step 1 keeps today's behaviour exactly.
 1. **Changes and evidence, recorded only.** The gateway records a change at every hand-back, and evidence when today's flow does its steps (the caller reports `check`, reviews and merges through new tools). Nothing is routed or refused. The Delivery view shows it. This proves the model on real traffic.
 2. **Step owners and routing.** `delivery.pipeline` and step owners as settings, default "caller". Step tasks go to the owner. With all owners set to "caller", behaviour is today's.
 3. **The merge check.** The merge tool refuses without the required evidence on the exact commit. The default-branch watcher flags commits with no evidence.
-4. **Forge integration.** `test` owned by `forge` reads CI results; evidence mirrored as commit statuses so branch protection can enforce it.
+4. **GitHub integration.** `test` owned by `github` reads CI results; evidence posted as checks on the commit so branch protection can enforce it.
 5. **Hand-over** with in-flight changes, and the "waiting for an offline owner" state.
 6. **Recipes:** load, choose and export a named pipeline per repo. Write the friend's way and list what it still cannot express.
 
@@ -168,4 +168,4 @@ The first real use: a merger node for agent-net, after step 5.
 2. **Small changes.** Should a review be required for every change, or may the recipe set a size or difficulty below which review is skipped? (Recommendation: a rule using the judge's difficulty label, default "review from hard up".)
 3. **Batching.** Today several workers' branches are merged and released together. Is a release a step on one change, or on a batch? (Recommendation: merge per change, release per batch, a batch being "everything merged since the last release".)
 4. **Who may submit a change** outside a worker (an agent's own commits)? (Recommendation: any agent in the repo, through `agent_change_submit`.)
-5. **The forge.** Is GitHub the only forge to support at first? (Recommendation: yes; the model stays forge-neutral.)
+5. **GitHub only?** Support only GitHub at first, not GitLab or Gitea? (Recommendation: yes; the design does not depend on GitHub, so others can be added.)
