@@ -23,7 +23,7 @@ func TestQueuedWorkerLateTaskAfterTimeout(t *testing.T) {
 			return nil, false, nil
 		}
 	})
-	starter := startWorkerNode(t, g, shortSet, func(c *Config) { c.testQueuedTaskTimeout = 500 * time.Millisecond })
+	starter := startWorkerNode(t, g, shortSet, func(c *Config) { c.Version = "v0.4.126"; c.testQueuedTaskTimeout = 500 * time.Millisecond })
 	repo := newRepo(t, "late")
 	starter.register(t, repo)
 	_, ownerID := helloPi(t, ownerNode.node, "caller", repo, true)
@@ -81,7 +81,7 @@ func TestQueuedWorkerLateTaskAfterTimeout(t *testing.T) {
 func TestQueuedWorkerTaskArrivesOnRunningWorker(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	ownerNode := startWorkerNode(t, g, shortSet, nil)
-	starter := startWorkerNode(t, g, shortSet, nil)
+	starter := startWorkerNode(t, g, shortSet, func(c *Config) { c.Version = "v0.4.126" })
 	repo := newRepo(t, "running")
 	starter.register(t, repo)
 	_, ownerID := helloPi(t, ownerNode.node, "caller", repo, true)
