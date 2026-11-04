@@ -34,9 +34,19 @@ func TestToolToggleVersionsAcrossMachines(t *testing.T) {
 	}
 	toggleFakeNode(t, g, a, ab, nil)
 	toggleFakeNode(t, g, b, bb, nil)
+	onPlan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: bid, Project: "one", On: true}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if onPlan.ToggleProject != "one" || !onPlan.ToggleOn {
+		t.Fatalf("missing group on metadata: %+v", onPlan)
+	}
 	p, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: bid, Project: "one", On: false}, "owner")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if p.ToggleProject != "one" || p.ToggleOn {
+		t.Fatalf("missing group toggle metadata: %+v", p)
 	}
 	removed := map[string]bool{}
 	for _, target := range p.Targets {

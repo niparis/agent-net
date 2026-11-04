@@ -316,6 +316,29 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 			targets = append(targets, t)
 		}
 	}
+	if standing, ok := ctx.Value(standingProjectsKey{}).([]string); ok {
+		selected := make(map[string]bool, len(standing))
+		for _, project := range standing {
+			selected[project] = true
+		}
+		projectNodes := map[string]bool{}
+		checkouts := map[string]bool{}
+		for _, project := range projects {
+			if selected[project.Name] && a.OnMachine(project.NodeID) {
+				projectNodes[project.NodeID] = true
+				checkouts[project.NodeID+"\x00"+project.Name] = true
+			}
+		}
+		filtered := targets[:0]
+		for _, target := range targets {
+			copy := (target.Action == "copy" || target.Action == "skip") && checkouts[target.NodeID+"\x00"+target.Project]
+			check := target.Conflict != "" && ((target.NodeID == "" && (target.Action == "import" || target.Action == "verify")) || (projectNodes[target.NodeID] && target.Action == "inspect" && (target.Project == "" || selected[target.Project])))
+			if copy || check {
+				filtered = append(filtered, target)
+			}
+		}
+		targets = filtered
+	}
 	if toggle, ok := ctx.Value(skillToggleKey{}).(protocol.ToolToggleRequest); ok {
 		// Keep safety checks for machines holding this project, even when an
 		// incomplete inventory prevents us from finding its copies.
@@ -399,7 +422,8 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	if t, ok := ctx.Value(skillToggleKey{}).(protocol.ToolToggleRequest); ok {
 		toggle = &t
 	}
-	out, err = g.store.saveToolPlan(p.Item, a, targets, actor, snap, p.Operation, p.RepoTargets, toggle, validatingProposal(ctx))
+	standing, _ := ctx.Value(standingProjectsKey{}).([]string)
+	out, err = g.store.saveToolPlan(p.Item, a, targets, actor, snap, p.Operation, p.RepoTargets, toggle, standing, validatingProposal(ctx))
 	out.Skipped = skipped
 	return out, err
 }
@@ -529,6 +553,9 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	}
 	if p.ToggleProject != "" {
 		ctx = context.WithValue(ctx, skillToggleKey{}, protocol.ToolToggleRequest{Project: p.ToggleProject, On: p.ToggleOn})
+	}
+	if len(p.StandingProjects) > 0 {
+		ctx = context.WithValue(ctx, standingProjectsKey{}, p.StandingProjects)
 	}
 	logPlan = p
 	current, e := g.store.ToolSnapshot(p.Item)

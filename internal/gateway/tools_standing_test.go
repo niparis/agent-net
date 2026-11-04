@@ -106,3 +106,64 @@ func TestStandingChoiceSkipsStaleAssignmentProject(t *testing.T) {
 		t.Fatalf("planned %v", planned)
 	}
 }
+
+func TestStandingChoiceOnlyCopiesNewProjects(t *testing.T) {
+	g, first, _ := toggleFixture(t)
+	id, bundle := toggleBundle(t, g, first, "# Demo\nFixture.\n")
+	second, _, err := g.store.CreateNode("second", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hash string
+	if err = g.store.db.QueryRow(`SELECT hash FROM tool_identities WHERE id=?`, id).Scan(&hash); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range []string{first, second} {
+		items := []protocol.InventoryItem{
+			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/home/skills/demo"},
+			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "one", ProjectRoot: "/repo/one", Location: "/repo/one/.claude/skills/demo"},
+			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "two", ProjectRoot: "/repo/two", Location: "/repo/two/.claude/skills/demo"},
+		}
+		if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo, err := g.skillRepository()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.put(id, hash, bundle, first, "/home/skills/demo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.store.AssignTool(id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"one", "two"}, Machines: []string{first, second}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err = g.store.SetToolNewProjects(protocol.ToolNewProjectsRequest{Item: id, On: true}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.store.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, first, "/repo/three", "three"); err != nil {
+		t.Fatal(err)
+	}
+	if err = g.addNewSkillProjects(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err = g.store.db.QueryRow(`SELECT plan FROM tool_plans WHERE item=? AND applied=1 ORDER BY rowid DESC LIMIT 1`, id).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var plan protocol.ToolPlan
+	if err = json.Unmarshal([]byte(raw), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.StandingProjects) != 1 || plan.StandingProjects[0] != "three" {
+		t.Fatalf("missing standing restriction: %+v", plan)
+	}
+	if len(plan.Targets) == 0 {
+		t.Fatal("missing new project copies")
+	}
+	for _, target := range plan.Targets {
+		if target.Action != "copy" || target.Project != "three" || target.NodeID != first {
+			t.Fatalf("unexpected target: %+v", target)
+		}
+	}
+}

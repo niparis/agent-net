@@ -242,6 +242,7 @@ func (s *Store) toolToggleAssignment(p protocol.ToolToggleRequest, validate bool
 }
 
 type skillToggleKey struct{}
+type standingProjectsKey struct{}
 
 func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, actor string) (out protocol.ToolPlan, err error) {
 	start := time.Now()
@@ -445,7 +446,16 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 			if g.onStandingPlan != nil {
 				g.onStandingPlan(row.Item, unseen)
 			}
-			plan, e := g.planTool(ctx, protocol.ToolPlanRequest{Item: row.Item, Target: a}, "standing choice")
+			planCtx := context.WithValue(ctx, standingProjectsKey{}, append([]string(nil), unseen...))
+			plan, e := g.planTool(planCtx, protocol.ToolPlanRequest{Item: row.Item, Target: a}, "standing choice")
+			if e == nil {
+				for _, target := range plan.Targets {
+					if target.NodeID == "" && (target.Action == "import" || target.Action == "verify") && target.Conflict != "" {
+						e = errors.New(target.Conflict)
+						break
+					}
+				}
+			}
 			if e == nil {
 				_, e = g.applyTool(ctx, plan.ID, "standing choice")
 			}
