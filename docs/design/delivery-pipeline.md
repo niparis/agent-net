@@ -68,12 +68,29 @@ A kind of work in the pipeline, from a fixed list that agent-net knows how to ro
 |---|---|---|
 | `check` | the caller (today's "read the report and diff") | accepted or sent back, with a note |
 | `review` | a node, which may start review workers | pass, or findings by severity |
-| `test` | a node, or GitHub's CI | pass or fail, the command or CI run link, the commit |
+| `test` | a node, or GitHub's CI | pass or fail, the command or CI run link, the commit, and evidence fields (below) |
+| `approve` | an approver (below): the owner, a delegate, or a node | approved or refused, by whom, for the exact commit |
 | `merge` | a node, in its own worktree | the merged commit on the target branch |
 | `release` | a node, running the repo's release command | the tag, the release run link |
+| `deploy` | a node, running the repo's deploy command | where it was deployed, the commit, the run link |
 | `verify` | a node | what was checked live, pass or fail |
 
 A recipe may leave steps out (a solo repo: `test`, `merge`). The list grows only when a recipe needs a step the list cannot express.
+
+`approve` is separate from `merge` on purpose: who **decides** a merge and who **does** it are different questions. The same holds for deploy: a `deploy` step may require an `approve` step of its own (`approve.for: deploy`). Release builds and publishes a version; deploy puts a version into service on a machine. A repo may have either, both or neither.
+
+### Evidence fields
+
+A step reports pass or fail, plus named fields the pipeline may require. A field is a fact agent-net can check or the step owner states, recorded for the exact commit:
+
+| Field | Set by | Checked how |
+|---|---|---|
+| `tests_added` | the test step | agent-net compares the change's diff for new or changed test files (per language: `_test.go`, `test_*.py`, `*.test.ts`); the owner can override with a reason |
+| `suite` | the test step | which suite ran (changed packages, full suite, CI) |
+| `findings_open` | the review step | count of blocker findings not yet fixed; merge requires 0 |
+| `independent` | agent-net | the step's session differs from the author, or its model family differs |
+
+A rule then reads `merge requires test(suite=full, tests_added=yes), review(findings_open=0)`.
 
 ### Step owner
 
@@ -82,6 +99,11 @@ Per repo, each step has an owner: a **role**, which the repo's settings map to a
 - a node (an agent session with that role in its charter);
 - `github` (only for `test`, and for `merge` with GitHub's merge queue: agent-net reads the result for the commit; no session works);
 - `owner` (the person; the step becomes an Inbox approval).
+
+For `approve`, the approver may also be:
+
+- `none`: the step is left out (today's merge authority "full");
+- `delegate`: whoever governs this node in the graph, through a "governs" edge in an allowed mode (`delivery.delegated_approver_modes`, today arbiter or owner), or the owner. This is today's "delegated", resolved from the graph at the moment the step starts, so a new architect takes over without a pipeline change.
 
 ### Rules on steps
 
@@ -96,6 +118,35 @@ Rules are settings of kind `rule` (owner approval to change, only tighten going 
 
 The ordered steps with their rules, per repo. It lives in the recipe (`delivery.pipeline`) and resolves through the settings layer like any other setting, with its source shown.
 
+### One source of truth: the pipeline replaces the step 6 delivery settings
+
+Settings step 6 made three delivery rules into settings: `delivery.merge_authority`, `delivery.tests_before_merge` and `delivery.deploy_rule`. If they stayed next to the pipeline, two places would say how a repo merges, and they would drift. So the pipeline is the one source, and those three become **shorthand**:
+
+- Setting a shorthand value writes the matching part of the pipeline, in the same change, with history.
+- Reading a shorthand shows the value the pipeline implies, or "custom" when the pipeline says something the shorthand cannot.
+- The rule text agents see (charters, the note on each delivered message, worker briefs, the checklist) is rendered from the pipeline, not from the shorthand.
+
+The mapping:
+
+| Shorthand | Value | Pipeline |
+|---|---|---|
+| `merge_authority` | full | no `approve` step before merge |
+| | delegated | `approve` before merge, approver `delegate` |
+| | ask | `approve` before merge, approver `owner` |
+| `tests_before_merge` | optional | merge does not require `test` |
+| | suite | merge requires `test(suite)` |
+| | suite-new-tests | merge requires `test(suite, tests_added=yes)` |
+| | suite-new-tests-review | merge requires `test(suite, tests_added=yes)` and `review(findings_open=0)` |
+| `deploy_rule` | brief | `deploy` with no approval (deploy as the brief says) |
+| | ask | `deploy` requires `approve(for: deploy)`, approver `delegate` |
+| | owner | `deploy` requires `approve(for: deploy)`, approver `owner` |
+
+The maturity defaults (prototype, beta, production, critical) keep working: each maturity level names a pipeline, which is what the shorthand values resolve to today.
+
+`charter.judge_consumers` and `charter.autonomy_mode` are not delivery. They decide how requests come in and whether an idle agent is woken, and stay settings of their own.
+
+The worker settings (branch prefix, commit trailers, cleanup, saving unfinished work, the brief texts) describe how the worker step runs, and do not change.
+
 ## How a change moves
 
 1. A worker hands back with `complete: yes`. The daemon records the head commit and creates the change (revision 1).
@@ -103,7 +154,7 @@ The ordered steps with their rules, per repo. It lives in the recipe (`delivery.
 3. The owner does the work. It may start workers (a reviewer node starts an independent review worker on another model family; the picker still chooses models).
 4. The owner reports with `agent_step_report`: pass, fail with findings, or "needs the owner". agent-net checks the commit in the report is still the head of the change.
 5. Pass: the next step starts. Fail: the change goes where `on_fail` says. A fix commit makes a new revision; steps with `requires` on it run again.
-6. `merge` checks, at the moment it runs, that every required step passed on the exact commit it merges. The merge tool refuses otherwise. This check is agent-net's, so it holds even when the merge node's model is wrong.
+6. `merge` checks, at the moment it runs, that every required step passed on the exact commit it merges, with the required evidence fields. The merge tool refuses otherwise. This check is agent-net's, so it holds even when the merge node's model is wrong. `deploy` checks its own requirements the same way.
 7. After merge, `after_merge` steps run on the merged commit.
 8. The caller gets one notice at the end (merged, released, or stopped and why), not one per step, unless it owns a step.
 
@@ -131,10 +182,13 @@ The owner changes a step owner (a rule change: from the TUI, or a CTO proposal a
 |---|---|---|
 | check | caller | |
 | review | caller | independent: family (steps 5 to 7 tonight); optional for small changes |
+| approve | none | merge authority "full" for agent-net |
 | merge | caller | requires check, review when present |
 | test | github (CI on the release branch) | |
 | release | caller | requires test on the exact commit; runs `release.sh` |
 | verify | caller | after release |
+
+voicemechs (deploy rule "brief", the one real node setting the step 6 cutover found) adds `deploy` with no approval.
 
 **The owner's way with a merger node:** the same, with review, merge, test, release and verify owned by `merger`. The orchestrator keeps only `check`.
 
@@ -154,8 +208,8 @@ The owner changes a step owner (a rule change: from the TUI, or a CTO proposal a
 Each step ships alone. Step 1 keeps today's behaviour exactly.
 
 1. **Changes and evidence, recorded only.** The gateway records a change at every hand-back, and evidence when today's flow does its steps (the caller reports `check`, reviews and merges through new tools). Nothing is routed or refused. The Delivery view shows it. This proves the model on real traffic.
-2. **Step owners and routing.** `delivery.pipeline` and step owners as settings, default "caller". Step tasks go to the owner. With all owners set to "caller", behaviour is today's.
-3. **The merge check.** The merge tool refuses without the required evidence on the exact commit. The default-branch watcher flags commits with no evidence.
+2. **Step owners and routing.** `delivery.pipeline` and step owners as settings, default "caller". Step tasks go to the owner. With all owners set to "caller", behaviour is today's. In the same step, the three shorthand settings start writing and reading the pipeline, and agents' rule text is rendered from it; the step 6 fixtures must stay byte-identical.
+3. **The merge and deploy checks.** The merge and deploy tools refuse without the required evidence and approvals on the exact commit, including the evidence fields (`tests_added`, `findings_open`). The default-branch watcher flags commits with no evidence.
 4. **GitHub integration.** `test` owned by `github` reads CI results; evidence posted as checks on the commit so branch protection can enforce it.
 5. **Hand-over** with in-flight changes, and the "waiting for an offline owner" state.
 6. **Recipes:** load, choose and export a named pipeline per repo. Write the friend's way and list what it still cannot express.
