@@ -631,10 +631,16 @@ func TestNewCommitsRequiresAndPinsRemoteURL(t *testing.T) {
 	if _, err := NewCommits(context.Background(), req); err == nil {
 		t.Fatal("want an error without RemoteURL")
 	}
-	// The watcher's own pushurl is redirected: refused, nothing fetched.
+	// A fetch URL that differs is refused.
 	req = r.watchReq("")
-	r.gitIn(r.watcher, "config", "remote.origin.pushurl", t.TempDir())
+	req.RemoteURL = "https://example.com/not-this.git"
 	if _, err := NewCommits(context.Background(), req); !errors.Is(err, ErrRemoteURL) {
 		t.Fatalf("err = %v, want ErrRemoteURL", err)
+	}
+	// A differing pushurl is ignored: the watcher only fetches by RemoteURL.
+	req = r.watchReq("")
+	r.gitIn(r.watcher, "config", "remote.origin.pushurl", t.TempDir())
+	if _, err := NewCommits(context.Background(), req); err != nil {
+		t.Fatalf("differing pushurl: %v", err)
 	}
 }

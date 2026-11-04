@@ -270,15 +270,14 @@ func TestMergeRemoteURLMustMatch(t *testing.T) {
 	if got := f.originMain(); got != before {
 		t.Fatal("origin moved")
 	}
-	// The push URL counts too: a pushurl that differs is refused.
+	// A differing pushurl is ignored: merge and push use RemoteURL.
 	r.RemoteURL = f.origin
 	f.setConfig("remote.origin.pushurl", "https://example.com/other.git")
-	if _, err := Merge(context.Background(), r); !errors.Is(err, ErrRemoteURL) {
-		t.Fatalf("pushurl: err = %v, want ErrRemoteURL", err)
-	}
-	mergeGit(t, f.repo, "config", "--unset", "remote.origin.pushurl")
 	if _, err := Merge(context.Background(), r); err != nil {
-		t.Fatalf("matching URL: %v", err)
+		t.Fatalf("differing pushurl: %v", err)
+	}
+	if got := f.originMain(); got == before {
+		t.Fatal("origin did not move to merged commit")
 	}
 }
 
@@ -425,8 +424,8 @@ func TestMergeRequiresRemoteURL(t *testing.T) {
 }
 
 // The push goes to the pinned URL even when the repository's own config
-// names another one; the disagreement is refused before anything runs.
-func TestMergeRefusesRedirectedPushURL(t *testing.T) {
+// names another pushurl; the differing pushurl is ignored.
+func TestMergeIgnoresRedirectedPushURL(t *testing.T) {
 	f := newConfigFx(t)
 	alt := filepath.Join(f.root, "alt.git")
 	mergeGit(t, f.root, "clone", "-q", "--bare", f.origin, alt)
@@ -434,9 +433,12 @@ func TestMergeRefusesRedirectedPushURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.setConfig("remote.origin.pushurl", alt)
-	_, err := Merge(context.Background(), f.req("feat", f.head, MergeModeCommit))
-	if !errors.Is(err, ErrRemoteURL) {
-		t.Fatalf("err = %v, want ErrRemoteURL", err)
+	res, err := Merge(context.Background(), f.req("feat", f.head, MergeModeCommit))
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if !res.Pushed {
+		t.Fatal("expected push")
 	}
 	if _, serr := os.Stat(f.marker); serr == nil {
 		t.Fatal("the redirected remote's hook ran")

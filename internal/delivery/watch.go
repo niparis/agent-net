@@ -81,7 +81,7 @@ type WatchRequest struct {
 	Remote string
 	// RemoteURL is required: the URL of Remote from the caller's own record.
 	// The fetch uses it and not the URL in the repository's config, and
-	// NewCommits refuses (ErrRemoteURL) when the repository's fetch or push
+	// NewCommits refuses (ErrRemoteURL) when the repository's fetch
 	// URL for Remote differs.
 	RemoteURL string
 	// Branch is the default branch, as the gateway gives it (the same one
