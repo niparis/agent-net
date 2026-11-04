@@ -19,9 +19,9 @@ import (
 // Every call runs the git binary with an explicit argument list, a timeout,
 // LC_ALL=C, and hooks switched off. Nothing here writes to the repository.
 
-// gitTimeout bounds one git call when the caller's context has no earlier
+// watchGitTimeout bounds one git call when the caller's context has no earlier
 // deadline.
-const gitTimeout = 30 * time.Second
+const watchGitTimeout = 30 * time.Second
 
 // Commit is one commit on the default branch.
 type Commit struct {
@@ -53,8 +53,8 @@ func MergedHeads(c Commit) []string {
 	return append([]string(nil), c.Parents[1:]...)
 }
 
-// Result is what NewCommits found.
-type Result struct {
+// WatchResult is what NewCommits found.
+type WatchResult struct {
 	// Commits are the new commits on the branch's first-parent line, oldest
 	// first.
 	Commits []Commit
@@ -123,18 +123,18 @@ func DefaultBranch(ctx context.Context, repoDir string) (string, error) {
 // When since is empty (the first run), only the tip of the branch is returned,
 // so that a first check does not flood the owner with old history. When since
 // is not an ancestor of the branch, or does not exist any more, history was
-// rewritten: only the tip is returned and Result.Rewritten is true. When since
+// rewritten: only the tip is returned and WatchResult.Rewritten is true. When since
 // is the tip, nothing is returned.
-func NewCommits(ctx context.Context, repoDir, branch, since string) (Result, error) {
+func NewCommits(ctx context.Context, repoDir, branch, since string) (WatchResult, error) {
 	if err := checkRevArg("branch", branch); err != nil {
-		return Result{}, err
+		return WatchResult{}, err
 	}
 	if err := checkRevArg("since", since); err != nil {
-		return Result{}, err
+		return WatchResult{}, err
 	}
 	tip, err := git(ctx, repoDir, "rev-parse", "--verify", "--quiet", "--end-of-options", branch+"^{commit}")
 	if err != nil {
-		return Result{}, fmt.Errorf("new commits: branch %q not found in %s: %w", branch, repoDir, err)
+		return WatchResult{}, fmt.Errorf("new commits: branch %q not found in %s: %w", branch, repoDir, err)
 	}
 	tip = strings.TrimSpace(tip)
 
@@ -149,7 +149,7 @@ func NewCommits(ctx context.Context, repoDir, branch, since string) (Result, err
 		if isExit(err, 1) {
 			return tipOnly(ctx, repoDir, tip, true)
 		}
-		return Result{}, fmt.Errorf("new commits: resolve since %q: %w", since, err)
+		return WatchResult{}, fmt.Errorf("new commits: resolve since %q: %w", since, err)
 	}
 	sinceSHA = strings.TrimSpace(sinceSHA)
 
@@ -157,30 +157,30 @@ func NewCommits(ctx context.Context, repoDir, branch, since string) (Result, err
 		if isExit(err, 1) {
 			return tipOnly(ctx, repoDir, tip, true)
 		}
-		return Result{}, fmt.Errorf("new commits: check ancestry of %s: %w", sinceSHA, err)
+		return WatchResult{}, fmt.Errorf("new commits: check ancestry of %s: %w", sinceSHA, err)
 	}
 
 	out, err := git(ctx, repoDir, append(logArgs("--first-parent", "--reverse"), "--end-of-options", tip, "^"+sinceSHA)...)
 	if err != nil {
-		return Result{}, fmt.Errorf("new commits: list commits: %w", err)
+		return WatchResult{}, fmt.Errorf("new commits: list commits: %w", err)
 	}
 	commits, err := parseLog(out)
 	if err != nil {
-		return Result{}, err
+		return WatchResult{}, err
 	}
-	return Result{Commits: commits}, nil
+	return WatchResult{Commits: commits}, nil
 }
 
-func tipOnly(ctx context.Context, repoDir, tip string, rewritten bool) (Result, error) {
+func tipOnly(ctx context.Context, repoDir, tip string, rewritten bool) (WatchResult, error) {
 	out, err := git(ctx, repoDir, append(logArgs("-1"), "--end-of-options", tip)...)
 	if err != nil {
-		return Result{}, fmt.Errorf("new commits: read tip: %w", err)
+		return WatchResult{}, fmt.Errorf("new commits: read tip: %w", err)
 	}
 	commits, err := parseLog(out)
 	if err != nil {
-		return Result{}, err
+		return WatchResult{}, err
 	}
-	return Result{Commits: commits, Rewritten: rewritten}, nil
+	return WatchResult{Commits: commits, Rewritten: rewritten}, nil
 }
 
 // Record layout for git log: fields end with the unit separator, the
@@ -291,9 +291,9 @@ func isExit(err error, code int) bool {
 
 // git runs one git command in repoDir and returns its standard output.
 // Hooks are switched off, the locale is fixed, and the call is bounded by
-// gitTimeout or the context, whichever ends first.
+// watchGitTimeout or the context, whichever ends first.
 func git(ctx context.Context, repoDir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, watchGitTimeout)
 	defer cancel()
 
 	full := append([]string{"--no-pager", "-C", repoDir, "-c", "core.hooksPath=/dev/null"}, args...)
