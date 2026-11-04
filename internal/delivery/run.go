@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -71,13 +72,20 @@ type StepCommand struct {
 	Argv []string
 	// Env is added to the environment. The command inherits only PATH and
 	// HOME from the caller. AGENT_NET_STEP and AGENT_NET_COMMIT are set by
-	// the runner and cannot be overridden.
+	// the runner and cannot be overridden. Every value of 8 bytes or more is
+	// treated as a secret: an output line that holds it is redacted and is
+	// not read as a field. Pass plain values the command must echo back as
+	// evidence (a version, a tag) in Argv.
 	Env map[string]string
 	// Timeout bounds the run. Zero means runDefaultTimeout.
 	Timeout time.Duration
-	// Commit is the exact commit. HEAD in Dir must be it. It may be a full
-	// SHA or an abbreviation of at least 7 hex digits.
+	// Commit is the exact commit, a full commit ID (see IsCommitID). HEAD in
+	// Dir must be it.
 	Commit string
+	// GitPath is the PATH list git is found on and runs with (see
+	// MergeRequest.GitPath). Empty means this process's PATH. It is not
+	// the command's PATH.
+	GitPath string
 }
 
 // StepRun is the outcome of one run. A command that fails or times out is a
@@ -87,41 +95,48 @@ type StepRun struct {
 	ExitCode int
 	Duration time.Duration
 	// OutputTail is the last 64 KB of stdout and stderr together, starting
-	// at a line start, with secret-looking lines replaced by "[redacted]".
+	// at a line start, with secret-looking lines, PEM blocks and lines that
+	// hold an Env value replaced by "[redacted]".
 	OutputTail string
 	// OutputDropped is how many bytes of output came before OutputTail.
 	OutputDropped int64
-	// TimedOut: the command was killed because it ran past Timeout.
+	// TimedOut: the runner killed the command because it ran past Timeout.
+	// A command that exited by itself is never timed out.
 	TimedOut bool
 	// Fields are the evidence fields the command reported with
 	// "agent-net: key=value" lines, plus url when the output named a GitHub
-	// Actions run.
+	// Actions run. A line that would be redacted from the tail is not read,
+	// so a field whose name ends in "key", "token" or "secret" is dropped.
 	Fields map[string]string
 }
 
-// RunStep runs cmd.Argv in cmd.Dir and reports the outcome. It first checks
-// that HEAD in Dir is cmd.Commit and refuses with ErrWrongCommit otherwise. It
-// then checks that the tree is clean (ignored files do not count) and refuses
-// with ErrDirtyTree otherwise.
+// RunStep runs cmd.Argv in cmd.Dir and reports the outcome. It first refuses
+// a repository with replace refs or a grafts file (ErrAlteredHistory). It
+// then checks that HEAD in Dir is cmd.Commit and refuses with ErrWrongCommit
+// otherwise. It then checks that the tree is clean (ignored files do not
+// count) and refuses with ErrDirtyTree otherwise.
 //
 // The command runs in its own process group. On timeout or cancel the whole
 // group is killed. When ctx ends, RunStep returns the partial StepRun and
 // ctx.Err(); callers should not treat that as a result. A command that cannot
 // start returns an error.
 func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
-	want, err := checkStepCommand(cmd)
-	if err != nil {
+	if err := checkStepCommand(cmd); err != nil {
 		return StepRun{}, err
 	}
-	head, err := runHead(ctx, cmd.Dir)
-	if err != nil {
+	g := gitIn{gitPath: cmd.GitPath, dir: cmd.Dir}
+	if err := checkHistory(ctx, g); err != nil {
 		return StepRun{}, err
 	}
-	if !strings.HasPrefix(head, want) {
+	head, err := revCommit(ctx, g, "HEAD")
+	if err != nil {
+		return StepRun{}, fmt.Errorf("read HEAD in %s: %w", cmd.Dir, err)
+	}
+	if head != cmd.Commit {
 		return StepRun{}, fmt.Errorf("%w: HEAD is %s, want %s", ErrWrongCommit, head, cmd.Commit)
 	}
 
-	if err := runCheckClean(ctx, cmd.Dir); err != nil {
+	if err := runCheckClean(ctx, g); err != nil {
 		return StepRun{}, err
 	}
 
@@ -132,7 +147,9 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	col := newRunCollector()
+	red := newRunRedactor(cmd.Env)
+	col := newRunCollector(red)
+	var killed atomic.Bool
 	c := exec.CommandContext(runCtx, cmd.Argv[0], cmd.Argv[1:]...)
 	c.Dir = cmd.Dir
 	c.Env = runEnv(cmd, head)
@@ -140,7 +157,9 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 	c.Stderr = col
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	c.Cancel = func() error {
-		// Setpgid makes the process leader's pid the group id.
+		// Called only while the command still runs. Setpgid makes the
+		// process leader's pid the group id.
+		killed.Store(true)
 		if err := syscall.Kill(-c.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return err
 		}
@@ -158,7 +177,7 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 		}
 		return StepRun{Duration: dur}, fmt.Errorf("start %s: %w", cmd.Argv[0], runErr)
 	}
-	timedOut := ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded)
+	timedOut := killed.Load() && ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded)
 	if runErr != nil && ctx.Err() == nil && !timedOut {
 		var exitErr *exec.ExitError
 		if !errors.As(runErr, &exitErr) && !errors.Is(runErr, exec.ErrWaitDelay) {
@@ -170,7 +189,7 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 	run := StepRun{
 		ExitCode:      c.ProcessState.ExitCode(),
 		Duration:      dur,
-		OutputTail:    runRedactLines(got.Tail),
+		OutputTail:    red.lines(got.Tail),
 		OutputDropped: got.Dropped,
 		TimedOut:      timedOut,
 		Fields:        got.Fields,
@@ -181,59 +200,46 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 	return run, nil
 }
 
-var runCommitRE = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
-
-// checkStepCommand validates cmd and returns the wanted commit, lower case.
-func checkStepCommand(cmd StepCommand) (string, error) {
+// checkStepCommand validates cmd.
+func checkStepCommand(cmd StepCommand) error {
 	if cmd.Step != StepRelease && cmd.Step != StepDeploy {
-		return "", fmt.Errorf("step %q: want %q or %q", cmd.Step, StepRelease, StepDeploy)
+		return fmt.Errorf("step %q: want %q or %q", cmd.Step, StepRelease, StepDeploy)
 	}
 	if cmd.Dir == "" {
-		return "", errors.New("no working directory")
+		return errors.New("no working directory")
 	}
 	if len(cmd.Argv) == 0 || cmd.Argv[0] == "" {
-		return "", errors.New("no command")
+		return errors.New("no command")
 	}
 	for _, a := range cmd.Argv {
 		if strings.ContainsRune(a, 0) {
-			return "", errors.New("command argument has a NUL byte")
+			return errors.New("command argument has a NUL byte")
 		}
 	}
 	if cmd.Timeout < 0 {
-		return "", fmt.Errorf("negative timeout %v", cmd.Timeout)
+		return fmt.Errorf("negative timeout %v", cmd.Timeout)
 	}
-	want := strings.ToLower(cmd.Commit)
-	if !runCommitRE.MatchString(want) {
-		return "", fmt.Errorf("commit %q: want 7 to 64 hex digits", cmd.Commit)
+	if err := checkCommitID("commit", cmd.Commit); err != nil {
+		return err
 	}
 	for k, v := range cmd.Env {
 		if k == "" || strings.ContainsAny(k, "=\x00") || strings.ContainsRune(v, 0) {
-			return "", fmt.Errorf("bad environment entry %q", k)
+			return fmt.Errorf("bad environment entry %q", k)
 		}
 	}
-	return want, nil
-}
-
-func runHead(ctx context.Context, dir string) (string, error) {
-	out, err := runGit(ctx, dir, "rev-parse", "--verify", "HEAD")
-	if err != nil {
-		return "", fmt.Errorf("read HEAD in %s: %w", dir, err)
-	}
-	return strings.TrimSpace(string(out)), nil
+	return nil
 }
 
 // runMaxDirtyListed is how many dirty paths ErrDirtyTree names.
 const runMaxDirtyListed = 10
 
-// runCheckClean returns ErrDirtyTree when dir has changes to tracked files or
-// untracked files that are not ignored. Git hooks and the fsmonitor hook are
-// off, so the check runs no repo code.
-func runCheckClean(ctx context.Context, dir string) error {
-	out, err := runGit(ctx, dir,
-		"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
-		"status", "--porcelain=v1", "-z", "--untracked-files=normal")
+// runCheckClean returns ErrDirtyTree when the directory has changes to
+// tracked files or untracked files that are not ignored. Git hooks and the
+// fsmonitor hook are off, so the check runs no repo code.
+func runCheckClean(ctx context.Context, g gitIn) error {
+	out, err := g.bytes(ctx, nil, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
 	if err != nil {
-		return fmt.Errorf("check the tree in %s: %w", dir, err)
+		return fmt.Errorf("check the tree in %s: %w", g.dir, err)
 	}
 	paths := runDirtyPaths(out)
 	if len(paths) == 0 {
@@ -300,22 +306,27 @@ type runCollected struct {
 }
 
 // runCollector is the one bounded buffer for stdout and stderr. It keeps the
-// last runTailBytes and, as the output goes by, reads fields and URLs from
-// complete lines, so a field printed early is not lost when the tail moves on.
+// last runTailBytes in a ring and, as the output goes by, reads fields and
+// URLs from complete lines, so a field printed early is not lost when the
+// tail moves on.
 type runCollector struct {
 	mu          sync.Mutex
-	buf         []byte
+	red         runRedactor
+	ring        []byte // runTailBytes long once the first byte arrives
+	start       int    // index of the oldest kept byte
+	size        int    // how many bytes are kept
 	total       int64
 	dropped     int64
 	lastDropped byte
 	line        []byte
 	overflow    bool
+	inPEM       bool
 	fields      map[string]string
 	url         string
 }
 
-func newRunCollector() *runCollector {
-	return &runCollector{fields: map[string]string{}}
+func newRunCollector(red runRedactor) *runCollector {
+	return &runCollector{red: red, fields: map[string]string{}}
 }
 
 // Write implements io.Writer. It never fails.
@@ -324,13 +335,7 @@ func (c *runCollector) Write(p []byte) (int, error) {
 	defer c.mu.Unlock()
 	n := len(p)
 	c.total += int64(n)
-
-	c.buf = append(c.buf, p...)
-	if over := len(c.buf) - runTailBytes; over > 0 {
-		c.lastDropped = c.buf[over-1]
-		c.dropped += int64(over)
-		c.buf = append(c.buf[:0], c.buf[over:]...)
-	}
+	c.keep(p)
 
 	for len(p) > 0 {
 		i := bytes.IndexByte(p, '\n')
@@ -355,6 +360,50 @@ func (c *runCollector) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+// keep adds p to the ring, dropping the oldest bytes when it is full.
+func (c *runCollector) keep(p []byte) {
+	if len(p) == 0 {
+		return
+	}
+	if c.ring == nil {
+		c.ring = make([]byte, runTailBytes)
+	}
+	if len(p) >= runTailBytes {
+		// Everything kept so far, and the start of p, is dropped.
+		cut := len(p) - runTailBytes
+		if cut > 0 {
+			c.lastDropped = p[cut-1]
+		} else if c.size > 0 {
+			c.lastDropped = c.ring[(c.start+c.size-1)%runTailBytes]
+		}
+		c.dropped += int64(c.size + cut)
+		copy(c.ring, p[cut:])
+		c.start, c.size = 0, runTailBytes
+		return
+	}
+	if over := c.size + len(p) - runTailBytes; over > 0 {
+		c.lastDropped = c.ring[(c.start+over-1)%runTailBytes]
+		c.start = (c.start + over) % runTailBytes
+		c.size -= over
+		c.dropped += int64(over)
+	}
+	end := (c.start + c.size) % runTailBytes
+	n := copy(c.ring[end:], p)
+	copy(c.ring, p[n:])
+	c.size += len(p)
+}
+
+// tail returns the kept bytes in order.
+func (c *runCollector) tail() []byte {
+	out := make([]byte, 0, c.size)
+	if c.size == 0 {
+		return out
+	}
+	first := c.ring[c.start:min(c.start+c.size, runTailBytes)]
+	out = append(out, first...)
+	return append(out, c.ring[:c.size-len(first)]...)
+}
+
 func (c *runCollector) endLine() {
 	if !c.overflow {
 		c.readLine(string(c.line))
@@ -377,7 +426,7 @@ func (c *runCollector) finish() runCollected {
 	if _, ok := fields["url"]; !ok && c.url != "" && len(fields) < runMaxFields {
 		fields["url"] = c.url
 	}
-	tail, dropped := c.buf, c.dropped
+	tail, dropped := c.tail(), c.dropped
 	if dropped > 0 && c.lastDropped != '\n' {
 		// The cut is in the middle of a line. Drop the rest of that line,
 		// so no half of a secret is left.
@@ -391,9 +440,22 @@ func (c *runCollector) finish() runCollected {
 
 var runKeyRE = regexp.MustCompile(`^[a-z_]+$`)
 
-// readLine looks at one complete output line, without its newline.
+// readLine looks at one complete output line, without its newline. Nothing
+// is read from a line inside a PEM block or a line that looks like it holds
+// a secret.
 func (c *runCollector) readLine(line string) {
 	line = strings.TrimSuffix(line, "\r")
+	begin, end := runPEMBegin(line), runPEMEnd(line)
+	if begin {
+		c.inPEM = true
+	}
+	inPEM := c.inPEM
+	if end {
+		c.inPEM = false
+	}
+	if inPEM || c.red.secret(line) {
+		return
+	}
 	if u := runLastActionsURL(line); u != "" {
 		c.url = u
 	}
@@ -406,7 +468,7 @@ func (c *runCollector) readLine(line string) {
 		return
 	}
 	val = strings.TrimSpace(val)
-	if val == "" || len(val) > runMaxFieldValue || runSecretRE.MatchString(line) {
+	if val == "" || len(val) > runMaxFieldValue {
 		return
 	}
 	if _, known := c.fields[key]; !known && len(c.fields) >= runMaxFields {
@@ -439,26 +501,81 @@ func runIsWordByte(b byte) bool {
 	return b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b == '_'
 }
 
-// runSecretRE matches the obvious ways a secret shows up in command output.
-// "sk-" must start a word, so "task-1" and "disk-usage" stay readable.
-var runSecretRE = regexp.MustCompile(`(?i)token=|password=|authorization:|ghp_|github_pat_|(?:^|[^a-z0-9])sk-`)
+// runSecretRE matches the obvious ways a secret shows up in command output:
+// GitHub tokens (ghp_, gho_, ghs_, ghu_, ghr_, github_pat_), API keys
+// (sk-...), "token=", "secret:", "key =" and the like, "password=",
+// Authorization headers, bearer tokens and AWS_SECRET_ACCESS_KEY. "sk-" must
+// start a word, so "task-1" and "disk-usage" stay readable.
+var runSecretRE = regexp.MustCompile(`(?i)(?:token|secret|key)\s*[:=]|password\s*[:=]|authorization:|bearer\s|aws_secret_access_key|gh[opsur]_[a-z0-9]|github_pat_|(?:^|[^a-z0-9])sk-`)
 
-// runRedact returns "[redacted]" for a line that looks like it holds a secret.
-func runRedact(line string) string {
-	if runSecretRE.MatchString(line) {
-		return runRedacted
-	}
-	return line
+// runMinSecretLen is the shortest Env value that is redacted. Shorter values
+// ("1", "true", "v2") would redact ordinary output.
+const runMinSecretLen = 8
+
+// runRedactor decides which output lines are hidden.
+type runRedactor struct {
+	// values are exact secret values, from StepCommand.Env.
+	values []string
 }
 
-// runRedactLines applies runRedact to every line of s.
-func runRedactLines(s string) string {
-	if !runSecretRE.MatchString(s) {
-		return s
+func newRunRedactor(env map[string]string) runRedactor {
+	var r runRedactor
+	for _, v := range env {
+		if len(v) >= runMinSecretLen {
+			r.values = append(r.values, v)
+		}
 	}
+	sort.Strings(r.values)
+	return r
+}
+
+// secret reports whether one line looks like it holds a secret.
+func (r runRedactor) secret(line string) bool {
+	if runSecretRE.MatchString(line) {
+		return true
+	}
+	for _, v := range r.values {
+		if strings.Contains(line, v) {
+			return true
+		}
+	}
+	return false
+}
+
+func runPEMBegin(line string) bool { return strings.Contains(line, "-----BEGIN ") }
+func runPEMEnd(line string) bool   { return strings.Contains(line, "-----END ") }
+
+// lines replaces every secret line of s, and every line of a PEM block from
+// its BEGIN line to its END line, with "[redacted]". When s starts inside a
+// PEM block (its BEGIN line was cut off), the lines up to the END line are
+// redacted too.
+func (r runRedactor) lines(s string) string {
 	lines := strings.Split(s, "\n")
+	inPEM := false
+	for _, l := range lines {
+		if runPEMBegin(l) {
+			break
+		}
+		if runPEMEnd(l) {
+			inPEM = true
+			break
+		}
+	}
 	for i, l := range lines {
-		lines[i] = runRedact(l)
+		begin, end := runPEMBegin(l), runPEMEnd(l)
+		if begin {
+			inPEM = true
+		}
+		if inPEM || r.secret(l) {
+			lines[i] = runRedacted
+		}
+		if end {
+			inPEM = false
+		}
 	}
 	return strings.Join(lines, "\n")
 }
+
+// runRedactLines redacts s with no Env values: for text other than a step's
+// output, such as git's stderr.
+func runRedactLines(s string) string { return runRedactor{}.lines(s) }

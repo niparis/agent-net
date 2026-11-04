@@ -15,6 +15,9 @@ type testRepo struct {
 	t   *testing.T
 	dir string
 	n   int
+	// watcher is a second repository whose remote "origin" is dir. It is
+	// created by the first watch call.
+	watcher string
 }
 
 func newTestRepo(t *testing.T, initialBranch string) *testRepo {
@@ -26,6 +29,12 @@ func newTestRepo(t *testing.T, initialBranch string) *testRepo {
 
 func (r *testRepo) git(args ...string) string {
 	r.t.Helper()
+	return r.gitIn(r.dir, args...)
+}
+
+// gitIn runs git in dir with the test identity and no hooks.
+func (r *testRepo) gitIn(dir string, args ...string) string {
+	r.t.Helper()
 	full := append([]string{
 		"-c", "user.name=Test Author",
 		"-c", "user.email=author@example.test",
@@ -33,7 +42,7 @@ func (r *testRepo) git(args ...string) string {
 		"-c", "core.hooksPath=/dev/null",
 	}, args...)
 	cmd := exec.Command("git", full...)
-	cmd.Dir = r.dir
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"LC_ALL=C",
 		"GIT_CONFIG_GLOBAL=/dev/null",
@@ -59,6 +68,36 @@ func (r *testRepo) commit(message string) string {
 	r.git("add", "-A")
 	r.git("commit", "-q", "-m", message)
 	return r.git("rev-parse", "HEAD")
+}
+
+// watch runs NewCommits for the main branch of r, as seen from the watcher
+// repository through a fetch.
+func (r *testRepo) watch(since string) (WatchResult, error) {
+	r.t.Helper()
+	return NewCommits(context.Background(), r.watchReq(since))
+}
+
+func (r *testRepo) watchReq(since string) WatchRequest {
+	r.t.Helper()
+	if r.watcher == "" {
+		r.watcher = r.t.TempDir()
+		r.gitIn(r.watcher, "init", "-q", "-b", "trunk")
+		r.gitIn(r.watcher, "remote", "add", "origin", r.dir)
+	}
+	return WatchRequest{RepoDir: r.watcher, Remote: "origin", Branch: "main", Since: since}
+}
+
+// rawCommit writes a commit object exactly as given, even a malformed one.
+func (r *testRepo) rawCommit(body string) string {
+	r.t.Helper()
+	cmd := exec.Command("git", "hash-object", "-t", "commit", "-w", "--literally", "--stdin")
+	cmd.Dir = r.dir
+	cmd.Stdin = strings.NewReader(body)
+	out, err := cmd.Output()
+	if err != nil {
+		r.t.Fatalf("hash-object: %v", err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func shas(cs []Commit) []string {
@@ -88,7 +127,7 @@ func TestNewCommitsLinearOldestFirst(t *testing.T) {
 	c := r.commit("c")
 	d := r.commit("d")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", a)
+	res, err := r.watch(a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +164,7 @@ func TestNewCommitsNothingNew(t *testing.T) {
 	r.commit("a")
 	tip := r.commit("b")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", tip)
+	res, err := r.watch(tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +184,7 @@ func TestNewCommitsMergeIsFirstParentOnly(t *testing.T) {
 	r.git("merge", "-q", "--no-ff", "-m", "merge feature", "feature")
 	merge := r.git("rev-parse", "HEAD")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", a)
+	res, err := r.watch(a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +223,7 @@ func TestNewCommitsOctopusMergedHeads(t *testing.T) {
 	r.git("checkout", "-q", "main")
 	r.git("merge", "-q", "--no-ff", "-m", "octopus", "one", "two")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", a)
+	res, err := r.watch(a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +245,7 @@ func TestNewCommitsFastForwardOfWholeBranch(t *testing.T) {
 	r.git("checkout", "-q", "main")
 	r.git("merge", "-q", "--ff-only", "feature")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", a)
+	res, err := r.watch(a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +263,7 @@ func TestNewCommitsEmptySinceReturnsOnlyTip(t *testing.T) {
 	r.commit("b")
 	tip := r.commit("c")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", "")
+	res, err := r.watch("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +283,7 @@ func TestNewCommitsRewrittenHistory(t *testing.T) {
 	r.commit("b2")
 	tip := r.commit("c")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", old)
+	res, err := r.watch(old)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +300,7 @@ func TestNewCommitsUnknownSinceIsRewritten(t *testing.T) {
 	r.commit("a")
 	tip := r.commit("b")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", strings.Repeat("ab", 20))
+	res, err := r.watch(strings.Repeat("ab", 20))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +324,7 @@ func TestNewCommitsParsesTrailers(t *testing.T) {
 	b := r.commit(msg)
 	c := r.commit("plain commit with no trailers")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", a)
+	res, err := r.watch(a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +361,7 @@ func TestNewCommitsTrailerNotInBodyText(t *testing.T) {
 	// A "trailer-looking" line in the middle of the body is not a trailer.
 	r.commit("Subject\n\nAgent-Net-Worker: w_fake\n\nThe rest of the body.\n")
 
-	res, err := NewCommits(context.Background(), r.dir, "main", a)
+	res, err := r.watch(a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,98 +370,9 @@ func TestNewCommitsTrailerNotInBodyText(t *testing.T) {
 	}
 }
 
-func TestDefaultBranchOriginHeadWins(t *testing.T) {
-	r := newTestRepo(t, "main")
-	tip := r.commit("a")
-	r.git("branch", "develop")
-	r.git("update-ref", "refs/remotes/origin/develop", tip)
-	r.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
-
-	got, err := DefaultBranch(context.Background(), r.dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "develop" {
-		t.Fatalf("DefaultBranch = %q, want develop (origin/HEAD beats the main fallback)", got)
-	}
-}
-
-func TestDefaultBranchOriginHeadWithSlashInName(t *testing.T) {
-	r := newTestRepo(t, "main")
-	tip := r.commit("a")
-	r.git("update-ref", "refs/remotes/origin/release/2026", tip)
-	r.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/release/2026")
-
-	got, err := DefaultBranch(context.Background(), r.dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "release/2026" {
-		t.Fatalf("DefaultBranch = %q, want release/2026", got)
-	}
-}
-
-func TestDefaultBranchFallsBackToMain(t *testing.T) {
-	r := newTestRepo(t, "main")
-	r.commit("a")
-	r.git("checkout", "-q", "-b", "topic")
-
-	got, err := DefaultBranch(context.Background(), r.dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "main" {
-		t.Fatalf("DefaultBranch = %q, want main", got)
-	}
-}
-
-func TestDefaultBranchFallsBackToMaster(t *testing.T) {
-	r := newTestRepo(t, "master")
-	r.commit("a")
-	r.git("checkout", "-q", "-b", "topic")
-
-	got, err := DefaultBranch(context.Background(), r.dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "master" {
-		t.Fatalf("DefaultBranch = %q, want master", got)
-	}
-}
-
-func TestDefaultBranchFallsBackToCurrentBranch(t *testing.T) {
-	r := newTestRepo(t, "trunk")
-	r.commit("a")
-
-	got, err := DefaultBranch(context.Background(), r.dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "trunk" {
-		t.Fatalf("DefaultBranch = %q, want trunk", got)
-	}
-}
-
-func TestDefaultBranchDetachedHeadIsAnError(t *testing.T) {
-	r := newTestRepo(t, "trunk")
-	tip := r.commit("a")
-	r.git("checkout", "-q", "--detach", tip)
-
-	_, err := DefaultBranch(context.Background(), r.dir)
-	if err == nil {
-		t.Fatal("want an error when no default branch can be found")
-	}
-	if !strings.Contains(err.Error(), "default branch") {
-		t.Fatalf("error should say what failed, got: %v", err)
-	}
-}
-
 func TestNotARepoIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := DefaultBranch(context.Background(), dir); err == nil {
-		t.Error("DefaultBranch: want an error outside a repository")
-	}
-	if _, err := NewCommits(context.Background(), dir, "main", ""); err == nil {
+	if _, err := NewCommits(context.Background(), WatchRequest{RepoDir: dir, Remote: "origin", Branch: "main"}); err == nil {
 		t.Error("NewCommits: want an error outside a repository")
 	}
 }
@@ -430,42 +380,232 @@ func TestNotARepoIsAnError(t *testing.T) {
 func TestNewCommitsUnknownBranchIsAnError(t *testing.T) {
 	r := newTestRepo(t, "main")
 	r.commit("a")
-	if _, err := NewCommits(context.Background(), r.dir, "nope", ""); err == nil {
+	req := r.watchReq("")
+	req.Branch = "nope"
+	if _, err := NewCommits(context.Background(), req); err == nil {
 		t.Fatal("want an error for a branch that does not exist")
 	}
 }
 
-func TestNewCommitsRejectsOptionLikeArguments(t *testing.T) {
+func TestNewCommitsRejectsBadArguments(t *testing.T) {
 	r := newTestRepo(t, "main")
 	a := r.commit("a")
-	if _, err := NewCommits(context.Background(), r.dir, "--all", ""); err == nil {
-		t.Error("branch starting with a dash must be refused")
+	cases := map[string]func(q *WatchRequest){
+		"option branch":     func(q *WatchRequest) { q.Branch = "--all" },
+		"bad branch":        func(q *WatchRequest) { q.Branch = "a..b" },
+		"no branch":         func(q *WatchRequest) { q.Branch = "" },
+		"option remote":     func(q *WatchRequest) { q.Remote = "--upload-pack=touch x" },
+		"no remote":         func(q *WatchRequest) { q.Remote = "" },
+		"option since":      func(q *WatchRequest) { q.Since = "--all" },
+		"abbreviated since": func(q *WatchRequest) { q.Since = a[:12] },
+		"branch name since": func(q *WatchRequest) { q.Since = "main" },
+		"no repo":           func(q *WatchRequest) { q.RepoDir = "" },
 	}
-	if _, err := NewCommits(context.Background(), r.dir, "main", "--all"); err == nil {
-		t.Error("since starting with a dash must be refused")
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			req := r.watchReq(a)
+			mutate(&req)
+			if _, err := NewCommits(context.Background(), req); err == nil {
+				t.Fatal("want an error")
+			}
+		})
 	}
-	_ = a
 }
 
-func TestHooksAreNeverRun(t *testing.T) {
+// S1: the watcher fetches, so it sees what landed on the remote even when
+// the local repository was not updated.
+func TestNewCommitsFetchesFromRemote(t *testing.T) {
 	r := newTestRepo(t, "main")
 	a := r.commit("a")
-	r.commit("b")
+	res, err := r.watch("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := shas(res.Commits); !equal(got, []string{a}) {
+		t.Fatalf("first run = %v, want the tip %s", got, a)
+	}
+	b := r.commit("b")
+	c := r.commit("c")
+	res, err = r.watch(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := shas(res.Commits), []string{b, c}; !equal(got, want) {
+		t.Fatalf("commits = %v, want %v", got, want)
+	}
+}
 
-	marker := filepath.Join(t.TempDir(), "hook-ran")
-	hooks := filepath.Join(r.dir, ".git", "hooks")
-	script := "#!/bin/sh\ntouch " + marker + "\n"
-	for _, name := range []string{"post-checkout", "post-merge", "reference-transaction", "post-rewrite", "pre-commit"} {
-		if err := os.WriteFile(filepath.Join(hooks, name), []byte(script), 0o755); err != nil {
-			t.Fatal(err)
+// S1: the remote-tracking ref is named in full, so a local branch or tag
+// with a shadowing name changes nothing.
+func TestNewCommitsWatchesRemoteTrackingRef(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	if _, err := r.watch(""); err != nil {
+		t.Fatal(err)
+	}
+	b := r.commit("b")
+	for _, ref := range []string{"refs/heads/main", "refs/tags/main", "refs/tags/origin/main", "refs/heads/origin/main"} {
+		r.gitIn(r.watcher, "update-ref", ref, a)
+	}
+	res, err := r.watch(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := shas(res.Commits); !equal(got, []string{b}) {
+		t.Fatalf("commits = %v, want [%s]", got, b)
+	}
+}
+
+// S1: fields are read from the raw commit object, so control characters in
+// a name or a subject cannot shift them.
+func TestNewCommitsOddCharactersParse(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	tree := r.git("rev-parse", "HEAD^{tree}")
+	odd := r.rawCommit("tree " + tree + "\nparent " + a +
+		"\nauthor Odd\x1fName\x00x <o@example.test> 1793790000 +0000" +
+		"\ncommitter C\x1eD <c@example.test> 1793790001 +0100" +
+		"\n\nsubject \x1e and \x1f inside\nsecond subject line\n\nbody\n\nAgent-Net-Worker: w_odd\x1fx\n")
+	r.git("update-ref", "refs/heads/main", odd)
+
+	res, err := r.watch(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Commits) != 1 {
+		t.Fatalf("commits = %v", shas(res.Commits))
+	}
+	c := res.Commits[0]
+	if c.ParseError != "" {
+		t.Fatalf("ParseError = %q", c.ParseError)
+	}
+	if c.SHA != odd || len(c.Parents) != 1 || c.Parents[0] != a {
+		t.Fatalf("commit = %+v", c)
+	}
+	if c.Author != "Odd\x1fName\x00x <o@example.test>" || c.Committer != "C\x1eD <c@example.test>" {
+		t.Fatalf("author %q, committer %q", c.Author, c.Committer)
+	}
+	if c.Subject != "subject \x1e and \x1f inside second subject line" {
+		t.Fatalf("subject = %q", c.Subject)
+	}
+	if !c.Time.Equal(time.Unix(1793790001, 0)) || c.Time.Location() != time.UTC {
+		t.Fatalf("time = %v", c.Time)
+	}
+	if got := c.Trailer("agent-net-worker"); got != "w_odd\x1fx" {
+		t.Fatalf("trailer = %q (all %v)", got, c.Trailers)
+	}
+}
+
+// S1: a commit the watcher cannot read is reported as a skip (no parents,
+// no trailers, ParseError set), never as an error that stops the watcher.
+func TestNewCommitsUnparseableCommitIsSkip(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	tree := r.git("rev-parse", "HEAD^{tree}")
+	bad := r.rawCommit("tree " + tree + "\nparent " + a +
+		"\nauthor A <a@example.test> 1793790000 +0000\ncommitter C <c@example.test> notatime +0000" +
+		"\n\nbad\n\nAgent-Net-Worker: w_bad\n")
+	good := r.rawCommit("tree " + tree + "\nparent " + bad +
+		"\nauthor A <a@example.test> 1793790000 +0000\ncommitter C <c@example.test> 1793790000 +0000\n\ngood\n")
+	r.git("update-ref", "refs/heads/main", good)
+
+	res, err := r.watch(a)
+	if err != nil {
+		t.Fatalf("an unparseable commit stopped the watcher: %v", err)
+	}
+	if got, want := shas(res.Commits), []string{bad, good}; !equal(got, want) {
+		t.Fatalf("commits = %v, want %v", got, want)
+	}
+	b := res.Commits[0]
+	if b.ParseError == "" || len(b.Parents) != 0 || len(b.Trailers) != 0 || b.Trailer("Agent-Net-Worker") != "" {
+		t.Fatalf("bad commit = %+v, want a skip with nothing that looks like evidence", b)
+	}
+	if res.Commits[1].ParseError != "" || res.Commits[1].Subject != "good" {
+		t.Fatalf("good commit = %+v", res.Commits[1])
+	}
+}
+
+func TestParseTrailers(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  string
+		want map[string]string
+	}{
+		{"subject only", "Key: value\n", map[string]string{}},
+		{"plain block", "S\n\nbody\n\nA-B: 1\nC: 2\n", map[string]string{"A-B": "1", "C": "2"}},
+		{"first value wins", "S\n\nA: 1\nA: 2\n", map[string]string{"A": "1"}},
+		{"continuation is unfolded", "S\n\nA: one\n  two\nB: x\n", map[string]string{"A": "one two", "B": "x"}},
+		{"space before colon", "S\n\nKey : v\n", map[string]string{"Key": "v"}},
+		{"not the last paragraph", "S\n\nA: 1\n\nprose\n", map[string]string{}},
+		{"mixed block without git trailer", "S\n\nA: 1\nprose line\n", map[string]string{}},
+		{"mixed block with Signed-off-by", "S\n\nprose line\nA: 1\nSigned-off-by: X <x@example.test>\n",
+			map[string]string{"A": "1", "Signed-off-by": "X <x@example.test>"}},
+		{"trailing blank lines", "S\n\nA: 1\n\n\n", map[string]string{"A": "1"}},
+		{"comment lines skipped", "S\n\nA: 1\n# note\nB: 2\n", map[string]string{"A": "1", "B": "2"}},
+		{"bad key", "S\n\nA_B: 1\n", map[string]string{}},
+		{"patch divider", "S\n\nA: 1\n---\nB: 2\n", map[string]string{"A": "1"}},
+		{"crlf", "S\r\n\r\nA: 1\r\n", map[string]string{"A": "1"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := parseTrailers(c.msg)
+			if len(got) != len(c.want) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+			for k, v := range c.want {
+				if got[k] != v {
+					t.Fatalf("got %v, want %v", got, c.want)
+				}
+			}
+		})
+	}
+}
+
+func TestCommitTrailerIgnoresCase(t *testing.T) {
+	c := Commit{Trailers: map[string]string{"Agent-Net-Worker": "w_1"}}
+	for _, k := range []string{"Agent-Net-Worker", "agent-net-worker", "AGENT-NET-WORKER"} {
+		if got := c.Trailer(k); got != "w_1" {
+			t.Errorf("Trailer(%q) = %q", k, got)
 		}
 	}
+	if got := c.Trailer("Agent-Net-Model"); got != "" {
+		t.Errorf("missing trailer = %q", got)
+	}
+}
 
-	if _, err := DefaultBranch(context.Background(), r.dir); err != nil {
+// S14: the watcher fetches, and a fetch would run the reference-transaction
+// hook. The control proves the hook is live; the watcher must not run it.
+func TestNewCommitsNeverRunsHooks(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	if _, err := r.watch(""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewCommits(context.Background(), r.dir, "main", a); err != nil {
+	r.commit("b")
+	marker := filepath.Join(t.TempDir(), "hook-ran")
+	hooks := filepath.Join(r.watcher, ".git", "hooks")
+	script := "#!/bin/sh\ntouch " + marker + "\n"
+	if err := os.WriteFile(filepath.Join(hooks, "reference-transaction"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	control := exec.Command("git", "fetch", "-q", "origin", "+refs/heads/main:refs/control/main")
+	control.Dir = r.watcher
+	if out, err := control.CombinedOutput(); err != nil {
+		t.Fatalf("control fetch: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("control: a plain fetch did not run the hook, so this test proves nothing")
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := r.watch(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Commits) != 1 {
+		t.Fatalf("commits = %v: the watcher's fetch did not update the ref", shas(res.Commits))
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("a git hook ran")
@@ -477,7 +617,7 @@ func TestCancelledContextStopsGit(t *testing.T) {
 	r.commit("a")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := NewCommits(ctx, r.dir, "main", ""); err == nil {
+	if _, err := NewCommits(ctx, r.watchReq("")); err == nil {
 		t.Fatal("want an error from a cancelled context")
 	}
 }

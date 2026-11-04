@@ -52,6 +52,8 @@ What agent-net does **not** build: a CI runner, a review UI, a merge queue for r
 
 **The limit, stated plainly.** On a repo that lives only on our machines (no GitHub copy), nothing can stop an agent with write access from pushing to main. agent-net makes the pipeline the easy path and makes a skip visible: a commit on the default branch with no recorded evidence becomes an Inbox item for the owner at once. Where the repo is on GitHub, agent-net posts its evidence as checks on the commit, and GitHub's branch protection refuses a merge without them.
 
+**Statuses and merge commits.** Branch protection checks the required statuses on the commit that becomes the new tip of the protected branch. Evidence is keyed by the change's head commit, so statuses posted on the head satisfy branch protection only when the target is fast-forwarded to that head. A merge commit is a new commit with no statuses, and a push of it to a protected branch is refused. So a protected target uses `ff-only` merges, or the merge step posts the statuses on the merged commit (after CI ran on it) before the target branch moves. `delivery.Merge` supports both modes; the recipe chooses.
+
 ## Concepts
 
 ### Change

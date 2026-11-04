@@ -137,7 +137,7 @@ func newClient(t *testing.T, f *fakeGitHub) *GitHubClient {
 	t.Cleanup(srv.Close)
 	return &GitHubClient{
 		BaseURL: srv.URL,
-		Token:   func() (string, error) { return "tok-secret", nil },
+		Token:   func(context.Context) (string, error) { return "tok-secret", nil },
 		HTTP:    srv.Client(),
 	}
 }
@@ -357,13 +357,60 @@ func TestCommitChecksRequiredNames(t *testing.T) {
 	}
 }
 
-func TestCommitChecksRequiredWithNoChecksIsNone(t *testing.T) {
+// S10: with required names a missing name is pending, never none.
+func TestCommitChecksRequiredWithNoChecksIsPending(t *testing.T) {
 	got, err := newClient(t, &fakeGitHub{}).CommitChecks(context.Background(), "o", "r", testSHA, "build")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.State != CINone {
-		t.Fatalf("state = %q, want none", got.State)
+	if got.State != CIPending {
+		t.Fatalf("state = %q, want pending", got.State)
+	}
+}
+
+func TestCommitChecksRefusesAgentNetRequiredName(t *testing.T) {
+	f := &fakeGitHub{runs: []map[string]any{run("build", "completed", "success")}}
+	for _, n := range []string{"agent-net/review", ""} {
+		if _, err := newClient(t, f).CommitChecks(context.Background(), "o", "r", testSHA, "build", n); err == nil {
+			t.Errorf("required name %q: want an error", n)
+		}
+	}
+	if len(f.requests) != 0 {
+		t.Fatalf("a refused call reached GitHub: %v", f.requests)
+	}
+}
+
+func TestCommitChecksPendingURLWithMissingName(t *testing.T) {
+	f := &fakeGitHub{runs: []map[string]any{run("build", "completed", "success"), run("slow", "in_progress", "")}}
+	got, err := newClient(t, f).CommitChecks(context.Background(), "o", "r", testSHA, "build", "slow", "deploy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != CIPending || got.URL != "https://github.com/o/r/runs/slow" {
+		t.Fatalf("state %q url %q, want pending at the running check", got.State, got.URL)
+	}
+}
+
+func TestTokenFetchedOncePerCall(t *testing.T) {
+	var runs []map[string]any
+	for range 5 {
+		runs = append(runs, run("r", "completed", "success"))
+	}
+	f := &fakeGitHub{runs: runs}
+	c := newClient(t, f)
+	c.pageSize = 2
+	calls := 0
+	c.Token = func(context.Context) (string, error) { calls++; return "tok", nil }
+	if _, err := c.CommitChecks(context.Background(), "o", "r", testSHA); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(f.requests) < 4 {
+		t.Fatalf("token fetched %d times for %d requests, want once", calls, len(f.requests))
+	}
+	for _, a := range f.auth {
+		if a != "Bearer tok" {
+			t.Fatalf("Authorization = %q", a)
+		}
 	}
 }
 
@@ -427,7 +474,7 @@ func TestCommitChecksServerError(t *testing.T) {
 func TestCommitChecksTokenError(t *testing.T) {
 	f := &fakeGitHub{}
 	c := newClient(t, f)
-	c.Token = func() (string, error) { return "", fmt.Errorf("no token here") }
+	c.Token = func(context.Context) (string, error) { return "", fmt.Errorf("no token here") }
 	_, err := c.CommitChecks(context.Background(), "o", "r", testSHA)
 	if err == nil || !strings.Contains(err.Error(), "no token here") {
 		t.Fatalf("want the token error, got %v", err)
@@ -439,7 +486,7 @@ func TestCommitChecksTokenError(t *testing.T) {
 
 func TestCommitChecksRejectsBadInput(t *testing.T) {
 	c := newClient(t, &fakeGitHub{})
-	for _, sha := range []string{"", "main", "../x", "abc/../../x", "zzzzzzz"} {
+	for _, sha := range []string{"", "main", "../x", "abc/../../x", "zzzzzzz", testSHA[:7], strings.ToUpper(testSHA)} {
 		if _, err := c.CommitChecks(context.Background(), "o", "r", sha); err == nil {
 			t.Errorf("sha %q: want an error", sha)
 		}
@@ -528,12 +575,12 @@ func TestPostCommitStatusErrors(t *testing.T) {
 func TestDefaultTokenFromEnv(t *testing.T) {
 	t.Setenv("GH_TOKEN", "from-gh-token")
 	t.Setenv("GITHUB_TOKEN", "from-github-token")
-	got, err := DefaultToken()
+	got, err := DefaultToken(context.Background())
 	if err != nil || got != "from-gh-token" {
 		t.Fatalf("got %q, %v; GH_TOKEN should win", got, err)
 	}
 	t.Setenv("GH_TOKEN", "")
-	got, err = DefaultToken()
+	got, err = DefaultToken(context.Background())
 	if err != nil || got != "from-github-token" {
 		t.Fatalf("got %q, %v; want GITHUB_TOKEN", got, err)
 	}
@@ -554,7 +601,7 @@ func TestDefaultTokenFromGh(t *testing.T) {
 	fakeGH(t, `[ "$1 $2" = "auth token" ] && [ $# -eq 2 ] && echo "gh-token-123" && exit 0
 exit 1
 `)
-	got, err := DefaultToken()
+	got, err := DefaultToken(context.Background())
 	if err != nil || got != "gh-token-123" {
 		t.Fatalf("got %q, %v", got, err)
 	}
@@ -564,7 +611,7 @@ func TestDefaultTokenGhFails(t *testing.T) {
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	fakeGH(t, "echo 'not logged in' >&2\nexit 1\n")
-	_, err := DefaultToken()
+	_, err := DefaultToken(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "GH_TOKEN") {
 		t.Fatalf("want an error that names GH_TOKEN, got %v", err)
 	}
@@ -574,7 +621,7 @@ func TestDefaultTokenNoGh(t *testing.T) {
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("PATH", t.TempDir())
-	if _, err := DefaultToken(); err == nil {
+	if _, err := DefaultToken(context.Background()); err == nil {
 		t.Fatal("want an error when there is no token and no gh")
 	}
 }
@@ -587,11 +634,26 @@ func TestDefaultTokenGhTimeout(t *testing.T) {
 	ghTokenTimeout = 200 * time.Millisecond
 	defer func() { ghTokenTimeout = old }()
 	start := time.Now()
-	if _, err := DefaultToken(); err == nil {
+	if _, err := DefaultToken(context.Background()); err == nil {
 		t.Fatal("want an error when gh hangs")
 	}
 	if time.Since(start) > 2*time.Second {
 		t.Fatal("gh was not stopped by the timeout")
+	}
+}
+
+func TestDefaultTokenHonorsContext(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	fakeGH(t, "exec /bin/sleep 30\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := DefaultToken(ctx); err == nil {
+		t.Fatal("want an error when the context ends")
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("gh was not stopped by the context")
 	}
 }
 
