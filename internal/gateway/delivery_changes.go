@@ -1,0 +1,617 @@
+package gateway
+
+// The delivery pipeline, build step 1 (decision 0057,
+// docs/design/delivery-pipeline.md): the gateway stores changes, their
+// revisions and the evidence of each step, and answers the change frames.
+// Nothing is routed or refused yet: no step task goes out, and nothing checks
+// the evidence before a merge.
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// Page sizes of change.list.
+const (
+	changeListDefault = 25
+	changeListMax     = 100
+)
+
+const changeColumns = `id, project, machine, branch, target_branch, base_commit, head_commit, uncommitted, revision, origin, caller, title, difficulty, state, merged_commit, created_at, updated_at`
+
+// deliveryQuerier is a *sql.DB or a *sql.Tx.
+type deliveryQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+// handleDelivery answers the delivery pipeline frames from a daemon.
+func (g *Gateway) handleDelivery(nc *nodeConn, typ string, raw []byte) (any, bool, error) {
+	var (
+		data any
+		err  error
+	)
+	switch typ {
+	case protocol.FrameChangeSubmit:
+		q, derr := decode[protocol.ChangeSubmitRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.SubmitChange(nc.id, q)
+	case protocol.FrameStepReport:
+		q, derr := decode[protocol.StepReportRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.ReportStep(nc.id, q)
+	case protocol.FrameChangeGet:
+		q, derr := decode[protocol.ChangeGetRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.GetChange(q.ChangeID)
+	case protocol.FrameChangeList:
+		q, derr := decode[protocol.ChangeListRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.ListChanges(q)
+	default:
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	return data, true, nil
+}
+
+// deliveryPipeline is the pipeline of a project's changes until step owners
+// and recipes are stored (build steps 2 and 6): the part the project's three
+// delivery settings describe, then the steps after merge of the owner's way
+// (CI on the merged commit, release, verify). With the default settings it is
+// protocol.PipelineToday. A project with no graph node gets the network
+// values.
+func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
+	graph, err := s.Graph()
+	if err != nil {
+		return protocol.Pipeline{}, err
+	}
+	repo := chartedProject(graph, project)
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return protocol.Pipeline{}, err
+	}
+	var values [3]string
+	for i, key := range []string{"delivery.tests_before_merge", "delivery.merge_authority", "delivery.deploy_rule"} {
+		if values[i], err = deliveryValue(snap, key, repo); err != nil {
+			return protocol.Pipeline{}, err
+		}
+	}
+	p, err := protocol.PipelineFromShorthand(values[0], values[1], values[2])
+	if err != nil {
+		return protocol.Pipeline{}, err
+	}
+	for _, step := range protocol.PipelineToday().Steps {
+		if step.AfterMerge {
+			if _, have := p.Find(step.StepRef); !have {
+				p.Steps = append(p.Steps, step)
+			}
+		}
+	}
+	return p, p.Validate()
+}
+
+// deliverySession is what the delivery frames need of a session: its
+// machine, harness and model, and the session that started it when it is a
+// worker.
+type deliverySession struct {
+	node, harness, model, workerOwner string
+}
+
+func (s *Store) deliverySession(id string) (deliverySession, bool, error) {
+	var d deliverySession
+	var worker string
+	err := s.db.QueryRow(`SELECT s.node_id, s.harness, s.model, s.worker FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.id = ?`, id).Scan(&d.node, &d.harness, &d.model, &worker)
+	if errors.Is(err, sql.ErrNoRows) {
+		return d, false, nil
+	}
+	if err != nil {
+		return d, false, err
+	}
+	if worker != "" {
+		var w protocol.WorkerInfo
+		if json.Unmarshal([]byte(worker), &w) == nil {
+			d.workerOwner = w.Owner
+		}
+	}
+	return d, true, nil
+}
+
+// family is the model maker of the session, for independence.
+func (d deliverySession) family() string {
+	if d.model == "" {
+		return ""
+	}
+	return protocol.ModelFamily(d.harness, d.model)
+}
+
+// checkSubmitter checks that machine may submit q: the session is on this
+// machine, or q is the hand-back of a worker on this machine that the session
+// started (the caller may be on another machine; the branch is here). A
+// session submits only its own work.
+func (s *Store) checkSubmitter(machine string, q protocol.ChangeSubmitRequest) error {
+	if q.Origin.Kind == protocol.OriginSession && q.Origin.SessionID != q.SessionID {
+		return reject("a session submits its own work: origin session_id must be %s", q.SessionID)
+	}
+	who, ok, err := s.deliverySession(q.SessionID)
+	if err != nil {
+		return err
+	}
+	if ok && who.node == machine {
+		return nil
+	}
+	if q.Origin.Kind == protocol.OriginWorker && q.Origin.SessionID != "" {
+		w, ok, err := s.deliverySession(q.Origin.SessionID)
+		if err != nil {
+			return err
+		}
+		if ok && w.node == machine && w.workerOwner == q.SessionID {
+			return nil
+		}
+	}
+	return reject("session %q is not on this machine", q.SessionID)
+}
+
+// fillOrigin adds the author's model from its session record when the submit
+// did not name it, and the model maker.
+func (s *Store) fillOrigin(o *protocol.ChangeOrigin) error {
+	harness := ""
+	if o.SessionID != "" {
+		d, ok, err := s.deliverySession(o.SessionID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			harness = d.harness
+			if o.Model == "" {
+				o.Model = d.model
+			}
+		}
+	}
+	if o.ModelFamily == "" && o.Model != "" {
+		o.ModelFamily = protocol.ModelFamily(harness, o.Model)
+	}
+	return nil
+}
+
+// SubmitChange stores change.submit from machine. Without a change ID, the
+// open change of the project and branch takes the new head, or a new change
+// starts. With one, that change follows the work to its branch. A new head
+// commit makes a new revision, whose author is the submit's origin. Fields the
+// submit gives replace stored ones; the caller and the base commit stay.
+func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (protocol.ChangeSubmitResult, error) {
+	if err := q.Validate(); err != nil {
+		return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
+	}
+	if err := s.checkSubmitter(machine, q); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
+	if err := s.fillOrigin(&q.Origin); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
+	p, err := s.deliveryPipeline(q.Project)
+	if err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
+	now := s.now().Unix()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
+	defer tx.Rollback()
+	var c protocol.Change
+	var found bool
+	if q.ChangeID != "" {
+		if c, found, err = queryChange(tx, `id = ?`, q.ChangeID); err != nil {
+			return protocol.ChangeSubmitResult{}, err
+		}
+		if !found {
+			return protocol.ChangeSubmitResult{}, reject("unknown change %q", q.ChangeID)
+		}
+		if c.Project != q.Project {
+			return protocol.ChangeSubmitResult{}, reject("change %s is for project %s, not %s", c.ID, c.Project, q.Project)
+		}
+	} else if c, found, err = queryChange(tx, `project = ? AND branch = ? AND state = 'open'`, q.Project, q.Branch); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
+	bumped := false
+	if !found {
+		c = protocol.Change{ID: protocol.NewID("ch"), Project: q.Project, Machine: machine, Branch: q.Branch, TargetBranch: q.TargetBranch,
+			BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Uncommitted: q.Uncommitted, Revision: 1, Origin: q.Origin, Caller: q.SessionID,
+			Title: q.Title, Difficulty: q.Difficulty, State: protocol.ChangeOpen, CreatedAt: now}
+		if err := c.Validate(); err != nil {
+			return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
+		}
+		if err := writeChange(tx, c, true); err != nil {
+			return protocol.ChangeSubmitResult{}, err
+		}
+		if err := insertRevision(tx, c); err != nil {
+			return protocol.ChangeSubmitResult{}, err
+		}
+	} else {
+		next, b, err := c.WithHead(q.Branch, q.HeadCommit, q.Uncommitted, now)
+		if err != nil {
+			return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
+		}
+		bumped = b
+		if next.Branch != c.Branch {
+			other, taken, err := queryChange(tx, `project = ? AND branch = ? AND state = 'open' AND id <> ?`, c.Project, next.Branch, c.ID)
+			if err != nil {
+				return protocol.ChangeSubmitResult{}, err
+			}
+			if taken {
+				return protocol.ChangeSubmitResult{}, reject("branch %s of project %s already holds open change %s", next.Branch, c.Project, other.ID)
+			}
+		}
+		next.Machine = machine
+		if bumped {
+			next.Origin = q.Origin
+		}
+		if q.TargetBranch != "" {
+			next.TargetBranch = q.TargetBranch
+		}
+		if next.BaseCommit == "" {
+			next.BaseCommit = q.BaseCommit
+		}
+		if q.Title != "" {
+			next.Title = q.Title
+		}
+		if q.Difficulty != "" {
+			next.Difficulty = q.Difficulty
+		}
+		if next != c {
+			next.UpdatedAt = now
+			if err := next.Validate(); err != nil {
+				return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
+			}
+			if err := writeChange(tx, next, false); err != nil {
+				return protocol.ChangeSubmitResult{}, err
+			}
+			if bumped {
+				if err := insertRevision(tx, next); err != nil {
+					return protocol.ChangeSubmitResult{}, err
+				}
+			}
+		}
+		c = next
+	}
+	if err := tx.Commit(); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
+	view, err := s.changeView(c, p, false)
+	return protocol.ChangeSubmitResult{Change: view, Bumped: bumped}, err
+}
+
+// ReportStep stores step.report from machine. The reporting session must be
+// on machine; done_by must be a worker it started. The gateway fills the
+// revision, who did the work with its model, and the independent field, then
+// checks the evidence with Pipeline.Accepts. A merge pass marks the change
+// merged, and done once every step after merge has passed; a close stops it.
+// Stored evidence never changes.
+func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protocol.StepReportResult, error) {
+	if err := q.Validate(); err != nil {
+		return protocol.StepReportResult{}, reject("%s", err.Error())
+	}
+	reporter, ok, err := s.deliverySession(q.SessionID)
+	if err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	if !ok || reporter.node != machine {
+		return protocol.StepReportResult{}, reject("session %q is not on this machine", q.SessionID)
+	}
+	by, doer, reportedBy := q.SessionID, reporter, ""
+	if q.DoneBy != "" && q.DoneBy != q.SessionID {
+		w, ok, err := s.deliverySession(q.DoneBy)
+		if err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		if !ok || w.workerOwner != q.SessionID {
+			return protocol.StepReportResult{}, reject("done_by %q is not a worker that session %s started", q.DoneBy, q.SessionID)
+		}
+		by, doer, reportedBy = q.DoneBy, w, q.SessionID
+	}
+	c, ok, err := queryChange(s.db, `id = ?`, q.ChangeID)
+	if err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	if !ok {
+		return protocol.StepReportResult{}, reject("unknown change %q", q.ChangeID)
+	}
+	p, err := s.deliveryPipeline(c.Project)
+	if err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	now := s.now().Unix()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	defer tx.Rollback()
+	// Read the change again in the transaction: a submit may have moved its
+	// head since.
+	if c, _, err = queryChange(tx, `id = ?`, q.ChangeID); err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	fields := map[string]string{}
+	for k, v := range q.Fields {
+		fields[k] = v
+	}
+	family := doer.family()
+	fields[protocol.FieldIndependent] = protocol.IndependenceOf(c.Origin, by, family)
+	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, StepRef: q.StepRef, Result: q.Result, Commit: q.Commit, Fields: fields,
+		By: by, ReportedBy: reportedBy, ByModel: doer.model, ByModelFamily: family, Note: q.Note, At: now}
+	if err := p.Accepts(c, e); err != nil {
+		return protocol.StepReportResult{}, reject("%s", err.Error())
+	}
+	if err := insertEvidence(tx, e); err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	next := c
+	switch {
+	case e.Result == protocol.StepResultClose:
+		next.State = protocol.ChangeStopped
+	case e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass:
+		next.State, next.MergedCommit = protocol.ChangeMerged, e.Fields[protocol.FieldMergedCommit]
+	}
+	if next.State == protocol.ChangeMerged {
+		evidence, err := changeEvidence(tx, c.ID)
+		if err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		if afterMergeDone(p, next, evidence) {
+			next.State = protocol.ChangeDone
+		}
+	}
+	if next != c {
+		next.UpdatedAt = now
+		if err := writeChange(tx, next, false); err != nil {
+			return protocol.StepReportResult{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	view, err := s.changeView(next, p, false)
+	return protocol.StepReportResult{Evidence: e, Change: view}, err
+}
+
+// afterMergeDone reports whether every step after merge passed or is left
+// out on merged change c.
+func afterMergeDone(p protocol.Pipeline, c protocol.Change, evidence []protocol.Evidence) bool {
+	for _, st := range p.Status(c, evidence) {
+		if st.AfterMerge && st.State != protocol.StepStatePassed && st.State != protocol.StepStateSkipped {
+			return false
+		}
+	}
+	return true
+}
+
+// GetChange answers change.get: one change with its pipeline, revisions and
+// evidence of every revision.
+func (s *Store) GetChange(id string) (protocol.ChangeView, error) {
+	c, ok, err := queryChange(s.db, `id = ?`, id)
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
+	if !ok {
+		return protocol.ChangeView{}, reject("unknown change %q", id)
+	}
+	p, err := s.deliveryPipeline(c.Project)
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
+	return s.changeView(c, p, true)
+}
+
+// ListChanges answers change.list, newest change first.
+func (s *Store) ListChanges(q protocol.ChangeListRequest) (protocol.ChangeListResult, error) {
+	where, args := "1=1", []any{}
+	switch q.State {
+	case "", protocol.ChangeListActive:
+		where += ` AND state IN ('open', 'merged')`
+	case protocol.ChangeListAny:
+	case protocol.ChangeOpen, protocol.ChangeMerged, protocol.ChangeDone, protocol.ChangeStopped:
+		where += ` AND state = ?`
+		args = append(args, q.State)
+	default:
+		return protocol.ChangeListResult{}, reject("state must be active, open, merged, done, stopped or any, not %q", q.State)
+	}
+	if q.Project != "" {
+		where += ` AND project = ?`
+		args = append(args, q.Project)
+	}
+	if q.Caller != "" {
+		where += ` AND caller = ?`
+		args = append(args, q.Caller)
+	}
+	if q.After != "" {
+		var seq int64
+		err := s.db.QueryRow(`SELECT seq FROM delivery_changes WHERE id = ?`, q.After).Scan(&seq)
+		if errors.Is(err, sql.ErrNoRows) {
+			return protocol.ChangeListResult{}, reject("unknown change %q in after", q.After)
+		}
+		if err != nil {
+			return protocol.ChangeListResult{}, err
+		}
+		where += ` AND seq < ?`
+		args = append(args, seq)
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = changeListDefault
+	}
+	if limit > changeListMax {
+		limit = changeListMax
+	}
+	rows, err := s.db.Query(`SELECT `+changeColumns+` FROM delivery_changes WHERE `+where+` ORDER BY seq DESC LIMIT ?`, append(args, limit+1)...)
+	if err != nil {
+		return protocol.ChangeListResult{}, err
+	}
+	var changes []protocol.Change
+	for rows.Next() {
+		c, err := scanChange(rows)
+		if err != nil {
+			rows.Close()
+			return protocol.ChangeListResult{}, err
+		}
+		changes = append(changes, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return protocol.ChangeListResult{}, err
+	}
+	out := protocol.ChangeListResult{Changes: []protocol.ChangeView{}}
+	if len(changes) > limit {
+		changes = changes[:limit]
+		out.Next = changes[limit-1].ID
+	}
+	pipelines := map[string]protocol.Pipeline{}
+	for _, c := range changes {
+		p, ok := pipelines[c.Project]
+		if !ok {
+			if p, err = s.deliveryPipeline(c.Project); err != nil {
+				return protocol.ChangeListResult{}, err
+			}
+			pipelines[c.Project] = p
+		}
+		v, err := s.changeView(c, p, false)
+		if err != nil {
+			return protocol.ChangeListResult{}, err
+		}
+		out.Changes = append(out.Changes, v)
+	}
+	return out, nil
+}
+
+// changeView is change c with where its steps stand and the steps that may
+// start now. full adds the pipeline, the revisions and all evidence.
+func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (protocol.ChangeView, error) {
+	evidence, err := changeEvidence(s.db, c.ID)
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
+	v := protocol.ChangeView{Change: c, Steps: p.Status(c, evidence), Next: p.NextSteps(c, evidence)}
+	if !full {
+		return v, nil
+	}
+	v.Pipeline, v.Evidence = &p, evidence
+	rows, err := s.db.Query(`SELECT change_id, number, branch, commit_hash, uncommitted, at FROM delivery_revisions WHERE change_id = ? ORDER BY number`, c.ID)
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r protocol.Revision
+		var uncommitted int
+		if err := rows.Scan(&r.ChangeID, &r.Number, &r.Branch, &r.Commit, &uncommitted, &r.At); err != nil {
+			return protocol.ChangeView{}, err
+		}
+		r.Uncommitted = uncommitted != 0
+		v.Revisions = append(v.Revisions, r)
+	}
+	return v, rows.Err()
+}
+
+func queryChange(q deliveryQuerier, where string, args ...any) (protocol.Change, bool, error) {
+	c, err := scanChange(q.QueryRow(`SELECT `+changeColumns+` FROM delivery_changes WHERE `+where, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return c, false, nil
+	}
+	return c, err == nil, err
+}
+
+func scanChange(row interface{ Scan(...any) error }) (protocol.Change, error) {
+	var c protocol.Change
+	var origin string
+	var uncommitted int
+	if err := row.Scan(&c.ID, &c.Project, &c.Machine, &c.Branch, &c.TargetBranch, &c.BaseCommit, &c.HeadCommit, &uncommitted, &c.Revision,
+		&origin, &c.Caller, &c.Title, &c.Difficulty, &c.State, &c.MergedCommit, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		return c, err
+	}
+	c.Uncommitted = uncommitted != 0
+	return c, json.Unmarshal([]byte(origin), &c.Origin)
+}
+
+// writeChange inserts change c, or updates the stored row with its ID.
+func writeChange(tx *sql.Tx, c protocol.Change, insert bool) error {
+	origin, err := json.Marshal(c.Origin)
+	if err != nil {
+		return err
+	}
+	if insert {
+		_, err = tx.Exec(`INSERT INTO delivery_changes(`+changeColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			c.ID, c.Project, c.Machine, c.Branch, c.TargetBranch, c.BaseCommit, c.HeadCommit, boolInt(c.Uncommitted), c.Revision,
+			string(origin), c.Caller, c.Title, c.Difficulty, c.State, c.MergedCommit, c.CreatedAt, c.UpdatedAt)
+		return err
+	}
+	_, err = tx.Exec(`UPDATE delivery_changes SET machine=?, branch=?, target_branch=?, base_commit=?, head_commit=?, uncommitted=?, revision=?,
+		origin=?, title=?, difficulty=?, state=?, merged_commit=?, updated_at=? WHERE id=?`,
+		c.Machine, c.Branch, c.TargetBranch, c.BaseCommit, c.HeadCommit, boolInt(c.Uncommitted), c.Revision,
+		string(origin), c.Title, c.Difficulty, c.State, c.MergedCommit, c.UpdatedAt, c.ID)
+	return err
+}
+
+// insertRevision records change c's current head as its revision.
+func insertRevision(tx *sql.Tx, c protocol.Change) error {
+	at := c.UpdatedAt
+	if at == 0 {
+		at = c.CreatedAt
+	}
+	_, err := tx.Exec(`INSERT INTO delivery_revisions(change_id, number, branch, commit_hash, uncommitted, at) VALUES(?,?,?,?,?,?)`,
+		c.ID, c.Revision, c.Branch, c.HeadCommit, boolInt(c.Uncommitted), at)
+	return err
+}
+
+func insertEvidence(tx *sql.Tx, e protocol.Evidence) error {
+	fields, err := json.Marshal(e.Fields)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO delivery_evidence(change_id, revision, step, for_step, after_merge, result, commit_hash, fields, by_session, reported_by, by_model, by_model_family, note, at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		e.ChangeID, e.Revision, e.Step, e.For, boolInt(e.AfterMerge), e.Result, e.Commit, string(fields), e.By, e.ReportedBy, e.ByModel, e.ByModelFamily, e.Note, e.At)
+	return err
+}
+
+// changeEvidence is every piece of evidence of change id, oldest first, so
+// that among results with the same time the later report counts.
+func changeEvidence(q deliveryQuerier, id string) ([]protocol.Evidence, error) {
+	rows, err := q.Query(`SELECT change_id, revision, step, for_step, after_merge, result, commit_hash, fields, by_session, reported_by, by_model, by_model_family, note, at
+		FROM delivery_evidence WHERE change_id = ? ORDER BY seq`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []protocol.Evidence
+	for rows.Next() {
+		var e protocol.Evidence
+		var after int
+		var fields string
+		if err := rows.Scan(&e.ChangeID, &e.Revision, &e.Step, &e.For, &after, &e.Result, &e.Commit, &fields, &e.By, &e.ReportedBy, &e.ByModel, &e.ByModelFamily, &e.Note, &e.At); err != nil {
+			return nil, err
+		}
+		e.AfterMerge = after != 0
+		if err := json.Unmarshal([]byte(fields), &e.Fields); err != nil {
+			return nil, err
+		}
+		if len(e.Fields) == 0 {
+			e.Fields = nil
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}

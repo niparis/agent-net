@@ -171,6 +171,7 @@ func TestAnnouncePassesTheWaitingQuestion(t *testing.T) {
 }
 
 func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "")
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	ss, err := New(func(context.Context, string, any) (json.RawMessage, error) { return nil, nil }, "").Connect(ctx, st, nil)
@@ -217,6 +218,7 @@ func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 // A session cannot rename itself (decision 0033): agent_announce has no name
 // parameter and its description does not mention one.
 func TestAnnounceHasNoNameParameter(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "")
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	ss, err := New(func(context.Context, string, any) (json.RawMessage, error) { return nil, nil }, "").Connect(ctx, st, nil)

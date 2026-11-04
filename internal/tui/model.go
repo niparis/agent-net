@@ -47,6 +47,8 @@ type Model struct {
 	workerLogDetail                     int
 	workersLog                          bool
 	workerLogRow                        int
+	delivery                            deliveryState
+	deliverySrc                         deliverySource
 	proposals                           []protocol.CTOProposal
 	proposalDetail                      *proposalDetail
 	proposalConfirm                     bool
@@ -223,6 +225,9 @@ func New(src Source) Model {
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
 		graphPixel: &graphPixelState{imageID: graphview.ImageID}, workerForecastMemo: &workerForecastMemo{}}
+	if c, ok := src.(inboxCaller); ok {
+		m.deliverySrc = newGatewayDelivery(c.Call, time.Now)
+	}
 	m.ctoGeneration = 1
 	m.cto = &ctoState{generation: 1}
 	if _, ok := src.(ctoSource); ok {
@@ -532,8 +537,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fetching = true
 			cmds = append(cmds, m.fetchCmd())
 		}
+		var deliveryCmd tea.Cmd
+		m, deliveryCmd = m.deliveryTick()
+		cmds = append(cmds, deliveryCmd)
 		return m, tea.Batch(cmds...)
 
+	case deliveryLoadedMsg:
+		return m.deliveryLoaded(msg)
+	case deliveryDetailMsg:
+		return m.deliveryDetailLoaded(msg), nil
 	case ctoPollMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil
@@ -1301,11 +1313,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == quotasTab {
 		if keyAction(contextQuotas, k.String()) == "workers log" {
-			m.workersLog = !m.workersLog
-			return m, nil
+			return m.nextQuotasSubtab()
 		}
 		if m.workersLog {
 			return m.workersLogKey(k)
+		}
+		if m.delivery.on {
+			return m.deliveryKey(k)
 		}
 		key := keyAction(contextQuotas, k.String())
 		switch key {

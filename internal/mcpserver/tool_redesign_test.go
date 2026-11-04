@@ -93,5 +93,5 @@ func TestToolListJSONSizes(t *testing.T) {
 func connectWorker(t *testing.T) *mcp.ClientSession {
 	t.Helper()
 	t.Setenv("AGENT_NET_WORKER", "1")
-	return connect(t, okCaller)
+	return connectServer(t, okCaller)
 }

@@ -649,6 +649,42 @@ SELECT 1 /* worker sandbox cutover */;
 -- over Taildrop. Separate tables so the migration can run again.
 CREATE TABLE IF NOT EXISTS message_files (message_id TEXT PRIMARY KEY, files TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS node_tailscale (node_id TEXT PRIMARY KEY, ip TEXT NOT NULL, updated_at INTEGER NOT NULL);
+`, `
+-- The delivery pipeline: delivery changes, revisions and evidence (decision
+-- 0057, build step 1). seq orders changes newest first. At most one open
+-- change per project and branch. A revision is the head at one complete
+-- hand-back or submit; evidence is append-only, like setting_history.
+CREATE TABLE IF NOT EXISTS delivery_changes (
+ seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
+ project TEXT NOT NULL, machine TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL,
+ target_branch TEXT NOT NULL DEFAULT '', base_commit TEXT NOT NULL DEFAULT '',
+ head_commit TEXT NOT NULL, uncommitted INTEGER NOT NULL DEFAULT 0,
+ revision INTEGER NOT NULL CHECK (revision >= 1),
+ origin TEXT NOT NULL CHECK (json_valid(origin)), caller TEXT NOT NULL DEFAULT '',
+ title TEXT NOT NULL DEFAULT '', difficulty TEXT NOT NULL DEFAULT '',
+ state TEXT NOT NULL CHECK (state IN ('open', 'merged', 'done', 'stopped')),
+ merged_commit TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX IF NOT EXISTS delivery_changes_open_branch ON delivery_changes(project, branch) WHERE state = 'open';
+CREATE INDEX IF NOT EXISTS delivery_changes_project ON delivery_changes(project, seq);
+CREATE TABLE IF NOT EXISTS delivery_revisions (
+ change_id TEXT NOT NULL, number INTEGER NOT NULL CHECK (number >= 1),
+ branch TEXT NOT NULL, commit_hash TEXT NOT NULL, uncommitted INTEGER NOT NULL DEFAULT 0,
+ at INTEGER NOT NULL, PRIMARY KEY (change_id, number));
+CREATE TABLE IF NOT EXISTS delivery_evidence (
+ seq INTEGER PRIMARY KEY AUTOINCREMENT, change_id TEXT NOT NULL,
+ revision INTEGER NOT NULL CHECK (revision >= 1), step TEXT NOT NULL,
+ for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0,
+ result TEXT NOT NULL CHECK (result IN ('pass', 'fail', 'needs_owner', 'close')),
+ commit_hash TEXT NOT NULL, fields TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(fields)),
+ by_session TEXT NOT NULL, reported_by TEXT NOT NULL DEFAULT '',
+ by_model TEXT NOT NULL DEFAULT '', by_model_family TEXT NOT NULL DEFAULT '',
+ note TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS delivery_evidence_change ON delivery_evidence(change_id, seq);
+CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_update BEFORE UPDATE ON delivery_evidence
+BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_delete BEFORE DELETE ON delivery_evidence
+BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

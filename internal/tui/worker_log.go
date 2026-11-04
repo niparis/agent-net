@@ -38,18 +38,6 @@ func (m Model) workersLogKey(k tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) quotasSubtabs(w int) string {
-	quotas, workers := "  Quotas  ", "  Workers log  "
-	if m.workersLog {
-		quotas = sDim.Render(quotas)
-		workers = sActiveTab.Render("[ Workers log ]")
-	} else {
-		quotas = sActiveTab.Render("[ Quotas ]")
-		workers = sDim.Render(workers)
-	}
-	return clip(quotas+"  "+workers, w)
-}
-
 // workerStatusStyle is shared with the worker threads in Messages.
 func workerStatusStyle(status string) lipgloss.Style {
 	switch status {

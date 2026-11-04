@@ -102,7 +102,7 @@ func TestCatalogToolsHaveNoOutputSchema(t *testing.T) {
 func TestWorkerHandbackTool(t *testing.T) {
 	t.Setenv("AGENT_NET_WORKER", "1")
 	var method string
-	cs := connect(t, func(_ context.Context, m string, _ any) (json.RawMessage, error) {
+	cs := connectServer(t, func(_ context.Context, m string, _ any) (json.RawMessage, error) {
 		method = m
 		return json.RawMessage(`{"sent":true,"status":"done","complete":true,"queued":false}`), nil
 	})

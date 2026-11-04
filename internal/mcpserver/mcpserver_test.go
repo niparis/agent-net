@@ -15,7 +15,17 @@ type call struct {
 	params map[string]any
 }
 
+// connect starts an ordinary agent's server. AGENT_NET_WORKER is cleared
+// first: these tests also run inside agent-net worker sessions, which set it,
+// and a worker server has other tools.
 func connect(t *testing.T, fn Caller) *mcp.ClientSession {
+	t.Helper()
+	t.Setenv("AGENT_NET_WORKER", "")
+	return connectServer(t, fn)
+}
+
+// connectServer starts a server for the role the environment says.
+func connectServer(t *testing.T, fn Caller) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()

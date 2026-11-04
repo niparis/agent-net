@@ -361,6 +361,11 @@ type (
 		// admission queue to the new worker's first run.
 		TaskID              string `json:"task_id,omitempty"`
 		ContinuationPartial bool   `json:"continuation_partial,omitempty"`
+		// ChangeID is the delivery change a continue carries to the new
+		// worker, so its hand-back moves the same change to the new branch.
+		// Only the machine's own continue sets it; it is never read from a
+		// frame.
+		ChangeID string `json:"-"`
 		// DifficultyAsked and DifficultyUsed are kept on the worker record for
 		// the difficulty calibration. Both are the difficulty judge's label
 		// (or normal on a fallback). Touches is recorded but never changes
@@ -844,6 +849,12 @@ type WorkerNotice struct {
 
 	// OSSandbox is the OS wrapper the worker ran in ("bubblewrap"), or "".
 	OSSandbox string
+
+	// Change is the delivery change the hand-back recorded, empty when it
+	// recorded none. DeliveryError is why recording it failed, empty when it
+	// did not fail.
+	Change        string
+	DeliveryError string
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -895,6 +906,12 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		}
 		if n.Committed != "" {
 			b.WriteString("the daemon committed your leftover changes as " + n.Committed + "\n")
+		}
+		if n.Change != "" {
+			b.WriteString("change: " + n.Change + "\n")
+		}
+		if n.DeliveryError != "" {
+			b.WriteString("delivery record: " + n.DeliveryError + "\n")
 		}
 		if n.Saved {
 			b.WriteString("unfinished changes were saved as a commit on branch " + n.Branch + "\n")

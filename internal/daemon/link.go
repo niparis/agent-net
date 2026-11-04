@@ -207,6 +207,11 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 
 // call sends a request over the current link.
 func (d *Daemon) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	if fake := d.cfg.testGatewayCall; fake != nil {
+		if res, handled, err := fake(ctx, typ, params); handled {
+			return res, err
+		}
+	}
 	if actor := proposalActor(ctx); actor != "" && (typ == "session.trust" || typ == "held.answer" || typ == "node.rename") {
 		raw, err := json.Marshal(params)
 		if err != nil {

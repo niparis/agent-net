@@ -201,6 +201,9 @@ type worker struct {
 	// leftAsIs is true when the worktree had a merge, rebase, cherry-pick or
 	// revert in progress, so the daemon did not commit it.
 	leftAsIs bool
+	// changeID is the delivery change of the worker's work: the one its last
+	// complete hand-back recorded, or the one a continue carried over.
+	changeID string
 	// permissions is the level the worker was started with (decision 0020).
 	permissions string
 	// osSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
@@ -504,7 +507,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 		AutoContinue: w.autoContinue, AutoContinueCount: w.autoContinueCount, AutoContinueRun: w.autoContinueRun,
 		PendingHandback: w.pendingHandback, PendingPartial: w.pendingPartial,
 		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed, Touches: w.touches,
-		TaskID: w.taskID, MidrunCount: w.midrunCount, MidrunRun: w.midrunRun, NoticeSinceRequest: w.noticeSinceRequest, MidrunSeen: w.midrunSeen, Failure: w.failure}
+		TaskID: w.taskID, MidrunCount: w.midrunCount, MidrunRun: w.midrunRun, NoticeSinceRequest: w.noticeSinceRequest, MidrunSeen: w.midrunSeen, Failure: w.failure, ChangeID: w.changeID}
 }
 
 // ---- starting ----
@@ -647,7 +650,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		title:       l.Title,
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
-		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue)}
+		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue), changeID: l.ChangeID}
 	if l.TaskID != "" {
 		w.taskID = l.TaskID
 		if l.ContinuationPartial {
@@ -1187,7 +1190,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
 		taskID: row.TaskID, midrunCount: row.MidrunCount, noticeSinceRequest: row.NoticeSinceRequest, midrunSeen: row.MidrunSeen,
 		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
-		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, ready: make(chan struct{}), osSandbox: sandbox}
+		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, changeID: row.ChangeID, ready: make(chan struct{}), osSandbox: sandbox}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
 	row.EndedReason, row.Reported, row.Resumable = "", false, false
@@ -1585,7 +1588,7 @@ func (d *Daemon) adoptWorkers() {
 			continueRun: r.ContinueRun, fixRun: r.FixRun, pendingHandback: r.PendingHandback, pendingPartial: r.PendingPartial,
 			taskID: r.TaskID, midrunCount: r.MidrunCount, midrunRun: r.MidrunRun, noticeSinceRequest: r.NoticeSinceRequest, midrunSeen: r.MidrunSeen,
 			autoContinue: r.AutoContinue, autoContinueCount: r.AutoContinueCount, autoContinueRun: r.AutoContinueRun,
-			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed, touches: r.Touches}
+			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed, touches: r.Touches, changeID: r.ChangeID}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.osSandbox = readOSSandboxMarker(w.dir)
 		if since, key, report, sent, err := d.st.loadWorkerIdleNotice(w.id); err == nil {

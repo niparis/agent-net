@@ -44,8 +44,13 @@ func TestWorkersLogSwitchAndDetails(t *testing.T) {
 		t.Fatal("details did not scroll")
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if next.(Model).workersLog {
-		t.Fatal("tab did not return")
+	m = next.(Model)
+	if m.workersLog || !m.delivery.on {
+		t.Fatal("tab did not move on to Delivery")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m = next.(Model); m.workersLog || m.delivery.on {
+		t.Fatal("tab did not return to Quotas")
 	}
 }
 

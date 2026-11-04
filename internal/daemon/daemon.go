@@ -67,6 +67,10 @@ type Host interface {
 
 type Config struct {
 	testFreePort func() (int, error) // deterministic collision tests
+	// testDeliveryRecordTimeout replaces deliveryRecordTimeout, how long a
+	// hand-back waits for the gateway to record its change.
+	testDeliveryRecordTimeout time.Duration
+
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.
 	testStopCTOOnExit bool
@@ -74,12 +78,16 @@ type Config struct {
 	// daemons set it, because their fake harnesses cannot answer the judge;
 	// the assessment tests turn it off again.
 	testNoDifficulty bool
-	InventoryHome    string // Empty disables tools inventory (used by tests).
-	GatewayURL       string
-	NodeID           string
-	Token            string
-	NodeConfigDir    string // node.json directory; empty uses ConfigDir().
-	CAPEM            []byte // pinned CA; nil means the system roots (plain http in tests)
+	// testGatewayCall is a fake gateway for chosen frame types: when it
+	// returns handled, Daemon.call returns its answer and the real gateway
+	// never sees the frame.
+	testGatewayCall func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error)
+	InventoryHome   string // Empty disables tools inventory (used by tests).
+	GatewayURL      string
+	NodeID          string
+	Token           string
+	NodeConfigDir   string // node.json directory; empty uses ConfigDir().
+	CAPEM           []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.
 	GatewayData string

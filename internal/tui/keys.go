@@ -18,6 +18,7 @@ type keyBinding struct {
 const (
 	contextGlobal          keyContext = "global"
 	contextWorkersLog      keyContext = "Workers log"
+	contextDelivery        keyContext = "Delivery"
 	contextSessions        keyContext = "Sessions"
 	contextHeld            keyContext = "held request"
 	contextSuggestion      keyContext = "learned suggestion"
@@ -52,7 +53,7 @@ const (
 )
 
 var allKeyContexts = []keyContext{
-	contextGlobal, contextWorkersLog, contextSessions, contextHeld, contextSuggestion, contextOutcome,
+	contextGlobal, contextWorkersLog, contextDelivery, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard,
 	contextTools, contextToolsFilter, contextToolsCosts, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
@@ -122,7 +123,17 @@ var keyBindings = []keyBinding{
 	bind(contextWorkersLog, "right|l", "scroll details down", "scroll details down", 3),
 	bind(contextWorkersLog, "?", "help", "help", 4),
 	bind(contextWorkersLog, "q|ctrl+c", "quit", "quit", 5),
-	bind(contextQuotas, "tab", "workers log", "Quotas / Workers log", 0),
+	bind(contextDelivery, "tab", "workers log", "Quotas", 0),
+	bind(contextDelivery, "up|k", "up", "select change", 1),
+	bind(contextDelivery, "down|j", "down", "select change", 1),
+	bind(contextDelivery, "pgup", "page up", "ten changes up", 2),
+	bind(contextDelivery, "pgdown", "page down", "ten changes down", 2),
+	bind(contextDelivery, "enter", "open", "evidence", 1),
+	bind(contextDelivery, "esc", "back", "back", 1),
+	bind(contextDelivery, "R", "refresh", "refresh", 2),
+	bind(contextDelivery, "?", "help", "help", 4),
+	bind(contextDelivery, "q|ctrl+c", "quit", "quit", 5),
+	bind(contextQuotas, "tab", "workers log", "Quotas / Workers log / Delivery", 0),
 	bind(contextGlobal, "1", "sessions tab", "Sessions", -1),
 	bind(contextGlobal, "2", "graph tab", "Graph", -1),
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),
