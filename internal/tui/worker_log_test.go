@@ -113,6 +113,19 @@ func TestWorkerLogModelParts(t *testing.T) {
 	}
 }
 
+func TestWorkerPickerNoteStripsOnlyMatchingDifficulty(t *testing.T) {
+	assessment := &protocol.WorkerAssessment{Reasoning: 3, Scope: 2, Coupling: 2, Uncertainty: 1, Verification: 2, Risk: 1, D: 2.1, Label: "normal"}
+	choice := "codex test-model:high (34.5, good enough; eligible for this task and available on the chosen machine)"
+	matching := "difficulty " + assessment.DifficultyLine() + " -> " + choice
+	if got := workerPickerNote(matching, assessment); got != choice {
+		t.Fatalf("matching picker note = %q, want %q", got, choice)
+	}
+	raw := "difficulty normal -> " + choice
+	if got := workerPickerNote(raw, assessment); got != raw {
+		t.Fatalf("unmatched picker note = %q, want raw note %q", got, raw)
+	}
+}
+
 func TestWorkersLogNoteOnlyForFailedStatus(t *testing.T) {
 	m := New(&fakeSource{snap: fakeSnapshot()})
 	m.tab = quotasTab
@@ -150,7 +163,7 @@ func TestWorkersLogBelongsToQuotasAndPickerNote(t *testing.T) {
 	}
 	m.snap.WorkerLog[0].ModelNote = "codex gpt-6.1-sol:low (34.5, good enough; a stored picker explanation that wraps across the detail box)"
 	got = ansi.Strip(strings.Join(m.quotasView(80, 50), "\n"))
-	if !strings.Contains(got, "Picker: codex gpt-6.1-sol:low") || !strings.Contains(got, "detail box)") {
+	if !strings.Contains(got, "Picker") || !strings.Contains(got, "codex gpt-6.1-sol:low") || !strings.Contains(got, "detail box)") {
 		t.Fatalf("stored picker note missing: %s", got)
 	}
 	m.workersLog = false

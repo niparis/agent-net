@@ -26,8 +26,8 @@
 │ normal  D 1.20                                                                                                       │
 │ Judge error: judge timed out while evaluating the worker run; retry later                                            │
 │                                                                                                                      │
-│ Picker: difficulty R3 S2 C2 U1 V2 K1 · D 2.10 · normal -> codex test-model:high (34.5, good enough; eligible for     │
-│         this task and available on the chosen machine)                                                               │
+│ Picker    difficulty R3 S2 C2 U1 V2 K1 · D 2.10 · normal -> codex test-model:high (34.5, good enough; eligible for   │
+│           this task and available on the chosen machine)                                                             │
 │ Note: the worker ended after its hand-back; a message from you starts it again 1 automatic continue was sent.        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮

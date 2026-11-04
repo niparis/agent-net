@@ -117,17 +117,7 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 		labelWidth = max(labelWidth, len(label))
 	}
 	addFact := func(label, value string) {
-		if strings.TrimSpace(value) == "" {
-			return
-		}
-		prefix := fmt.Sprintf("%-*s  ", labelWidth, label)
-		for _, line := range wrapHanging(prefix, sanitize(value), width) {
-			if strings.HasPrefix(line, prefix) {
-				detail = append(detail, sDim.Render(prefix)+strings.TrimPrefix(line, prefix))
-			} else {
-				detail = append(detail, line)
-			}
-		}
+		detail = appendWorkerLogFact(detail, label, value, labelWidth, width)
 	}
 	addFact("Title", r.Title)
 	caller := r.Caller
@@ -190,13 +180,37 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 	if picker == "" && r.Assessment != nil {
 		picker = r.Assessment.PickerNote
 	}
-	if picker != "" {
+	picker = workerPickerNote(picker, r.Assessment)
+	if strings.TrimSpace(picker) != "" {
 		if len(detail) > 0 {
 			detail = append(detail, "")
 		}
-		detail = append(detail, wrapHanging("Picker: ", sanitize(picker), width)...)
+		detail = appendWorkerLogFact(detail, "Picker", picker, labelWidth, width)
 	}
 	return detail
+}
+
+func appendWorkerLogFact(detail []string, label, value string, labelWidth, width int) []string {
+	if strings.TrimSpace(value) == "" {
+		return detail
+	}
+	prefix := fmt.Sprintf("%-*s  ", labelWidth, label)
+	for _, line := range wrapHanging(prefix, sanitize(value), width) {
+		if strings.HasPrefix(line, prefix) {
+			detail = append(detail, sDim.Render(prefix)+strings.TrimPrefix(line, prefix))
+		} else {
+			detail = append(detail, line)
+		}
+	}
+	return detail
+}
+
+func workerPickerNote(note string, assessment *protocol.WorkerAssessment) string {
+	if assessment == nil {
+		return note
+	}
+	prefix := "difficulty " + assessment.DifficultyLine() + " -> "
+	return strings.TrimPrefix(note, prefix)
 }
 
 func nonEmpty(values ...string) []string {
