@@ -1891,6 +1891,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	if data, ok, err := g.handleToolRead(nc, typ, raw); ok {
 		return data, err
 	}
+	if data, ok, err := g.handleDelivery(nc, typ, raw); ok {
+		return data, err
+	}
 	return nil, reject("unknown frame type %q", typ)
 }
 
