@@ -4,12 +4,12 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   AGENT    STATUS TRUST RULE   DELEGATE   CPU   RAM     view: offline  (v)
+  NAME               TYPE   PROJECT   MODEL              STATUS   CPU   RAM TASK  view: offline  (v)
  Mac (here) 1 session ──────────────────────────────────────────────────────────────────────────────
-  web                agent  opencode idle   -     normal -            ?     ?
+  web                agent  shop      opencode · sonnet… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────
-▸ ci-runner          agent  pi       idle   -     normal -           5%  300M
-  scratch            agent  pi       shell  -     normal -          <1%   80M
+▸ ci-runner          agent  agent-net pi · gpt-6         idle      5%  300M
+  scratch            agent  -         pi ·               shell    <1%   80M
 
 
 

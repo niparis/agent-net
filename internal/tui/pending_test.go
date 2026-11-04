@@ -73,10 +73,10 @@ func TestPendingTaskAndLayout(t *testing.T) {
 		if before[0] != after[0] {
 			t.Fatalf("width %d: headers %q vs %q", width, before[0], after[0])
 		}
-		if width >= 120 && !strings.Contains(after[0], "RULE") {
+		if width >= 120 && !strings.Contains(after[0], "MODEL") {
 			t.Fatalf("width %d: header lost RULE: %q", width, after[0])
 		}
-		if width == 80 && (!strings.Contains(after[0], "AGENT") || !strings.Contains(after[0], "PROJECT")) {
+		if width == 80 && (!strings.Contains(after[0], "TYPE") || !strings.Contains(after[0], "PROJECT")) {
 			t.Fatalf("width %d: header lost AGENT or PROJECT: %q", width, after[0])
 		}
 		for i := range before {

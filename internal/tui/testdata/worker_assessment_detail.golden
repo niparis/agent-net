@@ -7,14 +7,14 @@ difficulty R2 S1 C1 U1 V1 K1 · D 1.20 · trivial (picker: normal)   │
   model    claude-sonnet-5-5, background                           │
   function trading strategies                                      │
   task     backtest v2                                             │
+  TRUST    -                                                       │
+  RULE     normal                                                  │
+  DELEGATE -                                                       │
   remote   git@git.example.com:team/strategies.git                 │
   worktree /Users/n/code/strategies/.claude/worktrees/agent-a7  (… │
   project source: registered                                       │
   messages 13:57  -> tenebrae-53 (Mac)  reply  delivered           │
            13:56  <- tenebrae-53 (Mac)  request  replied           │
-                                                                   │
-                                                                   │
-                                                                   │
                                                                    │
                                                                    │
                                                                    │

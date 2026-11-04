@@ -39,6 +39,9 @@ func TestAppsPublicAndBotsScreens(t *testing.T) {
 	for _, w := range []int{80, 120} {
 		m := botScreenModel(w)
 		golden(t, fmt.Sprintf("sessions_bots_%d", w), m.testView())
+		if w == 120 && !strings.Contains(m.testView(), "last call") {
+			t.Fatal("bot last call missing")
+		}
 		m.mode = modeApps
 		m.apps.apps = []connectedApp{{ID: "app-test", Name: "weather-bot", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://www.cursor.com/cb"}, CreatedAt: m.now()}, {ID: "phone", Name: "phone", Kind: "owner_app", ClientName: "Safari", CreatedAt: m.now()}}
 		golden(t, fmt.Sprintf("connected_apps_public_off_%d", w), m.testView())
@@ -54,7 +57,7 @@ func TestAppsPublicAndBotsScreens(t *testing.T) {
 func TestBotColumnsAndPublicAddresses(t *testing.T) {
 	m := botScreenModel(120)
 	view := m.testView()
-	if !strings.Contains(view, "weather-bot        bot    bot      -          -          online -") || !strings.Contains(view, "las") {
+	if !strings.Contains(view, "weather-bot        bot    -") || !strings.Contains(view, "last call 14:04") {
 		t.Fatalf("bot columns:\n%s", view)
 	}
 	m.apps.public.On = true

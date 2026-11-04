@@ -956,10 +956,10 @@ func columnsNarrow(avail, nameWant, projectWant int) []column {
 }
 func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 	cols := []column{
-		{name: "NAME", min: 4, max: min(max(nameWant, 10), 24)},
+		{name: "NAME", min: 4, max: min(max(nameWant, 18), 32)},
 		{name: "TYPE", min: 6, max: 6},
-		{name: "PROJECT", min: 7, max: min(max(projectWant, 7), 16)},
-		{name: "MODEL", min: 18, max: 18},
+		{name: "PROJECT", min: 7, max: min(max(projectWant, 9), 16)},
+		{name: "MODEL", min: 18, max: 24},
 		{name: "STATUS", min: 6, max: 6},
 		{name: "CPU", min: 5, max: 5, right: true},
 		{name: "RAM", min: 5, max: 5, right: true},
@@ -968,8 +968,16 @@ func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 	for i := range cols {
 		cols[i].width = cols[i].min
 	}
+	// Below the normal minimum, clip project and name before model text.
+	deficit := max(0, sumMin(cols)-avail)
+	for _, i := range []int{2, 0, 3, 1, 4, 5, 6, 7} {
+		cut := min(deficit, cols[i].min-1)
+		cols[i].min -= cut
+		cols[i].width -= cut
+		deficit -= cut
+	}
 	extra := max(0, avail-sumMin(cols))
-	for _, i := range []int{0, 2, 7} {
+	for _, i := range []int{0, 2, 3, 7} {
 		add := min(extra, cols[i].max-cols[i].min)
 		cols[i].width += add
 		extra -= add
@@ -1035,7 +1043,13 @@ func (m Model) sessionsTable(w, n int) []string {
 	if w > 80 {
 		indicator += "  (v)"
 	}
-	avail := w - 2 - ansi.StringWidth(indicator) - 2 // marker and view indicator
+	if w <= 80 {
+		indicator = ""
+	}
+	avail := w - 2
+	if indicator != "" {
+		avail -= ansi.StringWidth(indicator) + 2
+	}
 	statusWidth := 6
 	if m.anySessionWaiting() {
 		statusWidth = 9
@@ -1050,23 +1064,6 @@ func (m Model) sessionsTable(w, n int) []string {
 	for i := range cols {
 		if cols[i].name == "STATUS" {
 			cols[i].width = statusWidth
-		}
-	}
-	wanted := 5
-	for _, g := range m.groups() {
-		for _, a := range g.agents {
-			wanted = max(wanted, utf8.RuneCountInString(m.requestRuleBadge(a)))
-		}
-	}
-	for i := range cols {
-		if cols[i].name == "TRUST" && wanted > cols[i].width {
-			for j := range cols {
-				if cols[j].name == "TASK" {
-					delta := min(wanted-cols[i].width, max(0, cols[j].width-cols[j].min))
-					cols[i].width += delta
-					cols[j].width -= delta
-				}
-			}
 		}
 	}
 	head := "  "

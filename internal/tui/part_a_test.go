@@ -111,10 +111,10 @@ func TestWorkerDetailShowsContextAndTokens(t *testing.T) {
 	}
 }
 
-func TestTrustIsAlwaysAColumn(t *testing.T) {
+func TestModelIsAlwaysAColumn(t *testing.T) {
 	for _, avail := range []int{46, 60, 80, 120} {
-		if !hasColumn(columns(avail, 12), "TRUST") {
-			t.Errorf("%d columns: TRUST is gone", avail)
+		if !hasColumn(columns(avail, 12), "MODEL") {
+			t.Errorf("%d columns: MODEL is gone", avail)
 		}
 	}
 }
@@ -122,7 +122,7 @@ func TestTrustIsAlwaysAColumn(t *testing.T) {
 func TestTableShowsTheNewColumnsAndNotTheMovedOnes(t *testing.T) {
 	m := newModel(120, 34)
 	out := m.testView()
-	for _, want := range []string{"NAME", "AGENT", "PROJECT", "MODEL", "STATUS", "TRUST", "CPU", "RAM", "TASK"} {
+	for _, want := range []string{"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing column %q", want)
 		}
@@ -306,7 +306,7 @@ func TestSessionsTableAt80ShowsAgentProjectAndTask(t *testing.T) {
 	m := newModel(80, 24)
 	table := ansi.Strip(strings.Join(m.sessionsTable(80, 12), "\n"))
 	header := strings.Split(table, "\n")[0]
-	for _, want := range []string{"NAME", "AGENT", "PROJECT", "STATUS", "CPU", "RAM", "TASK", "view: all"} {
+	for _, want := range []string{"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"} {
 		if !strings.Contains(header, want) {
 			t.Errorf("80 column header is missing %q: %q", want, header)
 		}
@@ -316,7 +316,7 @@ func TestSessionsTableAt80ShowsAgentProjectAndTask(t *testing.T) {
 			t.Errorf("80 column header still has %q: %q", gone, header)
 		}
 	}
-	for _, want := range []string{"tenebrae-53", "claude", "tenebrae"} {
+	for _, want := range []string{"tenebrae-53", "claude", "tenebrae", "busy"} {
 		if !strings.Contains(table, want) {
 			t.Errorf("80 column table is missing %q:\n%s", want, table)
 		}
@@ -327,7 +327,7 @@ func TestSessionsTableAt80ShowsAgentProjectAndTask(t *testing.T) {
 		}
 	}
 	wide := ansi.Strip(strings.Join(m.sessionsTable(120, 12), "\n"))
-	if !strings.Contains(strings.Split(wide, "\n")[0], "TRUST") {
-		t.Error("the 120 column header lost TRUST")
+	if !strings.Contains(strings.Split(wide, "\n")[0], "MODEL") {
+		t.Error("the 120 column header lost MODEL")
 	}
 }

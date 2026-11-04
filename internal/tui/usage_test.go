@@ -418,10 +418,9 @@ func TestColumnsFitEveryWidth(t *testing.T) {
 		}
 		return strings.Join(n, ",")
 	}
-	// Narrow: TRUST and the usage columns stay, TASK has room, the newer
-	// columns go first.
-	if got := names(columns(78, 12)); !strings.Contains(got, "CPU,RAM") || !strings.Contains(got, "TRUST") ||
-		!strings.Contains(got, "RULE") || !strings.Contains(got, "DELEGATE") || strings.Contains(got, "BRANCH") || strings.Contains(got, ",MODE,") || strings.Contains(got, "PROC") {
+	// Narrow: usage stays in the table; policy belongs in the detail view.
+	if got := names(columns(78, 12)); !strings.Contains(got, "CPU,RAM") || strings.Contains(got, "TRUST") ||
+		strings.Contains(got, "RULE") || strings.Contains(got, "DELEGATE") || strings.Contains(got, "BRANCH") || strings.Contains(got, ",MODE,") || strings.Contains(got, "PROC") {
 		t.Errorf("78 columns: %s", got)
 	}
 	if got := names(columns(118, 12)); !strings.Contains(got, "TASK") || strings.Contains(got, "BRANCH") || strings.Contains(got, "FUNCTION") {

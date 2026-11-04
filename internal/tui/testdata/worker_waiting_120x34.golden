@@ -4,9 +4,9 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free                 no claude · no opencode  │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM TASK   view: all  (v)
+  NAME               TYPE   PROJECT   MODEL                    STATUS   CPU   RAM TASK                    view: all  (v)
  Mac (here) 1 session ──────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ blocked-worker   worker opencode -         -          busy   -     normal -            ?     ?
+  ↳ blocked-worker   worker -         opencode ·               busy       ?     ?
 
 
 

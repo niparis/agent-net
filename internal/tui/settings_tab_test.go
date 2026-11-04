@@ -192,7 +192,7 @@ func TestSettingsSectionNavigationAndHelp(t *testing.T) {
 		}
 	}
 	help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
-	for _, want := range []string{"Settings", "move between NAME, RULE and DELEGATE", "cycle the request rule", "desktop notifications", "restart tips"} {
+	for _, want := range []string{"Settings", "move between session actions", "cycle the request rule", "desktop notifications", "restart tips"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help lacks %q", want)
 		}
