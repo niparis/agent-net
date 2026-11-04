@@ -61,6 +61,9 @@ func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessag
 	select {
 	case h := <-ch:
 		if !h.OK {
+			if h.Retry {
+				return nil, retryableRemote{RemoteError(h.Error)}
+			}
 			return nil, RemoteError(h.Error)
 		}
 		return h.Data, nil
@@ -69,7 +72,7 @@ func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessag
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(callWait(ctx)):
-		return nil, errors.New("gateway did not answer in time")
+		return nil, errGatewayTimeout
 	}
 }
 

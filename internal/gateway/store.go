@@ -685,6 +685,14 @@ CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_update BEFORE UPDATE ON delive
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_delete BEFORE DELETE ON delivery_evidence
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
+`, `
+-- worker starts the gateway tracks: a not-started report must name one
+CREATE TABLE IF NOT EXISTS worker_starts (
+ ref TEXT PRIMARY KEY, node_id TEXT NOT NULL, owner TEXT NOT NULL,
+ project TEXT NOT NULL DEFAULT '', harness TEXT NOT NULL DEFAULT '',
+ permissions TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
+ state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed', 'not_started')),
+ created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -2234,6 +2242,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err != nil {
 		return msg, false, err
 	}
+
 	if len(p.Files) > 0 {
 		raw, err := json.Marshal(p.Files)
 		if err != nil {

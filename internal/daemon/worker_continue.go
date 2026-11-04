@@ -106,7 +106,7 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	if p.Model != "" {
 		model = p.Model
 	}
-	l := protocol.WorkerLaunch{Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner, OwnerName: r.OwnerName,
+	l := protocol.WorkerLaunch{StartRef: p.StartRef, Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner, OwnerName: r.OwnerName,
 		Title:       first(p.Title, r.Title),
 		Permissions: r.Permissions, FromCTO: p.FromCTO, // the old worker's level, not the project's current one
 		DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches),

@@ -34,7 +34,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	if l.RequireReadOnly {
 		return &protocol.WorkerLaunched{Reason: "no room for a read-only background worker"}
 	}
-	q := queuedStart{ID: protocol.NewID("q"), Owner: l.Owner, OwnerName: l.OwnerName, Project: l.Project, Path: l.Path, Harness: l.Harness,
+	q := queuedStart{ID: queueIDFor(l), Owner: l.Owner, OwnerName: l.OwnerName, Project: l.Project, Path: l.Path, Harness: l.Harness,
 		Model: l.Model, Task: l.Task, Title: l.Title, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions,
 		DifficultyAsked: l.DifficultyAsked, DifficultyUsed: l.DifficultyUsed, Touches: strings.Join(l.Touches, ","), FromCTO: l.FromCTO, QueuedAt: time.Now(),
 		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID}
@@ -50,6 +50,15 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	d.Logf("worker.queued queue=%s position=%d project=%s harness=%s owner=%s room=%s reason=%q",
 		q.ID, ahead+1, l.Project, l.Harness, l.Owner, dec.Room, why)
 	return &protocol.WorkerLaunched{Queued: true, QueueID: q.ID, Position: ahead + 1, Reason: reason}
+}
+
+// queueIDFor is the queue ID of a start: the reference the gateway tracks it
+// under, when it gave one, so a report of the start names what the gateway has.
+func queueIDFor(l protocol.WorkerLaunch) string {
+	if protocol.IsQueueID(l.StartRef) {
+		return l.StartRef
+	}
+	return protocol.NewID("q")
 }
 
 // queueLoop checks the queue on a timer.
@@ -102,6 +111,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 	// The caller left: drop its starts, as a running worker ends when its
 	// owner is gone.
 	kept := live[:0]
+	var dropped []queuedStart
 	checked := map[string]bool{} // owner -> offline
 	for _, e := range live {
 		set := d.workerSettingsWith(snap, e.Project)
@@ -120,11 +130,16 @@ func (d *Daemon) processQueue(ctx context.Context) {
 		if leave && d.st.removeQueued(e.ID) {
 			delete(d.qGone, e.ID)
 			d.Logf("worker.queue_dropped queue=%s project=%s owner=%s reason=%q", e.ID, e.Project, e.Owner, "its owner ended or stayed offline")
+			dropped = append(dropped, e)
 		}
 		d.qmu.Unlock()
 		if !leave {
 			kept = append(kept, e)
 		}
+	}
+	// The gateway tracks each start until it hears how it ended.
+	for _, e := range dropped {
+		d.notStarted(ctx, e, "its owner ended or stayed offline while the start waited in the queue")
 	}
 	if len(kept) == 0 {
 		return
@@ -158,19 +173,38 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	}
 	waited := time.Since(e.QueuedAt)
 	d.Logf("worker.dequeued queue=%s session=%s project=%s harness=%s owner=%s waited=%s", e.ID, out.SessionID, e.Project, e.Harness, e.Owner, waited.Round(time.Second))
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: e.Owner, SessionID: out.SessionID,
+	// Sending the task may wait for a slow gateway for a long time. It runs on
+	// its own, so the queue goes on: the worker is already counted as running,
+	// which is what admission looks at.
+	d.wmu.Lock()
+	w := d.workers[out.WorkerID]
+	d.wmu.Unlock()
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		d.finishQueuedStart(ctx, e, out, w, waited)
+	}()
+}
+
+// finishQueuedStart sends the task of a dequeued start and tells the owner it
+// started. When the task cannot be sent, the worker is stopped and the owner is
+// told; when the worker ended by itself first, its own end tells the owner.
+func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out protocol.WorkerLaunched, w *worker, waited time.Duration) {
+	err := d.sendQueuedStart(ctx, w, protocol.WorkerQueuedStart{Ref: e.ID, Owner: e.Owner, SessionID: out.SessionID,
 		Harness: e.Harness, Project: e.Project, Task: e.Task, Title: e.Title, Worktree: out.Worktree, Branch: out.Branch,
 		ProjectRules: out.ProjectRules, Permissions: e.Permissions, OSSandbox: out.OSSandbox, FromCTO: e.FromCTO})
-	cancel()
+	if errors.Is(err, errWorkerEnded) {
+		d.notStarted(ctx, e, "the worker ended before its task was sent")
+		return
+	}
 	if err != nil {
-		if w := d.workerBySession(out.SessionID); w != nil {
+		if w != nil {
 			d.endWorker(w, protocol.StopStartFails)
 		}
 		d.notStarted(ctx, e, "the worker started, but its task could not be sent, so it was stopped: "+err.Error())
 		return
 	}
-	if w := d.workerBySession(out.SessionID); w != nil {
+	if w != nil {
 		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, out.OSSandbox) + "\n"
 		if _, err := d.send(ctx, protocol.MsgSend{Sender: out.SessionID, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 			d.Logf("worker %s: started notice: %v", w.id, err)
@@ -178,24 +212,83 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	}
 }
 
-// notStarted tells the owner that a queued start will not become a worker. It
-// is sent from this machine's owner session. When the owner is that session
-// (the person here started it), there is no one to send to: the log has it.
-func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
-	// The gateway records it for the TUI feed, which also covers the case
-	// below where there is no one to send a message to.
-	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	d.call(rctx, "worker.not_started", protocol.WorkerNotStarted{Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why})
-	cancel()
-	from := d.ownerSessionID()
-	if from == "" || from == e.Owner {
-		return
+// errWorkerEnded is a task send that stopped because the worker ended.
+var errWorkerEnded = errors.New("the worker ended before its task was sent")
+
+// queuedStartWait is how long the task send of a started worker may take. The
+// link waits 20 s for most calls, but the gateway relays this one to the
+// owner's machine, and a gateway that is busy or restarting for an upgrade can
+// need more. A worker that is running should not end for that.
+const queuedStartWait = 2 * time.Minute
+
+// sendQueuedStart asks the gateway to send a started worker its task
+// ("worker.queued_start"), as one call with a long deadline. A refusal or a
+// failure ends the start. The call stops when the worker ends.
+func (d *Daemon) sendQueuedStart(ctx context.Context, w *worker, p protocol.WorkerQueuedStart) error {
+	cctx, cancel := context.WithTimeout(withCallWait(ctx, queuedStartWait+5*time.Second), queuedStartWait)
+	defer cancel()
+	if w != nil {
+		ended := d.workerEnded(w)
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			select {
+			case <-ended:
+				cancel()
+			case <-stop:
+			}
+		}()
 	}
-	body := protocol.WorkerNotStartedText(e.Project, e.Harness, why) + protocol.WorkerPermissionsText(e.Permissions, e.Harness) + "\n"
-	if _, err := d.send(ctx, protocol.MsgSend{Sender: from, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
-		d.Logf("queue %s: not-started notice: %v", e.ID, err)
+	_, err := d.call(cctx, "worker.queued_start", p)
+	if err != nil && w != nil {
+		select {
+		case <-d.workerEnded(w):
+			return errWorkerEnded
+		default:
+		}
+	}
+	return err
+}
+
+// notStarted tells the gateway that a start will not become a worker. The
+// gateway records an event for the TUI feed and sends the owner a notice from
+// the reserved agent-net sender. This machine never sends it: a notice sent as
+// this machine's owner session would carry the owner's label and authority.
+//
+// The report is tried a few times with a growing pause while the gateway does
+// not answer or the link is down, and stops when the gateway accepts or
+// refuses it.
+func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
+	p := protocol.WorkerNotStarted{Ref: e.ID, Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why, Permissions: e.Permissions}
+	pause := d.cfg.BackoffMin
+	for attempt := 1; attempt <= notStartedTries; attempt++ {
+		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := d.call(rctx, "worker.not_started", p)
+		cancel()
+		var refused RemoteError
+		// A refusal is final. A fault of the gateway's own, marked by the
+		// gateway, and a call that did not get through are tried again.
+		if err == nil || (errors.As(err, &refused) && !errors.Is(err, errGatewayRetry)) {
+			if err != nil {
+				d.Logf("queue %s: not-started report refused: %v", e.ID, err)
+			}
+			return
+		}
+		d.Logf("queue %s: not-started report: %v (attempt %d of %d)", e.ID, err, attempt, notStartedTries)
+		if attempt == notStartedTries {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pause):
+		}
+		pause *= 2
 	}
 }
+
+// notStartedTries is how many times a not-started report is made.
+const notStartedTries = 5
 
 // sendQueuedTask handles "worker.task": a queued start has become a worker on
 // another machine, and this machine holds the owner, so it sends the task as

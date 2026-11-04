@@ -103,8 +103,10 @@ type WorkerResume struct {
 // WorkerContinue is "worker.continue", gateway to the machine: start a new
 // worker from an ended one. Only the owner of the old worker may ask.
 type WorkerContinue struct {
-	Touches []string `json:"touches,omitempty"`
-	FromCTO bool     `json:"sender_cto,omitempty"`
+	// StartRef is the reference the gateway tracks this start under (see WorkerLaunch).
+	StartRef string   `json:"start_ref,omitempty"`
+	Touches  []string `json:"touches,omitempty"`
+	FromCTO  bool     `json:"sender_cto,omitempty"`
 	// Session is the old worker's session ID.
 	Session   string `json:"session"`
 	Requester string `json:"requester_session"`
@@ -331,6 +333,10 @@ type (
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
+		// StartRef is the reference the gateway tracks this start under. A
+		// queued start uses it as its queue ID, and a machine names it when it
+		// reports that the start never became a worker.
+		StartRef        string `json:"start_ref,omitempty"`
 		FromCTO         bool   `json:"sender_cto,omitempty"`
 		RequireReadOnly bool   `json:"require_read_only,omitempty"`
 		Project         string `json:"project"`
@@ -400,18 +406,29 @@ type (
 		OSSandbox string `json:"os_sandbox,omitempty"`
 	}
 	// WorkerNotStarted is "worker.not_started", machine to gateway: a queued
-	// start ended without a worker. The gateway records an event for the feed.
+	// start ended without a worker. The gateway records an event for the feed
+	// and tells the owner with a notice from the reserved agent-net sender, so
+	// the notice never carries the owner's label.
 	WorkerNotStarted struct {
-		Owner   string `json:"owner_session"`
-		Project string `json:"project"`
-		Harness string `json:"harness"`
-		Reason  string `json:"reason"`
+		// Ref names one of this machine's starts that the gateway tracks (the
+		// StartRef it was given). The gateway takes the owner, project and
+		// harness of the notice from its own record of that start and ignores
+		// the fields below. Without a Ref (an older machine, which sends its
+		// own notice) the gateway only records the event.
+		Ref         string `json:"ref,omitempty"`
+		Owner       string `json:"owner_session"`
+		Project     string `json:"project"`
+		Harness     string `json:"harness"`
+		Reason      string `json:"reason"`
+		Permissions string `json:"permissions,omitempty"`
 	}
 	// WorkerQueuedStart is "worker.queued_start", machine to gateway: a queued
 	// start has become a worker. The gateway passes it to the owner's machine
 	// as "worker.task", and that machine sends the task, because only the
 	// owner's machine may send as the owner.
 	WorkerQueuedStart struct {
+		// Ref is the StartRef of the start this task belongs to.
+		Ref         string `json:"ref,omitempty"`
 		FromCTO     bool   `json:"sender_cto,omitempty"`
 		Permissions string `json:"permissions,omitempty"`
 		Owner       string `json:"owner_session"`

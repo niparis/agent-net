@@ -70,6 +70,8 @@ type Options struct {
 }
 
 type Gateway struct {
+	// relayWait overrides defaultRelayWait, for tests.
+	relayWait    time.Duration
 	publicMu     sync.Mutex
 	publicURLMu  sync.RWMutex
 	publicURL    string
@@ -1760,7 +1762,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		// A message from its owner starts an ended worker again, before it is
 		// stored, so a refusal reaches the sender (W10).
-		if err := g.resumeEndedWorker(ctx, nc, p); err != nil {
+		err = g.resumeEndedWorker(ctx, nc, p)
+		if err != nil {
 			g.notifyResumeRefusal(ctx, p, err)
 			var rj Rejection
 			if errors.As(err, &rj) {

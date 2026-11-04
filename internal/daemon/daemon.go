@@ -983,10 +983,23 @@ func (d *Daemon) Sessions() []protocol.SessionInfo {
 
 var errNotConnected = errors.New("not connected to the gateway")
 
+// errGatewayTimeout is a call that the gateway did not answer in time.
+var errGatewayTimeout = errors.New("gateway did not answer in time")
+
 // RemoteError is a refusal from the gateway.
 type RemoteError string
 
 func (e RemoteError) Error() string { return string(e) }
+
+// errGatewayRetry marks a gateway error that the gateway itself flagged as a
+// fault of its own (a storage error) that may go away. It is still a
+// RemoteError; callers that do not know the flag treat it as one.
+var errGatewayRetry = errors.New("the gateway reports a fault that may go away")
+
+type retryableRemote struct{ RemoteError }
+
+func (e retryableRemote) Unwrap() error        { return e.RemoteError }
+func (e retryableRemote) Is(target error) bool { return target == errGatewayRetry }
 
 // Send posts a message. When the gateway is unreachable the message goes to
 // the outbox, with its idempotency key, and is sent on reconnect.
