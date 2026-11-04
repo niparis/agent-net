@@ -295,6 +295,7 @@ const (
 )
 
 var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Inbox"}
+var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Inbox"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 // sessionViewName is the view the v key selected.
@@ -314,18 +315,17 @@ func (m Model) titleLine(w int) string {
 
 	var tabs []string
 	count := m.waitingCount()
-	fullTabs := len(strings.Join(tabNames, " ")) + len("1 2 3 4 5 6 7 ")
+	names := tabNames
+	if w <= 80 && count > 0 {
+		// The pending count makes the full names run into the online
+		// counter. Short names keep the separator between them.
+		names = shortTabNames
+	}
+	fullTabs := len(strings.Join(names, " ")) + len("1 2 3 4 5 6 7 ")
 	if count > 0 {
 		fullTabs += len(fmt.Sprintf(" (%d)", count))
 	}
-	shortOnline := ""
-	if m.usage.counts != nil {
-		shortOnline = fmt.Sprintf("%d online", m.usage.counts.Online)
-	}
-	for i, name := range tabNames {
-		if count > 0 && shortOnline != "" && fullTabs+3+len(shortOnline) > w && name == "Messages" {
-			name = "Msgs"
-		}
+	for i, name := range names {
 		label := fmt.Sprintf("%d %s", i+1, name)
 		if i == inboxTab && count > 0 {
 			label += fmt.Sprintf(" (%d)", count)

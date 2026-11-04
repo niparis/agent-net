@@ -1240,3 +1240,32 @@ func TestQuotaHarnessProviders(t *testing.T) {
 		t.Error("unexpected cursor")
 	}
 }
+
+func TestTabBarKeepsSeparatorWhenInboxHasItemsAt80(t *testing.T) {
+	m := newModel(80, 24)
+	m.usage.counts = &protocol.SessionCounts{Online: 12}
+	m.snap.Held = []protocol.Message{
+		{ID: "h1", To: "s_0000000000000001", CreatedAt: t0},
+		{ID: "h2", To: "s_0000000000000002", CreatedAt: t0},
+	}
+	line := ansi.Strip(m.titleLine(80))
+	for _, want := range []string{"1 Sess", "2 Graph", "3 Quota", "4 Msg", "5 Tools", "6 Set", "7 Inbox (2)", "│ 12 online"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("80 column tab bar is missing %q: %q", want, line)
+		}
+	}
+	for _, gone := range []string{"Sessions", "Quotas", "Messages", "Settings"} {
+		if strings.Contains(line, gone) {
+			t.Errorf("80 column tab bar still spells %q: %q", gone, line)
+		}
+	}
+	if !strings.Contains(line, "│") {
+		t.Errorf("80 column tab bar lost its separator: %q", line)
+	}
+	if ansi.StringWidth(line) > 80 {
+		t.Errorf("tab bar is %d columns wide: %q", ansi.StringWidth(line), line)
+	}
+	if wide := ansi.Strip(m.titleLine(120)); !strings.Contains(wide, "1 Sessions 2 Graph 3 Quotas 4 Messages") {
+		t.Errorf("120 column tab bar lost its full names: %q", wide)
+	}
+}
