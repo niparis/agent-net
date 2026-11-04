@@ -364,9 +364,6 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			newSnap.Values = append(newSnap.Values, settings.Value{Key: a.key, Level: a.level, Scope: a.scope, Item: a.item, Value: v})
 		}
 		newRule, newErr := newSnap.Resolve(c.Key, settings.Where{Repo: c.Scope})
-		if oldErr == nil && newErr == nil && bytes.Equal(oldRule.Value, newRule.Value) {
-			continue
-		}
 		kind := "approves"
 		if alias == "delivery.deploy_rule" {
 			kind = "approves_deploy"
@@ -376,6 +373,14 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		err := tx.QueryRow(`SELECT source,mode,rule FROM graph_edges WHERE target=? AND kind=?`, c.Scope, kind).Scan(&e.From, &e.Mode, &e.Rule)
 		if err != nil && err != sql.ErrNoRows {
 			return result, err
+		}
+		if err == nil && oldErr == nil && newErr == nil && bytes.Equal(oldRule.Value, newRule.Value) {
+			if current[address(c)] == nil {
+				delete(staged, address(c))
+			} else {
+				staged[address(c)] = current[address(c)]
+			}
+			continue
 		}
 		if err == nil {
 			graphChanges = append(graphChanges, settingGraphChange{address: address(c), edge: e})
