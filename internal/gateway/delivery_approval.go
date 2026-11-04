@@ -42,7 +42,7 @@ func (s *Store) answerDeliveryApproval(id, answer string, validate ...bool) (pro
 	}
 	item.AnsweredAt = s.now().UTC()
 	if answer == "dismiss" || answer == "seen" {
-		item.Status, item.Answer = "dismissed", ""
+		item.Status, item.Answer = "dismissed", "dismissed_by_owner"
 		if _, err := tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 			return item, true, err
 		}
@@ -124,6 +124,9 @@ func (s *Store) answerDeliveryApproval(id, answer string, validate ...bool) (pro
 		Fields: fields, By: protocol.EvidenceByOwner, At: item.AnsweredAt.Unix()}
 	if err := p.Accepts(c, e); err != nil {
 		return item, true, reject("%s", err.Error())
+	}
+	if err := checkMergeReady(tx, p, c, e); err != nil {
+		return item, true, err
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return item, true, err

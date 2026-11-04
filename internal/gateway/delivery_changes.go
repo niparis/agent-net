@@ -457,14 +457,8 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := p.Accepts(c, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
-	if e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass {
-		evidence, err := changeEvidence(tx, c.ID)
-		if err != nil {
-			return protocol.StepReportResult{}, err
-		}
-		if ready, missing := p.Ready(e.StepRef, c, evidence); !ready {
-			return protocol.StepReportResult{}, reject("merge is not ready: %s", strings.Join(missing, "; "))
-		}
+	if err := checkMergeReady(tx, p, c, e); err != nil {
+		return protocol.StepReportResult{}, err
 	}
 	var found bool
 	if directOwner {
@@ -861,4 +855,19 @@ func changeEvidence(q deliveryQuerier, id string) ([]protocol.Evidence, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// checkMergeReady applies the same merge gate to reports and owner approvals.
+func checkMergeReady(tx *sql.Tx, p protocol.Pipeline, c protocol.Change, e protocol.Evidence) error {
+	if e.Step != protocol.StepMerge || e.Result != protocol.StepResultPass {
+		return nil
+	}
+	evidence, err := changeEvidence(tx, c.ID)
+	if err != nil {
+		return err
+	}
+	if ready, missing := p.Ready(e.StepRef, c, evidence); !ready {
+		return reject("merge is not ready: %s", strings.Join(missing, "; "))
+	}
+	return nil
 }

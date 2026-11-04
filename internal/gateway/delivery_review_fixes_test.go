@@ -305,7 +305,7 @@ func TestDeliveryReassignApprovalToNoneClosesInbox(t *testing.T) {
 	}
 }
 
-func TestDeliveryDismissedApprovalReopensWhenRuleReenabled(t *testing.T) {
+func TestDeliveryRuleDisabledApprovalReopensWhenRuleReenabled(t *testing.T) {
 	r := newDeliveryRig(t)
 	q := protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "approve", For: "merge", Node: "@owner"}
 	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
@@ -315,9 +315,6 @@ func TestDeliveryDismissedApprovalReopensWhenRuleReenabled(t *testing.T) {
 	items, err := r.s.ListInbox()
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items: %+v, %v", items, err)
-	}
-	if _, err = r.s.AnswerInbox(items[0].ID, "dismiss"); err != nil {
-		t.Fatal(err)
 	}
 	q.Node, q.Expect = "@none", "@owner"
 	if err = r.s.SetDeliveryOwner(q, "owner"); err != nil {
