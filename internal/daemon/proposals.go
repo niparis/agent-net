@@ -181,6 +181,9 @@ func (d *Daemon) openApprovedRemoteSession(ctx context.Context, node, id string)
 		if json.Unmarshal(item.Result, &res) != nil || res.ID == "" || (res.Status != "starting" && res.Status != "started") {
 			return
 		}
+		if res.Background {
+			return
+		}
 		loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
 		if res.NodeID != "" && res.NodeID != d.cfg.NodeID {
 			d.rememberRelayedStart(res.ID, res.NodeID, loc.socket, loc.pane)

@@ -197,7 +197,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 				StartedAt: time.Now().Unix()}, nil
 		}
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
+	r := protocol.StartedSession{Background: p.CTOProposal && p.Harness == "claude", ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
@@ -233,7 +233,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.FirstMessage != "" {
 		args = append(args, "--", p.FirstMessage)
 	}
-	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner, p.CTOProposal && !remoteOwner), nil
+	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner, p.CTOProposal), nil
 }
 
 // relaySessionStart asks the gateway to start the session on another machine.
@@ -298,6 +298,11 @@ func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) 
 // remoteStartResult fills the fields that only the owner's machine can know:
 // the other machine's host name, the ssh note, and a remote Codex plan.
 func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSession, socket, pane string) protocol.StartedSession {
+	if res.Background {
+		res.EnterPlan = nil
+		res.EnterNote = "Enter opens it."
+		return res
+	}
 	if res.NodeID == "" || res.NodeID == d.cfg.NodeID {
 		return res
 	}
