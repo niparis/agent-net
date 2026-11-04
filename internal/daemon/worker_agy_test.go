@@ -343,9 +343,10 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 	}
 }
 
-// agy reports per-step usage and no context window. The worker shows the
-// context of the last agent_response step, the run's tokens, and a notice
-// with the token count alone.
+// agy reports per-step usage in its stream but no context window, so the
+// limit comes from the model's family. The worker shows the context of the
+// last agent_response step, that limit, the run's tokens, and a notice with
+// the percentage.
 func TestAgyWorkerContextFromSteps(t *testing.T) {
 	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
@@ -353,18 +354,43 @@ func TestAgyWorkerContextFromSteps(t *testing.T) {
 	wk := w.d.workerBySession(res.SessionID)
 	eventually(t, "step usage recorded", func() bool {
 		info := w.d.workerInfo(wk)
-		return info.ContextTokens == 10448 && info.ContextLimit == 0 && info.Tokens == 20557
+		return info.ContextTokens == 10448 && info.ContextLimit == 1048576 && info.Tokens == 20557
 	})
 	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	n := w.waitNotice(t, 1)[0]
-	for _, s := range []string{"context at end: 10k\n", "tokens: 20448 in, 99 out, 10 reasoning\n"} {
+	for _, s := range []string{"context at end: 10k / 1M (1%)\n", "tokens: 20448 in, 99 out, 10 reasoning\n"} {
 		if !strings.Contains(n.Body, s) {
 			t.Errorf("notice lacks %q:\n%s", s, n.Body)
 		}
 	}
 	eventually(t, "agy ends after handback", func() bool { return w.d.workerCount() == 0 })
+}
+
+// agyContextLimit maps an Antigravity model to the context window of its
+// family. A model outside the table has no limit, so the views show tokens
+// only, as before.
+func TestAgyContextLimit(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		model string
+		want  int64
+	}{
+		{"gemini-3.8-flash-medium", 1048576},
+		{"gemini-3.8-flash-low", 1048576},
+		{"gemini-3.1-pro-low", 1048576},
+		{"gemini-4-argon-medium", 1048576},
+		{"claude-opus-5-5-medium", 1000000},
+		{"claude-sonnet-5-5-low", 1000000},
+		{"gpt-oss-120b-medium", 131072},
+		{"mystery-model", 0},
+		{"", 0},
+	} {
+		if got := agyContextLimit(c.model); got != c.want {
+			t.Errorf("agyContextLimit(%q) = %d, want %d", c.model, got, c.want)
+		}
+	}
 }
 
 func TestAgyWorkerFollowupAndAutoContinue(t *testing.T) {
