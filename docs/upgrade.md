@@ -52,7 +52,7 @@ Rules:
 - `agent-net upgrade --rollback` on a machine holds the version it rolled back from. Automatic upgrade skips that version and older ones. A newer release lifts the hold and the machine upgrades. `agent-net upgrade` on that machine lifts it too. `agent-net status` and `agent-net upgrade --check` show `auto-upgrade held at vX after rollback`.
 - The gateway host's own daemon follows the same rules. Its gateway is local and normally serves the same version, so it does nothing.
 
-A gateway rollback runs setup with the previous binary, which replaces the gateway platform binary in the dist directory but leaves the newer signed manifest and the other platforms in place. A node on that platform refuses the mismatched binary. To restore a matching signed dist, run the published installer on the gateway with `--gateway --version vX.Y.Z` for the release you want to serve. It must be a signed release with the currently trusted key.
+A gateway rollback clears the signed manifest before running setup with the previous binary, which may replace the gateway platform binary in the dist directory. Signed nodes refuse upgrades while the gateway has no signed manifest. To restore a matching signed dist, run the published installer on the gateway with `--gateway --version vX.Y.Z` for the release you want to serve. It must be a signed release with the currently trusted key.
 
 ### Turn it off
 

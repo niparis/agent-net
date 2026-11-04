@@ -276,6 +276,12 @@ func (r *run) rollback(ctx context.Context, gatewayHost bool) error {
 	var args []string
 	if gatewayHost {
 		args = r.gatewaySetupArgs(nil)
+		// The previous binary runs setup and may predate signed releases. Clear
+		// the manifest before that older setup can change the dist binary.
+		dist := args[indexOf(args, "--dist")+1]
+		if err := setup.InvalidateSignedDist(dist); err != nil {
+			return fmt.Errorf("the binary was rolled back but gateway setup was not run: %w", err)
+		}
 	}
 	if err := r.runSetup(ctx, args...); err != nil {
 		return err

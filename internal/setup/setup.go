@@ -262,6 +262,19 @@ func (r *runner) setupGateway(ctx context.Context) {
 	r.step("gateway binaries", res, err)
 }
 
+// InvalidateSignedDist removes release metadata before a local binary changes.
+// Older clients can still use gateway-generated checksums; signed clients fail
+// closed until a complete signed release is installed again.
+func InvalidateSignedDist(dist string) error {
+	// Remove the signature first, so signed clients cannot trust stale sums.
+	for _, name := range []string{"checksums.txt.sig", "checksums.txt"} {
+		if err := os.Remove(filepath.Join(dist, name)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("cannot remove stale checksum file %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // syncDist makes sure the dist dir has this binary for its own platform.
 func (r *runner) syncDist(dist string) (string, error) {
 	target := filepath.Join(dist, fmt.Sprintf("agent-net-%s-%s", runtime.GOOS, runtime.GOARCH))
@@ -278,6 +291,10 @@ func (r *runner) syncDist(dist string) (string, error) {
 	}
 	tmp := target + ".tmp"
 	if err := os.WriteFile(tmp, src, 0o755); err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp)
+	if err := InvalidateSignedDist(dist); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, target); err != nil {

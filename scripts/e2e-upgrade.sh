@@ -343,8 +343,8 @@ check "(1) C keeps its own notes in CLAUDE.md" notes_kept c
 # ---- (2) a bad dist binary: D tries once, does not loop ----
 say "(2) the dist binary for D's platform does not match what the gateway says"
 cp "$T/gw/dist/agent-net-linux-amd64" "$T/dist-amd64.orig"
-# The gateway runs it from the dist dir and reads $V2. D runs the downloaded copy
-# from a temp dir, where it reports $V1: the version check must refuse it.
+# The gateway runs it from the dist dir and reads $V2. Its bytes do not match
+# the signed manifest, so D refuses it at the checksum check before running it.
 cat > "$T/gw/dist/agent-net-linux-amd64" <<EOF
 #!/bin/sh
 case "\$0" in
@@ -363,12 +363,11 @@ for i in 1 2; do
   bg d daemon daemon
   wait_for "D reconnect $i is seen and skipped" 30 bash -c "[ \"\$(grep -cF 'auto-upgrade: not upgrading' '$T/d/daemon.log')\" -ge $i ]"
 done
-sleep 3
 echo "--- D daemon log"; grep -E 'auto-upgrade|connected' "$T/d/daemon.log"
 echo "--- D state file"; cat "$T/d/state/auto-upgrade.json"; echo
 check "(2) D tried exactly once over three connects" test "$(log_count d "auto-upgrade: the gateway serves")" = 1
 check "(2) D logged one failure" test "$(log_count d "auto-upgrade to $V2 failed")" = 1
-check "(2) the failure names the version mismatch" test "$(log_count d "the gateway serves $V1 but $V2 was asked for")" = 1
+check "(2) the failure names the checksum mismatch" test "$(log_count d "checksum mismatch for agent-net-linux-amd64")" = 1
 check "(2) D skipped the version on the reconnects" test "$(log_count d "auto-upgrade: not upgrading $V1 to $V2")" = 2
 check "(2) failure remembered in the state dir" grep -q "\"version\":\"$V2\"" "$T/d/state/auto-upgrade.json"
 check "(2) D binary is still $V1" test "$(machine d version)" = "$V1"
@@ -391,7 +390,6 @@ machine b nodes
 check "rollback: gateway host untouched ($V2)" test "$(machine gw version)" = "$V2"
 say "(3) B reconnected on $V1 while the gateway serves $V2: held"
 wait_for "B logged the hold" 20 log_has b "held at $V2 after rollback"
-sleep 4
 echo "--- B daemon log"; grep -E 'auto-upgrade|connected' "$T/b/daemon.log"
 check "(3) B still $V1 (binary)" test "$(machine b version)" = "$V1"
 check "(3) B still $V1 (daemon)" test "$(daemon_version b)" = "$V1"
@@ -450,7 +448,12 @@ bg e daemon daemon
 bg f daemon daemon --no-auto-upgrade
 bg g daemon daemon
 for m in e f g; do wait_for "$m connected" 20 grep -q "connected to gateway" "$T/$m/daemon.log"; done
-sleep 6   # more than the 1 s random delay, and time for a download
+# Watch for an unexpected attempt beyond the 1 s random delay. Stop early if
+# any opt-out is broken; the checks below report which machine attempted one.
+for _ in $(seq 30); do
+  if log_has e auto-upgrade || log_has f auto-upgrade || log_has g auto-upgrade; then break; fi
+  sleep 0.2
+done
 echo "--- E (AGENT_NET_NO_AUTO_UPGRADE=1)"; daemon_version e; grep -c 'auto-upgrade' "$T/e/daemon.log"
 echo "--- F (--no-auto-upgrade)";           daemon_version f; grep -c 'auto-upgrade' "$T/f/daemon.log"
 echo "--- G (dev build)";                    daemon_version g; grep -c 'auto-upgrade' "$T/g/daemon.log"

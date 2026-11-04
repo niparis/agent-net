@@ -20,7 +20,8 @@ import (
 // stopWorkers is a variable so a test can look at the call.
 var stopWorkers = daemon.StopRecordedWorkers
 
-// Uninstall undoes Setup. It leaves the binary and the gateway data alone.
+// Uninstall undoes Setup. It leaves the binary, gateway dist (including any
+// signed manifest) and the gateway data alone.
 func Uninstall(o Options) error {
 	r, err := newRunner(o)
 	if err != nil {

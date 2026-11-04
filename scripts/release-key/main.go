@@ -14,7 +14,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"os/exec"
+	"regexp"
 
 	"github.com/niparis/agent-net/internal/upgrade"
 )
@@ -26,7 +27,7 @@ func main() {
 	switch {
 	case len(os.Args) == 3 && os.Args[1] == "generate":
 		err = generate(os.Args[2], os.Stdout)
-	case (len(os.Args) == 3 || len(os.Args) == 4) && os.Args[1] == "sign":
+	case (len(os.Args) == 3 || len(os.Args) == 4) && (os.Args[1] == "sign" || os.Args[1] == "verify"):
 		installerPath := "install.sh"
 		if len(os.Args) == 4 {
 			installerPath = os.Args[3]
@@ -34,10 +35,14 @@ func main() {
 		var installer []byte
 		installer, err = os.ReadFile(installerPath)
 		if err == nil {
-			err = signFile([]byte(os.Getenv("RELEASE_SIGNING_KEY")), os.Args[2], upgrade.ReleasePublicKeyBase64, installer)
+			if os.Args[1] == "sign" {
+				err = signFile([]byte(os.Getenv("RELEASE_SIGNING_KEY")), os.Args[2], upgrade.ReleasePublicKeyBase64, installer)
+			} else {
+				err = verifyFile(os.Args[2], upgrade.ReleasePublicKeyBase64, installer)
+			}
 		}
 	default:
-		err = errors.New("usage: release-key generate PRIVATE_KEY_PATH | sign CHECKSUMS_PATH [INSTALLER_PATH]")
+		err = errors.New("usage: release-key generate PRIVATE_KEY_PATH | sign|verify CHECKSUMS_PATH [INSTALLER_PATH]")
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "release-key:", err)
@@ -87,6 +92,24 @@ func sshPublicKey(pub ed25519.PublicKey) string {
 	return "ssh-ed25519 " + base64.StdEncoding.EncodeToString(sshPublicBlob(pub))
 }
 
+// checkPublicKeys checks the committed Go key and the one declaration in the
+// installer. A placeholder, malformed key, or mismatch must fail CI.
+func checkPublicKeys(goKey string, installer []byte) error {
+	pub, err := base64.StdEncoding.Strict().DecodeString(goKey)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return errors.New("Go release public key is invalid or still a placeholder")
+	}
+	keyLine := regexp.MustCompile(`(?m)^[ \t]*RELEASE_SSH_PUBLIC_KEY="([^"\n]*)"[ \t]*$`)
+	matches := keyLine.FindAllSubmatch(installer, -1)
+	if len(matches) != 1 {
+		return errors.New("installer must have exactly one release public key declaration")
+	}
+	if string(matches[0][1]) != sshPublicKey(ed25519.PublicKey(pub)) {
+		return errors.New("installer release public key is invalid, a placeholder, or differs from the Go key")
+	}
+	return nil
+}
+
 func signFile(keyPEM []byte, path, expectedGoPublic string, installer []byte) error {
 	block, rest := pem.Decode(keyPEM)
 	if block == nil || block.Type != "PRIVATE KEY" || len(bytes.TrimSpace(rest)) != 0 {
@@ -101,8 +124,10 @@ func signFile(keyPEM []byte, path, expectedGoPublic string, installer []byte) er
 		return errors.New("RELEASE_SIGNING_KEY is not an Ed25519 private key")
 	}
 	pub := key.Public().(ed25519.PublicKey)
-	line := "  RELEASE_SSH_PUBLIC_KEY=\"" + sshPublicKey(pub) + "\""
-	if base64.StdEncoding.EncodeToString(pub) != expectedGoPublic || !strings.Contains("\n"+string(installer)+"\n", "\n"+line+"\n") {
+	if err := checkPublicKeys(expectedGoPublic, installer); err != nil {
+		return err
+	}
+	if base64.StdEncoding.EncodeToString(pub) != expectedGoPublic {
 		return errors.New("signing key does not match both embedded release public keys")
 	}
 	data, err := os.ReadFile(path)
@@ -126,4 +151,38 @@ func signFile(keyPEM []byte, path, expectedGoPublic string, installer []byte) er
 		return err
 	}
 	return os.WriteFile(path+".sshsig", armored, 0o644)
+}
+
+// verifyFile independently checks both release signature formats before upload.
+func verifyFile(path, expectedGoPublic string, installer []byte) error {
+	if err := checkPublicKeys(expectedGoPublic, installer); err != nil {
+		return err
+	}
+	pub, _ := base64.StdEncoding.Strict().DecodeString(expectedGoPublic)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("cannot read checksums: %w", err)
+	}
+	raw, err := os.ReadFile(path + ".sig")
+	if err != nil || !ed25519.Verify(ed25519.PublicKey(pub), data, raw) {
+		return errors.New("raw Ed25519 release signature is missing or invalid")
+	}
+	allowed, err := os.CreateTemp("", "agent-net-allowed-signers.")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(allowed.Name())
+	if _, err := fmt.Fprintf(allowed, "agent-net %s\n", sshPublicKey(ed25519.PublicKey(pub))); err != nil {
+		allowed.Close()
+		return err
+	}
+	if err := allowed.Close(); err != nil {
+		return err
+	}
+	cmd := exec.Command("ssh-keygen", "-Y", "verify", "-f", allowed.Name(), "-I", "agent-net", "-n", namespace, "-s", path+".sshsig")
+	cmd.Stdin = bytes.NewReader(data)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("SSH release signature is missing or invalid, or ssh-keygen cannot verify it: %w", err)
+	}
+	return nil
 }

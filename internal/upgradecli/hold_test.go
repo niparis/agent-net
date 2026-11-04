@@ -125,3 +125,28 @@ func TestManualUpgradeClearsTheHold(t *testing.T) {
 		}
 	}
 }
+
+func TestGatewayRollbackInvalidatesManifestBeforeOldSetup(t *testing.T) {
+	isolate(t)
+	dist := filepath.Join(os.Getenv("HOME"), ".local", "share", "agent-net", "dist")
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"checksums.txt", "checksums.txt.sig"} {
+		if err := os.WriteFile(filepath.Join(dist, name), []byte("old metadata"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	if err := os.WriteFile(exe, script("v0.0.2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = setup ]; then\n  [ ! -e %q ] && [ ! -e %q ] || exit 1\n  exit 0\nfi\necho v0.0.1\n", filepath.Join(dist, "checksums.txt"), filepath.Join(dist, "checksums.txt.sig"))
+	if err := os.WriteFile(upgrade.PrevPath(exe), []byte(old), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Run(context.Background(), Options{Current: "v0.0.2", Exe: exe, GatewayData: gatewayDataDir(t), Rollback: true, Out: &out}); err != nil {
+		t.Fatalf("old setup observed a stale manifest: %v\n%s", err, out.String())
+	}
+}

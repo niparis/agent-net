@@ -30,11 +30,11 @@ Use a tag that starts with `v`. The release workflow (`.github/workflows/release
 
 1. runs `go vet ./...` and `scripts/test.sh -- -timeout 30m` only when the tagged commit has no green CI run,
 2. builds `agent-net-{linux,darwin}-{amd64,arm64}` with `CGO_ENABLED=0 go build -trimpath` and sets the version from the tag (`-X main.version=<tag>`),
-3. writes `checksums.txt` (SHA-256 of the four binaries) and signs its exact bytes with the `RELEASE_SIGNING_KEY` Actions secret,
+3. writes `checksums.txt` (SHA-256 of the four binaries), signs its exact bytes with the `RELEASE_SIGNING_KEY` Actions secret, and independently verifies both signatures against the tagged public keys,
 4. creates a GitHub release with generated notes and attaches the binaries, checksum file, both signatures and `install.sh`,
 5. dispatches the Pages workflow to publish the latest release installer.
 
-The release reuses a green CI run on the same commit: when the `ci` workflow already concluded `success` for the tagged commit, the release skips `go vet` and the test suite and goes straight to the build. If no green run is found, it runs them itself. Tag only commits that CI has passed.
+The release reuses a green CI run on the same commit: when the `ci` workflow already concluded `success` for the tagged commit, the release skips `go vet` and the test suite and goes straight to the build. If no green run is found, it runs them itself. Tag only commits that CI has passed. Protect the `v*` tag namespace with a GitHub ruleset that limits who can create, update or delete release tags.
 
 The workflow refuses to publish if the secret is missing, signing fails, or the secret does not match both public keys in the tagged commit. Go verifies the raw Ed25519 signature in `checksums.txt.sig`. The installer verifies the OpenSSH SSHSIG in `checksums.txt.sshsig`; both sign the same exact checksum file with the same key.
 
@@ -44,7 +44,13 @@ The workflow refuses to publish if the secret is missing, signing fails, or the 
 
 ## Release signing key
 
-The public keys in `internal/upgrade/release.go` and `install.sh` are placeholders until the owner makes a key. Before the first signed release:
+The release public key is in `internal/upgrade/release.go` and `install.sh`. The matching private key is in the repository Actions secret `RELEASE_SIGNING_KEY`. The key was put in place on 2026-11-04. Do not generate a new key for an ordinary release.
+
+For the first signed release, follow the release steps above. After Pages publishes the new installer, run the install line on the gateway, then upgrade the other machines. Wait until the Pages workflow has deployed: release creation and Pages deployment are separate steps. The old `agent-net upgrade` cannot copy the new manifest and signature to the gateway dist directory; if it was used, run the install line on the gateway afterward to put them there. Older binaries and the previously published installer do not check signatures while moving to this first release. Once the new code is installed, later unsigned or incorrectly signed releases are refused. A signed client also refuses upgrades from an older gateway that lacks the signed manifest.
+
+### Rotate the key
+
+Only for a planned rotation or after compromise:
 
 1. Generate a key on a trusted machine, outside the repository, at a new private path:
 
@@ -54,10 +60,14 @@ The public keys in `internal/upgrade/release.go` and `install.sh` are placeholde
 
    It writes an unencrypted PKCS#8 Ed25519 key with mode 0600, refuses to overwrite a file, and prints only its two public encodings. Store the private key securely and keep an offline backup. Never commit it or paste it into a log.
 2. Put the printed Go value in `ReleasePublicKeyBase64` in `internal/upgrade/release.go`. Put the printed SSH value in `RELEASE_SSH_PUBLIC_KEY` in `install.sh`. Commit both changes together.
-3. Add the complete PEM private key as the repository Actions secret `RELEASE_SIGNING_KEY` using GitHub's secret settings. Tag the commit only after the secret and both public keys are in place. The release signs and checks the key against both embedded public values before creating the release.
-4. After Pages publishes the new installer, run the install line on the gateway for the first signed release, then upgrade the other machines. Wait until that Pages workflow has deployed: release creation and Pages deployment are separate steps. The old `agent-net upgrade` cannot copy the new manifest and signature to the gateway dist directory; if it was used, run the install line on the gateway afterward to put them there. Older binaries and the previously published installer do not check signatures while moving to this first release. Once the new code is installed, later unsigned or incorrectly signed releases are refused. A new signed client also refuses upgrades from an older gateway that lacks the signed manifest.
+3. Replace the repository Actions secret `RELEASE_SIGNING_KEY` with the new PEM, then publish the release. The workflow checks that the secret matches both public keys and verifies both signatures before creating the release.
+4. After Pages deploys, bootstrap the gateway and every other machine with the new installer over authenticated HTTPS. Old binaries cannot verify a release signed only by the new key; their manual and automatic upgrades cannot cross the rotation. This scheme has no automatic signed key rollover.
 
-To rotate a key, generate and protect a new pair, update both public values, change the secret and publish a release together. Binaries with the old public key cannot verify a release signed only by the new key. After publishing, use the newly published install line on the gateway and on each machine to bootstrap the new key over the authenticated HTTPS channel; do not expect their old `agent-net upgrade` or auto-upgrade to cross the rotation. If the old key is compromised, remove it from the secret at once and treat previous signatures made with it as untrusted. This scheme has no automatic key revocation or signed key rollover.
+If the private key is compromised, consider it burned and assume signatures under the old key can be forged. Removing it from the Actions secret does not revoke the old public key embedded in installed binaries. Turn off auto-upgrade on every machine that cannot yet be bootstrapped, using `agent-net setup --no-auto-upgrade` where available, or stop its daemon or disconnect it until the new installer is ready. Auto-upgrade off alone does not block a manually requested or pushed upgrade. Do not accept old-key releases. Replace the secret, publish the new-key release from a trusted commit, and bootstrap every machine with the new installer as above.
+
+### Roll back a gateway
+
+`agent-net upgrade --rollback` clears the gateway's signed checksum manifest before it runs setup from the previous binary. A later `setup --gateway` that changes a dist binary also removes the manifest and signature. Signed nodes refuse upgrades from that gateway until a complete matching signed release is installed. To restore one, run the published installer on the gateway with `--gateway --version vX.Y.Z` for a signed release using the current key. The old gateway's generated checksums remain available to older clients that do not require signatures.
 
 OpenSSH 8.1 introduced `ssh-keygen -Y` signing and verification. Current macOS and common Linux installations include OpenSSH, but a minimal Linux install or an older OS may not have a suitable `ssh-keygen`; the installer stops with an error there. See [OpenSSH 8.1 release notes](https://www.openssh.org/txt/release-8.1). The Go upgrade path uses the standard library and does not need OpenSSH.
 
