@@ -359,8 +359,9 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 }
 
 // noteStepUsage records the context of a finished model step and the run's
-// tokens so far. Antigravity reports per-step usage and no context window, so
-// the context is the input that step saw plus its cache reads. The result
+// tokens so far. Antigravity reports per-step usage but no context window in
+// its stream, so the limit comes from the model's family (agyContextLimit).
+// The context is the input that step saw plus its cache reads. The result
 // event repeats the run's sum, so this adds to turnUsage and never to usage:
 // the result handler is the one that saves usage.
 func (c *agyConn) noteStepUsage(stepType, state string, usage *agyUsage) {
@@ -373,15 +374,42 @@ func (c *agyConn) noteStepUsage(stepType, state string, usage *agyUsage) {
 	c.turnUsage.Thinking += usage.Thinking
 	c.turnUsage.CacheRead += usage.CacheRead
 	base, turn := c.usage, c.turnUsage
+	model := c.w.model
 	c.mu.Unlock()
 	c.d.noteWorkerUsage(c.w, workerStats{
 		ContextTokens: int64(usage.Input + usage.CacheRead),
+		ContextLimit:  agyContextLimit(model),
 		TotalTokens:   int64(base.Input + base.Output + base.Thinking + turn.Input + turn.Output + turn.Thinking),
 	})
 }
 
 func agyStats(u agyUsage, model string) workerStats {
-	return workerStats{Tokens: tokenText(u.Input, u.Output, u.Thinking, u.CacheRead, 0), TotalTokens: int64(u.Input + u.Output + u.Thinking), Model: model}
+	return workerStats{Tokens: tokenText(u.Input, u.Output, u.Thinking, u.CacheRead, 0), ContextLimit: agyContextLimit(model),
+		TotalTokens: int64(u.Input + u.Output + u.Thinking), Model: model}
+}
+
+// agyContextLimit is the context window of an Antigravity model, by family.
+// Antigravity shows the window in its own status line but does not report it
+// in the stream-json events the daemon reads, so the number comes from the
+// model vendor:
+//   - Gemini 3 series and later, including Argon, have 1,048,576 input
+//     tokens: https://ai.google.dev/gemini-api/docs/models
+//   - Claude models use the same per-family table as the Claude adapter.
+//   - GPT-OSS 120B has a 131,072-token context window:
+//     https://github.com/openai/gpt-oss
+//
+// An unknown model has no limit (0), so the views show tokens only.
+func agyContextLimit(model string) int64 {
+	m := strings.ToLower(model)
+	switch {
+	case strings.HasPrefix(m, "gemini-"):
+		return 1_048_576
+	case strings.HasPrefix(m, "claude-"):
+		return claudeContextLimit(m)
+	case strings.HasPrefix(m, "gpt-oss-"):
+		return 131_072
+	}
+	return 0
 }
 
 func (agyLauncher) stats(_ context.Context, d *Daemon, w *worker) workerStats {
