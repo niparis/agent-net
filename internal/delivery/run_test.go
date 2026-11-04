@@ -728,7 +728,7 @@ func TestRunStepTailStartsAtLineBoundary(t *testing.T) {
 func TestRunStepTimedOutOnlyWhenKilled(t *testing.T) {
 	f := newRunFx(t)
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
-	s := f.script("bg.sh", fmt.Sprintf("sleep 3 &\necho $! > %s\necho done\n", pidFile))
+	s := f.script("bg.sh", fmt.Sprintf("sleep 2 &\necho $! > %s\necho done\n", pidFile))
 	cmd := f.cmd(s)
 	cmd.Timeout = 300 * time.Millisecond
 	run, err := RunStep(context.Background(), cmd)
