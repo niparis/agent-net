@@ -138,7 +138,7 @@ func modeShort(mode string) string {
 
 func statusShort(s string) string {
 	switch s {
-	case "idle", "busy", "shell":
+	case "idle", "busy", "shell", "exited":
 		return s
 	case protocol.StatusDormant:
 		return "dorm"

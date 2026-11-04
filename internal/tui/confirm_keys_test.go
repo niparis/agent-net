@@ -79,7 +79,9 @@ func TestStopOwnerConfirmKeys(t *testing.T) {
 			if m.mode != modeConfirm || !m.confirmOwner {
 				t.Fatal("owner stop did not ask")
 			}
-			confirmHintShown(t, m)
+			if v := ansi.Strip(m.View()); !strings.Contains(v, "enter/y: stop · esc/n: keep") {
+				t.Fatalf("missing stop action keys:\n%s", v)
+			}
 			m, cmd := press(m, tc.key)
 			if tc.yes {
 				m = finish(t, m, cmd)

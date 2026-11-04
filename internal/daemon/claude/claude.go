@@ -136,6 +136,7 @@ type sessionFile struct {
 	Kind                string `json:"kind"`
 	MessagingSocketPath string `json:"messagingSocketPath"`
 	JobID               string `json:"jobId"`
+	Spare               bool   `json:"spare"`
 }
 
 func pidAlive(pid int) bool {
@@ -165,14 +166,20 @@ func (a *Adapter) poll() {
 		if json.Unmarshal(raw, &sf) != nil || strconv.Itoa(sf.PID) != m[1] || sf.SessionID == "" {
 			continue
 		}
-		if !pidAlive(sf.PID) {
+		if sf.Spare || !pidAlive(sf.PID) {
 			continue
 		}
 		status := sf.Status
 		switch status {
-		case "idle", "busy", "shell":
+		case "idle", "busy", "shell", "exited":
 		default:
 			status = "unknown"
+		}
+		// A surviving background process (including one with status shell) is
+		// not proof that attach can still open the conversation after /exit.
+		if sf.Kind == "bg" && (status == "exited" || a.models.Exited(sf.SessionID, sf.Cwd)) {
+			status = "exited"
+			sf.MessagingSocketPath = ""
 		}
 		// The Claude name is a title for the TASK column, not the session's
 		// network name (decision 0024). A name Claude derived from the folder

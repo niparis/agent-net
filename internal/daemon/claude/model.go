@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,14 +46,15 @@ var dirBad = regexp.MustCompile(`[^A-Za-z0-9]`)
 func transcriptDir(cwd string) string { return dirBad.ReplaceAllString(cwd, "-") }
 
 type modelEntry struct {
-	path  string
-	size  int64
-	mtime time.Time
-	model string
+	path   string
+	size   int64
+	mtime  time.Time
+	model  string
+	exited bool
 }
 
-// modelReader finds the model of a Claude Code session. It reads only the
-// "model" field of the last assistant entry of the transcript and keeps no
+// modelReader finds the model and final exit command of a Claude Code session.
+// It reads the last assistant model and main conversation entry, and keeps no
 // transcript text.
 type modelReader struct {
 	projects string // ~/.claude/projects
@@ -112,9 +114,18 @@ func (r *modelReader) Model(sessionID, cwd string) string {
 		model = prev.model
 	}
 	r.mu.Lock()
-	r.cache[sessionID] = modelEntry{path: path, size: fi.Size(), mtime: fi.ModTime(), model: model}
+	r.cache[sessionID] = modelEntry{path: path, size: fi.Size(), mtime: fi.ModTime(), model: model, exited: transcriptExited(path, fi.Size())}
 	r.mu.Unlock()
 	return model
+}
+
+// Exited reports a final /exit command in the main conversation. The result
+// shares the model cache, so unchanged transcripts are not read again.
+func (r *modelReader) Exited(sessionID, cwd string) bool {
+	r.Model(sessionID, cwd)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cache[sessionID].exited
 }
 
 // LastWrite returns when the session's transcript was last written, or the
@@ -147,6 +158,11 @@ func (r *modelReader) forget(keep map[string]bool) {
 // assistant entry that has one. Entries of sub-agents (isSidechain) and
 // Claude Code's own placeholder model ("<synthetic>") are skipped.
 func lastModel(path string, size int64) (string, bool) {
+	return lastTranscriptMatch(path, size, modelOfLine)
+}
+
+// lastTranscriptMatch scans complete lines backwards with a bounded read.
+func lastTranscriptMatch(path string, size int64, match func([]byte) (string, bool)) (string, bool) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", false
@@ -174,7 +190,7 @@ func lastModel(path string, size int64) (string, bool) {
 			first = 1 // lines[0] may be cut off; the next block completes it
 		}
 		for i := len(lines) - 1; i >= first; i-- {
-			if m, ok := modelOfLine(lines[i]); ok {
+			if m, ok := match(lines[i]); ok {
 				return m, true
 			}
 		}
@@ -209,4 +225,52 @@ func modelOfLine(line []byte) (string, bool) {
 		return "", false
 	}
 	return protocol.CleanModel(m), true
+}
+
+// transcriptExited ignores bookkeeping and local command output after /exit.
+// A later user or assistant entry makes the conversation enterable again.
+func transcriptExited(path string, size int64) bool {
+	command, _ := lastTranscriptMatch(path, size, func(line []byte) (string, bool) {
+		var e struct {
+			Type        string `json:"type"`
+			IsSidechain bool   `json:"isSidechain"`
+			IsMeta      bool   `json:"isMeta"`
+			Message     struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &e) != nil || e.IsSidechain || e.IsMeta {
+			return "", false
+		}
+		if e.Type == "assistant" {
+			return "", true
+		}
+		if e.Type != "user" {
+			return "", false
+		}
+		var text string
+		if json.Unmarshal(e.Message.Content, &text) != nil {
+			var blocks []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(e.Message.Content, &blocks) != nil {
+				return "", true
+			}
+			for _, b := range blocks {
+				if b.Type == "text" {
+					text += b.Text
+				}
+			}
+		}
+		text = strings.TrimSpace(text)
+		if strings.HasPrefix(text, "<local-command-stdout>") || strings.HasPrefix(text, "<local-command-stderr>") {
+			return "", false
+		}
+		if text == "/exit" || ((strings.HasPrefix(text, "<command-message>") || strings.HasPrefix(text, "<command-name>")) && strings.Contains(text, "<command-name>/exit</command-name>")) {
+			return "exit", true
+		}
+		return "", true
+	})
+	return command == "exit"
 }

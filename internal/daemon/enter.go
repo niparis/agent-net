@@ -193,6 +193,9 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		return base, nil
 	}
 	info := d.infoOf(ls)
+	if info.Harness == "claude" && info.Status == "exited" {
+		return base, nil // Do not focus or reopen a stale attach pane either.
+	}
 	if info.Harness == protocol.OwnerHarness {
 		return base, nil
 	}
@@ -278,6 +281,9 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 	case protocol.OwnerHarness:
 		return no("that is you")
 	case "claude":
+		if info.Status == "exited" {
+			return no("%s exited; on %s run: %s", name, plan.Host, remoteCommand(info.Cwd, []string{"claude", "--resume", info.NativeID}))
+		}
 		kind, job := "", ""
 		if p, ok := d.adapters["claude"].(EnterRefProvider); ok {
 			kind, job = p.EnterRef(info.NativeID)

@@ -188,3 +188,21 @@ Restart the daemon to recheck immediately; regular harness inventory refreshes
 and managed updates also recheck and clear the warning when an inbox works.
 No live sessions means unknown, not broken. The check only connects and sends
 no message, so a passing check cannot prove that Claude consumed a user frame.
+
+## Claude background session stays listed after /exit
+
+Claude Code can leave a background session's process and session file alive
+when its transcript ends with `/exit`. In Claude Code 2.1.318, `shell` means
+the main thread is idle while background tasks are alive. It does not mean
+the conversation has ended. Claude describes `/exit` in a background session
+as detaching, but attaching again has also been observed to start a different
+conversation through a warm spare process.
+
+agent-net hides session files marked `spare: true`. For a background session
+whose last conversation entry is `/exit`, it shows `exited` and disables inbox
+delivery. The row stays discoverable while its process lives, but Enter only
+shows a command to resume the full conversation ID in its original folder.
+It does not attach, start another conversation, or open a terminal pane.
+Run the displayed `claude --resume <full-session-id>` command yourself. A new
+conversation entry clears the transcript exit marker. A `shell` session
+without that marker still attaches as before.
