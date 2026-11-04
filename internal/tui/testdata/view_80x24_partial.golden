@@ -5,14 +5,14 @@ machines list slow or unavailable
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
+  NAME        AGENT  PROJECT    STATUS   CPU   RAM TASK                view: all
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-▸ tenebrae-53  claude   busy   -     normal -          38%  1.2G
-  strategies   claude   idle   -     normal -         240%  4.6G
-  web          opencode idle   -     normal -            ?     ?
+▸ tenebrae-53 claude tenebrae   busy     38%  1.2G
+  strategies  claude strategies idle    240%  4.6G backtest v2
+  web         openc… shop       idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner    pi       idle   -     normal -           5%  300M
-  scratch      pi       shell  -     normal -          <1%   80M
+  ci-runner   pi     agent-net  idle      5%  300M
+  scratch     pi     -          shell    <1%   80M
 
 
 

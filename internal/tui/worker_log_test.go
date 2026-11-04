@@ -183,3 +183,31 @@ func TestWorkersLogBelongsToQuotasAndPickerNote(t *testing.T) {
 		t.Fatal("d no longer opens quality details")
 	}
 }
+
+func TestWorkersLogNarrowKeepsTaskTitle(t *testing.T) {
+	r := protocol.WorkerLogEntry{
+		StartedAt:  time.Date(2025, 11, 14, 22, 13, 0, 0, time.UTC).Unix(),
+		Title:      "Review worker history and difficulty scores",
+		Model:      "test-model:high",
+		Difficulty: "normal",
+		Caller:     "Agent One",
+		Status:     "running",
+	}
+	line := ansi.Strip(workerLogLine(r, 80, false, time.UTC))
+	for _, want := range []string{"22:13", "test-model", "norm", "Agent One", "Review worker history and", "running"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("narrow worker log line is missing %q: %q", want, line)
+		}
+	}
+	for _, gone := range []string{"11-14", "test-model:high", "normal"} {
+		if strings.Contains(line, gone) {
+			t.Errorf("narrow worker log line still shows %q: %q", gone, line)
+		}
+	}
+	if ansi.StringWidth(line) > 80 {
+		t.Errorf("line is %d columns wide: %q", ansi.StringWidth(line), line)
+	}
+	if !strings.Contains(ansi.Strip(workerLogLine(r, 120, false, time.UTC)), "11-14 22:13") {
+		t.Errorf("wide worker log line lost its date: %q", ansi.Strip(workerLogLine(r, 120, false, time.UTC)))
+	}
+}

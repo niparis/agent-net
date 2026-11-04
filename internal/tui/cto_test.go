@@ -853,3 +853,23 @@ func TestCTOEnterShowsStartupResultsInBox(t *testing.T) {
 		t.Fatalf("missing recovery notice in CTO box: %s", view)
 	}
 }
+
+func TestCTOBoxShowsTheStartOfALongError(t *testing.T) {
+	m := New(&fakeSource{snap: fakeSnapshot()})
+	m.cto.err = "Provider request failed because the account has insufficient credits. Add credits or choose another model before retrying the request. The request was not completed."
+	box := ansi.Strip(strings.Join(m.ctoView(76, 4), "\n"))
+	if !strings.Contains(box, "error: Provider request failed") {
+		t.Errorf("the box lost the start of the error:\n%s", box)
+	}
+	if !strings.Contains(box, "…") {
+		t.Errorf("the clipped error has no ellipsis:\n%s", box)
+	}
+	if strings.Contains(box, "The request was not completed.") {
+		t.Errorf("the box still shows only the tail of the error:\n%s", box)
+	}
+	// A box with room for the whole error shows all of it.
+	tall := ansi.Strip(strings.Join(m.ctoView(76, 10), "\n"))
+	if !strings.Contains(tall, "error: Provider request failed") || !strings.Contains(tall, "The request was not completed.") {
+		t.Errorf("a roomy box did not show the whole error:\n%s", tall)
+	}
+}

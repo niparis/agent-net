@@ -4,12 +4,12 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
+  NAME                 AGENT  PROJECT  STATUS   CPU   RAM TASK         view: all
  Mac (here) 2 sessions ─────────────────────────────────────────────────────────
-▸ ↳ backtest-a opencode idle   -     normal -            ?     ?
-  ↳ backtest-b opencode idle   -     normal -            ?     ?
+▸ ↳ backtest-a         openc… -        idle       ?     ? probe
+  ↳ backtest-b         openc… -        idle       ?     ? probe
  build-vm 1 session ────────────────────────────────────────────────────────────
-  ↳ backtest-… opencode idle   -     normal -            ?     ?
+  ↳ backtest-on-a-rem… openc… -        idle       ?     ? probe
 
 
 

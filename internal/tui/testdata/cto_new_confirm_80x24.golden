@@ -2,7 +2,7 @@
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │   no machines yet                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
+  NAME       AGENT  PROJECT  STATUS   CPU   RAM TASK                   view: all
   waiting for the daemon...
 
 

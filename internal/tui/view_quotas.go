@@ -109,13 +109,48 @@ func (m Model) quotasView(w, h int) []string {
 	if w < 110 {
 		machineWidth = 7
 	}
-	providerWidth, planWidth, windowWidth := quotaColumnWidths(configured, m, w-len(machines)*(machineWidth+1))
+	// At 80 columns a per machine column costs too much. One live machine
+	// becomes a badge beside the provider, and empty machine columns go.
+	showMachines := true
+	machineBadge := ""
+	var liveMachine protocol.UsageNode
+	if w < 110 {
+		live := 0
+		for _, node := range machines {
+			for _, r := range configured {
+				if quotaMachineStatus(node.Usage.Quotas, r.provider.Provider) == "live" {
+					live++
+					liveMachine = node
+					break
+				}
+			}
+		}
+		if live <= 1 {
+			showMachines = false
+			if live == 1 {
+				machineBadge = sanitize(firstNonEmpty(liveMachine.Hostname, liveMachine.NodeID))
+			}
+		}
+	}
+	machineRoom := 0
+	if showMachines {
+		machineRoom = len(machines) * (machineWidth + 1)
+	}
+	providerWidth, planWidth, windowWidth := quotaColumnWidths(configured, m, w-machineRoom, machineBadge)
+	barCells, remainingWidth := 10, 20
+	if w < 100 {
+		barCells, remainingWidth = 8, 18
+	}
 	if len(rows) > 0 {
 		header := cell("PROVIDER", providerWidth) + " " + cell("PLAN", planWidth)
-		for _, node := range machines {
-			header += " " + cell(strings.ToUpper(sanitize(firstNonEmpty(node.Hostname, node.NodeID))), machineWidth)
+		if showMachines {
+			for _, node := range machines {
+				header += " " + cell(strings.ToUpper(sanitize(firstNonEmpty(node.Hostname, node.NodeID))), machineWidth)
+			}
+			header += " " + cell("WINDOW", windowWidth) + " LEFT                 PACE      RESETS"
+		} else {
+			header += " " + cell("WINDOW", windowWidth) + " " + cell("USAGE", remainingWidth) + " " + cell("PACE", 9) + " RESETS"
 		}
-		header += " " + cell("WINDOW", windowWidth) + " LEFT                 PACE      RESETS"
 		subscription = append(subscription, sBold.Render(header))
 	}
 	for rowIndex, r := range configured {
@@ -131,6 +166,9 @@ func (m Model) quotasView(w, h int) []string {
 			provider, plan := "", ""
 			if i == 0 {
 				provider = sanitize(p.Provider)
+				if machineBadge != "" && quotaMachineStatus(liveMachine.Usage.Quotas, p.Provider) == "live" {
+					provider += " (" + machineBadge + ")"
+				}
 				if m.quotaProviderProtected(p.Provider) {
 					provider = "🔒 " + provider
 				}
@@ -165,9 +203,9 @@ func (m Model) quotasView(w, h int) []string {
 			}
 			remaining := "-"
 			if len(p.Windows) > 0 {
-				remaining = quotaBar(left/100, 10, color) + " " + pctText
+				remaining = quotaBar(left/100, barCells, color) + " " + pctText
 			}
-			remaining = padStyled(remaining, 20)
+			remaining = padStyled(remaining, remainingWidth)
 
 			paceStyle := sDim
 			if window.Pace == protocol.QuotaPaceAhead {
@@ -206,18 +244,20 @@ func (m Model) quotasView(w, h int) []string {
 				providerCell = sSel.Render(providerCell)
 			}
 			line := providerCell + " " + cell(plan, planWidth)
-			for _, node := range machines {
-				status := ""
-				if i == 0 {
-					status = quotaMachineStatus(node.Usage.Quotas, p.Provider)
+			if showMachines {
+				for _, node := range machines {
+					status := ""
+					if i == 0 {
+						status = quotaMachineStatus(node.Usage.Quotas, p.Provider)
+					}
+					value := cell(status, machineWidth)
+					if status == "live" {
+						value = sBusy.Render(value)
+					} else {
+						value = sDim.Render(value)
+					}
+					line += " " + value
 				}
-				value := cell(status, machineWidth)
-				if status == "live" {
-					value = sBusy.Render(value)
-				} else {
-					value = sDim.Render(value)
-				}
-				line += " " + value
 			}
 			line += fmt.Sprintf(" %s %s %s %s", cell(name, windowWidth), remaining, pace, reset)
 			subscription = append(subscription, clip(line, w-4))
@@ -396,13 +436,18 @@ func quotaErrorLabel(err string) string {
 	}
 }
 
-func quotaColumnWidths(rows []quotaRow, m Model, w int) (int, int, int) {
+func quotaColumnWidths(rows []quotaRow, m Model, w int, badge string) (int, int, int) {
 	provider, plan, window := len("PROVIDER"), len("PLAN"), len("WINDOW")
+	badgeWidth := 0
+	if badge != "" {
+		badgeWidth = lipgloss.Width(" (" + badge + ")")
+	}
 	for i, r := range rows {
 		name := sanitize(r.provider.Provider)
 		if m.quotaProviderProtected(r.provider.Provider) {
 			name = "🔒 " + name
 		}
+		name += strings.Repeat(" ", badgeWidth)
 		if i == m.quotaSelected {
 			name = "> " + name
 		} else {

@@ -4,21 +4,21 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME         AGENT    STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
+  NAME        AGENT  PROJECT    STATUS   CPU   RAM TASK                view: all
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-▸ tenebrae-53  claude   busy   -     normal -            ?     ?
-  strategies   claude   idle   -     normal -            ?     ?
-  web          opencode idle   -     normal -            ?     ?
+▸ tenebrae-53 claude tenebrae   busy       ?     ?
+  strategies  claude strategies idle       ?     ? backtest v2
+  web         openc… shop       idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner    pi       idle   -     normal -            ?     ?
-  scratch      pi       shell  -     normal -            ?     ?
+  ci-runner   pi     agent-net  idle       ?     ?
+  scratch     pi     -          shell      ?     ?
 
 
 
 
 
 ╭─CTO · opencode · fake/m1─────────────────────────────────────────────────────╮
-│   The request was not completed.                                             │
+│ error: Provider request failed because the account has insufficient…         │
 │ enter: open the CTO · ctrl+]: back · w: drive 30m                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter open CTO  ctrl+] back  m model  n new  u undo

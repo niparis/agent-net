@@ -55,17 +55,26 @@ func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool, loc *time.Lo
 	if selected {
 		lead = "▸ "
 	}
-	// Keep today's runs compact so the task title has room.
+	// Keep today's runs compact so the task title has room. Under 100
+	// columns the date, the model's effort and the spelled out difficulty
+	// are in the details pane instead.
 	started := time.Unix(r.StartedAt, 0).In(loc)
 	dateFormat := "01-02 15:04"
+	model := sanitize(firstNonEmpty(r.Model, "-"))
+	difficulty := sanitize(firstNonEmpty(r.Difficulty, "-"))
+	modelWidth := min(25, max(w/4, 6))
+	difficultyWidth := min(10, max(w/8, 3))
+	if w < 100 {
+		dateFormat = "15:04"
+		model = workerLogShortModel(model)
+		difficulty = workerLogShortDifficulty(difficulty)
+		modelWidth = 10
+		difficultyWidth = 4
+	}
 	if started.Format("2006-01-02") == time.Now().In(loc).Format("2006-01-02") {
 		dateFormat = "15:04"
 	}
-	modelWidth := min(25, max(w/4, 6))
-	if w < 100 {
-		modelWidth = min(12, max(w/7, 6))
-	}
-	prefix := started.Format(dateFormat) + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), modelWidth) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
+	prefix := started.Format(dateFormat) + "  " + cell(model, modelWidth) + "  " + cell(difficulty, difficultyWidth) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
 	status := r.Status
 	room := max(w-2-len(status)-1, 0)
 	line := lead + cell(sanitize(prefix+firstNonEmpty(r.Title, "-")), room) + " " + workerStatusStyle(status).Render(status)
@@ -237,6 +246,38 @@ func workerLogModel(harness, model string) string {
 	}
 	parts := nonEmpty(harness, provider, modelName, effort)
 	return strings.Join(parts, " · ")
+}
+
+// workerLogShortModel drops the effort and any provider folder from a model
+// name, then cuts it to the ten columns the narrow log gives it.
+func workerLogShortModel(model string) string {
+	model = sanitize(model)
+	if i := strings.LastIndex(model, ":"); i > 0 {
+		model = model[:i]
+	}
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		model = model[i+1:]
+	}
+	return model
+}
+
+// workerLogShortDifficulty is the four-column spelling of a difficulty level.
+func workerLogShortDifficulty(level string) string {
+	switch strings.ToLower(level) {
+	case "simple", "easy", "trivial":
+		return "simp"
+	case "normal":
+		return "norm"
+	case "hard":
+		return "hard"
+	case "very_complex", "very complex", "very hard", "extreme":
+		return "very"
+	}
+	r := []rune(level)
+	if len(r) > 4 {
+		return string(r[:4])
+	}
+	return string(r)
 }
 
 func workerDifficultyStyle(level string) lipgloss.Style {

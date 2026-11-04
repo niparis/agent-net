@@ -52,14 +52,27 @@ func settingsAppRow(width int, fields []string) string {
 
 func (m Model) settingsItems() []settingsItem {
 	state := "off"
+	narrowURLs := false
+	base := ""
 	if m.apps.public.On {
 		state = "on"
 		if m.apps.public.URL != "" {
-			base := strings.TrimRight(m.apps.public.URL, "/")
-			state += "   phone " + base + "/   bots " + base + "/mcp"
+			base = strings.TrimRight(m.apps.public.URL, "/")
+			narrowURLs = m.width > 0 && m.width < 100
+			if narrowURLs {
+				// The two addresses do not fit beside the toggle at 80
+				// columns. They sit under it as notes instead.
+			} else {
+				state += "   phone " + base + "/   bots " + base + "/mcp"
+			}
 		}
 	}
 	items := []settingsItem{{0, "public", 0, "Internet access: " + state}}
+	if narrowURLs {
+		items = append(items,
+			settingsItem{0, "public-phone", 0, "  phone  " + base + "/"},
+			settingsItem{0, "public-bots", 0, "  bots   " + base + "/mcp"})
+	}
 	if !m.apps.public.On {
 		items = append(items, settingsItem{0, "url", 0, "Use your own tunnel URL"})
 	} else if m.apps.public.Port == 0 && m.apps.public.URL != "" {
@@ -151,20 +164,17 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.openHelp()
 		return m, nil
 	case actUp:
-		m.settingsRow = max(0, m.settingsRow-1)
+		m.settingsRow = settingsStep(items, m.settingsRow, -1)
 	case actDown:
-		m.settingsRow = min(len(items)-1, m.settingsRow+1)
+		m.settingsRow = settingsStep(items, m.settingsRow, 1)
 	case "next section", "previous section":
 		step := 1
 		if keyAction(contextSettings, k.String()) == "previous section" {
 			step = -1
 		}
 		section := (item.section + step + 7) % 7
-		for i, row := range items {
-			if row.section == section {
-				m.settingsRow = i
-				break
-			}
+		if i, ok := settingsSection(items, section); ok {
+			m.settingsRow = i
 		}
 	case "rotate token":
 		if item.kind == "machine" {
@@ -278,6 +288,33 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func keyRunesForSettings(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Text: s, Code: []rune(s)[0]}
+}
+
+// settingsSelectable hides the URL notes under the internet toggle from the
+// row cursor: they are text, not actions.
+func settingsSelectable(item settingsItem) bool {
+	return item.kind != "public-phone" && item.kind != "public-bots"
+}
+
+// settingsSection finds the first selectable row of a section.
+func settingsSection(items []settingsItem, section int) (int, bool) {
+	for i, item := range items {
+		if item.section == section && settingsSelectable(item) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// settingsStep moves the row cursor to the next or previous selectable row.
+func settingsStep(items []settingsItem, row, step int) int {
+	row = min(max(row, 0), len(items)-1)
+	for next := row + step; next >= 0 && next < len(items); next += step {
+		if settingsSelectable(items[next]) {
+			return next
+		}
+	}
+	return row
 }
 
 // startTimeZoneEdit asks for the display time zone: auto, or a name the zone
@@ -425,6 +462,12 @@ func (m Model) settingsView(w, h int) []string {
 	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Change network values and review their history."}
 	items := m.settingsItems()
 	selected := min(max(m.settingsRow, 0), len(items)-1)
+	if !settingsSelectable(items[selected]) {
+		selected = settingsStep(items, selected, 1)
+		if !settingsSelectable(items[selected]) {
+			selected = settingsStep(items, selected, -1)
+		}
+	}
 	if items[selected].section == 6 {
 		old, unknown := m.settingsSyncMachines()
 		if len(old) > 0 {

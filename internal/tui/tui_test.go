@@ -600,7 +600,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	out := keys(newModel(80, 24), "down").testView() // tenebrae-53
 	for _, want := range []string{
 		"Mac (here)", "old-box", "12 online", "cpu", "mem", "disk 180G free", "disk 31G free",
-		"AGENT", "NAME", "STATUS", "TRUST", "RULE", "DLG", "CPU", "RAM",
+		"AGENT", "NAME", "PROJECT", "STATUS", "CPU", "RAM", "TASK",
 		"tenebrae-53", "busy", "shell", "CTO",
 		"up/down select", "q quit",
 	} {
@@ -888,8 +888,8 @@ func TestInitStartsFetchAndClock(t *testing.T) {
 	m := New(&fakeSource{snap: fakeSnapshot()})
 	cmd := m.Init()
 	batch, ok := cmd().(tea.BatchMsg)
-	if !ok || len(batch) != 2 {
-		t.Fatalf("Init must batch a fetch and a tick, got %T", cmd())
+	if !ok || len(batch) != 3 {
+		t.Fatalf("Init must batch a background request, a fetch and a tick, got %T", cmd())
 	}
 	var sawFetch bool
 	for _, c := range batch {

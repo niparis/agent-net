@@ -36,12 +36,32 @@ const maxMachineRows = 5
 // ctoBoxHeight keeps half the rows previously reserved for the CTO. Round up
 // when the old height is odd so that its latest output still has room.
 func (m Model) ctoBoxHeight(tab int) int {
+	if !m.showCTOBox(tab) {
+		return 0
+	}
 	h := max(m.height, 10)
 	box := min(max((h-1)/3, 6), max(h-4, 1))
 	if tab == quotasTab && h <= 24 && box > 6 {
 		box = 6
 	}
 	return (box + 1) / 2
+}
+
+// showCTOBox hides the box on the Graph tab unless the CTO proposes a change
+// to a node or an edge. The canvas needs those rows more than an empty box.
+func (m Model) showCTOBox(tab int) bool {
+	if tab != graphTab || m.focus == focusCTO || m.mapOn {
+		return true
+	}
+	for _, p := range m.proposals {
+		if p.Status != "open" {
+			continue
+		}
+		if p.Tool == "charter_set" || p.Action == "charter_set" || p.Tool == "edge_set" || p.Action == "edge_set" {
+			return true
+		}
+	}
+	return false
 }
 
 // layout divides the height between the parts. The sessions table gets what
@@ -189,7 +209,7 @@ func (m Model) renderView() string {
 		for len(out) < contentHeight {
 			out = append(out, "")
 		}
-		if m.cto != nil {
+		if m.cto != nil && box > 0 {
 			out = append(out, m.ctoView(w, box)...)
 		}
 
@@ -295,6 +315,7 @@ const (
 )
 
 var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Inbox"}
+var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Inbox"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 // sessionViewName is the view the v key selected.
@@ -314,18 +335,17 @@ func (m Model) titleLine(w int) string {
 
 	var tabs []string
 	count := m.waitingCount()
-	fullTabs := len(strings.Join(tabNames, " ")) + len("1 2 3 4 5 6 7 ")
+	names := tabNames
+	if w <= 80 && count > 0 {
+		// The pending count makes the full names run into the online
+		// counter. Short names keep the separator between them.
+		names = shortTabNames
+	}
+	fullTabs := len(strings.Join(names, " ")) + len("1 2 3 4 5 6 7 ")
 	if count > 0 {
 		fullTabs += len(fmt.Sprintf(" (%d)", count))
 	}
-	shortOnline := ""
-	if m.usage.counts != nil {
-		shortOnline = fmt.Sprintf("%d online", m.usage.counts.Online)
-	}
-	for i, name := range tabNames {
-		if count > 0 && shortOnline != "" && fullTabs+3+len(shortOnline) > w && name == "Messages" {
-			name = "Msgs"
-		}
+	for i, name := range names {
 		label := fmt.Sprintf("%d %s", i+1, name)
 		if i == inboxTab && count > 0 {
 			label += fmt.Sprintf(" (%d)", count)
@@ -929,6 +949,58 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 	return columnsForProject(avail, nameWant, 0, policy)
 }
 
+// columnsNarrow is the 80 column table. TRUST and RULE almost always hold the
+// defaults there, so the room goes to the agent, the project and the task.
+func columnsNarrow(avail, nameWant, projectWant int) []column {
+	cols := []column{
+		{name: "NAME", min: 10, max: 20},
+		{name: "AGENT", min: 6, max: 8},
+		{name: "PROJECT", min: 8, max: 14},
+		{name: "STATUS", min: 6, max: 6},
+		{name: "CPU", min: 5, max: 5, right: true},
+		{name: "RAM", min: 5, max: 5, right: true},
+		{name: "TASK", min: 1, max: 4000},
+	}
+	for _, drop := range []string{"CPU", "RAM", "PROJECT", "AGENT"} {
+		if sumMin(cols) <= avail {
+			break
+		}
+		for i, c := range cols {
+			if c.name == drop {
+				cols = append(cols[:i], cols[i+1:]...)
+				break
+			}
+		}
+	}
+	for i := range cols {
+		cols[i].width = cols[i].min
+	}
+	extra := avail - sumMin(cols)
+	for _, name := range []string{"NAME", "PROJECT", "TASK"} {
+		for i := range cols {
+			if cols[i].name != name || extra <= 0 {
+				continue
+			}
+			want := cols[i].max
+			switch name {
+			case "NAME":
+				want = max(min(nameWant, cols[i].max), cols[i].min)
+			case "PROJECT":
+				want = max(min(projectWant, cols[i].max), cols[i].min)
+			}
+			add := min(extra, want-cols[i].width)
+			cols[i].width += add
+			extra -= add
+		}
+	}
+	for i := range cols {
+		if cols[i].name == "TASK" && extra > 0 {
+			cols[i].width += extra
+		}
+	}
+	return cols
+}
+
 func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 	cols := []column{
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
@@ -1051,14 +1123,22 @@ func (m Model) sessionsTable(w, n int) []string {
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 		}
 	}
-	indicator := "view: " + m.sessionViewName() + "  (v)"
+	indicator := "view: " + m.sessionViewName()
+	if w > 80 {
+		indicator += "  (v)"
+	}
 	avail := w - 2 - ansi.StringWidth(indicator) - 2 // marker and view indicator
 	statusWidth := 6
 	if m.anySessionWaiting() {
 		statusWidth = 9
 	}
 	avail -= statusWidth - 6
-	cols := columnsForProject(avail, nameWant, projectWant, false)
+	var cols []column
+	if w <= 80 {
+		cols = columnsNarrow(avail, nameWant, projectWant)
+	} else {
+		cols = columnsForProject(avail, nameWant, projectWant, false)
+	}
 	for i := range cols {
 		if cols[i].name == "STATUS" {
 			cols[i].width = statusWidth

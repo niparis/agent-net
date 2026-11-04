@@ -153,3 +153,33 @@ func TestSettingsKeepsSelectedRowWhenTunnelAvailabilityChanges(t *testing.T) {
 		t.Fatalf("after URL row appeared: selected %q", got)
 	}
 }
+
+func TestSettingsURLsMoveBelowTheToggleAt80(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = settingsTab
+	m.apps.public = appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true, Port: 8443, URL: "https://example.test:8443"}}
+	view := ansi.Strip(strings.Join(m.settingsView(80, 40), "\n"))
+	for _, want := range []string{"Internet access: on\n", "    phone  https://example.test:8443/\n", "    bots   https://example.test:8443/mcp\n"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("80 column settings is missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Internet access: on   phone") {
+		t.Errorf("the URLs are still on the toggle line:\n%s", view)
+	}
+	// Down moves past the two URL rows, so Enter never lands on a note.
+	m.settingsRow = 0
+	next, _ := m.settingsKey(keyRunesForSettings("down"))
+	m = next.(Model)
+	item := m.settingsItems()[m.settingsRow]
+	if item.kind != "add" {
+		t.Errorf("down selected the %q row, want Add an app", item.kind)
+	}
+	m = newModel(120, 34)
+	m.tab = settingsTab
+	m.apps.public = appsPublicStatus{AppsPublicStatus: protocol.AppsPublicStatus{On: true, Port: 8443, URL: "https://example.test:8443"}}
+	wide := ansi.Strip(strings.Join(m.settingsView(120, 40), "\n"))
+	if !strings.Contains(wide, "Internet access: on   phone https://example.test:8443/   bots https://example.test:8443/mcp") {
+		t.Errorf("120 column settings changed its inline URLs:\n%s", wide)
+	}
+}
