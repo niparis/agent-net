@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
@@ -58,7 +58,7 @@ func TestGraphCardLearnedUndo(t *testing.T) {
 	m = keys(m, "enter", ".")
 	src := &learnedSource{}
 	m.src = src
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	_, cmd := m.Update(tea.KeyPressMsg{Text: "u", Code: []rune("u")[0]})
 	if cmd == nil {
 		t.Fatal("card undo missing")
 	}

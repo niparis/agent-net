@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -59,7 +59,7 @@ func TestNewSessionTypedPathStartsThere(t *testing.T) {
 	setProjectValue(&m, "~/code/garden")
 	m.sform.in[sHarness].SetValue("claude")
 
-	view := m.View()
+	view := m.testView()
 	if !strings.Contains(view, "not a known project yet: it will be registered") {
 		t.Fatalf("the form does not say the folder will be registered:\n%s", view)
 	}
@@ -69,7 +69,7 @@ func TestNewSessionTypedPathStartsThere(t *testing.T) {
 
 	src.sessionStart = startedSession("garden", "claude")
 	before := len(src.sessionStarts)
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -97,15 +97,15 @@ func TestNewSessionBareNameGoesUnderTheProjectsFolder(t *testing.T) {
 	m.sform.in[sHarness].SetValue("pi")
 	want := filepath.Join(home, "code", "garden-planner")
 
-	if view := m.View(); !strings.Contains(view, "new folder: ~/code/garden-planner") {
+	if view := m.testView(); !strings.Contains(view, "new folder: ~/code/garden-planner") {
 		t.Fatalf("a bare name does not show where the folder goes:\n%s", view)
 	}
 	src.sessionStart = startedSession("garden-planner", "pi")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil || m.sessionPending == nil {
 		t.Fatalf("the create question did not appear: cmd %v pending %+v", cmd != nil, m.sessionPending)
 	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("yes gave no command")
 	}
@@ -119,21 +119,21 @@ func TestNewSessionBareNameGoesUnderTheProjectsFolder(t *testing.T) {
 }
 
 func TestNewSessionMissingFolderAsksBeforeCreating(t *testing.T) {
-	for _, no := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune("n")}} {
+	for _, no := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, {Text: "n", Code: []rune("n")[0]}} {
 		t.Run(no.String(), func(t *testing.T) {
 			m, src, home := pathModel(t, 120, 34)
 			target := filepath.Join(home, "code", "garden-planner")
 			setProjectValue(&m, "~/code/garden-planner")
 			m.sform.in[sHarness].SetValue("pi")
 
-			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("the missing folder was sent before the owner answered: cmd %v asks %+v", cmd != nil, src.sessionStarts)
 			}
 			if m.mode != modeSessionForm || m.sessionPending == nil || m.sessionPending.kind != askCreateFolder {
 				t.Fatalf("mode %v pending %+v, want the create question", m.mode, m.sessionPending)
 			}
-			view := m.View()
+			view := m.testView()
 			for _, want := range []string{"Create ~/code/garden-planner on Mac and run git init?", confirmHint} {
 				if !strings.Contains(view, want) {
 					t.Errorf("the create question does not show %q:\n%s", want, view)
@@ -163,8 +163,8 @@ func TestNewSessionMissingFolderIsCreatedOnlyAfterYes(t *testing.T) {
 	setProjectValue(&m, "~/code/garden-planner")
 	m.sform.in[sHarness].SetValue("claude")
 
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // ask
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // ask
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("yes gave no command")
 	}
@@ -199,10 +199,10 @@ func TestNewSessionPathOutsideHomeIsRefused(t *testing.T) {
 			}
 			setProjectValue(&m, tc.value)
 			m.sform.in[sHarness].SetValue("pi")
-			if view := m.View(); !strings.Contains(strings.ToLower(view), tc.want) {
+			if view := m.testView(); !strings.Contains(strings.ToLower(view), tc.want) {
 				t.Fatalf("the form does not refuse the path:\n%s", view)
 			}
-			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("a refused path was sent: cmd %v asks %+v", cmd != nil, src.sessionStarts)
 			}
@@ -219,7 +219,7 @@ func TestNewSessionClaudeTrustNoteAndQuestion(t *testing.T) {
 		gitFolder(t, home, "code/garden")
 		setProjectValue(&m, "~/code/garden")
 		m.sform.in[sHarness].SetValue("claude")
-		if view := m.View(); !strings.Contains(view, "Claude Code has not trusted this folder: it will ask") {
+		if view := m.testView(); !strings.Contains(view, "Claude Code has not trusted this folder: it will ask") {
 			t.Fatalf("the form has no trust note:\n%s", view)
 		}
 	})
@@ -232,18 +232,18 @@ func TestNewSessionClaudeTrustNoteAndQuestion(t *testing.T) {
 		src.sessionStart = protocol.StartedSession{ID: "start_1", Status: "needs_trust",
 			NodeID: "n_mac", Hostname: "Mac", Harness: "claude", Project: "garden", Path: dir, StartedAt: t0.Unix()}
 
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		m, _ = press2(m, cmd())
 		if m.sessionPending == nil || m.sessionPending.kind != askTrustClaude {
 			t.Fatalf("no trust question: pending %+v", m.sessionPending)
 		}
-		view := m.View()
+		view := m.testView()
 		for _, want := range []string{"Trust ~/code/garden for Claude Code?", confirmHint} {
 			if !strings.Contains(view, want) {
 				t.Errorf("the trust question does not show %q:\n%s", want, view)
 			}
 		}
-		m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 		if cmd != nil || m.sessionPending != nil || len(src.sessionStarts) != 1 {
 			t.Fatalf("no still started: cmd %v pending %+v asks %+v", cmd != nil, m.sessionPending, src.sessionStarts)
 		}
@@ -260,9 +260,9 @@ func TestNewSessionClaudeTrustNoteAndQuestion(t *testing.T) {
 		src.sessionStart = protocol.StartedSession{ID: "start_1", Status: "needs_trust",
 			NodeID: "n_mac", Hostname: "Mac", Harness: "claude", Project: "garden", Path: dir, StartedAt: t0.Unix()}
 
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		m, _ = press2(m, cmd())
-		m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatal("yes gave no command")
 		}
@@ -284,7 +284,7 @@ func TestNewSessionRemoteMissingPathAsksAfterTheMachineChecks(t *testing.T) {
 	src.sessionStart = protocol.StartedSession{ID: "start_r", Status: "needs_create",
 		NodeID: "n_vm", Hostname: "build-vm", Harness: "pi", Project: "far", Path: "/srv/n/code/far"}
 
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -298,11 +298,11 @@ func TestNewSessionRemoteMissingPathAsksAfterTheMachineChecks(t *testing.T) {
 	if m.sessionPending == nil || m.sessionPending.kind != askCreateFolder {
 		t.Fatalf("the remote machine's missing folder did not ask: %+v", m.sessionPending)
 	}
-	if view := m.View(); !strings.Contains(view, "Create /srv/n/code/far on build-vm and run git init?") {
+	if view := m.testView(); !strings.Contains(view, "Create /srv/n/code/far on build-vm and run git init?") {
 		t.Fatalf("the remote create question is missing:\n%s", view)
 	}
 
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m, cmd = press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	if cmd == nil {
 		t.Fatal("yes gave no command")
 	}
@@ -325,20 +325,20 @@ func TestNewSessionPathGoldens(t *testing.T) {
 
 		setProjectValue(&m, "~/code/garden-planner")
 		m.sform.in[sHarness].SetValue("pi")
-		golden(t, name("new_session_path_new_folder"), m.View())
+		golden(t, name("new_session_path_new_folder"), m.testView())
 
 		setProjectValue(&m, "~/code/garden")
-		golden(t, name("new_session_path_register"), m.View())
+		golden(t, name("new_session_path_register"), m.testView())
 
 		setProjectValue(&m, "~/code/notes")
-		golden(t, name("new_session_path_not_git"), m.View())
+		golden(t, name("new_session_path_not_git"), m.testView())
 
 		setProjectValue(&m, "/etc/agent-net-garden")
-		golden(t, name("new_session_path_outside_home"), m.View())
+		golden(t, name("new_session_path_outside_home"), m.testView())
 
 		setProjectValue(&m, "~/code/garden-planner")
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-		golden(t, name("new_session_create_confirm"), m.View())
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		golden(t, name("new_session_create_confirm"), m.testView())
 	}
 }
 
@@ -350,12 +350,12 @@ func TestNewSessionPathTrustGoldens(t *testing.T) {
 		dir := gitFolder(t, home, "code/garden")
 		setProjectValue(&m, "~/code/garden")
 		m.sform.in[sHarness].SetValue("claude")
-		golden(t, name("new_session_trust_note"), m.View())
+		golden(t, name("new_session_trust_note"), m.testView())
 
 		src.sessionStart = protocol.StartedSession{ID: "start_1", Status: "needs_trust",
 			NodeID: "n_mac", Hostname: "Mac", Harness: "claude", Project: "garden", Path: dir, StartedAt: t0.Unix()}
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		m, _ = press2(m, cmd())
-		golden(t, name("new_session_trust_confirm"), m.View())
+		golden(t, name("new_session_trust_confirm"), m.testView())
 	}
 }

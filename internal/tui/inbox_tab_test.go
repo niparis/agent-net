@@ -8,8 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
@@ -118,7 +117,7 @@ func TestInboxTabOpensWithSeven(t *testing.T) {
 	if m.tab != inboxTab {
 		t.Fatalf("7 opened tab %d, want Inbox", m.tab)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "Inbox") {
+	if !strings.Contains(ansi.Strip(m.testView()), "Inbox") {
 		t.Fatal("the Inbox view is missing")
 	}
 }
@@ -139,9 +138,9 @@ func TestInboxTabLabelShowsTheCount(t *testing.T) {
 }
 
 func TestInboxTabLabelUsesTheWarningColour(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(old)
+	old := testColorProfile
+	setTestColorProfile(termenv.TrueColor)
+	defer setTestColorProfile(old)
 	m, _ := inboxAllKindsModel(120, 34)
 	title := m.titleLine(120)
 	want := sNeeds.Render(fmt.Sprintf("7 Inbox (%d)", m.waitingCount()))
@@ -159,7 +158,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 			t.Fatalf("%s rows are not newest first: %d then %d", rows[i].kind, rows[i-1].since, rows[i].since)
 		}
 	}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	for _, heading := range []string{"Needs your answer · 3", "Proposals · 2", "For your information · 2"} {
 		if !strings.Contains(view, heading) {
 			t.Errorf("missing box heading %q:\n%s", heading, view)
@@ -192,7 +191,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 			t.Fatalf("no %s row", tc.kind)
 		}
 		m.inboxIndex = i
-		line := ansi.Strip(lastLine(m.View()))
+		line := ansi.Strip(lastLine(m.testView()))
 		for _, want := range tc.keys {
 			if !strings.Contains(line, want) {
 				t.Errorf("%s key line %q lacks %q", tc.kind, line, want)
@@ -206,7 +205,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m, src := inboxAllKindsModel(100, 30)
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "held")
-		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
 			t.Fatal("a did not answer the held request")
 		}
@@ -219,7 +218,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m, src := inboxAllKindsModel(100, 30)
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "learned")
-		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
 			t.Fatal("a did not accept the suggestion")
 		}
@@ -233,7 +232,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m, src := inboxAllKindsModel(100, 30)
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "outcome")
-		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("O")})
+		next, cmd := press(m, tea.KeyPressMsg{Text: "O", Code: []rune("O")[0]})
 		if cmd == nil {
 			t.Fatal("O did not resolve the outcome")
 		}
@@ -246,7 +245,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m, src := inboxAllKindsModel(100, 30)
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "proposal")
-		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
 			t.Fatal("a did not answer the proposal")
 		}
@@ -260,7 +259,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m, _ := inboxAllKindsModel(100, 30)
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "proposal")
-		next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+		next, _ := press(m, tea.KeyPressMsg{Text: "A", Code: []rune("A")[0]})
 		if !next.proposalConfirm {
 			t.Fatal("A did not open the approve-all confirmation")
 		}
@@ -269,7 +268,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m, src := inboxAllKindsModel(100, 30)
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "approval")
-		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
 			t.Fatal("a did not answer the inbox item")
 		}
@@ -288,9 +287,9 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 			t.Fatal("t did not start an answer")
 		}
 		for _, r := range "feat" {
-			m = send(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			m = send(m, tea.KeyPressMsg{Text: string(r), Code: r})
 		}
-		next, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		next, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatal("enter did not send the answer")
 		}
@@ -306,7 +305,7 @@ func TestInboxDismissesANoticeWithX(t *testing.T) {
 	m, src := inboxAllKindsModel(100, 30)
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "notice")
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	next, cmd := press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 	if cmd == nil {
 		t.Fatal("x did not dismiss the notice")
 	}
@@ -329,12 +328,12 @@ func TestInboxOwnerStepAsksForEvidenceFields(t *testing.T) {
 	}
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "approval")
-	next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	next, _ := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 	if !next.inboxEditing {
 		t.Fatal("owner merge did not ask for the merged commit")
 	}
 	next.inboxInput.SetValue(`{"merged_commit":"` + strings.Repeat("a", 40) + `"}`)
-	next, cmd := press(next, tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := press(next, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("evidence was not sent")
 	}
@@ -349,7 +348,7 @@ func TestInboxEnterOnHeldRequestEntersTheSession(t *testing.T) {
 	m, src := inboxAllKindsModel(100, 30)
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "held")
-	_, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter did nothing on the held request")
 	}
@@ -368,7 +367,7 @@ func TestInboxEnterOnHeldRequestEntersTheSession(t *testing.T) {
 
 func TestInboxEmptyState(t *testing.T) {
 	m := openInbox(newModel(80, 24))
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "Nothing is waiting for you.") {
 		t.Fatalf("empty state missing:\n%s", view)
 	}
@@ -382,7 +381,7 @@ func TestInboxEmptyState(t *testing.T) {
 func TestSessionsShowsTheInboxSummaryAndNoNeedsRows(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = keys(m, "1")
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	want := fmt.Sprintf("%d waiting in Inbox (7)", m.waitingCount())
 	if !strings.Contains(view, want) {
 		t.Fatalf("Sessions lacks %q:\n%s", want, view)
@@ -396,20 +395,20 @@ func TestSessionsShowsTheInboxSummaryAndNoNeedsRows(t *testing.T) {
 	}
 
 	empty := keys(newModel(120, 34), "1")
-	if strings.Contains(ansi.Strip(empty.View()), "waiting in Inbox") {
-		t.Fatalf("empty Sessions shows a summary:\n%s", empty.View())
+	if strings.Contains(ansi.Strip(empty.testView()), "waiting in Inbox") {
+		t.Fatalf("empty Sessions shows a summary:\n%s", empty.testView())
 	}
 }
 
 func TestIKeyDoesNothing(t *testing.T) {
 	m := newModel(80, 24)
-	before := m.View()
-	next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	before := m.testView()
+	next, _ := press(m, tea.KeyPressMsg{Text: "i", Code: []rune("i")[0]})
 	if next.tab != sessionsTab || next.inboxDetail || next.inboxEditing {
 		t.Fatalf("i opened inbox state: tab=%d detail=%v editing=%v", next.tab, next.inboxDetail, next.inboxEditing)
 	}
-	if next.View() != before {
-		t.Fatalf("i changed the screen:\n%s", next.View())
+	if next.testView() != before {
+		t.Fatalf("i changed the screen:\n%s", next.testView())
 	}
 }
 
@@ -417,14 +416,14 @@ func TestInboxGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := inboxAllKindsModel(size[0], size[1])
 		m = openInbox(m)
-		golden(t, fmt.Sprintf("inbox_items_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("inbox_items_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
 func TestInboxEmptyGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := openInbox(newModel(size[0], size[1]))
-		golden(t, fmt.Sprintf("inbox_empty_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("inbox_empty_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -432,14 +431,14 @@ func TestSessionsSummaryGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := inboxAllKindsModel(size[0], size[1])
 		m = keys(m, "1")
-		golden(t, fmt.Sprintf("sessions_inbox_summary_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("sessions_inbox_summary_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
 func TestInboxTabBarGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := inboxAllKindsModel(size[0], size[1])
-		golden(t, fmt.Sprintf("inbox_tab_bar_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("inbox_tab_bar_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -512,7 +511,7 @@ func TestInboxRowsUsePlainWords(t *testing.T) {
 func TestInboxPanelShowsTheSelectedItem(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t answer", "enter details"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("question panel lacks %q:\n%s", want, view)
@@ -520,7 +519,7 @@ func TestInboxPanelShowsTheSelectedItem(t *testing.T) {
 	}
 
 	m.inboxIndex = inboxRowIndex(m, "outcome")
-	view = ansi.Strip(m.View())
+	view = ansi.Strip(m.testView())
 	for _, want := range []string{"ops → app", "deploy app refused: \"not now\"", "6 minutes ago", "s let stand", "O overrule"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("outcome panel lacks %q:\n%s", want, view)
@@ -551,7 +550,7 @@ func TestInboxKeyBarFollowsTheSelection(t *testing.T) {
 	}
 	for _, tc := range cases {
 		m.inboxIndex = inboxRowIndex(m, tc.kind)
-		line := ansi.Strip(lastLine(m.View()))
+		line := ansi.Strip(lastLine(m.testView()))
 		for _, want := range tc.want {
 			if !strings.Contains(line, want) {
 				t.Errorf("%s key bar %q lacks %q", tc.kind, line, want)
@@ -595,7 +594,7 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 		if got := ansi.Strip(keyHints(hintParts(m.inboxItemHints(row))...)); got != tc.item {
 			t.Errorf("%s item keys: got %q, want %q", tc.kind, got, tc.item)
 		}
-		if got := ansi.Strip(lastLine(m.View())); got != tc.bar {
+		if got := ansi.Strip(lastLine(m.testView())); got != tc.bar {
 			t.Errorf("%s key bar: got %q, want %q", tc.kind, got, tc.bar)
 		}
 		panel := ansi.Strip(strings.Join(m.inboxPanel(48, 12), "\n"))
@@ -614,7 +613,7 @@ func TestInboxNeverShowsANodeID(t *testing.T) {
 	m.proposals[0].Args = json.RawMessage(`{"project":"shop","node_id":"n_mac","harness":"pi"}`)
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "proposal")
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if strings.Contains(view, "n_mac") {
 		t.Fatalf("the Inbox shows a node ID:\n%s", view)
 	}
@@ -627,7 +626,7 @@ func TestInboxNeverShowsANodeID(t *testing.T) {
 func TestInboxPanelSitsBelowTheBoxesOnANarrowScreen(t *testing.T) {
 	m, _ := inboxAllKindsModel(80, 24)
 	m = openInbox(m)
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	lines := strings.Split(view, "\n")
 	panelAt := -1
 	for i, line := range lines {
@@ -657,7 +656,7 @@ func TestInboxPanelSitsBelowTheBoxesOnANarrowScreen(t *testing.T) {
 func TestInboxBoxesAreClosedAndAgedOnAWideScreen(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if strings.Contains(view, "───╭─ci-runner asks") {
 		t.Fatalf("a box runs into the panel:\n%s", view)
 	}
@@ -673,7 +672,7 @@ func TestInboxBoxesAreClosedAndAgedOnAWideScreen(t *testing.T) {
 func TestInboxPanelSitsOnTheRightOnAWideScreen(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
-	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	lines := strings.Split(ansi.Strip(m.testView()), "\n")
 	first := lines[1]
 	box, panel := strings.Index(first, "Needs your answer"), strings.Index(first, "ci-runner asks")
 	if box < 0 || panel < 0 || panel <= box {
@@ -688,7 +687,7 @@ func TestInboxDismissesAnApprovalWithX(t *testing.T) {
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "approval")
 	before := m.waitingCount()
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	next, cmd := press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 	if cmd == nil {
 		t.Fatal("x did not dismiss the approval")
 	}
@@ -712,7 +711,7 @@ func TestInboxDismissOfAGoneItemDropsItAndSaysAlreadyGone(t *testing.T) {
 	m.inboxIndex = inboxRowIndex(m, "approval")
 	m.inboxError = "inbox item not found"
 	before := m.waitingCount()
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	next, cmd := press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 	if cmd == nil {
 		t.Fatal("x did not try the dismiss")
 	}

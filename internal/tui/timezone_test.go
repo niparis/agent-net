@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -103,7 +103,7 @@ func TestTimeZoneSettingRefusesAnUnknownName(t *testing.T) {
 	m := New(src)
 	m.mode = modeTimeZone
 	m.rename.SetValue("Mars/Olympus")
-	next, cmd := m.timeZoneKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.timeZoneKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd != nil || m.mode != modeTimeZone || !m.notice.err || !strings.Contains(m.notice.text, "unknown time zone") {
 		t.Fatalf("unknown name accepted: mode %v cmd %v notice %q", m.mode, cmd, m.notice.text)
@@ -118,7 +118,7 @@ func TestTimeZoneSettingSavesAValidName(t *testing.T) {
 	m := New(src)
 	m.mode = modeTimeZone
 	m.rename.SetValue("Europe/Paris")
-	next, cmd := m.timeZoneKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.timeZoneKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd == nil || m.mode != modeNormal {
 		t.Fatalf("valid name not saved: mode %v cmd %v", m.mode, cmd)
@@ -152,7 +152,7 @@ func TestSettingsTimeZoneRowAndEditor(t *testing.T) {
 	}
 	m = selectSettingsKind(m, "timezone")
 	m.src = &zoneSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
-	next, _ := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next
 	if m.mode != modeTimeZone || m.rename.Value() != protocol.TimeZoneAuto {
 		t.Fatalf("editor: mode %v value %q", m.mode, m.rename.Value())

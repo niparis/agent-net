@@ -6,7 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // Braille renders a graph in terminal cells. Color, when provided, styles a
@@ -480,7 +482,7 @@ func StyleRole(role, text string) string { return colorRole(role, text) }
 
 // colorRole owns the terminal palette for semantic drawing roles.
 func colorRole(role, text string) string {
-	color := lipgloss.AdaptiveColor{Light: "#596171", Dark: "#6f7889"}
+	color := palette.Color("#596171", "#6f7889")
 	switch role {
 	case "voice":
 		color = voiceColor
@@ -489,26 +491,26 @@ func colorRole(role, text string) string {
 	case "talkFaint":
 		color = talkFaintColor
 	case "depends", "trail":
-		color = lipgloss.AdaptiveColor{Light: "#00666b", Dark: "#5fc4c9"}
+		color = palette.Color("#00666b", "#5fc4c9")
 	case "governs":
-		color = lipgloss.AdaptiveColor{Light: "#6445a1", Dark: "#b49cf5"}
+		color = palette.Color("#6445a1", "#b49cf5")
 	case "cto":
-		color = lipgloss.AdaptiveColor{Light: "#6445a1", Dark: "#b49cf5"}
+		color = palette.Color("#6445a1", "#b49cf5")
 	case "deploys", "selected", "selectedEdge", "flash", "busyPulse":
 		color = AccentColor
 	case "edgeDim":
-		color = lipgloss.AdaptiveColor{Light: "#a7adb8", Dark: "#454c58"}
+		color = palette.Color("#a7adb8", "#454c58")
 	case "node", "label", "card":
-		color = lipgloss.AdaptiveColor{Light: "#242a34", Dark: "#d7dce5"}
+		color = palette.Color("#242a34", "#d7dce5")
 	case "busy", "comet":
-		color = lipgloss.AdaptiveColor{Light: "#246b32", Dark: "#7ccf8a"}
+		color = palette.Color("#246b32", "#7ccf8a")
 	}
 	if role == "pixelSelectedLabel" {
-		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#11151c")).Background(lipgloss.Color("#5fc4c9")).Render(text)
+		return lipgloss.NewStyle().Bold(true).Foreground(palette.Fixed("#11151c")).Background(palette.Fixed("#5fc4c9")).Render(text)
 	}
 	if role == "selectedLabel" {
 		return lipgloss.NewStyle().Bold(true).
-			Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1b1c20"}).
+			Foreground(palette.Color("#ffffff", "#1b1c20")).
 			Background(AccentColor).Render(text)
 	}
 	if role == "selected" || role == "selectedEdge" {

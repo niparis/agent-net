@@ -43,7 +43,7 @@ func TestPendingGolden(t *testing.T) {
 				m.selected = m.snap.Agents[i].SessionID
 			}
 		}
-		golden(t, fmt.Sprintf("pending_%d", size.w), m.View())
+		golden(t, fmt.Sprintf("pending_%d", size.w), m.testView())
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -21,7 +21,7 @@ func hiddenModel(w, h int, src *fakeSource) Model {
 
 func finishHiddenKey(t *testing.T, m Model, key string) Model {
 	t.Helper()
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	m, cmd := press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 	if cmd == nil {
 		t.Fatalf("%q did not start a hidden-items update", key)
 	}
@@ -64,8 +64,8 @@ func TestHideSessionPersistsAndCanBeShownAndUnhidden(t *testing.T) {
 		t.Fatalf("session title omits hidden count: %s", m.titleLine(120))
 	}
 	m = keys(m, "v", "v")
-	if !containsSession(m, id) || !strings.Contains(m.View(), "hidden") {
-		t.Fatalf("show hidden did not draw a tagged session:\n%s", m.View())
+	if !containsSession(m, id) || !strings.Contains(m.testView(), "hidden") {
+		t.Fatalf("show hidden did not draw a tagged session:\n%s", m.testView())
 	}
 	m.selected = id
 	m.ensureSelection()
@@ -80,7 +80,7 @@ func TestHideSessionPersistsAndCanBeShownAndUnhidden(t *testing.T) {
 
 func TestHideSessionKeyDoesNotTakeTheWorkerStopKey(t *testing.T) {
 	m := keys(newModel(120, 34), "?")
-	v := m.View()
+	v := m.testView()
 	for _, want := range []string{"stop the selected worker or session", "hide or unhide the selected session", "cycle the view: active only, all, all with offline, all with offline and hidden"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help is missing %q:\n%s", want, v)
@@ -106,8 +106,8 @@ func TestHiddenSessionSaveFailureKeepsItVisible(t *testing.T) {
 	m.selected = id
 	m.ensureSelection()
 	m = finishHiddenKey(t, m, "h")
-	if !containsSession(m, id) || !strings.Contains(m.View(), "gateway unavailable") {
-		t.Fatalf("failed save changed local visibility without explaining the error:\n%s", m.View())
+	if !containsSession(m, id) || !strings.Contains(m.testView(), "gateway unavailable") {
+		t.Fatalf("failed save changed local visibility without explaining the error:\n%s", m.testView())
 	}
 }
 

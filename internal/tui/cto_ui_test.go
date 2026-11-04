@@ -32,11 +32,11 @@ func TestCTOUIShowAndNotice(t *testing.T) {
 		t.Fatalf("sessions: %+v", m)
 	}
 	m = send(m, protocol.UIRequest{Tab: "graph", Select: "shop", Why: "inspect"})
-	if m.mapOn || m.tab != graphTab || m.mp.selected != "shop" || m.notice.text != "CTO: inspect" || !strings.Contains(m.View(), "CTO: inspect") {
+	if m.mapOn || m.tab != graphTab || m.mp.selected != "shop" || m.notice.text != "CTO: inspect" || !strings.Contains(m.testView(), "CTO: inspect") {
 		t.Fatalf("map: %v %q %q", m.mapOn, m.mp.selected, m.notice.text)
 	}
 	m = send(m, protocol.UIRequest{Tab: "quotas", Why: "quota"})
-	if m.mapOn || m.tab != 2 || !strings.Contains(m.View(), "CTO: quota") {
+	if m.mapOn || m.tab != 2 || !strings.Contains(m.testView(), "CTO: quota") {
 		t.Fatalf("quotas: %v %d", m.mapOn, m.tab)
 	}
 	m = send(m, protocol.UIRequest{Text: "hello"})
@@ -49,7 +49,7 @@ func TestCTONoticeVisibleInOverlayAndOneLine(t *testing.T) {
 	m := mapModel(80, 24, fakeGraph())
 	m.help = true
 	m = send(m, protocol.UIRequest{Text: strings.Repeat("long notice ", 30)})
-	if !strings.Contains(m.View(), "CTO: long notice") {
+	if !strings.Contains(m.testView(), "CTO: long notice") {
 		t.Fatal("notice missing from overlay")
 	}
 	if line, ok := m.noticeLine(80); !ok || strings.Contains(line, "\n") {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -46,13 +46,13 @@ func TestNoticeKeepsTheLayoutAndUsesTheLastLine(t *testing.T) {
 	const text = "Back from agent-net (research)."
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		for _, screen := range noticeScreens(size[0], size[1]) {
-			base := screen.m.View()
+			base := screen.m.testView()
 			if got := len(lines(base)); got != size[1] {
 				t.Fatalf("%s %dx%d: %d rows before a result", screen.name, size[0], size[1], got)
 			}
 			with := screen.m
 			with.say(text)
-			got := with.View()
+			got := with.testView()
 			if n := len(lines(got)); n != size[1] {
 				t.Fatalf("%s %dx%d: %d rows with a result", screen.name, size[0], size[1], n)
 			}
@@ -85,7 +85,7 @@ func TestNoticeKeepsTheLayoutAndUsesTheLastLine(t *testing.T) {
 func TestNoticeErrorIsMarkedAndRed(t *testing.T) {
 	m := newModel(80, 24)
 	m.fail("Worker not started.")
-	last := ansi.Strip(lastLine(m.View()))
+	last := ansi.Strip(lastLine(m.testView()))
 	if !strings.HasPrefix(last, "! Worker not started.") {
 		t.Fatalf("error row: %q", last)
 	}
@@ -98,13 +98,13 @@ func TestNoticeHoldsFadesAndReturnsTheHints(t *testing.T) {
 	now := t0
 	m := newModel(80, 24)
 	m.now = func() time.Time { return now }
-	hints := lastLine(m.View())
+	hints := lastLine(m.testView())
 
 	m.say("Back from agent-net (research).")
 	full := fmt.Sprint(m.noticeStyle(m.activeNotice()).GetForeground())
 
 	now = t0.Add(noticeHold - 100*time.Millisecond)
-	if m.activeNotice() == nil || lastLine(m.View()) == hints {
+	if m.activeNotice() == nil || lastLine(m.testView()) == hints {
 		t.Fatal("the result left before the hold ended")
 	}
 	now = t0.Add(noticeHold + noticeFade/2)
@@ -115,7 +115,7 @@ func TestNoticeHoldsFadesAndReturnsTheHints(t *testing.T) {
 	if faded := fmt.Sprint(m.noticeStyle(n).GetForeground()); faded == full {
 		t.Fatal("the result did not fade")
 	}
-	if !strings.Contains(ansi.Strip(lastLine(m.View())), "Back from agent-net") {
+	if !strings.Contains(ansi.Strip(lastLine(m.testView())), "Back from agent-net") {
 		t.Fatal("the fading result is not on screen")
 	}
 
@@ -123,7 +123,7 @@ func TestNoticeHoldsFadesAndReturnsTheHints(t *testing.T) {
 	if m.activeNotice() != nil {
 		t.Fatal("the result outlived its fade")
 	}
-	if got := lastLine(m.View()); got != hints {
+	if got := lastLine(m.testView()); got != hints {
 		t.Fatalf("the hints did not return: %q", ansi.Strip(got))
 	}
 }
@@ -148,7 +148,7 @@ func TestNoticeErrorHoldsLonger(t *testing.T) {
 func TestNoticeDismissedByAKey(t *testing.T) {
 	m := newModel(80, 24)
 	m.say("Back from agent-net (research).")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.activeNotice() != nil {
 		t.Fatal("the result stayed after a key")
 	}

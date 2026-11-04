@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	udiff "github.com/aymanbagabas/go-udiff"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -115,7 +115,7 @@ func (md *toolsModal) planFoot(verb string) {
 	md.foot = []string{"enter/y", verb, "d", "exact folders", "esc/n", "cancel"}
 }
 
-func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) toolsModalKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	md := m.tl.modal
 	if md.menu != nil {
 		return m.toolMenuKey(k)
@@ -675,26 +675,26 @@ func pickerFoot(md *toolsModal, p *projPicker) {
 	md.foot = []string{"j/k", "move", "space", "tick", "/", "filter", "enter", verb, "esc", "cancel"}
 }
 
-func (m Model) pickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) pickerKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	md := m.tl.modal
 	p := md.picker
 	if p.filtering {
-		switch k.Type {
-		case tea.KeyEsc:
+		switch k.String() {
+		case "esc":
 			if p.filter != "" {
 				p.filter = ""
 			} else {
 				p.filtering = false
 			}
-		case tea.KeyEnter:
+		case "enter":
 			p.filtering = false
-		case tea.KeyBackspace, tea.KeyCtrlH:
+		case "backspace", "ctrl+h":
 			r := []rune(p.filter)
 			if len(r) > 0 {
 				p.filter = string(r[:len(r)-1])
 			}
-		case tea.KeyRunes, tea.KeySpace:
-			p.filter += string(k.Runes)
+		default:
+			p.filter += k.Text
 		}
 		p.cur = 0
 		pickerFoot(md, p)

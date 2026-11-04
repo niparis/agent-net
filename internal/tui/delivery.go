@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // The Delivery view shows the open changes of the delivery pipeline (see
@@ -248,7 +248,7 @@ func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) deliveryKey(k tea.KeyMsg) (Model, tea.Cmd) {
+func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	d := m.delivery
 	last := max(len(d.changes)-1, 0)
 	switch keyAction(contextDelivery, k.String()) {

@@ -1,7 +1,7 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -15,7 +15,7 @@ const stopConfirmHint = "enter/y: stop · esc/n: keep"
 const confirmSuffix = "  " + confirmHint
 
 // confirmAnswer reports what a key says to a yes/no question.
-func confirmAnswer(k tea.KeyMsg) (yes, no bool) {
+func confirmAnswer(k tea.KeyPressMsg) (yes, no bool) {
 	switch keyAction(contextConfirm, k.String()) {
 	case "yes":
 		return true, false

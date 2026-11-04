@@ -5,22 +5,22 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-func keyEnter() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnter} }
-func keyEsc() tea.KeyMsg   { return tea.KeyMsg{Type: tea.KeyEsc} }
-func keyRune(r string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(r)}
+func keyEnter() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyEnter} }
+func keyEsc() tea.KeyPressMsg   { return tea.KeyPressMsg{Code: tea.KeyEsc} }
+func keyRune(r string) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Text: r, Code: []rune(r)[0]}
 }
 
 func confirmHintShown(t *testing.T, m Model) {
 	t.Helper()
-	if v := ansi.Strip(m.View()); !strings.Contains(v, confirmHint) {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, confirmHint) {
 		t.Fatalf("missing confirm hint %q:\n%s", confirmHint, v)
 	}
 }
@@ -28,7 +28,7 @@ func confirmHintShown(t *testing.T, m Model) {
 func TestStopWorkerConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -64,7 +64,7 @@ func TestStopWorkerConfirmKeys(t *testing.T) {
 func TestStopOwnerConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -79,7 +79,7 @@ func TestStopOwnerConfirmKeys(t *testing.T) {
 			if m.mode != modeConfirm || !m.confirmOwner {
 				t.Fatal("owner stop did not ask")
 			}
-			if v := ansi.Strip(m.View()); !strings.Contains(v, "enter/y: stop · esc/n: keep") {
+			if v := ansi.Strip(m.testView()); !strings.Contains(v, "enter/y: stop · esc/n: keep") {
 				t.Fatalf("missing stop action keys:\n%s", v)
 			}
 			m, cmd := press(m, tc.key)
@@ -115,7 +115,7 @@ func quotaConfirmModel(t *testing.T) (Model, *quotaActionSource) {
 func TestQuotaProtectConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -154,7 +154,7 @@ func TestQuotaProtectConfirmKeys(t *testing.T) {
 func TestQuotaUnprotectConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -197,7 +197,7 @@ func TestQuotaUnprotectConfirmKeys(t *testing.T) {
 func TestTrustConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -240,7 +240,7 @@ func proposalConfirmModel(t *testing.T) (Model, *proposalSource, protocol.CTOPro
 func TestProposalConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -285,14 +285,14 @@ func TestCTONewConfirmGoldens(t *testing.T) {
 			t.Fatal("new conversation did not ask")
 		}
 		confirmHintShown(t, m)
-		golden(t, "cto_new_confirm_"+itoa(size.w)+"x"+itoa(size.h), m.View())
+		golden(t, "cto_new_confirm_"+itoa(size.w)+"x"+itoa(size.h), m.testView())
 	}
 }
 
 func TestCTONewConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -336,7 +336,7 @@ func TestCTONewConfirmKeys(t *testing.T) {
 func TestResumeConfirmKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		yes  bool
 	}{
 		{"enter", keyEnter(), true},
@@ -367,7 +367,7 @@ func TestResumeConfirmKeys(t *testing.T) {
 			if cmd != nil || m.resumeConfirm != nil {
 				t.Fatal("resume cancel did not stop")
 			}
-			if strings.Contains(ansi.Strip(m.View()), confirmHint) {
+			if strings.Contains(ansi.Strip(m.testView()), confirmHint) {
 				t.Fatal("hint stayed after cancel")
 			}
 		})

@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -30,6 +31,7 @@ const (
 // Rendering happens in a tea.Cmd, never in View or Update.
 type graphPixelState struct {
 	graphics     bool
+	profile      colorprofile.Profile
 	cellW, cellH int
 	imageID      uint32
 	hash         [32]byte
@@ -68,6 +70,12 @@ type graphFrameMsg struct {
 	transmit string
 }
 
+// The kitty placeholder names its image with a 24-bit foreground color.
+// Lower output profiles rewrite or remove that color and make the image blank.
+func (g *graphPixelState) enabled() bool {
+	return g != nil && g.graphics && g.profile == colorprofile.TrueColor
+}
+
 func (g *graphPixelState) set(gr graphview.Graphics) {
 	if g == nil {
 		return
@@ -97,7 +105,7 @@ func graphTickAfter(generation int, interval time.Duration) tea.Cmd {
 // graphFrameInterval chooses the next frame delay: fast only while pixel mode
 // has something to animate.
 func (m Model) graphFrameInterval() time.Duration {
-	if m.graphPixel == nil || !m.graphPixel.graphics {
+	if !m.graphPixel.enabled() {
 		return graphIdleInterval
 	}
 	if m.graphPixel.motion && m.graphState.Moving() {
@@ -108,7 +116,7 @@ func (m Model) graphFrameInterval() time.Duration {
 
 // smoothCamera turns on the eased camera only for the pixel renderer.
 func (m *Model) smoothCamera() {
-	m.graphState.Smooth = m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.motion
+	m.graphState.Smooth = m.graphPixel.enabled() && m.graphPixel.motion
 }
 
 // graphScene builds the renderer-independent scene with display names. It is
@@ -136,7 +144,7 @@ func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.
 // after it finishes starts another if the scene moved on.
 func (m *Model) scheduleGraphRender() tea.Cmd {
 	g := m.graphPixel
-	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
+	if !g.enabled() || g.cellW <= 0 || g.cellH <= 0 {
 		return nil
 	}
 	if m.tab != graphTab || m.mode != modeNormal || m.mapOn || m.help || m.graphState.Graph == nil {
@@ -157,6 +165,9 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 		stillScene(&scene)
 	}
 	key := graphview.HashScene(scene, size)
+	// Pixel labels are cached with their terminal colors. Rebuild them if the
+	// runtime upgrades or changes its output profile.
+	key[0] ^= byte(g.profile)
 	if g.ready && g.lines != nil && g.key == key && g.size == size {
 		return nil
 	}
@@ -230,7 +241,7 @@ func (m Model) startGraph() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
-func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.mp.finding {
 		switch keyAction(contextGraphFind, k.String()) {
 		case "clear or back":
@@ -250,8 +261,8 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.mp.findQuery = string(r[:len(r)-1])
 			}
 		default:
-			if k.Type == tea.KeyRunes {
-				m.mp.findQuery += string(k.Runes)
+			if k.Text != "" {
+				m.mp.findQuery += k.Text
 			}
 		}
 		return m, nil
@@ -337,7 +348,7 @@ func (m Model) graphView(w, h int) []string {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
 	gw, gh := max(w-4, 1), max(h-5, 1)
-	smooth := m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.motion
+	smooth := m.graphPixel.enabled() && m.graphPixel.motion
 	m.graphState.Smooth = smooth
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 	state.Smooth = smooth
@@ -376,7 +387,7 @@ func (m Model) graphView(w, h int) []string {
 // for this size the caller falls back to Braille.
 func (m Model) pixelLines(gw, gh int) ([]string, bool) {
 	g := m.graphPixel
-	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
+	if !g.enabled() || g.cellW <= 0 || g.cellH <= 0 {
 		return nil, false
 	}
 	size := graphview.Size{Width: gw, Height: gh}
@@ -508,24 +519,25 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 	if !m.graphMouseActive() || m.graphState.Graph == nil {
 		return m
 	}
+	mouse := msg.Mouse()
 	w, h := m.graphSize()
-	x, y := msg.X-2, msg.Y-1
+	x, y := mouse.X-2, mouse.Y-1
 	inside := x >= 0 && y >= 0 && x < w && y < h
-	if msg.Action == tea.MouseActionRelease {
+	if _, ok := msg.(tea.MouseReleaseMsg); ok {
 		m.graphDragging = false
 		return m
 	}
-	if msg.Action == tea.MouseActionMotion && m.graphDragging {
-		m.graphState, _ = graphview.Update(m.graphState, graphview.DragPan{DX: float64(msg.X - m.graphDragX), DY: float64(msg.Y - m.graphDragY)})
-		m.graphDragX, m.graphDragY = msg.X, msg.Y
+	if _, ok := msg.(tea.MouseMotionMsg); ok && m.graphDragging {
+		m.graphState, _ = graphview.Update(m.graphState, graphview.DragPan{DX: float64(mouse.X - m.graphDragX), DY: float64(mouse.Y - m.graphDragY)})
+		m.graphDragX, m.graphDragY = mouse.X, mouse.Y
 		return m
 	}
-	if !inside || msg.Action != tea.MouseActionPress {
+	if !inside {
 		return m
 	}
-	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+	if mouse.Button == tea.MouseWheelUp || mouse.Button == tea.MouseWheelDown {
 		factor := 1.25
-		if msg.Button == tea.MouseButtonWheelDown {
+		if mouse.Button == tea.MouseWheelDown {
 			factor = 1 / factor
 		}
 		m.smoothCamera()
@@ -533,13 +545,16 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 		m.graphState, _ = graphview.Update(m.graphState, graphview.ZoomAt{X: float64(x) + .5, Y: float64(y) + .5, Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}, Factor: factor})
 		return m
 	}
-	if msg.Button != tea.MouseButtonLeft {
+	if _, ok := msg.(tea.MouseClickMsg); !ok {
+		return m
+	}
+	if mouse.Button != tea.MouseLeft {
 		return m
 	}
 	size := graphview.Size{Width: w, Height: h}
 	scene := m.graphScene(m.graphState, size)
 	hit := ""
-	pixelReady := m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.ready && m.graphPixel.size == size
+	pixelReady := m.graphPixel.enabled() && m.graphPixel.ready && m.graphPixel.size == size
 	if pixelReady {
 		hit = graphview.PixelHit(scene, size, graphview.PixelMetrics{CellWidth: m.graphPixel.cellW, CellHeight: m.graphPixel.cellH}, graphview.Cell{X: x, Y: y})
 		if hit == "" {
@@ -550,7 +565,7 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 	}
 	if hit == "" {
 		m.graphDragging = true
-		m.graphDragX, m.graphDragY = msg.X, msg.Y
+		m.graphDragX, m.graphDragY = mouse.X, mouse.Y
 		m.graphLastNode = ""
 		return m
 	}

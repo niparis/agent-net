@@ -7,9 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -120,17 +118,17 @@ func (m Model) startCompose() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeCompose
-	m.compose = textinput.New()
+	m.compose = newTextInput()
 	m.compose.Prompt = "to " + sanitize(dashIfEmpty(a.Profile.Name)) + "> "
 	m.compose.CharLimit = 4000
-	m.compose.Cursor.SetMode(cursor.CursorHide)
+	m.compose.SetVirtualCursor(false)
 	m.composeTo = a.SessionID
 	m.composeName = sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
 	m.notice = notice{}
 	return m, m.compose.Focus()
 }
 
-func (m Model) composeKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) composeKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal
@@ -193,7 +191,7 @@ func (m Model) startConfirm() (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) confirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	yes, no := confirmAnswer(k)
 	switch {
 	case yes:
@@ -262,20 +260,20 @@ func (m Model) startDefect() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeDefectNote
-	m.defect = textinput.New()
+	m.defect = newTextInput()
 	name := sanitize(strings.TrimSpace(m.conversationName(row.workerSession)))
 	if name == "" || name == "unknown session" {
 		name = shortID(row.workerSession)
 	}
 	m.defect.Prompt = "defect later for " + name + "> "
 	m.defect.CharLimit = protocol.RateNoteMax
-	m.defect.Cursor.SetMode(cursor.CursorHide)
+	m.defect.SetVirtualCursor(false)
 	m.defectWorker, m.defectName = row.workerSession, name
 	m.notice = notice{}
 	return m, m.defect.Focus()
 }
 
-func (m Model) defectKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) defectKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal
@@ -288,10 +286,10 @@ func (m Model) defectKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeDefectSeverity
-		m.defectSeverity = textinput.New()
+		m.defectSeverity = newTextInput()
 		m.defectSeverity.Prompt = "severity for " + m.defectName + " (1 cosmetic · 2 annoyance · 3 broken in a release · 4 outage)> "
 		m.defectSeverity.CharLimit = 1
-		m.defectSeverity.Cursor.SetMode(cursor.CursorHide)
+		m.defectSeverity.SetVirtualCursor(false)
 		m.notice = notice{}
 		return m, m.defectSeverity.Focus()
 	}
@@ -300,7 +298,7 @@ func (m Model) defectKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) defectSeverityKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) defectSeverityKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal
@@ -382,10 +380,10 @@ func (m Model) startRenameMachine(id, host string) (Model, tea.Cmd) {
 		}
 	}
 	m.mode = modeRename
-	m.rename = textinput.New()
+	m.rename = newTextInput()
 	m.rename.Prompt = "name for " + sanitize(shown) + "> "
 	m.rename.CharLimit = protocol.MaxNodeName
-	m.rename.Cursor.SetMode(cursor.CursorHide)
+	m.rename.SetVirtualCursor(false)
 	m.rename.SetValue(sanitize(shown))
 	m.rename.CursorEnd()
 	m.renameNode, m.renameShown, m.renameSet = id, shown, set
@@ -393,7 +391,7 @@ func (m Model) startRenameMachine(id, host string) (Model, tea.Cmd) {
 	return m, m.rename.Focus()
 }
 
-func (m Model) renameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) renameKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal
@@ -476,7 +474,7 @@ func (m Model) startTrust() (Model, tea.Cmd) {
 	}
 }
 
-func (m Model) trustKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) trustKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	yes, no := confirmAnswer(k)
 	switch {
 	case yes:
@@ -527,10 +525,10 @@ func (m Model) startProjectRename() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeProjectRename
-	m.rename = textinput.New()
+	m.rename = newTextInput()
 	m.rename.Prompt = "name for " + sanitize(node.Name) + "> "
 	m.rename.CharLimit = protocol.ProjectMaxFieldLen
-	m.rename.Cursor.SetMode(cursor.CursorHide)
+	m.rename.SetVirtualCursor(false)
 	shown := m.projectName(node.Name)
 	if shown != node.Name {
 		m.rename.SetValue(shown)
@@ -541,7 +539,7 @@ func (m Model) startProjectRename() (Model, tea.Cmd) {
 	return m, m.rename.Focus()
 }
 
-func (m Model) projectRenameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) projectRenameKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal

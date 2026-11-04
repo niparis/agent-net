@@ -23,7 +23,7 @@ func TestHelpShowsTheCurrentScreenFirst(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := keys(newModel(120, 40), tc.keys...)
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(m.testView())
 			if !strings.Contains(view, "Keys · "+tc.name) {
 				t.Fatalf("help title does not name %s:\n%s", tc.name, view)
 			}
@@ -58,7 +58,7 @@ func TestHelpQuestionTogglesAllScreens(t *testing.T) {
 	if !m.help || !m.helpAll {
 		t.Fatalf("second ? did not open the full list: help %v all %v", m.help, m.helpAll)
 	}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "Keys · all screens") {
 		t.Fatalf("the full list has no title:\n%s", view)
 	}
@@ -78,8 +78,8 @@ func TestHelpQuestionTogglesAllScreens(t *testing.T) {
 	if m.helpAll {
 		t.Fatal("third ? did not return to this screen")
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "Keys · Sessions") {
-		t.Fatalf("this screen did not return:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(m.testView()), "Keys · Sessions") {
+		t.Fatalf("this screen did not return:\n%s", ansi.Strip(m.testView()))
 	}
 }
 
@@ -111,7 +111,7 @@ func TestQualityDetailsHelpShowsItsOwnSection(t *testing.T) {
 	if !m.help {
 		t.Fatal("? did not open help on Quality details")
 	}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "Keys · Quality details") {
 		t.Fatalf("help title does not name Quality details:\n%s", view)
 	}
@@ -131,7 +131,7 @@ func TestToolsMenuHelpShowsItsOwnSection(t *testing.T) {
 	m := keys(newModel(120, 40), "5")
 	m.tl.modal = &toolsModal{menu: &toolMenu{}}
 	m = keys(m, "?")
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "Keys · Tools menu") {
 		t.Fatalf("help title does not name the Tools menu:\n%s", view)
 	}
@@ -149,7 +149,7 @@ func TestCTOBoxHelpShowsItsOwnSection(t *testing.T) {
 	m.tab, m.focus = sessionsTab, focusCTO
 	m.cto = &ctoState{generation: 1}
 	m = keys(m, "?")
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "Keys · CTO box") {
 		t.Fatalf("help title does not name the CTO box:\n%s", view)
 	}
@@ -160,14 +160,14 @@ func TestCTOBoxHelpShowsItsOwnSection(t *testing.T) {
 
 func TestHelpKeyBarNamesTheToggle(t *testing.T) {
 	m := keys(newModel(120, 40), "?")
-	bar := ansi.Strip(m.View())
+	bar := ansi.Strip(m.testView())
 	for _, want := range []string{"? all screens", "up/down scroll", "esc close"} {
 		if !strings.Contains(bar, want) {
 			t.Fatalf("this screen help bar lacks %q:\n%s", want, bar)
 		}
 	}
 	m = keys(m, "?")
-	bar = ansi.Strip(m.View())
+	bar = ansi.Strip(m.testView())
 	for _, want := range []string{"? this screen", "up/down scroll", "esc close"} {
 		if !strings.Contains(bar, want) {
 			t.Fatalf("full help bar lacks %q:\n%s", want, bar)

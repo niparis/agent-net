@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
@@ -79,7 +79,7 @@ func (m *Model) applyMap(r mapMsg) {
 }
 
 // mapKey handles the selected agent card. Esc returns to the network.
-func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) mapKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := keyAction(contextCard, k.String())
 	switch key {
 	case "back":

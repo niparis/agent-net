@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
@@ -35,6 +36,7 @@ func graphFixture() protocol.GraphView {
 }
 func graphModel(w, h int) Model {
 	m := mapModel(w, h, graphFixture())
+	m.graphPixel.profile = colorprofile.TrueColor
 	m.applyMap(mapMsg{view: graphFixture(), at: t0})
 	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 7, HasEdge: true, Voice: true}, {From: "project-07", To: "project-11", Count: 23}}})
@@ -69,7 +71,7 @@ func TestGraphTabKeys(t *testing.T) {
 		t.Fatal("enter did not open selected map node")
 	}
 	n := mapModel(80, 24, graphFixture())
-	next, cmd := n.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	next, cmd := n.Update(tea.KeyPressMsg{Text: "2", Code: []rune("2")[0]})
 	n = next.(Model)
 	if n.tab != graphTab || cmd == nil {
 		t.Fatal("2 did not open graph")
@@ -80,7 +82,7 @@ func TestGraphGoldens(t *testing.T) {
 		m := graphModel(size[0], size[1])
 		// A central node shows the accented neighbourhood and the dimmed rest.
 		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
-		got := m.View()
+		got := m.testView()
 		plain := ansi.Strip(got)
 		if strings.Contains(plain, "…") {
 			t.Fatalf("truncated graph label: %s", plain)
@@ -285,33 +287,22 @@ func TestGraphMouseSelectsLabelAndIgnoresEmpty(t *testing.T) {
 	if target == "" {
 		t.Fatal("no label cell")
 	}
-	next, _ := m.Update(tea.MouseMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	next, _ := m.Update(tea.MouseClickMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseLeft})
 	m = next.(Model)
 	if m.graphState.Graph.Selected() != target {
 		t.Fatalf("selected %q, want %q", m.graphState.Graph.Selected(), target)
 	}
-	next, _ = m.Update(tea.MouseMsg{X: 0, Y: 0, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	next, _ = m.Update(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft})
 	if next.(Model).graphState.Graph.Selected() != target {
 		t.Fatal("empty click changed selection")
 	}
 }
 
 func TestGraphMouseDisabledWhenLeavingOrFocusingCTO(t *testing.T) {
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'1'}}, {Type: tea.KeyRunes, Runes: []rune{'C'}}} {
+	for _, key := range []tea.KeyPressMsg{{Text: "1", Code: '1'}, {Text: "C", Code: 'C'}} {
 		m := graphModel(120, 34)
-		_, cmd := m.Update(key)
-		if cmd == nil {
-			t.Fatal("missing mouse command")
-		}
-		msg := cmd()
-		batch, _ := msg.(tea.BatchMsg)
-		found := fmt.Sprintf("%T", msg) == fmt.Sprintf("%T", tea.DisableMouse())
-		for _, c := range batch {
-			if fmt.Sprintf("%T", c()) == fmt.Sprintf("%T", tea.DisableMouse()) {
-				found = true
-			}
-		}
-		if !found {
+		next, _ := m.Update(key)
+		if next.(Model).View().MouseMode != tea.MouseModeNone {
 			t.Fatalf("%s did not disable mouse", key.String())
 		}
 	}
@@ -319,13 +310,9 @@ func TestGraphMouseDisabledWhenLeavingOrFocusingCTO(t *testing.T) {
 
 func TestGraphQuitDisablesMouseBeforeQuit(t *testing.T) {
 	m := graphModel(120, 34)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	if cmd == nil {
-		t.Fatal("no quit command")
-	}
-	// A sequence preserves ordering between disabling mouse and stopping Bubble Tea.
-	if fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.Sequence(tea.DisableMouse, tea.Quit)()) {
-		t.Fatal("quit must disable mouse first")
+	next, cmd := m.Update(tea.KeyPressMsg{Text: "q", Code: 'q'})
+	if cmd == nil || next.(Model).View().MouseMode != tea.MouseModeNone {
+		t.Fatal("quit must release mouse")
 	}
 }
 
@@ -354,15 +341,15 @@ func TestGraphVoiceLegend(t *testing.T) {
 func TestGraphMockupMouseZoomAndPan(t *testing.T) {
 	m := graphModel(120, 34)
 	old := m.graphState.Camera
-	next, _ := m.Update(tea.MouseMsg{X: 20, Y: 5, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	next, _ := m.Update(tea.MouseWheelMsg{X: 20, Y: 5, Button: tea.MouseWheelUp})
 	m = next.(Model)
 	if m.graphState.Camera.Zoom <= old.Zoom || m.graphState.Camera.Center == old.Center {
 		t.Fatalf("wheel did not zoom at pointer: %+v", m.graphState.Camera)
 	}
 	old = m.graphState.Camera
-	next, _ = m.Update(tea.MouseMsg{X: 3, Y: 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	next, _ = m.Update(tea.MouseClickMsg{X: 3, Y: 2, Button: tea.MouseLeft})
 	m = next.(Model)
-	next, _ = m.Update(tea.MouseMsg{X: 9, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	next, _ = m.Update(tea.MouseMotionMsg{X: 9, Y: 4, Button: tea.MouseLeft})
 	m = next.(Model)
 	if m.graphState.Camera.Center == old.Center {
 		t.Fatal("drag did not pan")
@@ -371,7 +358,7 @@ func TestGraphMockupMouseZoomAndPan(t *testing.T) {
 
 func TestGraphMockupDoubleClickAndTrafficKey(t *testing.T) {
 	m := graphModel(120, 34)
-	m.graphPixel = &graphPixelState{graphics: true, cellW: 8, cellH: 16}
+	m.graphPixel = &graphPixelState{graphics: true, cellW: 8, cellH: 16, profile: colorprofile.TrueColor}
 	m = renderGraphFrame(t, m)
 	w, h := m.graphSize()
 	scene := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
@@ -387,7 +374,7 @@ func TestGraphMockupDoubleClickAndTrafficKey(t *testing.T) {
 	}
 	x, y := int(target.Position.X*float64(w))+2, int(target.Position.Y*float64(h))+1
 	for i := 0; i < 2; i++ {
-		next, _ := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		next, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		m = next.(Model)
 	}
 	if m.graphState.Graph.Selected() != target.Name || m.graphState.Camera.Zoom < m.graphState.Camera.FitZoom*2 {

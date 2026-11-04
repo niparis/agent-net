@@ -1,6 +1,6 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // openSessionSetting keeps the older form tests focused on the same action.
 func openSessionSetting(m Model, index int) (Model, tea.Cmd) {
@@ -9,12 +9,12 @@ func openSessionSetting(m Model, index int) (Model, tea.Cmd) {
 		if _, ok := m.selectedAgent(); !ok {
 			return m.startTrust()
 		}
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight})
-		return press(m, tea.KeyMsg{Type: tea.KeySpace})
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		return press(m, tea.KeyPressMsg{Code: tea.KeySpace})
 	case 1:
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight})
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight})
-		return press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		return press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	case 2:
 		m.tab = settingsTab
 		for i, row := range m.settingsItems() {
@@ -23,7 +23,7 @@ func openSessionSetting(m Model, index int) (Model, tea.Cmd) {
 				break
 			}
 		}
-		return press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		return press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	case 3:
 		a, _ := m.selectedAgent()
 		m.tab = settingsTab
@@ -33,7 +33,7 @@ func openSessionSetting(m Model, index int) (Model, tea.Cmd) {
 				break
 			}
 		}
-		return press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		return press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	}
 	return m, nil
 }

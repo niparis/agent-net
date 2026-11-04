@@ -54,7 +54,7 @@ func TestQualityNewScreenGoldens(t *testing.T) {
 		m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, Hostname: "workstation", QualityPicks: map[string]string{"normal": "sol", "hard": "terra"}, QualityPickModels: map[string]string{"normal": "sol", "hard": "terra high"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
 		golden(t, fmt.Sprintf("quality_overview_%dx%d", size[0], size[1]), strings.Join(m.calibrationView(size[0]), "\n"))
 		m.qualityDetail = true
-		golden(t, fmt.Sprintf("quality_details_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("quality_details_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 

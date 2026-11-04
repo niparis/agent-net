@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -37,7 +37,7 @@ func TestCTOWindowKeyAndGoldens(t *testing.T) {
 			m.src = src
 			m.focus = focusCTO
 			m.proposals = []protocol.CTOProposal{{ID: "p_1", Status: "open"}, {ID: "p_2", Status: "open"}, {ID: "p_3", Status: "approved"}}
-			next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+			next, cmd := m.ctoKey(tea.KeyPressMsg{Text: "w", Code: []rune("w")[0]})
 			m = next.(Model)
 			if cmd == nil {
 				t.Fatal("w did not toggle window")
@@ -76,7 +76,7 @@ func TestCTOWindowKeyAndGoldens(t *testing.T) {
 				t.Fatal("expired window displayed")
 			}
 			m.now = func() time.Time { return t0 }
-			next, cmd = m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+			next, cmd = m.ctoKey(tea.KeyPressMsg{Text: "w", Code: []rune("w")[0]})
 			m = next.(Model)
 			m = send(m, cmd())
 			if !m.cto.windowUntil.IsZero() {

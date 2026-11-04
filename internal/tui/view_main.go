@@ -8,7 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -122,7 +123,16 @@ func (m Model) layout() layout {
 // ---- view ----
 
 // View draws the screen. It never writes more than width columns or height rows.
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	v := tea.NewView(m.renderView())
+	v.AltScreen = true
+	if m.graphMouseActive() && !m.quitting {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
+}
+
+func (m Model) renderView() string {
 	if m.quitting {
 		return ""
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -332,7 +332,7 @@ func insideFolderTUI(root, path string) bool {
 }
 
 // sessionPendingKey answers the one question a start is waiting on.
-func (m Model) sessionPendingKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) sessionPendingKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	yes, no := confirmAnswer(k)
 	if !yes && !no {
 		return m, nil

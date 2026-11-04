@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -30,7 +30,7 @@ func TestSessionsBotsGroupAndKeys(t *testing.T) {
 	if next.tab != messagesTab || next.filter != "s-bot" {
 		t.Fatal("bot enter did not filter Messages")
 	}
-	next, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	next, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 	if !strings.Contains(strings.Join(next.appsView(120, 24), "\n"), "Revoke weather-bot?") {
 		t.Fatal("bot revoke does not confirm")
 	}
@@ -38,22 +38,22 @@ func TestSessionsBotsGroupAndKeys(t *testing.T) {
 func TestAppsPublicAndBotsScreens(t *testing.T) {
 	for _, w := range []int{80, 120} {
 		m := botScreenModel(w)
-		golden(t, fmt.Sprintf("sessions_bots_%d", w), m.View())
+		golden(t, fmt.Sprintf("sessions_bots_%d", w), m.testView())
 		m.mode = modeApps
 		m.apps.apps = []connectedApp{{ID: "app-test", Name: "weather-bot", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://www.cursor.com/cb"}, CreatedAt: m.now()}, {ID: "phone", Name: "phone", Kind: "owner_app", ClientName: "Safari", CreatedAt: m.now()}}
-		golden(t, fmt.Sprintf("connected_apps_public_off_%d", w), m.View())
+		golden(t, fmt.Sprintf("connected_apps_public_off_%d", w), m.testView())
 		m.apps.public.On = true
 		m.apps.public.URL = "https://host.example.ts.net:8443"
-		golden(t, fmt.Sprintf("connected_apps_public_on_%d", w), m.View())
+		golden(t, fmt.Sprintf("connected_apps_public_on_%d", w), m.testView())
 		m.apps.public.On = false
 		m.apps.public.Error = "On research-gateway (the gateway machine, where internet access runs), run once in a terminal: sudo tailscale set --operator=$USER. Then press p again."
-		golden(t, fmt.Sprintf("connected_apps_public_error_%d", w), m.View())
+		golden(t, fmt.Sprintf("connected_apps_public_error_%d", w), m.testView())
 	}
 }
 
 func TestBotColumnsAndPublicAddresses(t *testing.T) {
 	m := botScreenModel(120)
-	view := m.View()
+	view := m.testView()
 	if !strings.Contains(view, "weather-bot        bot      -          -          online -") || !strings.Contains(view, "last call") {
 		t.Fatalf("bot columns:\n%s", view)
 	}

@@ -1,8 +1,9 @@
 package tui
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"image/color"
 	"strings"
 )
 
@@ -17,11 +18,11 @@ func statusLabel(status string) string {
 	}
 }
 
-func panel(title string, body []string, width int, color lipgloss.TerminalColor) []string {
+func panel(title string, body []string, width int, color color.Color) []string {
 	return panelWithBorder(title, body, width, color, roleFaint)
 }
 
-func panelWithBorder(title string, body []string, width int, color, borderColor lipgloss.TerminalColor) []string {
+func panelWithBorder(title string, body []string, width int, color, borderColor color.Color) []string {
 	width = max(width, 4)
 	border := lipgloss.NewStyle().Foreground(borderColor)
 	heading := lipgloss.NewStyle().Foreground(color).Bold(true).Render(clip(title, width-4))
@@ -33,7 +34,7 @@ func panelWithBorder(title string, body []string, width int, color, borderColor 
 	return append(out, border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 }
 
-func panelWithRightHeader(title, right string, body []string, width int, color lipgloss.TerminalColor) []string {
+func panelWithRightHeader(title, right string, body []string, width int, color color.Color) []string {
 	out := panel(title, body, width, color)
 	border := lipgloss.NewStyle().Foreground(roleFaint)
 	heading := lipgloss.NewStyle().Foreground(color).Bold(true).Render(clip(title, width-4))
@@ -51,7 +52,7 @@ func keyHints(parts ...string) string {
 	return strings.Join(out, "  ")
 }
 
-func progressBar(frac float64, n int, color lipgloss.TerminalColor) string {
+func progressBar(frac float64, n int, color color.Color) string {
 	n = max(n, 0)
 	filled := min(max(int(frac*float64(n)+0.5), 0), n)
 	if frac > 0 && n > 0 && filled == 0 {
@@ -68,5 +69,7 @@ func selectedRow(line string) string {
 		return line
 	}
 	prefix := sample[:i]
-	return prefix + strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+prefix) + "\x1b[0m"
+	line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+prefix)
+	line = strings.ReplaceAll(line, "\x1b[m", "\x1b[m"+prefix)
+	return prefix + line + "\x1b[0m"
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -26,7 +26,7 @@ func TestOutcomeKeys(t *testing.T) {
 	m.tab = inboxTab
 	for _, tc := range []struct{ key, action string }{{"s", "let_stand"}, {"O", "overrule"}} {
 		key, action := tc.key, tc.action
-		_, cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		_, cmd := m.key(tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 		if cmd == nil {
 			t.Fatalf("%s did not resolve", key)
 		}

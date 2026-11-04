@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -141,7 +141,7 @@ func TestCTOPanePollAndEnter(t *testing.T) {
 	m := New(src)
 	m.width = 80
 	m.height = 24
-	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	if m.cto == nil || m.focus != focusCTO {
 		t.Fatal("C did not focus the CTO box")
@@ -149,12 +149,12 @@ func TestCTOPanePollAndEnter(t *testing.T) {
 	msg := m.ctoPollCmd()()
 	updated, _ = m.update(msg)
 	m = updated.(Model)
-	if !strings.Contains(m.View(), "fake/m1") || !strings.Contains(m.View(), "hello") {
-		t.Fatalf("missing model or reply:\n%s", m.View())
+	if !strings.Contains(m.testView(), "fake/m1") || !strings.Contains(m.testView(), "hello") {
+		t.Fatalf("missing model or reply:\n%s", m.testView())
 	}
-	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("question")})
+	updated, _ = m.update(tea.KeyPressMsg{Text: "question", Code: []rune("question")[0]})
 	m = updated.(Model)
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 	if cmd == nil {
 		t.Fatal("Enter did not request the CTO plan")
@@ -165,7 +165,7 @@ func TestCTOPanePollAndEnter(t *testing.T) {
 	if len(src.sent) != 0 {
 		t.Fatalf("the read-only box sent a message: %v", src.sent)
 	}
-	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	updated, _ = m.update(tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
 	m = updated.(Model)
 	if m.cto == nil || m.focus != focusSessions {
 		t.Fatal("ctrl+] did not return focus to sessions")
@@ -186,7 +186,7 @@ func TestCTOBoxBottomAlignsTheConversation(t *testing.T) {
 	if !strings.Contains(out[len(out)-4], "oldest") {
 		t.Fatalf("oldest line is not above newest:\n%s", strings.Join(out, "\n"))
 	}
-	if strings.TrimSpace(strings.Trim(out[1], "│")) != "" {
+	if strings.TrimSpace(strings.Trim(testOutput(out[1]), "│")) != "" {
 		t.Fatalf("conversation starts at the top of the box:\n%s", strings.Join(out, "\n"))
 	}
 }
@@ -198,26 +198,26 @@ func TestCTOPaneNewConversationAndMap(t *testing.T) {
 	m.height = 40
 	m.mapOn = true
 	m.mp.loaded = true
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, cmd := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
-	if m.mapOn || m.focus != focusCTO || !strings.Contains(m.View(), "CTO") {
+	if m.mapOn || m.focus != focusCTO || !strings.Contains(m.testView(), "CTO") {
 		t.Fatal("C did not focus the CTO on Sessions")
 	}
-	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	updated, cmd = m.update(tea.KeyPressMsg{Text: "n", Code: []rune("n")[0]})
 	m = updated.(Model)
 	if cmd != nil || !m.cto.confirming {
 		t.Fatal("new conversation did not ask for confirmation")
 	}
-	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updated, cmd = m.update(tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(cmd())
 	m = updated.(Model)
 	if src.fresh != 1 {
 		t.Fatal("new conversation not requested")
 	}
-	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	updated, _ = m.update(tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
 	m = updated.(Model)
 	if m.cto == nil || m.focus != focusSessions {
 		t.Fatal("ctrl+] did not return to sessions")
@@ -229,7 +229,7 @@ func TestCTOPaneShowsRecordedActions(t *testing.T) {
 	m := New(src)
 	m.width = 80
 	m.height = 24
-	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
@@ -247,12 +247,12 @@ func TestCTOShowsUndoAndRefreshesMap(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.mapOn = true
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, cmd := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	m.mapOn = true
-	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	updated, cmd = m.update(tea.KeyPressMsg{Text: "u", Code: []rune("u")[0]})
 	m = updated.(Model)
 	if cmd == nil {
 		t.Fatal("undo not started")
@@ -263,7 +263,7 @@ func TestCTOShowsUndoAndRefreshesMap(t *testing.T) {
 		t.Fatalf("wrong undo: %v", src.undone)
 	}
 	if !strings.Contains(strings.Join(m.cto.messages, "\n"), "undid graph change") {
-		t.Fatalf("undo not shown:\n%s", m.View())
+		t.Fatalf("undo not shown:\n%s", m.testView())
 	}
 	if cmd == nil || !m.mp.loading {
 		t.Fatal("map not refreshed after undo")
@@ -276,7 +276,7 @@ func TestCTOGraphChangeRefreshesOpenCard(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.mapOn = true
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, cmd := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
@@ -293,11 +293,11 @@ func TestCTOGraphChangeRefreshesOpenCard(t *testing.T) {
 func TestCTOPaneSanitizesConversation(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"bad\u001b[2Jtext"}`)}, Actions: []protocol.CTOAction{{Text: "sent: \x1b[2J"}}}}
 	m := New(src)
-	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
-	if strings.Contains(m.View(), "\x1b") {
+	if strings.Contains(m.testView(), "\x1b") {
 		t.Fatal("terminal control escaped the CTO pane")
 	}
 }
@@ -305,7 +305,7 @@ func TestCTOPaneSanitizesConversation(t *testing.T) {
 func TestCTOActionOrderFollowsConversation(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"change it","time":{"created":1000}}`), json.RawMessage(`{"type":"assistant","content":[{"type":"text","text":"done"}],"time":{"created":3000}}`)}, Actions: []protocol.CTOAction{{Text: "sent to peer: hello", At: 2500000000}}}, history: []protocol.CTOGraphChange{{Kind: "charter", Node: "node", Attr: "purpose", NewValue: "new", At: 2000000000}}}
 	m := New(src)
-	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
@@ -319,7 +319,7 @@ func TestCTOActionOrderFollowsConversation(t *testing.T) {
 func TestCTOPanePollingUpdatesStreamingMessage(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"id":"msg_1","type":"assistant","content":[{"type":"text","text":"par"}]}`)}, Next: 1}}
 	m := New(src)
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, cmd := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
@@ -349,7 +349,7 @@ func TestMapRefreshesWhenCTOPaneClosed(t *testing.T) {
 
 func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 	m := Model{cto: &ctoState{harness: "claude", model: "opus"}}
-	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO · claude · opus") {
+	if got := testOutput(m.ctoView(80, 4)[0]); !strings.Contains(got, "CTO · claude · opus") {
 		t.Fatalf("title: %s", got)
 	}
 }
@@ -357,14 +357,14 @@ func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 func TestCTOTitleUsesConfiguredModel(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Model: "fake/m2"}}
 	m := New(src)
-	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyPressMsg{Text: "C", Code: []rune("C")[0]})
 	m = updated.(Model)
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	if m.cto.configuredModel != "fake/m1" {
 		t.Fatalf("saved model changed unexpectedly: %q", m.cto.configuredModel)
 	}
-	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO · opencode · fake/m1") {
+	if got := testOutput(m.ctoView(80, 4)[0]); !strings.Contains(got, "CTO · opencode · fake/m1") {
 		t.Fatalf("title does not show the configured model: %s", got)
 	}
 }
@@ -382,7 +382,7 @@ func TestCTOEnterOnFocusedBoxRequestsPlan(t *testing.T) {
 	m := New(src)
 	model, _ := m.startCTO()
 	m = model.(Model)
-	_, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter did not request a plan")
 	}
@@ -395,12 +395,12 @@ func TestCTOEnterShowsOpeningAtOnce(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := ctoPart8Model(size[0], size[1], "Atlas", 0)
 		m.focus = focusCTO
-		next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+		next, cmd := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatalf("%dx%d: enter did not ask for a plan", size[0], size[1])
 		}
 		m = next.(Model)
-		view := m.View()
+		view := m.testView()
 		if plain := ansi.Strip(view); !strings.Contains(plain, "Opening the CTO") {
 			t.Fatalf("%dx%d: no opening line in the CTO box:\n%s", size[0], size[1], plain)
 		}
@@ -414,7 +414,7 @@ func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
 		m := ctoPart8Model(80, 24, "Atlas", 0)
 		m.src = src
 		m.focus = focusCTO
-		next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+		next, cmd := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatal("the first enter did not ask for a plan")
 		}
@@ -423,7 +423,7 @@ func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
 		if !m.cto.opening || !strings.Contains(m.cto.enterNotice, "Opening the CTO") {
 			t.Fatalf("the box does not show the open as in flight: %+v", m.cto)
 		}
-		_, second := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+		_, second := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if second != nil {
 			_ = second()
 		}
@@ -459,13 +459,13 @@ func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
 func TestCTOEnterFailureShowsTheReason(t *testing.T) {
 	m := ctoPart8Model(120, 34, "Atlas", 0)
 	m.focus = focusCTO
-	next, _ := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	m, _ = m.onEnter(enterMsg{name: "CTO", cto: true, err: errors.New("startup failed: permission denied")})
 	if m.cto.opening {
 		t.Fatal("the open is still marked as in flight")
 	}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "startup failed: permission denied") {
 		t.Fatalf("missing failure reason in the CTO box:\n%s", view)
 	}
@@ -482,7 +482,7 @@ func TestCTOEnterTimeoutShowsTheReason(t *testing.T) {
 	if m.cto.opening {
 		t.Fatal("the open is still marked as in flight")
 	}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "timed out") || !strings.Contains(view, "context deadline exceeded") {
 		t.Fatalf("missing timeout reason in the CTO box:\n%s", view)
 	}
@@ -495,7 +495,7 @@ func TestCTOBoxHasNoInput(t *testing.T) {
 	m = model.(Model)
 	m.cto.messages = []string{"cto: hello"}
 	for _, key := range []string{"hello", "x", "a"} {
-		next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		next, cmd := m.ctoKey(tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 		if cmd != nil {
 			t.Fatalf("%q started a command", key)
 		}
@@ -512,7 +512,7 @@ func TestCTOBoxOKeyDoesNothing(t *testing.T) {
 	model, _ := m.startCTO()
 	m = model.(Model)
 	m.focus = focusCTO
-	next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	next, cmd := m.ctoKey(tea.KeyPressMsg{Text: string('o'), Code: 'o'})
 	if cmd != nil {
 		t.Fatal("o still opened the full CTO")
 	}
@@ -553,22 +553,22 @@ func TestCTOModelFormSaveAndCancel(t *testing.T) {
 	if m.cto.settingsForm == nil {
 		t.Fatal("model form did not open")
 	}
-	m = send(m, tea.KeyMsg{Type: tea.KeyRight})
-	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
-	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m.cto.settingsForm.input.SetValue("opus")
-	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd == nil {
 		t.Fatal("save did not start")
 	}
 	next, _ = m.update(cmd())
 	m = next.(Model)
-	if src.saved.Harness == nil || *src.saved.Harness != "claude" || src.saved.Model == nil || *src.saved.Model != "opus" || !strings.Contains(m.View(), "CTO · claude · opus") {
-		t.Fatalf("save: %+v view %s", src.saved, m.View())
+	if src.saved.Harness == nil || *src.saved.Harness != "claude" || src.saved.Model == nil || *src.saved.Model != "opus" || !strings.Contains(m.testView(), "CTO · claude · opus") {
+		t.Fatalf("save: %+v view %s", src.saved, m.testView())
 	}
 	m = keys(m, "m")
-	m = send(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.cto.settingsForm != nil || m.focus != focusCTO {
 		t.Fatal("cancel failed")
 	}
@@ -602,35 +602,35 @@ func TestCTOModelFormSwapsPerHarnessModelsAndSuggestions(t *testing.T) {
 	if got := m.cto.settingsForm.input.Value(); got != "openai/gpt-6" {
 		t.Fatalf("OpenCode model field = %q", got)
 	}
-	m = send(m, tea.KeyMsg{Type: tea.KeyRight})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	if got := m.cto.settingsForm.input.Value(); got != "haiku" {
 		t.Fatalf("Claude model field = %q", got)
 	}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	for _, want := range []string{"Model:   haiku", "Suggestions: haiku, claude-haiku-4-5"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("Claude form missing %q:\n%s", want, view)
 		}
 	}
-	m = send(m, tea.KeyMsg{Type: tea.KeyLeft})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	if got := m.cto.settingsForm.input.Value(); got != "openai/gpt-6" {
 		t.Fatalf("OpenCode model was not restored: %q", got)
 	}
-	m = send(m, tea.KeyMsg{Type: tea.KeyRight})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	if got := m.cto.settingsForm.input.Value(); got != "haiku" {
 		t.Fatalf("Claude model was not restored: %q", got)
 	}
 	m.cto.settingsForm.input.SetValue("")
-	view = ansi.Strip(m.View())
+	view = ansi.Strip(m.testView())
 	for _, want := range []string{"Model:   default", "Suggestions: opus, sonnet, haiku, fable", "claude-sonnet-5-5"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("Claude default form missing %q:\n%s", want, view)
 		}
 	}
 	m.cto.settingsForm.input.SetValue("claude-sonnet")
-	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
-	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
-	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if got := m.cto.settingsForm.input.Value(); got != "claude-sonnet-5-5" {
 		t.Fatalf("Claude tab completion = %q", got)
 	}
@@ -658,9 +658,9 @@ func TestCTOModelFormGoldens(t *testing.T) {
 		m.src = src
 		m = send(m, m.ctoPollCmd()())
 		m = keys(m, "C", "m")
-		golden(t, fmt.Sprintf("cto_model_%dx%d", size[0], size[1]), m.View())
-		m = send(m, tea.KeyMsg{Type: tea.KeyRight})
-		golden(t, fmt.Sprintf("cto_model_claude_default_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("cto_model_%dx%d", size[0], size[1]), m.testView())
+		m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		golden(t, fmt.Sprintf("cto_model_claude_default_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -709,7 +709,7 @@ func TestCTOLongErrorGolden(t *testing.T) {
 	m = send(m, m.ctoPollCmd()())
 	m = keys(m, "C")
 	m.cto.err = "Provider request failed because the account has insufficient credits. Add credits or choose another model before retrying the request. The request was not completed."
-	golden(t, "cto_long_error_80x24", m.View())
+	golden(t, "cto_long_error_80x24", m.testView())
 }
 
 func TestCTOMultilineReplyPreserved(t *testing.T) {
@@ -738,16 +738,16 @@ func TestCTOConversationScroll(t *testing.T) {
 	if got := view(); !strings.Contains(got, "seven") || !strings.Contains(got, "↑ more") {
 		t.Fatalf("initial view: %s", got)
 	}
-	next, _ := m.ctoKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	next, _ := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	m = next.(Model)
-	next, _ = m.ctoKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	next, _ = m.ctoKey(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	m = next.(Model)
 	if got := view(); strings.Contains(got, "seven") || !strings.Contains(got, "one") {
 		t.Fatalf("scrolled view: %s", got)
 	}
-	next, _ = m.ctoKey(tea.KeyMsg{Type: tea.KeyCtrlD})
+	next, _ = m.ctoKey(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 	m = next.(Model)
-	next, _ = m.ctoKey(tea.KeyMsg{Type: tea.KeyCtrlD})
+	next, _ = m.ctoKey(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 	m = next.(Model)
 	if got := view(); !strings.Contains(got, "seven") {
 		t.Fatalf("returned view: %s", got)
@@ -826,7 +826,7 @@ func TestCTOScrollLoadsOlderTimelinePage(t *testing.T) {
 	}})
 	m.cto.scrollMax = 0
 	m.cto.pageRows = 1
-	next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	next, cmd := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	if cmd == nil {
 		t.Fatal("scrolling past the oldest loaded entry did not request a page")
 	}

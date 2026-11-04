@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -132,13 +132,13 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 		t.Fatalf("first step: %+v", got)
 	}
 	m.focus = focusSessions
-	next, cmd := m.key(tea.KeyMsg{Type: tea.KeyEsc})
+	next, cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = onboardingRun(next.(Model), cmd)
 	if len(src.progress.Steps) != 0 {
 		t.Fatal("unfocused escape skipped")
 	}
 	m.focus = focusCTO
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyEsc})
+	next, cmd = m.key(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = onboardingRun(next.(Model), cmd)
 	if src.progress.Steps["see"] != "skipped" {
 		t.Fatalf("focused skip: %+v", src.progress)
@@ -156,20 +156,20 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 			m.settingsRow = i
 		}
 	}
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeySpace})
+	next, cmd = m.key(tea.KeyPressMsg{Code: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
 	if !m.onboarding.Disabled || strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/7") {
 		t.Fatal("tips not hidden")
 	}
 	m.settingsRow++
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd = m.key(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = onboardingRun(next.(Model), cmd)
 	if m.onboarding.Disabled || m.onboardingStep().id != "see" {
 		t.Fatalf("restart: %+v", m.onboarding)
 	}
 	// A new model retrieves the gateway's persisted progress.
 	m.settingsRow--
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeySpace})
+	next, cmd = m.key(tea.KeyPressMsg{Code: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
 	fresh = New(src)
 	fresh.snap = src.snap
@@ -177,7 +177,7 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 	if !fresh.onboarding.Disabled {
 		t.Fatal("preference did not survive restart")
 	}
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeySpace})
+	next, cmd = m.key(tea.KeyPressMsg{Code: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
 	if m.onboarding.Disabled || !strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/7") {
 		t.Fatal("tips did not turn on")
@@ -195,7 +195,7 @@ func TestOnboardingGoldens(t *testing.T) {
 			if focused {
 				m.focus = focusCTO
 			}
-			golden(t, fmt.Sprintf("onboarding_%d_focused_%t", w, focused), m.View())
+			golden(t, fmt.Sprintf("onboarding_%d_focused_%t", w, focused), m.testView())
 		}
 	}
 }
@@ -215,7 +215,7 @@ func TestOnboardingHelpGoldens(t *testing.T) {
 				break
 			}
 		}
-		golden(t, fmt.Sprintf("onboarding_help_%d", width), m.View())
+		golden(t, fmt.Sprintf("onboarding_help_%d", width), m.testView())
 	}
 }
 
@@ -262,7 +262,7 @@ func TestOnboardingProtectionAction(t *testing.T) {
 		t.Fatalf("step: %s", got)
 	}
 	m.quotaConfirm, m.mode = "anthropic", modeQuotaConfirm
-	next, cmd := m.quotaConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	next, cmd := m.quotaConfirmKey(tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = onboardingRun(next.(Model), cmd)
 	if src.progress.Steps["work-protect"] != "done" {
 		t.Fatal("protection did not advance")

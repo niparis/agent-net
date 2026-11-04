@@ -2,10 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -433,7 +434,7 @@ func quotaColumnWidths(rows []quotaRow, m Model, w int) (int, int, int) {
 	return provider, plan, window
 }
 
-func quotaBar(frac float64, n int, color lipgloss.TerminalColor) string {
+func quotaBar(frac float64, n int, color color.Color) string {
 	n = max(n, 0)
 	filled := min(max(int(frac*float64(n)+0.5), 0), n)
 	if frac > 0 && n > 0 && filled == 0 {

@@ -1,6 +1,6 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // cycleSessionView moves through the four session views with one key.
 func (m *Model) cycleSessionView() {

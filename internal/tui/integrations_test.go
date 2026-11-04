@@ -4,12 +4,12 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func spaceKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")} }
+func spaceKey() tea.KeyPressMsg { return tea.KeyPressMsg{Text: " ", Code: []rune(" ")[0]} }
 
 func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
 	m, src := workerModel(120, 40)
@@ -21,7 +21,7 @@ func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
 		t.Fatalf("the settings menu must open the form and read the answers, mode %v", m.mode)
 	}
 	m = send(m, cmd())
-	screen := strings.Join(lines(m.View()), "\n")
+	screen := strings.Join(lines(m.testView()), "\n")
 	for _, want := range []string{"Integrations (all machines)", "[x] Claude: hint which session to ask after an error", "[ ] Claude: accept messages from your other agents"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("form lacks %q:\n%s", want, screen)
@@ -30,10 +30,10 @@ func TestIntegrationsFormTogglesAndSavesForTheNetwork(t *testing.T) {
 
 	// Turn all-on on, and the hint hook off.
 	m, _ = press(m, spaceKey())
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	m, _ = press(m, spaceKey())
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("Enter must save")
 	}
@@ -62,7 +62,7 @@ func TestIntegrationsFormEscCancels(t *testing.T) {
 	m, cmd := openSessionSetting(m, 2)
 	m = send(m, cmd())
 	m, _ = press(m, spaceKey())
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.mode != modeNormal || len(src.intgSaved) != 0 {
 		t.Fatalf("esc saved or stayed in the form: mode %v saved %d", m.mode, len(src.intgSaved))
 	}
@@ -72,15 +72,15 @@ func TestHarnessUpdateSettingsToggle(t *testing.T) {
 	m, src := workerModel(120, 40)
 	m, cmd := openSessionSetting(m, 2)
 	m = send(m, cmd())
-	screen := strings.Join(lines(m.View()), "\n")
+	screen := strings.Join(lines(m.testView()), "\n")
 	if !strings.Contains(screen, "[x] Keep harnesses updated") {
 		t.Fatalf("missing default on switch: %s", screen)
 	}
 	for range protocol.IntegrationSpecs() {
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	m, _ = press(m, spaceKey())
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = send(m, cmd())
 	if len(src.intgSaved) != 1 || !src.intgSaved[0].HarnessUpdatesOff {
 		t.Fatalf("not saved: %+v", src.intgSaved)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -29,7 +29,7 @@ func TestQuotaProtectionSavesAndRefreshes(t *testing.T) {
 	m.quotaShowUnset = true
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	m = keys(m, "p")
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	next, cmd := m.Update(tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = next.(Model)
 	if cmd == nil {
 		t.Fatal("missing save command")

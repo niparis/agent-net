@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -33,7 +33,7 @@ func TestGraphPixelModeUsesPlaceholdersAndCachesImage(t *testing.T) {
 	m.graphPixel.cellW, m.graphPixel.cellH = 8, 16
 	m = renderGraphFrame(t, m)
 
-	first := m.View()
+	first := m.testView()
 	if !strings.Contains(first, "\x1b_Ga=T") || !strings.Contains(first, "U=1") {
 		t.Fatalf("first frame does not transmit the image:\n%q", first)
 	}
@@ -44,7 +44,7 @@ func TestGraphPixelModeUsesPlaceholdersAndCachesImage(t *testing.T) {
 	// the renderer writes only the latest View, so a transmit that appears
 	// once can be dropped. The output is identical, so the renderer's
 	// unchanged-row check sends nothing new to the terminal.
-	second := m.View()
+	second := m.testView()
 	if second != first {
 		t.Fatal("an unchanged frame changed between Views; the image could be dropped or sent twice")
 	}
@@ -117,7 +117,7 @@ func TestPixelLabelClickUsesDisplayedFrame(t *testing.T) {
 	if target == "" {
 		t.Fatal("no selectable label in the rendered frame")
 	}
-	next, _ := m.Update(tea.MouseMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	next, _ := m.Update(tea.MouseClickMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseLeft})
 	if got := next.(Model).graphState.Graph.Selected(); got != target {
 		t.Fatalf("selected %q from label, want %q", got, target)
 	}
@@ -138,7 +138,7 @@ func TestPixelEmptyCellDoesNotHitBrailleLabel(t *testing.T) {
 		if name == selected || m.graphPixel.hits[cell] != "" || graphview.PixelHit(scene, size, metrics, cell) != "" {
 			continue
 		}
-		next, _ := m.Update(tea.MouseMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		next, _ := m.Update(tea.MouseClickMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseLeft})
 		if next.(Model).graphState.Graph.Selected() != selected {
 			t.Fatal("empty pixel cell selected an invisible Braille label")
 		}

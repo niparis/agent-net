@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -76,8 +76,8 @@ func TestWaitingSelectionMarkerShowsOnOneRow(t *testing.T) {
 	m, _ := waitingTableModel()
 	m.selected = cogforgeMaintenanceID
 	m.selIdx = tableOrdinal(m, cogforgeMaintenanceID)
-	if got := strings.Count(m.View(), "▸ "); got != 1 {
-		t.Fatalf("selection marker appears on %d rows, want one:\n%s", got, m.View())
+	if got := strings.Count(m.testView(), "▸ "); got != 1 {
+		t.Fatalf("selection marker appears on %d rows, want one:\n%s", got, m.testView())
 	}
 }
 
@@ -120,11 +120,11 @@ func TestWorkerWaitingScreen(t *testing.T) {
 				a.Worker = &protocol.WorkerInfo{ID: "w_test"}
 				waiting(a, -time.Minute, protocol.WaitingQuestion, "Which branch?")
 			})}
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(m.testView())
 			if strings.Contains(view, "Needs you") || !strings.Contains(view, "blocked-w") {
 				t.Fatalf("unexpected worker screen:\n%s", view)
 			}
-			golden(t, tc.name, m.View())
+			golden(t, tc.name, m.testView())
 		})
 	}
 }
@@ -154,7 +154,7 @@ func TestInboxRowsFollowTheFilter(t *testing.T) {
 	}
 	m = keys(m, "/", "c", "i", "-", "r", "u", "n", "n", "e", "r", "enter")
 	if got := len(m.inboxRows()); got != 1 {
-		t.Fatalf("filter left %d rows, want 1:\n%s", got, m.View())
+		t.Fatalf("filter left %d rows, want 1:\n%s", got, m.testView())
 	}
 }
 
@@ -164,7 +164,7 @@ func TestInboxViewFitsEverySize(t *testing.T) {
 	for w := 30; w <= 140; w += 11 {
 		for h := 8; h <= 40; h += 4 {
 			v := send(m, tea.WindowSizeMsg{Width: w, Height: h})
-			out := v.View()
+			out := v.testView()
 			if ls := lines(out); len(ls) > max(h, 10) {
 				t.Fatalf("%dx%d: %d lines", w, h, len(ls))
 			}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -25,7 +25,7 @@ func TestLearnedMapShowsEvidenceAndUndo(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, fakeGraph()))
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 11, Node: "cogforge", Field: "needs", Phrase: "ops backups", NewValue: "ops backups", Status: "applied", By: "learned", HistoryID: 42, Unseen: true, DecidedAt: t0.UnixNano(), Evidence: []protocol.LearnedEvidence{{ID: "m1", Excerpt: "ops owns backups"}}}}
 	m.mp.selected = "cogforge"
-	view := m.View()
+	view := m.testView()
 	for _, want := range []string{"● 1 learned", "needs", "ops backups", "ops owns backups", "undo"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q: %s", want, view)
@@ -33,7 +33,7 @@ func TestLearnedMapShowsEvidenceAndUndo(t *testing.T) {
 	}
 	src := &learnedSource{}
 	m.src = src
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	_, cmd := m.Update(tea.KeyPressMsg{Text: "u", Code: []rune("u")[0]})
 	if cmd == nil {
 		t.Fatal("missing undo command")
 	}
@@ -54,10 +54,10 @@ func TestLearnedMajorNeedsActions(t *testing.T) {
 			m.snap = src.snap
 			m.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", OldValue: "", NewValue: "deploys", Status: "pending", Severity: "major"}}
 			m.tab = inboxTab
-			if view := m.View(); !strings.Contains(view, "ops") || !strings.Contains(view, "deploys") {
+			if view := m.testView(); !strings.Contains(view, "ops") || !strings.Contains(view, "deploys") {
 				t.Fatalf("needs missing: %s", view)
 			}
-			_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			_, cmd := m.Update(tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 			if cmd == nil {
 				t.Fatal("missing action")
 			}
@@ -87,7 +87,7 @@ func TestLearnedMapMarksViewedOnLeavingProject(t *testing.T) {
 	m.mp.nodes = fakeGraph().Nodes
 	m.mp.selected = "cogforge"
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 11, Node: "cogforge", Field: "needs", Phrase: "ops backups", Status: "applied", By: "learned", HistoryID: 42, Unseen: true}}
-	_, cmd := m.update(tea.KeyMsg{Type: tea.KeyEsc})
+	_, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd == nil {
 		t.Fatal("missing viewed command")
 	}
@@ -117,7 +117,7 @@ func TestLearnedMapMarksViewedWhenChangingTabs(t *testing.T) {
 	m.mp.nodes = fakeGraph().Nodes
 	m.mp.selected = "cogforge"
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 11, Node: "cogforge", Field: "needs", Phrase: "ops backups", Status: "applied", By: "learned", HistoryID: 42, Unseen: true}}
-	_, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	_, cmd := m.update(tea.KeyPressMsg{Text: "2", Code: []rune("2")[0]})
 	if cmd == nil {
 		t.Fatal("missing viewed command")
 	}
@@ -143,11 +143,11 @@ func TestGoldenLearnedMapAndInbox(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.mp.selected = "cogforge"
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 11, Node: "cogforge", Field: "needs", Phrase: "ops backups", NewValue: "ops backups", Status: "applied", By: "learned", HistoryID: 42, Unseen: true, DecidedAt: t0.UnixNano(), Evidence: []protocol.LearnedEvidence{{ID: "m1", Excerpt: "ops owns backups"}}}}
-	golden(t, "map_learned_120x34", m.View())
+	golden(t, "map_learned_120x34", m.testView())
 	n := newModel(100, 30)
 	n.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", Kind: "add", NewValue: "deploys", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops refuses deploys"}}, Status: "pending", Severity: "major"}}
 	n = keys(n, "7")
-	golden(t, "inbox_learned_100x30", n.View())
+	golden(t, "inbox_learned_100x30", n.testView())
 }
 
 func TestLearnedMajorWording(t *testing.T) {

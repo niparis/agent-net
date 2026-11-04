@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func (m Model) workersLogKey(k tea.KeyMsg) (Model, tea.Cmd) {
+func (m Model) workersLogKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	before := m.workerLogRow
 	switch keyAction(contextWorkersLog, k.String()) {
 	case "up":

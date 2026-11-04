@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -198,7 +198,7 @@ func (m *Model) openProposalConfirm() {
 		}
 	}
 }
-func (m Model) proposalConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) proposalConfirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	yes, no := confirmAnswer(k)
 	switch {
 	case yes:
@@ -213,7 +213,7 @@ func (m Model) proposalConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-func (m Model) proposalDetailKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) proposalDetailKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := keyAction(contextProposalDetail, k.String())
 	switch key {
 	case actClose:
@@ -250,7 +250,7 @@ func (m Model) proposalHistoryItems() []protocol.CTOProposal {
 	}
 	return out
 }
-func (m Model) proposalHistoryKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) proposalHistoryKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.proposalDetail != nil {
 		return m.proposalDetailKey(k)
 	}

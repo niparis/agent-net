@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
@@ -249,7 +249,7 @@ func (m Model) selectedRow() (toolsdiff.Row, bool) {
 
 // ---- keys ----
 
-func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) toolsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.tl.modal != nil {
 		return m.toolsModalKey(k)
 	}
@@ -308,24 +308,24 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) toolsSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) toolsSearchKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	target := &m.tl.search
-	switch k.Type {
-	case tea.KeyEsc:
+	switch k.String() {
+	case "esc":
 		if *target != "" {
 			*target = ""
 		} else {
 			m.tl.searching = false
 		}
-	case tea.KeyEnter:
+	case "enter":
 		m.tl.searching = false
-	case tea.KeyBackspace, tea.KeyCtrlH:
+	case "backspace", "ctrl+h":
 		r := []rune(*target)
 		if len(r) > 0 {
 			*target = string(r[:len(r)-1])
 		}
-	case tea.KeyRunes, tea.KeySpace:
-		*target += string(k.Runes)
+	default:
+		*target += k.Text
 	}
 	m.tl.row, m.tl.scroll = 0, 0
 	m.toolsClamp()

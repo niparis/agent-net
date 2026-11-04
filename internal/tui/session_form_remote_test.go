@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -30,7 +30,7 @@ func TestNewSessionFormAcceptsAProjectOnAnotherMachine(t *testing.T) {
 	if got := m.sform.value(sProject); got != "agent-net@build-vm" {
 		t.Fatalf("project %q", got)
 	}
-	view := m.View()
+	view := m.testView()
 	for _, want := range []string{"on build-vm, /srv/agent-net", "empty: start and open it in herdr (on build-vm)"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the form does not show %q:\n%s", want, view)
@@ -43,7 +43,7 @@ func TestNewSessionFormAcceptsAProjectOnAnotherMachine(t *testing.T) {
 	src.sessionStart = remoteStartedSession()
 	src.enterPlan = protocol.EnterPlan{Argv: []string{"ssh", "-t", "--", "build-vm", "pi"}, Dir: "/srv/agent-net"}
 	got, dir, _, _ := captureName(&m, "agent-net (build-vm)")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -70,7 +70,7 @@ func TestNewSessionRemoteStartNotesSSH(t *testing.T) {
 	src.sessionStart = remoteStartedSession()
 	m, _ = press(m, sessionKey())
 	m = typeText(m, "Run the suite")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -94,15 +94,15 @@ func TestNewSessionRemoteGoldens(t *testing.T) {
 		m, src := workerModel(size.w, size.h)
 		m = selectID(m, "s_0000000000000004")
 		m, _ = press(m, sessionKey())
-		golden(t, name("new_session_remote"), m.View())
+		golden(t, name("new_session_remote"), m.testView())
 
 		src.sessionStart = remoteStartedSession()
 		m = typeText(m, "Run the suite")
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatalf("%dx%d: enter gave no command", size.w, size.h)
 		}
 		m, _ = press2(m, cmd())
-		golden(t, name("new_session_remote_started"), m.View())
+		golden(t, name("new_session_remote_started"), m.testView())
 	}
 }

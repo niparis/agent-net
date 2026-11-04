@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -140,7 +140,7 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 			f.kind = "owner_app"
 		}
 		f.stage = "approve"
-		f.input = textinput.New()
+		f.input = newTextInput()
 		name := v.Pending.ClientName
 		if f.kind != "owner_app" {
 			name = strings.Join(strings.Fields(strings.ToLower(name)), "-")
@@ -156,7 +156,7 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 	}
 	return m, nil
 }
-func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) appsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	f := &m.apps
 	if f.loading {
 		return m, nil
@@ -185,12 +185,12 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if f.stage == "rename" {
-		if k.Type == tea.KeyEsc {
+		if k.Code == tea.KeyEsc {
 			f.stage = ""
 			f.err = ""
 			return m, nil
 		}
-		if k.Type == tea.KeyEnter {
+		if k.Code == tea.KeyEnter {
 			name := strings.TrimSpace(f.input.Value())
 			if name == "" {
 				f.err = "Name cannot be empty"
@@ -204,7 +204,7 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if f.stage == "code" || f.stage == "approve" || f.stage == "url" {
-		if k.Type == tea.KeyEsc {
+		if k.Code == tea.KeyEsc {
 			f.stage = ""
 			f.err = ""
 			return m, nil
@@ -232,7 +232,7 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			}
 		}
-		if k.Type == tea.KeyEnter {
+		if k.Code == tea.KeyEnter {
 			f.loading = true
 			if f.stage == "url" {
 				return m, m.appsCall("apps.public.url", map[string]string{"url": f.input.Value()})
@@ -265,9 +265,9 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.appsCall(op, struct{}{})
 	case "url":
 		f.stage = "url"
-		f.input = textinput.New()
+		f.input = newTextInput()
 		f.input.CharLimit = 2048
-		f.input.Width = 60
+		f.input.SetWidth(60)
 		f.input.Focus()
 	case "add":
 		if !f.public.On {
@@ -280,9 +280,9 @@ func (m Model) appsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			f.stage = "confirm"
 		}
 	}
-	if k.Type == tea.KeyEnter && len(f.apps) > 0 {
+	if k.Code == tea.KeyEnter && len(f.apps) > 0 {
 		f.stage = "rename"
-		f.input = textinput.New()
+		f.input = newTextInput()
 		f.input.CharLimit = protocol.MaxNodeName
 		f.input.Prompt = "name for " + sanitize(f.apps[f.index].Name) + "> "
 		f.input.SetValue(f.apps[f.index].Name)
@@ -471,7 +471,7 @@ func (m Model) appsView(w, rows int) []string {
 
 func (f *appsForm) startCode() {
 	f.stage = "code"
-	f.input = textinput.New()
+	f.input = newTextInput()
 	f.input.CharLimit = 7
 	f.input.Focus()
 	f.err = ""

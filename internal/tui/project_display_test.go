@@ -1,8 +1,8 @@
 package tui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
@@ -19,20 +19,20 @@ func TestMapProjectDisplayForm(t *testing.T) {
 	if !strings.Contains(m.helpLine(120), "enter saves") {
 		t.Fatalf("prompt: %s", m.helpLine(120))
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if len(src.projectNames) != 0 {
 		t.Fatal("cancel saved")
 	}
 	m, _ = press(m, keyRunes("D"))
 	m.rename.SetValue("Evidence API")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = finish(t, m, cmd)
 	if len(src.projectNames) != 1 || src.projectNames[0] != (renameCall{"cogforge", "Evidence API"}) {
 		t.Fatalf("saved: %v", src.projectNames)
 	}
 	m, _ = press(m, keyRunes("D"))
 	m.rename.SetValue("")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = finish(t, m, cmd)
 	if len(src.projectNames) != 2 || src.projectNames[1] != (renameCall{"cogforge", ""}) {
 		t.Fatalf("cleared: %v", src.projectNames)
@@ -47,15 +47,15 @@ func TestProjectDisplayInMapAndSessions(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.snap.Projects = append(m.snap.Projects, protocol.ProjectView{Name: "cogforge", DisplayName: "Evidence API"})
 	m.mp.selected = "cogforge"
-	if !strings.Contains(m.View(), "Evidence API") {
-		t.Fatalf("map: %s", m.View())
+	if !strings.Contains(m.testView(), "Evidence API") {
+		t.Fatalf("map: %s", m.testView())
 	}
 	m.snap.Agents[0].Repo.Project = "cogforge"
 	m.snap.Agents[0].ProjectDisplayName = "Evidence API"
 	m.mapOn = false
 	m.tab = 0
-	if !strings.Contains(m.View(), "Evidence API") {
-		t.Fatalf("sessions: %s", m.View())
+	if !strings.Contains(m.testView(), "Evidence API") {
+		t.Fatalf("sessions: %s", m.testView())
 	}
 }
 
@@ -63,7 +63,7 @@ func TestProjectDisplayMapGraphMessagesAndFilter(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.snap.Projects = append(m.snap.Projects, protocol.ProjectView{Name: "cogforge", DisplayName: "Evidence API"})
 	m.mp.selected = "cogforge"
-	if !strings.Contains(m.View(), "Evidence API") {
+	if !strings.Contains(m.testView(), "Evidence API") {
 		t.Fatal("overview missing display name")
 	}
 	if !strings.Contains(strings.Join(m.mapEdgeLines("tenebrae", 120), " "), "Evidence API") {
@@ -71,7 +71,7 @@ func TestProjectDisplayMapGraphMessagesAndFilter(t *testing.T) {
 	}
 	m.mapOn = false
 	m.tab = graphTab
-	if !strings.Contains(strings.Join(m.graphView(120, 24), "\n"), "Evidence API") {
+	if !strings.Contains(testOutput(strings.Join(m.graphView(120, 24), "\n")), "Evidence API") {
 		t.Fatal("graph missing display name")
 	}
 	a := &m.snap.Agents[0]
@@ -92,8 +92,8 @@ func TestGoldenProjectDisplay(t *testing.T) {
 		m := openMap(t, mapModel(size[0], size[1], fakeGraph()))
 		m.snap.Projects = append(m.snap.Projects, protocol.ProjectView{Name: "cogforge", DisplayName: "Evidence API"})
 		m.mp.selected = "cogforge"
-		golden(t, fmt.Sprintf("project_display_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("project_display_%dx%d", size[0], size[1]), m.testView())
 		m, _ = press(m, keyRunes("D"))
-		golden(t, fmt.Sprintf("project_display_prompt_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("project_display_prompt_%dx%d", size[0], size[1]), m.testView())
 	}
 }

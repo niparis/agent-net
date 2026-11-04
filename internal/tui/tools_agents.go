@@ -2,11 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
@@ -115,24 +115,23 @@ func (m Model) agentToolsHints() []hint {
 	return append(out, bindingHint(ctx, "filter"), bindingHint(ctx, "all tools"), bindingHint(ctx, "back"), bindingHint(ctx, "help"), bindingHint(ctx, actQuit))
 }
 
-func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) agentToolsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	project := m.agentProject()
 	if m.tl.agentSearching {
-		switch k.Type {
-		case tea.KeyEsc:
+		switch k.String() {
+		case "esc":
 			m.tl.agentFilter = ""
 			m.tl.agentSearching = false
-		case tea.KeyEnter:
+		case "enter":
 			m.tl.agentSearching = false
-		case tea.KeyBackspace, tea.KeyCtrlH:
+		case "backspace", "ctrl+h":
 			r := []rune(m.tl.agentFilter)
 			if len(r) > 0 {
 				m.tl.agentFilter = string(r[:len(r)-1])
 			}
-		case tea.KeyRunes:
-			m.tl.agentFilter += string(k.Runes)
-		case tea.KeySpace:
-			m.tl.agentFilter += " "
+		default:
+			m.tl.agentFilter += k.Text
+
 		}
 		m.tl.skillRow = 0
 		return m, nil
@@ -218,7 +217,7 @@ func (m Model) agentToolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "review":
 		if len(m.tl.agentPending[project]) == 0 {
-			return m.agentToolsKey(tea.KeyMsg{Type: tea.KeySpace})
+			return m.agentToolsKey(tea.KeyPressMsg{Code: tea.KeySpace})
 		}
 		return m.reviewAgentChanges(project)
 	}
@@ -337,7 +336,7 @@ func (m Model) agentToolsView(w, h int) []string {
 	if m.tl.agentFilter != "" || m.tl.agentSearching {
 		heading += " / " + m.tl.agentFilter + searchCursor(m.tl.agentSearching)
 	}
-	leftColor, rightColor := lipgloss.TerminalColor(roleAccent), lipgloss.TerminalColor(roleFaint)
+	leftColor, rightColor := color.Color(roleAccent), color.Color(roleFaint)
 	if m.tl.skillsFocus {
 		leftColor, rightColor = rightColor, leftColor
 	}

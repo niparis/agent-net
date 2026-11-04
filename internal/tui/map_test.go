@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -77,11 +77,11 @@ func TestMapHidesAndUnhidesNodesWithSharedPreference(t *testing.T) {
 	m = settle(refresh(m, src))
 	m = openMap(t, m)
 	if containsString(m.mapSelectable(), "cogforge") || len(m.hiddenNodes) != 1 {
-		t.Fatalf("hidden node is still listed or not counted:\n%s", m.View())
+		t.Fatalf("hidden node is still listed or not counted:\n%s", m.testView())
 	}
 	m = keys(m, "H")
 	if !containsString(m.mapSelectable(), "cogforge") || !m.showHiddenNodes {
-		t.Fatalf("X did not show the tagged hidden node:\n%s", m.View())
+		t.Fatalf("X did not show the tagged hidden node:\n%s", m.testView())
 	}
 	m.mp.selected = "cogforge"
 	m = finishHiddenKey(t, m, "h")
@@ -109,7 +109,7 @@ func TestMapHidesAndUnhidesNodesWithSharedPreference(t *testing.T) {
 func TestMapFocusKeepsArchitectNameAt80(t *testing.T) {
 	m := openMap(t, mapModel(80, 24, fakeGraph()))
 	m.mp.selected = "cogforge"
-	if !strings.Contains(m.View(), "trading-architect") {
+	if !strings.Contains(m.testView(), "trading-architect") {
 		t.Fatal("architect name was cut")
 	}
 }
@@ -119,7 +119,7 @@ func TestFocusShowsMultipleNeighborsWhenThereIsRoom(t *testing.T) {
 	g.Edges = append(g.Edges, protocol.Edge{From: "homelab", To: "cogforge", Kind: "depends", Rule: "normal"})
 	m := openMap(t, mapModel(120, 34, g))
 	m.mp.selected = "cogforge"
-	if !strings.Contains(m.View(), "homelab") || !strings.Contains(m.View(), "tenebrae") {
+	if !strings.Contains(m.testView(), "homelab") || !strings.Contains(m.testView(), "tenebrae") {
 		t.Fatal("focus omits a neighbor")
 	}
 }
@@ -128,7 +128,7 @@ func TestMapReadFailureKeepsLastGraphVisible(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.mp.selected = "cogforge"
 	m.applyMap(mapMsg{err: errors.New("temporary failure")})
-	if v := m.View(); !strings.Contains(v, "cogforge") || !strings.Contains(v, "temporary failure") {
+	if v := m.testView(); !strings.Contains(v, "cogforge") || !strings.Contains(v, "temporary failure") {
 		t.Fatalf("last graph or error missing:\n%s", v)
 	}
 }
@@ -136,7 +136,7 @@ func TestMapReadFailureKeepsLastGraphVisible(t *testing.T) {
 func TestFocusCountsAppearOnlyOnTabBar(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.mp.selected = "cogforge"
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	ls := strings.Split(v, "\n")
 	if !strings.Contains(ls[0], "7 nodes, 4 edges") {
 		t.Fatalf("counts missing on tab bar: %q", ls[0])
@@ -181,7 +181,7 @@ func TestMapExplainsIsolatedNode(t *testing.T) {
 	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
 	m := openMap(t, mapModel(120, 34, g))
 	m.mp.selected = "a2a-ocs"
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, "no edges yet · ask the CTO to connect it (c)") {
 		t.Fatal(v)
 	}

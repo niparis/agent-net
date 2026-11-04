@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -52,7 +52,7 @@ func TestMessagesDefectKeyFilesReportAfterConfirm(t *testing.T) {
 	if m.mode != modeDefectNote {
 		t.Fatalf("f did not open the note prompt: mode %v notice %+v", m.mode, m.notice)
 	}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "defect") || !strings.Contains(v, "worker 8") {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "defect") || !strings.Contains(v, "worker 8") {
 		t.Fatalf("the note prompt does not name the worker:\n%s", v)
 	}
 	m.defect.SetValue("the old path stayed after the merge")
