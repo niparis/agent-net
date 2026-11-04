@@ -1,6 +1,6 @@
 # OS sandbox for workers (W7)
 
-Status: built for Pi and OpenCode workers on Linux ([decision 0056](../decisions/0056-worker-os-sandbox.md)). Claude workers are refused when the switch is on (see below). macOS is designed here and not built. Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
+Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)). Claude workers are refused when the switch is on (see below). macOS is designed here and not built. Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
 
 ## What it is
 

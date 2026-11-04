@@ -16,8 +16,8 @@ func ctoTestSession(t *testing.T) *mcp.ClientSession {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		if method == "graph" {
-			return json.Marshal(protocol.CharterGuideText())
+		if method == "agent_graph_read" {
+			return json.Marshal(map[string]any{"nodes": []any{}, "edges": []any{}, "note": protocol.CharterGuideText()})
 		}
 		if method == "graph_change" {
 			return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md"]}`), nil
@@ -67,7 +67,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	for _, tl := range list.Tools {
 		tools[tl.Name] = tl
 	}
-	wantTools := []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new", "message", "ask_owner", "learn", "ui", "sessions"}
+	wantTools := []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new", "agent_message_send", "agent_owner_ask", "agent_learn", "cto_ui_show", "agent_sessions_find"}
 	have := map[string]bool{}
 	for _, name := range wantTools {
 		if tools[name] == nil {
@@ -101,8 +101,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"},
 		},
 		"project_change": {"action": {"add", "remove", "display", "create"}},
-		"message":        {"action": {"send", "reply"}},
-		"ui":             {"action": {"show", "notice"}},
+		"cto_ui_show":    {"tab": {"sessions", "messages", "quotas", "graph", "tools"}},
 	}
 	for tool, fields := range wantEnums {
 		tl, ok := tools[tool]
@@ -186,10 +185,10 @@ func TestCTOToolsForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	for _, name := range []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new", "message", "ask_owner", "learn", "ui", "sessions"} {
+	for _, name := range []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new", "cto_ui_show"} {
 		args := map[string]any{}
 		if field := ctoRoutingField[name]; field != "" {
-			args[field] = map[string]string{"message": "send", "ui": "show", "graph_change": "charter_set", "session_change": "rename", "worker_change": "start", "answer": "held", "tools_change": "plan", "mcp_change": "test", "settings_change": "onboarding", "project_change": "add"}[name]
+			args[field] = map[string]string{"graph_change": "charter_set", "session_change": "rename", "worker_change": "start", "answer": "held", "tools_change": "plan", "mcp_change": "test", "settings_change": "onboarding", "project_change": "add"}[name]
 		}
 		switch name {
 		case "answer":
@@ -199,6 +198,8 @@ func TestCTOToolsForward(t *testing.T) {
 		case "project_change", "tools_change":
 		case "mcp_call":
 			args["server"], args["tool"], args["arguments"] = "test", "list", map[string]any{}
+		case "cto_ui_show":
+			args["tab"] = "graph"
 		}
 		if name == "worker_change" {
 			args["project"] = "example"
@@ -207,6 +208,19 @@ func TestCTOToolsForward(t *testing.T) {
 		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil || out.IsError || !seen[name] {
 			t.Errorf("%s: %+v %v", name, out, err)
+		}
+	}
+	// The shared catalog tools validate the daemon's answer, which this fake
+	// does not shape; it is enough that each call reaches the daemon.
+	for name, args := range map[string]map[string]any{
+		"agent_message_send":  {"to": "s01", "body": "hello"},
+		"agent_message_reply": {"message": "m1", "body": "answer"},
+		"agent_owner_ask":     {"kind": "question", "text": "Which?", "recommendation": "This one."},
+		"agent_learn":         {"subject_kind": "model", "subject": "m", "finding": "f", "evidence": []string{"e"}},
+		"agent_sessions_find": {},
+	} {
+		if _, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args}); err != nil || !seen[name] {
+			t.Errorf("%s did not reach the daemon: %v", name, err)
 		}
 	}
 }
@@ -221,16 +235,16 @@ func TestCTOParityTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		got[tool.Name] = true
 	}
-	for _, name := range []string{"overview", "sessions", "session", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings", "message", "ask_owner", "learn", "ui", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new",
+	for _, name := range []string{"cto_proposals_find", "cto_ui_show", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new",
 		"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_message_send", "agent_message_reply", "agent_owner_ask", "agent_learn"} {
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
 		}
 	}
-	if len(got) != 45 {
-		t.Errorf("CTO exposes %d tools, want 45: %v", len(got), got)
+	if len(got) != 29 {
+		t.Errorf("CTO exposes %d tools, want 29: %v", len(got), got)
 	}
-	for _, name := range []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
+	for _, name := range []string{"overview", "sessions", "session", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings", "message", "ask_owner", "learn", "ui", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
 		if got[name] {
 			t.Errorf("old name %s is still a CTO tool", name)
 		}
@@ -354,7 +368,7 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("total schema: %d bytes", len(schema))
+	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), 32*1024-len(schema), 32*1024)
 	if len(schema) >= 32*1024 {
 		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), 32*1024)
 	}
@@ -371,12 +385,15 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 
 func TestCTOCharterGuideView(t *testing.T) {
 	cs := ctoTestSession(t)
-	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "graph", Arguments: map[string]any{"view": "guide"}})
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_graph_read", Arguments: map[string]any{"view": "guide"}})
 	if err != nil || result.IsError {
 		t.Fatalf("guide: %v %v", result, err)
 	}
+	var out struct {
+		Note string `json:"note"`
+	}
 	text := result.Content[0].(*mcp.TextContent).Text
-	if text != protocol.CharterGuideText() {
+	if json.Unmarshal([]byte(text), &out) != nil || out.Note != protocol.CharterGuideText() {
 		t.Fatalf("guide missing: %s", text)
 	}
 	list, _ := cs.ListTools(context.Background(), nil)

@@ -81,3 +81,15 @@ func TestDeliveryChecklistMarkerCannotBeEditedOrForged(t *testing.T) {
 		t.Fatalf("missing or forged checklist boundary: %s", got)
 	}
 }
+
+func TestWorkerSandboxCutoverFlag(t *testing.T) {
+	snap := settings.Snapshot{Values: []settings.Value{{Key: "workers.sandbox_level", Level: "repo", Scope: "repo", Value: json.RawMessage(`"read-only"`)}}}
+	overrides := map[string]string{SettingWorkerSandbox: "no-network"}
+	if got := NodeDefaultsWithSettings("early", overrides, snap, "repo").WorkerSandbox; got != "no-network" {
+		t.Fatalf("old gateway = %s", got)
+	}
+	snap.WorkerSandboxCutover = true
+	if got := NodeDefaultsWithSettings("early", overrides, snap, "repo").WorkerSandbox; got != "read-only" {
+		t.Fatalf("cutover = %s", got)
+	}
+}

@@ -37,7 +37,7 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 
 // The brief of a wrapped worker says so, and says what fails.
 func TestWorkerBriefNamesTheWrapper(t *testing.T) {
-	body := WorkerTaskBodyOS("pi", "do it", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, "bubblewrap", settings.Snapshot{})
+	body := WorkerTaskBodyOS("pi", "do it", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, "bubblewrap", settings.Snapshot{}, "")
 	if !strings.Contains(body, "\n- permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap): writes outside your worktree and /tmp fail (read-only file system)") {
 		t.Fatalf("brief:\n%s", body)
 	}
@@ -45,7 +45,7 @@ func TestWorkerBriefNamesTheWrapper(t *testing.T) {
 	if strings.Contains(plain, "bubblewrap") || !strings.Contains(plain, "(enforced for Codex only for now)") {
 		t.Fatalf("brief without the wrapper:\n%s", plain)
 	}
-	ro := WorkerTaskBodyOS("opencode", "look", "", "", "", "", WorkersReadOnly, "bubblewrap", settings.Snapshot{})
+	ro := WorkerTaskBodyOS("opencode", "look", "", "", "", "", WorkersReadOnly, "bubblewrap", settings.Snapshot{}, "")
 	if !strings.Contains(ro, "(sandboxed by bubblewrap): you cannot write files; report findings only") {
 		t.Fatalf("read-only brief:\n%s", ro)
 	}

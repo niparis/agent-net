@@ -633,6 +633,16 @@ CREATE TRIGGER IF NOT EXISTS setting_history_no_delete BEFORE DELETE ON setting_
 BEGIN SELECT RAISE(ABORT, 'setting history is append-only'); END;
 `, `
 SELECT 1 /* delivery settings cutover */;
+`, `
+-- A provider account that a worker run reported out of quota, per machine,
+-- until the reset the provider named. The gateway adds it to the machine's
+-- quota reading, so starts on that provider are refused until then.
+CREATE TABLE IF NOT EXISTS quota_blocks (
+ node_id TEXT NOT NULL, provider TEXT NOT NULL, resets_at INTEGER NOT NULL,
+ detail TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL,
+ PRIMARY KEY (node_id, provider));
+`, `
+SELECT 1 /* worker sandbox cutover */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1015,6 +1025,12 @@ func (s *Store) migrate() error {
 		}
 		if strings.Contains(migrations[i], "CTO legacy route upgrade") {
 			if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_legacy_route_start','',?) ON CONFLICT(key) DO NOTHING`, s.now().UnixNano()); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "worker sandbox cutover") {
+			if err := s.cutoverWorkerSandboxTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -2064,6 +2080,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
 		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO,
 	}
+	threaded := false
 	if p.ParentID != "" {
 		parent, ok, err := s.message(tx, "m.id = ?", p.ParentID)
 		if err != nil {
@@ -2094,6 +2111,23 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		m.ParentID = parent.ID
 		m.ConversationID = parent.ConversationID
 		m.Hop = parent.Hop + 1
+		if m.Type == "" {
+			m.Type = protocol.TypeReply
+		}
+	} else if p.ConversationID != "" {
+		// Threaded into a conversation without a parent (W4.4): only by a
+		// session that the recipient wrote to in that conversation.
+		var hop sql.NullInt64
+		if err := tx.QueryRow(`SELECT MAX(hop) FROM messages WHERE conversation_id=? AND sender=? AND recipient=?`,
+			p.ConversationID, p.Recipient, p.Sender).Scan(&hop); err != nil {
+			return msg, false, err
+		}
+		if !hop.Valid {
+			return msg, false, reject("conversation %q has no message from the recipient to the sender", p.ConversationID)
+		}
+		m.ConversationID = p.ConversationID
+		m.Hop = int(hop.Int64) + 1
+		threaded = true
 		if m.Type == "" {
 			m.Type = protocol.TypeReply
 		}
@@ -2141,7 +2175,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err != nil {
 		return msg, false, err
 	}
-	if m.ParentID == "" && !m.FromCTO {
+	if m.ParentID == "" && !threaded && !m.FromCTO {
 		if err := s.signalRequest(tx, m); err != nil {
 			return msg, false, err
 		}
@@ -2180,6 +2214,19 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			return msg, false, err
 		}
 		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
+			return msg, false, err
+		}
+	}
+	if threaded && m.Type == protocol.TypeReply {
+		// A reply to the conversation answers every open request there from
+		// its recipient, as the reminder check already counts it.
+		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state IN (?,?,?)`,
+			protocol.StateReplied, m.ConversationID, m.To, m.From, protocol.TypeRequest,
+			protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+			return msg, false, err
+		}
+		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state = ?)`,
+			m.ConversationID, m.To, m.From, protocol.TypeRequest, protocol.StateReplied); err != nil {
 			return msg, false, err
 		}
 	}
@@ -2262,7 +2309,7 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 	rows.Close()
 	filtered := out[:0]
 	for _, m := range out {
-		if m.From == "agent-net" && !isWakeMessage(m) {
+		if needsReminderCheck(m) {
 			eligible, err := s.reminderEligible(m.ParentID)
 			if err != nil {
 				return nil, err
@@ -2296,32 +2343,40 @@ func (s *Store) UnmarkDispatched(id string) {
 // ApplyDelivery records a daemon's report. A message that is already replied,
 // expired or failed keeps its state.
 func (s *Store) ApplyDelivery(id, state, detail string) error {
+	_, _, err := s.ApplyDeliveryReport(id, state, detail)
+	return err
+}
+
+// ApplyDeliveryReport is ApplyDelivery that also returns the notice to the
+// sender, stored in the same transaction, when the report leaves the message
+// failed for good (W4.3). The caller dispatches it.
+func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.Message, noticed bool, err error) {
 	if state != protocol.StateDelivered && state != protocol.StateFailed && state != protocol.StateDispatched {
-		return reject("delivery state must be dispatched, delivered or failed")
+		return notice, false, reject("delivery state must be dispatched, delivered or failed")
 	}
 	now := s.now().UnixNano()
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return notice, false, err
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`, id, state, detail, now); err != nil {
-		return err
+		return notice, false, err
 	}
 	res, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN ('stored','dispatched')`, state, id)
 	if err != nil {
-		return err
+		return notice, false, err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return notice, false, err
 	}
 	if n == 1 {
 		if state == protocol.StateFailed && retryableFailure(detail) {
 			var attempts int
 			err = tx.QueryRow(`SELECT attempts FROM delivery_retries WHERE message_id=?`, id).Scan(&attempts)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return err
+				return notice, false, err
 			}
 			attempts++
 			_, err = tx.Exec(`INSERT INTO delivery_retries(message_id,attempts,next_at) VALUES(?,?,?) ON CONFLICT(message_id) DO UPDATE SET attempts=excluded.attempts,next_at=excluded.next_at`, id, attempts, now+int64(retryDelay(attempts)))
@@ -2329,16 +2384,22 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 			_, err = tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, id)
 		}
 		if err != nil {
-			return err
+			return notice, false, err
+		}
+		// A failure that is not retried is final: tell the sender once.
+		if state == protocol.StateFailed && !retryableFailure(detail) {
+			if notice, noticed, err = s.failureNotice(tx, id, detail); err != nil {
+				return protocol.Message{}, false, err
+			}
 		}
 	}
 	if state == protocol.StateDelivered {
 		if err = s.learnDelivery(tx, id, now); err != nil {
-			return err
+			return notice, false, err
 		}
 	}
 	if err = tx.Commit(); err != nil {
-		return err
+		return protocol.Message{}, false, err
 	}
 	s.Event("msg."+state, "", s.recipientOf(id), id, detail)
 	note := ""
@@ -2348,7 +2409,10 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 		}
 	}
 	s.logStep("msg."+state, id, "detail", detail, "note", note)
-	return err
+	if noticed {
+		s.logMessage(notice)
+	}
+	return notice, noticed, err
 }
 
 // Expire marks overdue undelivered messages expired and returns how many.
@@ -2818,13 +2882,21 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 	if _, err = tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, id); err != nil {
 		return false, err
 	}
+	var notice protocol.Message
+	noticed := false
 	if m.State == protocol.StateHeld {
+		// The held path answers the sender with its own reply.
 		if err = s.heldReply(tx, m, "your request expired while awaiting your user", "expired"); err != nil {
 			return false, err
 		}
+	} else if notice, noticed, err = s.expiryNotice(tx, m); err != nil {
+		return false, err
 	}
 	if err = tx.Commit(); err != nil {
 		return false, err
+	}
+	if noticed {
+		s.logMessage(notice)
 	}
 	return true, nil
 }

@@ -42,7 +42,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0013](decisions/0013-peer-trust-and-hints.md): peer trust (a per-session switch, set by the owner, that lets a session act on peer requests without asking), the sender-relays rule, and hints about which session can help after a failed tool call.
 - [0014](decisions/0014-delegation-policy.md): delegation policy (the owner sets, per session or project, whether a session does the coding itself or hands it to a native subagent or a worker; applied on every turn).
 - [0020](decisions/0020-worker-sandbox.md): unattended workers get a sandbox, not approval prompts (a level per project, Codex first). Amends 0002 W6.
-- [0056](decisions/0056-worker-os-sandbox.md): an optional OS sandbox (bubblewrap on Linux) for Pi and OpenCode workers, per project in node.json; Claude and no-network starts are refused while it is on. Amends 0020.
+- [0059](decisions/0059-worker-os-sandbox.md): an optional OS sandbox (bubblewrap on Linux) for Pi and OpenCode workers, per project in node.json; Claude and no-network starts are refused while it is on. Amends 0020.
 - [0021](decisions/0021-network-integrations.md): one setup integrations question, answered once for the whole network.
 - [0022](decisions/0022-component-graph-and-cto.md): built. A graph of components with charters (maturity included), edges with modes, and a CTO agent in the TUI that changes it by conversation.
 - [0023](decisions/0023-model-lists-for-every-harness.md): model lists for every harness, loose names resolved for all of them, recent success ranking, and the start gap counting only starts that ran.

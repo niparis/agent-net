@@ -1,4 +1,4 @@
-# 0056 - An optional OS sandbox for Pi and OpenCode workers
+# 0059 - An optional OS sandbox for Pi and OpenCode workers
 
 Date: 2026-11-04
 

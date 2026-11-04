@@ -78,8 +78,24 @@ func applyCTOCatalogInput(name string, resolved *jsonschema.Resolved, req *mcp.C
 			return nil, fmt.Errorf("%s arguments are not a JSON object: %v", name, err)
 		}
 	}
+	var sent map[string]bool
+	if fields, ok := value.(map[string]any); ok {
+		sent = make(map[string]bool, len(fields))
+		for key := range fields {
+			sent[key] = true
+		}
+	}
 	if err := resolved.ApplyDefaults(&value); err != nil {
 		return nil, err
+	}
+	// A default inside an object field must not create that object: the
+	// to_set defaults would turn a send to one session into a group send.
+	if fields, ok := value.(map[string]any); ok {
+		for key, field := range fields {
+			if _, isObject := field.(map[string]any); isObject && !sent[key] {
+				delete(fields, key)
+			}
+		}
 	}
 	if err := resolved.Validate(&value); err != nil {
 		return nil, fmt.Errorf("%v. Example: %s", err, catalogExample(name))

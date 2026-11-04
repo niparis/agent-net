@@ -1,6 +1,9 @@
 package guidance
 
 import (
+	"encoding/json"
+
+	"github.com/niparis/agent-net/internal/settings"
 	"strings"
 	"testing"
 )
@@ -189,5 +192,26 @@ func TestDecideDoNotDeferRule(t *testing.T) {
 				t.Errorf("%s block lacks %q", v, want)
 			}
 		}
+	}
+}
+
+func TestWorkerHandbackGuidanceUsesFixedToolAndKeepsCustomText(t *testing.T) {
+	def, ok := settings.DefinitionFor("guidance.worker_brief_precedence")
+	if !ok {
+		t.Fatal("missing worker guidance")
+	}
+	if strings.Contains(def.Default.Value, "agent_handback") || !strings.Contains(def.Default.Value, "{{handback}}") {
+		t.Fatalf("default must use the code-owned tool slot: %q", def.Default.Value)
+	}
+	custom := json.RawMessage(`"A custom worker note."`)
+	if _, err := def.Codec(custom); err != nil {
+		t.Fatalf("older custom guidance must remain valid: %v", err)
+	}
+	snap := settings.Snapshot{Values: []settings.Value{{Key: def.Key, Level: "network", Scope: "network", Value: custom}}}
+	if got := BlockWithSnapshot(Other, snap); !strings.Contains(got, "A custom worker note.") {
+		t.Fatalf("custom guidance was dropped: %s", got)
+	}
+	if got := Block(Other); !strings.Contains(got, "`agent_handback`") || strings.Contains(got, "{{handback}}") {
+		t.Fatalf("tool was not rendered: %s", got)
 	}
 }

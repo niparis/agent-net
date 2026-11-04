@@ -1,0 +1,51 @@
+{
+  "auto_continue": {
+    "[false,0]": false,
+    "[false,1]": false,
+    "[false,2]": false,
+    "[false,3]": false,
+    "[true,0]": true,
+    "[true,1]": true,
+    "[true,2]": false,
+    "[true,3]": false
+  },
+  "continue_text": "[agent-net] continue: your task is not finished. Carry on until it is done, then hand back with complete: yes, or say exactly what blocks you.",
+  "defaults": {
+    "Max": 12,
+    "CPUTarget": 75,
+    "MemReserve": 0,
+    "QueueTimeout": 7200000000000,
+    "QueueTick": 15000000000,
+    "StartGap": 6000000000,
+    "Idle": 3600000000000,
+    "IdleNotice": 120000000000,
+    "MaxAge": 14400000000000,
+    "OwnerGrace": 600000000000,
+    "Tick": 5000000000,
+    "StartTimeout": 45000000000,
+    "BackgroundStartTimeout": 600000000000,
+    "KillGrace": 3000000000,
+    "MCPSettle": 3000000000,
+    "Cleanup": 600000000000,
+    "OSSandbox": null
+  },
+  "node_json": {
+    "Max": 3,
+    "CPUTarget": 42,
+    "MemReserve": 2147483648,
+    "QueueTimeout": 1200000000000,
+    "QueueTick": 15000000000,
+    "StartGap": -1,
+    "Idle": 720000000000,
+    "IdleNotice": 120000000000,
+    "MaxAge": 10800000000000,
+    "OwnerGrace": 240000000000,
+    "Tick": 5000000000,
+    "StartTimeout": 45000000000,
+    "BackgroundStartTimeout": 600000000000,
+    "KillGrace": 3000000000,
+    "MCPSettle": 3000000000,
+    "Cleanup": 600000000000,
+    "OSSandbox": null
+  }
+}

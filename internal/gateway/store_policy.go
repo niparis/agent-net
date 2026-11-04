@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Delegation policy storage (decision 0014). A session has its own policy
@@ -48,16 +49,68 @@ func (s *Store) SetDelegation(sessionID, scope string, p protocol.DelegationPoli
 		if key == "" {
 			return false, errors.New("this session has no project: set the policy for the session instead")
 		}
-		if p.Empty() {
-			_, err = s.db.Exec(`DELETE FROM project_policies WHERE node_id = ? AND project = ?`, a.NodeID, key)
+		tx, e := s.db.Begin()
+		if e != nil {
+			return false, e
+		}
+		defer tx.Rollback()
+		names, e := workerProjectNamesTx(tx)
+		if e != nil {
+			return false, e
+		}
+		matches := names[key]
+		if len(matches) > 1 {
+			return false, reject("ambiguous project %q: graph names differ only by case", key)
+		}
+		name := key
+		if len(matches) == 1 {
+			name = matches[0]
+		}
+		var old sql.NullString
+		if e = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, workerSandboxKey, name).Scan(&old); e != nil && e != sql.ErrNoRows {
+			return false, e
+		}
+		change := SettingsChange{Key: workerSandboxKey, Level: "repo", Scope: name}
+		if old.Valid {
+			change.Expect = json.RawMessage(old.String)
+		}
+		if p.Workers == "" {
+			change.Delete = true
 		} else {
-			_, err = s.db.Exec(`INSERT INTO project_policies (node_id, project, policy, updated_at) VALUES (?,?,?,?)
-				ON CONFLICT (node_id, project) DO UPDATE SET policy = excluded.policy, updated_at = excluded.updated_at`,
-				a.NodeID, key, encodePolicy(p), s.now().UnixNano())
+			change.Value, _ = json.Marshal(p.Workers)
 		}
-		if err == nil {
-			_, err = s.db.Exec(`UPDATE sessions SET delegation = '' WHERE id = ?`, sessionID)
+		result, e := s.writeSettingsTx(tx, []SettingsChange{change}, "owner", "project policy adapter", "write", nil)
+		if e != nil {
+			return false, e
 		}
+		// Preserve the old workers field for downgrade; only the remaining
+		// delegation fields continue to be written to this table.
+		var raw string
+		e = tx.QueryRow(`SELECT policy FROM project_policies WHERE node_id=? AND project=?`, a.NodeID, key).Scan(&raw)
+		if e != nil && e != sql.ErrNoRows {
+			return false, e
+		}
+		var previous protocol.DelegationPolicy
+		_ = json.Unmarshal([]byte(raw), &previous)
+		p.Workers = previous.Workers
+		if p.Empty() {
+			_, e = tx.Exec(`DELETE FROM project_policies WHERE node_id=? AND project=?`, a.NodeID, key)
+		} else {
+			_, e = tx.Exec(`INSERT INTO project_policies (node_id,project,policy,updated_at) VALUES (?,?,?,?) ON CONFLICT(node_id,project) DO UPDATE SET policy=excluded.policy,updated_at=excluded.updated_at`, a.NodeID, key, encodePolicy(p), s.now().UnixNano())
+		}
+		if e != nil {
+			return false, e
+		}
+		if _, e = tx.Exec(`UPDATE sessions SET delegation='' WHERE id=?`, sessionID); e != nil {
+			return false, e
+		}
+		if e = tx.Commit(); e != nil {
+			return false, e
+		}
+		if result.changed {
+			s.settingsNotify()
+		}
+		return true, nil
 	default:
 		return false, errors.New("scope must be session or project")
 	}
@@ -68,50 +121,31 @@ func (s *Store) SetDelegation(sessionID, scope string, p protocol.DelegationPoli
 // on a machine (decision 0020): the owner's setting in the project policy,
 // else the node's worker sandbox default from its maturity (decision 0022).
 // Only the project policy counts: a session's own policy has no workers level.
-func (s *Store) WorkerPermissions(nodeID, project string) (string, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT policy FROM project_policies WHERE node_id = ? AND project = ?`,
-		nodeID, strings.ToLower(strings.TrimSpace(project))).Scan(&raw)
-	if err == nil {
-		var p protocol.DelegationPolicy
-		if json.Unmarshal([]byte(raw), &p) == nil && protocol.ValidWorkerPermissions(p.Workers) && p.Workers != "" {
-			return p.Workers, nil
-		}
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return "", err
-	}
-	return s.nodeWorkerSandbox(project)
-}
-
-// nodeWorkerSandbox is the sandbox level a node's maturity gives its workers,
-// after the node's own override. A node with no maturity keeps today's default.
-func (s *Store) nodeWorkerSandbox(project string) (string, error) {
-	var maturity string
-	err := s.db.QueryRow(`SELECT value FROM graph_charter WHERE node = ? AND attr = 'maturity'`, project).Scan(&maturity)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.WorkersSandboxed, nil
-	}
+func (s *Store) WorkerPermissions(_ string, project string) (string, error) {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return "", err
 	}
-	settings := map[string]string{}
-	rows, err := s.db.Query(`SELECT setting,value FROM graph_node_settings WHERE node = ? AND setting = 'worker_sandbox'`, project)
+	defer tx.Rollback()
+	names, err := workerProjectNamesTx(tx)
 	if err != nil {
 		return "", err
 	}
-	for rows.Next() {
-		var setting, value string
-		if err := rows.Scan(&setting, &value); err != nil {
-			rows.Close()
-			return "", err
-		}
-		settings[setting] = value
+	key := strings.ToLower(strings.TrimSpace(project))
+	matches := names[key]
+	if len(matches) > 1 {
+		return "", reject("ambiguous project %q: graph names differ only by case", key)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	if len(matches) == 1 {
+		project = matches[0]
+	} else {
+		project = key
+	}
+	snap, err := settingsSnapshotTx(tx)
+	if err != nil {
 		return "", err
 	}
-	return protocol.NodeDefaults(maturity, settings).WorkerSandbox, nil
+	return snap.String(workerSandboxKey, settings.Where{Repo: project}), nil
 }
 
 // projectPolicies loads every project default, keyed by node and project.
@@ -128,8 +162,11 @@ func (s *Store) projectPolicies() (map[string]protocol.DelegationPolicy, error) 
 			return nil, err
 		}
 		var p protocol.DelegationPolicy
-		if json.Unmarshal([]byte(raw), &p) == nil && !p.Empty() {
-			out[node+"\x00"+project] = p
+		if json.Unmarshal([]byte(raw), &p) == nil {
+			p.Workers = "" // the legacy field is only a downgrade backup
+			if !p.Empty() {
+				out[node+"\x00"+project] = p
+			}
 		}
 	}
 	return out, rows.Err()
@@ -143,6 +180,28 @@ func (s *Store) applyDelegation(as []protocol.AgentView) error {
 	if err != nil {
 		return err
 	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return err
+	}
+	graph, err := s.Graph()
+	if err != nil {
+		return err
+	}
+	byLower := map[string][]string{}
+	for _, n := range graph.Nodes {
+		k := strings.ToLower(n.Name)
+		byLower[k] = append(byLower[k], n.Name)
+	}
+	explicit := map[string]string{}
+	for _, v := range snap.Values {
+		if v.Key == workerSandboxKey && v.Level == "repo" && v.Item == "" {
+			var x string
+			if json.Unmarshal(v.Value, &x) == nil && protocol.ValidWorkerPermissions(x) {
+				explicit[v.Scope] = x
+			}
+		}
+	}
 	var nodes map[string]protocol.NodeView
 	usage := map[string]map[string]int{}
 	for i := range as {
@@ -150,6 +209,20 @@ func (s *Store) applyDelegation(as []protocol.AgentView) error {
 		if protocol.IsOwner(a.Harness) {
 			a.Delegation = nil
 			continue
+		}
+		key := projectKey(*a)
+		scope := key
+		if len(byLower[key]) == 1 {
+			scope = byLower[key][0]
+		}
+		if len(byLower[key]) > 1 {
+			scope = ""
+		}
+		workerValue := explicit[scope]
+		if workerValue != "" {
+			p := pp[a.NodeID+"\x00"+key]
+			p.Workers = workerValue
+			pp[a.NodeID+"\x00"+key] = p
 		}
 		if a.Delegation == nil {
 			if key := projectKey(*a); key != "" {

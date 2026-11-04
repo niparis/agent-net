@@ -351,6 +351,9 @@ type WorkerStartResult struct {
 	// OwnerLine is one line for the caller to pass on to its user: the model
 	// and the judge's difficulty. Empty for a continued worker.
 	OwnerLine string `json:"owner_line,omitempty"`
+	// Reminder is a short note for the caller when it named a model itself
+	// instead of leaving the choice to the picker. Empty otherwise.
+	Reminder string `json:"reminder,omitempty"`
 	// Worktree and Branch are set when the worker got its own worktree.
 	Worktree string `json:"worktree,omitempty"`
 	Branch   string `json:"branch,omitempty"`

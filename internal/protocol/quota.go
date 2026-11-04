@@ -278,7 +278,7 @@ func QuotaWarning(quotas *Quotas, provider, model string) string {
 		return ""
 	}
 	if w, ok := quotas.ExhaustedWindowFor(qp, model); ok {
-		return fmt.Sprintf("%s is exhausted (%s; %s)", qp, QuotaWindowName(w), QuotaResetText(w))
+		return quotaExhaustedText(qp, w)
 	}
 	if w, ok := quotas.HighWindowFor(qp, model); ok {
 		return fmt.Sprintf("%s is at %.0f%% of its %s window", qp, w.PercentUsed, QuotaWindowName(w))
@@ -297,7 +297,18 @@ func QuotaRefusal(quotas *Quotas, harness, model string) string {
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("%s is exhausted (%s; %s)", qp, QuotaWindowName(w), QuotaResetText(w))
+	return quotaExhaustedText(qp, w)
+}
+
+// quotaExhaustedText says that a provider window has no allowance left. The
+// account window, learned from a failed run, blocks every model of the
+// provider, so the sentence says to use another harness.
+func quotaExhaustedText(provider string, w QuotaWindow) string {
+	if w.ID == QuotaAccountWindowID {
+		return fmt.Sprintf("%s quota used up until %s (a worker run reported it); pick another harness",
+			provider, time.Unix(w.ResetsAt, 0).UTC().Format("2006-01-02 15:04 UTC"))
+	}
+	return fmt.Sprintf("%s is exhausted (%s; %s)", provider, QuotaWindowName(w), QuotaResetText(w))
 }
 
 // quotaExhaustedForDisplay tells whether a provider has no allowance left,
@@ -370,4 +381,121 @@ func QuotaSummary(q *Quotas) string {
 		parts = append(parts, fmt.Sprintf("%s %.0f%%%s", p.Provider, w.PercentUsed, quotaSuffix(w.Kind)))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// QuotaAccountWindowID names the window the gateway adds when a worker's run
+// shows that a whole provider account is out of quota (see AccountQuotaBlock).
+// It has no family prefix, so it limits every model of the provider.
+const QuotaAccountWindowID = "account"
+
+// accountQuotaMarkers are the phrases of an account-level quota refusal. A
+// rate limit or an overload is short and does not block the account.
+var accountQuotaMarkers = []string{"quota reached", "quota exceeded", "quota exhausted", "out of quota"}
+
+// AccountQuotaBlock reads a worker's failure text. When the run failed because
+// the provider account is out of quota, and the text says when it resets, it
+// returns the quota provider and how long to wait. Only agy is read this way:
+// quota-axi reads agy per model family and does not see the account limit.
+func AccountQuotaBlock(harness, failure string) (string, time.Duration, bool) {
+	if !strings.EqualFold(strings.TrimSpace(harness), "agy") {
+		return "", 0, false
+	}
+	text := strings.ToLower(failure)
+	found := false
+	for _, m := range accountQuotaMarkers {
+		if strings.Contains(text, m) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "", 0, false
+	}
+	i := strings.Index(text, "resets in ")
+	if i < 0 {
+		return "", 0, false
+	}
+	wait, ok := parseResetDelay(text[i+len("resets in "):])
+	if !ok {
+		return "", 0, false
+	}
+	return "agy", wait, true
+}
+
+// parseResetDelay reads a delay such as "160h24m5s" or "2d 3h" from the start
+// of s. It stops at the first word that is not a number with a unit.
+func parseResetDelay(s string) (time.Duration, bool) {
+	units := map[byte]time.Duration{'d': 24 * time.Hour, 'h': time.Hour, 'm': time.Minute, 's': time.Second}
+	var total time.Duration
+	parts := 0
+	for {
+		s = strings.TrimLeft(s, " ")
+		n := 0
+		for n < len(s) && s[n] >= '0' && s[n] <= '9' {
+			n++
+		}
+		if n == 0 || n > 6 || n == len(s) {
+			break
+		}
+		unit, ok := units[s[n]]
+		if !ok {
+			break
+		}
+		var v int64
+		for _, r := range s[:n] {
+			v = v*10 + int64(r-'0')
+		}
+		total += time.Duration(v) * unit
+		parts++
+		s = s[n+1:]
+	}
+	return total, parts > 0 && total > 0
+}
+
+// WithQuotaBlocks returns the reading q with an exhausted account window for
+// every provider blocked until a time after now. It does not change q. A
+// blocked provider whose reading is stale or failed is replaced by the block,
+// so the block still refuses starts.
+func WithQuotaBlocks(q *Quotas, blocks map[string]time.Time, now time.Time) *Quotas {
+	var names []string
+	for name, until := range blocks {
+		if until.After(now) {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return q
+	}
+	sort.Strings(names)
+	out := &Quotas{}
+	if q != nil {
+		*out = *q
+	}
+	out.Providers = nil
+	if q != nil {
+		out.Providers = make([]QuotaProvider, 0, len(q.Providers)+len(names))
+		out.Providers = append(out.Providers, q.Providers...)
+	}
+	for _, name := range names {
+		w := QuotaWindow{ID: QuotaAccountWindowID, Label: "account quota", Kind: "account", PercentUsed: 100,
+			ResetsAt: blocks[name].Unix(), Exhausted: true}
+		i := -1
+		for j, p := range out.Providers {
+			if p.Provider == name {
+				i = j
+				break
+			}
+		}
+		switch {
+		case i < 0:
+			out.Providers = append(out.Providers, QuotaProvider{Provider: name, Windows: []QuotaWindow{w}})
+		case !out.Providers[i].usable():
+			out.Providers[i] = QuotaProvider{Provider: name, Plan: out.Providers[i].Plan, Windows: []QuotaWindow{w}}
+		default:
+			p := out.Providers[i]
+			p.Windows = append([]QuotaWindow{w}, p.Windows...)
+			out.Providers[i] = p
+		}
+	}
+	return out
 }

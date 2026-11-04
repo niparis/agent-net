@@ -344,6 +344,12 @@ func fakeClaudeSession() {
 	}
 	go mcp.Wait()
 	writeRecord(in.Cwd, "fake-claude.json", rec)
+	if argValue(in.Args, "--resume") != "" {
+		// A worker is stopped right after its hand-back, before its turn ends.
+		// Claude Code (2.1.318) closes that turn when the session is resumed:
+		// it writes this placeholder to the transcript, seen on a real worker.
+		fakeClaudeTranscriptLine(dir, in.Cwd, session, fakeClaudeNoResponseLine)
+	}
 	sf := map[string]any{"pid": os.Getpid(), "sessionId": session, "jobId": id, "cwd": in.Cwd, "kind": "bg",
 		"name": argValue(in.Args, "--name"), "status": "idle", "messagingSocketPath": sock}
 	if os.Getenv("FAKE_CLAUDE_NO_JOB_ID") != "" {
@@ -374,6 +380,25 @@ func fakeClaudeSession() {
 			}
 		}()
 	}
+}
+
+// fakeClaudeNoResponseLine is the placeholder entry Claude Code writes to the
+// transcript when it closes an unfinished turn, copied from a real transcript
+// (usage trimmed). It is not an error: isApiErrorMessage is false.
+const fakeClaudeNoResponseLine = `{"parentUuid":"cc000a9a","isSidechain":false,"type":"assistant","uuid":"8a3dd78c","timestamp":"2026-11-04T01:11:39.571Z","message":{"id":"c6da3859","model":"<synthetic>","role":"assistant","stop_reason":"stop_sequence","stop_sequence":"","type":"message","usage":{"input_tokens":0,"output_tokens":0},"content":[{"type":"text","text":"No response requested."}]},"isApiErrorMessage":false,"sessionKind":"bg","userType":"external","entrypoint":"cli","version":"2.1.318"}`
+
+// fakeClaudeTranscriptLine appends one line to the transcript of a session,
+// where Claude Code keeps it: <projects>/<cwd folder>/<session>.jsonl, next to
+// the sessions folder.
+func fakeClaudeTranscriptLine(sessionsDir, cwd, session, line string) {
+	dir := filepath.Join(filepath.Dir(sessionsDir), "projects", claudeTranscriptDir(cwd))
+	os.MkdirAll(dir, 0o700)
+	f, err := os.OpenFile(filepath.Join(dir, session+".jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(line + "\n")
 }
 
 // fakeClaudeMCP is `agent-net mcp` inside the session: it says hello as the
@@ -453,6 +478,11 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 	if strings.Contains(body, "FAKE:edit") {
 		fakeEdit(cwd)
 	}
+	if strings.Contains(body, "FAKE:dirty") {
+		// Work left uncommitted, and a file that .gitignore may match.
+		os.WriteFile(filepath.Join(cwd, "dirty.txt"), []byte("dirty\n"), 0o644)
+		os.WriteFile(filepath.Join(cwd, "ignored.txt"), []byte("ignored\n"), 0o644)
+	}
 	status := ""
 	if strings.Contains(body, "FAKE:blocked") {
 		status = "blocked"
@@ -469,6 +499,23 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 // session. The real adapter (package claude) does the same with Claude's frame.
 type fsClaudeAdapter struct {
 	dir string
+
+	mu        sync.Mutex
+	delivered []protocol.Message // every message written to an inbox
+}
+
+// deliveredTo returns the messages delivered to the session with this
+// gateway ID.
+func (a *fsClaudeAdapter) deliveredTo(session string) []protocol.Message {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []protocol.Message
+	for _, m := range a.delivered {
+		if m.To == session {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (a *fsClaudeAdapter) Harness() string { return "claude" }
@@ -542,6 +589,9 @@ func (a *fsClaudeAdapter) Deliver(ctx context.Context, target protocol.SessionIn
 		defer c.Close()
 		b, _ := json.Marshal(map[string]string{"body": m.Body})
 		c.Write(append(b, '\n'))
+		a.mu.Lock()
+		a.delivered = append(a.delivered, m)
+		a.mu.Unlock()
 		return Result{Delivered: true}
 	}
 	return Result{Detail: "no such Claude session"}

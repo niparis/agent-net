@@ -38,3 +38,22 @@ func (s Snapshot) Strings(key string, w Where) []string {
 	_ = json.Unmarshal(e.Value, &v)
 	return v
 }
+
+func (s Snapshot) Int(key string, w Where) int {
+	e, err := s.Resolve(key, w)
+	if err != nil {
+		return 0
+	}
+	var v int
+	_ = json.Unmarshal(e.Value, &v)
+	return v
+}
+func (s Snapshot) Float(key string, w Where) float64 {
+	e, err := s.Resolve(key, w)
+	if err != nil {
+		return 0
+	}
+	var v float64
+	_ = json.Unmarshal(e.Value, &v)
+	return v
+}

@@ -179,7 +179,7 @@ func TestSettingsCTOApprovalAndRead(t *testing.T) {
 	if string(e.Value) != "false" {
 		t.Fatalf("after approval: %s", e.Value)
 	}
-	out, err := n.d.readCTOTool(ctx, "settings", json.RawMessage(`{"area":"values","key":"workers.auto_continue"}`))
+	out, err := n.d.readCTOTool(ctx, "agent_settings_read", json.RawMessage(`{"key":"workers.auto_continue"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
 		`[{"key":"delivery.merge_authority","level":"team","scope":"alpha","value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"repo","scope":"","value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"other","value":"ask"}]`,
-		`[{"key":"workers.auto_continue","level":"repo","scope":"alpha","value":false}]`,
+		`[{"key":"workers.auto_continue","level":"session","scope":"alpha","value":false}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"network","item":"x","value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"network","delete":true,"value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"network"}]`,
@@ -425,5 +425,57 @@ func TestSettingsDeliveryCutoverSurvivesOfflineRestart(t *testing.T) {
 	}
 	if !restarted.SettingsSnapshot().DeliveryCutover {
 		t.Fatal("cutover flag lost on restart")
+	}
+}
+
+func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{st: st}
+	raw := []byte(`{"revision":1,"recipe":"current","worker_sandbox_cutover":true,"values":[{"key":"workers.sandbox_level","level":"repo","scope":"repo","value":"read-only"}],"maturity":{}}`)
+	if err = d.acceptSettingsSnapshot(raw, true); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &Daemon{st: st}
+	if err = restarted.loadSettingsSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	snap := restarted.SettingsSnapshot()
+	if !snap.WorkerSandboxCutover || protocol.NodeDefaultsWithSettings("early", map[string]string{protocol.SettingWorkerSandbox: "no-network"}, snap, "repo").WorkerSandbox != "read-only" {
+		t.Fatalf("lost sandbox snapshot: %+v", snap)
+	}
+}
+
+func TestWorkerBriefRuleCTOProposesOwnerApplies(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.brief_codex_complete","level":"repo","scope":"shop","value":"Report {{complete_yes}} or {{complete_no}}."}],"reason":"approval"}`)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	proposals, err := n.d.proposalRunner().list()
+	if err != nil || len(proposals) != 1 {
+		t.Fatalf("proposal: %+v %v", proposals, err)
+	}
+	before, err := g.gw.Store().SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := before.String("workers.brief_codex_complete", settings.Where{Repo: "shop"}); strings.Contains(got, "Report ") {
+		t.Fatalf("CTO write applied before approval: %q", got)
+	}
+	if err = n.d.proposalRunner().decide(ctx, proposals[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := g.gw.Store().SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := after.String("workers.brief_codex_complete", settings.Where{Repo: "shop"}); got != "Report {{complete_yes}} or {{complete_no}}." {
+		t.Fatalf("approved value: %q", got)
 	}
 }

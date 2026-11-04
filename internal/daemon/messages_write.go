@@ -104,11 +104,21 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 		protocol.ReplyOutcome
 		MessageID      string `json:"message_id"`
 		Body           string `json:"body"`
+		AsOwner        bool   `json:"as_owner"`
 		IdempotencyKey string `json:"idempotency_key"`
 		Receipt        bool   `json:"receipt"`
 	}
 	if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
 		return nil, errors.New("reply needs message_id and body")
+	}
+	if p.AsOwner {
+		if sid != d.ctoSessionID() {
+			return nil, errors.New("as_owner is for the CTO session only; reply normally instead")
+		}
+		if p.ReplyOutcome != (protocol.ReplyOutcome{}) {
+			return nil, errors.New("as_owner proposes a plain reply; leave out outcome, reason, redirect_to and recommendation")
+		}
+		return d.replyAsOwner(ctx, p.MessageID, p.Body)
 	}
 	p.ReplyOutcome, err = protocol.CleanOutcome(p.ReplyOutcome)
 	if err != nil {
@@ -130,6 +140,39 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 		return data, err
 	}
 	return d.receiptForSend(ctx, data, parent.Message.From), nil
+}
+
+// replyAsOwner stores an owner-reply proposal for the owner's decision. The
+// approved reply goes from the CTO session with the owner's approval.
+func (d *Daemon) replyAsOwner(ctx context.Context, messageID, body string) (any, error) {
+	data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: messageID})
+	if err != nil {
+		return nil, err
+	}
+	var parent struct {
+		Message protocol.Message `json:"message"`
+	}
+	if err := json.Unmarshal(data, &parent); err != nil {
+		return nil, err
+	}
+	args, err := json.Marshal(map[string]any{
+		"action":     "reply",
+		"message_id": messageID,
+		"body":       body,
+		"as_owner":   true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	id, err := d.Propose(ctx, "message", "reply", args, "propose a reply from the owner")
+	if err != nil {
+		return nil, err
+	}
+	return messageReceipt{
+		MessageID: id,
+		To:        messageSessionRef{ID: parent.Message.From, Name: d.sessionName(ctx, parent.Message.From)},
+		State:     "proposed",
+	}, nil
 }
 
 // sendAsOwner stores an owner-send proposal for the owner's decision.

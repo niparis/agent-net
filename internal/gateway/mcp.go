@@ -201,6 +201,28 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 			return nil, reject("bad mcp.call")
 		}
 		return g.mcpCall(ctx, nc, p)
+
+	case "mcp.feature":
+		p, err := decode[protocol.MCPFeature](raw)
+		if err != nil {
+			return nil, reject("bad mcp.feature")
+		}
+		return g.mcpFeature(ctx, nc, p)
+
+	case "mcp.items_changed":
+		p, err := decode[protocol.MCPItemsChanged](raw)
+		if err != nil {
+			return nil, reject("bad mcp.items_changed")
+		}
+		srv, ok, err := st.MCPServer(p.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || srv.NodeID != nc.id {
+			return nil, reject("MCP server %q is not hosted on this node", p.Name)
+		}
+		g.mcpChanged(ctx, "")
+		return nil, nil
 	}
 	return nil, reject("unknown frame type %q", typ)
 }
@@ -314,35 +336,45 @@ func (g *Gateway) mcpTest(ctx context.Context, name string) (any, error) {
 	return map[string]any{"ok": true, "tools": tools}, nil
 }
 
-func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall, validate ...bool) (any, error) {
-	srv, ok, err := g.store.MCPServer(p.Server)
+// mcpAccess returns the named server if the caller may use it now: it exists,
+// the caller is the owner or its project may see it, and it is enabled.
+// Authorize here, on every call, from the gateway's own records: a client
+// that cached the tool earlier gets no more than its project may see now.
+func (g *Gateway) mcpAccess(nc *nodeConn, server, sessionID, owner string) (protocol.MCPServer, error) {
+	srv, ok, err := g.store.MCPServer(server)
 	if err != nil {
-		return nil, err
+		return srv, err
 	}
 	if !ok {
-		return nil, reject("no MCP server named %q", p.Server)
+		return srv, reject("no MCP server named %q", server)
 	}
-	// Authorize here, on every call, from the gateway's own records: a client
-	// that cached the tool earlier gets no more than its project may see now.
-	if !g.validToolOwner(nc, p.Owner) {
-		project, err := g.callerProject(nc, p.SessionID)
+	if !g.validToolOwner(nc, owner) {
+		project, err := g.callerProject(nc, sessionID)
 		if err != nil {
-			return nil, err
+			return srv, err
 		}
-		a, err := g.store.MCPAssignment(p.Server)
+		a, err := g.store.MCPAssignment(server)
 		if err != nil {
-			return nil, err
+			return srv, err
 		}
 		if !mcpVisible(a, project) {
-			g.store.Event("mcp.refused", nc.id, p.SessionID, "", p.Server+": not assigned to project "+project)
+			g.store.Event("mcp.refused", nc.id, sessionID, "", server+": not assigned to project "+project)
 			if project == "" {
-				return nil, reject("MCP server %q is not assigned to this project (the session has no project)", p.Server)
+				return srv, reject("MCP server %q is not assigned to this project (the session has no project)", server)
 			}
-			return nil, reject("MCP server %q is not assigned to this project", p.Server)
+			return srv, reject("MCP server %q is not assigned to this project", server)
 		}
 	}
 	if !srv.Enabled {
-		return nil, reject("MCP server %q is disabled", p.Server)
+		return srv, reject("MCP server %q is disabled", server)
+	}
+	return srv, nil
+}
+
+func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall, validate ...bool) (any, error) {
+	srv, err := g.mcpAccess(nc, p.Server, p.SessionID, p.Owner)
+	if err != nil {
+		return nil, err
 	}
 	if !srv.ToolAllowed(p.Tool) {
 		return nil, reject("tool %q is not exposed by MCP server %q", p.Tool, p.Server)

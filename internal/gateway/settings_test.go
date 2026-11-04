@@ -593,3 +593,45 @@ func TestSettingsUndoRemovesLegacyGuidanceMarker(t *testing.T) {
 		t.Fatal("undo restored forbidden marker")
 	}
 }
+
+func TestWorkerBriefRulesRequireOwner(t *testing.T) {
+	keys := []string{"workers.brief_codex_complete", "workers.brief_approval", "workers.brief_handback", "workers.brief_handback_partial", "workers.brief_blocked", "workers.brief_codex_final", "workers.brief_codex_blocked", "workers.brief_no_delegation"}
+	for _, key := range keys {
+		t.Run(key, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			e, err := (settings.Snapshot{}).Resolve(key, settings.Where{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			change := SettingsChange{Key: key, Level: "network", Scope: "network", Value: e.Value}
+			for _, actor := range []string{"cto", "CTO (minor)", "CTO (owner window)"} {
+				if _, err = s.WriteSettings([]SettingsChange{change}, actor, "test"); err == nil {
+					t.Errorf("%s changed protected %s without approval", actor, key)
+				}
+			}
+			if _, err = s.WriteSettings([]SettingsChange{change}, "owner", "test"); err != nil {
+				t.Fatalf("owner network write: %v", err)
+			}
+			change.Level, change.Scope = "repo", "shop"
+			var original string
+			if err = json.Unmarshal(e.Value, &original); err != nil {
+				t.Fatal(err)
+			}
+			change.Value, _ = json.Marshal(original + " Project wording.")
+			if _, err = s.WriteSettings([]SettingsChange{change}, "cto", "test"); err == nil {
+				t.Fatal("CTO wrote protected repo text")
+			}
+			if _, err = s.WriteSettings([]SettingsChange{change}, "owner", "test"); err != nil {
+				t.Fatalf("owner repo write: %v", err)
+			}
+			snap, err := s.SettingsSnapshot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			effective, err := snap.Resolve(key, settings.Where{Repo: "shop"})
+			if err != nil || string(effective.Value) != string(change.Value) || effective.Source != "repo shop" {
+				t.Fatalf("repo precedence: %+v %v", effective, err)
+			}
+		})
+	}
+}

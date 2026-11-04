@@ -72,8 +72,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	reads := map[string]map[string]any{
-		"workers": {}, "tools": {}, "settings": {"area": "worker_profiles"}, "graph": {}, "machines": {}, "proposals": {}, "feed": {}, "overview": {}, "sessions": {}, "session": {"session_id": ids[0]}, "projects": {},
-		"messages": {}, "cto_proposals_find": {},
+		"cto_proposals_find":  {},
 		"agent_sessions_find": {}, "agent_session_get": {"session": ids[0]},
 		"agent_machines_find": {}, "agent_machine_get": {"machine": "box-00"},
 		"agent_projects_find": {}, "agent_workers_find": {},
@@ -85,7 +84,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 
 	// mcp_call and mcp_test can execute arbitrary external operations. Mutation
 	// tools are classified explicitly and are never invoked here.
-	mutations := strings.Fields("message ask_owner learn ui cto_ui_show proposal_ask graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new agent_message_send agent_message_reply agent_owner_ask agent_learn")
+	mutations := strings.Fields("cto_ui_show proposal_ask graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new agent_message_send agent_message_reply agent_owner_ask agent_learn")
 	actions := map[string]bool{}
 	for _, name := range mutations {
 		actions[name] = true
@@ -139,11 +138,6 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 				t.Fatal(err)
 			}
 			if result.IsError {
-				// The CTO stays private until part 6. Caller-scoped reads must
-				// refuse its unregistered identity, rather than use the owner.
-				if tool.Name == "settings" || tool.Name == "feed" || tool.Name == "messages" || false {
-					return
-				}
 				t.Fatalf("read failed: %+v", result.Content)
 			}
 			if len(result.Content) != 1 {
