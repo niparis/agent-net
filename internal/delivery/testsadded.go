@@ -1,16 +1,12 @@
 package delivery
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path"
 	"sort"
 	"strings"
-	"time"
 )
 
 // Status is how a file changed between two commits.
@@ -40,41 +36,12 @@ type Result struct {
 	Reason string
 }
 
-// gitTimeout bounds a git call when the caller's context has no deadline.
-const gitTimeout = 60 * time.Second
-
 func runGit(ctx context.Context, repoDir string, args ...string) ([]byte, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, gitTimeout)
-		defer cancel()
-	}
-	full := append([]string{"--literal-pathspecs"}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Dir = repoDir
-	cmd.Env = append(os.Environ(), "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("git %s: %w", args[0], ctxErr)
-		}
-		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
+	return gitIn{dir: repoDir}.bytes(ctx, nil, args...)
 }
 
 func checkRef(name, ref string) error {
-	switch {
-	case ref == "":
-		return fmt.Errorf("%s ref is empty", name)
-	case strings.HasPrefix(ref, "-"):
-		return fmt.Errorf("%s ref %q looks like an option", name, ref)
-	case strings.ContainsAny(ref, "\x00\n"):
-		return fmt.Errorf("%s ref has a control character", name)
-	}
-	return nil
+	return checkCommitID(name, ref)
 }
 
 // ChangedFiles lists the files that head changed since the merge base of base

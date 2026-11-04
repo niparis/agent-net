@@ -75,9 +75,13 @@ type StepCommand struct {
 	Env map[string]string
 	// Timeout bounds the run. Zero means runDefaultTimeout.
 	Timeout time.Duration
-	// Commit is the exact commit. HEAD in Dir must be it. It may be a full
-	// SHA or an abbreviation of at least 7 hex digits.
+	// Commit is the exact commit, a full commit ID (see IsCommitID). HEAD in
+	// Dir must be it.
 	Commit string
+	// GitPath is the PATH list git is found on and runs with (see
+	// MergeRequest.GitPath). Empty means this process's PATH. It is not
+	// the command's PATH.
+	GitPath string
 }
 
 // StepRun is the outcome of one run. A command that fails or times out is a
@@ -99,29 +103,33 @@ type StepRun struct {
 	Fields map[string]string
 }
 
-// RunStep runs cmd.Argv in cmd.Dir and reports the outcome. It first checks
-// that HEAD in Dir is cmd.Commit and refuses with ErrWrongCommit otherwise. It
-// then checks that the tree is clean (ignored files do not count) and refuses
-// with ErrDirtyTree otherwise.
+// RunStep runs cmd.Argv in cmd.Dir and reports the outcome. It first refuses
+// a repository with replace refs or a grafts file (ErrAlteredHistory). It
+// then checks that HEAD in Dir is cmd.Commit and refuses with ErrWrongCommit
+// otherwise. It then checks that the tree is clean (ignored files do not
+// count) and refuses with ErrDirtyTree otherwise.
 //
 // The command runs in its own process group. On timeout or cancel the whole
 // group is killed. When ctx ends, RunStep returns the partial StepRun and
 // ctx.Err(); callers should not treat that as a result. A command that cannot
 // start returns an error.
 func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
-	want, err := checkStepCommand(cmd)
-	if err != nil {
+	if err := checkStepCommand(cmd); err != nil {
 		return StepRun{}, err
 	}
-	head, err := runHead(ctx, cmd.Dir)
-	if err != nil {
+	g := gitIn{gitPath: cmd.GitPath, dir: cmd.Dir}
+	if err := checkHistory(ctx, g); err != nil {
 		return StepRun{}, err
 	}
-	if !strings.HasPrefix(head, want) {
+	head, err := revCommit(ctx, g, "HEAD")
+	if err != nil {
+		return StepRun{}, fmt.Errorf("read HEAD in %s: %w", cmd.Dir, err)
+	}
+	if head != cmd.Commit {
 		return StepRun{}, fmt.Errorf("%w: HEAD is %s, want %s", ErrWrongCommit, head, cmd.Commit)
 	}
 
-	if err := runCheckClean(ctx, cmd.Dir); err != nil {
+	if err := runCheckClean(ctx, g); err != nil {
 		return StepRun{}, err
 	}
 
@@ -181,59 +189,46 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 	return run, nil
 }
 
-var runCommitRE = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
-
-// checkStepCommand validates cmd and returns the wanted commit, lower case.
-func checkStepCommand(cmd StepCommand) (string, error) {
+// checkStepCommand validates cmd.
+func checkStepCommand(cmd StepCommand) error {
 	if cmd.Step != StepRelease && cmd.Step != StepDeploy {
-		return "", fmt.Errorf("step %q: want %q or %q", cmd.Step, StepRelease, StepDeploy)
+		return fmt.Errorf("step %q: want %q or %q", cmd.Step, StepRelease, StepDeploy)
 	}
 	if cmd.Dir == "" {
-		return "", errors.New("no working directory")
+		return errors.New("no working directory")
 	}
 	if len(cmd.Argv) == 0 || cmd.Argv[0] == "" {
-		return "", errors.New("no command")
+		return errors.New("no command")
 	}
 	for _, a := range cmd.Argv {
 		if strings.ContainsRune(a, 0) {
-			return "", errors.New("command argument has a NUL byte")
+			return errors.New("command argument has a NUL byte")
 		}
 	}
 	if cmd.Timeout < 0 {
-		return "", fmt.Errorf("negative timeout %v", cmd.Timeout)
+		return fmt.Errorf("negative timeout %v", cmd.Timeout)
 	}
-	want := strings.ToLower(cmd.Commit)
-	if !runCommitRE.MatchString(want) {
-		return "", fmt.Errorf("commit %q: want 7 to 64 hex digits", cmd.Commit)
+	if err := checkCommitID("commit", cmd.Commit); err != nil {
+		return err
 	}
 	for k, v := range cmd.Env {
 		if k == "" || strings.ContainsAny(k, "=\x00") || strings.ContainsRune(v, 0) {
-			return "", fmt.Errorf("bad environment entry %q", k)
+			return fmt.Errorf("bad environment entry %q", k)
 		}
 	}
-	return want, nil
-}
-
-func runHead(ctx context.Context, dir string) (string, error) {
-	out, err := runGit(ctx, dir, "rev-parse", "--verify", "HEAD")
-	if err != nil {
-		return "", fmt.Errorf("read HEAD in %s: %w", dir, err)
-	}
-	return strings.TrimSpace(string(out)), nil
+	return nil
 }
 
 // runMaxDirtyListed is how many dirty paths ErrDirtyTree names.
 const runMaxDirtyListed = 10
 
-// runCheckClean returns ErrDirtyTree when dir has changes to tracked files or
-// untracked files that are not ignored. Git hooks and the fsmonitor hook are
-// off, so the check runs no repo code.
-func runCheckClean(ctx context.Context, dir string) error {
-	out, err := runGit(ctx, dir,
-		"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
-		"status", "--porcelain=v1", "-z", "--untracked-files=normal")
+// runCheckClean returns ErrDirtyTree when the directory has changes to
+// tracked files or untracked files that are not ignored. Git hooks and the
+// fsmonitor hook are off, so the check runs no repo code.
+func runCheckClean(ctx context.Context, g gitIn) error {
+	out, err := g.bytes(ctx, nil, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
 	if err != nil {
-		return fmt.Errorf("check the tree in %s: %w", dir, err)
+		return fmt.Errorf("check the tree in %s: %w", g.dir, err)
 	}
 	paths := runDirtyPaths(out)
 	if len(paths) == 0 {

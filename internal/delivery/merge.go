@@ -1,14 +1,11 @@
 package delivery
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -80,6 +77,10 @@ type MergeRequest struct {
 	Push bool
 	// Timeout bounds the whole call. Zero means DefaultMergeTimeout.
 	Timeout time.Duration
+	// GitPath is the PATH list git is found on and runs with, so git-lfs and
+	// credential helpers are found too. The daemon passes its login PATH.
+	// Empty means this process's PATH.
+	GitPath string
 }
 
 // MergeResult says what Merge did.
@@ -101,8 +102,6 @@ type MergeResult struct {
 	AlreadyMerged bool
 }
 
-var mergeFullSHARe = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
-
 // mergeRunner carries the test seam. The zero value is the real thing.
 type mergeRunner struct {
 	// beforePush runs after the local merge and before the push.
@@ -120,6 +119,8 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 	if err != nil {
 		return res, err
 	}
+	repo := gitIn{gitPath: req.GitPath, dir: req.RepoDir}
+	wt := gitIn{gitPath: req.GitPath, dir: req.WorktreeDir}
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = DefaultMergeTimeout
@@ -127,16 +128,19 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// 1. Fetch, then check that nothing moved.
-	remoteRefs := "refs/remotes/" + req.Remote + "/"
-	if _, err := mergeGitRun(ctx, req.RepoDir, "fetch", "--no-tags", "--no-recurse-submodules", "--quiet",
-		req.Remote, "+refs/heads/*:"+remoteRefs+"*"); err != nil {
-		return res, fmt.Errorf("fetch %s: %w", req.Remote, err)
-	}
-	if err := mergeCheckChangeHead(ctx, req); err != nil {
+	// 1. Refuse a repository whose history was altered, fetch, then check
+	// that nothing moved.
+	if err := checkHistory(ctx, repo); err != nil {
 		return res, err
 	}
-	tip, err := mergeRevParse(ctx, req.RepoDir, remoteRefs+req.TargetBranch)
+	remoteRefs := "refs/remotes/" + req.Remote + "/"
+	if err := fetchRefspec(ctx, repo, req.Remote, "+refs/heads/*:"+remoteRefs+"*"); err != nil {
+		return res, err
+	}
+	if err := mergeCheckChangeHead(ctx, repo, req); err != nil {
+		return res, err
+	}
+	tip, err := revCommit(ctx, repo, remoteRefs+req.TargetBranch)
 	if err != nil {
 		return res, fmt.Errorf("target branch %s/%s: %w", req.Remote, req.TargetBranch, err)
 	}
@@ -144,25 +148,25 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 	res.TargetAfter = tip
 
 	// 2. Already part of the target: nothing to do.
-	contained, err := mergeIsAncestor(ctx, req.RepoDir, req.HeadSHA, tip)
+	contained, err := isAncestor(ctx, repo, req.HeadSHA, tip)
 	if err != nil {
 		return res, err
 	}
 	if contained {
 		res.AlreadyMerged = true
-		res.MergedSHA = findMergeOf(ctx, req, tip)
+		res.MergedSHA = findMergeOf(ctx, repo, req.HeadSHA, tip)
 		return res, nil
 	}
 
 	// 3. Prepare the worktree at the remote tip.
-	if err := prepareMergeWorktree(ctx, req, tip); err != nil {
+	if err := prepareMergeWorktree(ctx, req, repo, wt, tip); err != nil {
 		return res, err
 	}
 
 	// 4. Merge.
 	switch req.Mode {
 	case MergeModeFFOnly:
-		ff, err := mergeIsAncestor(ctx, req.WorktreeDir, tip, req.HeadSHA)
+		ff, err := isAncestor(ctx, wt, tip, req.HeadSHA)
 		if err != nil {
 			return res, err
 		}
@@ -170,7 +174,7 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 			return res, fmt.Errorf("%w: %s does not contain %s/%s at %s",
 				ErrNotFastForward, req.HeadSHA, req.Remote, req.TargetBranch, tip)
 		}
-		if _, err := mergeGitRun(ctx, req.WorktreeDir, "merge", "--ff-only", "--quiet", req.HeadSHA); err != nil {
+		if _, err := wt.run(ctx, "merge", "--ff-only", "--quiet", req.HeadSHA); err != nil {
 			return res, fmt.Errorf("fast-forward: %w", err)
 		}
 		res.FastForward = true
@@ -179,15 +183,15 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 		if strings.TrimSpace(msg) == "" {
 			msg = fmt.Sprintf("Merge %s into %s", req.ChangeBranch, req.TargetBranch)
 		}
-		_, err := mergeGitRun(ctx, req.WorktreeDir,
+		_, err := wt.run(ctx,
 			"-c", "user.name="+req.Identity.Name, "-c", "user.email="+req.Identity.Email,
 			"-c", "commit.gpgsign=false",
 			"merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, req.HeadSHA)
 		if err != nil {
 			// A merge in progress means a conflict. Anything else failed before
 			// it touched the worktree.
-			if _, perr := mergeGitRun(ctx, req.WorktreeDir, "rev-parse", "-q", "--verify", "MERGE_HEAD"); perr == nil {
-				if _, aerr := mergeGitRun(ctx, req.WorktreeDir, "merge", "--abort"); aerr != nil {
+			if _, perr := wt.run(ctx, "rev-parse", "-q", "--verify", "MERGE_HEAD"); perr == nil {
+				if _, aerr := wt.run(ctx, "merge", "--abort"); aerr != nil {
 					return res, fmt.Errorf("%w (and merge --abort failed: %v)", ErrConflict, aerr)
 				}
 				return res, fmt.Errorf("%w: merging %s into %s at %s", ErrConflict, req.HeadSHA, req.TargetBranch, tip)
@@ -195,7 +199,7 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 			return res, fmt.Errorf("merge: %w", err)
 		}
 	}
-	after, err := mergeRevParse(ctx, req.WorktreeDir, "HEAD")
+	after, err := revCommit(ctx, wt, "HEAD")
 	if err != nil {
 		return res, err
 	}
@@ -208,10 +212,10 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 		if m.beforePush != nil {
 			m.beforePush()
 		}
-		_, perr := mergeGitRun(ctx, req.WorktreeDir, "push", "--quiet", "--no-verify",
+		_, perr := wt.run(ctx, "push", "--quiet", "--no-verify",
 			req.Remote, after+":refs/heads/"+req.TargetBranch)
 		if perr != nil {
-			out, lerr := mergeGitRun(ctx, req.WorktreeDir, "ls-remote", req.Remote, "refs/heads/"+req.TargetBranch)
+			out, lerr := wt.run(ctx, "ls-remote", req.Remote, "refs/heads/"+req.TargetBranch)
 			if lerr == nil {
 				if f := strings.Fields(out); len(f) > 0 && f[0] != tip {
 					return res, fmt.Errorf("%w: %s/%s is at %s, the merge started from %s",
@@ -240,20 +244,18 @@ func checkMergeRequest(ctx context.Context, req MergeRequest) (MergeRequest, err
 	if req.Mode != MergeModeFFOnly && req.Mode != MergeModeCommit {
 		return req, fmt.Errorf("merge: mode must be %q or %q, got %q", MergeModeFFOnly, MergeModeCommit, req.Mode)
 	}
-	if !mergeFullSHARe.MatchString(req.HeadSHA) {
-		return req, fmt.Errorf("merge: HeadSHA must be a full lowercase commit ID, got %q", req.HeadSHA)
+	if err := checkCommitID("merge: HeadSHA", req.HeadSHA); err != nil {
+		return req, err
 	}
 	if req.Mode == MergeModeCommit && (strings.TrimSpace(req.Identity.Name) == "" || strings.TrimSpace(req.Identity.Email) == "") {
 		return req, errors.New("merge: merge-commit mode needs an identity name and email")
 	}
+	repo := gitIn{gitPath: req.GitPath, dir: req.RepoDir}
 	for _, f := range []struct{ what, name string }{
 		{"remote", req.Remote}, {"target branch", req.TargetBranch}, {"change branch", req.ChangeBranch},
 	} {
-		if f.name == "" || strings.HasPrefix(f.name, "-") {
-			return req, fmt.Errorf("merge: bad %s %q", f.what, f.name)
-		}
-		if _, err := mergeGitRun(ctx, req.RepoDir, "check-ref-format", "refs/heads/"+f.name); err != nil {
-			return req, fmt.Errorf("merge: bad %s %q", f.what, f.name)
+		if err := checkRefName(ctx, repo, f.what, f.name); err != nil {
+			return req, fmt.Errorf("merge: %w", err)
 		}
 	}
 	if same, _ := mergeSamePath(req.RepoDir, req.WorktreeDir); same {
@@ -265,17 +267,16 @@ func checkMergeRequest(ctx context.Context, req MergeRequest) (MergeRequest, err
 // mergeCheckChangeHead refuses unless the change branch, locally or on the remote,
 // still points at HeadSHA. A branch that exists in both places and differs in
 // one is fine as long as the other one still holds HeadSHA.
-func mergeCheckChangeHead(ctx context.Context, req MergeRequest) error {
+func mergeCheckChangeHead(ctx context.Context, repo gitIn, req MergeRequest) error {
 	refs := []string{
 		"refs/heads/" + req.ChangeBranch,
 		"refs/remotes/" + req.Remote + "/" + req.ChangeBranch,
 	}
 	var found []string
 	for _, ref := range refs {
-		sha, err := mergeRevParse(ctx, req.RepoDir, ref)
+		sha, err := revCommit(ctx, repo, ref)
 		if err != nil {
-			var ge *mergeGitError
-			if errors.As(err, &ge) && ge.code == 1 {
+			if isExit(err, 1) {
 				continue // ref does not exist
 			}
 			return err
@@ -292,7 +293,7 @@ func mergeCheckChangeHead(ctx context.Context, req MergeRequest) error {
 }
 
 // prepareMergeWorktree makes WorktreeDir a clean detached worktree at tip.
-func prepareMergeWorktree(ctx context.Context, req MergeRequest, tip string) error {
+func prepareMergeWorktree(ctx context.Context, req MergeRequest, repo, wt gitIn, tip string) error {
 	entries, err := os.ReadDir(req.WorktreeDir)
 	switch {
 	case os.IsNotExist(err) || (err == nil && len(entries) == 0):
@@ -300,10 +301,10 @@ func prepareMergeWorktree(ctx context.Context, req MergeRequest, tip string) err
 			return err
 		}
 		// Forget worktrees whose directory was deleted.
-		if _, err := mergeGitRun(ctx, req.RepoDir, "worktree", "prune"); err != nil {
+		if _, err := repo.run(ctx, "worktree", "prune"); err != nil {
 			return err
 		}
-		if _, err := mergeGitRun(ctx, req.RepoDir, "worktree", "add", "--detach", "--quiet", req.WorktreeDir, tip); err != nil {
+		if _, err := repo.run(ctx, "worktree", "add", "--detach", "--quiet", req.WorktreeDir, tip); err != nil {
 			return fmt.Errorf("create merge worktree: %w", err)
 		}
 		return nil
@@ -312,32 +313,32 @@ func prepareMergeWorktree(ctx context.Context, req MergeRequest, tip string) err
 	}
 
 	// The directory exists and has files: it must be a worktree of this repo.
-	top, err := mergeGitRun(ctx, req.WorktreeDir, "rev-parse", "--show-toplevel")
+	top, err := wt.run(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return fmt.Errorf("%s is not a git worktree: %w", req.WorktreeDir, err)
 	}
 	if same, _ := mergeSamePath(top, req.WorktreeDir); !same {
 		return fmt.Errorf("%s is not the top of a git worktree", req.WorktreeDir)
 	}
-	wtCommon, err := mergeGitRun(ctx, req.WorktreeDir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	wtCommon, err := wt.run(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return err
 	}
-	repoCommon, err := mergeGitRun(ctx, req.RepoDir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	repoCommon, err := repo.run(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return err
 	}
 	if same, _ := mergeSamePath(wtCommon, repoCommon); !same {
 		return fmt.Errorf("%s is a worktree of another repository", req.WorktreeDir)
 	}
-	status, err := mergeGitRun(ctx, req.WorktreeDir, "status", "--porcelain", "--untracked-files=all")
+	status, err := wt.run(ctx, "status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(status) != "" {
 		return fmt.Errorf("%w: %s", ErrDirtyWorktree, req.WorktreeDir)
 	}
-	if _, err := mergeGitRun(ctx, req.WorktreeDir, "checkout", "--detach", "--quiet", tip); err != nil {
+	if _, err := wt.run(ctx, "checkout", "--detach", "--quiet", tip); err != nil {
 		return fmt.Errorf("reset merge worktree: %w", err)
 	}
 	return nil
@@ -346,18 +347,18 @@ func prepareMergeWorktree(ctx context.Context, req MergeRequest, tip string) err
 // findMergeOf returns the commit on the target that holds head: the merge
 // commit whose second parent is head, or head itself when it was
 // fast-forwarded in.
-func findMergeOf(ctx context.Context, req MergeRequest, tip string) string {
-	out, err := mergeGitRun(ctx, req.RepoDir, "rev-list", "--merges", "--parents", "--ancestry-path", req.HeadSHA+".."+tip)
+func findMergeOf(ctx context.Context, repo gitIn, head, tip string) string {
+	out, err := repo.run(ctx, "rev-list", "--merges", "--parents", "--ancestry-path", head+".."+tip)
 	if err != nil {
-		return req.HeadSHA
+		return head
 	}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
-		if len(f) == 3 && f[2] == req.HeadSHA {
+		if len(f) == 3 && f[2] == head {
 			return f[0]
 		}
 	}
-	return req.HeadSHA
+	return head
 }
 
 func mergeSamePath(a, b string) (bool, error) {
@@ -370,87 +371,4 @@ func mergeSamePath(a, b string) (bool, error) {
 		return false, err
 	}
 	return filepath.Clean(ra) == filepath.Clean(rb), nil
-}
-
-func mergeRevParse(ctx context.Context, dir, rev string) (string, error) {
-	return mergeGitRun(ctx, dir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
-}
-
-// mergeIsAncestor reports whether a is an ancestor of (or equal to) b.
-func mergeIsAncestor(ctx context.Context, dir, a, b string) (bool, error) {
-	_, err := mergeGitRun(ctx, dir, "merge-base", "--is-ancestor", a, b)
-	if err == nil {
-		return true, nil
-	}
-	var ge *mergeGitError
-	if errors.As(err, &ge) && ge.code == 1 {
-		return false, nil
-	}
-	return false, err
-}
-
-// mergeGitError is a failed git command.
-type mergeGitError struct {
-	args   []string
-	code   int
-	stderr string
-	err    error
-}
-
-func (e *mergeGitError) Error() string {
-	msg := strings.TrimSpace(e.stderr)
-	if msg == "" {
-		msg = e.err.Error()
-	}
-	return fmt.Sprintf("git %s: %s", strings.Join(e.args, " "), msg)
-}
-
-func (e *mergeGitError) Unwrap() error { return e.err }
-
-// mergeGitEnvDrop lists variables that would point git at another repository.
-var mergeGitEnvDrop = []string{
-	"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_OBJECT_DIRECTORY=",
-	"GIT_COMMON_DIR=", "GIT_PREFIX=", "GIT_NAMESPACE=",
-}
-
-// mergeGitRun runs git in dir with an explicit argument list and returns trimmed
-// stdout. It never runs hooks, never prompts, and never auto-collects garbage.
-func mergeGitRun(ctx context.Context, dir string, args ...string) (string, error) {
-	full := append([]string{
-		"-c", "core.hooksPath=/dev/null",
-		"-c", "gc.auto=0",
-		"-c", "maintenance.auto=false",
-	}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Dir = dir
-	cmd.WaitDelay = 5 * time.Second
-	var env []string
-	for _, kv := range os.Environ() {
-		drop := false
-		for _, p := range mergeGitEnvDrop {
-			if strings.HasPrefix(kv, p) {
-				drop = true
-				break
-			}
-		}
-		if !drop {
-			env = append(env, kv)
-		}
-	}
-	cmd.Env = append(env, "LC_ALL=C", "GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true", "GIT_MERGE_AUTOEDIT=no")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		code := -1
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			code = ee.ExitCode()
-		}
-		if ctx.Err() != nil {
-			err = fmt.Errorf("%w (%v)", ctx.Err(), err)
-		}
-		return strings.TrimSpace(stdout.String()), &mergeGitError{args: args, code: code, stderr: stderr.String(), err: err}
-	}
-	return strings.TrimSpace(stdout.String()), nil
 }

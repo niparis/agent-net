@@ -444,7 +444,9 @@ func TestNewCommitsRejectsOptionLikeArguments(t *testing.T) {
 	if _, err := NewCommits(context.Background(), r.dir, "main", "--all"); err == nil {
 		t.Error("since starting with a dash must be refused")
 	}
-	_ = a
+	if _, err := NewCommits(context.Background(), r.dir, "main", a[:12]); err == nil {
+		t.Error("an abbreviated since must be refused")
+	}
 }
 
 func TestHooksAreNeverRun(t *testing.T) {

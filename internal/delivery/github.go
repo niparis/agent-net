@@ -105,7 +105,6 @@ func DefaultToken() (string, error) {
 var (
 	scpRemote   = regexp.MustCompile(`^[A-Za-z0-9._-]+@github\.com:([^/]+)/([^/]+)$`)
 	namePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-	shaPattern  = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
 )
 
 // ParseGitHubRemote returns the owner and repo of a github.com remote URL in
@@ -148,8 +147,8 @@ func checkTarget(owner, repo, sha string) error {
 	if !validName(owner) || !validName(repo) {
 		return fmt.Errorf("github: invalid repository %q/%q", owner, repo)
 	}
-	if !shaPattern.MatchString(sha) {
-		return fmt.Errorf("github: %q is not a commit hash", sha)
+	if err := checkCommitID("github: commit", sha); err != nil {
+		return err
 	}
 	return nil
 }

@@ -39,10 +39,6 @@ func mergeGit(t *testing.T, dir string, args ...string) string {
 
 func newMergeFx(t *testing.T) *mergeFx {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	root := t.TempDir()
 	f := &mergeFx{t: t, root: root,
 		origin: filepath.Join(root, "origin.git"),
@@ -262,6 +258,22 @@ func TestMergeCommitDefaultMessage(t *testing.T) {
 	}
 	if got := mergeGit(t, f.origin, "log", "-1", "--format=%s", res.MergedSHA); got != "Merge feat into main" {
 		t.Fatalf("subject = %q", got)
+	}
+}
+
+func TestMergeIdentityIgnoresInheritedAuthor(t *testing.T) {
+	f := newMergeFx(t)
+	head := f.branch("feat", f.base, "a.txt", "a\n")
+	for _, k := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"} {
+		t.Setenv(k, "intruder")
+	}
+	res, err := Merge(context.Background(), f.req("feat", head, MergeModeCommit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mergeGit(t, f.origin, "log", "-1", "--format=%an|%ae|%cn|%ce", res.MergedSHA)
+	if got != "Merger|merger@example.com|Merger|merger@example.com" {
+		t.Fatalf("merge commit identity = %q", got)
 	}
 }
 

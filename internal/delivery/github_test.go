@@ -439,7 +439,7 @@ func TestCommitChecksTokenError(t *testing.T) {
 
 func TestCommitChecksRejectsBadInput(t *testing.T) {
 	c := newClient(t, &fakeGitHub{})
-	for _, sha := range []string{"", "main", "../x", "abc/../../x", "zzzzzzz"} {
+	for _, sha := range []string{"", "main", "../x", "abc/../../x", "zzzzzzz", testSHA[:7], strings.ToUpper(testSHA)} {
 		if _, err := c.CommitChecks(context.Background(), "o", "r", sha); err == nil {
 			t.Errorf("sha %q: want an error", sha)
 		}

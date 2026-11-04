@@ -1,12 +1,8 @@
 package delivery
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +14,6 @@ import (
 //
 // Every call runs the git binary with an explicit argument list, a timeout,
 // LC_ALL=C, and hooks switched off. Nothing here writes to the repository.
-
-// watchGitTimeout bounds one git call when the caller's context has no earlier
-// deadline.
-const watchGitTimeout = 30 * time.Second
 
 // Commit is one commit on the default branch.
 type Commit struct {
@@ -129,7 +121,12 @@ func NewCommits(ctx context.Context, repoDir, branch, since string) (WatchResult
 	if err := checkRevArg("branch", branch); err != nil {
 		return WatchResult{}, err
 	}
-	if err := checkRevArg("since", since); err != nil {
+	if since != "" {
+		if err := checkCommitID("new commits: since", since); err != nil {
+			return WatchResult{}, err
+		}
+	}
+	if err := checkHistory(ctx, gitIn{dir: repoDir}); err != nil {
 		return WatchResult{}, err
 	}
 	tip, err := git(ctx, repoDir, "rev-parse", "--verify", "--quiet", "--end-of-options", branch+"^{commit}")
@@ -267,56 +264,9 @@ func refExists(ctx context.Context, repoDir, ref string) (bool, error) {
 	return false, fmt.Errorf("check ref %s: %w", ref, err)
 }
 
-// gitError carries the exit code of a failed git call so callers can tell
-// "no" (exit 1) from "broken" (anything else).
-type gitError struct {
-	code   int
-	stderr string
-	err    error
-}
-
-func (e *gitError) Error() string {
-	if e.stderr != "" {
-		return fmt.Sprintf("git: %v: %s", e.err, e.stderr)
-	}
-	return fmt.Sprintf("git: %v", e.err)
-}
-
-func (e *gitError) Unwrap() error { return e.err }
-
-func isExit(err error, code int) bool {
-	var ge *gitError
-	return errors.As(err, &ge) && ge.code == code
-}
-
-// git runs one git command in repoDir and returns its standard output.
-// Hooks are switched off, the locale is fixed, and the call is bounded by
-// watchGitTimeout or the context, whichever ends first.
+// git runs one git command in repoDir through the package's git helper and
+// returns its raw standard output.
 func git(ctx context.Context, repoDir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, watchGitTimeout)
-	defer cancel()
-
-	full := append([]string{"--no-pager", "-C", repoDir, "-c", "core.hooksPath=/dev/null"}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Env = append(os.Environ(),
-		"LC_ALL=C",
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_OPTIONAL_LOCKS=0",
-	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		code := -1
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			code = ee.ExitCode()
-		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			err = fmt.Errorf("%w (%v)", err, ctxErr)
-			code = -1
-		}
-		return "", &gitError{code: code, stderr: strings.TrimSpace(stderr.String()), err: err}
-	}
-	return stdout.String(), nil
+	out, err := gitIn{dir: repoDir}.bytes(ctx, nil, args...)
+	return string(out), err
 }

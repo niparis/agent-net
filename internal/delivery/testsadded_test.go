@@ -314,6 +314,12 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// rev returns the full commit ID of a branch.
+func rev(t *testing.T, dir, name string) string {
+	t.Helper()
+	return gitRun(t, dir, "rev-parse", "--verify", name+"^{commit}")
+}
+
 func writeFile(t *testing.T, dir, rel, content string) {
 	t.Helper()
 	p := filepath.Join(dir, rel)
@@ -351,7 +357,7 @@ func TestEndToEndTestAdded(t *testing.T) {
 	writeFile(t, dir, "pkg/b_test.go", "package pkg\n")
 	commitAll(t, dir, "feature")
 
-	res, err := DetectTestsAdded(context.Background(), dir, "main", "feature")
+	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +372,7 @@ func TestEndToEndNoTests(t *testing.T) {
 	writeFile(t, dir, "pkg/a.go", "package pkg\n\nfunc A() int { return 3 }\n")
 	commitAll(t, dir, "feature")
 
-	files, err := ChangedFiles(context.Background(), dir, "main", "feature")
+	files, err := ChangedFiles(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +390,7 @@ func TestEndToEndRenameOfTestCounts(t *testing.T) {
 	gitRun(t, dir, "mv", "pkg/a_test.go", "pkg/renamed_test.go")
 	commitAll(t, dir, "rename")
 
-	files, err := ChangedFiles(context.Background(), dir, "main", "feature")
+	files, err := ChangedFiles(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +411,7 @@ func TestEndToEndDeletingTestsDoesNotCount(t *testing.T) {
 	writeFile(t, dir, "pkg/a.go", "package pkg\n\nfunc A() int { return 4 }\n")
 	commitAll(t, dir, "delete tests")
 
-	res, err := DetectTestsAdded(context.Background(), dir, "main", "feature")
+	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +426,7 @@ func TestEndToEndTestdataAlone(t *testing.T) {
 	writeFile(t, dir, "pkg/testdata/in.txt", "x\n")
 	commitAll(t, dir, "data")
 
-	res, err := DetectTestsAdded(context.Background(), dir, "main", "feature")
+	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +441,7 @@ func TestEndToEndRustInlineTest(t *testing.T) {
 	writeFile(t, dir, "src/lib.rs", "pub fn f() -> i32 { 1 }\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() { assert_eq!(super::f(), 1); }\n}\n")
 	commitAll(t, dir, "rust")
 
-	res, err := DetectTestsAdded(context.Background(), dir, "main", "feature")
+	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +456,7 @@ func TestEndToEndRustWithoutTests(t *testing.T) {
 	writeFile(t, dir, "src/lib.rs", "pub fn f() -> i32 { 2 }\n")
 	commitAll(t, dir, "rust")
 
-	res, err := DetectTestsAdded(context.Background(), dir, "main", "feature")
+	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +476,7 @@ func TestChangedFilesUsesMergeBase(t *testing.T) {
 	writeFile(t, dir, "pkg/m_test.go", "package pkg\n")
 	commitAll(t, dir, "main moves on")
 
-	files, err := ChangedFiles(context.Background(), dir, "main", "feature")
+	files, err := ChangedFiles(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +492,7 @@ func TestChangedFilesOddPaths(t *testing.T) {
 	writeFile(t, dir, "pkg/café_test.go", "package pkg\n")
 	commitAll(t, dir, "odd")
 
-	res, err := DetectTestsAdded(context.Background(), dir, "main", "feature")
+	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,18 +505,28 @@ func TestChangedFilesOddPaths(t *testing.T) {
 func TestChangedFilesErrors(t *testing.T) {
 	dir := newRepo(t)
 	ctx := context.Background()
-	if _, err := ChangedFiles(ctx, dir, "main", "does-not-exist"); err == nil {
-		t.Fatal("expected an error for an unknown ref")
+	main := rev(t, dir, "main")
+	if _, err := ChangedFiles(ctx, dir, main, strings.Repeat("d", 40)); err == nil {
+		t.Fatal("expected an error for an unknown commit")
 	}
-	if _, err := ChangedFiles(ctx, dir, "--output=/tmp/x", "main"); err == nil {
+	out := filepath.Join(t.TempDir(), "out")
+	if _, err := ChangedFiles(ctx, dir, "--output="+out, main); err == nil {
 		t.Fatal("expected an error for a ref that looks like an option")
 	}
-	if _, err := ChangedFiles(ctx, dir, "", "main"); err == nil {
-		t.Fatal("expected an error for an empty ref")
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("git wrote the --output file")
+	}
+	for _, bad := range []string{"", "main", "HEAD", main[:12], strings.ToUpper(main)} {
+		if _, err := ChangedFiles(ctx, dir, bad, main); err == nil {
+			t.Fatalf("expected an error for base %q: only full commit IDs are taken", bad)
+		}
+		if _, err := ChangedFiles(ctx, dir, main, bad); err == nil {
+			t.Fatalf("expected an error for head %q: only full commit IDs are taken", bad)
+		}
 	}
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := ChangedFiles(cctx, dir, "main", "main"); err == nil {
+	if _, err := ChangedFiles(cctx, dir, main, main); err == nil {
 		t.Fatal("expected an error for a cancelled context")
 	}
 }

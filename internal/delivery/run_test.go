@@ -403,23 +403,6 @@ func TestRunStepWrongCommitBeatsDirtyTree(t *testing.T) {
 	}
 }
 
-func TestRunStepAbbreviatedCommit(t *testing.T) {
-	f := newRunFx(t)
-	s := f.script("ok.sh", "echo ok\n")
-	cmd := f.cmd(s)
-	cmd.Commit = strings.ToUpper(f.head[:12])
-	if _, err := RunStep(context.Background(), cmd); err != nil {
-		t.Fatalf("abbreviated commit: %v", err)
-	}
-	cmd.Commit = f.head[:12] + "0" // same prefix length+1, not HEAD
-	if f.head[12] == '0' {
-		cmd.Commit = f.head[:12] + "1"
-	}
-	if _, err := RunStep(context.Background(), cmd); !errors.Is(err, ErrWrongCommit) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestRunStepRejectsBadInput(t *testing.T) {
 	f := newRunFx(t)
 	s := f.script("ok.sh", "echo ok\n")
@@ -433,6 +416,8 @@ func TestRunStepRejectsBadInput(t *testing.T) {
 		"non-hex commit":  func(c *StepCommand) { c.Commit = "main" },
 		"option commit":   func(c *StepCommand) { c.Commit = "--all" },
 		"short commit":    func(c *StepCommand) { c.Commit = f.head[:3] },
+		"abbreviated":     func(c *StepCommand) { c.Commit = f.head[:12] },
+		"upper case":      func(c *StepCommand) { c.Commit = strings.ToUpper(f.head) },
 		"negative time":   func(c *StepCommand) { c.Timeout = -time.Second },
 		"env key empty":   func(c *StepCommand) { c.Env = map[string]string{"": "x"} },
 		"env key equals":  func(c *StepCommand) { c.Env = map[string]string{"A=B": "x"} },
