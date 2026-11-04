@@ -784,6 +784,13 @@ type WorkerNotice struct {
 	// Saved is true when the daemon committed the worker's unfinished changes
 	// on its branch.
 	Saved bool
+	// Head is the short hash of the worktree's HEAD when the notice was made,
+	// empty when unknown.
+	Head string
+	// Committed is the short hash of the commit the daemon made of the
+	// worker's leftover changes at a complete hand-back, empty when it made
+	// none.
+	Committed string
 	// Continue and Fix are the worker's rework counters: the messages the
 	// caller sent after a hand-back with complete:no and complete:yes.
 	Continue int
@@ -843,6 +850,12 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	}
 	if n.Worktree != "" {
 		b.WriteString("worktree: " + n.Worktree + " (branch " + n.Branch + ")\n")
+		if n.Head != "" {
+			b.WriteString("head: " + n.Head + "\n")
+		}
+		if n.Committed != "" {
+			b.WriteString("the daemon committed your leftover changes as " + n.Committed + "\n")
+		}
 		if n.Saved {
 			b.WriteString("unfinished changes were saved as a commit on branch " + n.Branch + "\n")
 		}
