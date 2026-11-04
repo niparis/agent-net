@@ -4,10 +4,10 @@ package guidance
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
-	"strings"
 )
 
 const (
@@ -46,6 +46,7 @@ func BlockWithSnapshot(variant string, snapshot settings.Snapshot) string {
 			panic(err)
 		}
 		value = strings.ReplaceAll(value, "{{reply}}", protocol.NeutralizeMarkers(reply[variant]))
+		value = strings.ReplaceAll(value, "{{handback}}", protocol.WorkerHandbackTool)
 		parts = append(parts, value)
 	}
 	return Begin + "\n" + heading + "\n\n" + parts[0] + "\n\n" + strings.Join(parts[1:], "\n") + "\n" + End + "\n"

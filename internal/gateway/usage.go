@@ -64,13 +64,22 @@ func (u *usageTable) all() map[string]usageEntry {
 }
 
 // nodeQuotas returns the newest quota reading of a machine, or nil when it
-// reported none, or the report is stale.
+// reported none, or the report is stale. A provider account that a worker run
+// reported out of quota is added as an exhausted window until its reset.
 func (g *Gateway) nodeQuotas(nodeID string) *protocol.Quotas {
-	e, ok := g.usage.all()[nodeID]
-	if !ok || g.store.now().Sub(e.at) > protocol.UsageStaleSeconds*time.Second {
-		return nil
+	now := g.store.now()
+	var q *protocol.Quotas
+	if e, ok := g.usage.all()[nodeID]; ok && now.Sub(e.at) <= protocol.UsageStaleSeconds*time.Second {
+		q = e.rep.Quotas
 	}
-	return e.rep.Quotas
+	blocks, err := g.store.QuotaBlocks(nodeID)
+	if err != nil {
+		if g.logger != nil {
+			g.logLine("quota.blocks_error", "node", nodeID, "error", err)
+		}
+		return q
+	}
+	return protocol.WithQuotaBlocks(q, blocks, now)
 }
 
 // cleanUsage bounds what a node may send: sizes and values.

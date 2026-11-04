@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // The operator interface on the daemon (decision 0007). The methods and their
@@ -325,7 +326,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		// An older gateway still reads Difficulty; give it the judge's label.
 		frame.Difficulty = frame.Level
 	}
-	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
+	cctx := withCallWait(ctx, d.workerSettings("").StartTimeout+40e9)
 	var data json.RawMessage
 	if cto {
 		data, err = d.ctoAttributedCall(cctx, "worker.start", frame)
@@ -350,11 +351,13 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return &protocol.WorkerStartResult{Status: "queued", QueueID: ans.QueueID, Position: ans.Position, QueueReason: ans.Reason,
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
 			Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
-			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display())}, nil
+			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
+			Reminder: d.namedModelReminder(p)}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
-		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display())}
+		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
+		Reminder: d.namedModelReminder(p)}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil
@@ -366,7 +369,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	}
 	charter := d.charterBrief(ctx, ans.Project)
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithSettings(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, d.SettingsSnapshot())})
+		Body: protocol.WorkerTaskBodyWithSettingsForRepo(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, d.SettingsSnapshot(), ans.Project)})
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
 	}
@@ -375,6 +378,16 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		out.Task, out.Queued = sent.Message, sent.Queued
 	}
 	return out, nil
+}
+
+// namedModelReminder is the note a start result carries when the caller chose
+// the model itself. The picker's own choice, a harness alone and a continued
+// worker get none. The text is the network setting workers.named_model_reminder.
+func (d *Daemon) namedModelReminder(p protocol.WorkerStartRequest) string {
+	if p.Continue != "" || p.Model == "" || p.Model == "auto" {
+		return ""
+	}
+	return strings.TrimSpace(d.SettingsSnapshot().String("workers.named_model_reminder", settings.Where{}))
 }
 
 // workersView lists the workers on the network with their owners. The optional

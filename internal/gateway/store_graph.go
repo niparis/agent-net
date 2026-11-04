@@ -138,33 +138,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if _, err = tx.Exec(`DELETE FROM graph_charter WHERE node=?`, name); err != nil {
 		return err
 	}
-	// Node settings go with the node too.
-	rows, err = tx.Query(`SELECT setting,value FROM graph_node_settings WHERE node=? AND setting='worker_sandbox'`, name)
-	if err != nil {
-		return err
-	}
-	var settings [][2]string
-	for rows.Next() {
-		var setting, value string
-		if err = rows.Scan(&setting, &value); err != nil {
-			rows.Close()
-			return err
-		}
-		settings = append(settings, [2]string{setting, value})
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	for _, a := range settings {
-		if err = graphRecord(tx, "setting", name, a[0], a[1], "", actor, s.now().UnixNano()); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=? AND setting='worker_sandbox'`, name); err != nil {
-		return err
-	}
+	// Legacy node settings are kept as a downgrade backup.
 	settingsChanged, err := s.removeRepoSettingsTx(tx, name, actor)
 	if err != nil {
 		return err
@@ -363,9 +337,6 @@ func (s *Store) NodeSettings(node string) (protocol.NodeSettingsResult, error) {
 		return out, err
 	}
 	out.Overrides = explicit
-	if sandbox := n.Settings[protocol.SettingWorkerSandbox]; sandbox != "" {
-		out.Overrides[protocol.SettingWorkerSandbox] = sandbox
-	}
 	out.Maturity = n.Charter.Maturity
 	out.Defaults = protocol.DefaultsForMaturity(n.Charter.Maturity)
 	out.Effective = protocol.NodeDefaults(n.Charter.Maturity, n.Settings)
@@ -548,7 +519,7 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		}
 		if old == "" {
 			var n int
-			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM graph_node_settings WHERE node=? AND setting='worker_sandbox') + (SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?)`, node, node, node, node, node).Scan(&n); err != nil {
+			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?)`, node, node, node, node).Scan(&n); err != nil {
 				return err
 			}
 			if n != 0 {
@@ -775,28 +746,6 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
-	rows, err = s.db.Query(`SELECT node,setting,value FROM graph_node_settings WHERE setting='worker_sandbox'`)
-	if err != nil {
-		return g, err
-	}
-	for rows.Next() {
-		var name, setting, value string
-		if err = rows.Scan(&name, &setting, &value); err != nil {
-			rows.Close()
-			return g, err
-		}
-		if n := byName[name]; n != nil {
-			if n.Settings == nil {
-				n.Settings = map[string]string{}
-			}
-			n.Settings[setting] = value
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return g, err
-	}
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
 		return g, err
@@ -846,8 +795,16 @@ func (s *Store) Graph() (protocol.Graph, error) {
 		if json.Unmarshal([]byte(raw), &policy) != nil {
 			continue
 		}
+		policy.Workers = "" // legacy worker value is a downgrade backup
 		if n := byLower[strings.ToLower(project)]; n != nil {
-			n.Delegation = append(n.Delegation, protocol.NodeDelegation{Machine: machine, DelegationPolicy: policy})
+			for _, v := range snap.Values {
+				if v.Key == workerSandboxKey && v.Level == "repo" && v.Scope == n.Name && v.Item == "" {
+					_ = json.Unmarshal(v.Value, &policy.Workers)
+				}
+			}
+			if !policy.Empty() {
+				n.Delegation = append(n.Delegation, protocol.NodeDelegation{Machine: machine, DelegationPolicy: policy})
+			}
 		}
 	}
 	err = rows.Err()

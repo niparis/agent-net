@@ -547,6 +547,38 @@ func (s *Store) RecordModelAuthFailure(nodeID, harness, model string) error {
 	return err
 }
 
+// RecordQuotaBlock notes that a provider account on a node is out of quota
+// until resetsAt. A later report replaces an earlier one.
+func (s *Store) RecordQuotaBlock(nodeID, provider string, resetsAt time.Time, detail string) error {
+	if len(detail) > 300 {
+		detail = detail[:300]
+	}
+	_, err := s.db.Exec(`INSERT INTO quota_blocks (node_id, provider, resets_at, detail, at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (node_id, provider) DO UPDATE SET resets_at = excluded.resets_at, detail = excluded.detail, at = excluded.at`,
+		nodeID, provider, resetsAt.Unix(), detail, s.now().Unix())
+	return err
+}
+
+// QuotaBlocks returns the providers of a node that are blocked now, and when
+// each block ends.
+func (s *Store) QuotaBlocks(nodeID string) (map[string]time.Time, error) {
+	rows, err := s.db.Query(`SELECT provider, resets_at FROM quota_blocks WHERE node_id = ? AND resets_at > ?`, nodeID, s.now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var p string
+		var at int64
+		if err := rows.Scan(&p, &at); err != nil {
+			return nil, err
+		}
+		out[p] = time.Unix(at, 0)
+	}
+	return out, rows.Err()
+}
+
 // FailedModels returns the models of a harness on a node that failed a worker
 // within protocol.ModelFailureHours, and when each last failed.
 func (s *Store) FailedModels(nodeID, harness string) (map[string]time.Time, error) {

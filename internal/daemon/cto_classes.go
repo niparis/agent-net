@@ -20,11 +20,14 @@ const (
 
 // Every CTO entry point is listed here. Unknown tools and actions fail closed.
 // Reads must have an ordinary-agent source or be the CTO's own timeline.
+// message is not a CTO tool: it is the stored call of an as-owner send or
+// reply that agent_message_send or agent_message_reply proposes, and its class
+// marks that call a proposal.
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:     "overview sessions session proposals feed graph machines workers tools settings projects messages cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find",
-		ctoTalk:     "message ask_owner learn ui cto_ui_show proposal_ask agent_message_send agent_message_reply agent_owner_ask agent_learn",
+		ctoRead:     "cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find",
+		ctoTalk:     "message cto_ui_show proposal_ask agent_message_send agent_message_reply agent_owner_ask agent_learn",
 		ctoProposal: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new",
 	} {
 		for _, name := range strings.Fields(names) {
@@ -37,7 +40,6 @@ var ctoToolClasses = func() map[string]ctoToolClass {
 // ctoActionField names the routing field of each merged action tool.
 var ctoActionField = map[string]string{
 	"message":         "action",
-	"ui":              "action",
 	"graph_change":    "action",
 	"session_change":  "action",
 	"worker_change":   "action",
@@ -77,7 +79,6 @@ var ctoChangeActions = map[string]map[string]string{
 
 var ctoActions = map[string]map[string][]string{
 	"message":         {"action": {"send", "reply"}},
-	"ui":              {"action": {"show", "notice"}},
 	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"}},
 	"session_change":  {"action": {"rename", "trust", "policy", "session_start"}},
 	"worker_change":   {"action": {"start", "stop"}},

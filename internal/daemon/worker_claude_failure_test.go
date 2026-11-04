@@ -226,3 +226,102 @@ func TestClaudeWorkerCapacityFailureIsInfra(t *testing.T) {
 		t.Errorf("outcome = %q, want %q", outcome, protocol.OutcomeInfra)
 	}
 }
+
+// The bug of 2026-11-04: a Claude worker hands back and ends, and its caller
+// sends it a request. The daemon resumes the session, and Claude Code closes
+// the turn the stop cut short with a "No response requested." placeholder
+// (model <synthetic>, isApiErrorMessage false). The failure check read that
+// placeholder as a failed run and stopped the worker before it did the work:
+// "status: failed / note: the worker run failed: No response requested.".
+// The follow-up must run, and its hand-back must be reported as done.
+func TestClaudeWorkerFollowUpAfterHandbackIsNotAFailure(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.Idle = time.Hour
+	c := startClaudeNode(t, g, set)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	defer func() {
+		if t.Failed() {
+			t.Logf("notices: %+v", c.notices(t))
+			t.Logf("daemon log: %v", c.logs.lines())
+		}
+	}()
+
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "FAKE:handback first"})
+	rec := readClaude(t, repo)
+	c.waitNotice(t, 1)
+	eventually(t, "the worker ended after its hand-back", func() bool { return c.d.workerCount() == 0 && !alive(rec.Pid) })
+
+	// The follow-up: the worker reads it and works (it does not hand back yet).
+	c.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:ignore add the clean-tree check"})
+	eventually(t, "the follow-up reached the resumed session", func() bool { return len(c.adapter.deliveredTo(res.SessionID)) >= 2 })
+	wk := c.d.workerBySession(res.SessionID)
+	if wk == nil {
+		t.Fatalf("the resumed worker was ended: %v", c.logs.lines("worker.stopped"))
+	}
+	rec2 := readClaude(t, repo)
+	if argValue(rec2.Args, "--resume") != rec.Session {
+		t.Fatalf("the follow-up did not resume session %s: %+v", rec.Session, rec2)
+	}
+	// The follow-up reaches the worker as a request, never as a reply: the
+	// reply frame tells the model that no answer is needed.
+	if all := c.adapter.deliveredTo(res.SessionID); all[len(all)-1].Type == protocol.TypeReply || strings.Contains(all[len(all)-1].Body, "No answer is needed") {
+		t.Fatalf("the follow-up was delivered as %q: %q", all[len(all)-1].Type, all[len(all)-1].Body)
+	}
+
+	// The placeholder of the resume is in the transcript. The run goes on.
+	for i := 0; i < 3; i++ {
+		c.d.checkWorkers(context.Background())
+	}
+	if c.d.workerBySession(res.SessionID) == nil {
+		t.Fatalf("the resumed worker was ended: %v", c.logs.lines("worker.stopped"))
+	}
+	c.d.wmu.Lock()
+	failure := wk.failure
+	c.d.wmu.Unlock()
+	if failure != "" {
+		t.Fatalf("the resumed worker has a failure: %q", failure)
+	}
+
+	// The worker finishes the follow-up and hands back: a normal report.
+	c.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:handback done"})
+	ns := c.waitNotice(t, 2)
+	n := ns[len(ns)-1]
+	if !strings.Contains(n.Body, "status: done") || strings.Contains(n.Body, "No response requested") {
+		t.Fatalf("the follow-up's notice:\n%s", n.Body)
+	}
+}
+
+// Claude Code marks a real API error with isApiErrorMessage true. Its
+// placeholder for a turn with no answer is synthetic too, but is no error, and
+// neither is a short final reply of the model.
+func TestClaudeTranscriptPlaceholderIsNotAFailure(t *testing.T) {
+	dir := t.TempDir()
+	for name, line := range map[string]string{
+		"placeholder":      fakeClaudeNoResponseLine,
+		"short reply":      `{"type":"assistant","isSidechain":false,"message":{"role":"assistant","model":"claude-sonnet-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"No response requested."}]},"isApiErrorMessage":false}`,
+		"short reply done": `{"type":"assistant","message":{"role":"assistant","model":"claude-sonnet-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}}`,
+	} {
+		p := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".jsonl")
+		if err := os.WriteFile(p, []byte(line+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if msg, provider, _ := claudeTranscriptFailureAt(p, 0); msg != "" || provider {
+			t.Errorf("%s: read as a failure: %q provider=%v", name, msg, provider)
+		}
+	}
+	// Real API errors, in the shape of real transcripts, still fail the run.
+	for name, line := range map[string]string{
+		"session limit": `{"type":"assistant","error":"rate_limit","isApiErrorMessage":true,"message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"You've hit your session limit · resets 8am (UTC)"}]}}`,
+		"connection":    `{"type":"assistant","error":"unknown","isApiErrorMessage":true,"message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Connection lost mid-response. The response above may be incomplete."}]}}`,
+	} {
+		p := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".jsonl")
+		if err := os.WriteFile(p, []byte(line+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if msg, _, _ := claudeTranscriptFailureAt(p, 0); msg == "" {
+			t.Errorf("%s: not read as a failure", name)
+		}
+	}
+}

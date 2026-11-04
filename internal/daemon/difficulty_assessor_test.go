@@ -207,16 +207,117 @@ func TestJudgeRetryAfterParseFailure(t *testing.T) {
 	}
 }
 
-func TestJudgeRetryAfterTimeout(t *testing.T) {
+// The first judge is slow, so the retry judge starts at the hedge point and
+// its answer is used without waiting for the first one or the budget.
+func TestJudgeRetryStartsAtHedgeAndWinsWhileFirstRuns(t *testing.T) {
 	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
-	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeFirstTimeout: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
-	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" || !strings.Contains(a.Notes, "timed out") {
+	started := time.Now()
+	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" {
 		t.Fatalf("assessment: %+v, %v", a, err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("waited %s for a slow first judge", elapsed)
+	}
+	want := "first judge opencode-go/deepseek-v4.1-flash had no answer after 1s; retry judge codex gpt-6.1-sol answered first"
+	if a.Notes != want {
+		t.Fatalf("note: %q, want %q", a.Notes, want)
 	}
 	if calls := difficultyCalls(t, dir); len(calls) != 1 {
 		t.Fatalf("calls: %+v", calls)
+	}
+}
+
+// The first judge keeps its time after the retry starts. When it answers
+// first, its answer is used and the retry is stopped.
+func TestJudgeFirstAnswerAfterHedgeStopsRetry(t *testing.T) {
+	dir := fakeDifficultyRun(t, map[string][]string{"judge": {"HANG"}})
+	reply := filepath.Join(t.TempDir(), "reply")
+	if err := os.WriteFile(reply, []byte(difficultyScoresJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gate := filepath.Join(t.TempDir(), "gate")
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	t.Setenv("FAKE_DIFFICULTY_GATE", gate)
+	go func() {
+		// Open the gate once the retry judge is running.
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(filepath.Join(dir, "calls.jsonl")); err == nil {
+				_ = os.WriteFile(gate, []byte("go"), 0o600)
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	started := time.Now()
+	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil || a.Label != "hard" || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
+		t.Fatalf("assessment: %+v, %v", a, err)
+	}
+	if elapsed := time.Since(started); elapsed > 8*time.Second {
+		t.Fatalf("waited %s for the stopped retry judge", elapsed)
+	}
+	if !strings.Contains(a.Notes, "retry judge codex gpt-6.1-sol was stopped") {
+		t.Fatalf("note: %q", a.Notes)
+	}
+}
+
+// A first judge that fails early starts the retry at once, not at the hedge
+// point.
+func TestJudgeFirstFailureStartsRetryAtOnce(t *testing.T) {
+	fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
+	reply := filepath.Join(t.TempDir(), "reply")
+	if err := os.WriteFile(reply, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	started := time.Now()
+	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 50 * time.Second}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" {
+		t.Fatalf("assessment: %+v, %v", a, err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("the retry waited for the hedge point: %s", elapsed)
+	}
+}
+
+// A reply that does not parse is logged, capped, so the next failure shows
+// what the judge said.
+func TestJudgeParseFailureLogsReply(t *testing.T) {
+	fakeDifficultyRun(t, map[string][]string{"judge": {`{"reasoning":2,"scope":` + strings.Repeat("x", 3000)}})
+	reply := filepath.Join(t.TempDir(), "reply")
+	if err := os.WriteFile(reply, []byte("I will not score this."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envFakeOpenCode, "1")
+	t.Setenv(envFakeOpenCodeReply, reply)
+	var logs []string
+	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second}, DifficultySources{Logf: func(format string, args ...any) {
+		logs = append(logs, fmt.Sprintf(format, args...))
+	}}).Assess(context.Background(), t.TempDir(), "brief")
+	if err != nil || a.Label != "normal" {
+		t.Fatalf("assessment: %+v, %v", a, err)
+	}
+	if !strings.Contains(a.Notes, "the judge reply did not parse: no JSON object in the 53-byte reply") ||
+		!strings.Contains(a.Notes, "the retry judge reply did not parse: no complete JSON object in the 3023-byte reply (it may be cut off)") {
+		t.Fatalf("note: %q", a.Notes)
+	}
+	var replies []string
+	for _, l := range logs {
+		if strings.HasPrefix(l, "judge.reply ") {
+			replies = append(replies, l)
+		}
+	}
+	if len(replies) != 2 || !strings.Contains(replies[0], "I will not score this.") || !strings.Contains(replies[1], `{\"reasoning\":2`) {
+		t.Fatalf("reply logs: %q", replies)
+	}
+	if len(replies[1]) > 1200 {
+		t.Fatalf("reply log is not capped: %d bytes", len(replies[1]))
 	}
 }
 
@@ -267,9 +368,9 @@ func TestJudgeOpenCodeCleanupRunsAfterTimeout(t *testing.T) {
 	t.Setenv("FAKE_OPENCODE_DELETED", deleted)
 	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
 	_, _ = NewDifficultyAssessor(Config{
-		HarnessPaths:          map[string]string{"opencode": os.Args[0]},
-		DifficultyTimeout:     100 * time.Millisecond,
-		testJudgeFirstTimeout: 100 * time.Millisecond,
+		HarnessPaths:        map[string]string{"opencode": os.Args[0]},
+		DifficultyTimeout:   100 * time.Millisecond,
+		testJudgeHedgeAfter: 100 * time.Millisecond,
 	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
 
 	// The cleanup runs in the background so a retry judge does not wait.
@@ -284,36 +385,15 @@ func TestJudgeOpenCodeCleanupRunsAfterTimeout(t *testing.T) {
 	}
 }
 
-func TestJudgeTimeoutNoteFirstTimeoutRetryOk(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
-	t.Setenv(envFakeOpenCode, "1")
-	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
-	a, err := NewDifficultyAssessor(Config{
-		HarnessPaths:          map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
-		DifficultyTimeout:     60 * time.Second,
-		testJudgeFirstTimeout: 100 * time.Millisecond,
-	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
-	if err != nil || a.Label != "hard" {
-		t.Fatalf("assessment: %+v, %v", a, err)
-	}
-	wantNote := "first judge opencode-go/deepseek-v4.1-flash timed out at 1s of the 60s budget"
-	if a.Notes != wantNote {
-		t.Fatalf("note: %q, want %q", a.Notes, wantNote)
-	}
-	if calls := difficultyCalls(t, dir); len(calls) != 1 {
-		t.Fatalf("calls: %+v", calls)
-	}
-}
-
 func TestJudgeTimeoutNoteFirstTimeoutRetryTimeout(t *testing.T) {
 	fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
 	t.Setenv(envFakeCodexExecHang, "1")
 	a, err := NewDifficultyAssessor(Config{
-		HarnessPaths:          map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
-		DifficultyTimeout:     300 * time.Millisecond,
-		testJudgeFirstTimeout: 100 * time.Millisecond,
+		HarnessPaths:        map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
+		DifficultyTimeout:   300 * time.Millisecond,
+		testJudgeHedgeAfter: 100 * time.Millisecond,
 	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
 	if err != nil {
 		t.Fatal(err)
@@ -345,20 +425,36 @@ func TestJudgeAttemptLoggedPerAttempt(t *testing.T) {
 		},
 	}
 	_, err := NewDifficultyAssessor(Config{
-		HarnessPaths:          map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
-		DifficultyTimeout:     60 * time.Second,
-		testJudgeFirstTimeout: 100 * time.Millisecond,
+		HarnessPaths:        map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
+		DifficultyTimeout:   60 * time.Second,
+		testJudgeHedgeAfter: 100 * time.Millisecond,
 	}, sources).Assess(context.Background(), t.TempDir(), "brief")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The retry answers first; the slow first judge is then stopped.
 	if len(logs) != 2 {
 		t.Fatalf("expected 2 log lines, got %d: %v", len(logs), logs)
 	}
-	if !strings.HasPrefix(logs[0], "judge.attempt harness=opencode model=opencode-go/deepseek-v4.1-flash ") || !strings.Contains(logs[0], "result=timeout") {
+	if !strings.HasPrefix(logs[0], "judge.attempt harness=codex model=gpt-6.1-sol ") || !strings.Contains(logs[0], "result=ok") {
 		t.Fatalf("unexpected log line 1: %q", logs[0])
 	}
-	if !strings.HasPrefix(logs[1], "judge.attempt harness=codex model=gpt-6.1-sol ") || !strings.Contains(logs[1], "result=ok") {
+	if !strings.HasPrefix(logs[1], "judge.attempt harness=opencode model=opencode-go/deepseek-v4.1-flash ") || !strings.Contains(logs[1], "result=stopped") {
 		t.Fatalf("unexpected log line 2: %q", logs[1])
+	}
+}
+
+// On the 60 s start budget the retry judge starts at 25 s, so it has 35 s,
+// not the 21 s it timed out with.
+func TestJudgeHedgePoint(t *testing.T) {
+	for budget, want := range map[time.Duration]time.Duration{
+		60 * time.Second: 25 * time.Second,
+		3 * time.Minute:  145 * time.Second,
+		45 * time.Second: 15 * time.Second,
+		3 * time.Second:  time.Second,
+	} {
+		if got := judgeHedge(budget); got != want {
+			t.Errorf("judgeHedge(%s) = %s, want %s", budget, got, want)
+		}
 	}
 }

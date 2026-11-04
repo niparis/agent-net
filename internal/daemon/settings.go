@@ -11,7 +11,6 @@ import (
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
-	"github.com/niparis/agent-net/internal/settingsview"
 )
 
 // SettingsSnapshot returns a detached view. Call once per unit of work.
@@ -42,11 +41,12 @@ func (d *Daemon) loadSettingsSnapshot() error {
 }
 func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 	var wire struct {
-		Revision        *int64            `json:"revision"`
-		Recipe          string            `json:"recipe"`
-		DeliveryCutover bool              `json:"delivery_cutover"`
-		Values          []settings.Value  `json:"values"`
-		Maturity        map[string]string `json:"maturity"`
+		Revision             *int64            `json:"revision"`
+		Recipe               string            `json:"recipe"`
+		DeliveryCutover      bool              `json:"delivery_cutover"`
+		WorkerSandboxCutover bool              `json:"worker_sandbox_cutover"`
+		Values               []settings.Value  `json:"values"`
+		Maturity             map[string]string `json:"maturity"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return settings.Snapshot{}, err
@@ -54,7 +54,7 @@ func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 	if wire.Revision == nil || *wire.Revision < 0 {
 		return settings.Snapshot{}, fmt.Errorf("invalid revision")
 	}
-	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, Values: []settings.Value{}, Maturity: wire.Maturity}
+	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, WorkerSandboxCutover: wire.WorkerSandboxCutover, Values: []settings.Value{}, Maturity: wire.Maturity}
 	recipe := settings.Standard()
 	seen := map[string]bool{}
 	for _, v := range wire.Values {
@@ -139,7 +139,7 @@ func (d *Daemon) readSettings(ctx context.Context, q protocol.SettingsReadReques
 	if err := json.Unmarshal(raw, &history); err != nil {
 		return nil, err
 	}
-	return settingsview.Views(d.SettingsSnapshot(), history, q, owner)
+	return d.workerSettingsViews(d.SettingsSnapshot(), history, q, owner)
 }
 
 func (d *Daemon) settingsRevisionHasRule(ctx context.Context, rev int64) (bool, error) {

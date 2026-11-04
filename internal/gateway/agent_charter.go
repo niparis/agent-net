@@ -39,28 +39,6 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 	rows.Close()
 	settingsByNode := map[string]map[string]string{}
 	if !short {
-		rows, err := s.db.Query(`SELECT node,setting,value FROM graph_node_settings WHERE setting='worker_sandbox'`)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var node, setting, value string
-			if err := rows.Scan(&node, &setting, &value); err != nil {
-				rows.Close()
-				return err
-			}
-			if settingsByNode[node] == nil {
-				settingsByNode[node] = map[string]string{}
-			}
-			settingsByNode[node][setting] = value
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-	}
-	if !short {
 		snap, err := s.SettingsSnapshot()
 		if err != nil {
 			return err
@@ -93,7 +71,7 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 			if charted == "" {
 				settingsByNode[project] = nodeEffectiveSettings(snap, "", "", nil)
 			} else {
-				settingsByNode[project] = nodeEffectiveSettings(snap, project, byNode[project].Maturity, settingsByNode[project])
+				settingsByNode[project] = nodeEffectiveSettings(snap, charted, byNode[charted].Maturity, settingsByNode[charted])
 			}
 		}
 	}

@@ -60,6 +60,9 @@ type Host interface {
 	// Send posts a message to the network as the given sender session.
 	Send(ctx context.Context, p protocol.MsgSend) error
 	Logf(format string, args ...any)
+	// Replies is the daemon.db record that matches a Claude reply to the
+	// request it answers.
+	Replies() ReplyBook
 }
 
 type Config struct {
@@ -148,6 +151,9 @@ type Config struct {
 	IntegrationsInterval time.Duration
 	// MCPBackoffMin and MCPBackoffMax bound the restart delay of hosted MCP servers.
 	MCPBackoffMin, MCPBackoffMax time.Duration
+	// MCPListTTL is how long a hosted server's resource and prompt lists are
+	// reused. Default: protocol.MCPListCacheTTL.
+	MCPListTTL time.Duration
 	// Repo finds the project of a session's folder. Default: repoinfo.New().
 	Repo *repoinfo.Resolver
 	// TempFolders lists the folders whose sessions belong to no project.
@@ -198,7 +204,7 @@ type Config struct {
 	DifficultyJudgeModel        string
 	DifficultyRetryJudgeHarness string
 	DifficultyRetryJudgeModel   string
-	testJudgeFirstTimeout       time.Duration
+	testJudgeHedgeAfter         time.Duration
 	// DifficultyTimeout bounds each one-shot difficulty run. Default 3 minutes.
 	DifficultyTimeout time.Duration
 	// ModelProviders is model_providers of node.json. It goes to the gateway
@@ -592,6 +598,8 @@ func (d *Daemon) goBackground(fn func()) {
 }
 
 func (d *Daemon) Logf(format string, args ...any) { d.log.Printf(format, args...) }
+
+func (d *Daemon) Replies() ReplyBook { return d.st }
 
 // ---- registry ----
 
