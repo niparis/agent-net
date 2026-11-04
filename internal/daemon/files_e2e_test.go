@@ -68,15 +68,16 @@ const (
 )
 
 type filesNet struct {
-	t         *testing.T
-	g         *testGateway
-	a, b      *node
-	fa, fb    *fakeAdapter
-	alice     string // session on a
-	bob       string // session on b
-	project   string // alice's project folder
-	ts        string // the fake tailscale folder
-	downloads string // b's Downloads folder
+	t          *testing.T
+	g          *testGateway
+	a, b       *node
+	fa, fb     *fakeAdapter
+	alice      string // session on a
+	bob        string // session on b
+	project    string // alice's project folder
+	senderHome string // a's isolated home folder
+	ts         string // the fake tailscale folder
+	downloads  string // b's Downloads folder
 }
 
 type filesNetOpts struct {
@@ -124,8 +125,9 @@ func startFilesNet(t *testing.T, o filesNetOpts) *filesNet {
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	fb := &fakeAdapter{harness: "fake"}
+	senderHome := t.TempDir()
 	a := startNode(t, g, nodeOpts{adapter: fa, cfg: func(c *Config) {
-		c.Files.Home = t.TempDir()
+		c.Files.Home = senderHome
 		c.Files.TailscalePATH = bin // the fake tailscale is the only one on the daemon's path
 		c.Files.TailscaleIP = func() string { return filesSenderIP }
 		c.Files.Poll = 20 * time.Millisecond
@@ -154,7 +156,7 @@ func startFilesNet(t *testing.T, o filesNetOpts) *filesNet {
 		return fa.host.SessionID("fake", "na") != "" && fb.host.SessionID("fake", "nb") != ""
 	})
 	return &filesNet{t: t, g: g, a: a, b: b, fa: fa, fb: fb, alice: fa.host.SessionID("fake", "na"), bob: fb.host.SessionID("fake", "nb"),
-		project: project, ts: ts, downloads: downloads}
+		project: project, senderHome: senderHome, ts: ts, downloads: downloads}
 }
 
 func (n *filesNet) flag(name string) {
@@ -456,15 +458,13 @@ func TestFilesThatNeverArriveFail(t *testing.T) {
 // A refused path stops the send before any message is stored.
 func TestFilesSendRefusesSymlinkIntoSSH(t *testing.T) {
 	n := startFilesNet(t, filesNetOpts{layout: "darwin", tailnet: true})
-	home := os.Getenv("HOME")
-	key := writeTestFile(t, filepath.Join(home, ".ssh", "id_files_test"), []byte("not a real key"))
-	t.Cleanup(func() { os.Remove(key) })
+	key := writeTestFile(t, filepath.Join(n.senderHome, ".ssh", "id_files_test"), []byte("not a real key"))
 	link := filepath.Join(n.project, "key.txt")
 	if err := os.Symlink(key, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := n.send(link); err == nil {
-		t.Fatal("a symlink into ~/.ssh was sent")
+	if _, err := n.send(link); err == nil || !strings.Contains(err.Error(), "~/.ssh") {
+		t.Fatalf("symlink into ~/.ssh: got %v, want credential path refusal", err)
 	}
 	if strings.Contains(n.calls(), "file cp") {
 		t.Fatal("bytes were pushed for a refused file")
