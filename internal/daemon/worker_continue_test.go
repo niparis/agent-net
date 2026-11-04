@@ -230,7 +230,10 @@ func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
 	if !strings.Contains(firstNotice.Body, "status: done") {
 		t.Fatalf("first hand-back: %s", firstNotice.Body)
 	}
-	eventually(t, "the first Codex worker ends", func() bool { return w.d.workerCount() == 0 })
+	eventually(t, "the first Codex worker ends and is reported", func() bool {
+		row, ok, err := w.d.st.workerBySession(old.SessionID)
+		return w.d.workerCount() == 0 && err == nil && ok && row.EndedReason == protocol.StopHandback && row.Reported && row.Resumable
+	})
 
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: old.SessionID, Body: "continue the same task"}), &sent)
@@ -241,7 +244,10 @@ func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
 	if !strings.Contains(secondNotice.Body, "status: done") {
 		t.Fatalf("second hand-back: %s", secondNotice.Body)
 	}
-	eventually(t, "the resumed Codex worker ends", func() bool { return w.d.workerCount() == 0 })
+	eventually(t, "the resumed Codex worker ends and is reported", func() bool {
+		row, ok, err := w.d.st.workerBySession(old.SessionID)
+		return w.d.workerCount() == 0 && err == nil && ok && row.EndedReason == protocol.StopHandback && row.Reported && row.Resumable
+	})
 
 	continued, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID})
 	if err != nil {
