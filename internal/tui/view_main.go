@@ -304,8 +304,16 @@ func (m Model) titleLine(w int) string {
 
 	var tabs []string
 	count := m.waitingCount()
+	fullTabs := len(strings.Join(tabNames, " ")) + len("1 2 3 4 5 6 7 ")
+	if count > 0 {
+		fullTabs += len(fmt.Sprintf(" (%d)", count))
+	}
+	shortOnline := ""
+	if m.usage.counts != nil {
+		shortOnline = fmt.Sprintf("%d online", m.usage.counts.Online)
+	}
 	for i, name := range tabNames {
-		if count > 0 && w <= 80 && name == "Messages" {
+		if count > 0 && shortOnline != "" && fullTabs+3+len(shortOnline) > w && name == "Messages" {
 			name = "Msgs"
 		}
 		label := fmt.Sprintf("%d %s", i+1, name)

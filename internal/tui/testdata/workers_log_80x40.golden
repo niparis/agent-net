@@ -1,12 +1,12 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
   Quotas    [ Workers log ]    Delivery
 ╭─Workers log──────────────────────────────────────────────────────────────────╮
-│   11-14 22:13  test-model:high      normal     owner      Review wo… running │
-│ ▸ 11-14 22:11  test-model:high      normal     Agent One  Review worke… done │
-│   11-14 22:10  test-model:high      normal     CTO        Review wo… blocked │
-│   11-14 22:08  test-model:high      normal     Agent One  Review wor… failed │
-│   11-14 22:06  test-model:high      normal     CTO        Review … timed out │
-│   11-14 22:05  test-model:high      normal     -          Review wo… stopped │
+│   11-14 22:13  test-mode…  normal     owner      Review worker hist… running │
+│ ▸ 11-14 22:11  test-mode…  normal     Agent One  Review worker history… done │
+│   11-14 22:10  test-mode…  normal     CTO        Review worker hist… blocked │
+│   11-14 22:08  test-mode…  normal     Agent One  Review worker histo… failed │
+│   11-14 22:06  test-mode…  normal     CTO        Review worker hi… timed out │
+│   11-14 22:05  test-mode…  normal     -          Review worker hist… stopped │
 │                                                                              │
 │                                                                              │
 │                                                                              │

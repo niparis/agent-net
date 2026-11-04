@@ -61,7 +61,11 @@ func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool, loc *time.Lo
 	if started.Format("2006-01-02") == time.Now().In(loc).Format("2006-01-02") {
 		dateFormat = "15:04"
 	}
-	prefix := started.Format(dateFormat) + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), min(12, max(w/7, 6))) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
+	modelWidth := min(25, max(w/4, 6))
+	if w < 100 {
+		modelWidth = min(12, max(w/7, 6))
+	}
+	prefix := started.Format(dateFormat) + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), modelWidth) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
 	status := r.Status
 	room := max(w-2-len(status)-1, 0)
 	line := lead + cell(sanitize(prefix+firstNonEmpty(r.Title, "-")), room) + " " + workerStatusStyle(status).Render(status)
