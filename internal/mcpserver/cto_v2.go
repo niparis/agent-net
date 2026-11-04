@@ -49,7 +49,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 	if concrete == "" {
 		concrete = map[string]string{
 			"graph_change":   map[string]string{"charter_set": "charter_set", "node_add": "node_add", "node_remove": "node_remove", "edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set", "undo": "graph_undo"}[action],
-			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start"}[action],
+			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"}[action],
 			"worker_change":  map[string]string{"start": "worker_start", "stop": "worker_stop"}[action],
 		}[tool]
 	}

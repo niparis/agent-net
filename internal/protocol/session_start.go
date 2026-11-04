@@ -85,6 +85,7 @@ func OwnerWorktreeBranch(project string, n int) string {
 // machine that runs the start. Branch names the new worktree's branch; empty
 // asks the machine for the lowest free agent-net/<project>-<n>.
 type SessionStartRequest struct {
+	Merger       bool   `json:"merger,omitempty"`
 	Project      string `json:"project"`
 	Harness      string `json:"harness,omitempty"`
 	Model        string `json:"model,omitempty"`
@@ -144,6 +145,7 @@ type SessionStartQuery struct {
 // StartedSession is separate from a worker. It has no owner agent, brief,
 // deadline or cleanup rules. SessionID is filled after normal registration.
 type StartedSession struct {
+	Type     string `json:"type,omitempty"`
 	ID       string `json:"id"`
 	Status   string `json:"status"` // starting, started, failed
 	NodeID   string `json:"node_id"`

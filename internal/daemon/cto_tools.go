@@ -50,6 +50,9 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 			if item.Status != "open" {
 				return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
 			}
+			if item.Call.Tool == "session_change" && (item.Call.Action == "merger_start" || item.Call.Action == "merger_stop") {
+				return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": item.Reason}, nil
+			}
 			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
 		}
 	}

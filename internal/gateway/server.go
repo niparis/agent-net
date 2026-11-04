@@ -1402,6 +1402,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			g.dispatchStepTasks(ctx)
 		}
 		return map[string]bool{"ok": true}, err
+	case "merger.plan":
+		p, err := decode[protocol.MergerSetRequest](raw)
+		if err != nil || p.Project == "" {
+			return nil, reject("merger needs project")
+		}
+		needs, err := st.MergerNeedsDefault(p.Project)
+		return map[string]bool{"needs_default": needs}, err
 	case "merger.set":
 		p, err := decode[protocol.MergerSetRequest](raw)
 		if err != nil {

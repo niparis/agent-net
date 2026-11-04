@@ -93,9 +93,9 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"session_change": {
-		desc: "Change a session: rename, trust, policy or session_start.",
+		desc: "Change a session: rename, trust, policy, session_start, merger_start or merger_stop.",
 		fields: map[string]ctoField{
-			"action":     {typ: "string", enum: []string{"rename", "trust", "policy", "session_start"}},
+			"action":     {typ: "string", enum: []string{"rename", "trust", "policy", "session_start", "merger_start", "merger_stop"}},
 			"session_id": {typ: "string", desc: "Session ID."},
 			"project":    {typ: "string"}, "path": {typ: "string"}, "node_id": {typ: "string"},
 			"harness": {typ: "string"}, "model": {typ: "string"}, "folder": {typ: "string"},
