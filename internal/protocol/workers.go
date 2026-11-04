@@ -806,14 +806,12 @@ func ValidHandbackStatus(s string) bool {
 // measures them; the worker does not write them.
 type WorkerNotice struct {
 	Permissions string
-	// OSSandbox is the OS wrapper the worker ran in ("bubblewrap"), or "".
-	OSSandbox string
-	Status    string
-	Session   string
-	Harness   string
-	Model     string
-	Project   string
-	Host      string
+	Status      string
+	Session     string
+	Harness     string
+	Model       string
+	Project     string
+	Host        string
 	// Title is the worker's short title. Empty for an older record.
 	Title   string
 	RunTime time.Duration
@@ -842,6 +840,9 @@ type WorkerNotice struct {
 	// RateAsk adds the one-line satisfaction ask to the notice (difficulty
 	// calibration, part 4).
 	RateAsk bool
+
+	// OSSandbox is the OS wrapper the worker ran in ("bubblewrap"), or "".
+	OSSandbox string
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
