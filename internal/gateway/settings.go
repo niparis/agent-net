@@ -21,6 +21,13 @@ type SettingsResult struct {
 }
 type settingAddress struct{ key, level, scope, item string }
 
+const deliveryGraphHistoryPrefix = "delivery.pipeline.graph."
+
+type settingGraphChange struct {
+	address settingAddress
+	edge    protocol.Edge
+}
+
 func address(c SettingsChange) settingAddress { return settingAddress{c.Key, c.Level, c.Scope, c.Item} }
 
 // settingsNotify runs only after commit. The hook is installed by the gateway.
@@ -30,6 +37,24 @@ func (s *Store) settingsNotify() {
 	s.settingsHookMu.RUnlock()
 	if hook != nil {
 		hook()
+	}
+}
+
+// deliverySettingsChanged queues approvals that become ready under a new
+// delivery rule. The settings commit has already succeeded, so a queue error
+// is logged and retried when the gateway starts.
+func (s *Store) deliverySettingsChanged(changes []SettingsChange) {
+	for _, c := range changes {
+		if settings.DeliveryCanonicalKey(c.Key) != "" || strings.HasPrefix(c.Key, "delivery.pipeline.") {
+			s.refreshDeliveryTasks()
+			return
+		}
+	}
+}
+
+func (s *Store) refreshDeliveryTasks() {
+	if err := s.backfillDeliveryTasks(); err != nil {
+		s.logf("delivery task refresh", "err", err)
 	}
 }
 func bumpSettingsRevision(tx *sql.Tx) error {
@@ -50,7 +75,7 @@ func (s *Store) SettingsSnapshot() (settings.Snapshot, error) {
 	return out, err
 }
 func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
-	out := settings.Snapshot{DeliveryCutover: true, WorkerSandboxCutover: true, Recipe: settings.RecipeHash(), Values: []settings.Value{}, Maturity: map[string]string{}}
+	out := settings.Snapshot{DeliveryCutover: true, DeliveryPipelineCutover: true, WorkerSandboxCutover: true, Recipe: settings.RecipeHash(), Values: []settings.Value{}, Maturity: map[string]string{}}
 	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&out.Revision); err != nil {
 		return out, err
 	}
@@ -73,6 +98,16 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	if err != nil {
 		return out, err
 	}
+	// Older daemons know the shorthand keys only. These wire values are a
+	// projection of the pipeline rows, never another stored rule.
+	for _, v := range append([]settings.Value(nil), out.Values...) {
+		if alias := settings.DeliveryShorthandKey(v.Key); alias != "" {
+			value, err := settings.DeliveryShorthandValue(alias, v.Value)
+			if err == nil {
+				out.Values = append(out.Values, settings.Value{Key: alias, Level: v.Level, Scope: v.Scope, Item: v.Item, Value: value})
+			}
+		}
+	}
 	rows, err = tx.Query(`SELECT node,value FROM graph_charter WHERE attr='maturity' ORDER BY node`)
 	if err != nil {
 		return out, err
@@ -87,7 +122,58 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	}
 	err = rows.Err()
 	rows.Close()
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	rows, err = tx.Query(`SELECT target,kind,source FROM graph_edges WHERE kind IN ('accepts','reviews','tests','tests_after_merge','approves','approves_deploy','merges','releases','deploys','delivery_deploys','verifies') ORDER BY target,kind,source`)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var a settings.DeliveryAssignment
+		if err = rows.Scan(&a.Project, &a.Kind, &a.Node); err != nil {
+			rows.Close()
+			return out, err
+		}
+		ref := protocol.DeliveryEdgeRef(a.Kind)
+		a.Step, a.For, a.AfterMerge = ref.Step, ref.For, ref.AfterMerge
+		out.DeliveryAssignments = append(out.DeliveryAssignments, a)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
+	// Older daemons cannot express a node approver. Project the resulting
+	// shorthand to them, using the stricter owner rule for custom approvers.
+	for _, a := range out.DeliveryAssignments {
+		alias, fallback := "", ""
+		switch a.Kind {
+		case "approves":
+			alias, fallback = "delivery.merge_authority", "ask"
+		case "approves_deploy":
+			alias, fallback = "delivery.deploy_rule", "owner"
+		default:
+			continue
+		}
+		value := out.String(alias, settings.Where{Repo: a.Project})
+		if value == "custom" {
+			value = fallback
+		}
+		encoded, _ := json.Marshal(value)
+		found := false
+		for i := range out.Values {
+			v := &out.Values[i]
+			if v.Key == alias && v.Level == "repo" && v.Scope == a.Project && v.Item == "" {
+				v.Value = encoded
+				found = true
+			}
+		}
+		if !found {
+			out.Values = append(out.Values, settings.Value{Key: alias, Level: "repo", Scope: a.Project, Value: encoded})
+		}
+	}
+	return out, nil
 }
 
 // settingsCutoverActor identifies an internal migration in history. It is
@@ -140,6 +226,7 @@ func (s *Store) writeSettings(changes []SettingsChange, actor, reason, cause str
 		return result, err
 	}
 	if result.changed {
+		s.deliverySettingsChanged(changes)
 		s.settingsNotify()
 	}
 	return result, nil
@@ -150,9 +237,49 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		return SettingsResult{}, err
 	}
 	result := SettingsResult{Revision: before.Revision}
+	changes = append([]SettingsChange(nil), changes...)
+	aliases := map[settingAddress]string{}
+	for i := range changes {
+		c := &changes[i]
+		canonical := settings.DeliveryCanonicalKey(c.Key)
+		if canonical == "" {
+			continue
+		}
+		if c.Value != nil {
+			c.Value, err = settings.DeliveryCanonicalValue(c.Key, c.Value)
+			if err != nil {
+				return result, reject("invalid value: %v", err)
+			}
+		}
+		if c.Expect != nil && !bytes.Equal(bytes.TrimSpace(c.Expect), []byte("null")) {
+			expected := c.Expect
+			c.Expect, err = settings.DeliveryCanonicalValue(c.Key, expected)
+			if err != nil {
+				// Invalid migrated values can be repaired only by a writer
+				// that named their exact stored bytes.
+				matched := false
+				for _, v := range before.Values {
+					if v.Key == canonical && v.Level == c.Level && v.Scope == c.Scope && v.Item == c.Item && bytes.Equal(v.Value, expected) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					return result, reject("invalid expected shorthand: %v", err)
+				}
+				c.Expect = expected
+			}
+		}
+		alias := c.Key
+		c.Key = canonical
+		aliases[address(*c)] = alias
+	}
 	recipe := settings.Standard()
 	current := map[settingAddress]json.RawMessage{}
 	for _, v := range before.Values {
+		if settings.DeliveryCanonicalKey(v.Key) != "" {
+			continue
+		}
 		current[settingAddress{v.Key, v.Level, v.Scope, v.Item}] = v.Value
 	}
 	staged := map[settingAddress]json.RawMessage{}
@@ -194,8 +321,16 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			currentValue := string(old)
 			if old == nil {
 				currentValue = "not set"
+			} else if alias := aliases[a]; alias != "" {
+				if shorthand, err := settings.DeliveryShorthandValue(alias, old); err == nil {
+					currentValue = string(shorthand)
+				}
 			}
-			return result, reject("setting %s at %s %s changed (current %s)", c.Key, c.Level, c.Scope, currentValue)
+			name := c.Key
+			if alias := aliases[a]; alias != "" {
+				name = alias
+			}
+			return result, reject("setting %s at %s %s changed (current %s)", name, c.Level, c.Scope, currentValue)
 		}
 		if c.Delete {
 			if c.Value != nil {
@@ -216,8 +351,28 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			networkKeys[c.Key] = true
 		}
 	}
+	var graphChanges []settingGraphChange
+	for _, c := range changes {
+		alias := aliases[address(c)]
+		if c.Level != "repo" || (alias != "delivery.merge_authority" && alias != "delivery.deploy_rule") {
+			continue
+		}
+		kind := "approves"
+		if alias == "delivery.deploy_rule" {
+			kind = "approves_deploy"
+		}
+		var e protocol.Edge
+		e.To, e.Kind = c.Scope, kind
+		err := tx.QueryRow(`SELECT source,mode,rule FROM graph_edges WHERE target=? AND kind=?`, c.Scope, kind).Scan(&e.From, &e.Mode, &e.Rule)
+		if err != nil && err != sql.ErrNoRows {
+			return result, err
+		}
+		if err == nil {
+			graphChanges = append(graphChanges, settingGraphChange{address: address(c), edge: e})
+		}
+	}
 	makeSnapshot := func(vals map[settingAddress]json.RawMessage) settings.Snapshot {
-		snap := settings.Snapshot{Revision: before.Revision, Maturity: before.Maturity}
+		snap := settings.Snapshot{Revision: before.Revision, Maturity: before.Maturity, DeliveryPipelineCutover: true}
 		for a, v := range vals {
 			snap.Values = append(snap.Values, settings.Value{Key: a.key, Level: a.level, Scope: a.scope, Item: a.item, Value: v})
 		}
@@ -308,6 +463,18 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			}
 		}
 	}
+	for i := range result.Moved {
+		move := &result.Moved[i]
+		if alias := aliases[settingAddress{move.Key, "network", "network", ""}]; alias != "" {
+			if value, err := settings.DeliveryShorthandValue(alias, move.Old); err == nil {
+				move.Old = value
+			}
+			if value, err := settings.DeliveryShorthandValue(alias, move.New); err == nil {
+				move.New = value
+			}
+			move.Key = alias
+		}
+	}
 	sort.Slice(result.Moved, func(i, j int) bool {
 		if result.Moved[i].Key != result.Moved[j].Key {
 			return result.Moved[i].Key < result.Moved[j].Key
@@ -325,6 +492,11 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 	for a := range all {
 		if !bytes.Equal(staged[a], current[a]) {
 			changed = append(changed, a)
+		}
+	}
+	for _, graph := range graphChanges {
+		if !containsAddress(changed, graph.address) {
+			changed = append(changed, graph.address)
 		}
 	}
 	if len(changed) == 0 {
@@ -371,7 +543,31 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			return result, err
 		}
 	}
+	for i, graph := range graphChanges {
+		e := graph.edge
+		old, _ := json.Marshal(e)
+		if _, err := tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind); err != nil {
+			return result, err
+		}
+		if err := graphRecord(tx, "edge", e.From, e.Kind, string(old), "", actor, s.now().UnixNano()); err != nil {
+			return result, err
+		}
+		if _, err := tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,undo_of,at)
+			VALUES(?,?,?,?,?,'',?,NULL,?,?,?,?,?)`, result.Revision, len(changed)+i+1, deliveryGraphHistoryPrefix+e.Kind,
+			"repo", e.To, string(old), actor, reason, cause, undoOf, s.now().UnixNano()); err != nil {
+			return result, err
+		}
+	}
 	return result, nil
+}
+
+func containsAddress(all []settingAddress, want settingAddress) bool {
+	for _, a := range all {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 func hasLevel(levels []string, level string) bool {
 	for _, l := range levels {
@@ -392,12 +588,21 @@ func (s *Store) UndoSettings(revision int64, actor string) (SettingsResult, erro
 		return SettingsResult{}, err
 	}
 	var changes []SettingsChange
+	type graphUndo struct {
+		key, scope string
+		old, next  sql.NullString
+	}
+	var graphUndos []graphUndo
 	for rows.Next() {
 		var c SettingsChange
 		var old, newval sql.NullString
 		if err = rows.Scan(&c.Key, &c.Level, &c.Scope, &c.Item, &old, &newval); err != nil {
 			rows.Close()
 			return SettingsResult{}, err
+		}
+		if strings.HasPrefix(c.Key, deliveryGraphHistoryPrefix) {
+			graphUndos = append(graphUndos, graphUndo{key: c.Key, scope: c.Scope, old: old, next: newval})
+			continue
 		}
 		if old.Valid {
 			c.Value = json.RawMessage(old.String)
@@ -414,17 +619,87 @@ func (s *Store) UndoSettings(revision int64, actor string) (SettingsResult, erro
 	if err != nil {
 		return SettingsResult{}, err
 	}
-	if len(changes) == 0 {
+	if len(changes) == 0 && len(graphUndos) == 0 {
 		return SettingsResult{}, fmt.Errorf("no settings history for revision %d", revision)
 	}
 	result, err := s.writeSettingsTx(tx, changes, actor, fmt.Sprintf("undo revision %d", revision), "undo", &revision)
 	if err != nil {
 		return result, err
 	}
+	if len(graphUndos) != 0 && !actorAllowed(actor, "rule") {
+		return result, reject("only the owner may undo delivery owners")
+	}
+	if len(graphUndos) != 0 && !result.changed {
+		if err := bumpSettingsRevision(tx); err != nil {
+			return result, err
+		}
+		result.Revision++
+		result.changed = true
+	}
+	var seq int
+	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq),0) FROM setting_history WHERE revision=?`, result.Revision).Scan(&seq); err != nil {
+		return result, err
+	}
+	for _, undo := range graphUndos {
+		var e protocol.Edge
+		raw := undo.old.String
+		if !undo.old.Valid {
+			raw = undo.next.String
+		}
+		if err := json.Unmarshal([]byte(raw), &e); err != nil || e.To != undo.scope || deliveryGraphHistoryPrefix+e.Kind != undo.key {
+			return result, reject("invalid delivery owner history")
+		}
+		var actual protocol.Edge
+		actual.To, actual.Kind = e.To, e.Kind
+		err := tx.QueryRow(`SELECT source,mode,rule FROM graph_edges WHERE target=? AND kind=?`, e.To, e.Kind).Scan(&actual.From, &actual.Mode, &actual.Rule)
+		if err != nil && err != sql.ErrNoRows {
+			return result, err
+		}
+		if undo.next.Valid {
+			current, _ := json.Marshal(actual)
+			if err != nil || string(current) != undo.next.String {
+				return result, reject("delivery owner changed since that settings revision")
+			}
+		} else if err == nil {
+			return result, reject("delivery owner changed since that settings revision")
+		}
+		if undo.old.Valid {
+			if _, err := graphKind(tx, e.To); err != nil {
+				return result, err
+			}
+			if protocol.DeliveryOwnerFromSource(e.From).Kind == protocol.OwnerNode {
+				if _, err := graphKind(tx, e.From); err != nil {
+					return result, err
+				}
+			}
+			if _, err := tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?)`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
+				return result, err
+			}
+		} else if _, err := tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind); err != nil {
+			return result, err
+		}
+		if err := graphRecord(tx, "edge", e.From, e.Kind, undo.next.String, undo.old.String, actor, s.now().UnixNano()); err != nil {
+			return result, err
+		}
+		seq++
+		var old, next any
+		if undo.next.Valid {
+			old = undo.next.String
+		}
+		if undo.old.Valid {
+			next = undo.old.String
+		}
+		if _, err := tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,undo_of,at)
+			VALUES(?,?,?,'repo',?,'',?,?,?,?, 'undo',?,?)`, result.Revision, seq, undo.key, undo.scope, old, next, actor,
+			fmt.Sprintf("undo revision %d", revision), revision, s.now().UnixNano()); err != nil {
+			return result, err
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		return result, err
 	}
 	if result.changed {
+		s.deliverySettingsChanged(changes)
 		s.settingsNotify()
 	}
 	return result, nil
@@ -432,7 +707,8 @@ func (s *Store) UndoSettings(revision int64, actor string) (SettingsResult, erro
 
 // SettingsHistory returns public history, optionally restricted to a key or revision.
 func (s *Store) SettingsHistory(key string, revision int64, owner bool) ([]protocol.SettingsHistory, error) {
-	rows, err := s.db.Query(`SELECT revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,undo_of,at FROM setting_history WHERE (?='' OR key=?) AND (?=0 OR revision=?) ORDER BY revision DESC,seq DESC`, key, key, revision, revision)
+	canonical := settings.DeliveryCanonicalKey(key)
+	rows, err := s.db.Query(`SELECT revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,undo_of,at FROM setting_history WHERE (?='' OR key=? OR key=?) AND (?=0 OR revision=?) ORDER BY revision DESC,seq DESC`, key, key, canonical, revision, revision)
 	if err != nil {
 		return nil, err
 	}
@@ -455,6 +731,19 @@ func (s *Store) SettingsHistory(key string, revision int64, owner bool) ([]proto
 		}
 		if newval.Valid {
 			h.New = json.RawMessage(newval.String)
+		}
+		if canonical != "" && h.Key == canonical {
+			h.Key = key
+			if h.Old != nil {
+				if v, err := settings.DeliveryShorthandValue(key, h.Old); err == nil {
+					h.Old = v
+				}
+			}
+			if h.New != nil {
+				if v, err := settings.DeliveryShorthandValue(key, h.New); err == nil {
+					h.New = v
+				}
+			}
 		}
 		if undo.Valid {
 			h.UndoOf = &undo.Int64

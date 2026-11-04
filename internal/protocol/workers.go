@@ -929,6 +929,13 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		b.WriteString("\n" + ReportMarker + "\n" + strings.TrimSpace(report) + "\n")
 	}
 	b.WriteString("\n" + noticeChecklistWithSettings(n.Worktree, strings.TrimSpace(report) != "", snap))
+	if snap.DeliveryPipelineCutover && n.Project != "" {
+		if p, err := PipelineFromSettings(snap, n.Project); err == nil {
+			if merge, ok := p.Find(StepRef{Step: StepMerge}); ok && merge.Owner.Kind != OwnerCaller {
+				b.WriteString("\nThe merge step is assigned to " + NeutralizeMarkers(merge.Owner.String()) + ".")
+			}
+		}
+	}
 	return strings.TrimRight(b.String(), "\n")
 }
 

@@ -44,7 +44,7 @@ var ctoCharterAttrs = func() []string {
 	return attrs
 }()
 
-var ctoEdgeKinds = []string{"depends", "governs", "deploys", "accepts", "reviews", "tests", "approves", "merges", "releases", "verifies"}
+var ctoEdgeKinds = []string{"depends", "governs", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
 
 func settingsChangesField() ctoField {
 	return ctoField{typ: "array", desc: "Setting changes with key, level, scope, value or delete, and expect.", items: map[string]any{"type": "object", "additionalProperties": false, "required": []string{"key", "level", "scope"}, "properties": map[string]any{"key": map[string]any{"type": "string"}, "level": map[string]any{"type": "string"}, "scope": map[string]any{"type": "string"}, "value": map[string]any{}, "delete": map[string]any{"type": "boolean"}, "expect": map[string]any{}}}}

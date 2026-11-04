@@ -161,5 +161,8 @@ func (s *Store) MergeRuleForSession(session string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	if authority == protocol.ShorthandCustom && project != "" {
+		return authority, protocol.NodeDefaultsWithSettings(snap.Maturity[project], nil, snap, project).MergeText(), nil
+	}
 	return authority, protocol.MergeTextWithSettings(authority, snap), nil
 }

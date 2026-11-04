@@ -421,18 +421,19 @@ A critical repository should also have branch protection on its default branch: 
 
 ### Delivery steps and evidence
 
-The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. Build step 1 is in the gateway: it stores changes, their revisions and the evidence in `gateway.db`, and answers `change.submit`, `step.report`, `change.get` and `change.list` from a machine. The tools `agent_change_submit`, `agent_step_report` and `agent_changes_find` go through the daemon to the gateway. Nothing is routed, and no merge is refused yet. A worker's complete hand-back submits its change from the worker's machine, with the worker's caller as the change's session; the gateway accepts it only when that session is on the machine, or the worker's session is on the machine and that session started it. A change ID passed on by a continue comes only from the machine's own worker record, never from a frame.
+The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. The gateway stores changes, their revisions and evidence in `gateway.db`, and routes ready node-owned steps to that node's sessions. The tools `agent_change_submit`, `agent_step_claim`, `agent_step_report` and `agent_changes_find` go through the daemon to the gateway. The pipeline settings cutover is incomplete, and no merge is refused yet. A worker's complete hand-back submits its change from the worker's machine, with the worker's caller as the change's session; the gateway accepts it only when that session is on the machine, or the worker's session is on the machine and that session started it. A change ID passed on by a continue comes only from the machine's own worker record, never from a frame.
 
-- **A machine speaks only for its own sessions.** A submit names a session on the sending machine, or the hand-back of a worker on that machine which the session started. A session submits only its own work. A step report comes from a session on the sending machine, and `done_by` must be a worker that session started.
+- **A machine speaks only for its own sessions.** A submit names a session on the sending machine, or the hand-back of a worker on that machine which the session started. A session submits only its own work. A step report comes from a session on the sending machine. `done_by` names a worker that session started, or `owner` for a direct owner approval of a delegated step.
 - **The owner reads every change.** The TUI reads changes with the daemon method `changes_owner_find`, which is read only and follows the same gate as the other owner reads: only the owner's command line or TUI, not an agent connection and not a command line that runs inside an agent session. Agents keep `changes_find`, and a TUI connection cannot call it or the write methods.
 - **Evidence is append-only.** The gateway never changes or deletes a stored piece of evidence; database triggers refuse an update or a delete.
 - **The daemon fills in who and what.** The session that submits or reports, its project and its model come from the daemon, never from the arguments. A submit takes the head commit of the branch from git (a given commit must be on the branch) and says whether the worktree that has the branch checked out has changes that are not committed. A submit for another project than the session's is refused. Workers cannot submit or report; they can only read changes.
-- **`done_by` must be a worker you started.** The daemon asks the gateway for the session's record and refuses the report unless it is a worker whose caller is the reporting session, on any machine.
+- **`done_by` names a worker you started, or the owner of a delegated approval.** For a worker, the daemon asks the gateway for the session's record and refuses the report unless its caller is the reporting session, on any machine. For direct owner approval under `delegated`, only the caller or an allowed delegate may report `done_by: "owner"`. Under `ask`, the owner must answer the Inbox item instead.
 
 - **Evidence names one exact commit.** A commit must be a full 40 or 64 character lowercase hash; a short hash or a ref name is refused. A report for a commit that is not the change's head (or, after merge, its merged commit), or for an older revision, is refused (`Pipeline.Accepts`). Evidence of an older revision does not count.
-- **The reporter cannot claim independence.** The `independent` field is set by agent-net from the reporter's session and model maker, compared with the change's author. A report that sets it is refused.
+- **The reporter cannot set the independence field.** Agent-net derives it from the reported doer's session and model maker, compared with the change's author. A report that sets it is refused. The gateway verifies that a `done_by` worker was started by the reporter, but does not verify that the worker actually did the step. A reporter can therefore attribute its own work to that worker and make the evidence appear independent. Step 3 must close this gap before enforcing independence.
 - **Evidence is never a message.** Only an authenticated step report, an answered Inbox item or a GitHub result counts. A message body, a trust note or a CTO note does not.
 - **Limits on a report:** at most 16 fields; field names of lowercase letters, digits and `_`, at most 40; each value at most 200 bytes with no control characters; a note at most 8 KiB; a branch name at most 255 bytes; a change title at most 200 bytes.
+- **Diff summaries:** the gateway stores a diff stat of at most 8 KiB for a revision. It can name files in the change and is sent to the step owner's sessions. Control characters other than tabs and newlines are refused, and agent-net markers are neutralized in task text.
 
 ## What a worker can do: the sandbox level
 
@@ -485,11 +486,14 @@ There is no `--die-with-parent`: a worker outlives a daemon restart. The daemon 
 
 Requests use rules on graph edges. `normal` uses the normal peer guidance, `auto` adds the trust note, `ask` holds the request for the owner, and `never` refuses it. The sender-specific edge takes precedence over the wildcard edge into the recipient node. The `t` key cycles the wildcard through `normal`, `ask` and `auto`.
 
-Delivery assignment edges do not set request permissions and cannot override
-those rules. The owner or an approved CTO proposal may change or undo a step
-owner edge, including `deploys`; a CTO graph owner window alone is not enough.
-A node-owned task can be reported only by an online non-worker session of
-that node. The first report claims the task in the evidence transaction.
+The new delivery assignment edges, including `delivery_deploys`, do not set
+request permissions and cannot override those rules. The existing `deploys`
+edge retains its request rule and supplies the default deployer. The owner or
+an approved CTO proposal may change or undo a step owner edge, including
+`deploys`; a CTO graph owner window alone is not enough.
+A node-owned task can be claimed or reported only by an online non-worker
+session of that node. A claim reserves the task; the first report can also
+claim it in the evidence transaction.
 
 The risk of `auto` is that text relayed by a peer can steer a session without the owner seeing it first. The trust note follows the receiving node's merge authority; an `auto` edge does not approve merges on a `delegated` or `ask` node. It is guidance to the model, not a replacement for harness permission rules. It still asks for owner approval before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond the brief.
 

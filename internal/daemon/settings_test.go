@@ -74,6 +74,28 @@ func TestSettingsSnapshotOfflineAndOrder(t *testing.T) {
 	}
 }
 
+func TestDeliveryPipelineCutoverSurvivesSnapshotValidation(t *testing.T) {
+	d := &Daemon{}
+	snap, err := d.cleanSettingsSnapshot([]byte(`{"revision":1,"delivery_cutover":true,"delivery_pipeline_cutover":true,"values":[{"key":"delivery.pipeline.merge.approver","level":"repo","scope":"demo","item":"","value":"owner"}],"maturity":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snap.String("delivery.merge_authority", settings.Where{Repo: "demo"}); got != "ask" {
+		t.Fatalf("pipeline shorthand = %q", got)
+	}
+}
+
+func TestDeliveryAssignmentsSurviveSnapshotValidation(t *testing.T) {
+	d := &Daemon{}
+	snap, err := d.cleanSettingsSnapshot([]byte(`{"revision":1,"delivery_cutover":true,"delivery_pipeline_cutover":true,"delivery_assignments":[{"project":"demo","step":"approve","for":"merge","node":"reviewer","kind":"approves"}],"values":[],"maturity":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snap.String("delivery.merge_authority", settings.Where{Repo: "demo"}); got != "custom" {
+		t.Fatalf("graph assignment shorthand = %q", got)
+	}
+}
+
 func TestSettingsSnapshotLinkIgnoresUnknownFrames(t *testing.T) {
 	st, err := openState(t.TempDir())
 	if err != nil {

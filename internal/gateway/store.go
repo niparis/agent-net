@@ -699,6 +699,31 @@ CREATE TABLE IF NOT EXISTS delivery_step_messages (
  for_step TEXT NOT NULL, after_merge INTEGER NOT NULL, session_id TEXT NOT NULL,
  message_id TEXT NOT NULL,
  PRIMARY KEY(change_id, revision, step, for_step, after_merge, session_id));
+`, `
+-- A diff stat belongs to the revision named by its head commit.
+CREATE TABLE IF NOT EXISTS delivery_revision_stats (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, diff_stat TEXT NOT NULL,
+ PRIMARY KEY(change_id, revision));
+`, `
+-- Inbox approvals refer to an exact change revision and commit.
+CREATE TABLE IF NOT EXISTS delivery_step_inbox (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0,
+ commit_hash TEXT NOT NULL, item_id TEXT NOT NULL UNIQUE,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge));
+`, `
+-- Delegates are resolved when an approval step starts.
+CREATE TABLE IF NOT EXISTS delivery_step_delegates (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0,
+ node TEXT NOT NULL,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge, node));
+`, `
+-- delivery pipeline settings cutover: retain old values for downgrade.
+CREATE TABLE IF NOT EXISTS delivery_settings_legacy (
+ key TEXT NOT NULL, level TEXT NOT NULL, scope TEXT NOT NULL,
+ item TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, revision INTEGER NOT NULL,
+ PRIMARY KEY(key, level, scope, item));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -726,6 +751,10 @@ func OpenStore(path string) (*Store, error) {
 	if err := s.backfillTaskRework(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("task rework backfill: %w", err)
+	}
+	if err := s.backfillDeliveryTasks(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("delivery task backfill: %w", err)
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
@@ -1093,6 +1122,12 @@ func (s *Store) migrate() error {
 		}
 		if strings.Contains(migrations[i], "delivery settings cutover") {
 			if err := s.cutoverDeliveryTx(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "delivery pipeline settings cutover") {
+			if err := s.cutoverDeliveryPipelineTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}

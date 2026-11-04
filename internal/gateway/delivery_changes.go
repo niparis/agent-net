@@ -46,6 +46,12 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.ReportStep(nc.id, q)
+	case protocol.FrameStepClaim:
+		q, derr := decode[protocol.StepClaimRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.ClaimStep(nc.id, q)
 	case protocol.FrameChangeGet:
 		q, derr := decode[protocol.ChangeGetRequest](raw)
 		if derr != nil {
@@ -58,6 +64,14 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.ListChanges(q)
+	case protocol.FrameDeliveryNeedsPush:
+		q, derr := decode[protocol.DeliveryNeedsPushRequest](raw)
+		if derr != nil || q.Project == "" || len(q.Project) > protocol.ProjectMaxFieldLen {
+			return nil, true, reject("bad %s", typ)
+		}
+		var needed bool
+		needed, err = g.store.DeliveryNeedsPush(q.Project, nc.id)
+		data = protocol.DeliveryNeedsPushResult{NeedsPush: needed}
 	default:
 		return nil, false, nil
 	}
@@ -67,15 +81,47 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 	if typ == protocol.FrameChangeSubmit || typ == protocol.FrameStepReport {
 		g.dispatchStepTasks(ctx)
 	}
+	if typ == protocol.FrameStepReport {
+		result := data.(protocol.StepReportResult)
+		if node, err := g.store.SessionNode(result.Change.Change.Caller); err == nil && node != "" {
+			g.dispatchPending(ctx, node, false)
+		}
+	}
 	return data, true, nil
 }
 
-// deliveryPipeline is the pipeline of a project's changes until the settings
-// cutover and recipes are built: the part the project's three delivery
-// settings describe, then the steps after merge of the owner's way
-// (CI on the merged commit, release, verify). With the default settings it is
-// protocol.PipelineToday. A project with no graph node gets the network
-// values.
+// DeliveryNeedsPush reports whether an assigned step owner is known on a
+// different machine. It exposes no machine or session identities.
+func (s *Store) DeliveryNeedsPush(project, machine string) (bool, error) {
+	p, err := s.deliveryPipeline(project)
+	if err != nil {
+		return false, err
+	}
+	seen := map[string]bool{}
+	for _, step := range p.Steps {
+		if step.Owner.Kind != protocol.OwnerNode || seen[step.Owner.Node] {
+			continue
+		}
+		seen[step.Owner.Node] = true
+		var found int
+		err := s.db.QueryRow(`SELECT EXISTS(
+			SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+			WHERE COALESCE(NULLIF(s.repo_project,''),p.project,'')=? AND s.node_id<>? AND s.worker=''
+			AND s.harness NOT IN ('owner','bot','cto')
+			UNION ALL SELECT 1 FROM projects WHERE name=? AND node_id<>? AND graph_excluded<>1)`,
+			step.Owner.Node, machine, step.Owner.Node, machine).Scan(&found)
+		if err != nil {
+			return false, err
+		}
+		if found != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// deliveryPipeline resolves the ordered delivery settings and overlays graph
+// assignments. A project with no graph node gets the network values.
 func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
 	graph, err := s.Graph()
 	if err != nil {
@@ -86,29 +132,9 @@ func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
 	if err != nil {
 		return protocol.Pipeline{}, err
 	}
-	var values [3]string
-	for i, key := range []string{"delivery.tests_before_merge", "delivery.merge_authority", "delivery.deploy_rule"} {
-		if values[i], err = deliveryValue(snap, key, repo); err != nil {
-			return protocol.Pipeline{}, err
-		}
-	}
-	p, err := protocol.PipelineFromShorthand(values[0], values[1], values[2])
+	p, err := protocol.PipelineFromSettings(snap, repo)
 	if err != nil {
 		return protocol.Pipeline{}, err
-	}
-	for _, step := range protocol.PipelineToday().Steps {
-		if step.AfterMerge {
-			if _, have := p.Find(step.StepRef); !have {
-				p.Steps = append(p.Steps, step)
-			}
-		}
-	}
-	for i := range p.Steps {
-		for _, e := range graph.Edges {
-			if e.To == repo && deliveryEdgeStep(e.Kind) == p.Steps[i].Step {
-				p.Steps[i].Owner = protocol.StepOwner{Kind: protocol.OwnerNode, Node: e.From}
-			}
-		}
 	}
 	return p, p.Validate()
 }
@@ -116,12 +142,7 @@ func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
 // deliveryEdgeStep maps an assignment edge to the step it owns. deploys is
 // the existing deploy owner edge. The same owner handles both test phases.
 func deliveryEdgeStep(kind string) string {
-	return map[string]string{
-		"accepts": protocol.StepAccept, "reviews": protocol.StepReview,
-		"tests": protocol.StepTest, "approves": protocol.StepApprove,
-		"merges": protocol.StepMerge, "releases": protocol.StepRelease,
-		"deploys": protocol.StepDeploy, "verifies": protocol.StepVerify,
-	}[kind]
+	return protocol.DeliveryEdgeStep(kind)
 }
 
 // deliverySession is what the delivery frames need of a session: its
@@ -308,7 +329,16 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		}
 		c = next
 	}
-	if err := queueNodeSteps(tx, c, p, now); err != nil {
+	if q.DiffStat != "" {
+		if _, err := tx.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat) VALUES(?,?,?)
+			ON CONFLICT(change_id,revision) DO UPDATE SET diff_stat=excluded.diff_stat`, c.ID, c.Revision, q.DiffStat); err != nil {
+			return protocol.ChangeSubmitResult{}, err
+		}
+	}
+	if err := s.queueSteps(tx, c, p, now); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
+	if err := retireStepMessages(tx, c.ID); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -319,7 +349,8 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 }
 
 // ReportStep stores step.report from machine. The reporting session must be
-// on machine; done_by must be a worker it started. The gateway fills the
+// on machine; done_by must be a worker it started or the person directly
+// approving a delegated step. The gateway fills the
 // revision, who did the work with its model, and the independent field, then
 // checks the evidence with Pipeline.Accepts. A merge pass marks the change
 // merged, and done once every step after merge has passed; a close stops it.
@@ -336,7 +367,10 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		return protocol.StepReportResult{}, reject("session %q is not on this machine", q.SessionID)
 	}
 	by, doer, reportedBy := q.SessionID, reporter, ""
-	if q.DoneBy != "" && q.DoneBy != q.SessionID {
+	directOwner := q.DoneBy == protocol.EvidenceByOwner
+	if directOwner {
+		by, doer, reportedBy = protocol.EvidenceByOwner, deliverySession{}, q.SessionID
+	} else if q.DoneBy != "" && q.DoneBy != q.SessionID {
 		w, ok, err := s.deliverySession(q.DoneBy)
 		if err != nil {
 			return protocol.StepReportResult{}, err
@@ -368,6 +402,29 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if c, _, err = queryChange(tx, `id = ?`, q.ChangeID); err != nil {
 		return protocol.StepReportResult{}, err
 	}
+	if p, err = taskOwners(tx, c, p); err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	if err := checkApprovalTaskPolicy(tx, c, p, q.StepRef); err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	if step, ok := p.Find(q.StepRef); ok {
+		if directOwner && (step.Owner.Kind != protocol.OwnerDelegate || step.Step != protocol.StepApprove) {
+			return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step")
+		}
+		switch step.Owner.Kind {
+		case protocol.OwnerPerson:
+			return protocol.StepReportResult{}, reject("%s is owned by the person: answer its Inbox approval", q.StepRef)
+		case protocol.OwnerGitHub:
+			return protocol.StepReportResult{}, reject("%s is owned by GitHub", q.StepRef)
+		case protocol.OwnerDelegate:
+			if q.DoneBy != "" && q.DoneBy != q.SessionID && !directOwner {
+				return protocol.StepReportResult{}, reject("a delegate reports its own approval")
+			}
+		}
+	} else if directOwner {
+		return protocol.StepReportResult{}, reject("the approval step is not in this pipeline")
+	}
 	fields := map[string]string{}
 	for k, v := range q.Fields {
 		fields[k] = v
@@ -379,11 +436,25 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := p.Accepts(c, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
-	if err := claimNodeStep(tx, c, p, q); err != nil {
+	var found bool
+	if directOwner {
+		found, err = claimDirectOwnerApproval(tx, c, q.StepRef, q.SessionID, machine)
+	} else {
+		found, err = claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, true)
+	}
+	if err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if step, ok := p.Find(q.StepRef); !found && ok && (step.Owner.Kind == protocol.OwnerNode || step.Owner.Kind == protocol.OwnerDelegate) {
+		return protocol.StepReportResult{}, reject("%s has not reached its owner", q.StepRef)
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if found && q.Step == protocol.StepApprove {
+		if err := dismissStepInbox(tx, c, q.StepRef, s.now().UnixNano()); err != nil {
+			return protocol.StepReportResult{}, err
+		}
 	}
 	next := c
 	switch {
@@ -407,11 +478,23 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 			return protocol.StepReportResult{}, err
 		}
 	}
-	if err := queueNodeSteps(tx, next, p, now); err != nil {
+	if err := s.queueSteps(tx, next, p, now); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if err := retireStepMessages(tx, c.ID); err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	var notice protocol.Message
+	if found && (e.Result != protocol.StepResultPass || next.State == protocol.ChangeDone) {
+		if notice, err = s.stepResultNoticeTx(tx, next, e); err != nil {
+			return protocol.StepReportResult{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if notice.ID != "" {
+		s.logMessage(notice)
 	}
 	view, err := s.changeView(next, p, false)
 	return protocol.StepReportResult{Evidence: e, Change: view}, err
@@ -529,26 +612,110 @@ func (s *Store) ListChanges(q protocol.ChangeListRequest) (protocol.ChangeListRe
 // changeView is change c with where its steps stand and the steps that may
 // start now. full adds the pipeline, the revisions and all evidence.
 func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (protocol.ChangeView, error) {
+	p, err := taskOwners(s.db, c, p)
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
 	evidence, err := changeEvidence(s.db, c.ID)
 	if err != nil {
 		return protocol.ChangeView{}, err
 	}
 	v := protocol.ChangeView{Change: c, Steps: p.Status(c, evidence), Next: p.NextSteps(c, evidence)}
+	startedSteps := map[protocol.StepRef]bool{}
 	for i := range v.Steps {
 		st := &v.Steps[i]
-		if st.State != protocol.StepStateReady || st.Owner.Kind != protocol.OwnerNode {
+		if st.State != protocol.StepStateReady {
+			continue
+		}
+		if st.Owner.Kind == protocol.OwnerGitHub {
+			st.State, st.Note = protocol.StepStateWaiting, "waiting for GitHub (integration not built)"
+			startedSteps[st.StepRef] = true
+			continue
+		}
+		if st.Owner.Kind == protocol.OwnerDelegate && st.Step == protocol.StepApprove {
+			var claimed string
+			err := s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&claimed)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return protocol.ChangeView{}, err
+			}
+			if claimed != "" {
+				st.State, st.Note = protocol.StepStateRunning, "claimed by "+claimed
+				startedSteps[st.StepRef] = true
+				continue
+			}
+			var online int
+			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates d JOIN sessions s ON s.online=1 AND s.worker=''
+				LEFT JOIN profiles p ON p.session_id=s.id WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=?
+				AND d.node=COALESCE(NULLIF(s.repo_project,''),p.project,'') AND s.harness NOT IN ('owner','bot','cto'))`,
+				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&online)
+			if err != nil {
+				return protocol.ChangeView{}, err
+			}
+			if online != 0 {
+				st.Note = "waiting for a delegate or the owner"
+				continue
+			}
+		}
+		if st.Owner.Kind == protocol.OwnerPerson || (st.Owner.Kind == protocol.OwnerDelegate && st.Step == protocol.StepApprove) {
+			var open int
+			err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_inbox d JOIN inbox_items i ON i.id=d.item_id
+				WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND i.status='open')`,
+				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&open)
+			if err != nil {
+				return protocol.ChangeView{}, err
+			}
+			if open != 0 {
+				st.State, st.Note = protocol.StepStateNeedsOwner, "waiting for owner approval"
+				startedSteps[st.StepRef] = true
+			}
+			continue
+		}
+		if st.Owner.Kind != protocol.OwnerNode && st.Owner.Kind != protocol.OwnerCaller {
+			continue
+		}
+		var claimed string
+		err := s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks
+			WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+			c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&claimed)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return protocol.ChangeView{}, err
+		}
+		if errors.Is(err, sql.ErrNoRows) && st.Owner.Kind == protocol.OwnerCaller {
+			continue
+		}
+		if claimed != "" {
+			st.State, st.Note = protocol.StepStateRunning, "claimed by "+claimed
+			startedSteps[st.StepRef] = true
 			continue
 		}
 		var online int
-		err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
-			WHERE s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','bot','cto')
-			AND COALESCE(NULLIF(s.repo_project,''),p.project,'')=?)`, st.Owner.Node).Scan(&online)
+		if st.Owner.Kind == protocol.OwnerCaller {
+			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND online=1 AND worker='')`, c.Caller).Scan(&online)
+		} else {
+			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+				WHERE s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','bot','cto')
+				AND COALESCE(NULLIF(s.repo_project,''),p.project,'')=?)`, st.Owner.Node).Scan(&online)
+		}
 		if err != nil {
 			return protocol.ChangeView{}, err
 		}
 		if online == 0 {
-			st.Note = "waiting for " + st.Owner.Node + " (offline)"
+			owner := st.Owner.Node
+			if st.Owner.Kind == protocol.OwnerCaller {
+				owner = "caller"
+			}
+			st.Note = "waiting for " + owner + " (offline)"
 		}
+	}
+	if len(startedSteps) > 0 {
+		next := v.Next[:0]
+		for _, ref := range v.Next {
+			if !startedSteps[ref] {
+				next = append(next, ref)
+			}
+		}
+		v.Next = next
 	}
 	if !full {
 		return v, nil

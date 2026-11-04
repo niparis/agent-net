@@ -130,7 +130,7 @@ func deliveryMarks(steps []protocol.StepStatus) []stripState {
 				passed++
 			case protocol.StepStateFailed, protocol.StepStateClosed:
 				failed = true
-			case protocol.StepStateNeedsOwner:
+			case protocol.StepStateNeedsOwner, protocol.StepStateRunning:
 				needsOwner = true
 			}
 			active++
@@ -161,8 +161,8 @@ func hasStep(steps []protocol.StepStatus, name string) bool {
 }
 
 // currentStep is the step the change is in: the first step that may start now.
-// With none, the step that needs the owner, else one that failed, else one that
-// waits.
+// With none, a running step, then the step that needs the owner, else one that
+// failed, else one that waits.
 func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, bool) {
 	ownerOf := func(r protocol.StepRef) protocol.StepOwner {
 		for _, st := range v.Steps {
@@ -175,7 +175,7 @@ func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, b
 	if len(v.Next) > 0 {
 		return v.Next[0], ownerOf(v.Next[0]), true
 	}
-	for _, state := range []string{protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateWaiting} {
+	for _, state := range []string{protocol.StepStateRunning, protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateWaiting} {
 		for _, st := range v.Steps {
 			if st.State == state {
 				return st.StepRef, st.Owner, true

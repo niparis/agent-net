@@ -44,6 +44,8 @@ func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 		Revision             *int64            `json:"revision"`
 		Recipe               string            `json:"recipe"`
 		DeliveryCutover      bool              `json:"delivery_cutover"`
+		DeliveryPipelineCutover bool           `json:"delivery_pipeline_cutover"`
+		DeliveryAssignments     []settings.DeliveryAssignment `json:"delivery_assignments"`
 		WorkerSandboxCutover bool              `json:"worker_sandbox_cutover"`
 		Values               []settings.Value  `json:"values"`
 		Maturity             map[string]string `json:"maturity"`
@@ -54,7 +56,13 @@ func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 	if wire.Revision == nil || *wire.Revision < 0 {
 		return settings.Snapshot{}, fmt.Errorf("invalid revision")
 	}
-	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, WorkerSandboxCutover: wire.WorkerSandboxCutover, Values: []settings.Value{}, Maturity: wire.Maturity}
+	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, DeliveryPipelineCutover: wire.DeliveryPipelineCutover, WorkerSandboxCutover: wire.WorkerSandboxCutover, Values: []settings.Value{}, Maturity: wire.Maturity}
+	for _, a := range wire.DeliveryAssignments {
+		ref := protocol.DeliveryEdgeRef(a.Kind)
+		if a.Project != "" && a.Node != "" && ref.Step == a.Step && ref.For == a.For && ref.AfterMerge == a.AfterMerge && a.Step != "" {
+			snap.DeliveryAssignments = append(snap.DeliveryAssignments, a)
+		}
+	}
 	recipe := settings.Standard()
 	seen := map[string]bool{}
 	for _, v := range wire.Values {

@@ -1038,12 +1038,34 @@ func (m Model) inboxTabKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch k.Type {
 		case tea.KeyEsc:
 			m.inboxEditing = false
+			m.inboxDeliveryID = ""
 			return m, nil
 		case tea.KeyEnter:
 			answer := strings.TrimSpace(m.inboxInput.Value())
 			if answer != "" {
 				row, ok := m.inboxSelected(rows)
 				if ok {
+					if m.inboxDeliveryID != "" {
+						if row.item.ID != m.inboxDeliveryID || row.item.Delivery == nil {
+							m.inboxEditing = false
+							m.inboxDeliveryID = ""
+							m.fail("The delivery item changed; select it again.")
+							return m, nil
+						}
+						var fields map[string]string
+						if json.Unmarshal([]byte(answer), &fields) != nil || fields == nil {
+							m.fail("Enter evidence as a JSON object of strings.")
+							return m, nil
+						}
+						for _, field := range row.item.Delivery.ReportFields {
+							if strings.TrimSpace(fields[field]) == "" {
+								m.fail("Enter the required evidence field " + field + ".")
+								return m, nil
+							}
+						}
+						answer = "approve " + answer
+						m.inboxDeliveryID = ""
+					}
 					m.inboxEditing = false
 					return m, m.inboxAnswer(row.item.ID, answer)
 				}
@@ -1184,6 +1206,20 @@ func (m Model) inboxDecide(row inboxRow, approve bool) (tea.Model, tea.Cmd) {
 		}
 		return m, m.proposalAnswerCmd(row.proposal, action)
 	case "approval", "question":
+		if approve && row.item.Delivery != nil && len(row.item.Delivery.ReportFields) != 0 {
+			fields := map[string]string{}
+			for _, field := range row.item.Delivery.ReportFields {
+				fields[field] = ""
+			}
+			value, _ := json.Marshal(fields)
+			m.inboxInput = textinput.New()
+			m.inboxInput.Prompt = "evidence JSON> "
+			m.inboxInput.CharLimit = protocol.MaxBodyBytes
+			m.inboxInput.SetValue(string(value))
+			m.inboxDeliveryID = row.item.ID
+			m.inboxEditing = true
+			return m, m.inboxInput.Focus()
+		}
 		answer := "approve"
 		if !approve {
 			answer = "refuse"

@@ -17,4 +17,13 @@ type InboxItem struct {
 	Status         string    `json:"status"`
 	Answer         string    `json:"answer,omitempty"`
 	AnsweredAt     time.Time `json:"answered_at,omitempty"`
+	Delivery       *InboxDelivery `json:"delivery,omitempty"`
+}
+
+// InboxDelivery links a step task to its exact revision and commit.
+type InboxDelivery struct {
+	ChangeID string `json:"change_id"`
+	StepRef
+	Commit string `json:"commit"`
+	ReportFields []string `json:"report_fields,omitempty"`
 }

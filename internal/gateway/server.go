@@ -1330,6 +1330,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw)); err != nil {
 			return nil, err
 		}
+		g.dispatchStepTasks(ctx)
 		result := protocol.CharterSetResult{OK: true}
 		if graph, err := st.Graph(); err == nil {
 			for _, node := range graph.Nodes {
@@ -1381,6 +1382,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		} else {
 			err = st.RemoveEdge(p, graphActor(raw))
 		}
+		if err == nil {
+			g.dispatchStepTasks(ctx)
+		}
+		return map[string]bool{"ok": true}, err
+	case "delivery.owner.set":
+		p, err := decode[protocol.DeliveryOwnerSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad delivery owner request")
+		}
+		err = st.SetDeliveryOwner(p, graphActor(raw))
+		if err == nil {
+			g.dispatchStepTasks(ctx)
+		}
 		return map[string]bool{"ok": true}, err
 	case "edge.history":
 		p, err := decode[protocol.GraphHistoryRequest](raw)
@@ -1393,7 +1407,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || p.HistoryID < 0 {
 			return nil, reject("bad graph.undo")
 		}
-		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, graphActor(raw))
+		err = st.GraphUndo(p.HistoryID, graphActor(raw))
+		if err == nil {
+			g.dispatchStepTasks(ctx)
+		}
+		return map[string]bool{"ok": true}, err
 	case "settings.snapshot":
 		return st.SettingsSnapshot()
 	case "settings.write":
@@ -1404,7 +1422,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !settingsActor(p.By) {
 			return nil, reject("invalid settings actor")
 		}
-		return st.WriteSettings(p.Changes, p.By, p.Reason)
+		result, err := st.WriteSettings(p.Changes, p.By, p.Reason)
+		if err == nil {
+			g.dispatchStepTasks(ctx)
+		}
+		return result, err
 	case "settings.validate":
 		p, err := decode[protocol.SettingsWrite](raw)
 		if err != nil || len(p.Changes) == 0 || !settingsActor(p.By) {
@@ -1419,7 +1441,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !settingsActor(p.By) {
 			return nil, reject("invalid settings actor")
 		}
-		return st.UndoSettings(p.Revision, p.By)
+		result, err := st.UndoSettings(p.Revision, p.By)
+		if err == nil {
+			g.dispatchStepTasks(ctx)
+		}
+		return result, err
 	case "settings.history":
 		p, err := decode[struct {
 			Key      string `json:"key"`
@@ -1459,6 +1485,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.SetNodeSetting(p.Node, p.Setting, p.Value, actor); err != nil {
 			return nil, err
 		}
+		g.dispatchStepTasks(ctx)
 		return st.NodeSettings(p.Node)
 	case "onboarding.get":
 		return st.Onboarding()
@@ -1729,6 +1756,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err
 		}
+		g.dispatchStepTasks(ctx)
 		node, err := st.SessionNode(item.SessionID)
 		if err == nil {
 			g.dispatchPending(ctx, node, false)
@@ -1943,6 +1971,12 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 }
 
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {
+	if m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, "step_") {
+		current, err := g.store.stepMessageCurrent(m.ID)
+		if err != nil || !current {
+			return
+		}
+	}
 	if needsReminderCheck(m) {
 		ok, err := g.store.reminderEligible(m.ParentID)
 		if err != nil || !ok {

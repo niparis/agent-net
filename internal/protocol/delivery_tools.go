@@ -18,8 +18,15 @@ type ChangeSubmitArgs struct {
 	Title        string `json:"title,omitempty"`
 }
 
+// StepClaimArgs are the arguments of agent_step_claim.
+type StepClaimArgs struct {
+	Change string `json:"change"`
+	StepRef
+	Commit string `json:"commit"`
+}
+
 // StepReportArgs are the arguments of agent_step_report. DoneBy defaults to
-// the caller.
+// the caller; owner means direct owner approval of a delegated step.
 type StepReportArgs struct {
 	Change string `json:"change"`
 	StepRef

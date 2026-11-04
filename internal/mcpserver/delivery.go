@@ -34,6 +34,7 @@ func deliveryTool[In, Out any](s *mcp.Server, call Caller, name, op string) {
 // caller may not use.
 func addDeliveryTools(s *mcp.Server, call Caller) {
 	deliveryTool[protocol.ChangeSubmitArgs, protocol.ChangeSubmitResult](s, call, "agent_change_submit", protocol.OpChangeSubmit)
+	deliveryTool[protocol.StepClaimArgs, protocol.StepClaimResult](s, call, "agent_step_claim", protocol.OpStepClaim)
 	deliveryTool[protocol.StepReportArgs, protocol.StepReportResult](s, call, "agent_step_report", protocol.OpStepReport)
 	deliveryTool[protocol.ChangesFindArgs, protocol.ChangesFindResult](s, call, "agent_changes_find", protocol.OpChangesFind)
 }

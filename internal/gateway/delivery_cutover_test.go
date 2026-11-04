@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 func TestDeliveryCutoverMigratesLegacyRows(t *testing.T) {
@@ -38,8 +39,17 @@ func TestDeliveryCutoverMigratesLegacyRows(t *testing.T) {
 		}
 		names := map[string]string{protocol.SettingTestsBeforeMerge: "delivery.tests_before_merge", protocol.SettingMergeAuthority: "delivery.merge_authority", protocol.SettingJudgeConsumers: "charter.judge_consumers", protocol.SettingDeployRule: "delivery.deploy_rule", protocol.SettingAutonomy: "charter.autonomy_mode"}
 		var raw, cause, actor string
-		err := s.db.QueryRow(`SELECT v.value,h.cause,h.actor FROM setting_values v JOIN setting_history h ON h.revision=v.revision AND h.key=v.key AND h.scope=v.scope WHERE v.key=? AND v.level='repo' AND v.scope='alpha'`, names[key]).Scan(&raw, &cause, &actor)
+		storedKey := names[key]
+		if canonical := settings.DeliveryCanonicalKey(storedKey); canonical != "" {
+			storedKey = canonical
+		}
+		err := s.db.QueryRow(`SELECT v.value,h.cause,h.actor FROM setting_values v JOIN setting_history h ON h.revision=v.revision AND h.key=v.key AND h.scope=v.scope WHERE v.key=? AND v.level='repo' AND v.scope='alpha'`, storedKey).Scan(&raw, &cause, &actor)
 		var got string
+		if storedKey != names[key] {
+			if shorthand, convertErr := settings.DeliveryShorthandValue(names[key], json.RawMessage(raw)); convertErr == nil {
+				raw = string(shorthand)
+			}
+		}
 		_ = json.Unmarshal([]byte(raw), &got)
 		if err != nil || got != value || cause != "cutover" || actor != settingsCutoverActor {
 			t.Errorf("%s migrated: %q %q %q %v", key, got, cause, actor, err)
@@ -79,7 +89,7 @@ func TestDeliveryAdapterUndoAndRemoval(t *testing.T) {
 	if err = s.db.QueryRow(`SELECT count(*) FROM setting_values WHERE level='repo' AND scope='alpha'`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("values left: %d %v", count, err)
 	}
-	if err = s.db.QueryRow(`SELECT count(*) FROM setting_history WHERE scope='alpha' AND key='delivery.merge_authority' AND new_value IS NULL`).Scan(&count); err != nil || count != 1 {
+	if err = s.db.QueryRow(`SELECT count(*) FROM setting_history WHERE scope='alpha' AND key='delivery.pipeline.merge.approver' AND new_value IS NULL`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("missing removal history: %d %v", count, err)
 	}
 }

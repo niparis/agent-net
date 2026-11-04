@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -25,7 +26,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepReport, protocol.OpChangesFind:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind:
 	default:
 		return nil, false, nil
 	}
@@ -51,6 +52,21 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		}
 		res, err := d.changeSubmit(ctx, sid, info, a)
 		return res, true, err
+	case protocol.OpStepClaim:
+		if info.Worker != nil {
+			return nil, true, errors.New("a worker does not claim delivery steps")
+		}
+		var a protocol.StepClaimArgs
+		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+			return nil, true, err
+		}
+		q := protocol.StepClaimRequest{SessionID: sid, ChangeID: a.Change, StepRef: a.StepRef, Commit: a.Commit}
+		if err := q.Validate(); err != nil {
+			return nil, true, err
+		}
+		var out protocol.StepClaimResult
+		err := d.deliveryCall(ctx, protocol.FrameStepClaim, q, &out)
+		return out, true, err
 	case protocol.OpStepReport:
 		if info.Worker != nil {
 			return nil, true, errors.New("a worker does not report delivery steps: its caller reports, with done_by naming the worker")
@@ -157,6 +173,16 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 	if err := q.Validate(); err != nil {
 		return out, err
 	}
+	if q.TargetBranch != "" {
+		if target, err := gitBranchHead(ctx, folder, q.TargetBranch); err == nil {
+			if base, err := gitOut(ctx, folder, "merge-base", target, commit); err == nil && protocol.ValidCommit(base) {
+				q.BaseCommit = base
+				if stat, err := gitOut(ctx, folder, "diff", "--stat", base, commit); err == nil {
+					q.DiffStat = deliveryDiffStat(stat)
+				}
+			}
+		}
+	}
 	if err := d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out); err != nil {
 		return out, err
 	}
@@ -209,7 +235,11 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, a protocol.StepRepo
 	if err := q.Validate(); err != nil {
 		return out, err
 	}
-	if doneBy != "" {
+	if doneBy == protocol.EvidenceByOwner {
+		if a.Step != protocol.StepApprove {
+			return out, errors.New("done_by owner is only for a delegated approval step")
+		}
+	} else if doneBy != "" {
 		if err := d.checkStartedWorker(ctx, sid, doneBy); err != nil {
 			return out, err
 		}
@@ -291,6 +321,27 @@ func fillChangeView(v protocol.ChangeView) protocol.ChangeView {
 // record its change. The hand-back goes on without the record after it.
 const deliveryRecordTimeout = 10 * time.Second
 
+// deliveryDiffStat bounds the summary and removes terminal controls before it
+// is sent to the gateway. Keep truncation on a UTF-8 boundary.
+func deliveryDiffStat(stat string) string {
+	stat = strings.ToValidUTF8(stat, "?")
+	stat = strings.Map(func(r rune) rune {
+		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, stat)
+	if len(stat) <= protocol.MaxDiffStatBytes {
+		return stat
+	}
+	const tail = "\n... (truncated)"
+	end := protocol.MaxDiffStatBytes - len(tail)
+	for end > 0 && !utf8.RuneStart(stat[end]) {
+		end--
+	}
+	return stat[:end] + tail
+}
+
 // recordHandbackChange submits the change of a worker's complete hand-back
 // (origin worker), after commitAtHandback made the head hold the work. The
 // caller is the worker's owner. A continued worker carries the change of the
@@ -343,11 +394,34 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
 		HeadCommit: head, Uncommitted: uncommitted, Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
 		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model}}
+	if base != "" {
+		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
+			q.DiffStat = deliveryDiffStat(stat)
+		}
+	}
 	if model != "" {
 		q.Origin.ModelFamily = protocol.ModelFamily(harness, model)
 	}
 	if err := q.Validate(); err != nil {
 		return fail(err)
+	}
+	var pushProblem string
+	var plan protocol.DeliveryNeedsPushResult
+	if err := d.deliveryCall(ctx, protocol.FrameDeliveryNeedsPush, protocol.DeliveryNeedsPushRequest{Project: project}, &plan); err != nil {
+		if !errors.Is(err, errNoDeliveryGateway) {
+			pushProblem = "could not check whether a remote step owner needs the branch"
+		}
+	} else if plan.NeedsPush {
+		if uncommitted {
+			pushProblem = "the branch was not pushed for the remote step owner because the worktree has uncommitted changes"
+		} else {
+			pushCtx, stopPush := context.WithTimeout(ctx, timeout/2)
+			_, pushErr := gitOut(pushCtx, dir, "push", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
+			stopPush()
+			if pushErr != nil {
+				pushProblem = "could not push the branch to origin for the remote step owner"
+			}
+		}
 	}
 	var out protocol.ChangeSubmitResult
 	err = d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out)
@@ -368,5 +442,5 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	w.changeID = id
 	d.wmu.Unlock()
 	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s", w.id, sid, id, out.Change.Change.Revision, head)
-	return id, ""
+	return id, pushProblem
 }

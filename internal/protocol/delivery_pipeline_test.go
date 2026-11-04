@@ -743,6 +743,22 @@ func TestDeliveryFrameRequests(t *testing.T) {
 	if err := report.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	claim := StepClaimRequest{SessionID: "s_1", ChangeID: "ch_1", StepRef: refTest, Commit: commitA}
+	if err := claim.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, edit := range []func(*StepClaimRequest){
+		func(q *StepClaimRequest) { q.SessionID = "" },
+		func(q *StepClaimRequest) { q.ChangeID = "bad" },
+		func(q *StepClaimRequest) { q.Step = "bad" },
+		func(q *StepClaimRequest) { q.Commit = "bad" },
+	} {
+		q := claim
+		edit(&q)
+		if err := q.Validate(); err == nil {
+			t.Fatalf("bad claim accepted: %+v", q)
+		}
+	}
 	bad := report
 	bad.Fields = map[string]string{FieldIndependent: IndependentFamily}
 	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "independent is set by agent-net") {
@@ -757,6 +773,8 @@ func TestDeliveryFrameRequests(t *testing.T) {
 		func(q *ChangeSubmitRequest) { q.HeadCommit = "" },
 		func(q *ChangeSubmitRequest) { q.ChangeID = "x" },
 		func(q *ChangeSubmitRequest) { q.SessionID = "" },
+		func(q *ChangeSubmitRequest) { q.DiffStat = strings.Repeat("x", MaxDiffStatBytes+1) },
+		func(q *ChangeSubmitRequest) { q.DiffStat = "file\x00name" },
 	} {
 		q := submit
 		edit(&q)
@@ -770,6 +788,7 @@ func TestDeliveryFrameRequests(t *testing.T) {
 		FrameChangeSubmit: submit,
 		FrameChangeGet:    ChangeGetRequest{ChangeID: "ch_1"},
 		FrameChangeList:   ChangeListRequest{Project: "demo", State: ChangeListActive, Caller: "s_1", Limit: 10, After: "ch_0"},
+		FrameStepClaim:    claim,
 		FrameStepReport:   report,
 		FrameStepTask:     StepTask{TaskID: "st_1", SessionID: "s_owner", Change: testChange(), StepRef: refTest, Owner: StepOwner{Kind: OwnerCaller}, Commit: commitA, DiffStat: "1 file", Evidence: []Evidence{pass(testChange(), refAccept, 1, nil)}, ReportFields: []string{FieldSuite}},
 	}
@@ -785,7 +804,7 @@ func TestDeliveryFrameRequests(t *testing.T) {
 			t.Errorf("%s: frame fields lost: %s", name, raw)
 		}
 	}
-	for _, v := range []any{ChangeSubmitResult{Change: view}, ChangeListResult{Changes: []ChangeView{view}}, StepReportResult{Change: view}} {
+	for _, v := range []any{ChangeSubmitResult{Change: view}, ChangeListResult{Changes: []ChangeView{view}}, StepClaimResult{Claimed: true, SessionID: "s_1"}, StepReportResult{Change: view}} {
 		if _, err := json.Marshal(v); err != nil {
 			t.Fatal(err)
 		}
@@ -798,8 +817,8 @@ var snakeCase = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // top-level parameter named id or type.
 func TestDeliveryJSONNames(t *testing.T) {
 	types := []any{Change{}, ChangeOrigin{}, Revision{}, Evidence{}, StepRef{}, StepOwner{}, Requirement{}, PipelineStep{}, Pipeline{}, StepStatus{}, ChangeView{},
-		ChangeSubmitRequest{}, ChangeSubmitResult{}, ChangeGetRequest{}, ChangeListRequest{}, ChangeListResult{}, StepReportRequest{}, StepReportResult{}, StepTask{}}
-	frames := map[reflect.Type]bool{reflect.TypeOf(ChangeSubmitRequest{}): true, reflect.TypeOf(ChangeGetRequest{}): true, reflect.TypeOf(ChangeListRequest{}): true, reflect.TypeOf(StepReportRequest{}): true, reflect.TypeOf(StepTask{}): true}
+		ChangeSubmitRequest{}, ChangeSubmitResult{}, ChangeGetRequest{}, ChangeListRequest{}, ChangeListResult{}, StepClaimRequest{}, StepClaimResult{}, StepReportRequest{}, StepReportResult{}, StepTask{}}
+	frames := map[reflect.Type]bool{reflect.TypeOf(ChangeSubmitRequest{}): true, reflect.TypeOf(ChangeGetRequest{}): true, reflect.TypeOf(ChangeListRequest{}): true, reflect.TypeOf(StepClaimRequest{}): true, reflect.TypeOf(StepReportRequest{}): true, reflect.TypeOf(StepTask{}): true}
 	var walk func(reflect.Type, bool)
 	walk = func(rt reflect.Type, top bool) {
 		for i := 0; i < rt.NumField(); i++ {

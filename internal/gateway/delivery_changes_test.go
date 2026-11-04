@@ -216,8 +216,8 @@ func TestChangePipelineFollowsDeliverySettings(t *testing.T) {
 	if _, has := r.get(webID).Pipeline.Find(protocol.StepRef{Step: protocol.StepDeploy, AfterMerge: true}); has {
 		t.Fatal("a project with no graph node got the repo's deploy step")
 	}
-	// The approval for merge is a step now, so its report is stored.
-	approve := protocol.StepReportRequest{SessionID: r.caller, ChangeID: demo, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA}
+	// The owner can approve directly in the caller's session under delegated.
+	approve := protocol.StepReportRequest{SessionID: r.caller, ChangeID: demo, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, DoneBy: protocol.EvidenceByOwner}
 	if res := r.mustReport(r.a, approve); res.Evidence.Step != protocol.StepApprove || res.Evidence.For != protocol.StepMerge {
 		t.Fatalf("approve %+v", res.Evidence)
 	}

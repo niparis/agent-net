@@ -66,4 +66,5 @@ type SettingView struct {
 	Explicit    json.RawMessage   `json:"explicit,omitempty"`
 	Actor       string            `json:"actor,omitempty"`
 	History     []SettingsHistory `json:"history"`
+	DeliveryStep *StepRef `json:"delivery_step,omitempty"`
 }

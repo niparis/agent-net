@@ -1,7 +1,9 @@
 package settingsview
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
@@ -36,12 +38,36 @@ func ViewsWithWhere(snapshot settings.Snapshot, history []protocol.SettingsHisto
 			}
 		}
 		for _, v := range snap.Values {
-			if v.Key == def.Key && v.Level == level && v.Scope == scope && v.Item == "" {
+			valueKey := def.Key
+			if snap.DeliveryPipelineCutover && settings.DeliveryCanonicalKey(def.Key) != "" {
+				valueKey = settings.DeliveryCanonicalKey(def.Key)
+			}
+			if v.Key == valueKey && v.Level == level && v.Scope == scope && v.Item == "" {
 				row.Explicit = v.Value
+				if valueKey != def.Key {
+					if shorthand, err := settings.DeliveryShorthandValue(def.Key, v.Value); err == nil {
+						if string(shorthand) != `"custom"` {
+							row.Explicit = shorthand
+						}
+					}
+				}
 				break
 			}
 		}
 		for _, h := range history {
+			if snap.DeliveryPipelineCutover && h.Key == settings.DeliveryCanonicalKey(def.Key) {
+				h.Key = def.Key
+				if h.Old != nil {
+					if v, err := settings.DeliveryShorthandValue(def.Key, h.Old); err == nil {
+						h.Old = v
+					}
+				}
+				if h.New != nil {
+					if v, err := settings.DeliveryShorthandValue(def.Key, h.New); err == nil {
+						h.New = v
+					}
+				}
+			}
 			if h.Key != def.Key {
 				continue
 			}
@@ -52,8 +78,45 @@ func ViewsWithWhere(snapshot settings.Snapshot, history []protocol.SettingsHisto
 		}
 		out = append(out, row)
 	}
+	if q.Key == "" || q.Key == "delivery.pipeline" {
+		p, err := protocol.PipelineFromSettings(snap, q.Repo)
+		if err != nil {
+			return nil, err
+		}
+		value, err := json.Marshal(p)
+		if err != nil {
+			return nil, err
+		}
+		var sources []string
+		keys := []string{"delivery.pipeline.merge.requires", "delivery.pipeline.merge.approver", "delivery.pipeline.deploy.approver"}
+		if !snap.DeliveryPipelineCutover {
+			keys = []string{"delivery.tests_before_merge", "delivery.merge_authority", "delivery.deploy_rule"}
+		}
+		for _, key := range keys {
+			e, err := snap.Resolve(key, where)
+			if err == nil && !containsSource(sources, e.Source) {
+				sources = append(sources, e.Source)
+			}
+		}
+		for _, a := range snap.DeliveryAssignments {
+			if a.Project == q.Repo {
+				sources = append(sources, "graph assignments")
+				break
+			}
+		}
+		out = append(out, protocol.SettingView{Key: "delivery.pipeline", Description: "Resolved pipeline. Change its ordered rules or graph-backed owner rows.", Kind: "rule", Type: "pipeline_view", Levels: []string{"network", "repo"}, Live: true, Value: value, Source: strings.Join(sources, ", "), Revision: snap.Revision, History: []protocol.SettingsHistory{}})
+	}
 	if q.Key != "" && len(out) == 0 {
 		return nil, fmt.Errorf("unknown setting %s", q.Key)
 	}
 	return out, nil
+}
+
+func containsSource(sources []string, source string) bool {
+	for _, s := range sources {
+		if s == source {
+			return true
+		}
+	}
+	return false
 }

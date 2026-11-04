@@ -126,6 +126,9 @@ func (m Model) settingsItems() []settingsItem {
 	}
 	for i, v := range m.settingValues {
 		label := v.Key + ": " + sanitize(string(v.Value)) + " (" + settingSource(v) + ")"
+		if v.Type == "pipeline_view" {
+			label = v.Key + ": resolved steps (" + settingSource(v) + ")"
+		}
 		if !v.Live {
 			label += " [not live yet]"
 		}
@@ -547,22 +550,90 @@ func settingSource(v protocol.SettingView) string {
 }
 func (m Model) loadSettingValues() tea.Cmd {
 	src, ok := m.src.(inboxCaller)
+	repo := m.settingRepo
 	return func() tea.Msg {
 		if !ok {
 			return settingValuesMsg{err: fmt.Errorf("unavailable")}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
-		raw, err := src.Call(ctx, "settings_owner_read", protocol.SettingsReadRequest{Repo: m.settingRepo})
+		raw, err := src.Call(ctx, "settings_owner_read", protocol.SettingsReadRequest{Repo: repo})
 		if err != nil {
 			return settingValuesMsg{err: err}
 		}
 		var rows []protocol.SettingView
-		err = json.Unmarshal(raw, &rows)
-		return settingValuesMsg{rows: rows, err: err}
+		if err = json.Unmarshal(raw, &rows); err != nil {
+			return settingValuesMsg{err: err}
+		}
+		if repo != "" {
+			raw, err = src.Call(ctx, protocol.OpGraphGet, map[string]any{})
+			if err != nil {
+				return settingValuesMsg{err: err}
+			}
+			var graph protocol.Graph
+			if err = json.Unmarshal(raw, &graph); err != nil {
+				return settingValuesMsg{err: err}
+			}
+			rows = append(rows, deliveryOwnerViews(graph, repo)...)
+		}
+		return settingValuesMsg{rows: rows}
 	}
 }
+
+// deliveryOwnerViews adds the graph-backed assignment controls for a repo.
+// An empty explicit node returns to the step's default owner.
+func deliveryOwnerViews(graph protocol.Graph, repo string) []protocol.SettingView {
+	var rows []protocol.SettingView
+	refs := []protocol.StepRef{{Step: protocol.StepAccept}, {Step: protocol.StepReview}, {Step: protocol.StepTest},
+		{Step: protocol.StepTest, AfterMerge: true}, {Step: protocol.StepApprove, For: protocol.StepMerge},
+		{Step: protocol.StepApprove, For: protocol.StepDeploy, AfterMerge: true}, {Step: protocol.StepMerge},
+		{Step: protocol.StepRelease, AfterMerge: true}, {Step: protocol.StepDeploy, AfterMerge: true}, {Step: protocol.StepVerify, AfterMerge: true}}
+	for _, ref := range refs {
+		step := ref.Step
+		kind := protocol.DeliveryRefEdge(step, ref.For, ref.AfterMerge)
+		owner, defaultDeploy := "", ""
+		for _, edge := range graph.Edges {
+			if edge.To != repo {
+				continue
+			}
+			if edge.Kind == kind {
+				owner = protocol.DeliveryOwnerSetting(edge.From)
+			}
+			if step == protocol.StepDeploy && edge.Kind == "deploys" && defaultDeploy == "" {
+				defaultDeploy = edge.From
+			}
+		}
+		source := "caller by default"
+		if step == protocol.StepApprove {
+			source = "approval rule by default"
+		} else if defaultDeploy != "" {
+			source = "default deployer " + defaultDeploy
+		}
+		if owner != "" {
+			source = "graph assignment"
+		}
+		value, _ := json.Marshal(owner)
+		description := "Enter a node name or @caller, @owner, @github, @delegate or @none as a JSON string; empty uses the default."
+		if step == protocol.StepApprove {
+			description += " A written or delegated approval rule keeps its approver."
+		}
+		key := "delivery.owner." + step
+		if step == protocol.StepTest && ref.AfterMerge {
+			key += ".after_merge"
+		} else if step == protocol.StepApprove && ref.For == protocol.StepDeploy {
+			key += ".deploy"
+		}
+		rows = append(rows, protocol.SettingView{Key: key, Type: "delivery_owner", Kind: "rule", Live: true, DeliveryStep: &ref,
+			Description: description,
+			Value:       value, Explicit: value, Source: source})
+	}
+	return rows
+}
 func (m Model) startSettingValueEdit(i int) (Model, tea.Cmd) {
+	if m.settingValues[i].Type == "pipeline_view" {
+		m.fail("Edit the pipeline rule settings and owner rows below.")
+		return m, nil
+	}
 	if _, ok := m.src.(inboxCaller); !ok {
 		m.fail("Settings unavailable.")
 		return m, nil
@@ -592,6 +663,27 @@ func (m Model) settingValueKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !ok {
 			m.fail("Settings unavailable.")
 			return m, nil
+		}
+		if row.Type == "delivery_owner" {
+			var node, previous string
+			if json.Unmarshal(value, &node) != nil || json.Unmarshal(row.Explicit, &previous) != nil {
+				m.fail("Enter the node name as a JSON string, or an empty string for the default.")
+				return m, nil
+			}
+			m.mode = modeNormal
+			if row.DeliveryStep == nil {
+				m.fail("The delivery step is unavailable; reload Settings.")
+				return m, nil
+			}
+			q := protocol.DeliveryOwnerSetRequest{Project: m.settingRepo, Step: row.DeliveryStep.Step, For: row.DeliveryStep.For, AfterMerge: row.DeliveryStep.AfterMerge, Node: node, Expect: previous}
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				if _, err := src.Call(ctx, protocol.OpDeliveryOwnerSet, q); err != nil {
+					return settingValuesMsg{err: err}
+				}
+				return settingValuesMsg{notice: "Saved " + row.Key + "."}
+			}
 		}
 		m.mode = modeNormal
 		level, scope := "network", "network"

@@ -307,6 +307,32 @@ func TestDeliveryListShowsOfflineOwner(t *testing.T) {
 	}
 }
 
+func TestDeliveryShowsClaimedStepAsRunning(t *testing.T) {
+	v := listView(t0)
+	v.Steps[1].State = "running"
+	v.Steps[1].Note = "claimed by s_owner"
+	ch := deliveryChangeFromView(v, t0)
+	if ch.Marks[1] != stripRunning {
+		t.Fatalf("claimed review mark = %v", ch.Marks[1])
+	}
+	m := deliveryModel(&fakeDelivery{}, 120, 40)
+	got := ansi.Strip(strings.Join(m.deliveryDetail(ch, nil, 120, 40), "\n"))
+	if !strings.Contains(got, "review  merger  running  claimed by s_owner") {
+		t.Fatalf("claimed step missing from detail: %s", got)
+	}
+}
+
+func TestDeliveryCurrentStepUsesRunningStep(t *testing.T) {
+	v := listView(t0)
+	v.Next = nil
+	v.Steps[1].State = "running"
+	v.Steps[2].State = protocol.StepStatePassed
+	got := deliveryChangeFromView(v, t0)
+	if got.Step != "review" || got.StepOwner != "merger" {
+		t.Fatalf("current step = %s owned by %s", got.Step, got.StepOwner)
+	}
+}
+
 func TestDeliveryEvidenceTextIsKeptSafe(t *testing.T) {
 	v := fullView(t0)
 	v.Change.Project = "pro\x1b[31mject"

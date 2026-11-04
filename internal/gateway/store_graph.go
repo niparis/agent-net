@@ -9,6 +9,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/repoinfo"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 func validGraphName(name string) bool {
@@ -199,6 +200,7 @@ func (s *Store) SetCharter(node, attr, value, actor string) error {
 		return err
 	}
 	if attr == "maturity" && after != before {
+		s.refreshDeliveryTasks()
 		s.settingsNotify()
 	}
 	return nil
@@ -258,14 +260,23 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 		return err
 	}
 	if key, moved := deliveryNodeKeys[setting]; moved {
+		storedKey := key
+		if canonical := settings.DeliveryCanonicalKey(key); canonical != "" {
+			storedKey = canonical
+		}
 		var prior sql.NullString
-		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, key, node).Scan(&prior)
+		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, storedKey, node).Scan(&prior)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
 		change := SettingsChange{Key: key, Level: "repo", Scope: node}
 		if prior.Valid {
 			change.Expect = json.RawMessage(prior.String)
+			if storedKey != key {
+				if shorthand, err := settings.DeliveryShorthandValue(key, change.Expect); err == nil {
+					change.Expect = shorthand
+				}
+			}
 		}
 		if value == "" {
 			change.Delete = true
@@ -283,6 +294,7 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 			return err
 		}
 		if result.changed {
+			s.deliverySettingsChanged([]SettingsChange{change})
 			s.settingsNotify()
 		}
 		return nil
@@ -510,7 +522,13 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 					return reject("%s already has an owner for %s", e.To, deliveryEdgeStep(e.Kind))
 				}
 			}
-			if e.From != "*" {
+			owner := protocol.DeliveryOwnerFromSource(e.From)
+			if owner.Kind != protocol.OwnerNode {
+				source, ownerErr := protocol.DeliveryOwnerSource("@"+owner.Kind, deliveryEdgeStep(e.Kind))
+				if ownerErr != nil || source != e.From {
+					return reject("invalid special delivery owner")
+				}
+			} else if e.From != "*" {
 				if _, err = graphKind(tx, e.From); err != nil {
 					return err
 				}
@@ -559,7 +577,8 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		return err
 	}
 	maturityChanged := typ == "charter" && attr == "maturity" && old != value
-	if maturityChanged {
+	ownerChanged := typ == "edge" && deliveryEdgeStep(attr) != ""
+	if maturityChanged || ownerChanged {
 		if err = bumpSettingsRevision(tx); err != nil {
 			return err
 		}
@@ -570,7 +589,8 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	if maturityChanged {
+	if maturityChanged || ownerChanged {
+		s.refreshDeliveryTasks()
 		s.settingsNotify()
 	}
 	return nil
@@ -589,7 +609,99 @@ func (s *Store) SetEdge(e protocol.Edge, actor string, validate ...bool) error {
 	if len(validate) > 0 && validate[0] {
 		return nil
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if deliveryEdgeStep(e.Kind) != "" {
+		s.refreshDeliveryTasks()
+		s.settingsNotify()
+	}
+	return nil
+}
+
+// SetDeliveryOwner replaces a step's assignment in one transaction. The
+// expected owner prevents an old Settings screen from overwriting a change.
+func (s *Store) SetDeliveryOwner(q protocol.DeliveryOwnerSetRequest, actor string) error {
+	if !actorAllowed(actor, "rule") {
+		return reject("only the owner may change delivery step owners")
+	}
+	kind := protocol.DeliveryRefEdge(q.Step, q.For, q.AfterMerge)
+	if kind == "" || q.Project == "" {
+		return reject("invalid project or delivery step")
+	}
+	node, err := protocol.DeliveryOwnerSource(q.Node, q.Step)
+	if err != nil {
+		return reject("%v", err)
+	}
+	expect, err := protocol.DeliveryOwnerSource(q.Expect, q.Step)
+	if err != nil {
+		return reject("%v", err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	projectKind, err := graphKind(tx, q.Project)
+	if err != nil {
+		return err
+	}
+	if projectKind != "component" {
+		return reject("delivery owners are assigned to a project")
+	}
+	rows, err := tx.Query(`SELECT source,mode,rule FROM graph_edges WHERE target=? AND kind=? ORDER BY source`, q.Project, kind)
+	if err != nil {
+		return err
+	}
+	var existing []protocol.Edge
+	for rows.Next() {
+		e := protocol.Edge{To: q.Project, Kind: kind}
+		if err := rows.Scan(&e.From, &e.Mode, &e.Rule); err != nil {
+			rows.Close()
+			return err
+		}
+		existing = append(existing, e)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if len(existing) > 1 {
+		return reject("%s has more than one %s edge; resolve the edges first", q.Project, kind)
+	}
+	current := ""
+	if len(existing) == 1 {
+		current = existing[0].From
+	}
+	if current != expect {
+		return reject("%s owner changed; reload Settings", q.Step)
+	}
+	if current == node {
+		return nil
+	}
+	if current != "" {
+		if _, err := tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, current, q.Project, kind); err != nil {
+			return err
+		}
+		old, _ := json.Marshal(existing[0])
+		if err := graphRecord(tx, "edge", current, kind, string(old), "", actor, s.now().UnixNano()); err != nil {
+			return err
+		}
+	}
+	if node != "" {
+		if err := setEdgeTx(tx, protocol.Edge{From: node, To: q.Project, Kind: kind}, actor, s.now().UnixNano()); err != nil {
+			return err
+		}
+	} else if err := bumpSettingsRevision(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.refreshDeliveryTasks()
+	s.settingsNotify()
+	return nil
 }
 
 func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
@@ -617,7 +729,19 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	}
 	var err error
 	from := "component"
-	if e.From != "*" {
+	special := protocol.DeliveryOwnerFromSource(e.From)
+	if special.Kind != protocol.OwnerNode {
+		if !deliveryEdge {
+			return reject("special owner requires a delivery assignment")
+		}
+		resolved, err := protocol.DeliveryOwnerSource("@"+special.Kind, deliveryEdgeStep(e.Kind))
+		if err != nil {
+			return reject("%v", err)
+		}
+		if resolved != e.From {
+			return reject("unknown special delivery owner")
+		}
+	} else if e.From != "*" {
 		from, err = graphKind(tx, e.From)
 		if err != nil {
 			return err
@@ -666,6 +790,11 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	if err = graphRecord(tx, "edge", e.From, e.Kind, previous, string(b), actor, now); err != nil {
 		return err
 	}
+	if deliveryEdgeStep(e.Kind) != "" {
+		if err := bumpSettingsRevision(tx); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -690,10 +819,22 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) erro
 	if err = graphRecord(tx, "edge", e.From, e.Kind, string(b), "", actor, s.now().UnixNano()); err != nil {
 		return err
 	}
+	if deliveryEdgeStep(e.Kind) != "" {
+		if err := bumpSettingsRevision(tx); err != nil {
+			return err
+		}
+	}
 	if len(validate) > 0 && validate[0] {
 		return nil
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if deliveryEdgeStep(e.Kind) != "" {
+		s.refreshDeliveryTasks()
+		s.settingsNotify()
+	}
+	return nil
 }
 
 // Graph returns explicit and implicit nodes and all edges.
@@ -702,7 +843,7 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'',2 FROM graph_nodes
  UNION ALL SELECT name,'component',0,0,path,graph_excluded FROM projects WHERE graph_excluded<>1 AND name NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT repo_project,'component',0,0,repo_root,graph_excluded FROM sessions WHERE graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT source,'component',0,1,'',2 FROM graph_edges WHERE source<>'*' AND source NOT IN (SELECT name FROM graph_nodes)
+ UNION ALL SELECT source,'component',0,1,'',2 FROM graph_edges WHERE source<>'*' AND source NOT LIKE '/delivery/%' AND source NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT target,'component',0,1,'',2 FROM graph_edges WHERE target NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
 	if err != nil {
 		return g, err

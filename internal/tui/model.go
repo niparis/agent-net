@@ -58,6 +58,7 @@ type Model struct {
 	proposalHistoryIndex                int
 	inboxItems                          []protocol.InboxItem
 	inboxDetail, inboxEditing           bool
+	inboxDeliveryID                     string
 	inboxIndex                          int
 	inboxError                          string
 	inboxNote                           string

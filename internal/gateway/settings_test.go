@@ -302,7 +302,7 @@ func TestSettingsReportsReposWithoutMaturity(t *testing.T) {
 
 func TestSettingsTightenIgnoresBrokenChild(t *testing.T) {
 	s, _ := newTestStore(t)
-	_, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('delivery.merge_authority','repo','alpha','','42',0)`)
+	_, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('delivery.pipeline.merge.approver','repo','alpha','','42',0)`)
 	if err != nil {
 		t.Fatal(err)
 	}

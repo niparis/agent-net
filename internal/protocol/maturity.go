@@ -65,6 +65,10 @@ const (
 // MaturityDefaults is the set of controls a maturity level selects.
 type MaturityDefaults struct {
 	recipe           *settings.Snapshot
+	pipelineTestText string
+	pipelineMergeText string
+	pipelineDeployText string
+	pipelineReviewText string
 	Level            string `json:"level,omitempty"`
 	TestsBeforeMerge string `json:"tests_before_merge"`
 	MergeAuthority   string `json:"merge_authority"`
@@ -161,6 +165,58 @@ func nodeDefaults(maturity string, overrides map[string]string, snap settings.Sn
 	}
 	where := settings.Where{Repo: repo}
 	d := MaturityDefaults{Level: level, TestsBeforeMerge: snap.String("delivery.tests_before_merge", where), MergeAuthority: snap.String("delivery.merge_authority", where), JudgeConsumers: snap.String("charter.judge_consumers", where), DeployRule: snap.String("delivery.deploy_rule", where), WorkerSandbox: WorkersSandboxed}
+	if snap.DeliveryPipelineCutover {
+		from := snap.String("delivery.pipeline.review.required_from", where)
+		independent := snap.String("delivery.pipeline.review.independent", where)
+		requires := snap.Strings("delivery.pipeline.review.requires", where)
+		if from != "hard" || independent != IndependentFamily || len(requires) != 0 {
+			d.pipelineReviewText = "review from " + from + ", independent " + independent
+			if len(requires) != 0 {
+				d.pipelineReviewText += ", requires " + strings.Join(requires, ", ")
+			}
+		}
+	}
+	if snap.DeliveryPipelineCutover && d.MergeAuthority == ShorthandCustom {
+		if p, err := PipelineFromSettings(snap, repo); err == nil {
+			if approve, ok := p.Find(StepRef{Step: StepApprove, For: StepMerge}); ok {
+				switch approve.Owner.Kind {
+				case OwnerNode:
+					d.pipelineMergeText = "merge needs approval from " + approve.Owner.Node + " for the exact merge"
+				case OwnerCaller:
+					d.pipelineMergeText = "merge needs the caller's approval for the exact merge"
+				}
+			}
+		}
+	}
+	if snap.DeliveryPipelineCutover && d.DeployRule == ShorthandCustom {
+		if p, err := PipelineFromSettings(snap, repo); err == nil {
+			if approve, ok := p.Find(StepRef{Step: StepApprove, For: StepDeploy, AfterMerge: true}); ok {
+				switch approve.Owner.Kind {
+				case OwnerNode:
+					d.pipelineDeployText = "deploy needs approval from " + approve.Owner.Node
+				case OwnerCaller:
+					d.pipelineDeployText = "deploy needs the caller's approval"
+				}
+			}
+		}
+	}
+	if snap.DeliveryPipelineCutover && d.TestsBeforeMerge == ShorthandCustom {
+		if p, err := PipelineFromSettings(snap, repo); err == nil {
+			if merge, ok := p.Find(StepRef{Step: StepMerge}); ok {
+				var requirements []string
+				for _, req := range merge.Requires {
+					if req.Step != StepApprove {
+						requirements = append(requirements, req.String())
+					}
+				}
+				if len(requirements) == 0 {
+					d.pipelineTestText = "merge has no test or review requirements"
+				} else {
+					d.pipelineTestText = "merge requires " + strings.Join(requirements, ", ")
+				}
+			}
+		}
+	}
 	if level == MaturityCritical {
 		d.WorkerSandbox = WorkersNoNetwork
 	}
@@ -230,6 +286,9 @@ func ValidateNodeSetting(setting, value string) error {
 
 // TestText is the tests-before-merge rule in plain words.
 func (d MaturityDefaults) TestText() string {
+	if d.pipelineTestText != "" {
+		return d.pipelineTestText
+	}
 	testRule := d.TestsBeforeMerge
 	switch testRule {
 	case TestsOptional, TestsSuiteNewTests, TestsSuiteNewTestsReview:
@@ -280,7 +339,13 @@ func (d MaturityDefaults) approverModesText() string {
 	return strings.Join(modes, " or ")
 }
 func (d MaturityDefaults) MergeText() string {
+	if d.pipelineMergeText != "" {
+		return d.pipelineMergeText
+	}
 	authority := d.MergeAuthority
+	if authority == ShorthandCustom {
+		authority = MergeAsk
+	}
 	if authority != MergeDelegated && authority != MergeAsk {
 		authority = MergeFull
 	}
@@ -288,7 +353,13 @@ func (d MaturityDefaults) MergeText() string {
 	return strings.ReplaceAll(text, "{{modes}}", d.approverModesText())
 }
 func (d MaturityDefaults) DeployText() string {
+	if d.pipelineDeployText != "" {
+		return d.pipelineDeployText
+	}
 	rule := d.DeployRule
+	if rule == ShorthandCustom {
+		rule = DeployOwner
+	}
 	if rule != DeployAsk && rule != DeployOwner {
 		rule = DeployBrief
 	}
@@ -308,12 +379,16 @@ func (d MaturityDefaults) ConsumerText() string {
 func (d MaturityDefaults) RulesText() string {
 	level := d.Level
 	if level == "" {
-		if d.MergeAuthority != MergeAsk && d.MergeAuthority != MergeDelegated && d.DeployRule != DeployOwner {
+		if d.MergeAuthority != MergeAsk && d.MergeAuthority != MergeDelegated && d.DeployRule != DeployOwner && d.pipelineTestText == "" && d.pipelineMergeText == "" && d.pipelineDeployText == "" && d.pipelineReviewText == "" {
 			return ""
 		}
 		level = "not set"
 	}
-	return fmt.Sprintf("maturity %s: %s; %s; %s", level, d.TestText(), d.MergeText(), d.DeployText())
+	text := fmt.Sprintf("maturity %s: %s; %s; %s", level, d.TestText(), d.MergeText(), d.DeployText())
+	if d.pipelineReviewText != "" {
+		text += "; " + d.pipelineReviewText
+	}
+	return text
 }
 
 // MergeApproval is the approval a merge under a node's authority needs.
@@ -348,6 +423,17 @@ func MergeApprovalForWithSettings(g Graph, node string, snap settings.Snapshot) 
 	}
 	out := MergeApproval{Authority: d.MergeAuthority}
 	switch d.MergeAuthority {
+	case ShorthandCustom:
+		out.Required = true
+		out.Text = d.MergeText()
+		if p, err := PipelineFromSettings(snap, node); err == nil {
+			if approve, ok := p.Find(StepRef{Step: StepApprove, For: StepMerge}); ok && approve.Owner.Kind == OwnerNode {
+				out.Approvers = []string{approve.Owner.Node}
+				break
+			}
+		}
+		out.Written = true
+		out.Approvers = []string{"the owner"}
 	case MergeDelegated:
 		out.Required = true
 		out.Approvers = []string{"the owner"}

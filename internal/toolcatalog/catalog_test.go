@@ -50,8 +50,8 @@ func checkInputRoot(t *testing.T, name string, raw json.RawMessage) {
 }
 
 func TestInputSchemaShape(t *testing.T) {
-	if len(Tools) != 39 {
-		t.Errorf("catalog has %d tools, want 39", len(Tools))
+	if len(Tools) != 40 {
+		t.Errorf("catalog has %d tools, want 40", len(Tools))
 	}
 	for _, tool := range Tools {
 		checkInputRoot(t, tool.Name, tool.InputSchema)
@@ -293,7 +293,7 @@ func TestBotRole(t *testing.T) {
 }
 
 func TestExistingRoleListsUnchanged(t *testing.T) {
-	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_change_submit", "agent_changes_find", "agent_graph_read", "agent_learn", "agent_machine_get", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_owner_ask", "agent_project_add", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_step_report", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
+	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_change_submit", "agent_changes_find", "agent_graph_read", "agent_learn", "agent_machine_get", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_owner_ask", "agent_project_add", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_step_claim", "agent_step_report", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleAgent tools changed: %v", got)
 	}
 	if got, want := names(ForRole(RoleWorker)), []string{"agent_changes_find", "agent_graph_read", "agent_handback", "agent_learn", "agent_machine_get", "agent_machines_find", "agent_mcp_servers_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
@@ -342,6 +342,7 @@ func TestWorkerModelFieldsParity(t *testing.T) {
 func TestDeliveryToolRoles(t *testing.T) {
 	want := map[string][]Role{
 		"agent_change_submit": {RoleAgent},
+		"agent_step_claim":    {RoleAgent},
 		"agent_step_report":   {RoleAgent},
 		"agent_changes_find":  {RoleAgent, RoleWorker},
 	}
@@ -359,7 +360,7 @@ func TestDeliveryToolRoles(t *testing.T) {
 				t.Errorf("%s hints = %+v", name, tool.Hints)
 			}
 			props := decodeObject(t, name, tool.InputSchema)["properties"].(map[string]any)
-			for _, field := range map[string][]string{"agent_change_submit": {"branch", "commit", "change"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
+			for _, field := range map[string][]string{"agent_change_submit": {"branch", "commit", "change"}, "agent_step_claim": {"change", "step", "for", "after_merge", "commit"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
 				if props[field] == nil {
 					t.Errorf("%s has no %s", name, field)
 				}
