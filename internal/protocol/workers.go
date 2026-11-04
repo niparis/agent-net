@@ -31,7 +31,8 @@ const (
 var WorkerAutoContinueText = WorkerAutoContinueWithSettings(settings.Snapshot{}, "")
 
 const (
-	workerHandbackTool  = "agent_handback"
+	// WorkerHandbackTool is the code-owned hand-back tool name.
+	WorkerHandbackTool  = "agent_handback"
 	workerCompleteYes   = "complete: yes"
 	workerCompleteNo    = "complete: no"
 	workerCompleteFalse = "complete: false"
@@ -40,9 +41,9 @@ const (
 // renderWorkerText keeps protocol tokens outside editable prose. Required slots
 // are validated by the settings codec before values reach this renderer.
 func renderWorkerText(snap settings.Snapshot, key string, where settings.Where) string {
-	mcpTool := "mcp__agent-net__" + workerHandbackTool
+	mcpTool := "mcp__agent-net__" + WorkerHandbackTool
 	return strings.NewReplacer(
-		"{{handback}}", workerHandbackTool,
+		"{{handback}}", WorkerHandbackTool,
 		"{{mcp_handback}}", mcpTool,
 		"{{search_handback}}", "select:"+mcpTool,
 		"{{complete_yes}}", workerCompleteYes,

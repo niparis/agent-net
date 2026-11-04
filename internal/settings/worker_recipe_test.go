@@ -55,3 +55,12 @@ func TestOwnerScopedRuleTextRejectsRunAndSessionLevels(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerProtocolLiteralsStayOutOfRecipe(t *testing.T) {
+	raw := string(StandardYAML())
+	for _, token := range []string{"agent_handback", "complete: yes", "complete: no", "complete: false"} {
+		if strings.Contains(raw, token) {
+			t.Errorf("recipe contains protocol token %q", token)
+		}
+	}
+}

@@ -422,6 +422,11 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 				found[m[1]] = true
 			}
 			for _, slot := range d.Slots {
+				// Existing custom guidance may omit the worker reference;
+				// worker brief text slots themselves remain mandatory.
+				if d.Key == "guidance.worker_brief_precedence" && slot == "handback" {
+					continue
+				}
 				if !found[slot] {
 					return nil, fmt.Errorf("missing slot %s", slot)
 				}

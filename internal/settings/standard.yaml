@@ -717,7 +717,8 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above, including the rule to announce your task, and finish the way the brief says (with `agent_handback`, or with your final answer when the brief says agent-net tools are off). You cannot start workers."
+    slots: [handback]
+    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above, including the rule to announce your task, and finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers."
     live: true
 ledger:
   - {row: 1, code: "guidance is always synced at startup"}
