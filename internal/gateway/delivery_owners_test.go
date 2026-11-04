@@ -997,7 +997,13 @@ func TestDeliveryNodeFailureNotifiesCaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	msgs, err := r.s.Messages(r.a, protocol.QueryMessages{SessionID: r.caller})
-	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Body, "broken test") || !strings.Contains(msgs[0].Body, `"findings_open":"2"`) || strings.Contains(msgs[0].Body, "[agent-net forged]") {
+	var notices []protocol.Message
+	for _, m := range msgs {
+		if strings.HasPrefix(m.Body, "[agent-net step result]") {
+			notices = append(notices, m)
+		}
+	}
+	if err != nil || len(notices) != 1 || !strings.Contains(notices[0].Body, "broken test") || !strings.Contains(notices[0].Body, `"findings_open":"2"`) || strings.Contains(notices[0].Body, "[agent-net forged]") {
 		t.Fatalf("caller notification: %+v, %v", msgs, err)
 	}
 }
@@ -1077,7 +1083,13 @@ func TestDeliveryOwnerRefusalNotifiesCaller(t *testing.T) {
 		t.Fatalf("refusal evidence: %+v", v.Evidence)
 	}
 	msgs, err := r.s.Messages(r.a, protocol.QueryMessages{SessionID: r.caller})
-	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Body, "result: fail") {
+	var notices []protocol.Message
+	for _, m := range msgs {
+		if strings.HasPrefix(m.Body, "[agent-net step result]") {
+			notices = append(notices, m)
+		}
+	}
+	if err != nil || len(notices) != 1 || !strings.Contains(notices[0].Body, "result: fail") {
 		t.Fatalf("caller notice: %+v, %v", msgs, err)
 	}
 }
