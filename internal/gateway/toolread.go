@@ -137,15 +137,15 @@ func checkOnline(online, def string) (string, error) {
 
 func checkKinds(kinds []string) (map[string]bool, error) {
 	if len(kinds) == 0 {
-		kinds = []string{"agent", "worker"}
+		kinds = []string{"agent", "worker", "merger", "cto"}
 	}
 	out := map[string]bool{}
 	for _, kind := range kinds {
 		switch kind {
-		case "agent", "worker", "owner", "bot":
+		case "agent", "worker", "owner", "bot", "merger", "cto":
 			out[kind] = true
 		default:
-			return nil, fmt.Errorf("kind must be agent, worker, owner or bot. Example: {\"kind\":[\"agent\"]}")
+			return nil, fmt.Errorf("kind must be agent, worker, merger, cto, owner or bot. Example: {\"kind\":[\"agent\"]}")
 		}
 	}
 	return out, nil
@@ -204,16 +204,7 @@ func durationText(d time.Duration) string {
 }
 
 func sessionKind(a protocol.AgentView) string {
-	if a.Harness == "bot" {
-		return "bot"
-	}
-	if protocol.IsOwner(a.Harness) {
-		return "owner"
-	}
-	if a.Worker != nil {
-		return "worker"
-	}
-	return "agent"
+	return protocol.SessionType(a.Harness, a.Worker, a.Type)
 }
 
 func sessionProject(a protocol.AgentView) string {
@@ -251,6 +242,7 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		ID:       a.SessionID,
 		Name:     a.Profile.Name,
 		Kind:     sessionKind(a),
+		Type:     sessionKind(a),
 		Machine:  a.Hostname,
 		Project:  sessionProject(a),
 		Harness:  a.Harness,

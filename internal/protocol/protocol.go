@@ -112,6 +112,7 @@ func IsWorkerTask(m Message) bool {
 
 // SessionInfo is what a daemon reports about one local session.
 type SessionInfo struct {
+	Type      string `json:"type"`
 	SessionID string `json:"session_id,omitempty"`
 	Harness   string `json:"harness"`
 	NativeID  string `json:"native_id"`
@@ -278,6 +279,7 @@ type PendingRequest struct {
 }
 
 type AgentView struct {
+	Type               string           `json:"type"`
 	NativeID           string           `json:"native_id,omitempty"`
 	Pending            []PendingRequest `json:"pending,omitempty"`
 	ProjectDisplayName string           `json:"project_display_name,omitempty"`
@@ -733,4 +735,19 @@ func CertFingerprint(certPEM []byte) (string, error) {
 	}
 	sum := sha256.Sum256(block.Bytes)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// SessionType uses the existing harness and worker roles for older records.
+func SessionType(harness string, worker *WorkerInfo, explicit string) string {
+	switch harness {
+	case "cto", "owner", "bot":
+		return harness
+	}
+	if worker != nil {
+		return "worker"
+	}
+	if explicit == "merger" {
+		return explicit
+	}
+	return "agent"
 }

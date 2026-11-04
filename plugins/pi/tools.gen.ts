@@ -897,13 +897,17 @@ export const TOOL_CATALOG = [
               "agent",
               "worker",
               "owner",
-              "bot"
+              "bot",
+              "merger",
+              "cto"
             ]
           },
           "description": "Kind.",
           "default": [
             "agent",
-            "worker"
+            "worker",
+            "merger",
+            "cto"
           ]
         },
         "online": {

@@ -68,6 +68,7 @@ type ProjectsFindRequest struct {
 // agent_session_get. The required fields are always present; the optional
 // ones are added by detail "full".
 type SessionRow struct {
+	Type         string  `json:"type"`
 	ID           string  `json:"id"`
 	Name         string  `json:"name"`
 	Kind         string  `json:"kind"`

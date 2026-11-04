@@ -4,12 +4,12 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                          AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM …  view: all  (v)
+  NAME                   TYPE   AGENT    PROJECT   MODEL      STATUS TRUST RULE   DELEGATE   CPU   RAM …  view: all  (v)
  Mac (here) 2 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-▸ ↳ backtest-a                  opencode -         haiku-4-5  idle   -     normal -            ?     ? p
-  ↳ backtest-b                  opencode -         haiku-4-5  idle   -     normal -            ?     ? p
+▸ ↳ backtest-a           worker opencode -         haiku-4-5  idle   -     normal -            ?     ? p
+  ↳ backtest-b           worker opencode -         haiku-4-5  idle   -     normal -            ?     ? p
  build-vm 1 session ────────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ backtest-on-a-remote-machi… opencode -         haiku-4-5  idle   -     normal -            ?     ? p
+  ↳ backtest-on-a-remot… worker opencode -         haiku-4-5  idle   -     normal -            ?     ? p
 
 
 

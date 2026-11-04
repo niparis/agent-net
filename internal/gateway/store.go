@@ -2038,6 +2038,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 			}
 		}
 	}
+	a.Type = protocol.SessionType(a.Harness, a.Worker, a.Type)
 	a.Online = online == 1
 	a.LastSeen = lastSeen / int64(time.Second)
 	a.LastActive = lastActive / int64(time.Second)

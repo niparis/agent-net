@@ -932,6 +932,7 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 	cols := []column{
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
+		{name: "TYPE", min: 6, max: 6},
 		{name: "AGENT", min: 8, max: 8},
 		{name: "PROJECT", min: 9, max: 16},
 		{name: "MODEL", min: 10, max: 18},
@@ -1300,6 +1301,8 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		switch c.name {
 		case "NAME":
 			v = m.nameText(a, mk, c.width)
+		case "TYPE":
+			v = protocol.SessionType(a.Harness, a.Worker, a.Type)
 		case "AGENT":
 			v = a.Harness
 		case "PROJECT":
