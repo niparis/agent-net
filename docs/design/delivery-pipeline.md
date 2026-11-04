@@ -13,7 +13,7 @@ Settings steps 3 to 7 made the delivery rules data: `delivery.merge_authority`, 
 1. reads each worker's report and diff;
 2. starts the independent review worker and reads its findings;
 3. sends fixes back to the author;
-4. merges into a release branch in its own merge worktree (`main` does not move yet);
+4. merges into a release branch in a worktree of its mirror (`main` does not move yet);
 5. builds, vets, pushes the release branch;
 6. follows [RELEASING.md](../../RELEASING.md): waits for CI on that exact commit, fast-forwards `main` to it, tags, waits for the release workflow, installs;
 7. checks the release live.
@@ -76,7 +76,7 @@ A kind of work in the pipeline, from a fixed list that agent-net knows how to ro
 | `review` | a node, which may start review workers | pass, or findings by severity |
 | `test` | a node, or GitHub's CI | pass or fail, the command or CI run link, the commit, and evidence fields (below) |
 | `approve` | an approver (below): the owner, a delegate, or a node | approved or refused, by whom, for the exact commit |
-| `merge` | a node, in its own worktree | the merged commit on the target branch |
+| `merge` | a node, in a worktree of its mirror | the merged commit on the target branch |
 | `release` | a node, running the repo's release steps | the tag, the release run link |
 | `deploy` | a node, running the repo's deploy command | where it was deployed, the commit, the run link |
 | `verify` | a node | what was checked live, pass or fail |
@@ -218,9 +218,9 @@ So a change cannot be "the head at hand-back" until the head holds the work. See
 
 A worker's branch lives in the project repository on the worker's machine, and workers do not push. A reviewer or merger on another machine cannot read it. Either the step runs on that machine (a reviewer can start its worker there with `machine` and `base`), or the branch is pushed to the shared remote. See open question 3.
 
-### Merges in another worktree
+### Merges in a mirror worktree
 
-The orchestrator's merge worktree is another worktree of the same repository, so on one machine it shares branches with the worker worktrees. The merge check therefore works on commit hashes, not on worktrees: the change's head must be present where the merge runs, and the merge must keep it (fast-forward or merge commit). The same rule keeps cleanup working. Cleanup removes a worker's worktree and branch only when the branch head is reachable from the default branch, so a squash merge would leave the branch forever, and a change closed without merge keeps its branch, as today.
+The orchestrator's merge worktree is a worktree of agent-net's own mirror (a bare repository only the daemon writes), so worker-writable config is not read for checkout, merge or push. The change branch is fetched from the worker repository by name. The merge check therefore works on commit hashes, not on worktrees: the change's head must be present where the merge runs, and the merge must keep it (fast-forward or merge commit). The same rule keeps cleanup working. Cleanup removes a worker's worktree and branch only when the branch head is reachable from the default branch, so a squash merge would leave the branch forever, and a change closed without merge keeps its branch, as today.
 
 ### The default-branch watcher
 
@@ -240,7 +240,7 @@ Worker commits reach the default branch as parents of merge commits, or in a row
 | test | caller | `suite` is what the caller ran; part of accept today |
 | review | caller | independent: family; optional for small changes (decision 2) |
 | approve | none | merge authority "full" for agent-net |
-| merge | caller | into the release branch in the caller's merge worktree, not `main`; requires accept and test, and review when present |
+| merge | caller | into the release branch in a worktree of the caller's mirror, not `main`; requires accept and test, and review when present |
 | test | github | `after_merge`: CI on the merged commit, full suite |
 | release | caller | requires the CI test on that exact commit; then RELEASING.md: fast-forward `main` to it, tag, release workflow, install |
 | verify | caller | after release |
@@ -277,7 +277,7 @@ The first real use: a merger node for agent-net, after step 5.
 
 These were open questions in the first draft; each has an obvious answer, so they are settled here. Each is a setting where it may vary later.
 
-1. **Where the merge runs:** on the merge step owner's own machine, in its own worktree, like today's merge worktree. The change's branch must be on that machine (open question 3).
+1. **Where the merge runs:** on the merge step owner's own machine, in a worktree of agent-net's own mirror. The change's branch must be on that machine (open question 3).
 2. **Small changes:** review is required from difficulty "hard" up (hard and very_complex), using the judge's label for the run. A judge that failed or had low confidence counts as "normal", as the picker does. A change submitted with `agent_change_submit` has no label and counts as "normal". A rule (`review.required_from`), so a repo can require it always.
 3. **Batching:** merge each change on its own; release a batch, which is everything merged since the last release.
 4. **Changes from outside a worker:** any agent in the repo may submit one with `agent_change_submit`.

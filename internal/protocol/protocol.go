@@ -134,6 +134,11 @@ type SessionInfo struct {
 	ToolsOld     bool   `json:"tools_old,omitempty"`
 	// Waiting is set while the session waits for its user (decision 0016).
 	Waiting *Waiting `json:"waiting,omitempty"`
+	// HarnessWaits is set by a discovery adapter when the harness itself says
+	// the session waits for its user: Claude Code's session file or a Codex
+	// thread flag (decision 0057). The daemon uses it to see when that wait
+	// ends. It stays on this machine.
+	HarnessWaits bool `json:"-"`
 	// LastActive is when the session last did something: a turn started or
 	// ended, a message was sent or received, a task was announced, or a wait
 	// started. It is not the time the daemon last saw the session alive.
@@ -313,12 +318,23 @@ type AgentView struct {
 
 // Header is shared by every gateway <-> daemon frame.
 type Header struct {
-	Type  string          `json:"type"`
-	ID    string          `json:"id,omitempty"`
-	OK    bool            `json:"ok,omitempty"`
-	Error string          `json:"error,omitempty"`
+	Type  string `json:"type"`
+	ID    string `json:"id,omitempty"`
+	OK    bool   `json:"ok,omitempty"`
+	Error string `json:"error,omitempty"`
+	// Retry is set only by the gateway, on a result that failed for a fault of
+	// its own (a storage error): the same call may work later. A refusal never
+	// carries it, and a result from a node is never passed on with it.
+	Retry bool            `json:"retry,omitempty"`
 	Data  json.RawMessage `json:"data,omitempty"`
 }
+
+// RetryableError is a gateway fault that the caller may try again. Only
+// gateway code makes it.
+type RetryableError struct{ Err error }
+
+func (e RetryableError) Error() string { return e.Err.Error() }
+func (e RetryableError) Unwrap() error { return e.Err }
 
 // EncodeRequest builds a flat frame: the params' fields sit next to type and id.
 func EncodeRequest(typ, id string, params any) ([]byte, error) {
@@ -348,6 +364,10 @@ func EncodeResult(id string, data any, err error) ([]byte, error) {
 	h := map[string]any{"type": "result", "id": id, "ok": err == nil}
 	if err != nil {
 		h["error"] = err.Error()
+		var re RetryableError
+		if errors.As(err, &re) {
+			h["retry"] = true
+		}
 	} else if data != nil {
 		h["data"] = data
 	}
@@ -486,6 +506,7 @@ type (
 	// and restart. The daemon answers with NodeUpgradeResult before it restarts.
 	NodeUpgrade struct {
 		Version string `json:"version"`
+		Force   bool   `json:"force,omitempty"`
 	}
 	NodeUpgradeResult struct {
 		From       string `json:"from"`

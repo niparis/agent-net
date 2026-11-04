@@ -8,6 +8,9 @@ set -eu
 cd "$(dirname "$0")/.."
 DIST="${1:-${AGENT_NET_DIST:-$HOME/.local/share/agent-net/dist}}"
 mkdir -p "$DIST"
+# Locally built binaries cannot carry a release signature. Older clients may
+# still use generated checksums; signed-upgrade clients will refuse them.
+rm -f "$DIST/checksums.txt" "$DIST/checksums.txt.sig"
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
 
 for os in linux darwin; do

@@ -33,14 +33,16 @@ const GatewayPort = "7420"
 
 // Options configure Setup and Uninstall.
 type Options struct {
-	Join         string        // join string; empty means keep the current credentials
-	Gateway      bool          // also install and start the gateway on this machine
-	NoService    bool          // do not write or start services
-	NoLaunch     bool          // refuse workers on this machine (saved in node.json)
-	Launch       bool          // accept workers again after --no-launch
-	Purge        bool          // uninstall only: also remove credentials and state
-	Data         string        // gateway data dir
-	FunnelRunner funnel.Runner // optional Tailscale runner
+	Join          string        // join string; empty means keep the current credentials
+	Gateway       bool          // also install and start the gateway on this machine
+	NoService     bool          // do not write or start services
+	NoAutoUpgrade bool          // save automatic upgrade opt-out in node.json
+	AutoUpgrade   bool          // clear the saved opt-out
+	NoLaunch      bool          // refuse workers on this machine (saved in node.json)
+	Launch        bool          // accept workers again after --no-launch
+	Purge         bool          // uninstall only: also remove credentials and state
+	Data          string        // gateway data dir
+	FunnelRunner  funnel.Runner // optional Tailscale runner
 	// TailscaleName gives connected apps agent-net's own Tailscale node with
 	// this name (decision 0058). TailscaleAuthKeyFile is an optional path to
 	// a file with an auth key. TailscaleMachine goes back to the machine's
@@ -158,6 +160,9 @@ func (r *runner) hint(format string, a ...any) {
 // Setup makes this machine part of the network, prints its setup steps, and
 // finishes with a summary when the setup is not quota-only.
 func Setup(ctx context.Context, o Options) error {
+	if o.NoAutoUpgrade && o.AutoUpgrade {
+		return errors.New("--no-auto-upgrade and --auto-upgrade cannot be used together")
+	}
 	r, err := newRunner(o)
 	if err != nil {
 		return err
@@ -180,6 +185,12 @@ func Setup(ctx context.Context, o Options) error {
 		return r.failed
 	}
 	r.workersSetting()
+	if r.NoAutoUpgrade || r.AutoUpgrade {
+		if err := daemon.SetNoAutoUpgrade(daemon.ConfigDir(), r.NoAutoUpgrade); err != nil {
+			r.step("auto-upgrade", "", err)
+			return r.failed
+		}
+	}
 	r.daemonService()
 	r.chooseIntegrations(ctx)
 	r.askCTOTitle(ctx)
@@ -275,6 +286,19 @@ func (r *runner) setTailscaleChoice() {
 	}
 }
 
+// InvalidateSignedDist removes release metadata before a local binary changes.
+// Older clients can still use gateway-generated checksums; signed clients fail
+// closed until a complete signed release is installed again.
+func InvalidateSignedDist(dist string) error {
+	// Remove the signature first, so signed clients cannot trust stale sums.
+	for _, name := range []string{"checksums.txt.sig", "checksums.txt"} {
+		if err := os.Remove(filepath.Join(dist, name)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("cannot remove stale checksum file %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // syncDist makes sure the dist dir has this binary for its own platform.
 func (r *runner) syncDist(dist string) (string, error) {
 	target := filepath.Join(dist, fmt.Sprintf("agent-net-%s-%s", runtime.GOOS, runtime.GOARCH))
@@ -291,6 +315,10 @@ func (r *runner) syncDist(dist string) (string, error) {
 	}
 	tmp := target + ".tmp"
 	if err := os.WriteFile(tmp, src, 0o755); err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp)
+	if err := InvalidateSignedDist(dist); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, target); err != nil {

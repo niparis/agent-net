@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: write
-  actions: read
+  actions: write
 
 jobs:
   release:
@@ -61,8 +61,14 @@ jobs:
           fi
           cp install.sh dist/install.sh
           cd dist
-          sha256sum agent-net-* > checksums.txt
+          sha256sum agent-net-* install.sh > checksums.txt
           cat checksums.txt
+      - name: sign checksums
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: go run ./scripts/release-key sign dist/checksums.txt
+      - name: verify release signatures
+        run: go run ./scripts/release-key verify dist/checksums.txt dist/install.sh
       - name: create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,4 +77,9 @@ jobs:
           gh release create "$TAG" --title "$TAG" --generate-notes \
             dist/agent-net-linux-amd64 dist/agent-net-linux-arm64 \
             dist/agent-net-darwin-amd64 dist/agent-net-darwin-arm64 \
-            dist/checksums.txt dist/install.sh
+            dist/checksums.txt dist/checksums.txt.sig dist/checksums.txt.sshsig dist/install.sh
+      # Releases made with GITHUB_TOKEN do not trigger the release event.
+      - name: publish installer to Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml

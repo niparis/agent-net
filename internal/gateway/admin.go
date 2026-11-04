@@ -52,6 +52,7 @@ func (g *Gateway) WriteAdminInfo(listen string) error {
 func (g *Gateway) upgradeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /install/version", g.handleVersion)
 	mux.HandleFunc("GET /install/checksums.txt", g.handleChecksums)
+	mux.HandleFunc("GET /install/checksums.txt.sig", g.handleChecksumSignature)
 	mux.HandleFunc("GET /v1/admin/nodes", g.admin(func(w http.ResponseWriter, r *http.Request) {
 		info, err := g.NodesInfo()
 		writeJSON(w, info, err)
@@ -227,10 +228,14 @@ var (
 	sumCache = map[string]sumEntry{}
 )
 
-// handleChecksums serves the SHA-256 of every binary in the dist dir in
-// sha256sum format. It is computed from the files, so it always matches what
-// /install/bin serves.
+// handleChecksums serves the original signed file when present. With no
+// manifest, keep the generated checksums for older clients and local builds.
 func (g *Gateway) handleChecksums(w http.ResponseWriter, r *http.Request) {
+	path := filepath.Join(g.opts.DistDir, "checksums.txt")
+	if _, err := os.Stat(path); err == nil {
+		http.ServeFile(w, r, path)
+		return
+	}
 	names := upgrade.AllAssets()
 	sort.Strings(names)
 	var b strings.Builder
@@ -259,11 +264,16 @@ func (g *Gateway) handleChecksums(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, b.String())
 }
 
+func (g *Gateway) handleChecksumSignature(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, filepath.Join(g.opts.DistDir, "checksums.txt.sig"))
+}
+
 // ---- upgrade ----
 
 func (g *Gateway) handleAdminUpgrade(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Version        string   `json:"version"`
+		Force          bool     `json:"force"`
 		TimeoutSeconds int      `json:"timeout_seconds"`
 		ExpectOnline   []string `json:"expect_online"`
 	}
@@ -275,7 +285,7 @@ func (g *Gateway) handleAdminUpgrade(w http.ResponseWriter, r *http.Request) {
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
-	res, err := g.UpgradeNodesExpect(r.Context(), req.Version, timeout, req.ExpectOnline)
+	res, err := g.upgradeNodesExpect(r.Context(), req.Version, timeout, req.ExpectOnline, req.Force)
 	writeJSON(w, map[string]any{"results": res}, err)
 }
 
@@ -303,6 +313,10 @@ func (g *Gateway) UpgradeNodes(ctx context.Context, target string, timeout time.
 // only reconnecting, or restarting after it caught up by itself, is not
 // reported as offline.
 func (g *Gateway) UpgradeNodesExpect(ctx context.Context, target string, timeout time.Duration, expect []string) ([]protocol.UpgradeResult, error) {
+	return g.upgradeNodesExpect(ctx, target, timeout, expect, false)
+}
+
+func (g *Gateway) upgradeNodesExpect(ctx context.Context, target string, timeout time.Duration, expect []string, force bool) ([]protocol.UpgradeResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	g.waitConnected(ctx, expect, min(reconnectWait, timeout))
@@ -330,7 +344,7 @@ func (g *Gateway) UpgradeNodesExpect(ctx context.Context, target string, timeout
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				results[i] = g.upgradeOne(ctx, nc, res, target)
+				results[i] = g.upgradeOne(ctx, nc, res, target, force)
 			}()
 		}
 	}
@@ -359,13 +373,13 @@ func (g *Gateway) waitConnected(ctx context.Context, ids []string, d time.Durati
 	}
 }
 
-func (g *Gateway) upgradeOne(ctx context.Context, nc *nodeConn, res protocol.UpgradeResult, target string) protocol.UpgradeResult {
+func (g *Gateway) upgradeOne(ctx context.Context, nc *nodeConn, res protocol.UpgradeResult, target string, force bool) protocol.UpgradeResult {
 	fail := func(format string, a ...any) protocol.UpgradeResult {
 		res.Status = protocol.UpgradeFailed
 		res.Detail = fmt.Sprintf(format, a...)
 		return res
 	}
-	raw, err := nc.call(ctx, "node.upgrade", protocol.NodeUpgrade{Version: target})
+	raw, err := nc.call(ctx, "node.upgrade", protocol.NodeUpgrade{Version: target, Force: force})
 	var r protocol.NodeUpgradeResult
 	switch {
 	case err != nil && ctx.Err() != nil:

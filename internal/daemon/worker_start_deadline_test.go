@@ -69,7 +69,7 @@ func TestWorkerStartWorktreeFailureNotice(t *testing.T) {
 			w := startWorkerNode(t, g, shortSet, nil)
 			repo := newRepo(t, "shop")
 			w.register(t, repo)
-			_, owner := helloPi(t, w.node, "owner", repo, true)
+			pi, owner := helloPi(t, w.node, "owner", repo, true)
 			git, err := exec.LookPath("git")
 			if err != nil {
 				t.Fatal(err)
@@ -80,9 +80,11 @@ func TestWorkerStartWorktreeFailureNotice(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			out, err := w.d.startWorker(context.Background(), protocol.WorkerLaunch{Project: "shop", Path: repo, Harness: "opencode", Model: "fake/m1", Owner: owner, Task: "do work", Isolation: protocol.IsolationWorktree})
-			if err != nil || !out.Starting {
-				t.Fatalf("start: %+v %v", out, err)
+			// Through the gateway, which tracks the start; a report of a start it
+			// does not track makes no notice.
+			out := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "do work", Isolation: protocol.IsolationWorktree})
+			if out.SessionID == "" {
+				t.Fatalf("start: %+v", out)
 			}
 			eventually(t, "one failure notice", func() bool {
 				n := 0

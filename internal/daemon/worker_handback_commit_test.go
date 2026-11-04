@@ -151,6 +151,9 @@ func TestCompleteHandbackInAMergeIsLeftAsIs(t *testing.T) {
 // continue keeps the leftover work of a partial hand-back on the new branch,
 // even with delivery.save_unfinished off.
 func TestContinueKeepsWorkWithSaveUnfinishedOff(t *testing.T) {
+	// The end of a worker that ignores SIGTERM waits for the kill grace, so
+	// the continue below reaches the daemon while that end is still running.
+	t.Setenv(envFakeIgnoreTerm, "1")
 	c, repo, g := handbackCommitNodeGateway(t)
 	// Written at the gateway, as the owner would: a snapshot stored in the
 	// daemon directly is replaced by the next push from the gateway.
@@ -163,10 +166,9 @@ func TestContinueKeepsWorkWithSaveUnfinishedOff(t *testing.T) {
 	old := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Title: "Half done",
 		Task: "FAKE:dirty FAKE:partial FAKE:handback", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	c.waitNotice(t, 1)
-	eventually(t, "the worker ended and the gateway acknowledged it", func() bool {
-		row, ok, err := c.d.st.workerBySession(old.SessionID)
-		return c.d.workerCount() == 0 && err == nil && ok && row.EndedReason == protocol.StopHandback && row.Reported && row.Resumable
-	})
+	// Continue straight from the notice, as its text says: a message from the
+	// owner starts the worker again. The daemon may still be ending the worker
+	// here, and that must not turn the continue into "still running".
 	if c.d.SettingsSnapshot().Bool("delivery.save_unfinished", settings.Where{}) {
 		t.Fatal("save_unfinished is on")
 	}

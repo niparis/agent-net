@@ -43,6 +43,18 @@ type messageReplyIn struct {
 
 // addMessageWriteTools registers agent_message_send and agent_message_reply.
 func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
+	addCatalogTool(s, "agent_file_send", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var in protocol.FileSendRequest
+		if err := decodeCatalogInput("agent_file_send", req, &in); err != nil {
+			return toolError(err)
+		}
+		out, err := run(ctx, "file_send", in)
+		if err != nil {
+			return toolError(err)
+		}
+		return catalogResult("agent_file_send", out)
+	})
+
 	addCatalogTool(s, "agent_message_send", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var in messageSendIn
 		if err := decodeCatalogInput("agent_message_send", req, &in); err != nil {
@@ -193,6 +205,8 @@ func decodeCatalogInput(name string, req *mcp.CallToolRequest, dst any) error {
 
 func catalogExample(name string) string {
 	switch name {
+	case "agent_file_send":
+		return `{"to":"s01","paths":["/tmp/report.txt"],"note":"Please read."}`
 	case "agent_message_send":
 		return `{"to":"s01","body":"Please review."}`
 	case "agent_message_reply":

@@ -298,9 +298,10 @@ await test("agent_handback works for a worker", async () => {
     const hb = p.tools.get("agent_handback");
     if (!hb) throw new Error("agent_handback is not registered for a worker");
     replies.worker_handback = { status: "done", complete: false };
-    const out = (await hb.execute("id", { report: "part", complete: false })).content[0].text;
+    if (!hb.parameters.properties.files) throw new Error("handback has no files schema");
+    const out = (await hb.execute("id", { report: "part", complete: false, files: ["/work/result.txt"] })).content[0].text;
     const sent = requests.filter((r) => r.method === "worker_handback").pop();
-    if (sent.params.complete !== false || !out.includes("Handed back (done, partial)")) {
+    if (sent.params.complete !== false || sent.params.files?.[0] !== "/work/result.txt" || !out.includes("Handed back (done, partial)")) {
       throw new Error("handback: " + JSON.stringify(sent) + " " + out);
     }
     delete replies.worker_handback;
@@ -308,6 +309,19 @@ await test("agent_handback works for a worker", async () => {
   } finally {
     delete process.env.AGENT_NET_WORKER;
   }
+});
+
+await test("agent_file_send forwards paths and note", async () => {
+  const p = makePi(); extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const tool = p.tools.get("agent_file_send");
+  if (!tool || !tool.parameters.properties.paths) throw new Error("missing file send tool or schema");
+  await tool.execute("id", { to: "s_b", paths: ["/work/a.txt"], note: "read" });
+  const sent = requests.filter((r) => r.method === "file_send").pop();
+  if (sent?.params.to !== "s_b" || sent.params.paths?.[0] !== "/work/a.txt" || sent.params.note !== "read") throw new Error("file_send: " + JSON.stringify(sent));
+  await p.fire("session_shutdown", {});
 });
 
 await test("agent_learn records a finding", async () => {

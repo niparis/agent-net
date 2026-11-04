@@ -39,6 +39,9 @@ type fakeThread struct {
 	ID, Cwd, Name, Model, Status, Source string
 	Ephemeral                            bool
 	Parent                               string
+	// Flags are the activeFlags of an active thread, for example
+	// "waitingOnApproval".
+	Flags []string
 }
 
 type fakeQueued struct {
@@ -176,8 +179,12 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			if th.Name != "" {
 				name = th.Name
 			}
+			status := map[string]any{"type": th.Status}
+			if th.Status == "active" {
+				status["activeFlags"] = append([]string{}, th.Flags...)
+			}
 			reply(map[string]any{"thread": map[string]any{"id": th.ID, "cwd": th.Cwd, "name": name, "model": th.Model,
-				"ephemeral": th.Ephemeral, "parentThreadId": parent, "source": src, "status": map[string]any{"type": th.Status}}}, "")
+				"ephemeral": th.Ephemeral, "parentThreadId": parent, "source": src, "status": status}}, "")
 			continue
 		case "thread/queue/add":
 			if f.threads[p.ThreadID] == nil {

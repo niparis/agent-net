@@ -176,3 +176,46 @@ func TestInboxViewFitsEverySize(t *testing.T) {
 		}
 	}
 }
+
+// A session that waits for its user is an Inbox row in the owner's words:
+// "<session> waits for you: <question>" (decision 0057). Enter opens
+// the session, and the row goes when the wait ends.
+func TestInboxWaitingRowSaysTheSessionWaitsForYou(t *testing.T) {
+	m := newModel(100, 30)
+	for i := range m.snap.Agents {
+		switch m.snap.Agents[i].SessionID {
+		case "s_0000000000000002":
+			waiting(&m.snap.Agents[i], -12*time.Minute, protocol.WaitingQuestion, "Merge branch w_1 into main?")
+		case "s_0000000000000004":
+			waiting(&m.snap.Agents[i], -3*time.Minute, protocol.WaitingPermission, "Bash(git push origin main)")
+		}
+	}
+	texts := map[string]string{}
+	titles := map[string]string{}
+	for _, row := range m.inboxRows() {
+		if row.kind == "waiting" {
+			texts[row.session] = row.text
+			titles[row.session] = m.inboxPanelTitle(row)
+		}
+	}
+	if got := texts["s_0000000000000002"]; got != "waits for you: Merge branch w_1 into main?" {
+		t.Errorf("question row: %q", got)
+	}
+	if got := texts["s_0000000000000004"]; got != "waits for your approval: Bash(git push origin main)" {
+		t.Errorf("permission row: %q", got)
+	}
+	if got := titles["s_0000000000000002"]; got != "strategies waits for you" {
+		t.Errorf("panel title: %q", got)
+	}
+	if got := inboxWaitingSummary(&protocol.Waiting{Kind: protocol.WaitingInput}); got != "waits for you" {
+		t.Errorf("wait without words: %q", got)
+	}
+	for i := range m.snap.Agents {
+		m.snap.Agents[i].Waiting = nil
+	}
+	for _, row := range m.inboxRows() {
+		if row.kind == "waiting" {
+			t.Fatalf("a row is left after the wait ended: %+v", row)
+		}
+	}
+}

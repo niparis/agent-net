@@ -59,6 +59,9 @@ type agyConn struct {
 	handback   *protocol.WorkerHandbackRequest
 	pending    *protocol.WorkerHandbackRequest
 	pendingKey string
+	// Snapshots are kept in memory until the result event. After a daemon
+	// restart the saved request is checked and prepared again instead.
+	handbackFiles, pendingFiles *OutgoingFiles
 }
 
 func (agyLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
@@ -321,12 +324,18 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		usage, handback, failure := c.usage, c.handback, c.failure
 		if handback != nil {
 			c.pending, c.handback = handback, nil
+			c.pendingFiles, c.handbackFiles = c.handbackFiles, nil
 			c.pendingKey = fmt.Sprintf("agy-%s-%s-%d", w.id, c.streamID, c.offset)
+		}
+		var discarded *OutgoingFiles
+		if failure != "" {
+			discarded, c.pendingFiles = c.pendingFiles, nil
 		}
 		// Save usage and the acknowledged report with the consumed offset.
 		// Keep the report until handbackTo has durably recorded the notice.
 		_ = c.saveStreamLocked()
 		c.mu.Unlock()
+		discarded.Remove()
 		b, _ := json.Marshal(usage)
 		tmp := filepath.Join(w.dir, "agy-usage.json.tmp")
 		if err := os.WriteFile(tmp, b, 0600); err == nil {
@@ -532,7 +541,7 @@ func (c *agyConn) send(line []byte) error {
 
 // agy sends usage only after the MCP handback call has returned. Acknowledge
 // the tool now and publish the report on result, before ending the process.
-func (d *Daemon) deferAgyHandback(w *worker, req protocol.WorkerHandbackRequest) (*protocol.WorkerHandbackResult, error) {
+func (d *Daemon) deferAgyHandback(w *worker, req protocol.WorkerHandbackRequest, files *OutgoingFiles) (*protocol.WorkerHandbackResult, error) {
 	if req.Status == "" {
 		req.Status = protocol.StatusDone
 	}
@@ -554,8 +563,10 @@ func (d *Daemon) deferAgyHandback(w *worker, req protocol.WorkerHandbackRequest)
 		return nil, errors.New("the turn already has a handback")
 	}
 	c.handback = &req
+	c.handbackFiles = files
 	if err := c.saveStreamLocked(); err != nil {
 		c.handback = nil
+		c.handbackFiles = nil
 		return nil, err
 	}
 	return &protocol.WorkerHandbackResult{Status: req.Status, Complete: req.IsComplete()}, nil

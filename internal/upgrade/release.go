@@ -6,7 +6,9 @@ package upgrade
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -20,6 +22,17 @@ import (
 	"strings"
 	"time"
 )
+
+// ReleasePublicKeyBase64 is the Ed25519 release verification key, made on
+// 2026-11-04. Rotation is described in RELEASING.md.
+const ReleasePublicKeyBase64 = "J97gBiIQ95ELGj3Rw7DXqndIwQZMogTR6A+l8K4F8AE="
+
+// releaseKey is private to this package so tests can use freshly generated keys.
+var releaseKey, _ = base64.StdEncoding.DecodeString(ReleasePublicKeyBase64)
+
+// ReleaseMetadata travels with the binaries so nodes can verify the same bytes
+// the release signed. The SSH signature is only needed by install.sh.
+var ReleaseMetadata = []string{"checksums.txt", "checksums.txt.sig"}
 
 // DefaultReleaseBase is where GitHub serves the releases of agent-net.
 const DefaultReleaseBase = "https://github.com/niparis/agent-net/releases"
@@ -138,21 +151,32 @@ func get(ctx context.Context, c *http.Client, url, dest string) error {
 	return f.Close()
 }
 
-// Download fetches checksums.txt and then each named file from dirURL into
-// dir, and checks every file against its listed SHA-256. On the first problem
-// it returns an error, and the caller must not use anything in dir.
+// signedChecksums fetches and verifies the exact checksum bytes before parsing.
+func signedChecksums(ctx context.Context, c *http.Client, base, dir string) (map[string]string, error) {
+	for _, name := range ReleaseMetadata {
+		if err := get(ctx, c, base+"/"+name, filepath.Join(dir, name)); err != nil {
+			if name == "checksums.txt.sig" {
+				return nil, errors.New("release checksums signature is missing or invalid")
+			}
+			return nil, fmt.Errorf("cannot download checksums.txt: %w", err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "checksums.txt"))
+	if err != nil {
+		return nil, err
+	}
+	sig, err := os.ReadFile(filepath.Join(dir, "checksums.txt.sig"))
+	if err != nil || len(releaseKey) != ed25519.PublicKeySize || !ed25519.Verify(releaseKey, data, sig) {
+		return nil, errors.New("release checksums signature is missing or invalid")
+	}
+	return ParseChecksums(strings.NewReader(string(data)))
+}
+
+// Download fetches and verifies the signed checksums before downloading each
+// named file and checking its SHA-256. On error callers must not use the files.
 func Download(ctx context.Context, c *http.Client, dirURL string, names []string, dir string) error {
 	dirURL = strings.TrimRight(dirURL, "/")
-	sums := filepath.Join(dir, "checksums.txt")
-	if err := get(ctx, c, dirURL+"/checksums.txt", sums); err != nil {
-		return fmt.Errorf("cannot download checksums.txt: %w", err)
-	}
-	f, err := os.Open(sums)
-	if err != nil {
-		return err
-	}
-	want, err := ParseChecksums(f)
-	f.Close()
+	want, err := signedChecksums(ctx, c, dirURL, dir)
 	if err != nil {
 		return err
 	}

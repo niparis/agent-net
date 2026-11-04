@@ -685,6 +685,14 @@ CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_update BEFORE UPDATE ON delive
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_delete BEFORE DELETE ON delivery_evidence
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
+`, `
+-- worker starts the gateway tracks: a not-started report must name one
+CREATE TABLE IF NOT EXISTS worker_starts (
+ ref TEXT PRIMARY KEY, node_id TEXT NOT NULL, owner TEXT NOT NULL,
+ project TEXT NOT NULL DEFAULT '', harness TEXT NOT NULL DEFAULT '',
+ permissions TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
+ state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed', 'not_started')),
+ created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1280,9 +1288,9 @@ func (s *Store) upsertSession(q interface {
 			return "", false, err
 		}
 	}
-	var knownID, knownName string
-	err = q.QueryRow(`SELECT id, name FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
-		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName)
+	var knownID, knownName, knownWaiting string
+	err = q.QueryRow(`SELECT id, name, waiting FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
+		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting)
 	known := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
@@ -1349,6 +1357,7 @@ func (s *Store) upsertSession(q interface {
 	}
 	waiting := ""
 	if w := protocol.CleanWaiting(in.Waiting); w != nil {
+		keepWaitSince(knownWaiting, w)
 		if w.Since == 0 {
 			w.Since = s.now().Unix()
 		}
@@ -2233,6 +2242,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err != nil {
 		return msg, false, err
 	}
+
 	if len(p.Files) > 0 {
 		raw, err := json.Marshal(p.Files)
 		if err != nil {
@@ -2417,7 +2427,8 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 
 // ApplyDeliveryReport is ApplyDelivery that also returns the notice to the
 // sender, stored in the same transaction, when the report leaves the message
-// failed for good (W4.3). The caller dispatches it.
+// failed for good (W4.3), or delivers a request to a session that waits for
+// its user (decision 0057). The caller dispatches it.
 func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.Message, noticed bool, err error) {
 	if state != protocol.StateDelivered && state != protocol.StateFailed && state != protocol.StateDispatched {
 		return notice, false, reject("delivery state must be dispatched, delivered or failed")
@@ -2457,6 +2468,13 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 		// A failure that is not retried is final: tell the sender once.
 		if state == protocol.StateFailed && !retryableFailure(detail) {
 			if notice, noticed, err = s.failureNotice(tx, id, detail); err != nil {
+				return protocol.Message{}, false, err
+			}
+		}
+		// A request delivered to a session that waits for its user: tell the
+		// sender once per wait (decision 0057).
+		if state == protocol.StateDelivered {
+			if notice, noticed, err = s.waitingNotice(tx, id); err != nil {
 				return protocol.Message{}, false, err
 			}
 		}

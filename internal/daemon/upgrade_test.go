@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/niparis/agent-net/internal/gateway"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -283,5 +286,66 @@ func TestRestartIsForTheCLIOnly(t *testing.T) {
 	case <-restarted:
 	case <-time.After(scaled(3 * time.Second)):
 		t.Fatal("restart was not called")
+	}
+}
+
+func TestUpgradePushRejectsDowngrade(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	installed := make(chan string, 1)
+	n := startUpNode(t, g, "v2.0.0", func(target string) (string, error) {
+		installed <- target
+		return "", errors.New("forced install reached")
+	})
+	res, err := g.gw.UpgradeNodes(context.Background(), "v1.0.0", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := byNode(res)[n.cfg.NodeID]
+	if r.Status != protocol.UpgradeFailed || !strings.Contains(r.Detail, "--force") {
+		t.Fatalf("downgrade accepted: %+v", r)
+	}
+	select {
+	case <-installed:
+		t.Fatal("downgrade installed")
+	default:
+	}
+	if err := g.gw.WriteAdminInfo(g.addr); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(gateway.AdminFile(g.dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info gateway.AdminInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest("POST", g.srv.URL+"/v1/admin/upgrade", strings.NewReader(`{"version":"v1.0.0","force":true,"timeout_seconds":5}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+info.Token)
+	resp, err := g.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Results []protocol.UpgradeResult `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	r = byNode(body.Results)[n.cfg.NodeID]
+	if !strings.Contains(r.Detail, "forced install reached") {
+		t.Fatalf("forced push did not reach installer: %+v", r)
+	}
+	select {
+	case target := <-installed:
+		if target != "v1.0.0" {
+			t.Fatal(target)
+		}
+	default:
+		t.Fatal("forced push not delivered")
 	}
 }

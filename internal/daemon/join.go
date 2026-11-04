@@ -31,6 +31,8 @@ type NodeConfig struct {
 	Hostname string `json:"hostname,omitempty"`
 	// NoLaunch makes this machine refuse workers (`agent-net setup --no-launch`).
 	NoLaunch bool `json:"no_launch,omitempty"`
+	// NoAutoUpgrade disables daemon catch-up upgrades across setup runs.
+	NoAutoUpgrade bool `json:"no_auto_upgrade,omitempty"`
 	// EnterSSH turns on entering a session on another machine through ssh from
 	// the TUI (decision 0002, W16). It is on when absent; false turns it off.
 	// EnterSSHHosts maps a host name to the ssh target to use for it (an alias
@@ -175,6 +177,44 @@ func SetNoLaunch(dir string, noLaunch bool) error {
 	return os.WriteFile(path, out, 0o600)
 }
 
+// SetNoAutoUpgrade saves the automatic upgrade preference in node.json.
+func SetNoAutoUpgrade(dir string, disabled bool) error {
+	path := filepath.Join(dir, "node.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return errors.New("node.json is not an object")
+	}
+	if disabled {
+		fields["no_auto_upgrade"] = json.RawMessage("true")
+	} else {
+		delete(fields, "no_auto_upgrade")
+	}
+	out, err := json.MarshalIndent(fields, "", "  ")
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".node.json.*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.Write(out); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
+}
+
 // LoadNode reads node.json and ca.pem from dir.
 func LoadNode(dir string) (NodeConfig, []byte, error) {
 	var nc NodeConfig
@@ -285,7 +325,7 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 		return NodeConfig{}, err
 	}
 	nc := NodeConfig{GatewayURL: url, NodeID: out.NodeID, Token: out.Token, CASHA256: fp}
-	nc.NoLaunch, nc.Workers, nc.Hostname = old.NoLaunch, old.Workers, old.Hostname
+	nc.NoLaunch, nc.NoAutoUpgrade, nc.Workers, nc.Hostname = old.NoLaunch, old.NoAutoUpgrade, old.Workers, old.Hostname
 	nc.EnterSSH, nc.EnterSSHHosts = old.EnterSSH, old.EnterSSHHosts
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nc, err
