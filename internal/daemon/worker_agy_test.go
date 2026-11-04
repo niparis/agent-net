@@ -224,6 +224,56 @@ func TestAgyWorkerHandbackFiles(t *testing.T) {
 	eventually(t, "Antigravity handback file", func() bool { b, err := os.ReadFile(path); return err == nil && string(b) == "agy file\n" })
 }
 
+func TestAgyWorkerHandbackFilesSnapshotOnce(t *testing.T) {
+	w, dir, _ := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback FAKE:filehandback FAKE:result-gate", Isolation: protocol.IsolationWorktree})
+	wk := w.d.workerBySession(res.SessionID)
+	eventually(t, "Antigravity acknowledged handback", func() bool {
+		wk.agy.mu.Lock()
+		defer wk.agy.mu.Unlock()
+		return wk.agy.handback != nil
+	})
+	if err := os.WriteFile(filepath.Join(res.Worktree, "agy-result.txt"), []byte("later content\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "result-release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	n := w.waitNotice(t, 1)[0]
+	path := filepath.Join(w.cfg.StateDir, "inbox", w.ownerID(), n.ID, "agy-result.txt")
+	eventually(t, "Antigravity snapshot delivered", func() bool { _, err := os.Stat(path); return err == nil })
+	if got := string(mustReadFile(t, path)); got != "agy file\n" {
+		t.Fatalf("got %q, want bytes checked at handback", got)
+	}
+}
+
+func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
+	set := shortSet
+	set.Idle, set.IdleNotice = time.Hour, time.Hour
+	w, dir, _ := startAgyNode(t, set)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback FAKE:filehandback FAKE:result-gate FAKE:exit", Isolation: protocol.IsolationWorktree})
+	wk := w.d.workerBySession(res.SessionID)
+	eventually(t, "Antigravity acknowledged handback", func() bool {
+		wk.agy.mu.Lock()
+		defer wk.agy.mu.Unlock()
+		return wk.agy.handback != nil
+	})
+	pid := agyRecords(dir)[0].PID
+	w.d.Stop()
+	if err := os.WriteFile(filepath.Join(dir, "result-release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "Antigravity result written during downtime", func() bool { return !alive(pid) })
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	n := w.waitNotice(t, 1)[0]
+	path := filepath.Join(w.cfg.StateDir, "inbox", w.ownerID(), n.ID, "agy-result.txt")
+	eventually(t, "recovered Antigravity file", func() bool { _, err := os.Stat(path); return err == nil })
+	if got := string(mustReadFile(t, path)); got != "agy file\n" {
+		t.Fatalf("recovered file = %q", got)
+	}
+}
+
 func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string) {
 	t.Helper()
 	dir := t.TempDir()

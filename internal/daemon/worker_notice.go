@@ -607,8 +607,11 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 		if err != nil {
 			return nil, err
 		}
-		defer files.Remove()
-		return d.deferAgyHandback(w, req)
+		out, err := d.deferAgyHandback(w, req, files)
+		if err != nil {
+			files.Remove()
+		}
+		return out, err
 	}
 	return d.handbackTo(ctx, w, req, "", "")
 }
@@ -619,6 +622,15 @@ func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerH
 }
 
 func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool) (*protocol.WorkerHandbackResult, error) {
+	return d.handbackToNoteWithFiles(ctx, w, req, to, replyTo, sandboxNote, end, nil)
+}
+
+// An Antigravity handback carries its already checked snapshot until its
+// result event. A recovered stream without one prepares it again.
+func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool, files *OutgoingFiles) (*protocol.WorkerHandbackResult, error) {
+	if files != nil {
+		defer files.Remove()
+	}
 	d.wmu.Lock()
 	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
@@ -634,11 +646,14 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	if strings.TrimSpace(req.Report) == "" {
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
-	files, err := d.prepareHandbackFiles(w, req.Files)
-	if err != nil {
-		return nil, err
+	if files == nil {
+		var err error
+		files, err = d.prepareHandbackFiles(w, req.Files)
+		if err != nil {
+			return nil, err
+		}
+		defer files.Remove()
 	}
-	defer files.Remove()
 	// A partial hand-back is a worker that stopped early. Send it one more
 	// message ourselves, up to the limit, and do not tell the caller yet.
 	if req.Status == protocol.StatusDone && !req.IsComplete() && d.tryAutoContinue(ctx, w) {
