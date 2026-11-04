@@ -30,6 +30,12 @@ type StepReportArgs struct {
 	Note   string            `json:"note,omitempty"`
 }
 
+// OpChangesOwnerFind is the owner's read of the same data, for the TUI: it
+// takes ChangesFindArgs and answers ChangesFindResult, for every change of the
+// network and without a session. Only the owner's command line or TUI may call
+// it; it is read only.
+const OpChangesOwnerFind = "changes_owner_find"
+
 // Values of ChangesFindArgs.Caller.
 const (
 	ChangesCallerMe     = "me"

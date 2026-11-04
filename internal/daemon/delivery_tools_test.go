@@ -414,3 +414,49 @@ func deliveryJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
 }
+
+// The owner's TUI reads changes through changes_owner_find as the "cli"
+// client, without a session. It sees every change (caller anyone), reads one change,
+// and may not ask for "me" (the owner has no session whose changes those are).
+// The write methods stay closed to it.
+func TestChangesFindForTheOwnersTUI(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	c := protocol.Change{ID: "ch_7", Project: "demo", Branch: "feat/x", HeadCommit: strings.Repeat("a", 40), Revision: 1,
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: "s_other"}, State: protocol.ChangeOpen, CreatedAt: 1}
+	f.answer(protocol.FrameChangeList, func(json.RawMessage) (any, error) {
+		return protocol.ChangeListResult{Changes: []protocol.ChangeView{{Change: c}}, Next: "ch_7"}, nil
+	})
+	f.answer(protocol.FrameChangeGet, func(json.RawMessage) (any, error) { return deliveryTestView(c), nil })
+
+	cli := dialLocal(t, n.sock)
+	cli.mustCall("hello", map[string]any{"client": "cli"})
+	res := cli.mustCall(protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: 50, Cursor: "ch_9"})
+	var out protocol.ChangesFindResult
+	if err := json.Unmarshal(res, &out); err != nil || len(out.Items) != 1 || out.Items[0].Change.ID != "ch_7" || out.NextCursor != "ch_7" {
+		t.Fatalf("owner list %s: %v", res, err)
+	}
+	var q protocol.ChangeListRequest
+	_ = json.Unmarshal(f.frames(protocol.FrameChangeList)[0], &q)
+	if want := (protocol.ChangeListRequest{State: protocol.ChangeListActive, Limit: 50, After: "ch_9"}); q != want {
+		t.Fatalf("change.list %+v, want %+v", q, want)
+	}
+	res = cli.mustCall(protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{Change: "ch_7"})
+	out = protocol.ChangesFindResult{}
+	if err := json.Unmarshal(res, &out); err != nil || len(out.Items) != 1 || out.Items[0].Change.ID != "ch_7" {
+		t.Fatalf("owner get %s: %v", res, err)
+	}
+	if _, err := cli.call(protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{Caller: protocol.ChangesCallerMe}); err == nil || !strings.Contains(err.Error(), "caller") {
+		t.Fatalf("owner asked for me: %v", err)
+	}
+	// The owner method is not for agents, and the agent method stays closed
+	// to the TUI's client.
+	lc, _ := helloDelivery(t, n, "np-owner-find", t.TempDir(), "claude-opus-5-5")
+	if _, err := lc.call(protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("an agent session called the owner read: %v", err)
+	}
+	for _, method := range []string{protocol.OpChangeSubmit, protocol.OpStepReport, protocol.OpChangesFind} {
+		if _, err := cli.call(method, map[string]any{}); err == nil || !strings.Contains(err.Error(), "not available to cli clients") {
+			t.Fatalf("%s from the owner's TUI: %v", method, err)
+		}
+	}
+}
