@@ -3,7 +3,9 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -173,5 +175,33 @@ func TestCTOProposalAsk(t *testing.T) {
 	}
 	if _, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"proposal_ask","arguments":{"id":"`+id2+`"}}`)); err == nil || !strings.Contains(err.Error(), "not open") {
 		t.Fatalf("declined proposal reopened: %v", err)
+	}
+}
+
+func TestCTODialogProjectCreateReportsReady(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.d.cto.pid.Store(int64(os.Getpid()))
+	defer c.d.cto.pid.Store(0)
+	path := filepath.Join(home, "code", "company-rag")
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
+	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "harness": "claude"}})
+	v, err := cto.dispatch(context.Background(), "cto_tool", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := v.(map[string]any)
+	if p["kind"] != "proposal" {
+		t.Fatalf("response: %v", p)
+	}
+	answer, _ := json.Marshal(map[string]any{"id": p["proposal_id"], "approve": true})
+	out, err := cto.dispatch(context.Background(), "cto_dialog_answer", answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmt.Sprint(out), "company-rag is ready: session company-rag is waiting in tab 1 (Sessions). Press Enter on it to dive in.") {
+		t.Fatalf("outcome: %v", out)
 	}
 }

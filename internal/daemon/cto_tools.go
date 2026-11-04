@@ -106,10 +106,44 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 	}
 	for _, item := range items {
 		if item.ID == q.ID && (err == nil || item.Status == "failed") && item.Status != "open" {
+			if *q.Approve && item.Status == "applied" && item.Call.Tool == "project_change" && item.Call.Action == "create" {
+				var start protocol.StartedSession
+				if json.Unmarshal(item.Result, &start) == nil && start.ID != "" {
+					return lc.d.ctoProjectStartOutcome(ctx, start), nil
+				}
+			}
 			return item.Note, nil
 		}
 	}
 	return nil, err
+}
+
+// ctoProjectStartOutcome waits for the registered session before reporting it ready.
+func (d *Daemon) ctoProjectStartOutcome(ctx context.Context, start protocol.StartedSession) string {
+	if start.NodeID != "" && start.NodeID != d.cfg.NodeID {
+		return "Project creation was approved; check the remote session in Sessions."
+	}
+	ctx, cancel := context.WithTimeout(ctx, d.workerSettings("").StartTimeout)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for start.Status == "starting" {
+		select {
+		case <-ctx.Done():
+			return "Project creation was approved; the session is still starting."
+		case <-ticker.C:
+			var err error
+			start, err = d.sessionStartGet(ctx, start.ID)
+			if err != nil {
+				return "Project creation was approved; could not check the session: " + cleanLine(err.Error())
+			}
+		}
+	}
+	if start.Status != "started" || start.SessionID == "" {
+		return "Project creation was approved; the session did not start: " + cleanLine(firstNonEmpty(start.Error, start.Status))
+	}
+	name := cleanLine(start.Project)
+	return fmt.Sprintf("%s is ready: session %s is waiting in tab 1 (Sessions). Press Enter on it to dive in.", name, name)
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
