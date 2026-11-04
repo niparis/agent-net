@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 online
+[ Skills per project ]    All tools
+1 skill is installed outside agent-net. i imports them all (backups kept,
+  nothing is turned off)
+╭─Projects / voic…─╮╭─Skills · homelab─────────────────────────────────────────╮
+│   cogforge     1 ││ ▸ ×   voice-builder                   ~0                 │
+│   dotfiles     1 ││   cannot manage: a file is larger than the 64 MiB scan … │
+│   flood-war…   1 ││                                                          │
+│ ▸ homelab      2 ││                                                          │
+╰──────────────────╯╰──────────────────────────────────────────────────────────╯
+╭─Skill information────────────────────────────────────────────────────────────╮
+│ voice-builder · ~0 tokens per session                                        │
+│ on in 0 of 13 projects                                                       │
+│ Machines: research                                                           │
+│ New projects: off                                                            │
+│ cannot manage: a file is larger than the 64 MiB scan limit                   │
+│ (voices/model.onnx, 114 MB) [research/housing]                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+i import all  ↑↓ move  tab switches  / filter  ? help  q quit  esc back
+  ← projects  space on/off  enter on/off

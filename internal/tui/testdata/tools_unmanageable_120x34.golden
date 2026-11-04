@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 sessions, 6 online · 1 busy     updated 14:05:00
+[ Skills per project ]    All tools
+1 skill is installed outside agent-net. i imports them all (backups kept, nothing is turned off)
+╭─Projects / voice-bu…─╮╭─Skills · homelab─────────────────────────────────────────────────────────────────────────────╮
+│   a2a-ocs          1 ││ ▸ ×   voice-builder                   ~0                                                     │
+│   cogforge         1 ││   cannot manage: a file is larger than the 64 MiB scan limit (voices/model.onnx, 114 MB) [r… │
+│   dotfiles         1 ││                                                                                              │
+│   flood-wargame    1 ││                                                                                              │
+│ ▸ homelab          2 ││                                                                                              │
+│   homelab-portal   1 ││                                                                                              │
+│   infra-game       1 ││                                                                                              │
+│   sovl-clone       1 ││                                                                                              │
+│   strategies       1 ││                                                                                              │
+│   tenebrae         2 ││                                                                                              │
+│   wbg-arch         1 ││                                                                                              │
+│   wbg-housing      1 ││                                                                                              │
+│   wbg-worldview    1 ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+╰──────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Skill information────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ voice-builder · ~0 tokens per session                                                                                │
+│ on in 0 of 13 projects                                                                                               │
+│ Machines: research                                                                                                   │
+│ New projects: off                                                                                                    │
+│ cannot manage: a file is larger than the 64 MiB scan limit (voices/model.onnx, 114 MB) [research/housing]            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+i import all  ↑↓ move  tab switches  / filter  ? help  q quit  esc back  ← projects  space on/off  enter on/off

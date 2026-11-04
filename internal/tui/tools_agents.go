@@ -267,9 +267,22 @@ func (m Model) agentToolsView(w, h int) []string {
 		a = append(a, line)
 	}
 	rows := m.agentSkills()
-	start = max(0, m.tl.skillRow-room+1)
-	for i := start; i < min(len(rows), start+room); i++ {
+	start = min(m.tl.skillRow, max(0, len(rows)-1))
+	used := 0
+	for i := start; i >= 0 && i < len(rows); i-- {
+		cost := 1
+		if m.skillScanLockReason(rows[i]) != "" {
+			cost++
+		}
+		if used+cost > room {
+			break
+		}
+		start = i
+		used += cost
+	}
+	for i := start; i < len(rows) && len(b) < room; i++ {
 		r := rows[i]
+		scanProblem := m.skillScanLockReason(r)
 		on, repo := m.agentSkillState(r.Name, project)
 		check := "[ ] "
 		if on {
@@ -310,7 +323,7 @@ func (m Model) agentToolsView(w, h int) []string {
 		}
 		nameW -= 2
 		line := marker + check + cell(clip(sanitize(name), nameW), nameW) + cell(formatTokens(cost), 7)
-		if w >= 100 {
+		if w >= 100 && scanProblem == "" {
 			stateW := max(0, right-4-nameW-12)
 			line += " " + sDim.Render(clip(sanitize(state), stateW))
 		}
@@ -318,6 +331,9 @@ func (m Model) agentToolsView(w, h int) []string {
 			line = selectedRow(padStyled(line, right-4))
 		}
 		b = append(b, line)
+		if scanProblem != "" && len(b) < room {
+			b = append(b, "  "+tsWarn.Render(clip(sanitize(scanProblem), right-6)))
+		}
 	}
 	if !m.tl.loaded {
 		b = []string{orStr(m.tl.err, "reading the tools...")}

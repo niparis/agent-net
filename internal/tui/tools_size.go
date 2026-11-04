@@ -51,7 +51,37 @@ func tooLargeReason() string {
 	return fmt.Sprintf("too large to manage (over 200 files or %s)", skillSizeText(inventory.MaxBundleBytes))
 }
 
+// skillScanLockReason names scan failures without treating an offline copy as
+// unreadable. Offline observations keep their ordinary pending behavior.
+func (m Model) skillScanLockReason(r toolsdiff.Row) string {
+	items := append([]protocol.ToolItem{r.Item}, r.Variants...)
+	items = append(items, m.tl.items...)
+	for _, item := range items {
+		if item.Kind != protocol.InventorySkill || item.Name != r.Name {
+			continue
+		}
+		for _, loc := range item.Locations {
+			if loc.State != protocol.InventoryError && !(loc.State == protocol.InventoryStale && loc.Reason != "") {
+				continue
+			}
+			reason := orStr(loc.Reason, "inventory could not read this skill")
+			where := orStr(loc.Machine, loc.NodeID)
+			if loc.Project != "" {
+				where += "/" + loc.Project
+			}
+			if where != "" {
+				reason += " [" + where + "]"
+			}
+			return "cannot manage: " + reason
+		}
+	}
+	return ""
+}
+
 func (m Model) skillLockReason(r toolsdiff.Row) string {
+	if reason := m.skillScanLockReason(r); reason != "" {
+		return reason
+	}
 	size, large := skillItemBytes(r.Item), skillTooLarge(r.Item)
 	for _, v := range r.Variants {
 		size = max(size, skillItemBytes(v))
@@ -67,6 +97,9 @@ func (m Model) skillCopyLockReason(itemID string) string {
 	large := false
 	for _, it := range m.tl.items {
 		if it.ID == itemID {
+			if reason := m.skillScanLockReason(toolsdiff.Row{Name: it.Name, Item: it}); reason != "" {
+				return reason
+			}
 			size = max(size, skillItemBytes(it))
 			large = large || skillTooLarge(it)
 		}

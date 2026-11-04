@@ -65,6 +65,9 @@ func (m Model) toolAttention(r toolsdiff.Row) bool {
 }
 
 func (m Model) toolAttentionReason(r toolsdiff.Row) string {
+	if reason := m.skillScanLockReason(r); reason != "" {
+		return reason
+	}
 	for _, d := range m.tl.cat.Diffs {
 		if d.Name != r.Name || d.Info || m.tl.accepted[d.Key] {
 			continue
