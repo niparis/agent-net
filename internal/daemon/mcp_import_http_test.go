@@ -84,6 +84,8 @@ func TestMCPImportHTTPAndSSEEndToEnd(t *testing.T) {
 	if leg.State != protocol.MCPImportOK || !strings.Contains(leg.Compared, "not compared") {
 		t.Fatalf("sse apply: %+v", leg)
 	}
+	// The gateway sends MCP sync asynchronously after the import is applied.
+	eventually(t, "imported SSE server starts", func() bool { return f.n.d.mcp.runner("legacy") != nil })
 	if out, err := callTool(t, f.cli, "legacy", "echo", map[string]string{"text": "over sse"}); err != nil || out.Text != "echo: over sse" {
 		t.Fatalf("sse call: %+v %v", out, err)
 	}
