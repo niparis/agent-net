@@ -32,7 +32,7 @@ func restartGateway() {
 func cmdUpgrade(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
 	ver := fs.String("version", "", "install this release, like v0.2.0 (gateway host only; default: the latest)")
-	force := fs.Bool("force", false, "allow a downgrade, reinstall the same version, or upgrade from a dev build")
+	force := fs.Bool("force", false, "allow a downgrade or versions that cannot be ordered, reinstall, or upgrade from a dev build")
 	check := fs.Bool("check", false, "print versions and change nothing")
 	rollback := fs.Bool("rollback", false, "go back to the previous binary on this machine")
 	timeout := fs.Duration("timeout", 2*time.Minute, "how long to wait for the other machines")

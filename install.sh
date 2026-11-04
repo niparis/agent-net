@@ -51,6 +51,7 @@ main() {
       --version)
         [ $# -ge 2 ] || die "--version needs a value, like v0.1.0"
         VERSION="$2"
+        [ -n "$VERSION" ] || die "invalid release tag: $VERSION"
         shift
         ;;
       -h|--help)
@@ -113,15 +114,29 @@ main() {
   if [ -z "$VERSION" ]; then
     # Read GitHub's one redirect without following it. Every asset then comes
     # from that tag, even if a new latest release appears during the install.
-    location="$(curl -fsSI -o /dev/null -w '%{redirect_url}' "$RELEASES/latest/download/checksums.txt")" || die "cannot find the latest release"
+    headers="$(curl -fsSI "$RELEASES/latest/download/checksums.txt")" || die "cannot find the latest release"
+    location="$(printf '%s\n' "$headers" | awk '
+      tolower($0) ~ /^location:[[:space:]]*/ {
+        sub(/^[^:]*:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        location = $0
+      }
+      END { print location }
+    ')"
     case "$location" in
-      */download/*/checksums.txt) VERSION="${location%/checksums.txt}"; VERSION="${VERSION##*/download/}" ;;
+      */download/*/checksums.txt)
+        VERSION="${location%/checksums.txt}"
+        VERSION="${VERSION##*/download/}"
+        # A Location URL may encode the plus in build metadata.
+        VERSION="$(printf '%s' "$VERSION" | sed 's/%2[Bb]/+/g')"
+        ;;
       *) die "cannot read the latest release tag from $location" ;;
     esac
   fi
   case "$VERSION" in
-    ''|*[!A-Za-z0-9._-]*) die "invalid release tag: $VERSION" ;;
+    ''|*[!A-Za-z0-9.+-]*) die "invalid release tag: $VERSION" ;;
   esac
+  printf '%s\n' "$VERSION" | LC_ALL=C grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' || die "invalid release tag: $VERSION"
   BASE="$RELEASES/download/$VERSION"
 
   BIN_DIR="$HOME/.local/bin"
@@ -129,7 +144,13 @@ main() {
   mkdir -p "$BIN_DIR" || die "cannot create $BIN_DIR"
 
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/agent-net-install.XXXXXX")" || die "cannot create a temporary directory"
-  trap 'rm -rf "$WORK"' EXIT HUP INT TERM
+  BIN_TMP=""
+  cleanup() {
+    [ -z "$BIN_TMP" ] || rm -f "$BIN_TMP"
+    rm -rf "$WORK"
+  }
+  trap cleanup EXIT
+  trap 'exit 1' HUP INT TERM
 
   echo "downloading checksums ($BASE)"
   curl -fsSL -o "$WORK/checksums.txt" "$BASE/checksums.txt" || die "cannot download $BASE/checksums.txt (is the version right?)"
@@ -171,8 +192,11 @@ main() {
     echo "downloading agent-net-$OS-$ARCH"
     fetch "agent-net-$OS-$ARCH"
   fi
-  chmod 755 "$WORK/agent-net-$OS-$ARCH" || die "cannot run downloaded binary"
-  got_version="$("$WORK/agent-net-$OS-$ARCH" version)" || die "downloaded binary cannot report its version"
+  # The work directory may be on a noexec filesystem. Stage the local binary
+  # beside its destination, where it can run and can be renamed atomically.
+  BIN_TMP="$(mktemp "$BIN_DIR/.agent-net.XXXXXX")" || die "cannot write in $BIN_DIR"
+  cp "$WORK/agent-net-$OS-$ARCH" "$BIN_TMP" && chmod 755 "$BIN_TMP" || die "cannot stage downloaded binary"
+  got_version="$("$BIN_TMP" version)" || die "downloaded binary cannot report its version"
   [ "$got_version" = "$VERSION" ] || die "release $VERSION binary reports version $got_version"
 
   if [ "$MODE" = gateway ]; then
@@ -188,7 +212,8 @@ main() {
     place "$WORK/checksums.txt" "$DIST_DIR" checksums.txt
     place "$WORK/checksums.txt.sig" "$DIST_DIR" checksums.txt.sig
   fi
-  place "$WORK/agent-net-$OS-$ARCH" "$BIN_DIR" agent-net
+  mv -f "$BIN_TMP" "$BIN_DIR/agent-net" || die "cannot install $BIN_DIR/agent-net"
+  BIN_TMP=""
   echo "installed $BIN_DIR/agent-net ($got_version)"
 
   case ":${PATH:-}:" in
