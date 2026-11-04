@@ -282,6 +282,7 @@ type Daemon struct {
 	toolsPlanKey        [32]byte
 	toolsPlanKeyErr     error
 	ctoDispatchMu       ctoDispatchLock
+	ctoPresenceMu       sync.Mutex
 	ctoEnterMu          sync.Mutex
 	ctoEntering         *ctoEnterCall
 	herdrOpenMu         sync.Mutex
@@ -587,11 +588,14 @@ func (d *Daemon) Stop() {
 	// often, and killing the job lost the owner's CTO conversation. The next
 	// daemon adopts the running job again (startClaudeCTO).
 	if d.cfg.testStopCTOOnExit {
-		d.stopClaudeCTOLocked()
+		d.stopClaudeCTOLocked("daemon_shutdown")
 	} else {
+		if d.claudeCTO.ref != "" {
+			d.Logf("cto.stop harness=claude reason=daemon_shutdown action=release")
+		}
 		d.releaseClaudeCTOLocked()
 	}
-	d.cto.stopLocked()
+	d.stopOpenCodeCTOLocked("daemon_shutdown")
 	d.cto.mu.Unlock()
 	d.ctoDispatchMu.unlock()
 	d.mcp.stop()
@@ -1294,7 +1298,7 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 				sender = m.From
 			}
 		}
-		if _, err := d.ctoSendTracked(ctx, text, sender); err != nil {
+		if _, err := d.ctoSendTriggered(ctx, text, sender, ctoMessageTrigger(m.FromHarness)); err != nil {
 			return Result{Detail: "CTO delivery: " + err.Error()}
 		}
 		return Result{Delivered: true, Detail: "CTO"}

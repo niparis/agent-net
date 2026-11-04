@@ -51,10 +51,16 @@ type ctoRuntime struct {
 	mu             sync.Mutex
 	cmd            *exec.Cmd
 	exited         chan struct{}
+	run            *ctoProcess
 	base, password string
 	model, session string
 	compact        ctoCompactState
 	compactLoop    sync.Once
+}
+
+type ctoProcess struct {
+	expected atomic.Bool
+	started  atomic.Bool
 }
 
 // ctoCompactState keeps the auto-compaction clock for the one CTO
@@ -83,12 +89,17 @@ func (s *ctoCompactState) reset(sessionID string) {
 
 func (c *ctoRuntime) stopLocked() {
 	if c.cmd != nil {
-		syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
-		<-c.exited
+		select {
+		case <-c.exited:
+		default:
+			_ = syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
+			<-c.exited
+		}
 	}
 	c.pid.Store(0)
 	c.cmd = nil
 	c.exited = nil
+	c.run = nil
 	c.base = ""
 	c.password = ""
 	c.model = ""
@@ -136,7 +147,7 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 	if c.cmd != nil {
 		select {
 		case <-c.exited:
-			c.stopLocked()
+			d.stopOpenCodeCTOLocked("crash")
 		default:
 			return nil
 		}
@@ -194,22 +205,40 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 		c.base = "http://127.0.0.1:" + strconv.Itoa(port)
 		c.password = pass
 		exited := c.exited
-		go func() { cmd.Wait(); c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0); close(exited) }()
+		run := &ctoProcess{}
+		c.run = run
+		go func() {
+			err := cmd.Wait()
+			c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0)
+			if !run.expected.Load() {
+				// Reap any children left in the private process group.
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				d.Logf("cto.crash harness=opencode error=%v", err)
+				if run.started.Load() {
+					d.Logf("cto.stop harness=opencode reason=crash")
+				}
+			}
+			close(exited)
+			d.scheduleCTOPresence()
+		}()
 		for {
 			if info, infoErr := c.api(startup, "GET", "/api/info", nil); infoErr == nil {
 				if err := d.checkOpenCodeCTOTools(startup, info); err != nil {
-					c.stopLocked()
+					d.stopOpenCodeCTOLocked("startup_failure")
 					return err
 				}
+				run.started.Store(true)
+				d.Logf("cto.start harness=opencode")
+				d.scheduleCTOPresence()
 				d.startCTOCompactionLoop()
 				return nil
 			}
 			select {
 			case <-exited:
-				c.stopLocked()
+				d.stopOpenCodeCTOLocked("crash")
 				goto retry
 			case <-startup.Done():
-				c.stopLocked()
+				d.stopOpenCodeCTOLocked("startup_timeout")
 				return fmt.Errorf("CTO OpenCode did not start: %w", startup.Err())
 			case <-time.After(100 * time.Millisecond):
 			}

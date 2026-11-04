@@ -161,6 +161,31 @@ If a provider rejects its login, or the Quotas tab says it needs you once, run `
 
 On macOS, setup offers a Keychain prompt. If you agree, answer the dialog and choose Always Allow if you want future reads without another dialog. The check does not refresh credentials. The Subscriptions panel shows which quota-axi copy made the reading; the daemon keeps using its recorded copy until it stops working. Run setup again after correcting the login. The next quota reading can take up to five minutes.
 
+## The CTO is offline or stopped
+
+Check `agent-net nodes` and `agent-net list --all` for the CTO host and session.
+When the host daemon is connected, a dormant CTO is reachable and wakes on a
+message. If its host is disconnected, check the daemon and gateway connection;
+messages wait in the normal queue until it reconnects. A failed delivery includes
+the harness startup error in the message state.
+
+On the CTO host, find lifecycle lines in the daemon log:
+
+```
+# Linux
+journalctl --user -u agent-net-daemon -e | grep 'cto\.'
+# macOS
+grep 'cto\.' ~/Library/Logs/agent-net-daemon.log
+```
+
+`cto.start` names the harness, `cto.wake` names the trigger, `cto.stop` gives
+the reason, and `cto.crash` records an unexpected process or job failure. A
+`daemon_shutdown` stop with `action=release` leaves the Claude job running for
+the next daemon to adopt. Older daemon versions did not log these events. If
+the CTO still fails to start, check the delivery error and the harness log or
+Claude job for the cause. Sending a new message retries a stopped runtime; a
+message whose delivery may have been interrupted is not blindly retried.
+
 ## The CTO Claude conversation was closed
 
 If the CTO box says "The CTO's Claude conversation was closed by Claude Code; started a new one.", Claude Code closed the background conversation and could not resume it. agent-net started a fresh Claude conversation. The CTO timeline and proposals stored in agent-net remain available. The new Claude conversation does not contain the old Claude transcript. Other startup failures appear in the CTO box with their reason.

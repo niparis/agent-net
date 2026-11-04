@@ -1105,6 +1105,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"events": evs}, nil
 
+	case "cto.presence":
+		var p struct {
+			SessionID string `json:"session_id"`
+			Status    string `json:"status"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" || (p.Status != "idle" && p.Status != "dormant") {
+			return nil, reject("bad CTO presence")
+		}
+		// Only the host of the registered CTO can report its runtime state.
+		_, err := st.db.Exec(`UPDATE sessions SET status=?, last_seen=? WHERE id=? AND node_id=? AND harness='cto' AND id=(SELECT value FROM owner_settings WHERE key='cto_session')`, p.Status, st.now().UnixNano(), p.SessionID, nc.id)
+		return struct{}{}, err
+
 	case "session.sync":
 		p, err := decode[protocol.SessionSync](raw)
 		if err != nil {

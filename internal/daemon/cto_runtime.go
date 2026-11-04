@@ -67,9 +67,9 @@ func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, e
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
 	if h.name() == "claude" {
-		d.cto.stopLocked()
+		d.stopOpenCodeCTOLocked("harness_switch")
 	} else {
-		d.stopClaudeCTOLocked()
+		d.stopClaudeCTOLocked("harness_switch")
 	}
 	_, err := d.st.db.Exec(`INSERT INTO cto(id,session_id,active_harness) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness`, h.name())
 	return h, err
@@ -78,13 +78,40 @@ func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	return d.ctoSendTracked(ctx, text, "")
 }
 func (d *Daemon) ctoSendTracked(ctx context.Context, text, sender string) (any, error) {
+	trigger := "system"
+	if sender == "owner" {
+		trigger = "owner"
+	} else if sender != "" {
+		trigger = "agent"
+	}
+	return d.ctoSendTriggered(ctx, text, sender, trigger)
+}
+
+func ctoMessageTrigger(harness string) string {
+	switch harness {
+	case protocol.OwnerHarness:
+		return "owner"
+	case "bot":
+		return "bot"
+	case "phone":
+		return "phone"
+	default:
+		return "agent"
+	}
+}
+
+func (d *Daemon) ctoSendTriggered(ctx context.Context, text, sender, trigger string) (any, error) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return nil, err
 	}
 	defer d.ctoDispatchMu.unlock()
+	defer d.scheduleCTOPresence()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if !d.ctoRunning() {
+		d.Logf("cto.wake trigger=%s harness=%s", trigger, h.name())
 	}
 	out, err := h.send(ctx, d, text)
 	if err == nil && sender != "" {
@@ -124,6 +151,9 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return protocol.CTOEvents{}, err
+	}
+	if id, e := d.ctoSession(); e == nil && id != "" && !d.ctoRunning() {
+		d.Logf("cto.wake trigger=timeline harness=%s", h.name())
 	}
 	out, err := h.events(ctx, d, 0)
 	if err != nil {
@@ -201,12 +231,16 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		return protocol.EnterPlan{}, err
 	}
 	defer d.ctoDispatchMu.unlock()
+	defer d.scheduleCTOPresence()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}
 	if err := d.registerCTOSession(ctx); err != nil {
 		return protocol.EnterPlan{}, err
+	}
+	if !d.ctoRunning() {
+		d.Logf("cto.wake trigger=enter harness=%s", h.name())
 	}
 	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
 	bin, err := d.harnessBinary(h.name())

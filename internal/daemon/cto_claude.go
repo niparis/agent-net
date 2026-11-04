@@ -58,9 +58,19 @@ func (d *Daemon) releaseClaudeCTOLocked() {
 	c.ref, c.session, c.model, c.token = "", "", "", ""
 }
 
-func (d *Daemon) stopClaudeCTOLocked() {
+func (d *Daemon) stopClaudeCTOLocked(reasons ...string) {
+	reason := "requested"
+	if len(reasons) > 0 {
+		reason = reasons[0]
+	}
 	c := &d.claudeCTO
 	root := c.root.Load()
+	wasRunning := c.ref != ""
+	var crashState, crashDetail string
+	if wasRunning && reason == "crash" {
+		crashState, crashDetail = claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
+		crashState = claudeCTOErrorOutput([]byte(crashState))
+	}
 	if c.ref != "" {
 		(claudeLauncher{}).stopID(d, c.ref)
 	}
@@ -77,6 +87,13 @@ func (d *Daemon) stopClaudeCTOLocked() {
 	}
 	c.root.Store(nil)
 	c.ref, c.session, c.model, c.token = "", "", "", ""
+	if wasRunning {
+		if reason == "crash" {
+			d.Logf("cto.crash harness=claude reason=job_ended state=%q detail=%q", crashState, crashDetail)
+		}
+		d.Logf("cto.stop harness=claude reason=%s", reason)
+		d.scheduleCTOPresence()
+	}
 }
 
 func sameCTODir(a, b string) bool {
@@ -139,12 +156,20 @@ func recoverableClaudeResumeFailure(status, detail string) bool {
 
 func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 	d.setClaudeCTORestarted(false)
-	err := d.startClaudeCTOOnce(ctx, id, model)
+	start := func(id string) error {
+		err := d.startClaudeCTOOnce(ctx, id, model)
+		var failure *claudeCTOJobFailure
+		if errors.As(err, &failure) {
+			d.Logf("cto.crash harness=claude reason=startup_job_failed detail=%q", failure.detail)
+		}
+		return err
+	}
+	err := start(id)
 	var failure *claudeCTOJobFailure
 	if id == "" || !errors.As(err, &failure) || !failure.recoverable {
 		return err
 	}
-	if err = d.startClaudeCTOOnce(ctx, "", model); err != nil {
+	if err = start(""); err != nil {
 		return err
 	}
 	d.setClaudeCTORestarted(true)
@@ -179,10 +204,14 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 			d.cto.mu.Unlock()
 			return nil
 		}
-		d.stopClaudeCTOLocked()
+		reason := "configuration_change"
+		if !alive || root == nil || tok != c.token || claudeJobEnded(status) {
+			reason = claudeCTOEndReason(status)
+		}
+		d.stopClaudeCTOLocked(reason)
 	}
 	d.cto.mu.Unlock()
-	adopt := func(sf claudeSessionFile) bool {
+	adopt := func(sf claudeSessionFile, mode string) bool {
 		token, alive := procToken(sf.PID)
 		if !alive {
 			return false
@@ -191,6 +220,11 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		c.ref, c.session, c.model, c.token = sf.JobID, sf.SessionID, model, token
 		c.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
 		d.cto.mu.Unlock()
+		d.Logf("cto.start harness=claude mode=%s", mode)
+		d.scheduleCTOPresence()
+		if d.ctoCtx != nil {
+			d.goBackground(func() { d.monitorClaudeCTO(d.ctoCtx, sf.JobID, sf.PID, token) })
+		}
 		if id != "" && id != sf.SessionID && d.log != nil {
 			d.log.Printf("CTO Claude resumed as a copy: %s -> %s", id, sf.SessionID)
 		}
@@ -201,7 +235,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && func() bool {
 		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, sf.JobID)
 		return !claudeJobEnded(status)
-	}() && adopt(sf) {
+	}() && adopt(sf, "adopted") {
 		return nil
 	}
 	bin, err := d.harnessBinary("claude")
@@ -261,7 +295,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 			lower := strings.ToLower(detail)
 			return &claudeCTOJobFailure{detail: detail, recoverable: status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))}
 		}
-		if ok && !claudeJobEnded(status) && adopt(sf) {
+		if ok && !claudeJobEnded(status) && adopt(sf, "started") {
 			return nil
 		}
 		select {
@@ -456,7 +490,7 @@ func (claudeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, er
 	if err = json.Unmarshal(data, &latest); err != nil {
 		return nil, err
 	}
-	d.stopClaudeCTOLocked()
+	d.stopClaudeCTOLocked("new_conversation")
 	tx, err := d.st.db.Begin()
 	if err != nil {
 		return nil, err

@@ -68,18 +68,19 @@ type ProjectsFindRequest struct {
 // agent_session_get. The required fields are always present; the optional
 // ones are added by detail "full".
 type SessionRow struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Kind        string  `json:"kind"`
-	Machine     string  `json:"machine"`
-	Project     string  `json:"project"`
-	Harness     string  `json:"harness"`
-	Model       string  `json:"model"`
-	Online      bool    `json:"online"`
-	Status      string  `json:"status"`
-	Task        string  `json:"task"`
-	LastSeen    string  `json:"last_seen"`
-	TaskStarted *string `json:"task_started"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Kind         string  `json:"kind"`
+	Machine      string  `json:"machine"`
+	Project      string  `json:"project"`
+	Harness      string  `json:"harness"`
+	Model        string  `json:"model"`
+	Online       bool    `json:"online"`
+	Status       string  `json:"status"`
+	Availability string  `json:"availability,omitempty"`
+	Task         string  `json:"task"`
+	LastSeen     string  `json:"last_seen"`
+	TaskStarted  *string `json:"task_started"`
 
 	LastSeenAgo  string            `json:"last_seen_ago,omitempty"`
 	Folder       string            `json:"folder,omitempty"`
