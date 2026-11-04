@@ -633,6 +633,14 @@ CREATE TRIGGER IF NOT EXISTS setting_history_no_delete BEFORE DELETE ON setting_
 BEGIN SELECT RAISE(ABORT, 'setting history is append-only'); END;
 `, `
 SELECT 1 /* delivery settings cutover */;
+`, `
+-- A provider account that a worker run reported out of quota, per machine,
+-- until the reset the provider named. The gateway adds it to the machine's
+-- quota reading, so starts on that provider are refused until then.
+CREATE TABLE IF NOT EXISTS quota_blocks (
+ node_id TEXT NOT NULL, provider TEXT NOT NULL, resets_at INTEGER NOT NULL,
+ detail TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL,
+ PRIMARY KEY (node_id, provider));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
