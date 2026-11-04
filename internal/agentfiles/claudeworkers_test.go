@@ -60,7 +60,7 @@ func TestWriteClaudeWorkersWritesTheEmbeddedFiles(t *testing.T) {
 		}
 	}
 	want := filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx")
-	if got, _ := os.ReadFile(want); string(got) != string(agentnetworkers.Register) {
+	if got, _ := os.ReadFile(want); string(got) != strings.ReplaceAll(string(agentnetworkers.Register), "__AGENT_NET_PANEL_VERSION__", ClaudeWorkersPanelVersion()) {
 		t.Error("hooks/register.tsx is not the embedded one")
 	}
 	if _, err := os.Stat(filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.test.tsx")); err == nil {
@@ -124,7 +124,7 @@ func TestSyncClaudeWorkersRefreshesAnOldCopy(t *testing.T) {
 	if !r.Changed || r.Text != "updated" || r.Err != nil {
 		t.Fatalf("%+v", r)
 	}
-	if got := read(t, filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx")); got != string(agentnetworkers.Register) {
+	if got := read(t, filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx")); got != strings.ReplaceAll(string(agentnetworkers.Register), "__AGENT_NET_PANEL_VERSION__", ClaudeWorkersPanelVersion()) {
 		t.Error("register.tsx was not refreshed")
 	}
 	if got := read(t, filepath.Join(ClaudeWorkersDir(), ".claude-plugin", "marketplace.json")); !strings.Contains(got, `"agent-net-workers"`) {

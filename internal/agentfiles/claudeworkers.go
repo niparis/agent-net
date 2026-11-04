@@ -80,6 +80,13 @@ func claudeWorkersFiles(pluginFiles map[string][]byte) (map[string][]byte, error
 		if name == claudeWorkersPluginManifest {
 			data = manifest
 		}
+		if name == "hooks/register.tsx" {
+			var fields struct {
+				Version string `json:"version"`
+			}
+			json.Unmarshal(manifest, &fields)
+			data = []byte(strings.ReplaceAll(string(data), "__AGENT_NET_PANEL_VERSION__", fields.Version))
+		}
 		files[filepath.ToSlash(filepath.Join(ClaudeWorkersPlugin, filepath.FromSlash(name)))] = data
 	}
 	return files, nil
@@ -236,4 +243,17 @@ func SyncClaudeWorkers() Result {
 		r.Note += "open Claude Code sessions: run /reload-plugins"
 	}
 	return r
+}
+
+// ClaudeWorkersPanelVersion identifies the panel installed by this binary.
+func ClaudeWorkersPanelVersion() string {
+	manifest, err := versionedClaudeWorkersManifest(agentnetworkers.Files())
+	if err != nil {
+		return ""
+	}
+	var fields struct {
+		Version string `json:"version"`
+	}
+	json.Unmarshal(manifest, &fields)
+	return fields.Version
 }

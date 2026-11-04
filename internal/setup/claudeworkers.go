@@ -120,7 +120,7 @@ func (r *runner) claudeWorkersMod() {
 		r.step(workersModStepName, "on (plugin agent-net-workers@agent-net, user scope)", nil)
 	case changed:
 		r.step(workersModStepName, "updated (plugin agent-net-workers@agent-net)", nil)
-		r.hint("hint: open Claude Code sessions: run /reload-plugins")
+		r.hint("hint: restart open Claude Code sessions to load the new panel")
 	default:
 		r.step(workersModStepName, "ok (unchanged)", nil)
 	}

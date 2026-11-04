@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -172,7 +173,10 @@ func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args [
 			}
 			titled[i].Title = protocol.WorkerTitle(titled[i].Title, titled[i].Task, name)
 		}
-		b, _ := json.MarshalIndent(protocol.WorkersResult{Workers: titled, Queued: queued}, "", "  ")
+		b, _ := json.MarshalIndent(struct {
+			protocol.WorkersResult
+			PanelVersion string `json:"panel_version"`
+		}{protocol.WorkersResult{Workers: titled, Queued: queued}, agentfiles.ClaudeWorkersPanelVersion()}, "", "  ")
 		fmt.Fprintln(out, string(b))
 		return nil
 	}
