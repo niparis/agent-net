@@ -204,7 +204,6 @@ agent-net uses MCP to give agents their tools. It is not an implementation of A2
 - **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
 - **An optional sandbox for every worker.** Today only Codex workers and Antigravity workers with its own `--sandbox` flag are sandboxed. An OS-level wrapper (bubblewrap or Landlock on Linux, sandbox-exec on macOS) for every worker launcher, switched on per project. Plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
 - **A modular agent-net:** agent-net keeps the mechanisms, and a way of working (who does what, how work is tested and merged, what agents are told) becomes data at network, team, repo or agent level, which the CTO can propose to change. Plan: [docs/design/modularity.md](docs/design/modularity.md).
-- **A named model is the exception.** When a session asks for a worker by model name instead of letting the picker choose, agent-net replies with a reminder that naming a model should be exceptional, and why the picker is the default.
 - **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
 - **The phone app.**
 - MCP resources, prompts and OAuth logins in the registry.

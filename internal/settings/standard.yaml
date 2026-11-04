@@ -279,6 +279,13 @@ settings:
     levels: [network]
     default: Agent-Net-Caller
     live: true
+  - key: workers.named_model_reminder
+    description: Reminder in the start result when the caller named a model.
+    kind: advice
+    type: text
+    levels: [network]
+    default: "You named the model. agent-net's picker chooses by task difficulty, quota pace and each model's track record, and it spreads load. Name a model only for a stated reason (for example an independent review by another model family), and say the reason in the brief."
+    live: true
   - key: workers.auto_continue
     rows: [64]
     description: Whether an early worker stop is continued automatically.
