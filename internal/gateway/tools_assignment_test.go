@@ -607,6 +607,50 @@ func TestToolSnapshotIgnoresOtherSkills(t *testing.T) {
 	}
 }
 
+func TestToolSnapshotIgnoresEmptyOrUnrelatedInventory(t *testing.T) {
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := protocol.InventoryItem{Kind: "skill", Name: "a", Hash: "aaa", State: "ok"}
+	if err := s.SetInventory("node1", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{a}}); err != nil {
+		t.Fatal(err)
+	}
+	item := `["skill","a","aaa"]`
+	// A second machine has an inventory report with items: null.
+	if _, err := s.db.Exec(`INSERT INTO inventory_reports(node_id,report) VALUES('node2','{"machine":"node2","state":"ok","items":null}')`); err != nil {
+		t.Fatal(err)
+	}
+	snapNull, err := s.ToolSnapshot(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The second machine updates with empty items [].
+	if err := s.SetInventory("node2", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{}}); err != nil {
+		t.Fatal(err)
+	}
+	snapEmpty, err := s.ToolSnapshot(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapNull != snapEmpty {
+		t.Fatalf("snapshot changed between null and empty items: %s != %s", snapNull, snapEmpty)
+	}
+	// The second machine reports an unrelated skill.
+	other := protocol.InventoryItem{Kind: "skill", Name: "other", Hash: "ooo", State: "ok"}
+	if err := s.SetInventory("node2", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{other}}); err != nil {
+		t.Fatal(err)
+	}
+	snapOther, err := s.ToolSnapshot(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapEmpty != snapOther {
+		t.Fatalf("snapshot changed when unrelated skill reported: %s != %s", snapEmpty, snapOther)
+	}
+}
+
 func TestToolKnownProjectsRequireRepository(t *testing.T) {
 	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
