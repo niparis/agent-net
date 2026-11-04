@@ -131,9 +131,14 @@ func TestMessageLogLines(t *testing.T) {
 		t.Fatalf("failed lines: %v", lc.all())
 	}
 	m3, _, _ := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "third", IdempotencyKey: "k3"})
+	// The final failure stored one notice to the sender (W4.3), logged like
+	// any message. It is still undelivered a day later, so it expires too.
+	if ls := lc.with("event=msg.stored", "type=notification", "from=agent-net", "to="+a); len(ls) != 1 {
+		t.Fatalf("notice lines: %v", lc.all())
+	}
 	c.t = c.t.Add(protocol.DefaultTTL + time.Second)
-	if n, _ := s.Expire(); n != 1 {
-		t.Fatalf("expired %d", n)
+	if n, _ := s.Expire(); n != 2 {
+		t.Fatalf("expired %d, want m3 and the notice about m2", n)
 	}
 	if ls := lc.with("event=msg.expired", "msg="+m3.ID); len(ls) != 1 {
 		t.Fatalf("expired lines: %v", lc.all())

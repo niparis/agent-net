@@ -701,7 +701,25 @@ lost plugin connection, after 30 seconds, 2 minutes, 10 minutes, and then every
 30 minutes until expiry. The schedule survives a gateway restart. Status shows
 when a retry is scheduled. A success clears the schedule. Owner-only and policy
 refusals, unknown errors, and failures saying the message may have arrived are
-not retried. Final sender notices are separate work.
+not retried.
+
+When a message fails for good, the sender gets one notice from agent-net
+itself (a notification, no reply needed). A failure is final when it is not
+retried, or when the message expires before a confirmed delivery. The notice
+says `message to <name> was not delivered: <reason>`, then the message ID and
+the first line of the body (at most 200 characters). An expiry gives the reason
+`expired after 24 hours`, plus the last error if there was one. When the
+message may have arrived (the daemon stopped while delivering, a write failed
+after connecting, or it expired while dispatched with no report), the notice
+says `may not have arrived` instead. A delivered message gets no notice.
+
+The gateway stores the notice as a normal message with the idempotency key
+`undelivered:<message id>`, so each message gets at most one, also after a
+gateway restart. An offline sender gets it when it comes back. There is no
+notice about agent-net's own messages, so a failed notice never makes another
+one. The owner and connected apps get no notice: the TUI and the app already
+show the failed or expired state. An expired held request gets its own reply
+instead (see [Peer trust and hints](#peer-trust-and-hints)).
 
 ## Housekeeping
 
