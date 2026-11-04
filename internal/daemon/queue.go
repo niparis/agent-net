@@ -225,7 +225,8 @@ const queuedStartWait = 2 * time.Minute
 // ("worker.queued_start"), as one call with a long deadline. A refusal or a
 // failure ends the start. The call stops when the worker ends.
 func (d *Daemon) sendQueuedStart(ctx context.Context, w *worker, p protocol.WorkerQueuedStart) error {
-	cctx, cancel := context.WithTimeout(withCallWait(ctx, queuedStartWait+5*time.Second), queuedStartWait)
+	wait := d.queuedTaskTimeout()
+	cctx, cancel := context.WithTimeout(withCallWait(ctx, wait+5*time.Second), wait)
 	defer cancel()
 	if w != nil {
 		ended := d.workerEnded(w)
@@ -358,4 +359,11 @@ func (d *Daemon) releaseWorkerBase(base string) {
 	} else {
 		d.startingBases[base]--
 	}
+}
+
+func (d *Daemon) queuedTaskTimeout() time.Duration {
+	if d.cfg.testQueuedTaskTimeout > 0 {
+		return d.cfg.testQueuedTaskTimeout
+	}
+	return queuedStartWait
 }

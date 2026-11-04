@@ -1169,8 +1169,7 @@ func (p Pipeline) NextSteps(c Change, evidence []Evidence) []StepRef {
 // Accepts checks a step report before the gateway stores it: the evidence is
 // valid, for this change, for a step of the pipeline that is not left out,
 // on the change's current revision and on the commit that step runs on. It
-// does not check Ready (a step may be reported before the merge check
-// enforces anything) or independence (a pass that is not independent enough
+// does not check Ready (the gateway checks it for merge passes) or independence (a pass that is not independent enough
 // is kept, and Status says it does not count).
 func (p Pipeline) Accepts(c Change, e Evidence) error {
 	if err := e.Validate(); err != nil {

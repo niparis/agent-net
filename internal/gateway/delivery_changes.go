@@ -2,13 +2,15 @@ package gateway
 
 // The delivery pipeline (decision 0057, docs/design/delivery-pipeline.md):
 // the gateway stores changes, revisions and evidence, and routes ready steps
-// assigned to graph nodes. Evidence is not yet enforced at merge.
+// assigned to graph nodes. A merge pass is refused until its required
+// evidence has passed.
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -454,6 +456,15 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		By: by, ReportedBy: reportedBy, ByModel: doer.model, ByModelFamily: family, Note: q.Note, At: now}
 	if err := p.Accepts(c, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
+	}
+	if e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass {
+		evidence, err := changeEvidence(tx, c.ID)
+		if err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		if ready, missing := p.Ready(e.StepRef, c, evidence); !ready {
+			return protocol.StepReportResult{}, reject("merge is not ready: %s", strings.Join(missing, "; "))
+		}
 	}
 	var found bool
 	if directOwner {
