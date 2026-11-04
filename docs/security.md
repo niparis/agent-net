@@ -391,7 +391,7 @@ A critical repository should also have branch protection on its default branch: 
 
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers), but it is enforced only for Codex and Antigravity workers today. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude Code, OpenCode and Pi workers run with the owner's permissions. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`.
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers). Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. On Linux, Pi and OpenCode workers of a project that has the OS sandbox on run in bubblewrap ([below](#the-os-sandbox-for-pi-and-opencode-workers)). Otherwise Claude Code, OpenCode and Pi workers run with the owner's permissions. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`.
 
 The level definitions and limits below describe Codex's sandbox. Antigravity has separate behavior described in [Antigravity workers](antigravity.md#workers).
 
@@ -408,6 +408,31 @@ The level definitions and limits below describe Codex's sandbox. Antigravity has
 - **No approvals means no way to ask.** A step the sandbox refuses fails inside the worker. It may report that it is blocked, or work around it. The report is model output: check it.
 - **The agent-net tools are off for a Codex worker.** Its private app server runs with `mcp_servers.agent-net.enabled=false` when your Codex config defines the server, so it cannot list, message or start anything on the network. A server defined only in a project's `.codex/config.toml` is not turned off. Other MCP servers stay available to it, with their own authority.
 - **The sandbox is Codex's.** Its strength is the strength of Codex's Linux (bubblewrap/seccomp) and macOS (Seatbelt) sandbox on that machine. agent-net chooses the policy and does not test the isolation itself.
+
+### The OS sandbox for Pi and OpenCode workers
+
+An optional wrapper around the whole harness process, so shell commands, language servers and MCP servers of the worker are inside it too. It is off by default. Turn it on per project in `node.json` on the machine that runs the workers: `"workers": {"os_sandbox": ["shop"]}` (`"*"` is every project), then restart the daemon. It does not change the level; it applies it. Design and reasons: [docs/design/worker-os-sandbox.md](design/worker-os-sandbox.md).
+
+On Linux it is bubblewrap. A Pi or OpenCode worker of such a project:
+
+- sees the host read-only, with new user, PID, IPC, UTS, cgroup and (for `no-network`) network namespaces, a new `/proc` and a new `/dev`;
+- can write only its worktree, the main repository's `objects`, `refs`, `logs` and `worktrees/<name>`, its own private state, and a private `/tmp` (the `tmp` folder in its worker folder). At `read-only` the worktree and the git folders are read-only too. The worktree's `.git` file stays read-only;
+- cannot reach `$XDG_RUNTIME_DIR` (the systemd user bus, which can start processes outside the sandbox, and the user's agent and keyring sockets), the sockets in the host's `/tmp` (the Claude Code and Codex background services, tmux, ssh-agent), or `/run/docker.sock`. The agent-net socket is bound back so the worker's plugin or extension works;
+- cannot see, signal or trace your other processes.
+
+Pi gets a private agent folder (`pi-agent` in the worker folder, set as `PI_CODING_AGENT_DIR`) with a copy of `auth.json` and `models-store.json`; every other entry of your agent folder is bound into it read-only. Pi runs an `auth.json` key that starts with `!` as a shell command and loads code from `extensions`, `npm`, `git` and `settings.json`, so a worker that could write your real folder could plant a command for your next, unsandboxed Pi session. Its session folder stays writable, because the daemon reads the worker's usage there. Token refreshes stay in the copy. OpenCode keeps its private data and state folders writable; `~/.config/opencode` and `~/.cache/opencode` are read-only.
+
+Fail closed: with the switch on, the daemon refuses the start, and says why, when bubblewrap is not installed, when a probe sandbox cannot be made (user namespaces turned off), on macOS (not built yet), for a `no-network` Pi or OpenCode worker (the wrapper would also cut the harness's connection to its model), and for a Claude worker (`claude --bg` runs the session in Claude Code's own background service, which no wrapper can reach). It never starts such a worker without the sandbox. Codex and Antigravity workers keep their own sandboxes and are not wrapped.
+
+What it does not cover:
+
+- **Reads.** As above: the worker can read every file you can read.
+- **Exfiltration and local services.** With the network on, it can send what it reads and reach any service on localhost or the LAN. An ssh server on this machine that accepts a key the worker can read is a way out, and so is any local HTTP API that runs commands.
+- **Abstract Unix sockets** of the host stay reachable while the network is shared (for example an X11 display), and so do sockets on the filesystem outside the hidden folders, because a read-only mount does not stop `connect()`.
+- **Its own state.** It can change its own session history and its private copy of the credentials.
+- **Kernel and bubblewrap flaws.**
+
+There is no `--die-with-parent`: a worker outlives a daemon restart. The daemon stops it with SIGTERM, then SIGKILL, to bubblewrap's process group, which holds every process of the sandbox.
 
 ## Peer trust
 
