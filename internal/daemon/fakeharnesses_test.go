@@ -589,6 +589,26 @@ type fakePiRecord struct {
 	Pgid     int               `json:"pgid"`
 	ChildPid int               `json:"child_pid"`
 	Stdin    string            `json:"stdin"`
+	// The OS sandbox probes (envFakePiProbeHome, envFakePiProbeExt): the
+	// error of each write, "" when the write worked.
+	HomeWrite string `json:"home_write,omitempty"`
+	ExtWrite  string `json:"ext_write,omitempty"`
+	TmpWrite  string `json:"tmp_write,omitempty"`
+	AgentDir  string `json:"agent_dir,omitempty"`
+}
+
+// The fake Pi tries these writes when the variables are set, so a test can
+// see what the OS sandbox lets through.
+const (
+	envFakePiProbeHome = "FAKE_PI_PROBE_HOME" // a folder outside the sandbox's writable paths
+	envFakePiProbeExt  = "FAKE_PI_PROBE_EXT"  // try to add a Pi extension
+)
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // fakePi is `pi --mode rpc`: it ends when its standard input closes, as Pi
@@ -610,6 +630,14 @@ func fakePi() {
 	}
 	if fi, err := os.Stdin.Stat(); err == nil {
 		rec.Stdin = fi.Mode().String()
+	}
+	if dir := os.Getenv(envFakePiProbeHome); dir != "" {
+		rec.HomeWrite = errText(os.WriteFile(filepath.Join(dir, "probe"), []byte("x"), 0o600))
+		rec.TmpWrite = errText(os.WriteFile("/tmp/fake-pi-probe", []byte("x"), 0o600))
+		rec.AgentDir = os.Getenv("PI_CODING_AGENT_DIR")
+	}
+	if os.Getenv(envFakePiProbeExt) != "" {
+		rec.ExtWrite = errText(os.WriteFile(filepath.Join(os.Getenv("PI_CODING_AGENT_DIR"), "extensions", "evil.ts"), []byte("x"), 0o600))
 	}
 	child := exec.Command("sleep", "600")
 	if child.Start() == nil {
