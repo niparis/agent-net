@@ -252,9 +252,15 @@ func extractRemoteOwner(remote string) string {
 		if err != nil {
 			return ""
 		}
+		if strings.EqualFold(u.Scheme, "file") {
+			return ""
+		}
 		host = strings.ToLower(u.Host)
 		if i := strings.IndexByte(host, ':'); i >= 0 {
 			host = host[:i]
+		}
+		if host == "" {
+			return ""
 		}
 		pathPart = strings.TrimPrefix(u.Path, "/")
 	} else if i := strings.IndexByte(remote, ':'); i >= 0 && !filepath.IsAbs(remote) {

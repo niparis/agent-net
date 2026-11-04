@@ -367,3 +367,26 @@ func TestProjectsLayoutGitWaitDelay(t *testing.T) {
 		t.Fatalf("readRepoRemote took %v; bounds did not hold", elapsed)
 	}
 }
+
+func TestExtractRemoteOwner(t *testing.T) {
+	cases := []struct {
+		remote string
+		want   string
+	}{
+		{"file:///home/x/repos/foo", ""},
+		{"file://localhost/tmp/repo.git", ""},
+		{"/home/x/repos/foo", ""},
+		{"../relative/repo.git", ""},
+		{"https://github.com/niparis/a2a-ocs.git", "niparis"},
+		{"git@github.com:niparis/a2a-ocs.git", "niparis"},
+		{"https://gitlab.com/myorg/app1.git", "gitlab.com/myorg"},
+		{"git@gitlab.com:myorg/app1.git", "gitlab.com/myorg"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		got := extractRemoteOwner(tc.remote)
+		if got != tc.want {
+			t.Errorf("extractRemoteOwner(%q) = %q, want %q", tc.remote, got, tc.want)
+		}
+	}
+}
