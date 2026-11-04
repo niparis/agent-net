@@ -178,21 +178,15 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	}
 }
 
-// notStarted tells the owner that a queued start will not become a worker. It
-// is sent from this machine's owner session. When the owner is that session
-// (the person here started it), there is no one to send to: the log has it.
+// notStarted tells the gateway that a queued start will not become a worker.
+// The gateway records an event for the TUI feed and sends the owner a notice
+// from the reserved agent-net sender. This machine never sends it: a notice
+// sent as this machine's owner session would carry the owner's label and
+// authority.
 func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
-	// The gateway records it for the TUI feed, which also covers the case
-	// below where there is no one to send a message to.
 	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	d.call(rctx, "worker.not_started", protocol.WorkerNotStarted{Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why})
-	cancel()
-	from := d.ownerSessionID()
-	if from == "" || from == e.Owner {
-		return
-	}
-	body := protocol.WorkerNotStartedText(e.Project, e.Harness, why) + protocol.WorkerPermissionsText(e.Permissions, e.Harness) + "\n"
-	if _, err := d.send(ctx, protocol.MsgSend{Sender: from, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
+	defer cancel()
+	if _, err := d.call(rctx, "worker.not_started", protocol.WorkerNotStarted{Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why, Permissions: e.Permissions}); err != nil {
 		d.Logf("queue %s: not-started notice: %v", e.ID, err)
 	}
 }

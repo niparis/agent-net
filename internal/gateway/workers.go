@@ -176,6 +176,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil {
 			return nil, reject("bad worker.not_started")
 		}
+		full := p
 		if len(p.Reason) > 300 {
 			p.Reason = p.Reason[:300]
 		}
@@ -183,6 +184,12 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "reason", p.Reason), " "))
 		g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", p.Owner,
 			"project", p.Project, "harness", p.Harness, "reason", p.Reason)
+		n, ok, err := g.store.notStartedNotice(full)
+		if err != nil {
+			g.logLine("error", "where", "not_started_notice", "err", err)
+		} else if ok {
+			g.dispatch(ctx, n)
+		}
 		return nil, nil
 
 	case "worker.queued_start":

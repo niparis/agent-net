@@ -470,6 +470,44 @@ func TestQueuedStartTimesOutWithANotice(t *testing.T) {
 	}
 }
 
+// A system notice never carries the owner label or the owner's authority. The
+// not-started notice comes from the reserved agent-net sender, not from the
+// owner session of the machine, and every harness frames it as an agent-net
+// notice (it was shown as "from your user in person").
+func TestNotStartedNoticeIsFromAgentNetNotTheOwner(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	fl := &fakeLoad{l: cpuBusy()}
+	set := queueSet
+	set.QueueTimeout = 200 * time.Millisecond
+	w := startWorkerNode(t, g, set, withLoad(fl))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
+	r := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
+	if r.Status != "queued" {
+		t.Fatalf("%+v", r)
+	}
+	var m protocol.Message
+	for {
+		m = pi.nextPush()
+		if strings.Contains(m.Body, "status: not started") {
+			break
+		}
+	}
+	if m.From != "agent-net" || m.FromName != "agent-net" || m.FromHarness != "agent-net" || m.Type != protocol.TypeNotification {
+		t.Fatalf("sender of the notice: from=%q name=%q harness=%q type=%q", m.From, m.FromName, m.FromHarness, m.Type)
+	}
+	if m.FromHarness == protocol.OwnerHarness || m.FromWorker || m.FromCTO {
+		t.Fatalf("the notice carries authority: %+v", m)
+	}
+	if !strings.HasPrefix(m.Body, "[agent-net worker notice]\nstatus: not started\n") {
+		t.Errorf("notice body: %q", m.Body)
+	}
+	if got := codexFrame(m); strings.Contains(got, "from your user in person") || strings.Contains(got, "This is your user speaking") {
+		t.Errorf("codex frame has the owner note: %q", got)
+	}
+}
+
 func TestQueueSurvivesADaemonRestart(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}

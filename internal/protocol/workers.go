@@ -400,12 +400,15 @@ type (
 		OSSandbox string `json:"os_sandbox,omitempty"`
 	}
 	// WorkerNotStarted is "worker.not_started", machine to gateway: a queued
-	// start ended without a worker. The gateway records an event for the feed.
+	// start ended without a worker. The gateway records an event for the feed
+	// and tells the owner with a notice from the reserved agent-net sender, so
+	// the notice never carries the owner's label.
 	WorkerNotStarted struct {
-		Owner   string `json:"owner_session"`
-		Project string `json:"project"`
-		Harness string `json:"harness"`
-		Reason  string `json:"reason"`
+		Owner       string `json:"owner_session"`
+		Project     string `json:"project"`
+		Harness     string `json:"harness"`
+		Reason      string `json:"reason"`
+		Permissions string `json:"permissions,omitempty"`
 	}
 	// WorkerQueuedStart is "worker.queued_start", machine to gateway: a queued
 	// start has become a worker. The gateway passes it to the owner's machine
