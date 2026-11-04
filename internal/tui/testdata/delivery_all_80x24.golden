@@ -10,8 +10,8 @@
 │   Import suppliers … accept   waiting for s_unknown  1d6h!  a·r·t·p-m·l·d·v· │
 │ Done · 1                                                                     │
 │   Drop the old pars… -        done                   3d0h   a✓r✓t✓p✓m✓l✓d✓v✓ │
-│ a accept · r review · t test · m merge · l release · v verify.               │
-│ ✓ passed ✗ failed · waiting - not needed                                     │
+│ a accept · r review · t test · p approve · m merge · l release · d deploy    │
+│ v verify. ✓ passed ✗ failed · waiting - not needed                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 

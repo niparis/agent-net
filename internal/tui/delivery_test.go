@@ -344,6 +344,24 @@ func TestDeliveryRowsFitEveryWidth(t *testing.T) {
 	}
 }
 
+func TestDeliveryLegendNamesEveryLetter(t *testing.T) {
+	for _, w := range []int{80, 120, 200} {
+		inner := w - 4
+		lines := deliveryLegend(inner)
+		got := ansi.Strip(strings.Join(lines, " "))
+		for _, want := range []string{"a accept", "r review", "t test", "p approve", "m merge", "l release", "d deploy", "v verify.", "✓ passed", "✗ failed", "waiting", "not needed"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("width %d legend missing %q: %q", w, want, got)
+			}
+		}
+		for _, l := range lines {
+			if ansi.StringWidth(l) > inner {
+				t.Errorf("width %d legend overflow (%d): %q", w, ansi.StringWidth(l), ansi.Strip(l))
+			}
+		}
+	}
+}
+
 func TestDeliveryColumnsAlign(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 30))
 	for _, w := range []int{80, 120, 200} {

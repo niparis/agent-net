@@ -7,8 +7,8 @@
 │ Waiting on agents · 2                                                        │
 │   Fix the deploy ga… review   failed                 5h0m   a✓r✗t✓p-m·l·d·v· │
 │   Show the provider… review   waiting for merger     2h0m   a✓r·t·p·m·l·d·v· │
-│ a accept · r review · t test · m merge · l release · v verify.               │
-│ ✓ passed ✗ failed · waiting - not needed                                     │
+│ a accept · r review · t test · p approve · m merge · l release · d deploy    │
+│ v verify. ✓ passed ✗ failed · waiting - not needed                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 

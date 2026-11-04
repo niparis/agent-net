@@ -67,18 +67,49 @@ func deliveryStrip(states []stripState, spaced bool) string {
 	return b.String()
 }
 
-// deliveryLegendLine is the one-line legend at 120 columns and wider. At 80
-// it splits into two lines between items, so no word is cut.
-const deliveryLegendLine = "a accept · r review · t test · m merge · l release · v verify. ✓ passed ✗ failed · waiting - not needed"
-
+// deliveryLegend names every letter the strip shows, in strip order. A line
+// that does not fit wraps between items, so no word is cut.
 func deliveryLegend(w int) []string {
-	if ansi.StringWidth(deliveryLegendLine) <= w {
-		return []string{sDim.Render(deliveryLegendLine)}
+	type item struct{ text, sep string }
+	items := []item{
+		{"a accept", ""}, {"r review", " · "}, {"t test", " · "}, {"p approve", " · "},
+		{"m merge", " · "}, {"l release", " · "}, {"d deploy", " · "}, {"v verify.", " · "},
+		{"✓ passed", " "}, {"✗ failed", " "}, {"· waiting", " "}, {"- not needed", " "},
 	}
-	return []string{
-		sDim.Render("a accept · r review · t test · m merge · l release · v verify."),
-		sDim.Render("✓ passed ✗ failed · waiting - not needed"),
+	line := ""
+	for _, it := range items {
+		line += it.sep + it.text
 	}
+	if ansi.StringWidth(line) <= w {
+		return []string{sDim.Render(line)}
+	}
+	// Keep the step names together when they fit on their own line; only the
+	// marks need the second line.
+	steps := "a accept · r review · t test · p approve · m merge · l release · d deploy · v verify."
+	if ansi.StringWidth(steps) <= w {
+		return []string{sDim.Render(steps), sDim.Render("✓ passed ✗ failed · waiting - not needed")}
+	}
+	var out []string
+	line = ""
+	for _, it := range items {
+		if line == "" {
+			line = it.text
+			continue
+		}
+		if ansi.StringWidth(line+it.sep+it.text) <= w {
+			line += it.sep + it.text
+			continue
+		}
+		out = append(out, line)
+		line = it.text
+	}
+	if line != "" {
+		out = append(out, line)
+	}
+	for i := range out {
+		out[i] = sDim.Render(out[i])
+	}
+	return out
 }
 
 // deliveryColumns is the layout of the list for one width. The title is the
