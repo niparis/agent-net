@@ -610,6 +610,20 @@ func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
 	eventually(t, "the restarted daemon is connected", func() bool { return w.node.d.Connected() })
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "still there?"}), &sent)
+	if sent.Message == nil && sent.Queued {
+		eventually(t, "the queued owner message reaches the worker", func() bool {
+			for _, m := range w.messagesOf(t, res.SessionID) {
+				if m.From == owner && m.To == res.SessionID && m.Body == "still there?" && m.IdempotencyKey == sent.IdempotencyKey {
+					sent.Message = &m
+					return true
+				}
+			}
+			return false
+		})
+	}
+	if sent.Message == nil {
+		t.Fatalf("owner_send did not deliver: %+v", sent)
+	}
 	w.replyTo(t, owner, sent.Message.ID)
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the process is gone", func() bool { return !alive(rec.Pid) })
