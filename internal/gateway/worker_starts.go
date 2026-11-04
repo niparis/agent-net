@@ -124,11 +124,7 @@ func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) (bool, error) 
 	tracksBinding := daemonTracksBinding(v)
 	if ref == "" {
 		if tracksStarts {
-			var openCount int
-			err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE node_id=? AND owner=? AND state IN ('open', 'starting')`, nodeID, owner).Scan(&openCount)
-			if err == nil && openCount > 0 {
-				return false, reject("start reference required")
-			}
+			return false, reject("start reference required")
 		}
 		return false, nil
 	}
