@@ -704,7 +704,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				d.notStarted(d.ctoCtx, e, err.Error())
 				return
 			}
-			err = d.sendQueuedStart(d.ctoCtx, w, set.BackgroundStartTimeout, l.Project, protocol.WorkerQueuedStart{Ref: l.StartRef, Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, OSSandbox: out.OSSandbox, FromCTO: l.FromCTO})
+			err = d.sendQueuedStart(d.ctoCtx, w, protocol.WorkerQueuedStart{Ref: l.StartRef, Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, OSSandbox: out.OSSandbox, FromCTO: l.FromCTO})
 			if errors.Is(err, errWorkerEnded) {
 				return
 			}

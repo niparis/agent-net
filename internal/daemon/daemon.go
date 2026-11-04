@@ -991,16 +991,6 @@ type RemoteError string
 
 func (e RemoteError) Error() string { return string(e) }
 
-// errGatewayTransient is a gateway error that may go away: the gateway says the
-// same call may work later, for example when it could not reach another machine
-// in time. A plain RemoteError is a refusal and is final.
-var errGatewayTransient = errors.New("the gateway reports a transient fault")
-
-type transientRemote struct{ RemoteError }
-
-func (e transientRemote) Unwrap() error        { return e.RemoteError }
-func (e transientRemote) Is(target error) bool { return target == errGatewayTransient }
-
 // Send posts a message. When the gateway is unreachable the message goes to
 // the outbox, with its idempotency key, and is sent on reconnect.
 func (d *Daemon) Send(ctx context.Context, p protocol.MsgSend) error {

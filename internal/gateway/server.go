@@ -70,12 +70,6 @@ type Options struct {
 }
 
 type Gateway struct {
-	// relays holds the task relay of each worker (relayQueuedTask).
-	relayMu sync.Mutex
-	relays  map[string]*relayState
-	// relayWait is how long a relay waits for the owner's machine. Zero means
-	// defaultRelayWait.
-	relayWait    time.Duration
 	publicMu     sync.Mutex
 	publicURLMu  sync.RWMutex
 	publicURL    string
@@ -1759,23 +1753,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		// A message from its owner starts an ended worker again, before it is
 		// stored, so a refusal reaches the sender (W10).
-		// A task of a start that ended is refused, and a repeat of a task that
-		// was stored must not start an ended worker again.
-		delivered, err := st.checkInitialTask(p)
-		if err != nil {
-			var rj Rejection
-			if errors.As(err, &rj) {
-				st.Event("msg.refused", nc.id, p.Sender, "", err.Error())
-				g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "to", p.Recipient, "bytes", len(p.Body),
-					"reason", err.Error())
-			}
-			return nil, err
-		}
-		if delivered {
-			err = nil
-		} else {
-			err = g.resumeEndedWorker(ctx, nc, p)
-		}
+		err = g.resumeEndedWorker(ctx, nc, p)
 		if err != nil {
 			g.notifyResumeRefusal(ctx, p, err)
 			var rj Rejection

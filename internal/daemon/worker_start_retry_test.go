@@ -11,205 +11,203 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// slowQueuedStart makes the first n worker.queued_start calls fail the way a
-// busy or restarting gateway does: no answer in time, or no link.
-func slowQueuedStart(n int32, err error, calls *atomic.Int32) func(*Config) {
+// gatewayHook wraps chosen frames of the daemon's gateway link. fn returns
+// handled=true to answer the frame itself; false passes it on to the gateway.
+func gatewayHook(typ string, fn func(ctx context.Context, n int32) (json.RawMessage, bool, error), calls *atomic.Int32) func(*Config) {
 	return func(c *Config) {
-		c.testGatewayCall = func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
-			if typ != "worker.queued_start" {
+		c.testGatewayCall = func(ctx context.Context, t string, params any) (json.RawMessage, bool, error) {
+			if t != typ {
 				return nil, false, nil
 			}
-			if calls.Add(1) <= n {
-				return nil, true, err
-			}
-			return nil, false, nil
+			return fn(ctx, calls.Add(1))
 		}
 	}
 }
 
-// The worker started, but the gateway answered the task send slowly or was
-// restarting. The send is tried again while the gateway link is up or
-// reconnecting, and the worker stays alive and gets its task. It used to be
-// stopped as start_failed after the first timeout.
-func TestWorkerStartRetriesTheTaskSendWhenTheGatewayIsSlow(t *testing.T) {
+func startThroughGateway(t *testing.T, w *workerNode, pi *localClient) protocol.WorkerStartResult {
+	t.Helper()
+	r := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "do work", Isolation: protocol.IsolationWorktree})
+	if r.SessionID == "" {
+		t.Fatalf("start: %+v", r)
+	}
+	return r
+}
+
+func hasTask(t *testing.T, w *workerNode, session, owner string) bool {
+	t.Helper()
+	// The gateway does not know the session until the worker registers.
+	raw, err := w.cli.call("messages", protocol.QueryMessages{SessionID: session, Limit: 50})
+	if err != nil {
+		return false
+	}
+	var r struct {
+		Messages []protocol.Message `json:"messages"`
+	}
+	json.Unmarshal(raw, &r)
+	for _, m := range r.Messages {
+		if m.Type == protocol.TypeRequest && m.From == owner && strings.Contains(m.Body, "do work") {
+			return true
+		}
+	}
+	return false
+}
+
+func notStartedNotices(t *testing.T, w *workerNode, owner string) []protocol.Message {
+	t.Helper()
+	var out []protocol.Message
+	for _, m := range w.messagesOf(t, owner) {
+		if strings.Contains(m.Body, "status: not started") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// The task send of a started worker is one call with a long deadline, not the
+// 20 s of the link. A gateway that answers late does not end a running worker.
+func TestQueuedStartTaskSendHasALongDeadline(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	var calls atomic.Int32
+	var wait atomic.Int64
+	var deadline atomic.Int64
+	w := startWorkerNode(t, g, shortSet, gatewayHook("worker.queued_start", func(ctx context.Context, n int32) (json.RawMessage, bool, error) {
+		wait.Store(int64(callWait(ctx)))
+		if dl, ok := ctx.Deadline(); ok {
+			deadline.Store(int64(time.Until(dl)))
+		}
+		time.Sleep(1500 * time.Millisecond) // a slow gateway
+		return nil, false, nil
+	}, &calls))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	pi, owner := helloPi(t, w.node, "owner", repo, true)
+	r := startThroughGateway(t, w, pi)
+	eventually(t, "the worker has its task", func() bool { return hasTask(t, w, r.SessionID, owner) })
+	if d := time.Duration(wait.Load()); d <= 20*time.Second || d < queuedStartWait {
+		t.Errorf("the call waits %v, want at least %v", d, queuedStartWait)
+	}
+	if d := time.Duration(deadline.Load()); d < queuedStartWait-30*time.Second {
+		t.Errorf("the call deadline is %v away, want about %v", d, queuedStartWait)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("worker.queued_start calls = %d, want 1", n)
+	}
+	if ns := notStartedNotices(t, w, owner); len(ns) != 0 {
+		t.Errorf("a not-started notice for a worker that started:\n%s", ns[0].Body)
+	}
+	if w.d.workerBySession(r.SessionID) == nil {
+		t.Error("the worker was stopped")
+	}
+}
+
+// A refusal, or a gateway that does not answer, ends the start: one call, one
+// notice, a start_failed record.
+func TestQueuedStartTaskSendFailureEndsTheStart(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		err  error
+		want string
 	}{
-		{"timeout", errGatewayTimeout},
-		{"reconnecting", errNotConnected},
-		{"transient", transientRemote{RemoteError("the owner's machine did not send the task in time")}},
+		{"refusal", RemoteError("session is not a worker of this node with that owner"), "not a worker of this node"},
+		{"unreachable", errGatewayTimeout, "did not answer"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
 			var calls atomic.Int32
-			w := startWorkerNode(t, g, shortSet, slowQueuedStart(2, tc.err, &calls))
+			w := startWorkerNode(t, g, shortSet, gatewayHook("worker.queued_start", func(ctx context.Context, n int32) (json.RawMessage, bool, error) {
+				return nil, true, tc.err
+			}, &calls))
 			repo := newRepo(t, "shop")
 			w.register(t, repo)
-			_, owner := helloPi(t, w.node, "owner", repo, true)
-			out, err := w.d.startWorker(context.Background(), protocol.WorkerLaunch{Project: "shop", Path: repo, Harness: "opencode", Model: "fake/m1", Owner: owner, Task: "do work", Isolation: protocol.IsolationWorktree})
-			if err != nil || !out.Starting {
-				t.Fatalf("start: %+v %v", out, err)
+			pi, owner := helloPi(t, w.node, "owner", repo, true)
+			r := startThroughGateway(t, w, pi)
+			eventually(t, "one not-started notice", func() bool {
+				ns := notStartedNotices(t, w, owner)
+				return len(ns) == 1 && strings.Contains(ns[0].Body, "its task could not be sent") && strings.Contains(ns[0].Body, tc.want)
+			})
+			if n := calls.Load(); n != 1 {
+				t.Errorf("worker.queued_start calls = %d, want 1", n)
 			}
-			eventually(t, "the worker has its task", func() bool {
-				// The gateway does not know the session until the worker registers.
-				raw, err := w.cli.call("messages", protocol.QueryMessages{SessionID: out.SessionID, Limit: 50})
-				if err != nil {
-					return false
-				}
-				var r struct {
-					Messages []protocol.Message `json:"messages"`
-				}
-				json.Unmarshal(raw, &r)
-				for _, m := range r.Messages {
-					if m.Type == protocol.TypeRequest && m.From == owner && strings.Contains(m.Body, "do work") {
+			eventually(t, "a start_failed record", func() bool {
+				rows, _ := w.d.st.workers()
+				for _, row := range rows {
+					if row.SessionID == r.SessionID && row.EndedReason == protocol.StopStartFails {
 						return true
 					}
 				}
 				return false
 			})
-			if n := calls.Load(); n != 3 {
-				t.Errorf("worker.queued_start calls = %d, want 3 (two failures, one success)", n)
-			}
-			for _, m := range w.messagesOf(t, owner) {
-				if strings.Contains(m.Body, "status: not started") {
-					t.Errorf("a not-started notice for a worker that kept going:\n%s", m.Body)
-				}
-			}
-			if w.d.workerBySession(out.SessionID) == nil {
-				t.Error("the worker was stopped")
-			}
-			rows, err := w.d.st.workers()
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, row := range rows {
-				if row.SessionID == out.SessionID && row.EndedReason != "" {
-					t.Errorf("the worker record ended: %q", row.EndedReason)
-				}
-			}
 		})
 	}
 }
 
-// A gateway that stays unreachable ends the start within the bound, as before:
-// one not-started notice and a start_failed record.
-func TestWorkerStartGivesUpWhenTheGatewayStaysUnreachable(t *testing.T) {
+// The task send belongs to the worker: when the worker is stopped, the call is
+// cancelled, and no not-started notice follows (the worker's own end tells the
+// owner).
+func TestQueuedStartTaskSendStopsWhenTheWorkerEnds(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	set := shortSet
-	// The same bound covers the checkout and launch, so it is not tiny.
-	set.BackgroundStartTimeout = 1500 * time.Millisecond
 	var calls atomic.Int32
-	w := startWorkerNode(t, g, set, slowQueuedStart(1<<20, errGatewayTimeout, &calls))
+	cancelled := make(chan struct{})
+	w := startWorkerNode(t, g, shortSet, gatewayHook("worker.queued_start", func(ctx context.Context, n int32) (json.RawMessage, bool, error) {
+		<-ctx.Done()
+		close(cancelled)
+		return nil, true, ctx.Err()
+	}, &calls))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, owner := helloPi(t, w.node, "owner", repo, true)
-	out := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "do work", Isolation: protocol.IsolationWorktree})
-	if out.SessionID == "" {
-		t.Fatalf("start: %+v", out)
-	}
-	eventually(t, "one not-started notice", func() bool {
-		n := 0
-		for _, m := range w.messagesOf(t, owner) {
-			if strings.Contains(m.Body, "status: not started") && strings.Contains(m.Body, "its task could not be sent") {
-				n++
-			}
-		}
-		return n == 1
-	})
-	if n := calls.Load(); n < 2 {
-		t.Errorf("worker.queued_start calls = %d, want a retry before giving up", n)
-	}
-	eventually(t, "a start_failed record", func() bool {
-		rows, _ := w.d.st.workers()
-		for _, row := range rows {
-			if row.SessionID == out.SessionID && row.EndedReason == protocol.StopStartFails {
-				return true
-			}
-		}
-		return false
-	})
-}
-
-// The retry may send the task a second time when the first call was only slow.
-// The task message carries a key, so the gateway stores it once.
-func TestQueuedTaskSendIsIdempotent(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	_, owner := helloPi(t, w.node, "owner", repo, true)
-	_, worker := helloPi(t, w.node, "worker", repo, true)
-	p := protocol.WorkerQueuedStart{Owner: owner, SessionID: worker, Harness: "opencode", Project: "shop", Task: "once only"}
-	for i := 0; i < 2; i++ {
-		if err := w.d.sendQueuedTask(context.Background(), p); err != nil {
-			t.Fatal(err)
-		}
-	}
-	n := 0
-	for _, m := range w.messagesOf(t, worker) {
-		if strings.Contains(m.Body, "once only") {
-			n++
-		}
-	}
-	if n != 1 {
-		t.Errorf("task messages = %d, want 1", n)
-	}
-}
-
-// A refusal from the gateway is final: no retry, one notice.
-func TestWorkerStartDoesNotRetryARefusal(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	var calls atomic.Int32
-	w := startWorkerNode(t, g, shortSet, slowQueuedStart(1<<20, RemoteError("session is not a worker of this node with that owner"), &calls))
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	pi, owner := helloPi(t, w.node, "owner", repo, true)
-	out := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "do work", Isolation: protocol.IsolationWorktree})
-	_ = out
-	eventually(t, "one not-started notice", func() bool {
-		n := 0
-		for _, m := range w.messagesOf(t, owner) {
-			if strings.Contains(m.Body, "status: not started") {
-				n++
-			}
-		}
-		return n == 1
-	})
-	if n := calls.Load(); n != 1 {
-		t.Errorf("worker.queued_start calls = %d, want 1 (a refusal is final)", n)
-	}
-}
-
-// The retry belongs to the worker. When the worker is stopped, no more calls
-// are made, and no not-started notice follows: the worker's own end tells the
-// owner.
-func TestWorkerStartRetryStopsWhenTheWorkerEnds(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	set := shortSet
-	set.BackgroundStartTimeout = time.Minute
-	var calls atomic.Int32
-	w := startWorkerNode(t, g, set, slowQueuedStart(1<<20, errGatewayTimeout, &calls))
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	pi, owner := helloPi(t, w.node, "owner", repo, true)
-	out := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "do work", Isolation: protocol.IsolationWorktree})
-	eventually(t, "the task send is being retried", func() bool { return calls.Load() >= 3 })
-	wk := w.d.workerBySession(out.SessionID)
+	r := startThroughGateway(t, w, pi)
+	eventually(t, "the task send is waiting", func() bool { return calls.Load() == 1 })
+	wk := w.d.workerBySession(r.SessionID)
 	if wk == nil {
 		t.Fatal("no worker")
 	}
 	w.d.endWorker(wk, protocol.StopRequested)
-	time.Sleep(100 * time.Millisecond) // a call that was in flight may still count
-	after := calls.Load()
-	time.Sleep(400 * time.Millisecond)
-	if n := calls.Load(); n != after {
-		t.Errorf("worker.queued_start went on after the worker ended: %d then %d", after, n)
+	select {
+	case <-cancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the task send went on after the worker ended")
 	}
-	for _, m := range w.messagesOf(t, owner) {
-		if strings.Contains(m.Body, "status: not started") {
-			t.Errorf("a not-started notice for a worker that was stopped:\n%s", m.Body)
+	time.Sleep(300 * time.Millisecond)
+	if ns := notStartedNotices(t, w, owner); len(ns) != 0 {
+		t.Errorf("a not-started notice for a worker that was stopped:\n%s", ns[0].Body)
+	}
+}
+
+// The not-started report is tried again while the gateway does not answer, and
+// not again after a refusal.
+func TestNotStartedReportIsRetried(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	var sendCalls, reports atomic.Int32
+	hook := gatewayHook("worker.queued_start", func(ctx context.Context, n int32) (json.RawMessage, bool, error) {
+		return nil, true, RemoteError("refused")
+	}, &sendCalls)
+	report := gatewayHook("worker.not_started", func(ctx context.Context, n int32) (json.RawMessage, bool, error) {
+		if n <= 2 {
+			return nil, true, errGatewayTimeout
 		}
+		return nil, false, nil
+	}, &reports)
+	both := func(c *Config) {
+		hook(c)
+		first := c.testGatewayCall
+		report(c)
+		second := c.testGatewayCall
+		c.testGatewayCall = func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
+			if typ == "worker.queued_start" {
+				return first(ctx, typ, params)
+			}
+			return second(ctx, typ, params)
+		}
+	}
+	w := startWorkerNode(t, g, shortSet, both)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	pi, owner := helloPi(t, w.node, "owner", repo, true)
+	startThroughGateway(t, w, pi)
+	eventually(t, "the notice after two failed reports", func() bool { return len(notStartedNotices(t, w, owner)) == 1 })
+	if n := reports.Load(); n != 3 {
+		t.Errorf("worker.not_started calls = %d, want 3", n)
 	}
 }
 

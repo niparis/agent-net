@@ -184,7 +184,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 // started. When the task cannot be sent, the worker is stopped and the owner is
 // told; when the worker ended by itself first, its own end tells the owner.
 func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out protocol.WorkerLaunched, w *worker, waited time.Duration) {
-	err := d.sendQueuedStart(ctx, w, d.workerSettings(e.Project).BackgroundStartTimeout, e.Project, protocol.WorkerQueuedStart{Ref: e.ID, Owner: e.Owner, SessionID: out.SessionID,
+	err := d.sendQueuedStart(ctx, w, protocol.WorkerQueuedStart{Ref: e.ID, Owner: e.Owner, SessionID: out.SessionID,
 		Harness: e.Harness, Project: e.Project, Task: e.Task, Title: e.Title, Worktree: out.Worktree, Branch: out.Branch,
 		ProjectRules: out.ProjectRules, Permissions: e.Permissions, OSSandbox: out.OSSandbox, FromCTO: e.FromCTO})
 	if errors.Is(err, errWorkerEnded) {
@@ -208,20 +208,17 @@ func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out proto
 // errWorkerEnded is a task send that stopped because the worker ended.
 var errWorkerEnded = errors.New("the worker ended before its task was sent")
 
+// queuedStartWait is how long the task send of a started worker may take. The
+// link waits 20 s for most calls, but the gateway relays this one to the
+// owner's machine, and a gateway that is busy or restarting for an upgrade can
+// need more. A worker that is running should not end for that.
+const queuedStartWait = 2 * time.Minute
+
 // sendQueuedStart asks the gateway to send a started worker its task
-// ("worker.queued_start"). A gateway that is busy or restarting for an upgrade
-// answers late or not at all, and that is no reason to stop a worker that is
-// running. So the call is tried again while the link is up or reconnecting, or
-// the gateway says the fault is transient, until the bound is over. The retry
-// stops with the worker: a call that waits is cancelled when the worker ends. A
-// gateway that answers with a refusal ends it at once. The task message has a
-// fixed key (sendQueuedTask) and the gateway sends the task once, so a first
-// call that was only slow does not send the task twice.
-func (d *Daemon) sendQueuedStart(ctx context.Context, w *worker, within time.Duration, project string, p protocol.WorkerQueuedStart) error {
-	if within <= 0 {
-		within = d.workerSettings(project).BackgroundStartTimeout
-	}
-	bound, cancel := context.WithTimeout(ctx, within)
+// ("worker.queued_start"), as one call with a long deadline. A refusal or a
+// failure ends the start. The call stops when the worker ends.
+func (d *Daemon) sendQueuedStart(ctx context.Context, w *worker, p protocol.WorkerQueuedStart) error {
+	cctx, cancel := context.WithTimeout(withCallWait(ctx, queuedStartWait+5*time.Second), queuedStartWait)
 	defer cancel()
 	if w != nil {
 		ended := d.workerEnded(w)
@@ -235,66 +232,54 @@ func (d *Daemon) sendQueuedStart(ctx context.Context, w *worker, within time.Dur
 			}
 		}()
 	}
-	workerGone := func() bool {
-		if w == nil {
-			return false
-		}
+	_, err := d.call(cctx, "worker.queued_start", p)
+	if err != nil && w != nil {
 		select {
 		case <-d.workerEnded(w):
-			return true
+			return errWorkerEnded
 		default:
-			return false
 		}
 	}
-	for attempt := 1; ; attempt++ {
-		if workerGone() {
-			return errWorkerEnded
-		}
-		// The gateway may take up to 30 s to relay the task to the owner's
-		// machine, so a call waits a little longer than that.
-		cctx, cancelCall := context.WithTimeout(withCallWait(bound, 35*time.Second), 30*time.Second)
-		_, err := d.call(cctx, "worker.queued_start", p)
-		cancelCall()
-		if err == nil {
-			return nil
-		}
-		if workerGone() {
-			return errWorkerEnded
-		}
-		if bound.Err() != nil || !retryableGatewayError(err) {
-			return err
-		}
-		d.Logf("worker.task_retry session=%s attempt=%d reason=%q", p.SessionID, attempt, err.Error())
-		select {
-		case <-bound.Done():
-			if workerGone() {
-				return errWorkerEnded
-			}
-			return err
-		case <-time.After(d.cfg.BackoffMin):
-		}
-	}
+	return err
 }
 
-// retryableGatewayError tells whether a failed gateway call may work later: the
-// gateway did not answer, the link is down or coming back, or the gateway says
-// the fault is transient. A refusal from the gateway is final.
-func retryableGatewayError(err error) bool {
-	return errors.Is(err, errGatewayTimeout) || errors.Is(err, errNotConnected) || errors.Is(err, errGatewayTransient) || errors.Is(err, context.DeadlineExceeded)
-}
-
-// notStarted tells the gateway that a queued start will not become a worker.
-// The gateway records an event for the TUI feed and sends the owner a notice
-// from the reserved agent-net sender. This machine never sends it: a notice
-// sent as this machine's owner session would carry the owner's label and
-// authority.
+// notStarted tells the gateway that a start will not become a worker. The
+// gateway records an event for the TUI feed and sends the owner a notice from
+// the reserved agent-net sender. This machine never sends it: a notice sent as
+// this machine's owner session would carry the owner's label and authority.
+//
+// The report is tried a few times with a growing pause while the gateway does
+// not answer or the link is down, and stops when the gateway accepts or
+// refuses it.
 func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
-	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if _, err := d.call(rctx, "worker.not_started", protocol.WorkerNotStarted{Ref: e.ID, Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why, Permissions: e.Permissions}); err != nil {
-		d.Logf("queue %s: not-started notice: %v", e.ID, err)
+	p := protocol.WorkerNotStarted{Ref: e.ID, Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why, Permissions: e.Permissions}
+	pause := d.cfg.BackoffMin
+	for attempt := 1; attempt <= notStartedTries; attempt++ {
+		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := d.call(rctx, "worker.not_started", p)
+		cancel()
+		var refused RemoteError
+		if err == nil || errors.As(err, &refused) {
+			if err != nil {
+				d.Logf("queue %s: not-started report refused: %v", e.ID, err)
+			}
+			return
+		}
+		d.Logf("queue %s: not-started report: %v (attempt %d of %d)", e.ID, err, attempt, notStartedTries)
+		if attempt == notStartedTries {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pause):
+		}
+		pause *= 2
 	}
 }
+
+// notStartedTries is how many times a not-started report is made.
+const notStartedTries = 5
 
 // sendQueuedTask handles "worker.task": a queued start has become a worker on
 // another machine, and this machine holds the owner, so it sends the task as
@@ -304,8 +289,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 		return errors.New("the owner of this queued start is not a session of this machine")
 	}
 	charter := d.charterBrief(ctx, p.Project)
-	// The key is fixed per worker, so the same task sent twice is stored once.
-	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest, IdempotencyKey: "queued-task:" + p.SessionID,
+	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
 		Body: protocol.WorkerTaskBodyOS(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions, p.OSSandbox, d.SettingsSnapshot(), p.Project)})
 	return err
 }
