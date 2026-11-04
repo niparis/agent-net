@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -26,8 +27,12 @@ func (d *Daemon) verifySkillAbsence(t protocol.ToolTarget) protocol.ToolResult {
 	report := d.toolsReport
 	report.Items = append([]protocol.InventoryItem(nil), report.Items...)
 	d.toolsMu.Unlock()
-	if report.State == protocol.InventoryError || report.State == protocol.InventoryStale {
-		r.Reason = "inventory scan incomplete"
+	reason := inventory.PlanReportProblem(report)
+	if reason == "" {
+		reason = inventory.PlanItemProblem(report, protocol.InventorySkill, t.Name)
+	}
+	if reason != "" {
+		r.Reason = reason
 		return r
 	}
 	for _, obs := range report.Items {

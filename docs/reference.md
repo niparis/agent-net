@@ -1233,6 +1233,26 @@ every other fresh observation and marks only that source stale, so one
 unreadable or linked-out skill no longer hides new file manifests. A scan that
 produces no successful observation at all leaves the previous observations
 marked stale. The inventory is read-only and does not execute skills or servers.
+
+A skill that cannot be hashed safely shows `cannot manage: <reason>` in Tools.
+The reason names the file and rule: more than 64 MiB of total regular file
+data, more than 10,000 entries, an absolute or escaping symlink, a special
+file, an unreadable file, or a file that changes during the scan. For example,
+a 114 MB model file exceeds the 64 MiB scan limit by itself. This is separate
+from the 2 MiB import limit below. An `.env` file alone does not fail discovery;
+recognized secret contents refuse import, and the refusal names the file
+without showing its contents.
+
+A fresh scan with one failed skill blocks plans for that skill name or an
+overlapping source folder, including its aliases. It does not block unrelated
+skills on the same machine. If a whole source root cannot be listed, its
+unknown contents may hide the requested skill, so skill plans stay blocked.
+A missing report, a report older than 15 minutes, a scanner or upload failure,
+a report that exceeds its limits, or a scan with no successful observations
+also blocks plans for that machine. Planning and applying refresh reachable
+machines and require the fresh scan's upload acknowledgement. Conflict lines
+name the machine, skill, project or source folder, and the actual reason.
+
 MCP fingerprints omit
 sensitive descriptor values. Project MCP entries also carry an opaque
 `definition` digest so the same name can be compared across harnesses. It is

@@ -43,7 +43,7 @@ func skillManifestRoot(dir *os.Root) (*protocol.SkillManifest, error) {
 	var total int64
 	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return skillReadError(path, err)
 		}
 		if path == "." {
 			return nil
@@ -63,18 +63,18 @@ func skillManifestRoot(dir *os.Root) (*protocol.SkillManifest, error) {
 		}
 		info, err := dir.Lstat(path)
 		if err != nil {
-			return err
+			return skillReadError(path, err)
 		}
 		h := sha256.New()
 		switch {
 		case info.Mode().IsRegular():
 			total += info.Size()
 			if info.Size() < 0 || total > maxBytes {
-				return fmt.Errorf("skill exceeds size limit")
+				return skillSizeError(path, info.Size(), total)
 			}
 			f, err := dir.Open(path)
 			if err != nil {
-				return err
+				return skillReadError(path, err)
 			}
 			actual, err := f.Stat()
 			if err != nil || !os.SameFile(info, actual) {
@@ -85,7 +85,7 @@ func skillManifestRoot(dir *os.Root) (*protocol.SkillManifest, error) {
 			n, err := io.Copy(h, io.LimitReader(f, info.Size()+1))
 			closeErr := f.Close()
 			if err != nil {
-				return err
+				return skillReadError(path, err)
 			}
 			if closeErr != nil {
 				return closeErr
@@ -96,18 +96,18 @@ func skillManifestRoot(dir *os.Root) (*protocol.SkillManifest, error) {
 		case info.Mode()&os.ModeSymlink != 0:
 			target, err := dir.Readlink(path)
 			if err != nil {
-				return err
+				return skillReadError(path, err)
 			}
 			if filepath.IsAbs(target) {
-				return fmt.Errorf("absolute symlink")
+				return fmt.Errorf("absolute symlink (%s)", path)
 			}
 			if _, err := dir.Stat(path); err != nil {
-				return fmt.Errorf("invalid or escaping symlink")
+				return fmt.Errorf("invalid or escaping symlink (%s)", path)
 			}
 			h.Write([]byte("symlink\x00"))
 			h.Write([]byte(filepath.ToSlash(target)))
 		default:
-			return fmt.Errorf("special file in skill")
+			return fmt.Errorf("special file in skill (%s)", path)
 		}
 		m.Files = append(m.Files, protocol.SkillFile{Path: path, Size: info.Size(), Fingerprint: hex.EncodeToString(h.Sum(nil))})
 		if info.ModTime().After(m.Newest) {
@@ -115,7 +115,7 @@ func skillManifestRoot(dir *os.Root) (*protocol.SkillManifest, error) {
 		}
 		b, err := json.Marshal(m)
 		if err != nil {
-			return err
+			return skillReadError(path, err)
 		}
 		if len(b) > 64<<10 {
 			m.TooLarge = true

@@ -83,3 +83,18 @@ func TestMergeReportsKeepsPreviousWhenNothingScanned(t *testing.T) {
 		t.Fatalf("previous report lost: %+v", got)
 	}
 }
+
+func TestMergeReportsAllFailedPreservesRetainedItemReason(t *testing.T) {
+	previous := protocol.InventoryReport{State: protocol.InventoryStale, Items: []protocol.InventoryItem{
+		{Kind: "skill", Name: "retained", State: protocol.InventoryStale, Reason: "absolute symlink (link)"},
+		{Kind: "skill", Name: "without-reason", State: protocol.InventoryOK},
+	}}
+	fresh := protocol.InventoryReport{State: protocol.InventoryError, Reason: "project registry unavailable"}
+	got := MergeReports(previous, fresh)
+	if got.Items[0].Reason != previous.Items[0].Reason {
+		t.Fatalf("lost item cause: %+v", got.Items[0])
+	}
+	if got.Items[1].Reason != fresh.Reason {
+		t.Fatalf("missing report fallback: %+v", got.Items[1])
+	}
+}

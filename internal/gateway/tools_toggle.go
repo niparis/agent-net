@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/temppath"
 )
@@ -289,6 +291,17 @@ func (g *Gateway) ensureSkillImported(ctx context.Context, itemID string) error 
 			}
 		}
 		if location.NodeID == "" {
+			for _, item := range items {
+				if item.ID != itemID {
+					continue
+				}
+				for _, loc := range item.Locations {
+					report := protocol.InventoryReport{Items: []protocol.InventoryItem{loc.InventoryItem}}
+					if reason := inventory.PlanItemProblem(report, item.Kind, item.Name, loc.Location); reason != "" {
+						return fmt.Errorf("%s: %s", loc.Machine, reason)
+					}
+				}
+			}
 			return errors.New("unmanaged skill has no online user-folder copy to import")
 		}
 		if _, err = g.importSkill(ctx, protocol.ToolImport{Item: itemID, Location: location}); err != nil {

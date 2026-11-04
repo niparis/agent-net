@@ -738,7 +738,15 @@ the `standing choice` actor. The setting defaults on for existing global skills
 and off for other assignments. Failed automatic plans leave the new project
 eligible for retry on a later discovery report.
 
-A plan changes nothing. It lists the machines, harnesses, checkouts, sources, destinations and conflicts, and binds to the inventory, the known projects, the item versions and the desired revisions. An out-of-date plan is refused. Destination checks use a bounded fingerprint, locally keyed, so the plan carries no file contents. Incomplete scans, opaque sources and offline paths are conflicts. An apply records the desired state as pending. It does not claim that a file changed. A target stays `pending` until the machine reports.
+A plan changes nothing. It lists the machines, harnesses, checkouts, sources, destinations and conflicts, and binds to the inventory, the known projects, the item versions and the desired revisions. An out-of-date plan is refused. Destination checks use a bounded fingerprint, locally keyed, so the plan carries no file contents. A fresh partial scan blocks the failed skill name and overlapping source folders,
+including entry aliases, rather than every skill on that machine. A failed
+source root with unknown contents still blocks skills it could hide. Missing
+reports, reports older than 15 minutes, scanner failures, failed upload
+acknowledgements, report-limit failures and scans with no successful items
+block the machine. The gateway checks these conditions again on apply; the
+daemon also checks them before verifying absence. Specific refusal reasons
+survive inventory merging and reach the owner without file contents. Opaque
+sources and offline paths remain conflicts. An apply records the desired state as pending. It does not claim that a file changed. A target stays `pending` until the machine reports.
 
 When a daemon applies a target:
 

@@ -44,9 +44,9 @@ func Scan(o Options) protocol.InventoryReport {
 			return
 		}
 		totalFields += total
-		if state == protocol.InventoryError {
+		if state == protocol.InventoryError && (report.Reason == "" || report.Reason == PartialScanReason) {
 			report.State = protocol.InventoryError
-			report.Reason = "one or more sources could not be scanned"
+			report.Reason = PartialScanReason
 		}
 		report.Items = append(report.Items, protocol.InventoryItem{Harness: h, Kind: k, Scope: scope, Project: project, ProjectRoot: root, Location: path, Name: name, Source: protocol.InventoryNative, Hash: hash, ScannedAt: now, State: state, Reason: reason, Unsupported: unsupported})
 	}
@@ -214,7 +214,17 @@ func Scan(o Options) protocol.InventoryReport {
 			}
 			skillRoot.Close()
 			if err != nil {
-				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "cannot hash skill safely")
+				index := len(report.Items)
+				add(h, protocol.InventorySkill, scope, project, root, actual, e.Name(), "", protocol.InventoryError, err.Error())
+				if alias != "" && index < len(report.Items) {
+					if totalFields+len(alias) > 512<<10 {
+						report.State = protocol.InventoryError
+						report.Reason = "inventory exceeds report limit"
+						return
+					}
+					report.Items[index].Aliases = []string{alias}
+					totalFields += len(alias)
+				}
 				continue
 			}
 			index := len(report.Items)
@@ -399,7 +409,7 @@ func Scan(o Options) protocol.InventoryReport {
 				skillRoot.Close()
 				name := filepath.Base(filepath.Dir(source))
 				if err != nil {
-					add("pi", protocol.InventorySkill, scope, project, root, source, name, "", protocol.InventoryError, "cannot hash skill safely")
+					add("pi", protocol.InventorySkill, scope, project, root, source, name, "", protocol.InventoryError, err.Error())
 				} else {
 					index := len(report.Items)
 					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")

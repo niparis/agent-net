@@ -75,14 +75,14 @@ func (g *Gateway) findCandidate(key string) (nativeMCP, error) {
 
 // importBuild reads the entry again on its machine and works out the server and
 // scope, plus anything that stops the import.
-func (g *Gateway) importBuild(ctx context.Context, e nativeMCP, failed map[string]bool) (protocol.MCPServer, protocol.ToolAssignment, []string, error) {
+func (g *Gateway) importBuild(ctx context.Context, e nativeMCP, failed map[string]string) (protocol.MCPServer, protocol.ToolAssignment, []string, error) {
 	c := e.candidate
 	var conflicts []string
 	if c.Class != protocol.MCPImportable {
 		return protocol.MCPServer{}, protocol.ToolAssignment{}, nil, reject("this entry cannot be imported: %s", c.Reason)
 	}
-	if failed[c.NodeID] {
-		conflicts = append(conflicts, "fresh inventory scan unavailable on "+c.Machine)
+	if reason := failed[c.NodeID]; reason != "" {
+		conflicts = append(conflicts, c.Machine+": "+reason)
 	}
 	var server protocol.MCPServer
 	spec, err := g.importSpec(ctx, c)

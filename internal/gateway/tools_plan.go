@@ -13,11 +13,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 )
 
-func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolAssignment, failed map[string]bool) ([]protocol.ToolPlanTarget, error) {
+func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolAssignment, failed map[string]string) ([]protocol.ToolPlanTarget, error) {
 	var kind, name, hash string
 	if err := g.store.db.QueryRow(`SELECT kind,name,hash FROM tool_identities WHERE id=?`, item).Scan(&kind, &name, &hash); err != nil {
 		return nil, errors.New("tool item not found")
@@ -49,8 +50,18 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	}
 	targets := []protocol.ToolPlanTarget{}
 	for _, node := range nodes {
-		if failed[node.NodeID] {
-			targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "inspect", State: "conflict", Conflict: "fresh inventory scan unavailable"})
+		hasReport := false
+		for _, report := range reports {
+			if report.NodeID == node.NodeID {
+				hasReport = true
+			}
+		}
+		problem := failed[node.NodeID]
+		if !hasReport && problem == "" {
+			problem = "machine has no inventory report; rescan the machine"
+		}
+		if problem != "" {
+			targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "inspect", State: "conflict", Conflict: problem})
 		}
 	}
 	source := ""
@@ -264,8 +275,19 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		if !a.OnMachine(report.NodeID) {
 			continue
 		}
-		if report.State != protocol.InventoryOK {
-			targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Action: "inspect", State: "conflict", Conflict: "inventory scan incomplete"})
+		sources := []string{}
+		for _, obs := range report.Items {
+			if obs.Kind == kind && obs.Name == name {
+				sources = append(sources, obs.Location)
+				sources = append(sources, obs.Aliases...)
+			}
+		}
+		problem := inventory.PlanReportProblem(report)
+		if problem == "" {
+			problem = inventory.PlanItemProblem(report, kind, name, sources...)
+		}
+		if problem != "" {
+			targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Action: "inspect", State: "conflict", Conflict: problem})
 		}
 		for _, obs := range report.Items {
 			if obs.Kind == kind && obs.Name == name && len(obs.Unsupported) > 0 && (obs.Source == protocol.InventoryPlugin || obs.Source == protocol.InventoryPackage || obs.Source == protocol.InventorySystem) {
@@ -725,15 +747,15 @@ func (s *Store) toolPlanNodes() ([]protocol.NodeView, error) {
 	return nodes, rows.Err()
 }
 
-func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]bool, error) {
+func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]string, error) {
 	if validatingProposal(ctx) {
-		return map[string]bool{}, nil
+		return map[string]string{}, nil
 	}
 	nodes, err := g.store.toolPlanNodes()
 	if err != nil {
 		return nil, err
 	}
-	failed := map[string]bool{}
+	failed := map[string]string{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 16)
@@ -749,14 +771,14 @@ func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]bool,
 			case sem <- struct{}{}:
 			case <-ctx.Done():
 				mu.Lock()
-				failed[id] = true
+				failed[id] = "inventory scan canceled"
 				mu.Unlock()
 				return
 			}
 			defer func() { <-sem }()
 			if _, err := host.request(ctx, "node.tool_plan_scan", struct{}{}, 30*time.Second); err != nil {
 				mu.Lock()
-				failed[id] = true
+				failed[id] = redact.Secrets(err.Error())
 				mu.Unlock()
 			}
 		}(node.NodeID)

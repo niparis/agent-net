@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -483,7 +484,7 @@ func TestVerifySkillAbsence(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
-	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: "hash", Location: path, Source: protocol.InventoryNative}}
+	d.toolsReport = protocol.InventoryReport{State: protocol.InventoryOK, ScannedAt: time.Now(), Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: "hash", Location: path, Source: protocol.InventoryNative, State: protocol.InventoryOK}}}
 	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: `["skill","demo","hash"]`, Version: "hash"}, Target: protocol.ToolPlanTarget{Action: "verify"}}
 	if r := d.verifySkillAbsence(target); r.State != "pending" {
 		t.Fatalf("existing skill: %+v", r)
@@ -533,5 +534,25 @@ func TestRemoveSkillUnmanagedCodexHome(t *testing.T) {
 	})
 	if err != nil || !found {
 		t.Fatalf("backup missing: %v", err)
+	}
+}
+
+func TestVerifySkillAbsencePartialInventory(t *testing.T) {
+	d := &Daemon{}
+	d.toolsReport = protocol.InventoryReport{State: "stale", Reason: inventory.PartialScanReason, ScannedAt: time.Now(), Items: []protocol.InventoryItem{
+		{Kind: "skill", Name: "other", State: "ok"},
+		{Kind: "skill", Name: "bad", State: "error", Reason: "unreadable file"},
+	}}
+	target := protocol.ToolTarget{Name: "gone", Revision: protocol.ToolRevision{Item: `["skill","gone","hash"]`, Version: "hash"}}
+	if r := d.verifySkillAbsence(target); r.State != "applied" {
+		t.Fatalf("unrelated error: %+v", r)
+	}
+	target.Name = "bad"
+	if r := d.verifySkillAbsence(target); r.State == "applied" || !strings.Contains(r.Reason, "unreadable file") {
+		t.Fatalf("bad skill accepted: %+v", r)
+	}
+	d.toolsReport = protocol.InventoryReport{}
+	if r := d.verifySkillAbsence(target); r.State == "applied" {
+		t.Fatal("missing scan accepted")
 	}
 }

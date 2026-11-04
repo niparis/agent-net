@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -188,7 +189,11 @@ func (g *Gateway) applySkillGroup(ctx context.Context, id, actor string) (protoc
 	if failed, e := g.refreshToolObservations(ctx); e != nil {
 		return protocol.ToolApplyResult{}, true, e
 	} else if len(failed) > 0 {
-		return protocol.ToolApplyResult{}, true, errors.New("fresh inventory scan unavailable")
+		for _, target := range p.Targets {
+			if reason := failed[target.NodeID]; reason != "" {
+				return protocol.ToolApplyResult{}, true, fmt.Errorf("%s: %s", target.Machine, reason)
+			}
+		}
 	}
 	// A newly discovered content identity also belongs to this name. Never
 	// apply an older group that omitted it.

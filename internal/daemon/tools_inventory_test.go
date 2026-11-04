@@ -465,3 +465,73 @@ func TestToolsReadFileOwnerAndPaths(t *testing.T) {
 	}
 
 }
+
+// Exercise the actual scan RPC and upload, not just a stored partial report.
+func TestToolsPlanPartialScanEndToEnd(t *testing.T) {
+	home := t.TempDir()
+	for _, name := range []string{"good", "bad"} {
+		root := filepath.Join(home, ".claude/skills", name)
+		if err := os.MkdirAll(root, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("# Fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	voice, err := os.Create(filepath.Join(home, ".claude/skills/bad/voice.onnx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = voice.Truncate(113895201); err != nil {
+		t.Fatal(err)
+	}
+	if err = voice.Close(); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory, cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var good, bad protocol.ToolItem
+	eventually(t, "partial inventory", func() bool {
+		raw, e := cli.call("tools_items", map[string]any{"kind": "skill"})
+		if e != nil {
+			return false
+		}
+		var page protocol.ToolsPage
+		if json.Unmarshal(raw, &page) != nil {
+			return false
+		}
+		for _, item := range page.Items {
+			switch item.Name {
+			case "good":
+				good = item
+			case "bad":
+				bad = item
+			}
+		}
+		return good.ID != "" && bad.ID != ""
+	})
+	loc := good.Locations[0]
+	cli.mustCall("tools_import", protocol.ToolImport{Item: good.ID, Location: protocol.ToolImportLocation{NodeID: loc.NodeID, Location: loc.Location}})
+	raw, err := cli.call("tools_plan", protocol.ToolPlanRequest{Item: good.ID, Target: protocol.ToolAssignment{Scope: "uninstalled"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan protocol.ToolPlan
+	if err = json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) > 0 {
+		t.Fatalf("unrelated partial failure blocks good skill: %s", raw)
+	}
+	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: plan.ID})
+	raw, err = cli.call("tools_plan", protocol.ToolPlanRequest{Item: bad.ID, Target: protocol.ToolAssignment{Scope: "uninstalled"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"bad (", "cannot be read safely", "64 MiB", "voice.onnx", "114 MB"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("bad skill conflict lacks %q: %s", want, raw)
+		}
+	}
+}
