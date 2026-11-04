@@ -147,6 +147,7 @@ type worker struct {
 	ownerGoneSince                    time.Time
 	ownerChecked                      time.Time
 	stopping                          bool
+	handingBack                       bool // from the hand-back notice until the worker has ended
 	turnActive                        bool
 	turnHandbackIdle                  bool
 	turnAwaitingStart                 bool

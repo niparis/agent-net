@@ -996,9 +996,11 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if old.Worker.Owner != p.Owner {
 		return none, reject("worker %s ended, and only the session that started it can continue it", old.SessionID)
 	}
-	if old.Online {
-		return none, reject("worker %s is still running: wait for it to end, or stop it first", old.SessionID)
-	}
+	// Whether the worker still runs is the machine's answer, not this store's:
+	// a hand-back notice tells the owner that a message starts the worker
+	// again, and the notice can reach the owner before the machine has
+	// reported the end. The machine either waits for an end under way or
+	// refuses with "still running". Its record is also the newer one.
 	if p.Project != "" && old.Worker.Project != "" && !strings.EqualFold(p.Project, old.Worker.Project) {
 		return none, reject("worker %s ran in project %q, not %q: a continued worker keeps its project", old.SessionID, old.Worker.Project, p.Project)
 	}

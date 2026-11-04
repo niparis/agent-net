@@ -635,8 +635,18 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 			c.mu.Unlock()
 		}
 	}
+	// The notice goes out before the worker is ended, and its text says that
+	// a message from the owner starts the worker again. Mark the hand-back
+	// first, so a continue that arrives with the notice waits for the end
+	// instead of being refused as "still running" (see continueWorker).
+	d.wmu.Lock()
+	w.handingBack = true
+	d.wmu.Unlock()
 	raw, err := d.sendNoticeToKey(ctx, w, n, req.Report, to, replyTo, noticeKey, true)
 	if err != nil {
+		d.wmu.Lock()
+		w.handingBack = false
+		d.wmu.Unlock()
 		return nil, err
 	}
 	d.wmu.Lock()
@@ -649,11 +659,15 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		w.turnAwaitingStart = true
 		w.turnMessageID = m.ID
 		next = &m
+		w.handingBack = false
 	} else {
 		w.doneStatus = req.Status
 		w.donePartial = !req.IsComplete()
 		w.pendingHandback = true
 		w.pendingPartial = !req.IsComplete()
+		if !end {
+			w.handingBack = false
+		}
 		d.saveWorkerLocked(w)
 	}
 	d.wmu.Unlock()
