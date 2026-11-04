@@ -131,7 +131,12 @@ func TestCleanupOnlyRemovesOwnedState(t *testing.T) {
 			if _, err := Start(dir, Choice{Name: "agent-net"}, open); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(StateDir(dir), "tailscaled.state"), []byte("keys"), 0600); err != nil {
+			// Write only inside the temporary folder, even if StateDir is wrong.
+			state := StateDir(dir)
+			if rel, err := filepath.Rel(dir, state); err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+				t.Fatalf("state dir %q is not inside %q", state, dir)
+			}
+			if err := os.WriteFile(filepath.Join(state, "tailscaled.state"), []byte("keys"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			node.closed = false
