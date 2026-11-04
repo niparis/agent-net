@@ -50,7 +50,11 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 			if item.Status != "open" {
 				return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
 			}
-			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
+			text := ProposalToolResult(id)
+			if item.Call.Tool == "project_change" && item.Call.Action == "create" {
+				text = "Project proposal " + id + " is waiting for the owner's yes in the CTO chat. Show the one-line placement now."
+			}
+			return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
 		}
 	}
 	return nil, errors.New("proposal not found")

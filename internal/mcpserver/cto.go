@@ -454,6 +454,14 @@ func ctoDialogTools(s *mcp.Server, call Caller) ctoToolAdder {
 			if res == nil || res.IsError {
 				return res, err
 			}
+			if request.Params.Name == "project_change" {
+				var args struct {
+					Action string `json:"action"`
+				}
+				if json.Unmarshal(request.Params.Arguments, &args) == nil && args.Action == "create" {
+					return finish(ctx, proposal, ""), nil
+				}
+			}
 			init := request.Session.InitializeParams()
 			if init == nil || init.Capabilities == nil || init.Capabilities.Elicitation == nil {
 				return finish(ctx, proposal, ""), nil
