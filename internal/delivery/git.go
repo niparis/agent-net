@@ -307,12 +307,13 @@ func checkRefName(ctx context.Context, g gitIn, what, name string) error {
 	return nil
 }
 
-// fetchRefspec fetches one refspec from remote. It never fetches tags or
+// fetchRefspec fetches one refspec from remote, a remote name or a URL. It
+// removes remote-tracking refs the remote no longer has, inside the refspec. It never fetches tags or
 // submodules and does not write FETCH_HEAD.
 func fetchRefspec(ctx context.Context, g gitIn, remote, refspec string) error {
 	if _, err := g.run(ctx, "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head", "--quiet",
-		remote, refspec); err != nil {
-		return fmt.Errorf("fetch %s: %w", remote, err)
+		"--prune", remote, refspec); err != nil {
+		return fmt.Errorf("fetch %s: %w", redactURL(remote), err)
 	}
 	return nil
 }

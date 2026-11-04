@@ -19,7 +19,7 @@ import (
 // also lets config rewrite the remote URL.
 //
 // Design: refuse, do not neutralise. Before any step that checks out, merges,
-// fetches or pushes, checkConfig lists every config value git would read,
+// fetches or pushes in a repository, checkConfig lists every config value git would read,
 // with its scope, and refuses the whole call when a repository-level value
 // (scope local or worktree) is a key that can run a program or redirect the
 // remote. Overriding keys with -c instead would have to name every key, and a
@@ -32,9 +32,16 @@ import (
 // helper, which lives there. The "command" scope is the -c flags of this
 // package. Anything with another scope is treated as repository level.
 //
-// What the check cannot cover: a config written between the check and the git
-// call that reads it. Merge checks again just before the worktree is changed
-// and just before the push, so the window is the time of one git call.
+// The check is a second line. It cannot close the gap between the check and
+// the git call that reads the config, because a worker can write a shared
+// config at any time. So the steps that matter most do not depend on it:
+// Merge checks out, merges and pushes in a mirror that only the daemon writes
+// (see merge.go), and pushes to a URL the caller pinned. The check still
+// guards the mirror, the worktree's own config.worktree and the source
+// repository, and it is the only guard of RunStep, NewCommits and the tests
+// added check, which read a repository the caller gives them. RunStep then
+// runs the repository's own command, so a repository it checks is trusted at
+// least that far.
 // .gitattributes in the tree can only select a driver by name, and a driver
 // with that name exists only if the owner's global config defines it.
 
@@ -110,6 +117,8 @@ func unsafeConfigKey(key, value string) string {
 		switch name {
 		case "sshcommand", "askpass", "gitproxy":
 			return "runs a program"
+		case "worktree":
+			return "points git at another working directory"
 		}
 	case "url":
 		if hasSub && (name == "insteadof" || name == "pushinsteadof") {
@@ -124,7 +133,11 @@ func unsafeConfigKey(key, value string) string {
 	case "protocol":
 		return "changes which transports git may run"
 	case "http":
-		return "changes proxy, certificates or headers of http remotes"
+		switch name {
+		case "proxy", "extraheader", "sslverify", "sslcainfo", "sslcapath", "curloptresolve",
+			"followredirects", "cookiefile", "proxyauthmethod", "proxysslverify", "proxysslcainfo":
+			return "changes where git connects or what it trusts for http remotes"
+		}
 	case "lfs":
 		return "redirects LFS transfers"
 	case "remote":
@@ -145,13 +158,25 @@ func unsafeConfigKey(key, value string) string {
 // ErrRemoteURL: the remote's URL is not the one the caller expects.
 var ErrRemoteURL = errors.New("remote URL is not the expected one")
 
+// checkRemoteURLValue refuses a pinned URL that is empty or that git could
+// read as an option or that holds control characters.
+func checkRemoteURLValue(u string) error {
+	if u == "" {
+		return errors.New("RemoteURL is required: the URL the caller recorded for the remote")
+	}
+	if strings.HasPrefix(u, "-") || strings.ContainsFunc(u, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return fmt.Errorf("bad RemoteURL %q", redactURL(u))
+	}
+	return nil
+}
+
 // checkRemoteURL refuses unless every fetch URL and every push URL of the
-// remote, as git resolves them, equals want. A caller that knows the URL of
-// its remote (from the project record, not from the repository) passes it so
-// a changed remote.<name>.url or pushurl cannot send the push elsewhere.
+// remote in g, as git resolves them, equals want. The caller passes the URL
+// it recorded itself (not one read from the repository), so a changed
+// remote.<name>.url or pushurl is noticed.
 func checkRemoteURL(ctx context.Context, g gitIn, remote, want string) error {
-	if want == "" {
-		return nil
+	if err := checkRemoteURLValue(want); err != nil {
+		return err
 	}
 	for _, push := range []bool{false, true} {
 		args := []string{"remote", "get-url", "--all"}

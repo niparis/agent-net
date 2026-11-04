@@ -3,7 +3,10 @@ package delivery
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,6 +43,11 @@ func TestUnsafeConfigKey(t *testing.T) {
 		{"remote.origin.proxy", "http://evil"},
 		{"lfs.url", "https://evil"},
 		{"submodule.x.update", "!x"},
+		{"core.worktree", "/tmp/decoy"},
+		{"http.sslverify", "false"},
+		{"http.https://good/.extraheader", "X: y"},
+		{"http.https://good/.proxy", "http://evil"},
+		{"http.cookiefile", "/tmp/c"},
 	}
 	for _, c := range unsafe {
 		if why := unsafeConfigKey(c.key, c.value); why == "" {
@@ -64,6 +72,11 @@ func TestUnsafeConfigKey(t *testing.T) {
 		{"submodule.x.url", "https://good/s.git"},
 		{"push.default", "simple"},
 		{"commit.gpgsign", "false"},
+		{"http.version", "HTTP/1.1"},
+		{"http.postbuffer", "524288000"},
+		{"http.lowspeedlimit", "1000"},
+		{"http.https://good/.version", "HTTP/1.1"},
+		{"http.useragent", "x"},
 	}
 	for _, c := range safe {
 		if why := unsafeConfigKey(c.key, c.value); why != "" {
@@ -103,6 +116,18 @@ func newConfigFx(t *testing.T) *configFx {
 }
 
 func (f *configFx) touchCmd() string { return "touch " + f.marker }
+
+// script writes an executable that touches the marker and fails, for keys
+// whose value git runs as a program with arguments and without a shell.
+func (f *configFx) script(name string) string {
+	f.t.Helper()
+	p := filepath.Join(f.root, name)
+	f.write(f.root, name, "#!/bin/sh\n"+f.touchCmd()+"\nexit 1\n")
+	if err := os.Chmod(p, 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	return p
+}
 
 func (f *configFx) setConfig(key, value string) {
 	f.t.Helper()
@@ -149,7 +174,7 @@ func TestMergeRefusesRepoConfigThatRunsPrograms(t *testing.T) {
 			f.setConfig("credential.helper", "!"+f.touchCmd())
 		},
 		"askpass": func(f *configFx) {
-			f.setConfig("core.askPass", f.touchCmd())
+			f.setConfig("core.askPass", f.script("fake-askpass"))
 		},
 		"external diff": func(f *configFx) {
 			f.setConfig("diff.external", f.touchCmd())
@@ -158,7 +183,7 @@ func TestMergeRefusesRepoConfigThatRunsPrograms(t *testing.T) {
 			f.setConfig("remote.origin.uploadpack", f.touchCmd())
 		},
 		"gpg program": func(f *configFx) {
-			f.setConfig("gpg.program", f.touchCmd())
+			f.setConfig("gpg.program", f.script("fake-gpg"))
 		},
 	} {
 		for _, mode := range []string{MergeModeFFOnly, MergeModeCommit} {
@@ -193,13 +218,13 @@ func TestMergeRefusesWorktreeConfig(t *testing.T) {
 	f.assertRefused(err)
 }
 
-// A repository whose config is clean when Merge starts but gets a driver
-// before the push (a worker writing it while Merge runs) is refused at the
-// push, and the program does not run.
-func TestMergeRefusesConfigChangedBeforePush(t *testing.T) {
+// The mirror is written only by the daemon, but if its config gets a driver
+// anyway between the start and the push, the push is refused and the program
+// does not run.
+func TestMergeRefusesMirrorConfigChangedBeforePush(t *testing.T) {
 	f := newConfigFx(t)
 	r := &mergeRunner{beforePush: func() {
-		f.setConfig("core.sshCommand", f.touchCmd())
+		mergeGit(t, f.mirror, "config", "core.sshCommand", f.touchCmd())
 	}}
 	before := f.originMain()
 	_, err := r.merge(context.Background(), f.req("feat", f.head, MergeModeCommit))
@@ -279,5 +304,141 @@ func TestCheckRepoGuardsOtherEntryPoints(t *testing.T) {
 	}
 	if !strings.Contains(unsafeConfigKey("filter.evil.clean", "x"), "filter") {
 		t.Fatal("reason should name the kind of key")
+	}
+}
+
+// Positive controls: for the keys that the other tests cannot trigger through
+// a local-path remote, show with plain git that each one runs its program,
+// then that checkConfig refuses the same config. Without the control, an
+// absent marker could mean the vector never worked.
+func TestConfigVectorsRunPlainGit(t *testing.T) {
+	srv := newAuthServer(t)
+	cases := map[string]struct {
+		set func(f *configFx)
+		run func(f *configFx) // plain git, no guard
+	}{
+		"credential helper": {
+			set: func(f *configFx) { f.setConfig("credential.helper", "!"+f.touchCmd()+";:") },
+			run: func(f *configFx) { plainGit(f.repo, "ls-remote", srv.URL+"/x.git") },
+		},
+		"askpass": {
+			set: func(f *configFx) { f.setConfig("core.askPass", f.script("fake-askpass")) },
+			run: func(f *configFx) { plainGit(f.repo, "ls-remote", srv.URL+"/x.git") },
+		},
+		"external diff": {
+			set: func(f *configFx) { f.setConfig("diff.external", f.touchCmd()) },
+			run: func(f *configFx) {
+				f.write(f.repo, "README", "changed\n")
+				plainGit(f.repo, "diff")
+			},
+		},
+		"gpg program": {
+			set: func(f *configFx) { f.setConfig("gpg.program", f.script("fake-gpg")) },
+			run: func(f *configFx) {
+				plainGit(f.repo, "-c", "user.name=T", "-c", "user.email=t@example.com",
+					"commit", "-q", "--allow-empty", "-S", "-m", "signed")
+			},
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newConfigFx(t)
+			c.set(f)
+			c.run(f)
+			if _, err := os.Stat(f.marker); err != nil {
+				t.Fatalf("control: plain git did not run the program: %v", err)
+			}
+			if err := checkConfig(context.Background(), gitIn{dir: f.repo}); !errors.Is(err, ErrUnsafeConfig) {
+				t.Fatalf("checkConfig = %v, want ErrUnsafeConfig", err)
+			}
+		})
+	}
+}
+
+func plainGit(dir string, args ...string) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	// An askpass program set in the environment would beat core.askPass.
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_ASKPASS=") && !strings.HasPrefix(kv, "SSH_ASKPASS=") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, "GIT_TERMINAL_PROMPT=0")
+	_ = cmd.Run() // the failure is expected; only the side effect counts
+}
+
+// newAuthServer answers every request with 401, so git asks for credentials.
+func newAuthServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="x"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// The mirror, not RepoDir, is where Merge works: RepoDir keeps its refs and
+// config exactly as they were.
+func TestMergeLeavesRepoDirAlone(t *testing.T) {
+	f := newConfigFx(t)
+	snapshot := func() string {
+		return mergeGit(t, f.repo, "for-each-ref") + "\n" + mergeGit(t, f.repo, "config", "--local", "--list")
+	}
+	before := snapshot()
+	if _, err := Merge(context.Background(), f.req("feat", f.head, MergeModeCommit)); err != nil {
+		t.Fatal(err)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("RepoDir changed:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestMergeRefusesForeignMirror(t *testing.T) {
+	f := newConfigFx(t)
+	if err := os.MkdirAll(f.mirror, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.write(f.mirror, "precious.txt", "keep\n")
+	_, err := Merge(context.Background(), f.req("feat", f.head, MergeModeCommit))
+	if !errors.Is(err, ErrNotOwnedMirror) {
+		t.Fatalf("err = %v, want ErrNotOwnedMirror", err)
+	}
+	if _, serr := os.Stat(filepath.Join(f.mirror, "precious.txt")); serr != nil {
+		t.Fatal("the foreign directory was changed")
+	}
+}
+
+func TestMergeRequiresRemoteURL(t *testing.T) {
+	f := newConfigFx(t)
+	r := f.req("feat", f.head, MergeModeCommit)
+	r.RemoteURL = ""
+	if _, err := Merge(context.Background(), r); err == nil {
+		t.Fatal("want an error without RemoteURL")
+	}
+	r.RemoteURL = "--upload-pack=touch x"
+	if _, err := Merge(context.Background(), r); err == nil {
+		t.Fatal("want an error for an option as RemoteURL")
+	}
+}
+
+// The push goes to the pinned URL even when the repository's own config
+// names another one; the disagreement is refused before anything runs.
+func TestMergeRefusesRedirectedPushURL(t *testing.T) {
+	f := newConfigFx(t)
+	alt := filepath.Join(f.root, "alt.git")
+	mergeGit(t, f.root, "clone", "-q", "--bare", f.origin, alt)
+	if err := os.WriteFile(filepath.Join(alt, "hooks", "pre-receive"), []byte("#!/bin/sh\ntouch "+f.marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.setConfig("remote.origin.pushurl", alt)
+	_, err := Merge(context.Background(), f.req("feat", f.head, MergeModeCommit))
+	if !errors.Is(err, ErrRemoteURL) {
+		t.Fatalf("err = %v, want ErrRemoteURL", err)
+	}
+	if _, serr := os.Stat(f.marker); serr == nil {
+		t.Fatal("the redirected remote's hook ran")
 	}
 }
