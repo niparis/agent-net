@@ -48,8 +48,9 @@ func runTestGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// script writes an executable shell script at scripts/<name> and returns the
-// relative path, as a repo would name its release command.
+// script writes an executable shell script at scripts/<name>, commits it so the
+// tree stays clean, moves f.head to the new commit, and returns the relative
+// path, as a repo would name its release command.
 func (f *runFx) script(name, body string) string {
 	f.t.Helper()
 	dir := filepath.Join(f.dir, "scripts")
@@ -60,6 +61,9 @@ func (f *runFx) script(name, body string) string {
 	if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
+	runTestGit(f.t, f.dir, "add", "scripts/"+name)
+	runTestGit(f.t, f.dir, "commit", "-q", "-m", "add "+name)
+	f.head = runTestGit(f.t, f.dir, "rev-parse", "HEAD")
 	return "scripts/" + name
 }
 
@@ -285,6 +289,117 @@ func TestRunStepWrongCommit(t *testing.T) {
 	}
 	if _, statErr := os.Stat(marker); statErr == nil {
 		t.Error("the command ran although HEAD was wrong")
+	}
+}
+
+// dirtyFx is a clean fixture whose command writes a marker when it runs.
+func dirtyFx(t *testing.T) (*runFx, string, string) {
+	t.Helper()
+	f := newRunFx(t)
+	marker := filepath.Join(t.TempDir(), "ran")
+	s := f.script("release.sh", "touch "+marker+"\n")
+	return f, s, marker
+}
+
+func runWriteFile(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runExpectRefused(t *testing.T, f *runFx, s, marker string) error {
+	t.Helper()
+	_, err := RunStep(context.Background(), f.cmd(s))
+	if !errors.Is(err, ErrDirtyTree) {
+		t.Fatalf("err = %v, want ErrDirtyTree", err)
+	}
+	if _, statErr := os.Stat(marker); statErr == nil {
+		t.Error("the command ran although the tree was dirty")
+	}
+	return err
+}
+
+func TestRunStepRefusesModifiedTrackedFile(t *testing.T) {
+	f, s, marker := dirtyFx(t)
+	runWriteFile(t, f.dir, "README", "changed\n")
+	err := runExpectRefused(t, f, s, marker)
+	if !strings.Contains(err.Error(), "README") {
+		t.Errorf("error should name the path: %v", err)
+	}
+}
+
+func TestRunStepRefusesStagedChange(t *testing.T) {
+	f, s, marker := dirtyFx(t)
+	runWriteFile(t, f.dir, "README", "changed\n")
+	runTestGit(t, f.dir, "add", "README")
+	runExpectRefused(t, f, s, marker)
+}
+
+func TestRunStepRefusesUntrackedFile(t *testing.T) {
+	f, s, marker := dirtyFx(t)
+	runWriteFile(t, f.dir, "stray.txt", "x\n")
+	err := runExpectRefused(t, f, s, marker)
+	if !strings.Contains(err.Error(), "stray.txt") {
+		t.Errorf("error should name the path: %v", err)
+	}
+}
+
+func TestRunStepAllowsIgnoredFile(t *testing.T) {
+	f := newRunFx(t)
+	runWriteFile(t, f.dir, ".gitignore", "*.log\n")
+	runTestGit(t, f.dir, "add", ".gitignore")
+	runTestGit(t, f.dir, "commit", "-q", "-m", "ignore")
+	marker := filepath.Join(t.TempDir(), "ran")
+	s := f.script("release.sh", "touch "+marker+"\n")
+	runWriteFile(t, f.dir, "build.log", "noise\n")
+	run, err := RunStep(context.Background(), f.cmd(s))
+	if err != nil {
+		t.Fatalf("ignored file should be allowed: %v", err)
+	}
+	if run.ExitCode != 0 {
+		t.Errorf("exit = %d", run.ExitCode)
+	}
+	if _, statErr := os.Stat(marker); statErr != nil {
+		t.Error("the command did not run")
+	}
+}
+
+func TestRunStepCleanTreeRuns(t *testing.T) {
+	f, s, marker := dirtyFx(t)
+	if _, err := RunStep(context.Background(), f.cmd(s)); err != nil {
+		t.Fatalf("clean tree: %v", err)
+	}
+	if _, statErr := os.Stat(marker); statErr != nil {
+		t.Error("the command did not run")
+	}
+}
+
+func TestRunStepDirtyListIsCapped(t *testing.T) {
+	f, s, marker := dirtyFx(t)
+	for i := 0; i < 13; i++ {
+		runWriteFile(t, f.dir, fmt.Sprintf("stray-%02d.txt", i), "x\n")
+	}
+	err := runExpectRefused(t, f, s, marker)
+	msg := err.Error()
+	if n := strings.Count(msg, "stray-"); n != 10 {
+		t.Errorf("error lists %d paths, want 10: %v", n, msg)
+	}
+	if !strings.Contains(msg, "3 more") {
+		t.Errorf("error should count the rest (3 more): %v", msg)
+	}
+	if strings.Contains(msg, "stray-12") {
+		t.Errorf("error lists a path beyond the first 10: %v", msg)
+	}
+}
+
+func TestRunStepWrongCommitBeatsDirtyTree(t *testing.T) {
+	f, s, _ := dirtyFx(t)
+	runWriteFile(t, f.dir, "stray.txt", "x\n")
+	cmd := f.cmd(s)
+	cmd.Commit = strings.Repeat("a", 40)
+	if _, err := RunStep(context.Background(), cmd); !errors.Is(err, ErrWrongCommit) {
+		t.Fatalf("err = %v, want ErrWrongCommit", err)
 	}
 }
 
