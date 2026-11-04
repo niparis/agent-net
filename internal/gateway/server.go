@@ -87,6 +87,16 @@ type Gateway struct {
 	store           *Store
 	skillsMu        sync.Mutex
 	skillProjectsMu sync.Mutex
+	// standing* run addNewSkillProjects in the background, one run at a time.
+	standingMu      sync.Mutex
+	standingRunning bool
+	standingPending bool
+	standingStopped bool
+	standingCancel  context.CancelFunc
+	standingCtx     context.Context
+	standingWG      sync.WaitGroup
+	// onStandingPlan is a test hook, called before each standing-choice plan.
+	onStandingPlan func(item string, projects []string)
 	// importMu serializes MCP imports, so two applies cannot race on a name.
 	importMu sync.Mutex
 	skills   *skillStore
@@ -291,6 +301,7 @@ func (g *Gateway) TLSConfig() *tls.Config {
 
 // Close drops every node connection and closes the database.
 func (g *Gateway) Close() error {
+	g.stopStandingChoices()
 	g.publicMu.Lock()
 	g.stopPublicListener()
 	g.closeTailscaleNode()
@@ -702,11 +713,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if _, err := st.ToolProjectStates(); err != nil {
 			return nil, err
 		}
-		defer func() {
-			if err := g.addNewSkillProjects(ctx); err != nil {
-				g.logLine("skills.standing_choice.refused", "error", err)
-			}
-		}()
+		defer g.scheduleNewSkillProjects()
 	}
 	switch typ {
 	case "cto.session.register":
