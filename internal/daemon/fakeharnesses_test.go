@@ -188,6 +188,7 @@ func randHex(n int) string {
 // ---- Claude ----
 
 type fakeClaudeRecord struct {
+	MCPClient  string            `json:"mcp_client"`
 	Args       []string          `json:"args"`
 	Cwd        string            `json:"cwd"`
 	Settings   map[string]any    `json:"settings"`
@@ -335,8 +336,12 @@ func fakeClaudeSession() {
 		rec.ChildPid = sleeper.Process.Pid
 		go sleeper.Wait()
 	}
+	rec.MCPClient = "mcp"
+	if strings.Contains(argValue(in.Args, "--mcp-config"), `"agent-net-cto"`) {
+		rec.MCPClient = "cto-mcp"
+	}
 	mcp := exec.Command(os.Args[0], "-test.run=XXX")
-	mcp.Env = append(os.Environ(), envFakeClaudeMCP+"="+session)
+	mcp.Env = append(os.Environ(), envFakeClaudeMCP+"="+session, "FAKE_CLAUDE_MCP_CLIENT="+rec.MCPClient)
 	mcp.Env = workerEnv(mcp.Env, map[string]string{envFakeClaudeSession: ""})
 	mcpIn, _ := mcp.StdinPipe()
 	if mcp.Start() != nil {
@@ -415,7 +420,7 @@ func fakeClaudeMCP() {
 	hello := func() {
 		next++
 		b, _ := json.Marshal(map[string]any{"id": strconv.Itoa(next), "method": "hello", "params": map[string]any{
-			"client": "mcp", "harness": "claude", "native_id": session, "cwd": cwd}})
+			"client": os.Getenv("FAKE_CLAUDE_MCP_CLIENT"), "harness": "claude", "native_id": session, "cwd": cwd}})
 		c.Write(append(b, '\n'))
 	}
 	dial := func() bool {
