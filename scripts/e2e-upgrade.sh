@@ -14,11 +14,11 @@
 # is tried once (D), a rollback is held until a newer release (B), and the
 # opt-outs (E env, F flag, G dev build) do nothing.
 #
-# The agent files are tested too. $V1 is built with older embedded Pi and
-# OpenCode plugin files and an older guidance text (go build -overlay), and the
-# machines have the harness folders. After each way a new binary starts on a
-# node (pushed upgrade B, catch-up C, manual copy E and F), the node's Pi
-# extension, OpenCode plugin and guidance block must hold the new content.
+# The agent files are tested too. $V1 is built with older embedded Pi,
+# OpenCode and guidance sources (go build -overlay), and the machines have the
+# harness folders. After each way a new binary starts on a node (pushed upgrade
+# B, catch-up C, manual copy E and F), its Pi extension, OpenCode plugin and
+# guidance block must hold the new content.
 # F has its Pi extension symlinked to a "dev checkout": it must stay alone. The
 # gateway host has no harness folders: nothing may be created there.
 set -u
@@ -60,7 +60,6 @@ wait_for() { # wait_for DESCRIPTION SECONDS COMMAND...
 # ---- fake releases ----
 say "build $V1, $V2 and $V3"
 REL="$T/releases"
-# $V1 embeds old agent files: go build -overlay swaps the embedded sources.
 mkdir -p "$T/old"
 # The test uses a new disposable key and builds binaries with its public key.
 # No production key, user setup, or external release server is used.
@@ -83,13 +82,14 @@ EOF2
 "$GO" build -overlay "$T/overlay.json" -o "$T/sign-release" ./scripts/release-key || exit 1
 echo "// old pi extension" > "$T/old/pi.ts"
 echo "// old opencode plugin" > "$T/old/opencode.ts"
-printf '## agent-net: OLD GUIDANCE\n\nold text {{reply}}\n' > "$T/old/guidance.md"
+sed 's/Other coding agents run on my machines (Claude Code, Codex, Pi, OpenCode)/OLD GUIDANCE/' \
+  "$ROOT/internal/settings/standard.yaml" > "$T/old/standard.yaml"
 cat > "$T/old/overlay.json" <<EOF2
 {"Replace": {
   "$ROOT/internal/upgrade/release.go": "$T/release.go",
   "$ROOT/plugins/pi/agent-net.ts": "$T/old/pi.ts",
   "$ROOT/plugins/opencode/agent-net.ts": "$T/old/opencode.ts",
-  "$ROOT/internal/guidance/guidance.md": "$T/old/guidance.md"
+  "$ROOT/internal/settings/standard.yaml": "$T/old/standard.yaml"
 }}
 EOF2
 for v in $V1 $V2 $V3; do
@@ -144,12 +144,15 @@ for m in b c d e f; do
   printf '# my notes\n' > "$T/$m/home/.claude/CLAUDE.md"
 done
 echo "// dev checkout" > "$T/f/devpi.ts"
-ln -s "$T/f/devpi.ts" "$T/f/home/.pi/agent/extensions/agent-net.ts"
+mkdir -p "$T/f/home/.pi/agent/extensions/agent-net"
+ln -s "$T/f/devpi.ts" "$T/f/home/.pi/agent/extensions/agent-net/index.ts"
 
 # Agent file helpers. The new content is what the repo embeds.
-PI_FILE() { echo "$T/$1/home/.pi/agent/extensions/agent-net.ts"; }
+PI_FILE() { echo "$T/$1/home/.pi/agent/extensions/agent-net/index.ts"; }
+PI_DIR() { echo "$T/$1/home/.pi/agent/extensions/agent-net"; }
+LEGACY_PI_FILE() { echo "$T/$1/home/.pi/agent/extensions/agent-net.ts"; }
 OC_FILE() { echo "$T/$1/home/.config/opencode/plugins/agent-net.ts"; }
-NEW_GUIDE_LINE="$(grep -v '{{' internal/guidance/guidance.md | sed -n 3p)"
+NEW_GUIDE_LINE="Other coding agents run on my machines"
 agent_files_old() { # agent_files_old NAME: Pi, OpenCode and guidance hold the $V1 content
   grep -qF "old pi extension" "$(PI_FILE "$1")" && grep -qF "old opencode plugin" "$(OC_FILE "$1")" \
     && grep -qF "OLD GUIDANCE" "$T/$1/home/.claude/CLAUDE.md"
@@ -247,6 +250,7 @@ check "B has the old Pi, OpenCode and guidance content" agent_files_old b
 check "C has the old Pi, OpenCode and guidance content" agent_files_old c
 check "D has the old Pi, OpenCode and guidance content" agent_files_old d
 check "B keeps its own notes in CLAUDE.md" notes_kept b
+printf '// agent-net extension for Pi. old\n' > "$(LEGACY_PI_FILE b)"
 
 say "agent-net nodes (from B)"
 machine b nodes
@@ -317,6 +321,7 @@ say "agent files on B after the pushed upgrade"
 wait_for "B agent files are refreshed" 10 agent_files_new b
 echo "--- B daemon log"; grep -F 'agent files' "$T/b/daemon.log"
 check "(push) B has the new Pi, OpenCode and guidance content" agent_files_new b
+check "(push) B removed the legacy flat Pi extension" test ! -e "$(LEGACY_PI_FILE b)"
 check "(push) B keeps its own notes in CLAUDE.md" notes_kept b
 check "(push) B logged the Pi extension update" grep -qF 'agent files: pi extension updated' "$T/b/daemon.log"
 check "(gateway host) no harness folder was created" bash -c "[ ! -e '$T/gw/home/.pi' ] && [ ! -e '$T/gw/home/.config/opencode' ] && [ ! -e '$T/gw/home/.claude' ]"
@@ -481,7 +486,8 @@ wait_for "E agent files are refreshed" 10 agent_files_new e
 echo "--- E daemon log"; log_since e | grep -F 'agent files'
 echo "--- F daemon log"; log_since f | grep -F 'agent files'
 check "(6) E has the new Pi, OpenCode and guidance content" agent_files_new e
-check "(6) E logged one line per changed file" test "$(log_count e 'agent files:')" = 5
+# The overlay makes two plugins and three guidance files stale; the catalogs match.
+check "(6) E logged each changed agent file" test "$(log_count e 'agent files:')" = 5
 check "(6) F's Pi extension is still the symlink" test -L "$(PI_FILE f)"
 check "(6) F's dev checkout is untouched" test "$(cat "$T/f/devpi.ts")" = "// dev checkout"
 check "(6) F's OpenCode plugin is new" cmp -s "$ROOT/plugins/opencode/agent-net.ts" "$(OC_FILE f)"
@@ -503,6 +509,10 @@ DEV_OUT="$(cd "$T" && env -i HOME="$T/gw/home" PATH=/usr/bin:/bin AGENT_NET_NO_S
 echo "$DEV_OUT"
 check "dev build refused" test "$DEV_RC" -ne 0
 check "dev refusal mentions --force" contains "$DEV_OUT" "--force"
+
+say "uninstall removes the Pi extension directory"
+machine e uninstall --no-service --data "$T/e/no-gateway" >/dev/null
+check "uninstall removed the Pi extension directory" test ! -e "$(PI_DIR e)"
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED"; exit 1; fi
