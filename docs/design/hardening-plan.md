@@ -89,7 +89,7 @@ A spike first, then four build steps.
   - upload and download in 1 MB parts, with a checksum on each;
   - resumable;
   - stored in the gateway data folder and deleted after delivery or expiry.
-- **T3. Daemon send and receive:**
+- **T3. Daemon send and receive:** built (2026-11-04). See decision 0054, "T3: send and receive", and reference.md, "Files between machines". The daemon exposes `Daemon.SendFiles` for T4 and T5.
   - Send: check the path and the limits, hash, send the manifest, push the bytes (Taildrop or gateway).
   - Receive:
     - collect the files;
