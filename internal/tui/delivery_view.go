@@ -234,12 +234,19 @@ func (m Model) deliveryView(w, h int) []string {
 	legend := deliveryLegend(inner)
 	body := append([]string{}, errLine...)
 	body = append(body, cols.header())
-	listRoom := max(room-len(body)-len(legend), 1)
+	var offline []string
+	for _, step := range d.changes[sel].Steps {
+		if strings.HasPrefix(step.Note, "waiting for ") && strings.HasSuffix(step.Note, " (offline)") {
+			offline = append(offline, wrap(sanitize(step.Note), inner)...)
+		}
+	}
+	listRoom := max(room-len(body)-len(legend)-len(offline), 1)
 	var list []string
 	for i, ch := range d.changes {
 		list = append(list, cols.row(ch, i == sel))
 	}
 	body = append(body, messageFit(list, min(listRoom, len(list)), sel)...)
+	body = append(body, messageFit(offline, min(len(offline), max(room-len(body), 0)), 0)...)
 	if room-len(body) >= len(legend) {
 		body = append(body, legend...)
 	}
@@ -292,6 +299,17 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	modelW := 22
 	gap := "  "
 	var lines []string
+	if len(ch.Steps) > 0 {
+		lines = append(lines, sBold.Render("Steps"))
+		for _, step := range ch.Steps {
+			line := sanitize(step.Name) + "  " + sanitize(step.Owner) + "  " + sanitize(step.State)
+			if step.Note != "" {
+				line += "  " + sanitize(step.Note)
+			}
+			lines = append(lines, wrap(line, inner)...)
+		}
+		lines = append(lines, "", sBold.Render("Evidence"))
+	}
 	if wide {
 		fieldsW := max(inner-(stepW+resultW+commitW+byW+modelW+timeW+6*2), 8)
 		lines = append(lines, sDim.Render(strings.Join([]string{cell("STEP", stepW), cell("RESULT", resultW), cell("COMMIT", commitW), cell("BY", byW), cell("MODEL", modelW), cell("TIME", timeW), cell("FIELDS", fieldsW)}, gap)))
@@ -334,6 +352,9 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	scroll := min(max(m.delivery.scroll, 0), max(len(lines)-roomForEvidence, 0))
 	view := messageFit(lines, min(roomForEvidence, len(lines)), min(roomForEvidence-1+scroll, max(len(lines)-1, 0)))
 	title := "Evidence"
+	if len(ch.Steps) > 0 {
+		title = "Steps and evidence"
+	}
 	if len(lines) > roomForEvidence {
 		title += " (" + strconv.Itoa(scroll+1) + "-" + strconv.Itoa(min(scroll+roomForEvidence, len(lines))) + " of " + strconv.Itoa(len(lines)) + ")"
 	}

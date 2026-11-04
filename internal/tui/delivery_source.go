@@ -192,6 +192,9 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 	c := v.Change
 	out := deliveryChange{ID: c.ID, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
 		Marks: deliveryMarks(v.Steps), Full: v.Pipeline != nil}
+	for _, st := range v.Steps {
+		out.Steps = append(out.Steps, deliveryStep{Name: st.StepRef.String(), Owner: deliveryOwnerLabel(st.Owner), State: st.State, Note: st.Note})
+	}
 	if r, owner, ok := currentStep(v); ok {
 		out.Step, out.StepOwner = r.Step, deliveryOwnerLabel(owner)
 	}

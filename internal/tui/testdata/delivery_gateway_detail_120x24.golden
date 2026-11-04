@@ -5,19 +5,19 @@
 │ head: aaaaaaaaaaaa  revision: r2  step: review  owner: merger  waiting: 20m                                          │
 │ a✓ r· t✓ p* m· l· d· v·                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─Evidence─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─Steps and evidence (1-11 of 15)──────────────────────────────────────────────────────────────────────────────────────╮
+│ Steps                                                                                                                │
+│ accept  caller  passed                                                                                               │
+│ review  merger  ready                                                                                                │
+│ test  github  passed                                                                                                 │
+│ approve for merge  owner  needs_owner                                                                                │
+│ merge  caller  waiting                                                                                               │
+│                                                                                                                      │
+│ Evidence                                                                                                             │
 │ STEP     RESULT      COMMIT       BY            MODEL                   TIME         FIELDS                          │
 │ accept   passed      bbbbbbb old  caller        -                       10-29 09:05  -                               │
 │ review   failed      bbbbbbb old  s_rev         claude-opus-5-5         10-29 10:05  findings_open=2                 │
-│ accept   passed      aaaaaaa      caller        -                       10-29 12:05  -                               │
-│ test     passed      aaaaaaa      github        -                       10-29 13:05  suite=ci                        │
-│ approve  needs you   aaaaaaa      owner         -                       10-29 13:35  for=merge                       │
-│ test     passed      aaaaaaa      s_x           -                       10-29 13:45  after_merge=yes                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
-
-
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────────────────────────────────────────────╯

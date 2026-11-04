@@ -1939,14 +1939,19 @@ revision 2), STEP, OWNER, WAIT and EVIDENCE:
   follow the state of each step, so a pass that does not count (for example a
   review that is not independent enough) shows as `·`.
 
-`Enter` opens the evidence of the selected change. The TUI then reads the full
-change from the gateway: every report of every revision, oldest first, with
+`Enter` opens the selected change. The TUI reads the full change from the
+gateway and lists each pipeline step with its owner and state, followed by every
+report of every revision, oldest first, with
 STEP, RESULT, COMMIT, BY, MODEL, TIME and the fields. Evidence for an older
 commit than the change's head shows `old` after its commit. A report on a step
 after merge has the field `after_merge=yes`, and one for `approve` has
 `for=merge` or `for=deploy`. BY is `owner`, `github`, `caller` or the session
 that reported. `Up` / `Down` scroll, `Esc` goes back. The selection stays on the
 same change when the list changes.
+
+When a gateway reports that a step is waiting for an offline node, the detail
+shows that note and the selected change in the list shows it too. Step routing
+and the offline queue are not built yet.
 
 The sub-tab loads when it opens, on `R`, and every 30 seconds while it is open
 on the Quotas tab. A failed load keeps the last list and shows the error above

@@ -283,6 +283,30 @@ func TestDeliveryChangeFromAFullView(t *testing.T) {
 	}
 }
 
+func TestDeliveryDetailShowsEachStepOwnerAndState(t *testing.T) {
+	v := fullView(t0)
+	v.Steps[1].Note = "waiting for merger (offline)"
+	ch := deliveryChangeFromView(v, t0)
+	m := deliveryModel(&fakeDelivery{}, 120, 40)
+	text := ansi.Strip(strings.Join(m.deliveryDetail(ch, nil, 120, 40), "\n"))
+	for _, want := range []string{"accept", "caller", "passed", "review", "merger", "ready", "waiting for merger (offline)", "approve for merge", "owner", "needs_owner"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in detail:\n%s", want, text)
+		}
+	}
+}
+
+func TestDeliveryListShowsOfflineOwner(t *testing.T) {
+	v := listView(t0)
+	v.Steps[1].Note = "waiting for merger (offline)"
+	ch := deliveryChangeFromView(v, t0)
+	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{ch}}, 120, 30))
+	got := deliveryText(m, 120, 30)
+	if !strings.Contains(got, "waiting for merger (offline)") {
+		t.Fatalf("offline owner is not shown: %s", got)
+	}
+}
+
 func TestDeliveryEvidenceTextIsKeptSafe(t *testing.T) {
 	v := fullView(t0)
 	v.Change.Project = "pro\x1b[31mject"

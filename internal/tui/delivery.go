@@ -33,6 +33,7 @@ type deliveryChange struct {
 	StepOwner string // who owns that step: a node, "caller", "owner", "github"
 	Waiting   time.Duration
 	Evidence  []deliveryEvidence
+	Steps     []deliveryStep
 	// Marks is the strip as the source worked it out from the step states. A
 	// source that has no step states leaves it empty, and the strip follows
 	// the evidence.
@@ -40,6 +41,11 @@ type deliveryChange struct {
 	// Full says the evidence covers every revision, not only the latest
 	// counted result of each step.
 	Full bool
+}
+
+// deliveryStep is one pipeline step, including repeated test and approval steps.
+type deliveryStep struct {
+	Name, Owner, State, Note string
 }
 
 // deliveryEvidence is one step report, tied to one commit.
