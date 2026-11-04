@@ -790,3 +790,27 @@ func TestCTONewProjectRecipe(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOLearnedProjectPlacement(t *testing.T) {
+	s, err := openState(seededStateDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	d := &Daemon{st: s}
+	ctx := context.Background()
+	if _, err := d.runCTOToolRaw(ctx, "cto_placement_memory", json.RawMessage(`{"action":"save","purpose":"company knowledge tools","placement":"lab:~/code/work"}`)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := d.runCTOToolRaw(ctx, "cto_placement_memory", json.RawMessage(`{"action":"read"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(result)
+	if !strings.Contains(string(raw), "company knowledge tools") || !strings.Contains(string(raw), "lab:~/code/work") {
+		t.Fatalf("memory: %s", raw)
+	}
+	if !strings.Contains(ctoBrief, "cto_placement_memory") {
+		t.Fatal("brief does not read placement memory")
+	}
+}

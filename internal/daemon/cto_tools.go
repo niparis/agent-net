@@ -196,6 +196,9 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 
 // executeCTOTool is used only for immediate reads/talk or by the approved runner.
 func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "cto_placement_memory" {
+		return d.ctoPlacementMemory(ctx, raw)
+	}
 	if ctoToolClasses[name] == ctoRead {
 		return d.readCTOTool(ctx, name, raw)
 	}
@@ -775,4 +778,50 @@ func compactCTONeedsYou(agents []protocol.AgentView, now time.Time) any {
 		out = append(out, item{a.Waiting.Kind, a.SessionID, name, project, a.Hostname, string(text), age})
 	}
 	return map[string]any{"agents": out}
+}
+
+// ctoPlacementMemory stores only advisory owner placement answers.
+func (d *Daemon) ctoPlacementMemory(ctx context.Context, raw json.RawMessage) (any, error) {
+	var q struct {
+		Action    string `json:"action"`
+		Purpose   string `json:"purpose"`
+		Placement string `json:"placement"`
+	}
+	if json.Unmarshal(raw, &q) != nil {
+		return nil, errors.New("bad placement memory")
+	}
+	q.Purpose, q.Placement = strings.TrimSpace(q.Purpose), strings.TrimSpace(q.Placement)
+	switch q.Action {
+	case "save":
+		if q.Purpose == "" || q.Placement == "" || len(q.Purpose) > 512 || len(q.Placement) > 512 {
+			return nil, errors.New("placement memory needs a purpose and placement of at most 512 bytes")
+		}
+		if _, err := d.st.db.ExecContext(ctx, `INSERT INTO cto_placements(purpose,placement) VALUES(?,?) ON CONFLICT(purpose) DO UPDATE SET placement=excluded.placement`, q.Purpose, q.Placement); err != nil {
+			return nil, err
+		}
+	case "read":
+	default:
+		return nil, errors.New("placement memory action must be read or save")
+	}
+	rows, err := d.st.db.QueryContext(ctx, `SELECT purpose,placement FROM cto_placements ORDER BY purpose LIMIT 100`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type entry struct {
+		Purpose   string `json:"purpose"`
+		Placement string `json:"placement"`
+	}
+	items := []entry{}
+	for rows.Next() {
+		var e entry
+		if err := rows.Scan(&e.Purpose, &e.Placement); err != nil {
+			return nil, err
+		}
+		items = append(items, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return map[string]any{"items": items}, nil
 }
