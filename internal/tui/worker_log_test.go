@@ -20,10 +20,10 @@ func TestWorkersLogSwitchAndDetails(t *testing.T) {
 	if !m.workersLog {
 		t.Fatal("tab did not switch")
 	}
-	for _, w := range []int{120, 80, 45} {
+	for _, w := range []int{200, 120, 80, 45} {
 		lines := m.workersLogView(w, 35)
 		got := ansi.Strip(strings.Join(lines, "\n"))
-		for _, want := range []string{"Workers log", "Inspect history", "R3", "judge", "history checks", "test-machine", "Agent One", "Caller: Agent One (test-machine)"} {
+		for _, want := range []string{"Workers log", "Inspect history", "normal", "D 2.10", "judge", "history checks", "test-machine", "Agent One", "Agent One (test-machine)", "3/5"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("width %d missing %q: %s", w, want, got)
 			}
@@ -35,8 +35,8 @@ func TestWorkersLogSwitchAndDetails(t *testing.T) {
 		}
 	}
 	m.snap.WorkerLog[0].Assessment = nil
-	if got := ansi.Strip(strings.Join(m.workersLogView(120, 35), "\n")); !strings.Contains(got, "Assessment: -") {
-		t.Fatal(got)
+	if got := ansi.Strip(strings.Join(m.workersLogView(120, 35), "\n")); strings.Contains(got, "Assessment: -") {
+		t.Fatalf("empty assessment should be hidden: %s", got)
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = next.(Model)
@@ -78,8 +78,39 @@ func TestWorkersLogGoldens(t *testing.T) {
 		m.width, m.height = size[0], size[1]
 		golden(t, fmt.Sprintf("workers_log_%dx%d", size[0], size[1]), m.View())
 	}
+	// A judge failure has a distinct compact layout with no score rows.
+	m.snap.WorkerLog[1].Assessment = &protocol.WorkerAssessment{Label: "normal", D: 1.2, Error: "judge timed out while evaluating the worker run; retry later"}
+	m.workerLogRow = 1
+	m.width, m.height = 120, 40
+	golden(t, "workers_log_judge_failed_120x40", m.View())
 	m.workerLogRow = 3
 	golden(t, "workers_log_failed_120x40", m.View())
+}
+
+func TestWrapHangingIndent(t *testing.T) {
+	got := wrapHanging("Reasoning 4/5 ▰▰▰▰▱ ", "The explanation wraps cleanly beneath its text", 32)
+	want := []string{
+		"Reasoning 4/5 ▰▰▰▰▱ The",
+		"                    explanation",
+		"                    wraps",
+		"                    cleanly",
+		"                    beneath its",
+		"                    text",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("wrapHanging() =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestWorkerLogModelParts(t *testing.T) {
+	for _, test := range []struct{ harness, model, want string }{
+		{"codex", "test-model:high", "codex · test-model · high"},
+		{"opencode", "deepseek/deepseek-v4.1:low", "opencode · deepseek · deepseek-v4.1 · low"},
+	} {
+		if got := workerLogModel(test.harness, test.model); got != test.want {
+			t.Errorf("workerLogModel(%q, %q) = %q, want %q", test.harness, test.model, got, test.want)
+		}
+	}
 }
 
 func TestWorkersLogNoteOnlyForFailedStatus(t *testing.T) {
@@ -111,11 +142,11 @@ func TestWorkersLogBelongsToQuotasAndPickerNote(t *testing.T) {
 	m.snap.WorkerLog = []protocol.WorkerLogEntry{{Title: "Stored run", Status: "done", Assessment: &protocol.WorkerAssessment{Label: "normal", PickerLabel: "normal"}}}
 	m.workersLog = true
 	got := ansi.Strip(strings.Join(m.quotasView(80, 30), "\n"))
-	if !strings.Contains(got, "Picker: -") || strings.Contains(got, "Picker: normal") {
-		t.Fatalf("missing picker should be a dash: %s", got)
+	if strings.Contains(got, "Picker:") {
+		t.Fatalf("missing picker should be hidden: %s", got)
 	}
-	if !strings.Contains(got, "Caller: -") {
-		t.Fatalf("missing caller should be a dash: %s", got)
+	if strings.Contains(got, "Caller:") {
+		t.Fatalf("missing caller should be hidden: %s", got)
 	}
 	m.snap.WorkerLog[0].ModelNote = "codex gpt-6.1-sol:low (34.5, good enough; a stored picker explanation that wraps across the detail box)"
 	got = ansi.Strip(strings.Join(m.quotasView(80, 50), "\n"))

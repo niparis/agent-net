@@ -12,23 +12,23 @@
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────╮
-│ Title: Review worker history and difficulty scores                           │
-│ Caller: Agent One (caller-machine)                                           │
-│ Model: test-model:high                                                       │
-│ Machine: test-machine   Project: demo   Harness: codex                       │
-│ Run time: 2m0s                                                               │
-│ R3 S2 C2 U1 V2 K1 · D 2.10 · normal                                          │
-│ Judge: fake/judge                                                            │
-│ Reasoning: Join stored runs and current sessions.                            │
-│ Scope: One read method and one sub-tab.                                      │
-│ Coupling: Operator gate and TUI refresh.                                     │
-│ Uncertainty: Known table schema.                                             │
-│ Verification: Gateway and TUI tests.                                         │
-│ Risk: Read only history.                                                     │
+│ Title     Review worker history and difficulty scores                        │
+│ Caller    Agent One (caller-machine)                                         │
+│ Model     codex · test-model · high                                          │
+│ Where     test-machine / demo                                                │
+│ Run time  2m0s                                                               │
+│                                                                              │
+│ normal  D 2.10  ·  fake/judge                                                │
+│                                                                              │
+│ Reasoning     3/5 ###..  Join stored runs and current sessions.              │
+│ Scope         2/5 ##...  One read method and one sub-tab.                    │
+│ Coupling      2/5 ##...  Operator gate and TUI refresh.                      │
+│ Uncertainty   1/5 #....  Known table schema.                                 │
+│ Verification  2/5 ##...  Gateway and TUI tests.                              │
+│ Risk          1/5 #....  Read only history.                                  │
+│                                                                              │
 │ Picker: difficulty R3 S2 C2 U1 V2 K1 · D 2.10 · normal -> codex              │
-│ test-model:high (34.5, good enough; eligible for this task and available on  │
-│ the chosen machine)                                                          │
-│ Note: the worker ended after its hand-back; a message from you starts it     │
+│         test-model:high (34.5, good enough; eligible for this task and       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

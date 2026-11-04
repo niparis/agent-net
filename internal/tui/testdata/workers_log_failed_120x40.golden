@@ -1,40 +1,40 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 sessions, 5 online · 1 busy     updated 00:00:00
   Quotas    [ Workers log ]
-╭─Workers log──────────────────────────────────────────────────────────────────╮
-│   11-14 22:13  test-model:high      normal     owner      Review wo… running │
-│   11-14 22:11  test-model:high      normal     Agent One  Review worke… done │
-│   11-14 22:10  test-model:high      normal     CTO        Review wo… blocked │
-│ ▸ 11-14 22:08  test-model:high      normal     Agent One  Review wor… failed │
-│   11-14 22:06  test-model:high      normal     CTO        Review … timed out │
-│   11-14 22:05  test-model:high      normal     -          Review wo… stopped │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Difficulty details───────────────────────────────────────────────────────────╮
-│ Title: Review worker history and difficulty scores                           │
-│ Caller: Agent One                                                            │
-│ Model: test-model:high                                                       │
-│ Machine: test-machine   Project: demo   Harness: codex                       │
-│ Run time: 2m0s                                                               │
-│ R3 S2 C2 U1 V2 K1 · D 2.10 · normal                                          │
-│ Judge: fake/judge                                                            │
-│ Reasoning: Join stored runs and current sessions.                            │
-│ Scope: One read method and one sub-tab.                                      │
-│ Coupling: Operator gate and TUI refresh.                                     │
-│ Uncertainty: Known table schema.                                             │
-│ Verification: Gateway and TUI tests.                                         │
-│ Risk: Read only history.                                                     │
-│ Picker: -                                                                    │
-│ Failure: the model call failed: the provider was unavailable                 │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─CTO──────────────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ c: open the CTO                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Workers log──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   11-14 22:13  test-model:high            normal      owner           Review worker history and difficulty … running │
+│   11-14 22:11  test-model:high            normal      Agent One       Review worker history and difficulty sco… done │
+│   11-14 22:10  test-model:high            normal      CTO             Review worker history and difficulty … blocked │
+│ ▸ 11-14 22:08  test-model:high            normal      Agent One       Review worker history and difficulty s… failed │
+│   11-14 22:06  test-model:high            normal      CTO             Review worker history and difficult… timed out │
+│   11-14 22:05  test-model:high            normal      -               Review worker history and difficulty … stopped │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Title     Review worker history and difficulty scores                                                                │
+│ Caller    Agent One                                                                                                  │
+│ Model     codex · test-model · high                                                                                  │
+│ Where     test-machine / demo                                                                                        │
+│ Run time  2m0s                                                                                                       │
+│                                                                                                                      │
+│ normal  D 2.10  ·  fake/judge                                                                                        │
+│                                                                                                                      │
+│ Reasoning     3/5 ###..  Join stored runs and current sessions.                                                      │
+│ Scope         2/5 ##...  One read method and one sub-tab.                                                            │
+│ Coupling      2/5 ##...  Operator gate and TUI refresh.                                                              │
+│ Uncertainty   1/5 #....  Known table schema.                                                                         │
+│ Verification  2/5 ##...  Gateway and TUI tests.                                                                      │
+│ Risk          1/5 #....  Read only history.                                                                          │
+│ Failure: the model call failed: the provider was unavailable                                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 tab Quotas  ↑↓ select run  ←→ details  ? help  q quit
