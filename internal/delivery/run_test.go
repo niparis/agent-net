@@ -484,6 +484,60 @@ echo "last line"
 	}
 }
 
+// Output written by a child that the command left behind is still the
+// command's output. The drain must not close the pipe on a timer and drop
+// the bytes it has not read yet: that is how a step lost the end of its
+// output in CI (v0.4.124), when the reader goroutine fell behind after the
+// process exited.
+func TestRunStepKeepsOutputWrittenAfterExit(t *testing.T) {
+	f := newRunFx(t)
+	s := f.script("late.sh", `
+echo "first line"
+( sleep 1.5; echo "late line" ) &
+`)
+	run, err := RunStep(context.Background(), f.cmd(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(run.OutputTail, "late line") {
+		t.Fatalf("output written after the command exited was dropped: %q", run.OutputTail)
+	}
+	if !strings.Contains(run.OutputTail, "first line") {
+		t.Fatalf("tail lost the earlier line: %q", run.OutputTail)
+	}
+}
+
+// A child the command left behind that keeps writing must not hold the step
+// open: the drain stops after runDrainMax.
+func TestRunStepDrainStopsOnAChildThatKeepsWriting(t *testing.T) {
+	old := runDrainMax
+	runDrainMax = 200 * time.Millisecond
+	defer func() { runDrainMax = old }()
+
+	f := newRunFx(t)
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	s := f.script("chatty.sh", fmt.Sprintf(`
+while :; do echo "tick"; sleep 0.02; done &
+echo $! > %s
+echo "done"
+`, pidFile))
+	start := time.Now()
+	run, err := RunStep(context.Background(), f.cmd(s))
+	dur := time.Since(start)
+	if pid := runWaitFile(t, pidFile); pid > 0 {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(run.OutputTail, "done") {
+		t.Errorf("tail lost the command's own line: %q", run.OutputTail)
+	}
+	if dur > 2*time.Second {
+		t.Errorf("RunStep took %v while a %v drain limit was set", dur, runDrainMax)
+	}
+}
+
 func TestRunCollectorFieldParsing(t *testing.T) {
 	feed := func(s string) map[string]string {
 		c := newRunCollector(runRedactor{})
