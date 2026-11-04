@@ -12,16 +12,20 @@ import (
 //
 // Git holds the work: a change is a branch and its head commit. agent-net
 // decides who does each step of a repo's pipeline and keeps the evidence of
-// each step, keyed by the exact commit it was done on. A new head commit makes
-// a new revision of the change, and evidence of an older revision no longer
-// counts.
+// each step, keyed by the exact commit it was done on. A revision is the head
+// at one complete hand-back or one submit; evidence of an older revision no
+// longer counts.
 //
 // This file is the shared contract: the types, the pure rules on them, and the
-// frames. It stores nothing and routes nothing.
+// frames. It stores nothing and routes nothing. Where a repo's pipeline is
+// stored is the gateway's part (the settings layer cannot hold it as one
+// rule).
 
-// Steps, in their usual order. A pipeline uses a subset of them.
+// Steps, in their usual order. A pipeline uses a subset of them. accept is the
+// caller reading the report and diff (not "check": that is the idle check and
+// an Inbox kind).
 const (
-	StepCheck   = "check"
+	StepAccept  = "accept"
 	StepReview  = "review"
 	StepTest    = "test"
 	StepApprove = "approve"
@@ -31,7 +35,7 @@ const (
 	StepVerify  = "verify"
 )
 
-var stepOrder = []string{StepCheck, StepReview, StepTest, StepApprove, StepMerge, StepRelease, StepDeploy, StepVerify}
+var stepOrder = []string{StepAccept, StepReview, StepTest, StepApprove, StepMerge, StepRelease, StepDeploy, StepVerify}
 
 // StepNames lists every step agent-net knows how to route, in their usual
 // order.
@@ -47,16 +51,20 @@ func ValidStep(step string) bool {
 	return false
 }
 
-// The result a step owner reports.
+// The result a step owner reports. close closes the change without merge (its
+// user does not want it); the gateway then stops the change.
 const (
 	StepResultPass       = "pass"
 	StepResultFail       = "fail"
 	StepResultNeedsOwner = "needs_owner"
+	StepResultClose      = "close"
 )
 
-// Kinds of step owner. OwnerPerson is the owner of the network (the person):
-// the step becomes an Inbox approval. OwnerDelegate and OwnerNone are only for
-// approve: delegate is whoever governs the node in the graph in an allowed mode
+// Kinds of step owner. A step owner is a graph node (OwnerNode, a component or
+// an architect): one of its sessions does the work, never a worker.
+// OwnerPerson is the owner of the network: the step becomes an Inbox item.
+// OwnerDelegate and OwnerNone are only for approve: delegate is whoever governs
+// the node through a governs edge in an allowed mode
 // (delivery.delegated_approver_modes), or the owner, resolved when the step
 // starts; none leaves the approval out.
 const (
@@ -70,22 +78,24 @@ const (
 
 // How independent a step's evidence must be from the change's author. The same
 // words are the values of the independent evidence field, which agent-net
-// sets: none (same session), session (another session, same model family) or
-// family (another model family, a person, or GitHub).
+// sets: none (the author's own session), session (another session, same model
+// family) or family (another model family, a person, or GitHub).
 const (
 	IndependentNone    = "none"
 	IndependentSession = "session"
 	IndependentFamily  = "family"
 )
 
-// Where a failed step sends the change. Empty means OnFailCaller.
+// Where a failed step sends the change. Empty means OnFailCaller. Only the
+// session that started a worker may start it again, so author means: the
+// findings go to the caller, or the step owner starts its own fix worker.
 const (
 	OnFailCaller = "caller"
 	OnFailAuthor = "author"
 )
 
-// Evidence field names. A pipeline requirement names fields and the exact
-// values it needs. Field values are strings.
+// Evidence field names. A pipeline requirement names fields and the values it
+// needs. Field values are strings.
 const (
 	FieldTestsAdded   = "tests_added"   // test: yes or no
 	FieldSuite        = "suite"         // test: changed (the changed packages) or full
@@ -97,17 +107,19 @@ const (
 	FieldTarget       = "target"        // deploy: where it was deployed
 )
 
-// Values of the suite and tests_added fields. A CI run of the whole suite
-// reports suite full, with the run link in run.
+// Field values. FieldAny is for requirements only: the field must be set, to
+// any value (tests_before_merge suite names no suite). A CI run of the whole
+// suite reports suite full, with the run link in run.
 const (
 	SuiteChanged = "changed"
 	SuiteFull    = "full"
 	FieldYes     = "yes"
 	FieldNo      = "no"
+	FieldAny     = "*"
 )
 
-// Who did a step, when it was not a session: EvidenceByOwner for the person,
-// EvidenceByGitHub for a result read from GitHub.
+// Who did a step, when it was not a session: EvidenceByOwner for the person
+// (an answered Inbox item), EvidenceByGitHub for a result read from GitHub.
 const (
 	EvidenceByOwner  = "owner"
 	EvidenceByGitHub = "github"
@@ -121,8 +133,8 @@ const (
 )
 
 // Change states. A change is open until its merge step passes, then merged
-// while the after-merge steps run, then done. Stopped means withdrawn or given
-// up; a failed step does not stop a change, it waits for a fix.
+// while the after-merge steps run, then done. Stopped means closed without
+// merge or given up; a failed step does not stop a change, it waits for a fix.
 const (
 	ChangeOpen    = "open"
 	ChangeMerged  = "merged"
@@ -144,6 +156,9 @@ const ChangeIDPrefix = "ch_"
 // says something that setting cannot.
 const ShorthandCustom = "custom"
 
+// reviewRequiredFrom is decision 2: review from difficulty hard up.
+const reviewRequiredFrom = "hard"
+
 // Limits on what a report may carry. The gateway refuses more.
 const (
 	MaxEvidenceFields     = 16
@@ -155,18 +170,25 @@ const (
 )
 
 // StepRef names one step of a pipeline. For is set only for approve and says
-// what it approves: merge or deploy. A pipeline holds each step once, and
-// approve once for each For.
+// what it approves: merge or deploy. AfterMerge says the step runs on the
+// merged commit. A pipeline holds each step at most once before merge and once
+// after it (test may run in both places), and approve once for each For.
 type StepRef struct {
-	Step string `json:"step"`
-	For  string `json:"for,omitempty"`
+	Step       string `json:"step"`
+	For        string `json:"for,omitempty"`
+	AfterMerge bool   `json:"after_merge,omitempty"`
 }
 
+// String is the step's name in messages: "approve for deploy after merge".
 func (r StepRef) String() string {
+	s := r.Step
 	if r.For != "" {
-		return r.Step + " for " + r.For
+		s += " for " + r.For
 	}
-	return r.Step
+	if r.AfterMerge {
+		s += " after merge"
+	}
+	return s
 }
 
 // Validate checks the step name and For.
@@ -184,7 +206,8 @@ func (r StepRef) Validate() error {
 	return nil
 }
 
-// StepOwner is who does a step. Node is the node name, set only for kind node.
+// StepOwner is who does a step. Node is the graph node's name, set only for
+// kind node.
 type StepOwner struct {
 	Kind string `json:"kind"`
 	Node string `json:"node,omitempty"`
@@ -203,10 +226,7 @@ func (o StepOwner) validateFor(step string) error {
 		if strings.TrimSpace(o.Node) == "" {
 			return errors.New("owner node needs a node name")
 		}
-		if len(o.Node) > maxNameBytes {
-			return fmt.Errorf("owner node name is longer than %d bytes", maxNameBytes)
-		}
-		return nil
+		return validText("owner node name", o.Node, maxNameBytes)
 	case OwnerCaller, OwnerPerson:
 	case OwnerGitHub:
 		if step != StepTest && step != StepMerge {
@@ -225,52 +245,72 @@ func (o StepOwner) validateFor(step string) error {
 	return nil
 }
 
+// DefaultDeployOwner is the default owner of a project's deploy step: the node with a
+// deploys edge to it, else the caller.
+func DefaultDeployOwner(g Graph, project string) StepOwner {
+	for _, e := range g.Edges {
+		if e.Kind == "deploys" && e.To == project && e.From != "" {
+			return StepOwner{Kind: OwnerNode, Node: e.From}
+		}
+	}
+	return StepOwner{Kind: OwnerCaller}
+}
+
 // Requirement is one condition of a step: the named step has passed on the
-// commit it runs on, with each field equal to the value given.
+// commit it runs on, with each field equal to the value given (FieldAny: set
+// to any value).
 type Requirement struct {
 	StepRef
 	Fields map[string]string `json:"fields,omitempty"`
 }
 
-// String is the rule text: test(suite=full, tests_added=yes).
+// String is the rule text: test(suite=*, tests_added=yes), or
+// test(suite=full) after merge.
 func (r Requirement) String() string {
-	if len(r.Fields) == 0 {
-		return r.StepRef.String()
+	s := r.Step
+	if r.For != "" {
+		s += " for " + r.For
 	}
-	parts := make([]string, 0, len(r.Fields))
-	for _, k := range sortedKeys(r.Fields) {
-		parts = append(parts, k+"="+r.Fields[k])
+	if len(r.Fields) > 0 {
+		parts := make([]string, 0, len(r.Fields))
+		for _, k := range sortedKeys(r.Fields) {
+			parts = append(parts, k+"="+r.Fields[k])
+		}
+		s += "(" + strings.Join(parts, ", ") + ")"
 	}
-	return r.StepRef.String() + "(" + strings.Join(parts, ", ") + ")"
+	if r.AfterMerge {
+		s += " after merge"
+	}
+	return s
 }
 
 // PipelineStep is one step of a pipeline with its owner and rules.
 //
 // Requires lists steps that must have passed first, each listed earlier in
 // the pipeline. Independent is none, session or family (empty is none).
-// OnFail is caller or author (empty is caller). AfterMerge is true exactly for
-// the steps listed after merge: they run on the merged commit. RequiredFrom is
-// a difficulty (DifficultyLevels): below it the step is left out unless it
-// ran anyway; empty means always.
+// OnFail is caller or author (empty is caller). AfterMerge (in StepRef) is
+// true exactly for the steps listed after merge. RequiredFrom is a difficulty
+// (DifficultyLevels): below it the step is left out unless it ran anyway;
+// empty means always. A change with no difficulty label counts as normal.
 type PipelineStep struct {
 	StepRef
 	Owner        StepOwner     `json:"owner"`
 	Requires     []Requirement `json:"requires,omitempty"`
 	Independent  string        `json:"independent,omitempty"`
 	OnFail       string        `json:"on_fail,omitempty"`
-	AfterMerge   bool          `json:"after_merge,omitempty"`
 	RequiredFrom string        `json:"required_from,omitempty"`
 }
 
-// Pipeline is a repo's ordered delivery steps (the delivery.pipeline setting).
-// Steps without a requirement between them may run in parallel.
+// Pipeline is a repo's ordered delivery steps. Steps without a requirement
+// between them may run in parallel.
 type Pipeline struct {
 	Steps []PipelineStep `json:"steps"`
 }
 
 // ChangeOrigin is where a change came from. WorkerID and SessionID name the
-// worker run and its session; Model and ModelFamily are the author's, used to
-// judge independence.
+// worker run and its session (the Agent-Net-Worker trailer names the same
+// session); Model and ModelFamily are the author's, used to judge
+// independence.
 type ChangeOrigin struct {
 	Kind        string `json:"kind"`
 	WorkerID    string `json:"worker_id,omitempty"`
@@ -280,22 +320,28 @@ type ChangeOrigin struct {
 	ModelFamily string `json:"model_family,omitempty"`
 }
 
-// Change is one unit of delivery: a repo, a branch and its head commit. There
-// is at most one open change per repo and branch: a later submit for the same
-// branch is the same change, with a new revision when the head moved.
+// Change is one unit of delivery: a project, the machine that holds the
+// branch, a branch and its head commit.
 //
-// Repo is the project name, as the settings layer and the graph name it.
-// Caller is the session that gets the final notice. Difficulty is the judge's
-// label for the worker run, empty when unknown. Times are Unix seconds.
+// Project is the project's identity (decision 0031). Machine is the node ID of
+// the machine that holds the branch; the gateway sets it from the connection
+// that submitted the change. BaseCommit is the commit the work started from.
+// Uncommitted says the worktree still had uncommitted changes when the head was
+// recorded. Caller is the session that gets the final notice. Difficulty is
+// the judge's label for the worker run, empty when there is none (counts as
+// normal). Times are Unix seconds.
 //
 // Change is a record, not a frame: never embed it anonymously in a request,
 // because its id would clash with the frame's id.
 type Change struct {
 	ID           string       `json:"id"`
-	Repo         string       `json:"repo"`
+	Project      string       `json:"project"`
+	Machine      string       `json:"machine,omitempty"`
 	Branch       string       `json:"branch"`
 	TargetBranch string       `json:"target_branch,omitempty"`
+	BaseCommit   string       `json:"base_commit,omitempty"`
 	HeadCommit   string       `json:"head_commit"`
+	Uncommitted  bool         `json:"uncommitted,omitempty"`
 	Revision     int          `json:"revision"`
 	Origin       ChangeOrigin `json:"origin"`
 	Caller       string       `json:"caller_session_id,omitempty"`
@@ -307,20 +353,27 @@ type Change struct {
 	UpdatedAt    int64        `json:"updated_at,omitempty"`
 }
 
-// Revision is one head commit of a change. Number starts at 1.
+// Revision is the head of a change at one complete hand-back or one submit.
+// Number starts at 1. Branch is where the head was: continue moves a change to
+// a new branch.
 type Revision struct {
-	ChangeID string `json:"change_id"`
-	Number   int    `json:"number"`
-	Commit   string `json:"commit"`
-	At       int64  `json:"at"`
+	ChangeID    string `json:"change_id"`
+	Number      int    `json:"number"`
+	Branch      string `json:"branch"`
+	Commit      string `json:"commit"`
+	Uncommitted bool   `json:"uncommitted,omitempty"`
+	At          int64  `json:"at"`
 }
 
 // Evidence is one step result for one revision of a change, on one exact
 // commit: the head for steps before merge, the merged commit after it.
+// Evidence comes only from an authenticated step report, an answered Inbox
+// item or GitHub, never from a message.
 //
 // By is who did the work: a session ID, EvidenceByOwner or EvidenceByGitHub.
-// ReportedBy is the session that reported it, when another session (a worker
-// the reporter started) did the work. ByModel and ByModelFamily belong to By.
+// ReportedBy is the session that reported it when that is not By (a worker the
+// reporter started did the work, or the owner approved in the session).
+// ByModel and ByModelFamily belong to By.
 type Evidence struct {
 	ChangeID string `json:"change_id"`
 	Revision int    `json:"revision"`
@@ -344,6 +397,7 @@ const (
 	StepStatePassed     = "passed"      // its latest counted result is pass
 	StepStateFailed     = "failed"      // its latest counted result is fail
 	StepStateNeedsOwner = "needs_owner" // its latest counted result is needs_owner
+	StepStateClosed     = "closed"      // its owner closed the change without merge
 )
 
 // StepStatus is where one step of a change stands. Missing lists what a
@@ -369,9 +423,43 @@ var (
 // so evidence always names exactly one commit.
 func ValidCommit(s string) bool { return commitPattern.MatchString(s) }
 
-// ModelFamily is the family used to judge independence: the model's vendor,
-// as ModelVendor gives it ("anthropic", "deepseek", "openai").
-func ModelFamily(harness, model string) string { return ModelVendor(harness, model) }
+// modelMakers maps the start of a model name to its maker.
+var modelMakers = []struct {
+	maker    string
+	prefixes []string
+}{
+	{"anthropic", []string{"claude", "sonnet", "opus", "haiku", "fable"}},
+	{"openai", []string{"gpt", "o1", "o3", "o4", "codex"}},
+	{"google", []string{"gemini", "gemma"}},
+	{"deepseek", []string{"deepseek"}},
+	{"moonshot", []string{"kimi"}},
+	{"zhipu", []string{"glm"}},
+	{"alibaba", []string{"qwen"}},
+	{"xai", []string{"grok"}},
+	{"mistral", []string{"mistral", "codestral", "devstral"}},
+	{"meta", []string{"llama"}},
+}
+
+// ModelFamily is the family used to judge independence: the model's maker
+// (anthropic, openai, google, deepseek, ...), whoever hosts it. So Sonnet and
+// Opus are one family. A name it does not know falls back to ModelVendor.
+func ModelFamily(harness, model string) string {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if i := strings.LastIndexByte(name, ':'); i >= 0 {
+		name = name[:i]
+	}
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	for _, m := range modelMakers {
+		for _, p := range m.prefixes {
+			if strings.HasPrefix(name, p) {
+				return m.maker
+			}
+		}
+	}
+	return ModelVendor(harness, model)
+}
 
 // IndependenceOf is the value agent-net writes into the independent field of
 // evidence done by by (a session ID, EvidenceByOwner or EvidenceByGitHub) with
@@ -427,6 +515,16 @@ func validText(name, s string, max int) error {
 	return nil
 }
 
+// validTexts checks name, value pairs in order with validText.
+func validTexts(max int, pairs ...string) error {
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if err := validText(pairs[i], pairs[i+1], max); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validBranch(name, b string) error {
 	if b == "" {
 		return fmt.Errorf("%s is empty", name)
@@ -445,13 +543,20 @@ func validBranch(name, b string) error {
 	return nil
 }
 
-// validField checks one evidence field or requirement condition.
-func validField(name, value string) error {
+// validField checks one evidence field, or one requirement condition when
+// condition is true (then FieldAny is allowed).
+func validField(name, value string, condition bool) error {
 	if !fieldNamePattern.MatchString(name) {
 		return fmt.Errorf("field name %q must be lowercase letters, digits and _ (at most 40)", name)
 	}
 	if err := validText(name, value, MaxEvidenceFieldBytes); err != nil {
 		return err
+	}
+	if value == FieldAny {
+		if condition {
+			return nil
+		}
+		return fmt.Errorf("%s: * is for requirements, not evidence", name)
 	}
 	switch name {
 	case FieldTestsAdded:
@@ -483,7 +588,7 @@ func validFields(fields map[string]string) error {
 		return fmt.Errorf("at most %d fields", MaxEvidenceFields)
 	}
 	for _, k := range sortedKeys(fields) {
-		if err := validField(k, fields[k]); err != nil {
+		if err := validField(k, fields[k], false); err != nil {
 			return err
 		}
 	}
@@ -491,10 +596,11 @@ func validFields(fields map[string]string) error {
 }
 
 func validResult(r string) error {
-	if r != StepResultPass && r != StepResultFail && r != StepResultNeedsOwner {
-		return fmt.Errorf("result must be pass, fail or needs_owner, not %q", r)
+	switch r {
+	case StepResultPass, StepResultFail, StepResultNeedsOwner, StepResultClose:
+		return nil
 	}
-	return nil
+	return fmt.Errorf("result must be pass, fail, needs_owner or close, not %q", r)
 }
 
 func validChangeID(id string) error {
@@ -525,16 +631,6 @@ func (o ChangeOrigin) Validate() error {
 	return validTexts(maxNameBytes, "worker_id", o.WorkerID, "session_id", o.SessionID, "person", o.Person, "model", o.Model, "model_family", o.ModelFamily)
 }
 
-// validTexts checks name, value pairs in order with validText.
-func validTexts(max int, pairs ...string) error {
-	for i := 0; i+1 < len(pairs); i += 2 {
-		if err := validText(pairs[i], pairs[i+1], max); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Validate checks a stored change.
 func (c Change) Validate() error {
 	if err := validChangeID(c.ID); err != nil {
@@ -554,14 +650,14 @@ func (c Change) Validate() error {
 	if c.MergedCommit != "" && !ValidCommit(c.MergedCommit) {
 		return errors.New("merged_commit must be a full commit hash")
 	}
-	return nil
+	return validText("machine", c.Machine, maxNameBytes)
 }
 
 func (c Change) validateWork() error {
-	if strings.TrimSpace(c.Repo) == "" {
-		return errors.New("repo is empty")
+	if strings.TrimSpace(c.Project) == "" {
+		return errors.New("project is empty")
 	}
-	if err := validText("repo", c.Repo, maxNameBytes); err != nil {
+	if err := validText("project", c.Project, maxNameBytes); err != nil {
 		return err
 	}
 	if err := validBranch("branch", c.Branch); err != nil {
@@ -578,6 +674,9 @@ func (c Change) validateWork() error {
 	if !ValidCommit(c.HeadCommit) {
 		return errors.New("head_commit must be a full commit hash")
 	}
+	if c.BaseCommit != "" && !ValidCommit(c.BaseCommit) {
+		return errors.New("base_commit must be a full commit hash")
+	}
 	if err := c.Origin.Validate(); err != nil {
 		return err
 	}
@@ -589,23 +688,30 @@ func (c Change) validateWork() error {
 	return validText("title", c.Title, MaxChangeTitleBytes)
 }
 
-// WithHead returns the change with a new head commit. A different commit makes
-// the next revision (bumped is true); the same commit changes nothing. Only an
-// open change takes a new head.
-func (c Change) WithHead(commit string, at int64) (out Change, bumped bool, err error) {
+// WithHead returns the change with the head of a new complete hand-back or
+// submit. A different commit makes the next revision (bumped is true). The
+// same commit on another branch (continue moved the work) keeps the revision:
+// it is the same work, so its evidence still counts. Only an open change takes
+// a new head.
+func (c Change) WithHead(branch, commit string, uncommitted bool, at int64) (out Change, bumped bool, err error) {
 	if !ValidCommit(commit) {
 		return c, false, errors.New("head commit must be a full commit hash")
 	}
-	if c.State != ChangeOpen {
-		return c, false, fmt.Errorf("change %s is %s and takes no new commits; submit a new change", c.ID, c.State)
+	if err := validBranch("branch", branch); err != nil {
+		return c, false, err
 	}
-	if commit == c.HeadCommit {
+	if c.State != ChangeOpen {
+		return c, false, fmt.Errorf("change %s is %s and takes no new head; submit a new change", c.ID, c.State)
+	}
+	if branch == c.Branch && commit == c.HeadCommit && uncommitted == c.Uncommitted {
 		return c, false, nil
 	}
-	c.HeadCommit = commit
-	c.Revision++
-	c.UpdatedAt = at
-	return c, true, nil
+	bumped = commit != c.HeadCommit
+	c.Branch, c.HeadCommit, c.Uncommitted, c.UpdatedAt = branch, commit, uncommitted, at
+	if bumped {
+		c.Revision++
+	}
+	return c, bumped, nil
 }
 
 // Validate checks one piece of evidence as the gateway stores it.
@@ -650,21 +756,33 @@ func (p Pipeline) Find(ref StepRef) (PipelineStep, bool) {
 	return PipelineStep{}, false
 }
 
-// Validate checks a pipeline: known steps, each once, valid owners and rule
-// values, requirements only on earlier steps, after_merge exactly for the
-// steps after merge, and each approve required by the step it approves.
+// Validate checks a pipeline: known steps, each at most once on each side of
+// merge and approve once for each For, valid owners and rule values,
+// requirements only on earlier steps, after_merge exactly for the steps listed
+// after merge, and each approve required by every step it approves.
 func (p Pipeline) Validate() error {
 	if len(p.Steps) == 0 {
 		return errors.New("pipeline has no steps")
 	}
-	seen := map[StepRef]int{}
-	mergeAt := -1
-	for i, s := range p.Steps {
+	seen := map[StepRef]bool{}
+	approves := map[string]bool{}
+	hasMerge := false
+	for _, s := range p.Steps {
+		hasMerge = hasMerge || s.Step == StepMerge
+	}
+	merged := false
+	for _, s := range p.Steps {
 		if err := s.StepRef.Validate(); err != nil {
 			return err
 		}
-		if _, dup := seen[s.StepRef]; dup {
+		if seen[s.StepRef] {
 			return fmt.Errorf("%s appears twice", s.StepRef)
+		}
+		if s.Step == StepApprove {
+			if approves[s.For] {
+				return fmt.Errorf("approve for %s appears twice: approve runs once for each for", s.For)
+			}
+			approves[s.For] = true
 		}
 		if err := s.Owner.validateFor(s.Step); err != nil {
 			return fmt.Errorf("%s: %w", s.StepRef, err)
@@ -688,58 +806,79 @@ func (p Pipeline) Validate() error {
 			if r.StepRef == s.StepRef {
 				return fmt.Errorf("%s requires itself", s.StepRef)
 			}
-			if _, ok := seen[r.StepRef]; !ok {
+			if !seen[r.StepRef] {
 				return fmt.Errorf("%s requires %s, which is not earlier in the pipeline", s.StepRef, r.StepRef)
 			}
 			for _, k := range sortedKeys(r.Fields) {
-				if err := validField(k, r.Fields[k]); err != nil {
+				if err := validField(k, r.Fields[k], true); err != nil {
 					return fmt.Errorf("%s requires %s: %w", s.StepRef, r.StepRef, err)
 				}
 			}
 		}
-		if s.Step == StepMerge {
-			if s.AfterMerge {
-				return errors.New("merge cannot run after merge")
-			}
-			mergeAt = i
-		} else if s.AfterMerge && mergeAt < 0 {
-			if _, ok := p.Find(StepRef{Step: StepMerge}); ok {
-				return fmt.Errorf("%s has after_merge but comes before merge", s.StepRef)
-			}
-			return fmt.Errorf("%s runs after merge, but the pipeline has no merge step", s.StepRef)
-		} else if !s.AfterMerge && mergeAt >= 0 {
+		switch {
+		case s.Step == StepMerge && s.AfterMerge:
+			return errors.New("merge cannot run after merge")
+		case s.Step == StepMerge:
+			merged = true
+		case s.AfterMerge && !hasMerge:
+			return fmt.Errorf("%s: the pipeline has no merge step", s.StepRef)
+		case s.AfterMerge && !merged:
+			return fmt.Errorf("%s is listed before merge", s.StepRef)
+		case !s.AfterMerge && merged:
 			return fmt.Errorf("%s comes after merge, so it needs after_merge", s.StepRef)
 		}
-		seen[s.StepRef] = i
+		seen[s.StepRef] = true
 	}
 	for _, target := range []string{StepMerge, StepDeploy} {
-		approve := StepRef{Step: StepApprove, For: target}
-		if _, ok := p.Find(approve); !ok {
+		if !approves[target] {
 			continue
 		}
-		s, ok := p.Find(StepRef{Step: target})
-		if !ok {
-			return fmt.Errorf("%s needs a %s step", approve, target)
+		var approve StepRef
+		found := false
+		for _, s := range p.Steps {
+			if s.Step == StepApprove && s.For == target {
+				approve = s.StepRef
+			}
+			if s.Step != target {
+				continue
+			}
+			found = true
 		}
-		required := false
-		for _, r := range s.Requires {
-			required = required || r.StepRef == approve
+		if !found {
+			return fmt.Errorf("approve for %s needs a %s step", target, target)
 		}
-		if !required {
-			return fmt.Errorf("%s must require %s", target, approve)
+		for _, s := range p.Steps {
+			if s.Step != target {
+				continue
+			}
+			required := false
+			for _, r := range s.Requires {
+				required = required || r.StepRef == approve
+			}
+			if !required {
+				return fmt.Errorf("%s must require %s", s.StepRef, approve)
+			}
 		}
 	}
 	return nil
 }
 
 // leftOut says why a step is left out of this change, or "" when it is not.
-// A step below its required_from still counts when it ran (has evidence).
+// A step below its required_from still counts when it ran (has evidence). A
+// change with no difficulty label counts as normal.
 func leftOut(s PipelineStep, c Change, latest *Evidence) string {
 	if s.Owner.Kind == OwnerNone {
 		return "left out: owner none"
 	}
-	if s.RequiredFrom != "" && latest == nil && c.Difficulty != "" && difficultyRank(c.Difficulty) >= 0 && difficultyRank(c.Difficulty) < difficultyRank(s.RequiredFrom) {
-		return "left out: required from difficulty " + s.RequiredFrom + ", the change is " + c.Difficulty
+	if s.RequiredFrom == "" || latest != nil {
+		return ""
+	}
+	have := c.Difficulty
+	if difficultyRank(have) < 0 {
+		have = "normal"
+	}
+	if difficultyRank(have) < difficultyRank(s.RequiredFrom) {
+		return "left out: required from difficulty " + s.RequiredFrom + ", the change is " + have
 	}
 	return ""
 }
@@ -819,10 +958,15 @@ func (p Pipeline) missing(s PipelineStep, c Change, evidence []Evidence) []strin
 			continue
 		}
 		for _, k := range sortedKeys(r.Fields) {
-			if got, ok := ev.Fields[k]; !ok {
-				out = append(out, fmt.Sprintf("%s: %s is not set, needs %q", r, k, r.Fields[k]))
-			} else if got != r.Fields[k] {
-				out = append(out, fmt.Sprintf("%s: %s is %q, needs %q", r, k, got, r.Fields[k]))
+			want := r.Fields[k]
+			got, ok := ev.Fields[k]
+			switch {
+			case !ok && want == FieldAny:
+				out = append(out, fmt.Sprintf("%s: %s is not set, needs any value", r, k))
+			case !ok:
+				out = append(out, fmt.Sprintf("%s: %s is not set, needs %q", r, k, want))
+			case want != FieldAny && got != want:
+				out = append(out, fmt.Sprintf("%s: %s is %q, needs %q", r, k, got, want))
 			}
 		}
 	}
@@ -848,6 +992,8 @@ func (p Pipeline) Status(c Change, evidence []Evidence) []StepStatus {
 				st.State = StepStatePassed
 			case StepResultFail:
 				st.State = StepStateFailed
+			case StepResultClose:
+				st.State = StepStateClosed
 			default:
 				st.State = StepStateNeedsOwner
 			}
@@ -879,15 +1025,21 @@ func (p Pipeline) Ready(ref StepRef, c Change, evidence []Evidence) (bool, []str
 
 // NextSteps returns the steps that may start now for change c, in pipeline
 // order. Several may run in parallel. An open change offers only steps before
-// merge, a merged change only steps after it, and a done or stopped change
-// none. Steps already out as step tasks are the caller's to filter.
+// merge, a merged change only steps after it, and a done, stopped or closed
+// change none. Steps already out as step tasks are the caller's to filter.
 func (p Pipeline) NextSteps(c Change, evidence []Evidence) []StepRef {
 	if c.State != ChangeOpen && c.State != ChangeMerged {
 		return nil
 	}
+	status := p.Status(c, evidence)
+	for _, st := range status {
+		if st.State == StepStateClosed {
+			return nil
+		}
+	}
 	var out []StepRef
-	for i, st := range p.Status(c, evidence) {
-		if st.State == StepStateReady && p.Steps[i].AfterMerge == (c.State == ChangeMerged) {
+	for _, st := range status {
+		if st.State == StepStateReady && st.AfterMerge == (c.State == ChangeMerged) {
 			out = append(out, st.StepRef)
 		}
 	}
@@ -932,7 +1084,7 @@ func (p Pipeline) Accepts(c Change, e Evidence) error {
 		return fmt.Errorf("commit %s is not the head of change %s (head %s, revision %d): check the new head and report again", shortCommit(e.Commit), c.ID, shortCommit(want), c.Revision)
 	}
 	if e.Step == StepMerge && e.Result == StepResultPass && e.Fields[FieldMergedCommit] == "" {
-		return errors.New("a merge pass needs merged_commit: the commit on the target branch")
+		return errors.New("a merge pass needs merged_commit: the commit on the target branch, which keeps the change's head")
 	}
 	return nil
 }
@@ -957,11 +1109,13 @@ func (p Pipeline) ReportFields(ref StepRef) []string {
 }
 
 // PipelineFromShorthand builds the pipeline the three step 6 delivery settings
-// describe (the mapping table in the design). Every step is owned by the
-// caller. The steps are check, review (from difficulty hard, on another model
-// family), test, approve for merge, merge, then after merge approve for deploy
-// and deploy. The settings say what merge requires and who approves; release
-// and verify come from a repo's recipe.
+// describe (the mapping table in the design), every step owned by the caller:
+// accept, test, review (from difficulty hard, on another model family),
+// approve for merge, merge. Deploy rule ask or owner adds approve for deploy
+// and deploy after merge; brief adds no deploy step, because a deploy step
+// exists only when the repo's recipe has one. The settings say only what merge
+// and deploy require and who approves; the steps after merge (CI, release,
+// verify) come from a repo's recipe, as in PipelineToday.
 func PipelineFromShorthand(tests, merge, deploy string) (Pipeline, error) {
 	approver := map[string]string{MergeFull: OwnerNone, MergeDelegated: OwnerDelegate, MergeAsk: OwnerPerson}
 	deployApprover := map[string]string{DeployBrief: OwnerNone, DeployAsk: OwnerDelegate, DeployOwner: OwnerPerson}
@@ -972,15 +1126,15 @@ func PipelineFromShorthand(tests, merge, deploy string) (Pipeline, error) {
 		return Pipeline{}, fmt.Errorf("deploy_rule must be brief, ask or owner, not %q", deploy)
 	}
 	caller := StepOwner{Kind: OwnerCaller}
-	review := PipelineStep{StepRef: StepRef{Step: StepReview}, Owner: caller, Independent: IndependentFamily, RequiredFrom: "hard"}
+	review := PipelineStep{StepRef: StepRef{Step: StepReview}, Owner: caller, Independent: IndependentFamily, RequiredFrom: reviewRequiredFrom}
 	reviewReq := Requirement{StepRef: review.StepRef}
 	var testReq *Requirement
 	switch tests {
 	case TestsOptional:
 	case TestsSuite:
-		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldSuite: SuiteFull}}
+		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldSuite: FieldAny}}
 	case TestsSuiteNewTests, TestsSuiteNewTestsReview:
-		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldSuite: SuiteFull, FieldTestsAdded: FieldYes}}
+		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldTestsAdded: FieldYes}}
 		if tests == TestsSuiteNewTestsReview {
 			review.RequiredFrom = ""
 			reviewReq.Fields = map[string]string{FieldFindingsOpen: "0"}
@@ -989,21 +1143,25 @@ func PipelineFromShorthand(tests, merge, deploy string) (Pipeline, error) {
 		return Pipeline{}, fmt.Errorf("tests_before_merge must be optional, suite, suite-new-tests or suite-new-tests-review, not %q", tests)
 	}
 	approveMerge := StepRef{Step: StepApprove, For: StepMerge}
-	approveDeploy := StepRef{Step: StepApprove, For: StepDeploy}
-	requires := []Requirement{{StepRef: StepRef{Step: StepCheck}}, reviewReq}
+	requires := []Requirement{{StepRef: StepRef{Step: StepAccept}}, reviewReq}
 	if testReq != nil {
 		requires = append(requires, *testReq)
 	}
 	requires = append(requires, Requirement{StepRef: approveMerge})
-	return Pipeline{Steps: []PipelineStep{
-		{StepRef: StepRef{Step: StepCheck}, Owner: caller},
-		review,
+	p := Pipeline{Steps: []PipelineStep{
+		{StepRef: StepRef{Step: StepAccept}, Owner: caller},
 		{StepRef: StepRef{Step: StepTest}, Owner: caller},
+		review,
 		{StepRef: approveMerge, Owner: StepOwner{Kind: approver[merge]}},
 		{StepRef: StepRef{Step: StepMerge}, Owner: caller, Requires: requires},
-		{StepRef: approveDeploy, Owner: StepOwner{Kind: deployApprover[deploy]}, AfterMerge: true},
-		{StepRef: StepRef{Step: StepDeploy}, Owner: caller, AfterMerge: true, Requires: []Requirement{{StepRef: approveDeploy}}},
-	}}, nil
+	}}
+	if deploy != DeployBrief {
+		approveDeploy := StepRef{Step: StepApprove, For: StepDeploy, AfterMerge: true}
+		p.Steps = append(p.Steps,
+			PipelineStep{StepRef: approveDeploy, Owner: StepOwner{Kind: deployApprover[deploy]}},
+			PipelineStep{StepRef: StepRef{Step: StepDeploy, AfterMerge: true}, Owner: caller, Requires: []Requirement{{StepRef: approveDeploy}}})
+	}
+	return p, nil
 }
 
 // PipelineForMaturity is the pipeline a maturity level gives today: the step 6
@@ -1013,21 +1171,31 @@ func PipelineForMaturity(level string) (Pipeline, error) {
 	return PipelineFromShorthand(d.TestsBeforeMerge, d.MergeAuthority, d.DeployRule)
 }
 
-// PipelineToday is the pipeline of today's behaviour, used when a repo sets
-// nothing: every step owned by the caller, no approvals (merge authority full,
-// deploy as the brief says), merge after the full suite. It is the default
-// maturity level's pipeline. Each call returns a fresh copy.
+// PipelineToday is the owner's way today, with every step owned by the caller
+// and no approvals: accept; the caller's test (suite is what it ran) and, from
+// difficulty hard, an independent review; merge into the release branch; then
+// on the merged commit the CI test of the full suite; release, which needs that
+// test on that exact commit (fast-forward main, tag, release workflow,
+// install); verify. Its shorthand reads suite, full, brief: the default
+// maturity's values. Each call returns a fresh copy.
 func PipelineToday() Pipeline {
 	p, err := PipelineFromShorthand(TestsSuite, MergeFull, DeployBrief)
 	if err != nil {
 		panic("protocol: today's pipeline: " + err.Error())
 	}
+	caller := StepOwner{Kind: OwnerCaller}
+	ci := StepRef{Step: StepTest, AfterMerge: true}
+	release := StepRef{Step: StepRelease, AfterMerge: true}
+	p.Steps = append(p.Steps,
+		PipelineStep{StepRef: ci, Owner: caller},
+		PipelineStep{StepRef: release, Owner: caller, Requires: []Requirement{{StepRef: ci, Fields: map[string]string{FieldSuite: SuiteFull}}}},
+		PipelineStep{StepRef: StepRef{Step: StepVerify, AfterMerge: true}, Owner: caller, Requires: []Requirement{{StepRef: release}}})
 	return p
 }
 
 // Shorthand reads the three step 6 delivery settings back from a pipeline:
 // each is the value whose part of the pipeline matches exactly, or
-// ShorthandCustom. A pipeline without a deploy step reads deploy_rule brief.
+// ShorthandCustom. No approve step reads as no approval (full, brief).
 func (p Pipeline) Shorthand() (tests, merge, deploy string) {
 	tests, merge, deploy = ShorthandCustom, ShorthandCustom, ShorthandCustom
 	part := testsPart(p)
@@ -1057,8 +1225,8 @@ func (p Pipeline) Shorthand() (tests, merge, deploy string) {
 }
 
 // testsPart is the part of a pipeline tests_before_merge speaks about: what
-// merge requires of test and review, and whether a required clean review runs
-// for every change.
+// merge requires of the test and review before it, and whether a required
+// clean review runs for every change.
 func testsPart(p Pipeline) string {
 	m, ok := p.Find(StepRef{Step: StepMerge})
 	if !ok {
@@ -1083,11 +1251,12 @@ func testsPart(p Pipeline) string {
 // approverKind is the owner kind of the approve step for target: none when
 // there is no such step.
 func approverKind(p Pipeline, target string) string {
-	s, ok := p.Find(StepRef{Step: StepApprove, For: target})
-	if !ok {
-		return OwnerNone
+	for _, s := range p.Steps {
+		if s.Step == StepApprove && s.For == target {
+			return s.Owner.Kind
+		}
 	}
-	return s.Owner.Kind
+	return OwnerNone
 }
 
 func sortedKeys(m map[string]string) []string {
@@ -1101,7 +1270,9 @@ func sortedKeys(m map[string]string) []string {
 
 // Gateway frames of the delivery pipeline. change.submit, change.get,
 // change.list and step.report go from a daemon to the gateway; step.task goes
-// from the gateway to the daemon of the step owner's session.
+// from the gateway to the daemon of the step owner's session. agent-net itself
+// sends step tasks, as for the idle check, so edge request rules do not hold
+// them.
 const (
 	FrameChangeSubmit = "change.submit"
 	FrameChangeGet    = "change.get"
@@ -1118,18 +1289,26 @@ const (
 	OpChangesFind  = "changes_find"
 )
 
-// ChangeSubmitRequest is change.submit: the daemon sends it when a worker hands
-// back with complete: yes (origin worker), or when an agent calls
-// agent_change_submit (origin session). SessionID is the session it comes for:
-// the worker's caller, or the submitting agent; the gateway checks it is on the
-// sending machine. A submit for a branch with an open change returns that
-// change, with a new revision when the head moved.
+// ChangeSubmitRequest is change.submit: the daemon sends it at a complete
+// worker hand-back (origin worker), or when an agent calls agent_change_submit
+// (origin session). SessionID is the session it comes for: the worker's
+// caller, or the submitting agent; the gateway checks it is on the sending
+// machine, and sets the change's machine from the connection.
+//
+// ChangeID names the change this work continues: set it for a continue or a
+// worker started with base on the change's branch, so the change follows the
+// work to its new branch. Without it, a submit for a branch that has an open
+// change is that change; otherwise it is a new change. Either way a new head
+// commit makes a new revision.
 type ChangeSubmitRequest struct {
 	SessionID    string       `json:"session_id"`
-	Repo         string       `json:"repo"`
+	ChangeID     string       `json:"change_id,omitempty"`
+	Project      string       `json:"project"`
 	Branch       string       `json:"branch"`
 	TargetBranch string       `json:"target_branch,omitempty"`
+	BaseCommit   string       `json:"base_commit,omitempty"`
 	HeadCommit   string       `json:"head_commit"`
+	Uncommitted  bool         `json:"uncommitted,omitempty"`
 	Origin       ChangeOrigin `json:"origin"`
 	Difficulty   string       `json:"difficulty,omitempty"`
 	Title        string       `json:"title,omitempty"`
@@ -1140,11 +1319,17 @@ func (q ChangeSubmitRequest) Validate() error {
 	if q.SessionID == "" {
 		return errors.New("session_id is empty")
 	}
-	return Change{Repo: q.Repo, Branch: q.Branch, TargetBranch: q.TargetBranch, HeadCommit: q.HeadCommit, Origin: q.Origin, Difficulty: q.Difficulty, Title: q.Title}.validateWork()
+	if q.ChangeID != "" {
+		if err := validChangeID(q.ChangeID); err != nil {
+			return err
+		}
+	}
+	return Change{Project: q.Project, Branch: q.Branch, TargetBranch: q.TargetBranch, BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Origin: q.Origin, Difficulty: q.Difficulty, Title: q.Title}.validateWork()
 }
 
-// ChangeView is a change with where each of its steps stands. Pipeline,
-// Revisions and Evidence (every revision) are filled only by change.get.
+// ChangeView is a change with where each of its steps stands and the steps
+// that may start now. Pipeline, Revisions and Evidence (every revision) are
+// filled only by change.get.
 type ChangeView struct {
 	Change    Change       `json:"change"`
 	Steps     []StepStatus `json:"steps"`
@@ -1170,11 +1355,11 @@ type ChangeGetRequest struct {
 // (the default when empty) or ChangeListAny. Caller keeps the changes whose
 // caller is that session. After is the last change ID of the previous page.
 type ChangeListRequest struct {
-	Repo   string `json:"repo,omitempty"`
-	State  string `json:"state,omitempty"`
-	Caller string `json:"caller_session_id,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
-	After  string `json:"after,omitempty"`
+	Project string `json:"project,omitempty"`
+	State   string `json:"state,omitempty"`
+	Caller  string `json:"caller_session_id,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+	After   string `json:"after,omitempty"`
 }
 
 // ChangeListResult answers change.list, newest change first. Next is the
@@ -1184,11 +1369,12 @@ type ChangeListResult struct {
 	Next    string       `json:"next,omitempty"`
 }
 
-// StepReportRequest is step.report: a step owner reports a result. SessionID
-// is the reporting session (the daemon fills it). DoneBy, when set, is a
-// worker the reporter started that did the work; it becomes the evidence's By
-// and decides independence. The gateway fills the revision, the model and the
-// independent field, then checks the report with Pipeline.Accepts.
+// StepReportRequest is step.report: a step owner reports a result from its own
+// session. SessionID is the reporting session (the daemon fills it). DoneBy,
+// when set, is a worker the reporter started that did the work (a review
+// worker on another model family); it becomes the evidence's By and decides
+// independence. The gateway fills the revision, the model and the independent
+// field, then checks the report with Pipeline.Accepts.
 type StepReportRequest struct {
 	SessionID string `json:"session_id"`
 	ChangeID  string `json:"change_id"`
@@ -1239,10 +1425,11 @@ type StepReportResult struct {
 	Change   ChangeView `json:"change"`
 }
 
-// StepTask is step.task: the gateway gives one step of one change to the step
-// owner's session, in the same form as a worker notice. Commit is the commit to
-// work on (the head, or the merged commit after merge). Evidence is the counted
-// evidence so far on this revision. ReportFields are the fields to report.
+// StepTask is step.task: the gateway gives one step of one change to a
+// session of the step owner, in the same form as a worker notice. Commit is the
+// commit to work on (the head, or the merged commit after merge). Evidence is
+// the counted evidence so far on this revision. ReportFields are the fields to
+// report.
 type StepTask struct {
 	TaskID    string `json:"task_id"`
 	SessionID string `json:"session_id"`
