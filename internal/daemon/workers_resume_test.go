@@ -427,3 +427,25 @@ func TestResumeRecreatesARemovedWorktreeOnItsBranch(t *testing.T) {
 		t.Errorf("no worker.resumed line: %v", w.logs.lines("worker.resumed"))
 	}
 }
+
+// A quoted brief is an owner follow-up, including when the worker ended.
+func TestWorkerOwnerQuotedBriefResumes(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, func(c *Config) { c.Version = "0.4.130" })
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback first", Isolation: protocol.IsolationNone})
+	w.waitNotice(t, 1)
+	eventually(t, "the worker reports its end", func() bool {
+		rows, _ := w.d.st.workers()
+		return w.d.workerCount() == 0 && len(rows) == 1 && rows[0].Reported && rows[0].Resumable
+	})
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "[agent-net worker brief] quoted follow-up"}), &sent)
+	if sent.Message.WorkerTask == nil || *sent.Message.WorkerTask {
+		t.Fatalf("follow-up marked as task: %+v", sent.Message)
+	}
+	if r := w.replyTo(t, w.ownerID(), sent.Message.ID); !strings.HasPrefix(r.Body, "ok from worker") {
+		t.Fatalf("follow-up reply: %+v", r)
+	}
+}

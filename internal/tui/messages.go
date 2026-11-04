@@ -79,7 +79,7 @@ func (m Model) feedConversations() []messageConversation {
 		}
 		g.items = append(g.items, i)
 		g.ownerInstruction = g.ownerInstruction || it.OwnerInstruction != ""
-		if g.task == "" && strings.HasPrefix(strings.TrimSpace(it.Body), "[agent-net worker brief]") {
+		if g.task == "" && protocol.IsWorkerTask(protocol.Message{WorkerTask: it.WorkerTask, Type: it.Type, ParentID: it.Parent, Body: it.Body}) {
 			g.task = sanitize(protocol.WorkerTaskSummary(it.Body))
 		}
 		if !workerNoticeLifecycle(it.Body) {
@@ -165,7 +165,7 @@ func (m Model) feedWorkers() map[string]string {
 		if !it.isMessage() {
 			continue
 		}
-		if strings.HasPrefix(strings.TrimSpace(it.Body), "[agent-net worker brief]") && it.To != "" {
+		if protocol.IsWorkerTask(protocol.Message{WorkerTask: it.WorkerTask, Type: it.Type, ParentID: it.Parent, Body: it.Body}) && it.To != "" {
 			workers[it.To] = it.From
 		}
 	}

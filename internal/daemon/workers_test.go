@@ -355,6 +355,9 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	}
 
 	// The task is a normal message from the owner with the fixed preamble.
+	if res.Task.WorkerTask == nil || !*res.Task.WorkerTask {
+		t.Errorf("initial task missing marker: %+v", res.Task)
+	}
 	if res.Task.From != owner || res.Task.To != res.SessionID || res.Task.Type != protocol.TypeRequest {
 		t.Errorf("task message: %+v", res.Task)
 	}

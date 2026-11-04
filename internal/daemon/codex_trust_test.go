@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -137,5 +138,23 @@ func TestCodexDeliveryMergeTextFromGateway(t *testing.T) {
 	m.RecipientMergeText = ""
 	if got := codexFrame(m); strings.Contains(got, protocol.MergeAskText) {
 		t.Fatal(got)
+	}
+}
+
+func TestCodexWorkerTaskFieldDistinguishesQuotedBrief(t *testing.T) {
+	var quoted, brief protocol.Message
+	if err := json.Unmarshal([]byte(`{"worker_task":false}`), &quoted); err != nil {
+		t.Fatal(err)
+	}
+	quoted.FromHarness, quoted.Body = protocol.OwnerHarness, "[agent-net worker brief] quoted"
+	if got := codexWorkerText(quoted); !strings.HasPrefix(got, "Message from your user, in person:") || strings.Contains(got, "[agent-net worker brief]") {
+		t.Fatalf("quoted message = %q", got)
+	}
+	if err := json.Unmarshal([]byte(`{"worker_task":true}`), &brief); err != nil {
+		t.Fatal(err)
+	}
+	brief.FromHarness, brief.Body = protocol.OwnerHarness, "[agent-net worker brief] task"
+	if got := codexWorkerText(brief); !strings.HasPrefix(got, "[agent-net worker brief]") {
+		t.Fatalf("brief = %q", got)
 	}
 }

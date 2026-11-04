@@ -1790,9 +1790,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if p.IdempotencyKey == "" {
 			p.IdempotencyKey = protocol.NewID("k")
 		}
+		// Only the worker's node, or a relay for a start the gateway tracked,
+		// can mark a task. A peer's marker cannot change message routing.
+		if p.WorkerTask {
+			allowed, err := st.authorizeWorkerTask(nc.id, p)
+			if err != nil {
+				return nil, err
+			}
+			p.WorkerTask = allowed
+		}
 		// A message from its owner starts an ended worker again, before it is
 		// stored, so a refusal reaches the sender (W10).
-		if !isWorkerTask(p) {
+		workerTask, err := workerTaskForSend(st.db, p)
+		if err != nil {
+			return nil, err
+		}
+		if !workerTask {
 			err = g.resumeEndedWorker(ctx, nc, p)
 		}
 		if err != nil {

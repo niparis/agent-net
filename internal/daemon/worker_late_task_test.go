@@ -39,6 +39,10 @@ func TestQueuedWorkerLateTaskAfterTimeout(t *testing.T) {
 		close(release)
 		t.Fatal("task send did not begin")
 	}
+	if !task.WorkerTask || task.WorkerTaskRef == "" {
+		close(release)
+		t.Fatalf("queued brief missing marker or relay reference: %+v", task)
+	}
 	select {
 	case <-finished:
 	case <-time.After(15 * time.Second):
@@ -89,7 +93,7 @@ func TestQueuedWorkerTaskArrivesOnRunningWorker(t *testing.T) {
 	eventually(t, "running worker receives task", func() bool {
 		for _, m := range ownerNode.messagesOf(t, ownerID) {
 			if m.From == ownerID && m.Type == protocol.TypeRequest && strings.Contains(m.Body, "running task canary") {
-				return starter.d.workerBySession(m.To) != nil
+				return protocol.IsWorkerTask(m) && m.WorkerTask != nil && starter.d.workerBySession(m.To) != nil
 			}
 		}
 		return false

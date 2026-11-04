@@ -732,6 +732,8 @@ CREATE TABLE IF NOT EXISTS delivery_settings_legacy (
  key TEXT NOT NULL, level TEXT NOT NULL, scope TEXT NOT NULL,
  item TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, revision INTEGER NOT NULL,
  PRIMARY KEY(key, level, scope, item));
+`, `
+SELECT 1 /* worker task marker and run state columns */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -791,6 +793,24 @@ func (s *Store) migrate() error {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
+		}
+		if strings.Contains(migrations[i], "worker task marker and run state columns") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"messages", "worker_task", "worker_task INTEGER"},
+				{"sessions", "worker_run_active", "worker_run_active INTEGER NOT NULL DEFAULT 1"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
 		}
 		if strings.Contains(migrations[i], "model auth failure column") {
 			var has int
@@ -1429,7 +1449,8 @@ func (s *Store) upsertSession(q interface {
 		worker_title=excluded.worker_title,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded,
-		no_project=excluded.no_project`,
+		no_project=excluded.no_project,
+		worker_run_active=CASE WHEN sessions.online=0 THEN 1 ELSE sessions.worker_run_active END`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, workerTitle,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
@@ -2070,15 +2091,19 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
 	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
-	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),'')
+	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),''), m.worker_task
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	var files string
+	var workerTask sql.NullBool
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files, &workerTask)
+	if workerTask.Valid {
+		m.WorkerTask = &workerTask.Bool
+	}
 	if err == nil && files != "" {
 		if jerr := json.Unmarshal([]byte(files), &m.Files); jerr != nil {
 			err = fmt.Errorf("message %s: stored files: %w", m.ID, jerr)
@@ -2189,10 +2214,14 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	// Initial worker briefs must not revive or reach a worker that has ended.
 	// Check in the message transaction: worker.stopped can record the run
 	// before its separate session-offline update reaches the database.
-	if isWorkerTask(p) {
+	workerTask, err := workerTaskForSend(tx, p)
+	if err != nil {
+		return msg, false, err
+	}
+	if workerTask {
 		var stopped int
 		err := tx.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE s.id=? AND s.worker<>''
-			AND (s.online=0 OR EXISTS (SELECT 1 FROM worker_runs r WHERE r.session_id=s.id))`, p.Recipient).Scan(&stopped)
+			AND (s.online=0 OR s.worker_run_active=0)`, p.Recipient).Scan(&stopped)
 		if err != nil {
 			return msg, false, err
 		}
@@ -2208,7 +2237,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	m := protocol.Message{
 		ID: protocol.NewID("m"), From: p.Sender, To: p.Recipient, Type: p.Type, Body: p.Body,
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
-		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO,
+		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO, WorkerTask: &workerTask,
 	}
 	threaded := false
 	if p.ParentID != "" {
@@ -2300,9 +2329,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		return msg, false, reject("conversation budget exceeded (%d messages)", protocol.MaxConvMessages)
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state, sender_cto, owner_approved) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask)
 	if err != nil {
 		return msg, false, err
 	}
@@ -2682,7 +2711,7 @@ func (s *Store) workerSessionIDs() ([]string, error) {
 			AND instr(m.body, char(10)||'status: not started'||char(10)) = 0
 			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.sender)
 		UNION
-		SELECT m.recipient FROM messages m WHERE m.body LIKE '[agent-net worker brief]%'
+		SELECT m.recipient FROM messages m WHERE COALESCE(m.worker_task, m.body LIKE '[agent-net worker brief]%')
 			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.recipient)`)
 	if err != nil {
 		return nil, err
@@ -3062,7 +3091,41 @@ func graphExclusion(excluded, checked bool) int {
 	return 0
 }
 
-// isWorkerTask identifies the initial brief, which must never resume a worker.
-func isWorkerTask(p protocol.MsgSend) bool {
-	return (p.Type == "" || p.Type == protocol.TypeRequest) && p.ParentID == "" && strings.HasPrefix(p.Body, "[agent-net worker brief]")
+// workerTaskForSend classifies the message once using the sending daemon's
+// version. Development builds support the field; unknown versions are old.
+func workerTaskForSend(q queryer, p protocol.MsgSend) (bool, error) {
+	if (p.Type != "" && p.Type != protocol.TypeRequest) || p.ParentID != "" {
+		return false, nil
+	}
+	if p.WorkerTask {
+		return true, nil
+	}
+	var version string
+	err := q.QueryRow(`SELECT n.version FROM sessions s JOIN nodes n ON n.id=s.node_id WHERE s.id=?`, p.Sender).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if version == "dev" {
+		return false, nil
+	}
+	have, ok := parseReleaseVersion(version)
+	want, _ := parseReleaseVersion("0.4.130")
+	if ok {
+		for i := range want {
+			if have[i] > want[i] {
+				return false, nil
+			}
+			if have[i] < want[i] {
+				break
+			}
+			if i == len(want)-1 {
+				return false, nil
+			}
+		}
+	}
+	return strings.HasPrefix(p.Body, "[agent-net worker brief]"), nil
 }
