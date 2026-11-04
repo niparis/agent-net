@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,8 +11,13 @@ import (
 	"testing"
 )
 
+// change is a file that gained one line, or a deleted file.
 func change(status Status, path string) FileChange {
-	return FileChange{Path: path, Status: status}
+	added := 1
+	if status == StatusDeleted {
+		added = 0
+	}
+	return FileChange{Path: path, Status: status, Added: added}
 }
 
 func TestIsTestPath(t *testing.T) {
@@ -213,15 +219,43 @@ func TestTestsAdded(t *testing.T) {
 			wantFiles: []string{"pkg/a_test.go"},
 		},
 		{
-			name:      "renamed test counts",
-			files:     []FileChange{{Path: "pkg/b_test.go", OldPath: "pkg/a_test.go", Status: StatusRenamed}},
+			name:      "renamed test with new lines counts",
+			files:     []FileChange{{Path: "pkg/b_test.go", OldPath: "pkg/a_test.go", Status: StatusRenamed, Added: 3}},
 			wantAdded: true,
 			wantFiles: []string{"pkg/b_test.go"},
 		},
 		{
+			name:   "pure rename of a test does not count",
+			files:  []FileChange{{Path: "pkg/b_test.go", OldPath: "pkg/a_test.go", Status: StatusRenamed}},
+			reason: "only renamed or changed mode",
+		},
+		{
+			name:   "mode change of a test does not count",
+			files:  []FileChange{{Path: "pkg/a_test.go", Status: StatusModified}},
+			reason: "only renamed or changed mode",
+		},
+		{
+			name:   "binary file at a test path does not count",
+			files:  []FileChange{{Path: "pkg/a_test.go", Status: StatusAdded, Added: -1}},
+			reason: "only renamed or changed mode",
+		},
+		{
 			name:   "rename from test to non-test does not count",
-			files:  []FileChange{{Path: "pkg/b.go", OldPath: "pkg/a_test.go", Status: StatusRenamed}},
+			files:  []FileChange{{Path: "pkg/b.go", OldPath: "pkg/a_test.go", Status: StatusRenamed, Added: 1}},
 			reason: "no test files",
+		},
+		{
+			name: "rust tokio, async_std, rstest and test_case attributes",
+			files: []FileChange{
+				{Path: "src/a.rs", Status: StatusModified, Added: 1, AddedLines: []string{"#[tokio::test]"}},
+				{Path: "src/b.rs", Status: StatusModified, Added: 1, AddedLines: []string{"  #[tokio::test(flavor = \"multi_thread\")]"}},
+				{Path: "src/c.rs", Status: StatusModified, Added: 1, AddedLines: []string{"#[rstest]"}},
+				{Path: "src/d.rs", Status: StatusModified, Added: 1, AddedLines: []string{"#[test_case(1, 2)]"}},
+				{Path: "src/e.rs", Status: StatusModified, Added: 1, AddedLines: []string{"#[async_std::test]"}},
+				{Path: "src/f.rs", Status: StatusModified, Added: 1, AddedLines: []string{"#[testing_helper]", "#[tests]"}},
+			},
+			wantAdded: true,
+			wantFiles: []string{"src/a.rs", "src/b.rs", "src/c.rs", "src/d.rs", "src/e.rs"},
 		},
 		{
 			name: "files are sorted and deduplicated",
@@ -281,18 +315,78 @@ func TestParseNameStatus(t *testing.T) {
 	}
 }
 
-func TestRustAddedLinesFromDiff(t *testing.T) {
+func TestAddedLinesByFile(t *testing.T) {
 	diff := "diff --git a/src/lib.rs b/src/lib.rs\n" +
 		"--- a/src/lib.rs\n+++ b/src/lib.rs\n" +
 		"@@ -1,2 +1,4 @@\n" +
-		" fn keep() {}\n" +
 		"-fn old() {}\n" +
 		"+#[test]\n" +
-		"+fn t() {}\n"
-	got := addedLines(diff)
-	want := []string{"#[test]", "fn t() {}"}
+		"+++ not a header inside a hunk\n" +
+		"diff --git a/src/with space.rs b/src/with space.rs\n" +
+		"new file mode 100644\n" +
+		"--- /dev/null\n+++ b/src/with space.rs\t\n" +
+		"@@ -0,0 +1 @@\n" +
+		"+fn s() {}\n" +
+		"diff --git \"a/src/caf\\303\\251.rs\" \"b/src/caf\\303\\251.rs\"\n" +
+		"--- \"a/src/caf\\303\\251.rs\"\n+++ \"b/src/caf\\303\\251.rs\"\n" +
+		"@@ -1 +1 @@\n" +
+		"-x\n" +
+		"+y\n" +
+		"diff --git a/src/gone.rs b/src/gone.rs\n" +
+		"deleted file mode 100644\n" +
+		"--- a/src/gone.rs\n+++ /dev/null\n" +
+		"@@ -1 +0,0 @@\n" +
+		"-z\n"
+	got := addedLinesByFile(diff)
+	want := map[string][]string{
+		"src/lib.rs":        {"#[test]", "++ not a header inside a hunk"},
+		"src/with space.rs": {"fn s() {}"},
+		"src/café.rs":       {"y"},
+	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v want %v", got, want)
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+}
+
+func TestParseNumstat(t *testing.T) {
+	out := "3\t1\tpkg/a.go\x00-\t-\timg.png\x000\t0\t\x00old_test.go\x00new_test.go\x0012\t0\tdir/with\ttab.go\x00"
+	got, err := parseNumstat(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"pkg/a.go": 3, "img.png": -1, "new_test.go": 0, "dir/with\ttab.go": 12}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for _, bad := range []string{"x\x00", "a\tb\tc\x00", "1\t1\t\x00only-old\x00"} {
+		if _, err := parseNumstat(bad); err == nil {
+			t.Errorf("parseNumstat(%q): want an error", bad)
+		}
+	}
+}
+
+func TestCodeChanged(t *testing.T) {
+	cases := []struct {
+		name  string
+		files []FileChange
+		want  bool
+	}{
+		{"code", []FileChange{change(StatusModified, "pkg/a.go")}, true},
+		{"deleted code", []FileChange{change(StatusDeleted, "pkg/a.go")}, true},
+		{"tests only", []FileChange{change(StatusAdded, "pkg/a_test.go")}, false},
+		{"test data only", []FileChange{change(StatusAdded, "pkg/testdata/in.txt")}, false},
+		{"docs only", []FileChange{
+			change(StatusModified, "README.md"), change(StatusAdded, "docs/design/x.md"),
+			change(StatusAdded, "docs/img/a.png"), change(StatusModified, "LICENSE"), change(StatusModified, "pkg/NOTES.rst"),
+		}, false},
+		{"docs and code", []FileChange{change(StatusModified, "README.md"), change(StatusModified, "scripts/x.sh")}, true},
+		{"requirements is code", []FileChange{change(StatusModified, "requirements.txt")}, true},
+		{"nothing", nil, false},
+	}
+	for _, c := range cases {
+		if got := TestsAdded(c.files).CodeChanged; got != c.want {
+			t.Errorf("%s: CodeChanged = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 
@@ -318,6 +412,12 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 func rev(t *testing.T, dir, name string) string {
 	t.Helper()
 	return gitRun(t, dir, "rev-parse", "--verify", name+"^{commit}")
+}
+
+// rng is the change from main to feature in dir.
+func rng(t *testing.T, dir string) ChangeRange {
+	t.Helper()
+	return ChangeRange{RepoDir: dir, BaseSHA: rev(t, dir, "main"), HeadSHA: rev(t, dir, "feature")}
 }
 
 func writeFile(t *testing.T, dir, rel, content string) {
@@ -357,7 +457,7 @@ func TestEndToEndTestAdded(t *testing.T) {
 	writeFile(t, dir, "pkg/b_test.go", "package pkg\n")
 	commitAll(t, dir, "feature")
 
-	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,11 +472,11 @@ func TestEndToEndNoTests(t *testing.T) {
 	writeFile(t, dir, "pkg/a.go", "package pkg\n\nfunc A() int { return 3 }\n")
 	commitAll(t, dir, "feature")
 
-	files, err := ChangedFiles(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	files, err := ChangedFiles(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(files, []FileChange{{Path: "pkg/a.go", Status: StatusModified}}) {
+	if !reflect.DeepEqual(files, []FileChange{{Path: "pkg/a.go", Status: StatusModified, Added: 1}}) {
 		t.Fatalf("files = %#v", files)
 	}
 	if res := TestsAdded(files); res.Added {
@@ -384,13 +484,14 @@ func TestEndToEndNoTests(t *testing.T) {
 	}
 }
 
-func TestEndToEndRenameOfTestCounts(t *testing.T) {
+// S11: a pure rename of a test adds no test.
+func TestEndToEndPureRenameOfTestDoesNotCount(t *testing.T) {
 	dir := newRepo(t)
 	gitRun(t, dir, "checkout", "-q", "-b", "feature")
 	gitRun(t, dir, "mv", "pkg/a_test.go", "pkg/renamed_test.go")
 	commitAll(t, dir, "rename")
 
-	files, err := ChangedFiles(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	files, err := ChangedFiles(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,9 +499,78 @@ func TestEndToEndRenameOfTestCounts(t *testing.T) {
 	if !reflect.DeepEqual(files, want) {
 		t.Fatalf("files = %#v, want %#v", files, want)
 	}
-	res := TestsAdded(files)
+	if res := TestsAdded(files); res.Added || res.CodeChanged {
+		t.Fatalf("got %+v", res)
+	}
+}
+
+func TestEndToEndRenameWithNewLinesCounts(t *testing.T) {
+	dir := newRepo(t)
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	gitRun(t, dir, "mv", "pkg/a_test.go", "pkg/renamed_test.go")
+	writeFile(t, dir, "pkg/renamed_test.go", "package pkg\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) {\n\tif A() != 1 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n\nfunc TestMore(t *testing.T) {}\n")
+	commitAll(t, dir, "rename and add")
+
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !res.Added || !reflect.DeepEqual(res.Files, []string{"pkg/renamed_test.go"}) {
 		t.Fatalf("got %+v", res)
+	}
+}
+
+// S11: a mode change of a test adds no test.
+func TestEndToEndChmodOfTestDoesNotCount(t *testing.T) {
+	dir := newRepo(t)
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	gitRun(t, dir, "update-index", "--chmod=+x", "pkg/a_test.go")
+	gitRun(t, dir, "commit", "-q", "-m", "chmod")
+
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added || res.CodeChanged {
+		t.Fatalf("got %+v", res)
+	}
+}
+
+func TestEndToEndDocsOnlyIsNoCode(t *testing.T) {
+	dir := newRepo(t)
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	writeFile(t, dir, "docs/guide.md", "# Guide\n")
+	writeFile(t, dir, "README.md", "hello\n")
+	commitAll(t, dir, "docs")
+
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added || res.CodeChanged {
+		t.Fatalf("got %+v", res)
+	}
+}
+
+// One diff reads every Rust file, including odd names and a renamed file.
+func TestEndToEndRustSeveralFiles(t *testing.T) {
+	dir := newRepo(t)
+	writeFile(t, dir, "src/old name.rs", "pub fn a() {}\npub fn b() {}\npub fn c() {}\npub fn d() {}\n")
+	commitAll(t, dir, "more rust")
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	writeFile(t, dir, "src/café.rs", "#[tokio::test]\nasync fn t() {}\n")
+	writeFile(t, dir, "src/plain.rs", "pub fn p() {}\n")
+	gitRun(t, dir, "mv", "src/old name.rs", "src/new name.rs")
+	writeFile(t, dir, "src/new name.rs", "pub fn a() {}\npub fn b() {}\npub fn c() {}\npub fn d() {}\n#[cfg(test)]\nmod tests {}\n")
+	commitAll(t, dir, "rust")
+
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"src/café.rs", "src/new name.rs"}
+	if !res.Added || !reflect.DeepEqual(res.Files, want) {
+		t.Fatalf("got %+v, want files %v", res, want)
 	}
 }
 
@@ -411,7 +581,7 @@ func TestEndToEndDeletingTestsDoesNotCount(t *testing.T) {
 	writeFile(t, dir, "pkg/a.go", "package pkg\n\nfunc A() int { return 4 }\n")
 	commitAll(t, dir, "delete tests")
 
-	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +596,7 @@ func TestEndToEndTestdataAlone(t *testing.T) {
 	writeFile(t, dir, "pkg/testdata/in.txt", "x\n")
 	commitAll(t, dir, "data")
 
-	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +611,7 @@ func TestEndToEndRustInlineTest(t *testing.T) {
 	writeFile(t, dir, "src/lib.rs", "pub fn f() -> i32 { 1 }\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() { assert_eq!(super::f(), 1); }\n}\n")
 	commitAll(t, dir, "rust")
 
-	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +626,7 @@ func TestEndToEndRustWithoutTests(t *testing.T) {
 	writeFile(t, dir, "src/lib.rs", "pub fn f() -> i32 { 2 }\n")
 	commitAll(t, dir, "rust")
 
-	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,11 +646,11 @@ func TestChangedFilesUsesMergeBase(t *testing.T) {
 	writeFile(t, dir, "pkg/m_test.go", "package pkg\n")
 	commitAll(t, dir, "main moves on")
 
-	files, err := ChangedFiles(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	files, err := ChangedFiles(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(files, []FileChange{{Path: "pkg/f.go", Status: StatusAdded}}) {
+	if !reflect.DeepEqual(files, []FileChange{{Path: "pkg/f.go", Status: StatusAdded, Added: 1}}) {
 		t.Fatalf("files = %#v", files)
 	}
 }
@@ -492,7 +662,7 @@ func TestChangedFilesOddPaths(t *testing.T) {
 	writeFile(t, dir, "pkg/café_test.go", "package pkg\n")
 	commitAll(t, dir, "odd")
 
-	res, err := DetectTestsAdded(context.Background(), dir, rev(t, dir, "main"), rev(t, dir, "feature"))
+	res, err := DetectTestsAdded(context.Background(), rng(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,27 +676,46 @@ func TestChangedFilesErrors(t *testing.T) {
 	dir := newRepo(t)
 	ctx := context.Background()
 	main := rev(t, dir, "main")
-	if _, err := ChangedFiles(ctx, dir, main, strings.Repeat("d", 40)); err == nil {
+	r := func(base, head string) ChangeRange { return ChangeRange{RepoDir: dir, BaseSHA: base, HeadSHA: head} }
+	if _, err := ChangedFiles(ctx, r(main, strings.Repeat("d", 40))); err == nil {
 		t.Fatal("expected an error for an unknown commit")
 	}
 	out := filepath.Join(t.TempDir(), "out")
-	if _, err := ChangedFiles(ctx, dir, "--output="+out, main); err == nil {
+	if _, err := ChangedFiles(ctx, r("--output="+out, main)); err == nil {
 		t.Fatal("expected an error for a ref that looks like an option")
 	}
 	if _, err := os.Stat(out); err == nil {
 		t.Fatal("git wrote the --output file")
 	}
 	for _, bad := range []string{"", "main", "HEAD", main[:12], strings.ToUpper(main)} {
-		if _, err := ChangedFiles(ctx, dir, bad, main); err == nil {
+		if _, err := ChangedFiles(ctx, r(bad, main)); err == nil {
 			t.Fatalf("expected an error for base %q: only full commit IDs are taken", bad)
 		}
-		if _, err := ChangedFiles(ctx, dir, main, bad); err == nil {
+		if _, err := ChangedFiles(ctx, r(main, bad)); err == nil {
 			t.Fatalf("expected an error for head %q: only full commit IDs are taken", bad)
 		}
 	}
+	if _, err := ChangedFiles(ctx, ChangeRange{BaseSHA: main, HeadSHA: main}); err == nil {
+		t.Fatal("expected an error without RepoDir")
+	}
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := ChangedFiles(cctx, dir, main, main); err == nil {
+	if _, err := ChangedFiles(cctx, r(main, main)); err == nil {
 		t.Fatal("expected an error for a cancelled context")
+	}
+}
+
+func TestTestsAddedRefusesReplaceRef(t *testing.T) {
+	dir := newRepo(t)
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	writeFile(t, dir, "pkg/x.go", "package pkg\n")
+	commitAll(t, dir, "x")
+	gitRun(t, dir, "checkout", "-q", "-b", "fake", "main")
+	writeFile(t, dir, "pkg/x_test.go", "package pkg\n")
+	commitAll(t, dir, "fake")
+	gitRun(t, dir, "replace", rev(t, dir, "feature"), rev(t, dir, "fake"))
+
+	if _, err := DetectTestsAdded(context.Background(), rng(t, dir)); !errors.Is(err, ErrAlteredHistory) {
+		t.Fatalf("err = %v, want ErrAlteredHistory", err)
 	}
 }
