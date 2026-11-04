@@ -284,3 +284,30 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 		}
 	}
 }
+
+func TestGatewayProjectsLayoutUnknownMachineFilter(t *testing.T) {
+	s, _ := newTestStore(t)
+	idA, _, err := s.CreateNode("box-alpha", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(idA, "box-alpha", "v0.4.132"); err != nil {
+		t.Fatal(err)
+	}
+	idB, _, err := s.CreateNode("box-beta", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(idB, "box-beta", "v0.4.132"); err != nil {
+		t.Fatal(err)
+	}
+
+	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
+	_, err = g.ProjectsLayout(context.Background(), protocol.ProjectsLayoutRequest{Machine: "box-gamma"})
+	if err == nil {
+		t.Fatalf("expected error for unknown machine filter")
+	}
+	if !strings.Contains(err.Error(), "box-gamma") || !strings.Contains(err.Error(), "box-alpha") || !strings.Contains(err.Error(), "box-beta") {
+		t.Errorf("error %q does not name unknown machine and known machines", err.Error())
+	}
+}

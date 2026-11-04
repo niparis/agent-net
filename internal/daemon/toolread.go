@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -77,6 +78,9 @@ func (lc *localConn) dispatchToolRead(ctx context.Context, client, method string
 		}
 		p.Caller = lc.toolReadCaller()
 		if !lc.d.Connected() {
+			if p.Machine != "" && !strings.EqualFold(p.Machine, lc.d.hostName()) {
+				return nil, true, fmt.Errorf("unknown machine %q; known machines: %s", p.Machine, lc.d.hostName())
+			}
 			layout, err := lc.d.ProjectsLayoutLocal(ctx)
 			if err != nil {
 				return nil, true, err

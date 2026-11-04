@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,6 +62,27 @@ func (g *Gateway) ProjectsLayout(ctx context.Context, p protocol.ProjectsLayoutR
 	nodes, err := g.store.Nodes()
 	if err != nil {
 		return protocol.ProjectsLayoutResult{Machines: []protocol.MachineLayout{}, Skipped: []protocol.SkippedMachine{}}, err
+	}
+
+	if p.Machine != "" {
+		var found bool
+		for _, n := range nodes {
+			if strings.EqualFold(n.Hostname, p.Machine) || strings.EqualFold(n.NodeID, p.Machine) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			names := make([]string, 0, len(nodes))
+			for _, n := range nodes {
+				names = append(names, n.Hostname)
+			}
+			sort.Strings(names)
+			if len(names) == 0 {
+				return protocol.ProjectsLayoutResult{Machines: []protocol.MachineLayout{}, Skipped: []protocol.SkippedMachine{}}, fmt.Errorf("unknown machine %q; no known machines", p.Machine)
+			}
+			return protocol.ProjectsLayoutResult{Machines: []protocol.MachineLayout{}, Skipped: []protocol.SkippedMachine{}}, fmt.Errorf("unknown machine %q; known machines: %s", p.Machine, strings.Join(names, ", "))
+		}
 	}
 
 	type target struct {
