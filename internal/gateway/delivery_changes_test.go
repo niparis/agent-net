@@ -452,6 +452,13 @@ func TestStepReportMovesChangeThroughMerge(t *testing.T) {
 		t.Helper()
 		return r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields}).Change.Change
 	}
+	merge := protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}}
+	if _, err := r.report(r.a, merge); err == nil || !strings.Contains(err.Error(), "accept: no pass") || !strings.Contains(err.Error(), "test(suite=*): no pass") {
+		t.Fatalf("premature merge: %v", err)
+	}
+	if got := r.get(id).Change.State; got != protocol.ChangeOpen {
+		t.Fatalf("premature merge changed state to %s", got)
+	}
 	pass(stepAccept, commitA, nil)
 	pass(protocol.StepRef{Step: protocol.StepTest}, commitA, map[string]string{protocol.FieldSuite: protocol.SuiteChanged})
 	c := pass(protocol.StepRef{Step: protocol.StepMerge}, commitA, map[string]string{protocol.FieldMergedCommit: commitMerged})
@@ -499,6 +506,8 @@ func TestChangeListFiltersAndPages(t *testing.T) {
 	}
 	c1 := sub("demo", "b1")
 	c2 := sub("demo", "b2")
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldSuite: protocol.SuiteChanged}})
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}})
 	c3 := sub("demo", "b3")
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c3, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA})
