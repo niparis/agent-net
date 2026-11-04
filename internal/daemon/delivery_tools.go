@@ -5,19 +5,18 @@ package daemon
 // The daemon fills in what only it can know: the calling session, its project,
 // the branch head from git and whether the work is committed, and the model.
 // It checks that done_by is a worker the caller started, then sends the
-// gateway frames. The caller is never taken from the arguments.
-//
-// TODO(delivery): a worker's complete hand-back submits its change too
-// (origin worker), from handbackToNote in worker_notice.go. It is not hooked
-// in yet because another worker is changing that code; when it is, reuse
-// gitBranchHead and branchUncommitted below.
+// gateway frames. The caller is never taken from the arguments. A worker's
+// complete hand-back submits its change too (origin worker): see
+// recordHandbackChange.
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -82,13 +81,18 @@ func decodeDeliveryArgs(method string, raw json.RawMessage, v any) error {
 	return nil
 }
 
+// errNoDeliveryGateway is the error of a gateway that does not know the
+// delivery frames (an older one).
+var errNoDeliveryGateway = errors.New("the gateway does not know the delivery pipeline yet; upgrade it with `agent-net upgrade` on the gateway machine")
+
 // deliveryCall sends one delivery frame to the gateway. A gateway's refusal
-// reaches the agent as it is; a gateway without the frames is named as too old.
+// reaches the agent as it is; a gateway without the frames is named as too old
+// (errNoDeliveryGateway).
 func (d *Daemon) deliveryCall(ctx context.Context, typ string, params, out any) error {
 	raw, err := d.call(ctx, typ, params)
 	if err != nil {
 		if strings.Contains(err.Error(), "unknown frame type") {
-			return errors.New("the gateway does not know the delivery pipeline yet; upgrade it with `agent-net upgrade` on the gateway machine")
+			return errNoDeliveryGateway
 		}
 		return err
 	}
@@ -277,4 +281,88 @@ func fillChangeView(v protocol.ChangeView) protocol.ChangeView {
 		v.Steps = []protocol.StepStatus{}
 	}
 	return v
+}
+
+// deliveryRecordTimeout is how long a hand-back waits for the gateway to
+// record its change. The hand-back goes on without the record after it.
+const deliveryRecordTimeout = 10 * time.Second
+
+// recordHandbackChange submits the change of a worker's complete hand-back
+// (origin worker), after commitAtHandback made the head hold the work. The
+// caller is the worker's owner. A continued worker carries the change of the
+// worker it continues (its new branch has no open change yet), so the change
+// follows the work. A worker with no worktree has no branch of its own and
+// records nothing.
+//
+// It never fails the hand-back: it returns the change ID, or the error for the
+// notice's "delivery record:" line. A gateway that does not know change.submit
+// gives neither.
+func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID, problem string) {
+	d.wmu.Lock()
+	dir, branch, base, owner, sid := w.worktree, w.branch, w.base, w.owner, w.sessionID
+	harness, model, title, kept := w.harness, w.model, w.title, w.changeID
+	difficulty := first(w.difficultyUsed, w.difficultyAsked)
+	project := w.project
+	d.wmu.Unlock()
+	if dir == "" || branch == "" || owner == "" {
+		return "", ""
+	}
+	timeout := deliveryRecordTimeout
+	if d.cfg.testDeliveryRecordTimeout > 0 {
+		timeout = d.cfg.testDeliveryRecordTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	fail := func(err error) (string, string) {
+		d.Logf("worker.delivery_record worker=%s session=%s branch=%s error=%q", w.id, sid, branch, err.Error())
+		return "", strings.Join(strings.Fields(err.Error()), " ")
+	}
+	head, err := gitBranchHead(ctx, dir, branch)
+	if err != nil {
+		return fail(err)
+	}
+	uncommitted, err := branchUncommitted(ctx, dir, branch)
+	if err != nil {
+		return fail(err)
+	}
+	// The project's identity, as a session in the worktree has it (the
+	// origin remote), so a submit from the caller names the same project.
+	if p := d.repo.Lookup(dir).Project; p != "" {
+		project = p
+	}
+	if !slices.Contains(protocol.DifficultyLevels, difficulty) {
+		difficulty = ""
+	}
+	if !protocol.ValidCommit(base) {
+		base = ""
+	}
+	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
+		HeadCommit: head, Uncommitted: uncommitted, Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model}}
+	if model != "" {
+		q.Origin.ModelFamily = protocol.ModelFamily(harness, model)
+	}
+	if err := q.Validate(); err != nil {
+		return fail(err)
+	}
+	var out protocol.ChangeSubmitResult
+	err = d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out)
+	if err != nil && kept != "" && strings.Contains(err.Error(), "takes no new head") {
+		// The kept change was merged or closed: this work is a new change.
+		q.ChangeID = ""
+		out = protocol.ChangeSubmitResult{}
+		err = d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out)
+	}
+	if errors.Is(err, errNoDeliveryGateway) {
+		return "", ""
+	}
+	if err != nil {
+		return fail(err)
+	}
+	id := out.Change.Change.ID
+	d.wmu.Lock()
+	w.changeID = id
+	d.wmu.Unlock()
+	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s", w.id, sid, id, out.Change.Change.Revision, head)
+	return id, ""
 }

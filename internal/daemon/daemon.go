@@ -64,6 +64,10 @@ type Host interface {
 
 type Config struct {
 	testFreePort func() (int, error) // deterministic collision tests
+	// testDeliveryRecordTimeout replaces deliveryRecordTimeout, how long a
+	// hand-back waits for the gateway to record its change.
+	testDeliveryRecordTimeout time.Duration
+
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.
 	testStopCTOOnExit bool
