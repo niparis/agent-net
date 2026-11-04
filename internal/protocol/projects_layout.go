@@ -41,7 +41,14 @@ type MachineLayout struct {
 	Truncated bool            `json:"truncated"`
 }
 
+// SkippedMachine reports a machine that could not answer projects_layout.
+type SkippedMachine struct {
+	Machine string `json:"machine"`
+	Reason  string `json:"reason"` // "offline", "timeout" or "old version"
+}
+
 // ProjectsLayoutResult is the result returned by projects_layout.
 type ProjectsLayoutResult struct {
-	Machines []MachineLayout `json:"machines"`
+	Machines []MachineLayout  `json:"machines"`
+	Skipped  []SkippedMachine `json:"skipped"`
 }

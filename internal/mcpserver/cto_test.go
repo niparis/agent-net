@@ -451,6 +451,7 @@ func TestProjectsLayoutOutputSchemaValidation(t *testing.T) {
 				Truncated: false,
 			},
 		},
+		Skipped: []protocol.SkippedMachine{},
 	}
 	if res, err := catalogResult("projects_layout", goodRes); err != nil || res.IsError {
 		t.Fatalf("catalogResult failed for non-nil empty roots: %v (res=%+v)", err, res)

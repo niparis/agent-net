@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -131,12 +132,155 @@ func TestGatewayProjectsLayout(t *testing.T) {
 	}
 
 	// Test handleToolRead dispatch
-	data, ok, err := g.handleToolRead(nil, "query.projects_layout", []byte(`{"machine":"box-alpha"}`))
+	data, ok, err := g.handleToolRead(context.Background(), nil, "query.projects_layout", []byte(`{"machine":"box-alpha"}`))
 	if !ok || err != nil {
 		t.Fatalf("handleToolRead query.projects_layout: ok=%v err=%v", ok, err)
 	}
 	r, ok := data.(protocol.ProjectsLayoutResult)
 	if !ok || len(r.Machines) != 1 || r.Machines[0].Machine != "box-alpha" {
 		t.Errorf("handleToolRead result mismatch: %+v", data)
+	}
+}
+
+func fakeSlowNode(t *testing.T, g *Gateway, nodeID, hostname string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	accepted := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Errorf("accept: %v", err)
+			return
+		}
+		accepted <- ws
+	}))
+	t.Cleanup(server.Close)
+
+	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close(websocket.StatusNormalClosure, "") })
+
+	ws := <-accepted
+	nc := &nodeConn{id: nodeID, ws: ws, dead: make(chan struct{}), cancel: cancel}
+	g.mu.Lock()
+	g.conns[nodeID] = nc
+	g.mu.Unlock()
+
+	// Server read loop
+	go func() {
+		for {
+			_, raw, e := ws.Read(ctx)
+			if e != nil {
+				return
+			}
+			var h protocol.Header
+			if json.Unmarshal(raw, &h) == nil && h.Type == "result" {
+				nc.answer(h)
+			}
+		}
+	}()
+
+	// Client loop that deliberately ignores node.projects_layout (does not answer)
+	go func() {
+		for {
+			_, _, e := client.Read(ctx)
+			if e != nil {
+				return
+			}
+		}
+	}()
+}
+
+func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
+	s, _ := newTestStore(t)
+
+	// 1. Modern fast node
+	idFast, _, err := s.CreateNode("box-fast", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(idFast, "box-fast", "v0.4.132"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Old node (below 0.4.132)
+	idOld, _, err := s.CreateNode("box-old", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(idOld, "box-old", "v0.4.130"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Modern slow node (ignores request)
+	idSlow, _, err := s.CreateNode("box-slow", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(idSlow, "box-slow", "v0.4.132"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Offline node (no conn in gateway)
+	idOffline, _, err := s.CreateNode("box-offline", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(idOffline, "box-offline", "v0.4.132"); err != nil {
+		t.Fatal(err)
+	}
+
+	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
+
+	layoutFast := protocol.MachineLayout{
+		Machine:   "box-fast",
+		Home:      "/home/fast",
+		Roots:     []protocol.LayoutRoot{},
+		Loose:     []protocol.LayoutProject{},
+		ScannedAt: 1000,
+	}
+	fakeConnectedNode(t, g, idFast, "box-fast", layoutFast)
+
+	// Connect old node as well (it should be skipped by version without being called)
+	fakeConnectedNode(t, g, idOld, "box-old", protocol.MachineLayout{Machine: "box-old"})
+
+	// Connect slow node
+	fakeSlowNode(t, g, idSlow, "box-slow")
+
+	// Call with caller context timeout of 150ms to keep test fast (< 2s)
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	res, err := g.ProjectsLayout(ctx, protocol.ProjectsLayoutRequest{})
+	if err != nil {
+		t.Fatalf("ProjectsLayout: %v", err)
+	}
+
+	if len(res.Machines) != 1 || res.Machines[0].Machine != "box-fast" {
+		t.Fatalf("Machines = %+v, want only box-fast", res.Machines)
+	}
+
+	if len(res.Skipped) != 3 {
+		t.Fatalf("Skipped count = %d, want 3: %+v", len(res.Skipped), res.Skipped)
+	}
+
+	wantSkipped := map[string]string{
+		"box-offline": "offline",
+		"box-old":     "old version",
+		"box-slow":    "timeout",
+	}
+	for _, sk := range res.Skipped {
+		wantReason, ok := wantSkipped[sk.Machine]
+		if !ok {
+			t.Errorf("unexpected skipped machine: %+v", sk)
+			continue
+		}
+		if sk.Reason != wantReason {
+			t.Errorf("machine %s reason = %q, want %q", sk.Machine, sk.Reason, wantReason)
+		}
 	}
 }

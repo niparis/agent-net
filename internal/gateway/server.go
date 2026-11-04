@@ -1983,7 +1983,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	if data, ok, err := g.handleUsage(nc, typ, raw); ok {
 		return data, err
 	}
-	if data, ok, err := g.handleToolRead(nc, typ, raw); ok {
+	if data, ok, err := g.handleToolRead(ctx, nc, typ, raw); ok {
 		return data, err
 	}
 	if data, ok, err := g.handleDelivery(ctx, nc, typ, raw); ok {

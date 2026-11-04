@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -11,28 +12,82 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+const (
+	projectsLayoutMinVersion       = "0.4.132"
+	gatewayLayoutOverallTimeout    = 15 * time.Second
+	gatewayLayoutPerMachineTimeout = 8 * time.Second
+)
+
+func daemonSupportsProjectsLayout(version string) bool {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if version == "" {
+		return false
+	}
+	if version == "dev" {
+		return true
+	}
+	if i := strings.IndexAny(version, "-+"); i >= 0 {
+		version = version[:i]
+	}
+	parts := strings.Split(version, ".")
+	if len(parts) == 0 || len(parts) > 3 {
+		return false
+	}
+	var have [3]int
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return false
+		}
+		have[i] = n
+	}
+	want, ok := parseReleaseVersion(projectsLayoutMinVersion)
+	if !ok {
+		return false
+	}
+	for i := range want {
+		if have[i] != want[i] {
+			return have[i] > want[i]
+		}
+	}
+	return true
+}
+
 // ProjectsLayout asks online machines for their layout and merges the results.
 func (g *Gateway) ProjectsLayout(ctx context.Context, p protocol.ProjectsLayoutRequest) (protocol.ProjectsLayoutResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, gatewayLayoutOverallTimeout)
+	defer cancel()
+
 	nodes, err := g.store.Nodes()
 	if err != nil {
-		return protocol.ProjectsLayoutResult{Machines: []protocol.MachineLayout{}}, err
+		return protocol.ProjectsLayoutResult{Machines: []protocol.MachineLayout{}, Skipped: []protocol.SkippedMachine{}}, err
 	}
 
 	type target struct {
-		id   string
-		name string
-		conn *nodeConn
+		machine string
+		conn    *nodeConn
 	}
 
+	var (
+		targets []target
+		skipped []protocol.SkippedMachine
+	)
+
 	g.mu.Lock()
-	var targets []target
 	for _, n := range nodes {
 		if p.Machine != "" && !strings.EqualFold(n.Hostname, p.Machine) && !strings.EqualFold(n.NodeID, p.Machine) {
 			continue
 		}
-		if nc, ok := g.conns[n.NodeID]; ok && nc != nil {
-			targets = append(targets, target{id: n.NodeID, name: n.Hostname, conn: nc})
+		nc := g.conns[n.NodeID]
+		if nc == nil {
+			skipped = append(skipped, protocol.SkippedMachine{Machine: n.Hostname, Reason: "offline"})
+			continue
 		}
+		if !daemonSupportsProjectsLayout(n.Version) {
+			skipped = append(skipped, protocol.SkippedMachine{Machine: n.Hostname, Reason: "old version"})
+			continue
+		}
+		targets = append(targets, target{machine: n.Hostname, conn: nc})
 	}
 	g.mu.Unlock()
 
@@ -46,18 +101,31 @@ func (g *Gateway) ProjectsLayout(ctx context.Context, p protocol.ProjectsLayoutR
 		wg.Add(1)
 		go func(tgt target) {
 			defer wg.Done()
-			cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			cctx, cancel := context.WithTimeout(ctx, gatewayLayoutPerMachineTimeout)
 			defer cancel()
 			data, err := tgt.conn.call(cctx, "node.projects_layout", nil)
 			if err != nil {
+				mu.Lock()
+				skipped = append(skipped, protocol.SkippedMachine{Machine: tgt.machine, Reason: "timeout"})
+				mu.Unlock()
 				return
 			}
 			var layout protocol.MachineLayout
-			if err := json.Unmarshal(data, &layout); err == nil {
+			if err := json.Unmarshal(data, &layout); err != nil {
 				mu.Lock()
-				machines = append(machines, layout)
+				skipped = append(skipped, protocol.SkippedMachine{Machine: tgt.machine, Reason: "timeout"})
 				mu.Unlock()
+				return
 			}
+			if layout.Roots == nil {
+				layout.Roots = []protocol.LayoutRoot{}
+			}
+			if layout.Loose == nil {
+				layout.Loose = []protocol.LayoutProject{}
+			}
+			mu.Lock()
+			machines = append(machines, layout)
+			mu.Unlock()
 		}(t)
 	}
 
@@ -66,9 +134,15 @@ func (g *Gateway) ProjectsLayout(ctx context.Context, p protocol.ProjectsLayoutR
 	if machines == nil {
 		machines = []protocol.MachineLayout{}
 	}
+	if skipped == nil {
+		skipped = []protocol.SkippedMachine{}
+	}
 	sort.Slice(machines, func(i, j int) bool {
 		return machines[i].Machine < machines[j].Machine
 	})
+	sort.Slice(skipped, func(i, j int) bool {
+		return skipped[i].Machine < skipped[j].Machine
+	})
 
-	return protocol.ProjectsLayoutResult{Machines: machines}, nil
+	return protocol.ProjectsLayoutResult{Machines: machines, Skipped: skipped}, nil
 }

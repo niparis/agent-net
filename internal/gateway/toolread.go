@@ -849,7 +849,7 @@ func (s *Store) FindProjects(p protocol.ProjectsFindRequest) (protocol.ProjectsP
 
 // handleToolRead serves the read tools of the tool redesign. The second value
 // says whether this hook handled the frame type.
-func (g *Gateway) handleToolRead(nc *nodeConn, typ string, raw []byte) (data any, ok bool, err error) {
+func (g *Gateway) handleToolRead(ctx context.Context, nc *nodeConn, typ string, raw []byte) (data any, ok bool, err error) {
 	switch typ {
 	case "query.sessions_find":
 		p, err := decode[protocol.SessionsFindRequest](raw)
@@ -891,7 +891,7 @@ func (g *Gateway) handleToolRead(nc *nodeConn, typ string, raw []byte) (data any
 		if err != nil {
 			return nil, true, reject("bad query.projects_layout")
 		}
-		out, err := g.ProjectsLayout(context.Background(), p)
+		out, err := g.ProjectsLayout(ctx, p)
 		return out, true, err
 	}
 	return nil, false, nil

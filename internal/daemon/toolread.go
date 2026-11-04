@@ -81,15 +81,12 @@ func (lc *localConn) dispatchToolRead(ctx context.Context, client, method string
 			if err != nil {
 				return nil, true, err
 			}
-			return protocol.ProjectsLayoutResult{Machines: []protocol.MachineLayout{layout}}, true, nil
+			return protocol.ProjectsLayoutResult{
+				Machines: []protocol.MachineLayout{layout},
+				Skipped:  []protocol.SkippedMachine{},
+			}, true, nil
 		}
 		res, handled, err := lc.forwardToolRead(ctx, "query.projects_layout", p)
-		if err != nil && (errors.Is(err, errNotConnected) || errors.Is(err, errGatewayTimeout)) {
-			layout, lerr := lc.d.ProjectsLayoutLocal(ctx)
-			if lerr == nil {
-				return protocol.ProjectsLayoutResult{Machines: []protocol.MachineLayout{layout}}, true, nil
-			}
-		}
 		return res, handled, err
 	}
 	return nil, false, nil
