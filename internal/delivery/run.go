@@ -54,6 +54,11 @@ const (
 // evidence was checked. The command was not run.
 var ErrWrongCommit = errors.New("HEAD is not the commit to run the step for")
 
+// ErrDirtyTree: the working directory has changes to tracked files or
+// untracked files that are not ignored. Evidence is keyed by the commit, and a
+// dirty tree runs different content than that commit. The command was not run.
+var ErrDirtyTree = errors.New("working tree is not clean")
+
 // StepCommand says what to run and for which commit.
 type StepCommand struct {
 	// Step is "release" or "deploy".
@@ -95,7 +100,9 @@ type StepRun struct {
 }
 
 // RunStep runs cmd.Argv in cmd.Dir and reports the outcome. It first checks
-// that HEAD in Dir is cmd.Commit and refuses with ErrWrongCommit otherwise.
+// that HEAD in Dir is cmd.Commit and refuses with ErrWrongCommit otherwise. It
+// then checks that the tree is clean (ignored files do not count) and refuses
+// with ErrDirtyTree otherwise.
 //
 // The command runs in its own process group. On timeout or cancel the whole
 // group is killed. When ctx ends, RunStep returns the partial StepRun and
@@ -112,6 +119,10 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 	}
 	if !strings.HasPrefix(head, want) {
 		return StepRun{}, fmt.Errorf("%w: HEAD is %s, want %s", ErrWrongCommit, head, cmd.Commit)
+	}
+
+	if err := runCheckClean(ctx, cmd.Dir); err != nil {
+		return StepRun{}, err
 	}
 
 	timeout := cmd.Timeout
@@ -209,6 +220,53 @@ func runHead(ctx context.Context, dir string) (string, error) {
 		return "", fmt.Errorf("read HEAD in %s: %w", dir, err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// runMaxDirtyListed is how many dirty paths ErrDirtyTree names.
+const runMaxDirtyListed = 10
+
+// runCheckClean returns ErrDirtyTree when dir has changes to tracked files or
+// untracked files that are not ignored. Git hooks and the fsmonitor hook are
+// off, so the check runs no repo code.
+func runCheckClean(ctx context.Context, dir string) error {
+	out, err := runGit(ctx, dir,
+		"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+		"status", "--porcelain=v1", "-z", "--untracked-files=normal")
+	if err != nil {
+		return fmt.Errorf("check the tree in %s: %w", dir, err)
+	}
+	paths := runDirtyPaths(out)
+	if len(paths) == 0 {
+		return nil
+	}
+	shown := paths
+	if len(shown) > runMaxDirtyListed {
+		shown = shown[:runMaxDirtyListed]
+	}
+	msg := strings.Join(shown, ", ")
+	if rest := len(paths) - len(shown); rest > 0 {
+		msg += fmt.Sprintf(" and %d more", rest)
+	}
+	return fmt.Errorf("%w: %d changed or untracked paths: %s", ErrDirtyTree, len(paths), msg)
+}
+
+// runDirtyPaths reads the output of git status --porcelain=v1 -z: entries
+// "XY path" ended by NUL. A rename or copy is followed by one more entry, the
+// old path, which is skipped.
+func runDirtyPaths(out []byte) []string {
+	var paths []string
+	entries := strings.Split(string(out), "\x00")
+	for i := 0; i < len(entries); i++ {
+		e := entries[i]
+		if len(e) < 4 {
+			continue
+		}
+		paths = append(paths, e[3:])
+		if e[0] == 'R' || e[0] == 'C' || e[1] == 'R' || e[1] == 'C' {
+			i++
+		}
+	}
+	return paths
 }
 
 // runEnv builds the command's environment: PATH and HOME from the caller,
