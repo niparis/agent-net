@@ -597,6 +597,12 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: false, AutoContinued: true}, nil
 	}
 	committed := d.commitAtHandback(w, req)
+	// A complete hand-back is a revision of a delivery change (delivery
+	// pipeline build step 1). A partial one records nothing.
+	changeID, deliveryProblem := "", ""
+	if req.Status == protocol.StatusDone && req.IsComplete() {
+		changeID, deliveryProblem = d.recordHandbackChange(ctx, w)
+	}
 	st := d.workerStats(w)
 	d.wmu.Lock()
 	pending, cc := len(w.turnQueue) > 0, w.codex
@@ -617,6 +623,7 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	}
 	n := d.notice(w, req.Status, note, st)
 	n.Committed = committed
+	n.Change, n.DeliveryError = changeID, deliveryProblem
 	noticeKey := ""
 	if w.harness == "agy" {
 		d.wmu.Lock()

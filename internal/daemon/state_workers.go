@@ -64,6 +64,9 @@ type workerRow struct {
 	TaskID                          string
 	MidrunCount, MidrunRun          int
 	NoticeSinceRequest, MidrunSeen  bool
+	// ChangeID is the delivery change of the worker's work: the one its last
+	// complete hand-back recorded, or the one a continue carried over.
+	ChangeID string
 }
 
 func (s *state) saveWorker(w workerRow) error {
@@ -71,8 +74,8 @@ func (s *state) saveWorker(w workerRow) error {
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, title, done_status, done_partial, harness_ref, task_full, permissions,
 		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
-		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen, failure)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen, failure, change_id)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (id) DO UPDATE SET native_id=excluded.native_id, session_id=excluded.session_id,
 		owner_name=excluded.owner_name,
 		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token,
@@ -86,14 +89,14 @@ func (s *state) saveWorker(w workerRow) error {
 		difficulty_asked=excluded.difficulty_asked, difficulty_used=excluded.difficulty_used, touches=excluded.touches,
 		auto_continue=excluded.auto_continue, auto_continue_count=excluded.auto_continue_count,
 		auto_continue_run=excluded.auto_continue_run, task_id=excluded.task_id, midrun_count=excluded.midrun_count,
-		midrun_run=excluded.midrun_run, notice_since_request=excluded.notice_since_request, midrun_seen=excluded.midrun_seen, failure=excluded.failure`,
+		midrun_run=excluded.midrun_run, notice_since_request=excluded.notice_since_request, midrun_seen=excluded.midrun_seen, failure=excluded.failure, change_id=excluded.change_id`,
 		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.OwnerName, w.NativeID, w.SessionID, w.PID, w.PGID,
 		w.StartToken, w.StartedAt.UnixNano(), w.LastActive.UnixNano(), w.EndedReason, boolInt(w.Resumable),
 		boolInt(w.Reported), w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.TaskText, w.Title, w.DoneStatus,
 		boolInt(w.DonePartial), w.Ref, w.TaskFull, w.Permissions,
 		w.Continue, w.Fix, w.ContinueRun, w.FixRun, boolInt(w.PendingHandback), boolInt(w.PendingPartial),
 		w.DifficultyAsked, w.DifficultyUsed, w.Touches,
-		boolInt(w.AutoContinue), w.AutoContinueCount, w.AutoContinueRun, w.TaskID, w.MidrunCount, w.MidrunRun, boolInt(w.NoticeSinceRequest), boolInt(w.MidrunSeen), w.Failure)
+		boolInt(w.AutoContinue), w.AutoContinueCount, w.AutoContinueRun, w.TaskID, w.MidrunCount, w.MidrunRun, boolInt(w.NoticeSinceRequest), boolInt(w.MidrunSeen), w.Failure, w.ChangeID)
 	if err != nil {
 		return err
 	}
@@ -136,7 +139,7 @@ func (s *state) workers() ([]workerRow, error) {
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, title, done_status, done_partial, harness_ref, task_full, permissions,
 		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
-		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen, failure
+		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen, failure, change_id
 		FROM workers ORDER BY started_at`)
 	if err != nil {
 		return nil, err
@@ -151,7 +154,7 @@ func (s *state) workers() ([]workerRow, error) {
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
 			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.Title, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
 			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed, &w.Touches,
-			&autoContinue, &w.AutoContinueCount, &w.AutoContinueRun, &w.TaskID, &w.MidrunCount, &w.MidrunRun, &notice, &seen, &w.Failure); err != nil {
+			&autoContinue, &w.AutoContinueCount, &w.AutoContinueRun, &w.TaskID, &w.MidrunCount, &w.MidrunRun, &notice, &seen, &w.Failure, &w.ChangeID); err != nil {
 			return nil, err
 		}
 		w.StartedAt, w.LastActive = time.Unix(0, started), time.Unix(0, active)
@@ -174,13 +177,13 @@ func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, title, done_status, done_partial, harness_ref, task_full, permissions,
 		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
-		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen, failure
+		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen, failure, change_id
 		FROM workers WHERE session_id = ?`, sessionID).
 		Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.OwnerName, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
 			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.Title, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
 			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed, &w.Touches,
-			&autoContinue, &w.AutoContinueCount, &w.AutoContinueRun, &w.TaskID, &w.MidrunCount, &w.MidrunRun, &notice, &seen, &w.Failure)
+			&autoContinue, &w.AutoContinueCount, &w.AutoContinueRun, &w.TaskID, &w.MidrunCount, &w.MidrunRun, &notice, &seen, &w.Failure, &w.ChangeID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return w, false, nil
