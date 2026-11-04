@@ -229,7 +229,7 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 			continue
 		}
 		d, _ := recipe.Definition(c.Key)
-		if d.Kind != "rule" || staged[settingAddress{c.Key, "network", "network", ""}] == nil {
+		if d.Kind != "rule" || d.OwnerScopedText() || staged[settingAddress{c.Key, "network", "network", ""}] == nil {
 			continue
 		}
 		a := address(c)
@@ -246,7 +246,7 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 	// affected repo, including maturity defaults that need no stored row.
 	for key := range networkKeys {
 		d, _ := recipe.Definition(key)
-		if d.Kind != "rule" || !hasLevel(d.Levels, "repo") {
+		if d.Kind != "rule" || d.OwnerScopedText() || !hasLevel(d.Levels, "repo") {
 			continue
 		}
 		oldNet, _ := before.Resolve(key, settings.Where{})

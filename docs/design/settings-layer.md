@@ -103,7 +103,7 @@ settings:
 | `kind` | `advice` or `rule`. |
 | `type` | `bool`, `int`, `float`, `duration`, `string`, `text`, `enum` or `set`. `keyed` comes later. |
 | `values` | For `enum`: the allowed values. For a rule, loosest first. |
-| `stricter` | For a rule with a lower level: `lower` or `higher` for numbers and durations, `true` or `false` for a bool, `fewer` or `more` for a set. |
+| `stricter` | For a rule with a lower level: `lower` or `higher` for numbers and durations, `true` or `false` for a bool, `fewer` or `more` for a set. Owner-controlled rule text uses `owner`; its repo wording is an owner-approved replacement, not an ordered bound. |
 | `min`, `max` | Bounds for numbers and durations. |
 | `levels` | Where a value may be set. `network` is always allowed. |
 | `default` | The standard value. |
@@ -183,8 +183,10 @@ setting lists and that the place has:
 2. At the repo, take the explicit repo value. If there is none and the repo has
    a maturity with a `by_maturity` entry, take that.
 3. At each lower level, take the explicit value given there.
-4. For a rule, each step down keeps the stricter of the value from above and
-   the value found here. Advice takes the value found here.
+4. For an ordered rule, each step down keeps the stricter of the value from
+   above and the value found here. Advice takes the value found here. A rule
+   text marked `stricter: owner` takes the owner-approved repo text; arbitrary
+   prose has no strictness order and cannot be set at session or run level.
 
 The maturity value is the repo's default, not a bound. An explicit repo value
 replaces it, even when looser, exactly as a node setting replaces it today
@@ -596,8 +598,8 @@ Special cases:
   with history, in its transaction.
 - **Project policies** are keyed by machine and lower-case project
   (`internal/gateway/store_policy.go:18-24`). At step 7 the `workers` value
-  becomes the repo's value. If machines disagree, the strictest wins and the
-  owner is told. A lower-case project maps to its node the way `Graph()` does
+  becomes the repo's value. The strictest policy and legacy node fallback win,
+  and the Inbox names machines that become stricter with their old values. A lower-case project maps to its node the way `Graph()` does
   (`store_graph.go:643,720`). Two nodes with the same lower-case name stop that
   key's cutover for the owner to fix. The delegation fields move with the
   repo and agent split.

@@ -30,8 +30,29 @@ const (
 // WorkerAutoContinueText is the default reserved continuation message.
 var WorkerAutoContinueText = WorkerAutoContinueWithSettings(settings.Snapshot{}, "")
 
+const (
+	workerHandbackTool  = "agent_handback"
+	workerCompleteYes   = "complete: yes"
+	workerCompleteNo    = "complete: no"
+	workerCompleteFalse = "complete: false"
+)
+
+// renderWorkerText keeps protocol tokens outside editable prose. Required slots
+// are validated by the settings codec before values reach this renderer.
+func renderWorkerText(snap settings.Snapshot, key string, where settings.Where) string {
+	mcpTool := "mcp__agent-net__" + workerHandbackTool
+	return strings.NewReplacer(
+		"{{handback}}", workerHandbackTool,
+		"{{mcp_handback}}", mcpTool,
+		"{{search_handback}}", "select:"+mcpTool,
+		"{{complete_yes}}", workerCompleteYes,
+		"{{complete_no}}", workerCompleteNo,
+		"{{complete_false}}", workerCompleteFalse,
+	).Replace(snap.String(key, where))
+}
+
 func WorkerAutoContinueWithSettings(snap settings.Snapshot, repo string) string {
-	return "[agent-net] continue: " + snap.String("workers.continue_prompt_text", settings.Where{Repo: repo})
+	return "[agent-net] continue: " + renderWorkerText(snap, "workers.continue_prompt_text", settings.Where{Repo: repo})
 }
 
 // WorkerAutoContinueNote says how many automatic continues were sent before a
@@ -483,12 +504,12 @@ func WorkerReadOnlySupported(h string) bool { return h == "codex" || h == "agy" 
 var (
 	WorkerPreamble      = workerPreamble("", settings.Snapshot{}, "")
 	WorkerPreambleCodex = workerPreamble("codex", settings.Snapshot{}, "")
-	WorkerClaudeNote    = "\n- " + (settings.Snapshot{}).String("workers.brief_claude", settings.Where{})
+	WorkerClaudeNote    = "\n- " + renderWorkerText(settings.Snapshot{}, "workers.brief_claude", settings.Where{})
 )
 
 func workerPreamble(harness string, snap settings.Snapshot, repo string) string {
 	where := settings.Where{Repo: repo}
-	line := func(key string) string { return snap.String(key, where) }
+	line := func(key string) string { return renderWorkerText(snap, key, where) }
 	b := "[agent-net worker brief] " + line("workers.brief_preamble")
 	for _, key := range []string{"workers.brief_task", "workers.brief_no_delegation"} {
 		b += "\n- " + line(key)

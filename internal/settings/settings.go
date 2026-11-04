@@ -152,6 +152,10 @@ func Load(data []byte) (*Recipe, error) {
 				if d.Stricter != "fewer" && d.Stricter != "more" {
 					return nil, fmt.Errorf("%s: stricter required", d.Key)
 				}
+			case "text":
+				if !d.OwnerScopedText() || seen["session"] || seen["run"] {
+					return nil, fmt.Errorf("%s: unordered rule", d.Key)
+				}
 			default:
 				return nil, fmt.Errorf("%s: unordered rule", d.Key)
 			}
@@ -252,6 +256,13 @@ func contains(a []string, s string) bool {
 	}
 	return false
 }
+
+// OwnerScopedText is protected wording whose network and repo values are
+// individually owner-controlled. Text has no automatic strictness ordering.
+func (d Definition) OwnerScopedText() bool {
+	return d.Kind == "rule" && d.Type == "text" && d.Stricter == "owner"
+}
+
 func (d Definition) yamlValue(n *yaml.Node) (json.RawMessage, error) {
 	var v any
 	switch d.Type {
@@ -640,7 +651,7 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 			log.Printf("settings: ignoring invalid %s at %s: %v", key, source, err)
 			return
 		}
-		if d.Kind == "rule" && (networkSet || source == "session" || source == "run") {
+		if d.Kind == "rule" && !d.OwnerScopedText() && (networkSet || source == "session" || source == "run") {
 			bound, err := d.StricterValue(e.Value, candidate)
 			if err == nil {
 				if !bytes.Equal(bound, candidate) {

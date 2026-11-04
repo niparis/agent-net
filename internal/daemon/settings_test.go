@@ -448,3 +448,34 @@ func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
 		t.Fatalf("lost sandbox snapshot: %+v", snap)
 	}
 }
+
+func TestWorkerBriefRuleCTOProposesOwnerApplies(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.brief_codex_complete","level":"repo","scope":"shop","value":"Report {{complete_yes}} or {{complete_no}}."}],"reason":"approval"}`)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	proposals, err := n.d.proposalRunner().list()
+	if err != nil || len(proposals) != 1 {
+		t.Fatalf("proposal: %+v %v", proposals, err)
+	}
+	before, err := g.gw.Store().SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := before.String("workers.brief_codex_complete", settings.Where{Repo: "shop"}); strings.Contains(got, "Report ") {
+		t.Fatalf("CTO write applied before approval: %q", got)
+	}
+	if err = n.d.proposalRunner().decide(ctx, proposals[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := g.gw.Store().SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := after.String("workers.brief_codex_complete", settings.Where{Repo: "shop"}); got != "Report {{complete_yes}} or {{complete_no}}." {
+		t.Fatalf("approved value: %q", got)
+	}
+}

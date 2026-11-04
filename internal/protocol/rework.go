@@ -25,9 +25,9 @@ func WorkerReportComplete(report string) (complete, ok bool) {
 			continue
 		}
 		switch line {
-		case "complete: no":
+		case workerCompleteNo:
 			return false, true
-		case "complete: yes":
+		case workerCompleteYes:
 			return true, true
 		}
 		return true, false

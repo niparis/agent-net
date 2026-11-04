@@ -24,8 +24,12 @@ Settings tab 6 has a Working rules and guidance section. Choose network or a
 repo, select a setting and press Enter to edit its value as JSON. The row shows
 the effective value and source. The selected row shows its history. Press `u`
 to undo the latest displayed revision and confirm; this undoes the entire batch.
-A tighter network rule moves less strict stored repo values. The result names
-repos whose effective values changed. Empty text and empty sets are values;
+A tighter ordered network rule moves less strict stored repo values. The result
+names repos whose effective values changed. Owner-controlled rule text has no
+strictness order: an owner-approved repo value replaces its network wording. Worker hand-back text
+has required slots such as `{{handback}}`, `{{complete_yes}}` and
+`{{complete_no}}`; retain them when editing so code can insert the protocol
+tokens. Empty text and empty sets are values;
 deleting an override makes it inherit again.
 
 Agents, workers and the CTO can read public settings with `agent_settings_read`.
@@ -57,14 +61,16 @@ network merge authority. Text and worker delivery settings appear under
 `delivery.*` in Settings. The delegated merge text uses the configured
 `delivery.delegated_approver_modes`. Branch prefix changes apply to new workers;
 a resumed worker keeps its recorded branch. Cleanup recognizes recorded branches
-with a valid older prefix. The worker sandbox and
-project policies stay where they are until the worker settings step. Older
-daemons and extensions use their built-in merge text until upgraded, even when
+with a valid older prefix. The worker sandbox is also a repo setting, with the
+older project policy and node-setting methods as adapters. Older daemons and extensions use their built-in merge text until upgraded, even when
 the authority value has synced.
 
 On first upgrade, the gateway copies old node setting rows into settings in one
-transaction and records their cutover. Existing settings values take precedence;
-repeating the cutover does not change them. The old rows stay as a backup. An older
+transaction and records their cutover. Existing settings values take precedence,
+except that an unsafe worker sandbox value is tightened to preserve the old
+machine policies and node fallback. Inbox checks name machines made stricter
+and their old values. Repeating the cutover changes no values. The old rows stay
+as a backup. An older
 binary reads that backup after a downgrade, so changes made after the cutover
 are absent. Changes made to old rows while downgraded are not copied on a later
 upgrade. There is no downgrade tool.

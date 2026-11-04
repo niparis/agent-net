@@ -1,6 +1,7 @@
 package settings_test
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/niparis/agent-net/internal/settings"
@@ -32,6 +33,25 @@ func TestWorkerRecipeDefinitions(t *testing.T) {
 		def, ok := recipe.Definition(key)
 		if !ok || !def.Live || snap.String(key, Where{}) == "" {
 			t.Errorf("%s missing, empty or not live", key)
+		}
+	}
+}
+
+func TestOwnerScopedRuleTextRejectsRunAndSessionLevels(t *testing.T) {
+	source := string(StandardYAML())
+	start := strings.Index(source, "  - key: workers.brief_approval\n")
+	if start < 0 {
+		t.Fatal("missing definition")
+	}
+	end := strings.Index(source[start+4:], "  - key:")
+	if end < 0 {
+		t.Fatal("missing following definition")
+	}
+	end += start + 4
+	for _, level := range []string{"run", "session"} {
+		changed := source[:start] + strings.Replace(source[start:end], "levels: [network, repo]", "levels: [network, "+level+"]", 1) + source[end:]
+		if _, err := Load([]byte(changed)); err == nil {
+			t.Errorf("accepted owner-controlled text at %s level", level)
 		}
 	}
 }

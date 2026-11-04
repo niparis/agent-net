@@ -10,7 +10,11 @@ may write advice and undo an advice-only revision. A batch containing any rule,
 or undo of a revision containing a rule, is stored as a proposal and runs only
 after owner approval, including during a graph owner window. Every change is
 recorded; per-address expectations prevent a stale approval from silently
-replacing a newer value.
+replacing a newer value. Worker hand-back, delegation and approval wording is
+rule text, so the CTO must get owner approval to change it. The owner can set
+that wording at network or repo scope; text has no automatic strictness order.
+Required hand-back tool names and completion tokens are supplied by code, not
+by the editable wording.
 
 The gateway trusts the authenticated daemon's actor label, as for graph writes.
 An enrolled machine token can therefore assert owner authority. A compromised
@@ -391,7 +395,7 @@ A critical repository should also have branch protection on its default branch: 
 
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers) or the settings layer and applies to that project on every machine. It is enforced only for Codex and Antigravity workers today. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude Code, OpenCode and Pi workers run with the owner's permissions. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Both the policy form and node setting change the same repo value. At cutover, conflicting machine policies use the strictest value; a check in the Inbox reports conflicts and case-ambiguous project names.
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers) or the settings layer and applies to that project on every machine. It is enforced only for Codex and Antigravity workers today. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude Code, OpenCode and Pi workers run with the owner's permissions. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Both the policy form and node setting change the same repo value. At cutover, the strictest machine policy and old node fallback win. An existing repo value is tightened only if its effective value would otherwise be looser than the old fallback or a machine policy. Inbox checks name the machines made stricter and their old values, and report case-ambiguous project names.
 
 The level definitions and limits below describe Codex's sandbox. Antigravity has separate behavior described in [Antigravity workers](antigravity.md#workers).
 
