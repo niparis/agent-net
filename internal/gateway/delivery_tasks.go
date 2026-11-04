@@ -16,6 +16,7 @@ import (
 // node assignment. The actual delegate nodes are stored separately.
 const delegateTaskOwner = "/delegate"
 const callerTaskOwner = "/caller"
+const mergerTaskOwner = "/merger"
 
 type nodeTaskTarget struct {
 	id, owner, session string
@@ -180,6 +181,8 @@ func taskOwners(q deliveryQuerier, c protocol.Change, p protocol.Pipeline) (prot
 				}
 				if owner == callerTaskOwner {
 					p.Steps[i].Owner = protocol.StepOwner{Kind: protocol.OwnerCaller}
+				} else if owner == mergerTaskOwner {
+					p.Steps[i].Owner = protocol.StepOwner{Kind: protocol.OwnerMerger}
 				} else if owner == delegateTaskOwner {
 					p.Steps[i].Owner = protocol.StepOwner{Kind: protocol.OwnerDelegate}
 				} else {
@@ -248,7 +251,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
-		AND ((t.owner_node=? AND s.id=c.caller) OR COALESCE(NULLIF(s.repo_project,''),p.project,'')=t.owner_node OR
+		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=c.caller) OR COALESCE(NULLIF(s.repo_project,''),p.project,'')=t.owner_node OR
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
 		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND a.node=COALESCE(NULLIF(s.repo_project,''),p.project,''))))
 		AND s.harness NOT IN ('owner','bot','cto')
@@ -416,6 +419,8 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 		ownerNode := step.Owner.Node
 		if step.Owner.Kind == protocol.OwnerCaller && shared {
 			ownerNode = callerTaskOwner
+		} else if step.Owner.Kind == protocol.OwnerMerger {
+			ownerNode = mergerTaskOwner
 		} else if step.Owner.Kind != protocol.OwnerNode {
 			continue
 		}
@@ -605,6 +610,13 @@ func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 		return true, err
 	}
 	allowedOwner := project == owner
+	if owner == mergerTaskOwner {
+		var n int
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers WHERE project=? AND node_id=? AND session_id=?)`, c.Project, c.Machine, session).Scan(&n); err != nil {
+			return true, err
+		}
+		allowedOwner = n != 0
+	}
 	if owner == callerTaskOwner {
 		allowedOwner = session == c.Caller
 	}

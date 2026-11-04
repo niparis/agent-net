@@ -489,7 +489,7 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err != nil {
 		return protocol.StepReportResult{}, err
 	}
-	if step, ok := p.Find(q.StepRef); !found && ok && (step.Owner.Kind == protocol.OwnerNode || step.Owner.Kind == protocol.OwnerDelegate) {
+	if step, ok := p.Find(q.StepRef); !found && ok && (step.Owner.Kind == protocol.OwnerNode || step.Owner.Kind == protocol.OwnerDelegate || step.Owner.Kind == protocol.OwnerMerger) {
 		return protocol.StepReportResult{}, reject("%s has not reached its owner", q.StepRef)
 	}
 	if err := insertEvidence(tx, e); err != nil {
@@ -721,7 +721,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 			}
 			continue
 		}
-		if st.Owner.Kind != protocol.OwnerNode && st.Owner.Kind != protocol.OwnerCaller {
+		if st.Owner.Kind != protocol.OwnerNode && st.Owner.Kind != protocol.OwnerCaller && st.Owner.Kind != protocol.OwnerMerger {
 			continue
 		}
 		var claimed string
@@ -741,7 +741,9 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 			continue
 		}
 		var online int
-		if st.Owner.Kind == protocol.OwnerCaller {
+		if st.Owner.Kind == protocol.OwnerMerger {
+			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE pm.project=? AND pm.node_id=? AND s.online=1)`, c.Project, c.Machine).Scan(&online)
+		} else if st.Owner.Kind == protocol.OwnerCaller {
 			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND online=1 AND worker='')`, c.Caller).Scan(&online)
 		} else {
 			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
@@ -753,6 +755,9 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		if online == 0 {
 			owner := st.Owner.Node
+			if st.Owner.Kind == protocol.OwnerMerger {
+				owner = "merger"
+			}
 			if st.Owner.Kind == protocol.OwnerCaller {
 				owner = "caller"
 			}

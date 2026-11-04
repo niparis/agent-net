@@ -755,6 +755,14 @@ INSERT INTO worker_starts_new(ref, node_id, owner, project, harness, permissions
 DROP TABLE worker_starts;
 ALTER TABLE worker_starts_new RENAME TO worker_starts;
 CREATE INDEX IF NOT EXISTS worker_starts_legacy_ref ON worker_starts(legacy_ref) WHERE legacy_ref <> '';
+`, `
+CREATE TABLE IF NOT EXISTS project_mergers (
+ project TEXT NOT NULL, node_id TEXT NOT NULL, session_id TEXT NOT NULL UNIQUE,
+ PRIMARY KEY(project,node_id)
+);
+CREATE TRIGGER IF NOT EXISTS remove_project_merger AFTER DELETE ON sessions BEGIN
+ DELETE FROM project_mergers WHERE session_id=OLD.id;
+END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1702,6 +1710,15 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 		}
 		keep[id] = true
 		si.SessionID = id
+		var merger int
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers WHERE session_id=?)`, id).Scan(&merger); err != nil {
+			return nil, err
+		}
+		explicit := ""
+		if merger != 0 {
+			explicit = "merger"
+		}
+		si.Type = protocol.SessionType(si.Harness, si.Worker, explicit)
 		out = append(out, si)
 	}
 	// The registered CTO belongs to this node even when its harness is asleep.
@@ -1986,7 +2003,8 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
 	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),''),
-	COALESCE(p.task_started,0),
+	CASE WHEN EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id) THEN 'merger' ELSE '' END,
+ COALESCE(p.task_started,0),
  COALESCE((SELECT json_object('run_id',wa.run_id,'session_id',wa.session_id,'started_at',wa.started_at,
  'assessed_at',wa.assessed_at,'reasoning',wa.reasoning,'scope',wa.scope,'coupling',wa.coupling,
  'uncertainty',wa.uncertainty,'verification',wa.verification,'risk',wa.risk,'d',wa.d,
@@ -2008,7 +2026,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.TaskStarted, &assessment)
+		&a.Type, &a.TaskStarted, &assessment)
 	if err != nil {
 		return a, err
 	}
