@@ -52,7 +52,7 @@ func (d *Daemon) scanTools(ctx context.Context) protocol.InventoryReport {
 	// own stored report.
 	_, _ = d.call(ctx, "node.inventory", fresh)
 	result := d.toolsReport
-	result.Items = append([]protocol.InventoryItem(nil), result.Items...)
+	result.Items = append([]protocol.InventoryItem{}, result.Items...)
 	return result
 }
 

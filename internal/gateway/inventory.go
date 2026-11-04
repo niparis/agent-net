@@ -36,6 +36,9 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 		}
 	}
 	r.Machine = nodeID
+	if r.Items == nil {
+		r.Items = []protocol.InventoryItem{}
+	}
 	b, err := json.Marshal(r)
 	if err != nil {
 		return err

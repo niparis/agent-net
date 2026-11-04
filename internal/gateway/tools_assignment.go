@@ -226,13 +226,15 @@ func (s *Store) toolSnapshot(tx *sql.Tx, item string) (string, error) {
 					return "", err
 				}
 				if item != "" {
-					filtered := report.Items[:0]
+					filtered := make([]protocol.InventoryItem, 0, len(report.Items))
 					for _, observed := range report.Items {
 						if string(observed.Kind) == kind && observed.Name == name {
 							filtered = append(filtered, observed)
 						}
 					}
 					report.Items = filtered
+				} else if report.Items == nil {
+					report.Items = []protocol.InventoryItem{}
 				}
 				report.ScannedAt = time.Time{}
 				for i := range report.Items {
