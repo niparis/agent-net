@@ -124,7 +124,7 @@ func TestStandingChoiceOnlyCopiesNewProjects(t *testing.T) {
 			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "one", ProjectRoot: "/repo/one", Location: "/repo/one/.claude/skills/demo"},
 			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "two", ProjectRoot: "/repo/two", Location: "/repo/two/.claude/skills/demo"},
 		}
-		if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+		if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: items}); err != nil {
 			t.Fatal(err)
 		}
 	}

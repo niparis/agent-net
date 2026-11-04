@@ -22,9 +22,12 @@ func TestPeerTrustMigratesOnceToWildcardRule(t *testing.T) {
 	// it, and their tables cannot be replayed. Run the trust migration itself
 	// again, as a gateway that never applied it would.
 	trust := ""
+	// Later migrations (the merger lifecycle trigger) also insert graph
+	// edges, so take the trust migration by what it reads: peer_trust.
 	for _, m := range migrations {
-		if strings.Contains(m, "INSERT OR IGNORE INTO graph_edges") {
+		if strings.Contains(m, "INSERT OR IGNORE INTO graph_edges") && strings.Contains(m, "peer_trust") {
 			trust = m
+			break
 		}
 	}
 	if trust == "" {
