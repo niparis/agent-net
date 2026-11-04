@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -380,101 +381,135 @@ func TestExpiredUnknownStartRefusesQueuedStart(t *testing.T) {
 	}
 }
 
-// Finding 3 review fix: closeLegacyStart / abandonLegacyStart prefer the record with a matching
-// legacy_ref when the report carries the queue ID; falling back to oldest only when none.
-func TestLegacyStartPreferMatchingLegacyRefOverOldest(t *testing.T) {
+// Finding 1 review fix (race): claim the start atomically before relay so ExpireStarts
+// and declareNotStarted do not interfere while relay is in-flight.
+func TestQueuedStartRaceWithExpireStarts(t *testing.T) {
+	inTask := make(chan struct{})
+	resumeTask := make(chan struct{})
+	var relayed atomic.Int32
+
 	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
-		return func(h protocol.Header, raw []byte) error { return nil }
+		return func(h protocol.Header, raw []byte) error {
+			relayed.Add(1)
+			close(inTask)
+			<-resumeTask
+			return nil
+		}
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.126"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Two open starts for same node, owner and project.
-	// Start 1 is older.
-	if err := f.s.trackWorkerStart("q_gw_old", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+	if err := f.s.trackWorkerStart("q_race", f.nodeA, f.b, "shop", "codex", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_old", "q_legacy_old"); err != nil {
+	if err := f.s.markStartUnknown(f.nodeA, "q_race"); err != nil {
 		t.Fatal(err)
 	}
-
-	f.clock.t = f.clock.t.Add(2 * time.Second)
-
-	// Start 2 is newer.
-	if err := f.s.trackWorkerStart("q_gw_new", f.nodeA, f.b, "shop", "codex", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_new", "q_legacy_new"); err != nil {
+	if err := f.s.startSession(f.nodeA, "q_race", worker); err != nil {
 		t.Fatal(err)
 	}
 
-	// 1. Report carrying the newer queue ID "q_legacy_new" must close the newer start, leaving the older start open.
-	ref, err := f.s.closeLegacyStart(f.nodeA, f.b, "shop", worker, "q_legacy_new")
+	done := make(chan error, 1)
+	go func() {
+		done <- f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_race"))
+	}()
+
+	// Wait until relay has started and blocked in worker.task.
+	<-inTask
+
+	// Check OpenStarts counts 'starting' as open.
+	openCount, err := f.s.OpenStarts()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ref != "q_gw_new" {
-		t.Errorf("closeLegacyStart closed %q, want q_gw_new", ref)
-	}
-	var stateOld, stateNew string
-	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_old'`).Scan(&stateOld)
-	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_new'`).Scan(&stateNew)
-	if stateNew != "closed" {
-		t.Errorf("newer start state = %q, want closed", stateNew)
-	}
-	if stateOld != "open" {
-		t.Errorf("older start state = %q, want open", stateOld)
+	if openCount != 1 {
+		t.Errorf("OpenStarts during starting = %d, want 1", openCount)
 	}
 
-	// 2. Report without queue ID falls back to oldest open start.
-	ref, err = f.s.closeLegacyStart(f.nodeA, f.b, "shop", worker, "")
+	// While relay is in-flight ('starting'), ExpireStarts runs.
+	f.clock.t = f.clock.t.Add(15 * time.Minute)
+	notices, err := f.s.ExpireStarts(10*time.Minute, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ref != "q_gw_old" {
-		t.Errorf("closeLegacyStart closed %q, want q_gw_old", ref)
-	}
-	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_old'`).Scan(&stateOld)
-	if stateOld != "closed" {
-		t.Errorf("older start state = %q, want closed", stateOld)
+	if len(notices) != 0 {
+		t.Errorf("ExpireStarts produced notices while start was starting: %v", notices)
 	}
 
-	// 3. Test abandonLegacyStart preferring matching legacy_ref over oldest.
-	f.clock.t = f.clock.t.Add(2 * time.Second)
-	if err := f.s.trackWorkerStart("q_gw_ab_old", f.nodeA, f.b, "shop", "codex", ""); err != nil {
-		t.Fatal(err)
+	// Also declareNotStarted directly while starting must not touch it.
+	_, _, noticed, _, _ := f.s.declareNotStarted(f.nodeA, "q_race", "nodeA", "concurrent report")
+	if noticed {
+		t.Errorf("declareNotStarted emitted notice while start was starting")
 	}
-	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_ab_old", "q_legacy_ab_old"); err != nil {
-		t.Fatal(err)
+
+	// Let relay finish.
+	close(resumeTask)
+	if err := <-done; err != nil {
+		t.Fatalf("queued_start failed: %v", err)
 	}
-	f.clock.t = f.clock.t.Add(2 * time.Second)
-	if err := f.s.trackWorkerStart("q_gw_ab_new", f.nodeA, f.b, "shop", "codex", ""); err != nil {
-		t.Fatal(err)
+
+	// Verify state is closed.
+	var state string
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_race'`).Scan(&state)
+	if state != "closed" {
+		t.Errorf("state after relay = %q, want closed", state)
 	}
-	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_ab_new", "q_legacy_ab_new"); err != nil {
+
+	// Verify no not-started notice was emitted.
+	if ns := f.notices(t, f.b); len(ns) != 0 {
+		t.Errorf("unexpected not-started notices: %v", ns)
+	}
+}
+
+// Finding 2 review fix (idempotency): a worker.queued_start for a start already 'closed'
+// with the same session_id must answer success without relaying again. A different session stays refused.
+func TestQueuedStartIdempotentWhenAlreadyClosed(t *testing.T) {
+	var relayed atomic.Int32
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			relayed.Add(1)
+			return nil
+		}
+	})
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Abandon with matching legacy queue ID abandons the newer start.
-	if err := f.s.abandonLegacyStart(f.nodeA, f.b, "shop", "q_legacy_ab_new"); err != nil {
+	if err := f.s.trackWorkerStart("q_idem", f.nodeA, f.b, "shop", "codex", ""); err != nil {
 		t.Fatal(err)
 	}
-	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_ab_new'`).Scan(&stateNew)
-	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_ab_old'`).Scan(&stateOld)
-	if stateNew != "not_started" {
-		t.Errorf("newer start state = %q, want not_started", stateNew)
-	}
-	if stateOld != "open" {
-		t.Errorf("older start state = %q, want open", stateOld)
+	if err := f.s.startSession(f.nodeA, "q_idem", worker); err != nil {
+		t.Fatal(err)
 	}
 
-	// Abandon without queue ID falls back to oldest.
-	if err := f.s.abandonLegacyStart(f.nodeA, f.b, "shop"); err != nil {
+	// First queued_start: succeeds and closes the start.
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_idem")); err != nil {
+		t.Fatalf("first queued_start failed: %v", err)
+	}
+	if relayed.Load() != 1 {
+		t.Fatalf("relayed count = %d, want 1", relayed.Load())
+	}
+
+	// Second queued_start with same session_id: answers success without relaying again.
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_idem")); err != nil {
+		t.Fatalf("second queued_start with same session_id failed: %v", err)
+	}
+	if relayed.Load() != 1 {
+		t.Fatalf("relayed count after repeat = %d, want 1", relayed.Load())
+	}
+
+	// Third queued_start with a DIFFERENT session_id: must be refused!
+	diffWorker, err := f.s.UpsertSession(f.nodeA, protocol.SessionInfo{Harness: "codex", NativeID: "w2", Name: "w2",
+		Worker: &protocol.WorkerInfo{ID: "w_2", Owner: f.b}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_ab_old'`).Scan(&stateOld)
-	if stateOld != "not_started" {
-		t.Errorf("older start state = %q, want not_started", stateOld)
+	err = f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(diffWorker, "q_idem"))
+	if err == nil || !errors.As(err, new(Rejection)) {
+		t.Fatalf("queued_start with different session_id on closed start was accepted: %v", err)
+	}
+	if relayed.Load() != 1 {
+		t.Fatalf("relayed count after different session = %d, want 1", relayed.Load())
 	}
 }

@@ -53,7 +53,7 @@ func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol
 			strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "reason", p.Reason), " "))
 		g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", p.Owner,
 			"project", p.Project, "harness", p.Harness, "reason", p.Reason)
-		_ = g.store.abandonLegacyStart(nc.id, p.Owner, p.Project, p.Ref)
+		_ = g.store.abandonLegacyStart(nc.id, p.Owner, p.Project)
 		return nil
 	}
 	rec, n, noticed, first, err := g.store.declareNotStarted(nc.id, p.Ref, g.store.hostname(nc.id), full.Reason)
@@ -231,10 +231,26 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			return nil, reject("bad worker.queued_start")
 		}
 		// A reference must belong to this machine, this owner and this worker.
-		if err := g.store.verifyStart(nc.id, p.Ref, p.Owner, p.SessionID); err != nil {
+		alreadyClosed, err := g.store.verifyStart(nc.id, p.Ref, p.Owner, p.SessionID)
+		if err != nil {
 			return nil, err
 		}
+		if alreadyClosed {
+			return nil, nil
+		}
+		if p.Ref != "" {
+			won, err := g.store.claimStart(nc.id, p.Ref)
+			if err != nil {
+				return nil, err
+			}
+			if !won {
+				return nil, reject("start %s is not open", p.Ref)
+			}
+		}
 		if err := g.relayQueuedTask(ctx, nc, p); err != nil {
+			if p.Ref != "" {
+				_ = g.store.unclaimStart(nc.id, p.Ref)
+			}
 			return nil, err
 		}
 		// The task was sent: the start is closed, and no one can say it never began.
@@ -243,7 +259,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				g.logLine("error", "where", "close start", "err", err)
 			}
 		} else {
-			if _, err := g.store.closeLegacyStart(nc.id, p.Owner, p.Project, p.SessionID, p.Ref); err != nil {
+			if _, err := g.store.closeLegacyStart(nc.id, p.Owner, p.Project, p.SessionID); err != nil {
 				g.logLine("error", "where", "close legacy start", "err", err)
 			}
 		}

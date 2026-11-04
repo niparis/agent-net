@@ -696,6 +696,21 @@ CREATE TABLE IF NOT EXISTS worker_starts (
 `, `
 SELECT 1 /* worker start tracking: legacy daemon references and launch timeout tracking */;
 CREATE INDEX IF NOT EXISTS worker_starts_legacy_ref ON worker_starts(legacy_ref) WHERE legacy_ref <> '';
+`, `
+SELECT 1 /* worker start state: starting */;
+CREATE TABLE IF NOT EXISTS worker_starts_new (
+ ref TEXT PRIMARY KEY, node_id TEXT NOT NULL, owner TEXT NOT NULL,
+ project TEXT NOT NULL DEFAULT '', harness TEXT NOT NULL DEFAULT '',
+ permissions TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
+ state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'starting', 'closed', 'not_started')),
+ created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0,
+ legacy_ref TEXT NOT NULL DEFAULT '', launch_state TEXT NOT NULL DEFAULT ''
+);
+INSERT INTO worker_starts_new(ref, node_id, owner, project, harness, permissions, session_id, state, created_at, closed_at, legacy_ref, launch_state)
+ SELECT ref, node_id, owner, project, harness, permissions, session_id, state, created_at, closed_at, legacy_ref, launch_state FROM worker_starts;
+DROP TABLE worker_starts;
+ALTER TABLE worker_starts_new RENAME TO worker_starts;
+CREATE INDEX IF NOT EXISTS worker_starts_legacy_ref ON worker_starts(legacy_ref) WHERE legacy_ref <> '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
