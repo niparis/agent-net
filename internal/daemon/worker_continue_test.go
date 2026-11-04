@@ -218,6 +218,7 @@ func TestContinueAfterHandback(t *testing.T) {
 }
 
 func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -355,6 +356,7 @@ func TestContinueNeedsTheMachineOnline(t *testing.T) {
 }
 
 func TestUnrestorableAdoptedWorkerSavesChanges(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"opencode", "codex"} {
 		t.Run(harness, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")

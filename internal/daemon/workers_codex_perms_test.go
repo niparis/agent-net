@@ -35,6 +35,7 @@ func anyStrings(v any) []string {
 // the folders of the main repository that a commit needs, and the network on
 // or off. Read-only writes nowhere.
 func TestCodexWorkerPermissionLevels(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		level, want string
 		mode        string
@@ -117,6 +118,7 @@ func TestCodexWorkerPermissionLevels(t *testing.T) {
 // The level is kept with the worker: a follow-up that starts the thread again
 // sends the same permissions to thread/resume and to the turn.
 func TestCodexWorkerKeepsItsLevelOnResume(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -153,6 +155,7 @@ func TestCodexWorkerTurnsOffTheAgentNetMCPServer(t *testing.T) {
 		{"no config", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CODEX_HOME", t.TempDir())
 			g := startGateway(t, t.TempDir(), "")
 			w := startCodexNode(t, g, shortSet)
 			home := os.Getenv("CODEX_HOME")
@@ -194,6 +197,7 @@ func TestCodexBriefHasNoAgentNetTools(t *testing.T) {
 
 // An approval that still arrives is declined.
 func TestCodexApprovalStillDeclinedWithTheSandbox(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -213,6 +217,7 @@ func TestCodexApprovalStillDeclinedWithTheSandbox(t *testing.T) {
 // Only the owner sets the level: an agent session is refused, and a session
 // scope is refused for everyone because the level belongs to the project.
 func TestWorkersLevelGateAndScope(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -273,6 +278,7 @@ func TestQueuedCodexStartKeepsItsLevel(t *testing.T) {
 // A continued worker keeps the level of the worker it continues, not the
 // project's current level.
 func TestContinuedCodexWorkerKeepsTheOldLevel(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")

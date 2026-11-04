@@ -97,6 +97,7 @@ func TestSessionReportsKnownID(t *testing.T) {
 }
 
 func TestAdoptedCodexKeepsItsSessionIDAfterRecordCleanup(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")

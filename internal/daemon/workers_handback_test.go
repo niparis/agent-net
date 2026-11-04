@@ -438,6 +438,7 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 }
 
 func TestCodexWorkerIdleNoticeAfterAutomaticHandbackFails(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = 1 * time.Second

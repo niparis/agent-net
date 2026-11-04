@@ -109,6 +109,7 @@ func TestOpenCodeWorkerQueuedDeliveryAfterHandback(t *testing.T) {
 // A Pi worker cannot be started again: Pi's rpc mode has no resume, so the
 // owner gets that reason, and no process is started.
 func TestPiWorkerCannotBeResumed(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -143,6 +144,7 @@ func TestPiWorkerCannotBeResumed(t *testing.T) {
 
 // A send queued while disconnected still reports a restart refusal.
 func TestQueuedWorkerResumeRefusalNotifiesSender(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")

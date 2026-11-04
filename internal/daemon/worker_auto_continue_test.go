@@ -178,6 +178,7 @@ func TestAutoContinueFailedWorkerGetsNone(t *testing.T) {
 // caller, not back to that sender (v0.4.93 and earlier: "unknown recipient
 // session", and the caller was told "idle without hand-back").
 func TestAutoContinueCodexReportReachesTheCaller(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = time.Hour

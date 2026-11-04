@@ -615,6 +615,7 @@ func TestBusyWorkerIsNotIdle(t *testing.T) {
 // Tokens that grow mean the worker is still working, so the idle limit does
 // not end it.
 func TestWorkerWithGrowingTokensIsNotIdle(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Idle = 700 * time.Millisecond

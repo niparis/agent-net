@@ -163,7 +163,10 @@ func TestContinueKeepsWorkWithSaveUnfinishedOff(t *testing.T) {
 	old := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Title: "Half done",
 		Task: "FAKE:dirty FAKE:partial FAKE:handback", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	c.waitNotice(t, 1)
-	eventually(t, "the worker ended", func() bool { return c.d.workerCount() == 0 })
+	eventually(t, "the worker ended and its row was saved", func() bool {
+		row, ok, err := c.d.st.workerBySession(old.SessionID)
+		return c.d.workerCount() == 0 && err == nil && ok && row.EndedReason != ""
+	})
 	if c.d.SettingsSnapshot().Bool("delivery.save_unfinished", settings.Where{}) {
 		t.Fatal("save_unfinished is on")
 	}
