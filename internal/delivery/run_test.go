@@ -654,8 +654,8 @@ func TestRunRedact(t *testing.T) {
 		{"secrets found: none", "secrets found: none"},
 	}
 	for _, tc := range cases {
-		if got := runRedact(tc.in); got != tc.want {
-			t.Errorf("runRedact(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := runRedactLines(tc.in); got != tc.want {
+			t.Errorf("runRedactLines(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

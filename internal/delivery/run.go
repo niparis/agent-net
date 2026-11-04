@@ -579,6 +579,3 @@ func (r runRedactor) lines(s string) string {
 // runRedactLines redacts s with no Env values: for text other than a step's
 // output, such as git's stderr.
 func runRedactLines(s string) string { return runRedactor{}.lines(s) }
-
-// runRedact returns "[redacted]" for a line that looks like it holds a secret.
-func runRedact(line string) string { return runRedactor{}.lines(line) }
