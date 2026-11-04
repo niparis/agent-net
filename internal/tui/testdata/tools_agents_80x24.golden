@@ -2,15 +2,15 @@
 [ Skills per project ]    All tools
 1 skill is installed outside agent-net. i imports them all (backups kept,
   nothing is turned off)
-╭─Projects─────────╮╭─Skills · homelab─────────────────────────────────────────╮
-│   a2a-ocs      1 ││   [x] archify                         ~120               │
-│   cogforge     1 ││   [x] estate-runbook                  ~160               │
-│   dotfiles     1 ││   [ ] found-skill                     ~200               │
-│   flood-war…   1 ││   [ ] react-best-practices            ~240               │
-│ ▸ homelab      2 ││                                                          │
-│   homelab-p…   1 ││                                                          │
-│   infra-game   1 ││                                                          │
-╰──────────────────╯╰──────────────────────────────────────────────────────────╯
+╭─Projects───────────────╮╭─Skills · homelab───────────────────────────────────╮
+│   a2a-ocs            1 ││   [x] archify                         ~120         │
+│   cogforge           1 ││   [x] estate-runbook                  ~160         │
+│   dotfiles           1 ││   [ ] found-skill                     ~200         │
+│   flood-wargame      1 ││   [ ] react-best-practices            ~240         │
+│ ▸ homelab            2 ││                                                    │
+│   homelab-portal     1 ││                                                    │
+│   infra-game         1 ││                                                    │
+╰────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─Project information──────────────────────────────────────────────────────────╮
 │ homelab                                                                      │
 │ Machines: research                                                           │
