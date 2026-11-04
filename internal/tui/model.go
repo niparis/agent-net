@@ -47,6 +47,8 @@ type Model struct {
 	workerLogDetail                     int
 	workersLog                          bool
 	workerLogRow                        int
+	delivery                            deliveryState
+	deliverySrc                         deliverySource
 	proposals                           []protocol.CTOProposal
 	proposalDetail                      *proposalDetail
 	proposalConfirm                     bool
@@ -534,6 +536,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case deliveryLoadedMsg:
+		return m.deliveryLoaded(msg), nil
 	case ctoPollMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil
@@ -1301,11 +1305,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == quotasTab {
 		if keyAction(contextQuotas, k.String()) == "workers log" {
-			m.workersLog = !m.workersLog
-			return m, nil
+			return m.nextQuotasSubtab()
 		}
 		if m.workersLog {
 			return m.workersLogKey(k)
+		}
+		if m.delivery.on {
+			return m.deliveryKey(k)
 		}
 		key := keyAction(contextQuotas, k.String())
 		switch key {

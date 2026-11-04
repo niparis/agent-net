@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 sessions, 5 online · 1 busy     updated 00:00:00
+  Quotas      Workers log    [ Delivery ]
+╭─Delivery──────────────────────────────────────────────────────────────────────────────────────────────3 open changes─╮
+│   REPO        BRANCH                                   HEAD     REV  STEP     OWNER   WAIT   EVIDENCE                │
+│ ▸ agent-net   w_1bcfc4c4a93b2687                       9f3a1c2  r2   review   merger  2h14m  a✓ r* t✓ p· m· l· d· v· │
+│   agent-net   delivery-pipeline                        0b77d4e  r1   merge    caller  6m     a✓ r✓ t✓ p– m· l· d· v· │
+│   voicemechs  feature/a-very-long-branch-name-for-th…  c41de0a  r3   review   owner   1d2h   a✓ r✗ t· p· m· l· d· v· │
+│ a accept  r review  t test  p approve  m merge  l release  d deploy  v verify                                        │
+│ ✓ passed  ✗ failed  * running  – not needed  · waiting                                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+╰─c: open the CTO──────────────────────────────────────────────────────────────────────────────────────────────────────╯
+tab Quotas  up/down select  enter evidence  R refresh  ? help  q quit
