@@ -206,7 +206,7 @@ func (m Model) helpLine(w int) string {
 			return clip(sBold.Render(confirmName(fmt.Sprintf("Report a severity %d defect found later on ", m.defectLevel), m.defectName, "?", w)), w)
 		}
 		if m.confirmOwner {
-			return clip(sBold.Render(confirmName("Stop ", m.confirmName, "? Conversation kept: Enter resumes it.", w)), w)
+			return clip(sBold.Render(confirmNameWithHint("Stop ", m.confirmName, "? Conversation kept.", stopConfirmHint, w)), w)
 		}
 		return clip(sBold.Render(confirmName("Stop worker ", m.confirmName, "?", w)), w)
 	case modeDefectNote:

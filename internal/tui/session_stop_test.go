@@ -28,7 +28,7 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 		// The key line changes; every other row stays put.
 		joined := strings.Join(strings.Fields(view), " ")
 		name := "tenebrae-53"
-		want := strings.Join(strings.Fields("Stop "+name+"? Conversation kept: Enter resumes it."+confirmSuffix), " ")
+		want := strings.Join(strings.Fields("Stop "+name+"? Conversation kept.  enter/y: stop · esc/n: keep"), " ")
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing confirm %q:\n%s", want, view)
 		}
@@ -65,5 +65,26 @@ func TestStopOwnerSessionCancelAndRefusal(t *testing.T) {
 	m = finish(t, m, cmd)
 	if !m.notice.err || m.notice.text != "Not stopped: tenebrae-53 runs in your terminal on Mac: end it there" {
 		t.Fatalf("refusal: %+v", m.notice)
+	}
+}
+
+func TestStopExitedClaudeConfirmation(t *testing.T) {
+	m, _ := workerModel(80, 24)
+	id := "s_0000000000000001"
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == id {
+			m.snap.Agents[i].Status = "exited"
+			m.snap.Agents[i].Mode = "background"
+		}
+	}
+	m = selectID(m, id)
+	m, _ = press(m, keyRune("x"))
+	// Even a long name must leave the action keys readable.
+	m.confirmName = strings.Repeat("procurement", 12)
+	for _, width := range []int{40, 80, 120} {
+		line := ansi.Strip(m.helpLine(width))
+		if !strings.HasSuffix(line, "enter/y: stop · esc/n: keep") || strings.Contains(strings.ToLower(line), "resume") {
+			t.Fatalf("misleading stop confirmation at %d columns: %q", width, line)
+		}
 	}
 }
