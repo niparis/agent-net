@@ -235,14 +235,14 @@ func (s *Store) toolToggleAssignment(p protocol.ToolToggleRequest, validate bool
 		}
 		if len(a.Projects) == 0 {
 			a.Scope = "uninstalled"
-		} else if len(a.Projects) == len(row.Projects) && row.NewProjects {
-			a.Scope = "global"
-			a.Projects = nil
 		}
 		return normalizeAssignment(a)
 	}
 	return protocol.ToolAssignment{}, errors.New("skill item not found")
 }
+
+type skillToggleKey struct{}
+type standingProjectsKey struct{}
 
 func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, actor string) (out protocol.ToolPlan, err error) {
 	start := time.Now()
@@ -255,6 +255,7 @@ func (g *Gateway) toggleTool(ctx context.Context, p protocol.ToolToggleRequest, 
 	if _, e := g.refreshToolObservations(ctx); e != nil {
 		return protocol.ToolPlan{}, e
 	}
+	ctx = context.WithValue(ctx, skillToggleKey{}, p)
 	if group, ok, e := g.toggleSkillGroup(ctx, p, actor); ok || e != nil {
 		return group, e
 	}
@@ -393,7 +394,37 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 		if len(unseen) == 0 {
 			continue
 		}
+		allUnseen := unseen
 		if row.NewProjects && a.Scope == "projects" {
+			// Observed project copies can outlive their registered project. Do not
+			// let one stale name prevent placement in all the other projects.
+			tx, e := g.store.db.Begin()
+			if e != nil {
+				return e
+			}
+			placeable := func(names []string) ([]string, error) {
+				var out []string
+				for _, name := range names {
+					known, e := g.store.projectKnownTx(tx, name)
+					if e != nil {
+						return nil, e
+					}
+					if !known {
+						g.logLine("skills.standing_choice.skipped", "item", row.Item, "project", name, "reason", "project is not known")
+						continue
+					}
+					out = append(out, name)
+				}
+				return out, nil
+			}
+			a.Projects, e = placeable(a.Projects)
+			if e == nil {
+				unseen, e = placeable(unseen)
+			}
+			tx.Rollback()
+			if e != nil {
+				return e
+			}
 			for _, name := range unseen {
 				exists := false
 				for _, p := range a.Projects {
@@ -404,10 +435,27 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 				}
 			}
 			// Keep project placement here: this standing choice only adds projects.
+			if len(unseen) == 0 {
+				for _, name := range allUnseen {
+					if _, err = g.store.db.Exec(`INSERT OR IGNORE INTO tool_project_seen(item,project) VALUES(?,?)`, row.Item, name); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			if g.onStandingPlan != nil {
 				g.onStandingPlan(row.Item, unseen)
 			}
-			plan, e := g.planTool(ctx, protocol.ToolPlanRequest{Item: row.Item, Target: a}, "standing choice")
+			planCtx := context.WithValue(ctx, standingProjectsKey{}, append([]string(nil), unseen...))
+			plan, e := g.planTool(planCtx, protocol.ToolPlanRequest{Item: row.Item, Target: a}, "standing choice")
+			if e == nil {
+				for _, target := range plan.Targets {
+					if target.NodeID == "" && (target.Action == "import" || target.Action == "verify") && target.Conflict != "" {
+						e = errors.New(target.Conflict)
+						break
+					}
+				}
+			}
 			if e == nil {
 				_, e = g.applyTool(ctx, plan.ID, "standing choice")
 			}
@@ -418,7 +466,7 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 				}
 			}
 		}
-		for _, name := range unseen {
+		for _, name := range allUnseen {
 			if _, err = g.store.db.Exec(`INSERT OR IGNORE INTO tool_project_seen(item,project) VALUES(?,?)`, row.Item, name); err != nil {
 				return err
 			}
