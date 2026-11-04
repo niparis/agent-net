@@ -413,6 +413,7 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 		by, reportedBy, model       string
 		family, independent         string
 	}{
+		{"the author", r.a, r.caller, r.worker, r.worker, r.caller, "claude-opus-5-5", "anthropic", protocol.IndependentNone},
 		{"the reporter itself as done_by", r.a, r.caller, r.caller, r.caller, "", "claude-opus-5-5", "anthropic", protocol.IndependentSession},
 		{"a review worker of the caller", r.a, r.caller, r.reviewer, r.reviewer, r.caller, "gpt-5.5", "openai", protocol.IndependentFamily},
 	} {
@@ -424,6 +425,21 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 			t.Errorf("%s: evidence %+v", tc.name, e)
 		}
 	}
+	// Unrelated sessions cannot be named as done_by; test their classification
+	// with the same author and session metadata directly.
+	origin := r.get(id).Change.Origin
+	for _, tc := range []struct{ name, session, model, family, independent string }{
+		{"another Anthropic model", r.sonnet, "claude-sonnet-5-5", "anthropic", protocol.IndependentSession},
+		{"another maker", r.deepseek, "deepseek/deepseek-v4-pro", "deepseek", protocol.IndependentFamily},
+	} {
+		maker, ok, err := r.s.deliverySession(tc.session)
+		if err != nil || !ok || maker.model != tc.model || maker.family() != tc.family {
+			t.Fatalf("%s: maker %+v, %v", tc.name, maker, err)
+		}
+		if got := protocol.IndependenceOf(origin, tc.session, maker.family()); got != tc.independent {
+			t.Errorf("%s: independence %s, want %s", tc.name, got, tc.independent)
+		}
+	}
 	// done_by must be a worker the reporter started.
 	for _, doneBy := range []string{r.deepseek, r.worker + "x"} {
 		if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepReview}, Result: protocol.StepResultPass, Commit: commitA, DoneBy: doneBy}); err == nil {
@@ -432,8 +448,8 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 	}
 	// The review step needs another maker: only the latest such pass counts.
 	v := r.get(id)
-	if len(v.Evidence) != 2 {
-		t.Fatalf("evidence %d, want 2", len(v.Evidence))
+	if len(v.Evidence) != 3 {
+		t.Fatalf("evidence %d, want 3", len(v.Evidence))
 	}
 	for _, st := range v.Steps {
 		if st.Step == protocol.StepReview && (st.State != protocol.StepStatePassed || st.Evidence == nil || st.Evidence.Fields[protocol.FieldIndependent] != protocol.IndependentFamily) {

@@ -1404,7 +1404,8 @@ const (
 )
 
 type DeliveryNeedsPushRequest struct {
-	Project string `json:"project"`
+	Project         string `json:"project"`
+	CallerSessionID string `json:"caller_session_id,omitempty"`
 }
 
 type DeliveryNeedsPushResult struct {

@@ -172,7 +172,7 @@ func TestDeliveryRemoteCallerRequiresPush(t *testing.T) {
 	if _, err := deliveryCall[protocol.ChangeSubmitResult](r, r.a, protocol.FrameChangeSubmit, q); err != nil {
 		t.Fatal(err)
 	}
-	needs, err := r.s.DeliveryNeedsPush("demo", r.a)
+	needs, err := r.s.DeliveryNeedsPush("demo", r.a, callerB)
 	if err != nil {
 		t.Fatal(err)
 	}

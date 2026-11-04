@@ -292,6 +292,7 @@ func TestHandbackWithAnOldGatewaySkipsTheRecord(t *testing.T) {
 // Any other error does not fail the hand-back: the notice carries one line.
 func TestHandbackDeliveryErrorIsOneNoticeLine(t *testing.T) {
 	f := &fakeDeliveryGateway{sent: map[string][]json.RawMessage{}, answers: map[string]func(json.RawMessage) (any, error){}}
+	f.answer(protocol.FrameDeliveryNeedsPush, func(json.RawMessage) (any, error) { return protocol.DeliveryNeedsPushResult{}, nil })
 	f.answer(protocol.FrameChangeSubmit, func(json.RawMessage) (any, error) {
 		return nil, errors.New("the store is full")
 	})
@@ -305,6 +306,14 @@ func TestHandbackDeliveryErrorIsOneNoticeLine(t *testing.T) {
 	}
 	if !strings.Contains(n.Body, "status: done") {
 		t.Errorf("the hand-back did not go through:\n%s", n.Body)
+	}
+	pushFrames := f.frames(protocol.FrameDeliveryNeedsPush)
+	if len(pushFrames) != 1 {
+		t.Fatalf("push frames: %d", len(pushFrames))
+	}
+	var push map[string]any
+	if err := json.Unmarshal(pushFrames[0], &push); err != nil || push["caller_session_id"] != callerID {
+		t.Fatalf("push request: %s, %v", pushFrames[0], err)
 	}
 	// What the daemon sent: the worker's branch, the full head, its origin.
 	frames := f.frames(protocol.FrameChangeSubmit)

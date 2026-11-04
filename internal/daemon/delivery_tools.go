@@ -407,7 +407,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	}
 	var pushProblem string
 	var plan protocol.DeliveryNeedsPushResult
-	if err := d.deliveryCall(ctx, protocol.FrameDeliveryNeedsPush, protocol.DeliveryNeedsPushRequest{Project: project}, &plan); err != nil {
+	if err := d.deliveryCall(ctx, protocol.FrameDeliveryNeedsPush, protocol.DeliveryNeedsPushRequest{Project: project, CallerSessionID: owner}, &plan); err != nil {
 		if !errors.Is(err, errNoDeliveryGateway) {
 			pushProblem = "could not check whether a remote step owner needs the branch"
 		}

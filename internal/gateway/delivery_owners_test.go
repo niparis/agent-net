@@ -581,6 +581,24 @@ func TestDeliveryCallerTaskInSharedPipeline(t *testing.T) {
 
 func TestDeliveryPushPlanFindsRemoteOwner(t *testing.T) {
 	r := newDeliveryRig(t)
+	remote, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "remote-caller", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := func(machine, caller string, want bool) {
+		t.Helper()
+		q := map[string]string{"project": "demo"}
+		if caller != "" {
+			q["caller_session_id"] = caller
+		}
+		got, err := deliveryCall[protocol.DeliveryNeedsPushResult](r, machine, protocol.FrameDeliveryNeedsPush, q)
+		if err != nil || got.NeedsPush != want {
+			t.Fatalf("machine %s caller %s: got %+v, %v, want %t", machine, caller, got, err, want)
+		}
+	}
+	plan(r.a, r.caller, false) // Remote unrelated project sessions do not own this worker.
+	plan(r.a, remote, true)
+	plan(r.a, "", false) // Older daemons only check node owners.
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
 		t.Fatal(err)
 	}
@@ -590,14 +608,9 @@ func TestDeliveryPushPlanFindsRemoteOwner(t *testing.T) {
 	if _, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "reviewer", Repo: protocol.RepoInfo{Project: "reviewer"}}); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := r.s.DeliveryNeedsPush("demo", r.a)
-	if err != nil || !plan {
-		t.Fatalf("remote owner plan = %t, %v", plan, err)
-	}
-	plan, err = r.s.DeliveryNeedsPush("demo", r.b)
-	if err != nil || !plan {
-		t.Fatalf("remote caller plan = %t, %v", plan, err)
-	}
+	plan(r.a, r.caller, true)
+	plan(r.b, remote, false)
+	plan(r.a, "", true)
 }
 
 func TestDeliveryExpiredTaskNoticeCanBeSentAgain(t *testing.T) {

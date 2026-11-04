@@ -70,7 +70,7 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		var needed bool
-		needed, err = g.store.DeliveryNeedsPush(q.Project, nc.id)
+		needed, err = g.store.DeliveryNeedsPush(q.Project, nc.id, q.CallerSessionID)
 		data = protocol.DeliveryNeedsPushResult{NeedsPush: needed}
 	default:
 		return nil, false, nil
@@ -92,21 +92,21 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 
 // DeliveryNeedsPush reports whether an assigned step owner is known on a
 // different machine. It exposes no machine or session identities.
-func (s *Store) DeliveryNeedsPush(project, machine string) (bool, error) {
+func (s *Store) DeliveryNeedsPush(project, machine, caller string) (bool, error) {
 	p, err := s.deliveryPipeline(project)
 	if err != nil {
 		return false, err
 	}
-	for _, step := range p.Steps {
-		if step.Owner.Kind == protocol.OwnerCaller {
-			var remoteCaller int
-			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE COALESCE(NULLIF(s.repo_project,''),p.project,'')=? AND s.node_id<>? AND s.worker='' AND s.harness NOT IN ('owner','bot','cto'))`, project, machine).Scan(&remoteCaller); err != nil {
-				return false, err
-			}
-			if remoteCaller != 0 {
-				return true, nil
-			}
-			break
+	if caller != "" {
+		session, ok, err := s.deliverySession(caller)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, reject("unknown caller session %q", caller)
+		}
+		if session.node != machine {
+			return true, nil
 		}
 	}
 	seen := map[string]bool{}
