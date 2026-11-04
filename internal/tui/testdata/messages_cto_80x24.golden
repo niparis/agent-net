@@ -1,9 +1,9 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
-│   tenebrae-53 ↔ ended session · Which environment should… 1 message · 1m ago │
-│   ci-runner ↔ tenebrae-53 · Rollback is ready if we nee… 2 messages · 2m ago │
-│ ▸ CTO ↔ strategies · The deployment plan looks good.     2 messages · 8m ago │
+│   tenebrae-53 ↔ ended session · Which environment should I use?   1m · 1 msg │
+│   ci-runner ↔ tenebrae-53 · Rollback is ready if we need it.     2m · 2 msgs │
+│ ▸ CTO ↔ strategies · The deployment plan looks good.             8m · 2 msgs │
 │ 1 system event                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮

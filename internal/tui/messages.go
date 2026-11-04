@@ -258,6 +258,11 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		fromName = m.ctoTitle()
 	}
 	toName = m.partyName(to, toName)
+	if m.width <= 80 {
+		// Two long peer names leave no room for the preview at 80 columns.
+		fromName = ansi.Truncate(fromName, 14, "…")
+		toName = ansi.Truncate(toName, 14, "…")
+	}
 	names := fromName + " ↔ " + toName
 	age := m.now().Sub(c.at)
 	if age < 0 {
@@ -267,7 +272,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	ageText := strings.TrimSuffix(age.String(), "0s")
 	if age < time.Minute {
 		ageText = "now"
-	} else {
+	} else if m.width > 80 {
 		ageText += " ago"
 	}
 	lead := "  "
@@ -284,6 +289,13 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		messageWord = "message"
 	}
 	suffix := fmt.Sprintf("%d %s · %s", count, messageWord, ageText)
+	if m.width <= 80 {
+		messageWord = "msgs"
+		if count == 1 {
+			messageWord = "msg"
+		}
+		suffix = fmt.Sprintf("%s · %d %s", ageText, count, messageWord)
+	}
 	marker := ""
 	if ownerInstruction {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("you→ ")
