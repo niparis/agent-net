@@ -287,7 +287,8 @@ func (w *workerNode) workerStopped(t *testing.T, g *testGateway, reason string) 
 	})
 }
 
-var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
+// Fake workers need no production-length grace period before SIGKILL.
+var shortSet = WorkerSettings{KillGrace: 100 * time.Millisecond, Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
 
 // ---- the lifecycle ----
 
@@ -523,7 +524,7 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	end := time.Now().Add(2500 * time.Millisecond)
 	for time.Now().Before(end) {
 		w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "ping"})
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 0 {
 		t.Fatalf("a worker that was talked to ended: %v", evs)
