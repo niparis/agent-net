@@ -118,6 +118,8 @@ type FileRules struct {
 	// AllowSecrets sends a text file the secret scanner flagged. Only the
 	// owner sets it.
 	AllowSecrets bool
+	// ConfineSymlinks keeps each path within the root it was named under.
+	ConfineSymlinks bool
 }
 
 // credentialPaths are the folders and files under the home folder that hold
@@ -243,6 +245,11 @@ func checkSendPath(p string, rules FileRules) (real, name string, err error) {
 	if info.Size() > protocol.MaxFileBytes {
 		return "", "", fmt.Errorf("%s is %d MB; the limit is %d MB per file", p, info.Size()>>20, protocol.MaxFileBytes>>20)
 	}
+	if rules.ConfineSymlinks {
+		if err := checkFileRoot(clean, real, rules); err != nil {
+			return "", "", err
+		}
+	}
 	roots := resolvedRoots(rules.Roots)
 	for _, candidate := range []string{clean, real} {
 		if why := forbiddenPath(candidate, rules, roots); why != "" {
@@ -264,6 +271,36 @@ func checkSendPath(p string, rules FileRules) (real, name string, err error) {
 		return "", "", fmt.Errorf("%s is outside the session's project and /tmp; agent-net sends only files from there", p)
 	}
 	return real, name, nil
+}
+
+// checkFileRoot uses the most specific allowed root that contains the named
+// path, so a link in a project cannot escape to a different folder in /tmp.
+func checkFileRoot(clean, real string, rules FileRules) error {
+	temp := rules.Temp
+	if temp == nil {
+		temp = []string{"/tmp"}
+	}
+	var root string
+	for _, r := range append(append([]string{}, rules.Roots...), temp...) {
+		if !filepath.IsAbs(r) || filepath.Clean(r) == string(filepath.Separator) {
+			continue
+		}
+		r = filepath.Clean(r)
+		if within(clean, r) && len(r) > len(root) {
+			root = r
+		}
+	}
+	if root == "" {
+		return fmt.Errorf("%s is outside the session's project and /tmp", clean)
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("cannot resolve source folder %s: %w", root, err)
+	}
+	if !within(real, resolved) {
+		return fmt.Errorf("%s: a symlink points outside the source folder %s", clean, root)
+	}
+	return nil
 }
 
 // resolvedRoots resolves symlinks in the roots and drops empty ones and the

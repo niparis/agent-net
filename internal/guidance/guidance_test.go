@@ -215,3 +215,12 @@ func TestWorkerHandbackGuidanceUsesFixedToolAndKeepsCustomText(t *testing.T) {
 		t.Fatalf("tool was not rendered: %s", got)
 	}
 }
+
+func TestGuidanceNamesMCPFileSend(t *testing.T) {
+	for _, variant := range []string{Claude, Other, Combined} {
+		b := Block(variant)
+		if !strings.Contains(b, "agent_file_send") || !strings.Contains(b, "absolute paths") {
+			t.Errorf("%s block lacks file send guidance", variant)
+		}
+	}
+}

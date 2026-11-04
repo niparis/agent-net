@@ -40,6 +40,10 @@ var pluginMethods = map[string]string{
 func PluginTools() ([]PluginTool, error) {
 	var out []PluginTool
 	for _, tool := range Tools {
+		// File sending is available through MCP only in this layer.
+		if tool.Name == "agent_file_send" {
+			continue
+		}
 		var roles []Role
 		for _, role := range tool.Roles {
 			if role == RoleAgent || role == RoleWorker {

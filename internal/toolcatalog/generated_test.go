@@ -36,7 +36,7 @@ func TestGeneratedPluginCatalogsAreCurrent(t *testing.T) {
 		for _, role := range []Role{RoleAgent, RoleWorker} {
 			var wantNames, gotNames []string
 			for _, tool := range ForRole(role) {
-				if role == RoleAgent || hasRole(tool.Roles, RoleWorker) {
+				if tool.Name != "agent_file_send" && (role == RoleAgent || hasRole(tool.Roles, RoleWorker)) {
 					wantNames = append(wantNames, tool.Name)
 				}
 			}
