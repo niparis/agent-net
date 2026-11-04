@@ -354,7 +354,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
-		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display())}
+		Permissions: ans.Permissions, OSSandbox: ans.OSSandbox, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display())}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil
@@ -366,7 +366,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	}
 	charter := d.charterBrief(ctx, ans.Project)
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithSettings(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, d.SettingsSnapshot())})
+		Body: protocol.WorkerTaskBodyOS(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot())})
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
 	}

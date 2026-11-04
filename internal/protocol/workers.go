@@ -232,6 +232,9 @@ type WorkerInfo struct {
 	// Permissions is the level the worker was started with (decision 0020):
 	// sandboxed, no-network or read-only. Only Codex workers apply it today.
 	Permissions string `json:"permissions,omitempty"`
+	// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
+	// (docs/design/worker-os-sandbox.md).
+	OSSandbox string `json:"os_sandbox,omitempty"`
 	// Continue counts the messages the caller sent after a hand-back with
 	// complete:no; Fix counts those after a hand-back with complete:yes.
 	Continue int `json:"continue,omitempty"`
@@ -318,6 +321,9 @@ type (
 		MachineNote string `json:"machine_note,omitempty"`
 		// Permissions is the worker permission level of the project.
 		Permissions string `json:"permissions,omitempty"`
+		// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
+		// when it runs without one.
+		OSSandbox string `json:"os_sandbox,omitempty"`
 		// Track and Playbooks are the gateway's record for the chosen harness
 		// and model, and the fresh notes about it (decision 0022).
 		Track     *TrackRecord   `json:"track,omitempty"`
@@ -385,6 +391,8 @@ type (
 		QueueID  string `json:"queue_id,omitempty"`
 		Position int    `json:"position,omitempty"`
 		Reason   string `json:"reason,omitempty"`
+		// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or "".
+		OSSandbox string `json:"os_sandbox,omitempty"`
 	}
 	// WorkerNotStarted is "worker.not_started", machine to gateway: a queued
 	// start ended without a worker. The gateway records an event for the feed.
@@ -411,6 +419,8 @@ type (
 		Branch      string `json:"branch,omitempty"`
 		// ProjectRules is the project's .agent-net/worker.md text, for the brief.
 		ProjectRules string `json:"project_rules,omitempty"`
+		// OSSandbox is the OS wrapper the worker runs in, for the brief.
+		OSSandbox string `json:"os_sandbox,omitempty"`
 	}
 	// WorkerStopFrame is "worker.stop".
 	WorkerStopFrame struct {
@@ -549,8 +559,28 @@ func WorkerTaskBodyWithRules(harness, task, worktree, branch, rules string) stri
 	return WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, "")
 }
 
-// WorkerPermissionsText describes the effective project level.
+// WorkerPermissionsText describes the effective project level of a worker
+// that runs without the OS sandbox.
 func WorkerPermissionsText(level, harness string) string {
+	return WorkerPermissionsLine(level, harness, "")
+}
+
+// WorkerEnforcer names what enforces a worker's level: the OS sandbox the
+// worker runs in (osSandbox, such as "bubblewrap"), the harness's own sandbox
+// ("codex", or "agy" except for no-network), or "" when nothing does yet.
+func WorkerEnforcer(level, harness, osSandbox string) string {
+	switch {
+	case osSandbox != "":
+		return osSandbox
+	case harness == "codex", harness == "agy" && WorkerPermissionsOrDefault(level) != WorkersNoNetwork:
+		return harness
+	}
+	return ""
+}
+
+// WorkerPermissionsLine describes the effective project level, and what
+// enforces it (docs/design/worker-os-sandbox.md).
+func WorkerPermissionsLine(level, harness, osSandbox string) string {
 	level = WorkerPermissionsOrDefault(level)
 	detail := "writes only in its worktree, network on"
 	switch level {
@@ -560,7 +590,10 @@ func WorkerPermissionsText(level, harness string) string {
 		detail = "no writes"
 	}
 	text := "permissions: " + level + " (" + detail + ")"
-	if harness != "codex" && !(harness == "agy" && level != WorkersNoNetwork) {
+	switch {
+	case osSandbox != "":
+		text += " (sandboxed by " + osSandbox + ")"
+	case WorkerEnforcer(level, harness, "") == "":
 		text += " (enforced for Codex only for now)"
 	}
 	return text
@@ -578,6 +611,12 @@ func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, 
 }
 
 func WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter, level string, snap settings.Snapshot) string {
+	return WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, "", snap)
+}
+
+// WorkerTaskBodyOS is WorkerTaskBodyWithSettings for a worker that may run in
+// the OS sandbox: osSandbox names the wrapper, "" when there is none.
+func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot) string {
 	b := WorkerPreamble
 	switch harness {
 	case "codex":
@@ -587,12 +626,16 @@ func WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter,
 	case "agy":
 		b += "\n- " + snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
 	}
-	b += "\n- " + WorkerPermissionsText(level, harness)
+	b += "\n- " + WorkerPermissionsLine(level, harness, osSandbox)
 	switch WorkerPermissionsOrDefault(level) {
 	case WorkersReadOnly:
 		b += ": you cannot write files; report findings only"
 	case WorkersNoNetwork:
 		b += ": no network: git fetch, package installs and web calls will fail"
+	default:
+		if osSandbox != "" {
+			b += ": writes outside your worktree and /tmp fail (read-only file system)"
+		}
 	}
 	if worktree != "" {
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
@@ -763,12 +806,14 @@ func ValidHandbackStatus(s string) bool {
 // measures them; the worker does not write them.
 type WorkerNotice struct {
 	Permissions string
-	Status      string
-	Session     string
-	Harness     string
-	Model       string
-	Project     string
-	Host        string
+	// OSSandbox is the OS wrapper the worker ran in ("bubblewrap"), or "".
+	OSSandbox string
+	Status    string
+	Session   string
+	Harness   string
+	Model     string
+	Project   string
+	Host      string
 	// Title is the worker's short title. Empty for an older record.
 	Title   string
 	RunTime time.Duration
@@ -823,7 +868,7 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		b.WriteString(" · " + t)
 	}
 	b.WriteString("\nmodel: " + ParseModelSelection(n.Harness, "", n.Model, "").Display() + "\n")
-	b.WriteString(WorkerPermissionsText(n.Permissions, n.Harness) + "\n")
+	b.WriteString(WorkerPermissionsLine(n.Permissions, n.Harness, n.OSSandbox) + "\n")
 	b.WriteString("run time: " + n.RunTime.Round(time.Second).String() + "\n")
 	if n.Tokens != "" {
 		b.WriteString("tokens: " + n.Tokens + "\n")

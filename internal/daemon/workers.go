@@ -286,6 +286,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	// encoding (noteAsk hands it out), so never write into it: replace it.
 	next := *w.info
 	next.ContextTokens, next.ContextLimit, next.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
+	next.OSSandbox = w.osSandbox
 	next.Continue, next.Fix = w.continueCount, w.fixCount
 	next.AutoContinue = w.autoContinueCount
 	next.DifficultyAsked, next.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
@@ -676,19 +677,19 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				return
 			}
 			cctx, cancel := context.WithTimeout(d.ctoCtx, 30*time.Second)
-			_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, FromCTO: l.FromCTO})
+			_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, OSSandbox: out.OSSandbox, FromCTO: l.FromCTO})
 			cancel()
 			if err != nil {
 				d.endWorker(w, protocol.StopStartFails)
 				d.notStarted(d.ctoCtx, e, "the worker started, but its task could not be sent: "+err.Error())
 				return
 			}
-			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt)) + protocol.WorkerPermissionsText(l.Permissions, l.Harness) + "\n"
+			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt)) + protocol.WorkerPermissionsLine(l.Permissions, l.Harness, out.OSSandbox) + "\n"
 			if _, err := d.send(d.ctoCtx, protocol.MsgSend{Sender: out.SessionID, Recipient: l.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 				d.Logf("worker %s: started notice: %v", w.id, err)
 			}
 		}()
-		return protocol.WorkerLaunched{Starting: true, SessionID: sid, WorkerID: w.id, Worktree: worktree, Branch: branch, ProjectRules: rules}, nil
+		return protocol.WorkerLaunched{Starting: true, SessionID: sid, WorkerID: w.id, Worktree: worktree, Branch: branch, ProjectRules: rules, OSSandbox: w.osSandbox}, nil
 	}
 	return d.finishWorkerStart(ctx, l, set, w, rules)
 }
@@ -719,7 +720,7 @@ func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch,
 	d.recordWorkerAssessment(w, l.Assessment)
 	d.Logf("worker.started worker=%s session=%s project=%s path=%s harness=%s model=%s owner=%s pid=%d worktree=%s branch=%s toolchains=%q",
 		w.id, sid, w.project, w.path, w.harness, w.model, w.owner, w.pid, wt, br, toolchains)
-	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br, ProjectRules: rules}, nil
+	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br, ProjectRules: rules, OSSandbox: w.osSandbox}, nil
 }
 
 // spawnWorker starts the process for w in its own process group, in the project

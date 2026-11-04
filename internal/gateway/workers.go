@@ -708,7 +708,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	return protocol.WorkerStartAnswer{Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
-		Track: track, Playbooks: books}, nil
+		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books}, nil
 }
 
 // recordWorkerPickerNote stores the start's judge result and the picker's
@@ -1098,7 +1098,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	return protocol.WorkerStartAnswer{Starting: c.Starting, SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
 		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model, ModelNote: modelNote, Title: c.Title,
 		Worktree: c.Worktree, Branch: c.Branch, ProjectRules: c.ProjectRules, Task: c.Task,
-		Permissions: old.Worker.Permissions, Track: c.Track, Playbooks: c.Playbooks}, nil
+		Permissions: old.Worker.Permissions, OSSandbox: c.OSSandbox, Track: c.Track, Playbooks: c.Playbooks}, nil
 }
 
 // mostHeadroom picks, among the machines that hold the project, the one with

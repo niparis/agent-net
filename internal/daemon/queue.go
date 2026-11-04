@@ -159,7 +159,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: e.Owner, SessionID: out.SessionID,
 		Harness: e.Harness, Project: e.Project, Task: e.Task, Title: e.Title, Worktree: out.Worktree, Branch: out.Branch,
-		ProjectRules: out.ProjectRules, Permissions: e.Permissions, FromCTO: e.FromCTO})
+		ProjectRules: out.ProjectRules, Permissions: e.Permissions, OSSandbox: out.OSSandbox, FromCTO: e.FromCTO})
 	cancel()
 	if err != nil {
 		if w := d.workerBySession(out.SessionID); w != nil {
@@ -169,7 +169,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 		return
 	}
 	if w := d.workerBySession(out.SessionID); w != nil {
-		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Title) + protocol.WorkerPermissionsText(e.Permissions, e.Harness) + "\n"
+		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, out.OSSandbox) + "\n"
 		if _, err := d.send(ctx, protocol.MsgSend{Sender: out.SessionID, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 			d.Logf("worker %s: started notice: %v", w.id, err)
 		}
@@ -204,7 +204,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 	}
 	charter := d.charterBrief(ctx, p.Project)
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithSettings(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions, d.SettingsSnapshot())})
+		Body: protocol.WorkerTaskBodyOS(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions, p.OSSandbox, d.SettingsSnapshot())})
 	return err
 }
 

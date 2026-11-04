@@ -178,8 +178,11 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	if a.Worker != nil && a.Worker.Permissions != "" {
 		note := ""
-		if a.Harness != "codex" {
-			note = " (not enforced yet: Codex only)"
+		switch {
+		case a.Worker.OSSandbox != "":
+			note = " (sandboxed by " + a.Worker.OSSandbox + ")"
+		case protocol.WorkerEnforcer(a.Worker.Permissions, a.Harness, "") == "":
+			note = " (not enforced yet)"
 		}
 		out = append(out, kv("sandbox", a.Worker.Permissions+note))
 	}

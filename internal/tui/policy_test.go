@@ -325,6 +325,40 @@ func TestDetailShowsWorkerPermissions(t *testing.T) {
 	}
 }
 
+// A worker in the OS sandbox shows the wrapper on its sandbox line, and an
+// Antigravity worker (its own sandbox) shows no "not enforced" note.
+func TestDetailShowsWorkerOSSandbox(t *testing.T) {
+	m, src := workerModel(140, 50)
+	var worker protocol.AgentView
+	for _, a := range src.snap.Agents {
+		if a.Worker != nil {
+			worker = a
+		}
+	}
+	if worker.SessionID == "" {
+		t.Fatal("the fixture has no worker")
+	}
+	for _, tc := range []struct{ harness, os, want, not string }{
+		{"pi", "bubblewrap", "sandboxed (sandboxed by bubblewrap)", "not enforced"},
+		{"pi", "", "sandboxed (not enforced yet)", "bubblewrap"},
+		{"agy", "", "sandboxed", "not enforced"},
+	} {
+		for i := range src.snap.Agents {
+			if src.snap.Agents[i].SessionID == worker.SessionID {
+				src.snap.Agents[i].Harness = tc.harness
+				src.snap.Agents[i].Worker.Permissions = protocol.WorkersSandboxed
+				src.snap.Agents[i].Worker.OSSandbox = tc.os
+			}
+		}
+		m = refresh(m, src)
+		m = selectID(m, worker.SessionID)
+		s := detailText(m)
+		if !strings.Contains(s, tc.want) || strings.Contains(s, tc.not) {
+			t.Errorf("%s %q: want %q and not %q in:\n%s", tc.harness, tc.os, tc.want, tc.not, s)
+		}
+	}
+}
+
 // The form starts from the project's workers level, also when the session has
 // its own policy, so a save at project scope does not reset it.
 func TestPolicyFormLoadsTheProjectWorkersLevel(t *testing.T) {
