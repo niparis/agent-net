@@ -158,7 +158,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	}
 	waited := time.Since(e.QueuedAt)
 	d.Logf("worker.dequeued queue=%s session=%s project=%s harness=%s owner=%s waited=%s", e.ID, out.SessionID, e.Project, e.Harness, e.Owner, waited.Round(time.Second))
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, d.queuedTaskTimeout())
 	_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: e.Owner, SessionID: out.SessionID,
 		Harness: e.Harness, Project: e.Project, Task: e.Task, Title: e.Title, Worktree: out.Worktree, Branch: out.Branch,
 		ProjectRules: out.ProjectRules, Permissions: e.Permissions, OSSandbox: out.OSSandbox, FromCTO: e.FromCTO})
@@ -265,4 +265,11 @@ func (d *Daemon) releaseWorkerBase(base string) {
 	} else {
 		d.startingBases[base]--
 	}
+}
+
+func (d *Daemon) queuedTaskTimeout() time.Duration {
+	if d.cfg.testQueuedTaskTimeout > 0 {
+		return d.cfg.testQueuedTaskTimeout
+	}
+	return 30 * time.Second
 }

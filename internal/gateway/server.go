@@ -1760,7 +1760,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		// A message from its owner starts an ended worker again, before it is
 		// stored, so a refusal reaches the sender (W10).
-		if err := g.resumeEndedWorker(ctx, nc, p); err != nil {
+		if err := func() error {
+			if isWorkerTask(p) {
+				return nil
+			}
+			return g.resumeEndedWorker(ctx, nc, p)
+		}(); err != nil {
 			g.notifyResumeRefusal(ctx, p, err)
 			var rj Rejection
 			if errors.As(err, &rj) {
