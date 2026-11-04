@@ -481,7 +481,7 @@ test('an outdated panel warns even without workers and clears for an older binar
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const band = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
-  expect(await band.find({ type: 'Text', text: /agent-net panel is out of date: restart Claude Code to load the new one/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /agent-net panel is out of date: run \/reload-plugins or restart Claude Code/ })).toBeDefined()
   await band.unmount()
   payload = { workers: [] } as typeof payload
   await clock.advance(3000)

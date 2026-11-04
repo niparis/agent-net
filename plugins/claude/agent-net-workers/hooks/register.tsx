@@ -349,7 +349,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor wrap="truncate-end">{rule}</Text>
-        {outdated && <Text dimColor>agent-net panel is out of date: restart Claude Code to load the new one</Text>}
+        {outdated && <Text dimColor>agent-net panel is out of date: run /reload-plugins or restart Claude Code</Text>}
         {formatWorkerRows(workers, now, columns).map(row => (
           <Box key={row.sessionId}>
             <Text wrap="truncate-end">

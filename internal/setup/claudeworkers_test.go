@@ -120,7 +120,7 @@ func TestClaudeWorkersModUpgradeRefreshesAndAsksForReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo})
-	for _, want := range []string{"claude workers mod updated (plugin agent-net-workers@agent-net)", "hint: restart open Claude Code sessions to load the new panel"} {
+	for _, want := range []string{"claude workers mod updated (plugin agent-net-workers@agent-net)", "hint: open Claude Code sessions: run /reload-plugins or restart them to load the new panel"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
