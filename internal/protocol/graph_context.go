@@ -78,7 +78,7 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 		needsDeployApproval := false
 		for _, edge := range g.Edges {
 			if (edge.Kind == "deploys" || edge.Kind == "delivery_deploys") && edge.From == name {
-				if target := nodeNamed(g, edge.To); target != nil && NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name).DeployRule == DeployOwner {
+				if target := nodeNamed(g, edge.To); target != nil && NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name).DeployRule == DeployOwner || target != nil && NodeDefaultsWithSettings(target.Charter.Maturity, target.Settings, snap, target.Name).DeployRule == ShorthandCustom {
 					needsDeployApproval = true
 					break
 				}
@@ -149,6 +149,9 @@ func DeliveryProjectOwners(g Graph, project string) string {
 		step := DeliveryEdgeStep(edge.Kind)
 		if step != "" && edge.Kind != "deploys" && edge.To == project {
 			label := DeliveryEdgeRef(edge.Kind).String()
+			if DeliveryOwnerFromSource(edge.From).Kind == OwnerNone {
+				continue
+			}
 			owner := edge.From
 			if assignment := DeliveryOwnerFromSource(edge.From); assignment.Kind != OwnerNode {
 				owner = assignment.String()

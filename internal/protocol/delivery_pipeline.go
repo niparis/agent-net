@@ -1254,7 +1254,7 @@ func PipelineFromShorthand(tests, merge, deploy string) (Pipeline, error) {
 	case TestsSuite:
 		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldSuite: FieldAny}}
 	case TestsSuiteNewTests, TestsSuiteNewTestsReview:
-		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldTestsAdded: FieldYes}}
+		testReq = &Requirement{StepRef: StepRef{Step: StepTest}, Fields: map[string]string{FieldSuite: FieldAny, FieldTestsAdded: FieldYes}}
 		if tests == TestsSuiteNewTestsReview {
 			review.RequiredFrom = ""
 			reviewReq.Fields = map[string]string{FieldFindingsOpen: "0"}

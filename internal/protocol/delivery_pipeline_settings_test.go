@@ -138,3 +138,32 @@ func TestPipelineSettingsResolveReviewRules(t *testing.T) {
 		t.Fatalf("review rule text = %q", text)
 	}
 }
+
+func TestMergeSuiteAndTestsAddedBothRequired(t *testing.T) {
+	snap := settings.Snapshot{DeliveryPipelineCutover: true, Values: []settings.Value{{Key: "delivery.pipeline.merge.requires", Level: "repo", Scope: "demo", Value: json.RawMessage(`["accept","review","test:suite","test:tests_added"]`)}}}
+	for _, canonical := range []bool{true, false} {
+		var p Pipeline
+		var err error
+		if canonical {
+			p, err = PipelineFromSettings(snap, "demo")
+		} else {
+			p, err = PipelineFromShorthand(TestsSuiteNewTests, MergeFull, DeployBrief)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, step := range p.Steps {
+			if step.Step == StepMerge {
+				for _, req := range step.Requires {
+					if req.Step == StepTest {
+						found = req.Fields[FieldSuite] == FieldAny && req.Fields[FieldTestsAdded] == FieldYes
+					}
+				}
+			}
+		}
+		if !found {
+			t.Errorf("canonical=%v: suite and tests_added must both be required: %+v", canonical, p)
+		}
+	}
+}

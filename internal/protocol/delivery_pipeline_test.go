@@ -143,7 +143,7 @@ func TestPipelineValidate(t *testing.T) {
 	}
 }
 
-// merge requires test(tests_added=yes) and review(findings_open=0): evidence
+// merge requires test(suite=*, tests_added=yes) and review(findings_open=0): evidence
 // counts only on the exact head commit and current revision, with the right
 // fields, and the latest result of a step wins.
 func TestReadyNeedsEvidenceOnTheExactCommit(t *testing.T) {
@@ -164,7 +164,7 @@ func TestReadyNeedsEvidenceOnTheExactCommit(t *testing.T) {
 	older := pass(c, refTest, 3, added)
 	older.Commit = commitB
 	ok, missing := p.Ready(refMerge, c, []Evidence{good[0], good[1], older})
-	if ok || !strings.Contains(strings.Join(missing, "; "), "test(tests_added=yes): no pass on aaaaaaaaaaaa") {
+	if ok || !strings.Contains(strings.Join(missing, "; "), "test(suite=*, tests_added=yes): no pass on aaaaaaaaaaaa") {
 		t.Fatalf("evidence on another commit counted: %v %v", ok, missing)
 	}
 
@@ -519,8 +519,8 @@ func TestShorthandTable(t *testing.T) {
 	}{
 		{TestsOptional, MergeFull, DeployBrief, "accept, review, approve for merge", OwnerNone, ""},
 		{TestsSuite, MergeDelegated, DeployAsk, "accept, review, test(suite=*), approve for merge", OwnerDelegate, OwnerDelegate},
-		{TestsSuiteNewTests, MergeAsk, DeployOwner, "accept, review, test(tests_added=yes), approve for merge", OwnerPerson, OwnerPerson},
-		{TestsSuiteNewTestsReview, MergeFull, DeployBrief, "accept, review(findings_open=0), test(tests_added=yes), approve for merge", OwnerNone, ""},
+		{TestsSuiteNewTests, MergeAsk, DeployOwner, "accept, review, test(suite=*, tests_added=yes), approve for merge", OwnerPerson, OwnerPerson},
+		{TestsSuiteNewTestsReview, MergeFull, DeployBrief, "accept, review(findings_open=0), test(suite=*, tests_added=yes), approve for merge", OwnerNone, ""},
 	}
 	for _, tc := range cases {
 		p, err := PipelineFromShorthand(tc.tests, tc.merge, tc.deploy)
@@ -601,7 +601,7 @@ func TestReportFields(t *testing.T) {
 		ref  StepRef
 		want []string
 	}{
-		{p, refTest, []string{FieldTestsAdded}},
+		{p, refTest, []string{FieldSuite, FieldTestsAdded}},
 		{p, refReview, []string{FieldFindingsOpen}},
 		{p, refMerge, []string{FieldMergedCommit}},
 		{p, refAccept, []string{}},

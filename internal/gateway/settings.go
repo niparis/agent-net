@@ -357,6 +357,16 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		if c.Level != "repo" || (alias != "delivery.merge_authority" && alias != "delivery.deploy_rule") {
 			continue
 		}
+		// Preserve explicit assignments when the underlying approver rule is unchanged.
+		oldRule, oldErr := before.Resolve(c.Key, settings.Where{Repo: c.Scope})
+		newSnap := settings.Snapshot{Maturity: before.Maturity, DeliveryPipelineCutover: true}
+		for a, v := range staged {
+			newSnap.Values = append(newSnap.Values, settings.Value{Key: a.key, Level: a.level, Scope: a.scope, Item: a.item, Value: v})
+		}
+		newRule, newErr := newSnap.Resolve(c.Key, settings.Where{Repo: c.Scope})
+		if oldErr == nil && newErr == nil && bytes.Equal(oldRule.Value, newRule.Value) {
+			continue
+		}
 		kind := "approves"
 		if alias == "delivery.deploy_rule" {
 			kind = "approves_deploy"
