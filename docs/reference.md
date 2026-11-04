@@ -242,6 +242,23 @@ tool name `cto_action`; a harness failure carries `cto_error`.
 Changing harness stops the previous runtime; the next send resumes the selected
 conversation. The CTO is a network session, not a worker.
 
+Once registered, the CTO is reachable while its host daemon is connected, even
+when no runtime is running. Its directory entry says `online: true`, with
+`status: dormant` and `availability: wakes on message` while asleep. A message
+from the owner, a peer, a bot or the phone starts the selected harness and is
+delivered to its saved conversation. Messages sent while the daemon is offline
+wait in the normal gateway queue. After a restart or upgrade, the host sync
+restores the same network identity without moving it to another machine. The
+first message starts OpenCode again or adopts a live Claude background job (and
+resumes the saved conversation if the job is gone). Claude may be reported as
+dormant until the new daemon adopts its job. The daemon does not stop the CTO
+for idleness; a harness switch, daemon shutdown or an external process exit can
+end supervision. A shutdown releases a live Claude job rather than killing it.
+
+The host daemon log records `cto.start`, `cto.stop` with a reason, `cto.wake`
+with a trigger, and `cto.crash` for unexpected exits. `cto.stop` on daemon
+shutdown with `action=release` means that the Claude job was left running.
+
 Each harness resumes its conversation with its own saved model. For OpenCode,
 the model is resolved against the local inventory. With no preference, the
 daemon tries GPT 6.1, Opus 5.5, then DeepSeek v4 Pro using the model resolver. If

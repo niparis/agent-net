@@ -224,3 +224,23 @@ func TestMachineGetTwoCategoriesRefused(t *testing.T) {
 		t.Fatalf("the daemon was called anyway: %+v", calls)
 	}
 }
+
+func TestCTOAvailabilityMatchesSessionOutputSchemas(t *testing.T) {
+	session := map[string]any{
+		"id": "s_cto", "name": "CTO", "kind": "agent", "machine": "test", "project": "", "harness": "cto", "model": "", "online": true,
+		"status": "dormant", "availability": "wakes on message", "task": "", "last_seen": "", "task_started": nil,
+	}
+	for _, tc := range []struct {
+		name   string
+		output any
+	}{
+		{"agent_sessions_find", map[string]any{"items": []any{session}, "total": 1}},
+		{"agent_session_get", map[string]any{"session": session}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := resolvedSchema(t, catalogToolT(t, tc.name).OutputSchema).Validate(tc.output); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

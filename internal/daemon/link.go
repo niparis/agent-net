@@ -335,6 +335,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	d.mu.Unlock()
 	d.Logf("connected to gateway")
+	d.scheduleCTOPresence()
 	if d.toolsWake != nil {
 		select {
 		case d.toolsWake <- struct{}{}:

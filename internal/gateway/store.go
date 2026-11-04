@@ -1530,6 +1530,12 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 		si.SessionID = id
 		out = append(out, si)
 	}
+	// The registered CTO belongs to this node even when its harness is asleep.
+	// A node disconnect marks it offline; its host sync makes it reachable again
+	// without allowing a different node to move the identity.
+	if _, err := tx.Exec(`UPDATE sessions SET online=1, status=CASE WHEN online=0 THEN 'dormant' ELSE status END, last_seen=? WHERE node_id=? AND harness='cto' AND id=(SELECT value FROM owner_settings WHERE key='cto_session')`, s.now().UnixNano(), nodeID); err != nil {
+		return nil, err
+	}
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 1 AND harness <> 'cto'`, nodeID)
 	if err != nil {
 		return nil, err
