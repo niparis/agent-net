@@ -502,7 +502,7 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	out := panel("Change", head, w, roleAccent)
 	roomForEvidence := max(room-len(head)-2, 1)
 	scroll := min(max(m.delivery.scroll, 0), max(len(lines)-roomForEvidence, 0))
-	view := messageFit(lines, min(roomForEvidence, len(lines)), min(roomForEvidence-1+scroll, max(len(lines)-1, 0)))
+	view := messageFit(lines, roomForEvidence, min(roomForEvidence-1+scroll, max(len(lines)-1, 0)))
 	title := "Evidence"
 	if len(ch.Steps) > 0 {
 		title = "Steps and evidence"

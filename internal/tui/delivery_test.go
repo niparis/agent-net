@@ -535,6 +535,15 @@ func TestDeliveryDetailUsesTheDisplayZone(t *testing.T) {
 	}
 }
 
+func TestDeliveryDetailFillsAvailableHeight(t *testing.T) {
+	m := deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 24)
+	ch := deliveryScenes()[2]
+	got := m.deliveryDetail(ch, nil, 80, 20)
+	if len(got) != 22 {
+		t.Fatalf("detail used %d rows, want 22 to fill the available area", len(got))
+	}
+}
+
 func TestDeliveryDetailMarksOldEvidenceAndHidesNothing(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 40))
 	m.delivery.row, m.delivery.detail = visibleRow(m, "c_3"), true

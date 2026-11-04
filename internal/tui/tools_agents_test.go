@@ -53,6 +53,18 @@ func TestToolsAgentsView(t *testing.T) {
 	}
 }
 
+func TestToolsAgentsProjectNamesFitAt80Columns(t *testing.T) {
+	m, _ := agentToolsFixture(80, 24)
+	m.tl.states = []protocol.ToolProjectState{{Projects: map[string]bool{"flood-warning": false, "homelab-prod": false}}}
+	m.tl.agentRow = 0
+	text := plain(m)
+	for _, project := range []string{"flood-warning", "homelab-prod"} {
+		if !strings.Contains(text, project) {
+			t.Errorf("project %q was truncated at 80 columns:\n%s", project, text)
+		}
+	}
+}
+
 func TestToolsAgentsPendingPlan(t *testing.T) {
 	m, s := agentToolsFixture(120, 34)
 	m = pressKey(m, "right")
