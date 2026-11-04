@@ -59,7 +59,7 @@ func TestConnectedAppsSocketPath(t *testing.T) {
 func TestConnectedAppsOperatorToGateway(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{}, nil)
-	db, err := sql.Open("sqlite", filepath.Join(g.dir, "gateway.db"))
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(g.dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
