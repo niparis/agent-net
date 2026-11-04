@@ -23,9 +23,9 @@ import (
 	"time"
 )
 
-// ReleasePublicKeyBase64 is the Ed25519 release verification key. Replace this
-// placeholder with the public key printed by scripts/release-key before release.
-const ReleasePublicKeyBase64 = "REPLACE_WITH_RELEASE_PUBLIC_KEY"
+// ReleasePublicKeyBase64 is the Ed25519 release verification key, made on
+// 2026-11-04. Rotation is described in RELEASING.md.
+const ReleasePublicKeyBase64 = "J97gBiIQ95ELGj3Rw7DXqndIwQZMogTR6A+l8K4F8AE="
 
 // releaseKey is private to this package so tests can use freshly generated keys.
 var releaseKey, _ = base64.StdEncoding.DecodeString(ReleasePublicKeyBase64)

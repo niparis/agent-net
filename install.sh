@@ -30,8 +30,8 @@ main() {
   set -eu
 
   REPO="niparis/agent-net"
-  # Replace this placeholder with the SSH public key printed by scripts/release-key.
-  RELEASE_SSH_PUBLIC_KEY="ssh-ed25519 REPLACE_WITH_RELEASE_SSH_PUBLIC_KEY"
+  # The release signing public key (SSH form). Rotation: see RELEASING.md.
+  RELEASE_SSH_PUBLIC_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICfe4AYiEPeRCxo90cOw16p3SMEGTKIE0egPpfCuBfAB"
   MODE=""
   FRESH=""
   PEER_FLAG=""
