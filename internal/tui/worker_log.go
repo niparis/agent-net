@@ -55,8 +55,13 @@ func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool, loc *time.Lo
 	if selected {
 		lead = "▸ "
 	}
-	// The model includes the harness's effort suffix already.
-	prefix := time.Unix(r.StartedAt, 0).In(loc).Format("01-02 15:04") + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), min(25, max(w/4, 6))) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
+	// Keep today's runs compact so the task title has room.
+	started := time.Unix(r.StartedAt, 0).In(loc)
+	dateFormat := "01-02 15:04"
+	if started.Format("2006-01-02") == time.Now().In(loc).Format("2006-01-02") {
+		dateFormat = "15:04"
+	}
+	prefix := started.Format(dateFormat) + "  " + cell(sanitize(firstNonEmpty(r.Model, "-")), min(12, max(w/7, 6))) + "  " + cell(sanitize(firstNonEmpty(r.Difficulty, "-")), min(10, max(w/8, 3))) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
 	status := r.Status
 	room := max(w-2-len(status)-1, 0)
 	line := lead + cell(sanitize(prefix+firstNonEmpty(r.Title, "-")), room) + " " + workerStatusStyle(status).Render(status)

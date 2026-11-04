@@ -305,6 +305,9 @@ func (m Model) titleLine(w int) string {
 	var tabs []string
 	count := m.waitingCount()
 	for i, name := range tabNames {
+		if count > 0 && w <= 80 && name == "Messages" {
+			name = "Msgs"
+		}
 		label := fmt.Sprintf("%d %s", i+1, name)
 		if i == inboxTab && count > 0 {
 			label += fmt.Sprintf(" (%d)", count)
@@ -417,9 +420,6 @@ func (m Model) titleLine(w int) string {
 		short := fmt.Sprintf("%d online", m.usage.counts.Online)
 		if ansi.StringWidth(left)+3+ansi.StringWidth(short) <= w {
 			return clip(left+" │ "+short, w)
-		}
-		if ansi.StringWidth(left)+1+ansi.StringWidth(short) <= w {
-			return clip(left+" "+short, w)
 		}
 	}
 	// Then drop the time, then say the same status in fewer words.
