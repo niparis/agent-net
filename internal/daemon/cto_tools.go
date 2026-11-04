@@ -54,7 +54,7 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 			text := ProposalToolResult(id)
 			message := fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)
 			if item.Call.Tool == "project_change" && item.Call.Action == "create" {
-				text = "Project proposal " + id + " is waiting for the owner's yes in the CTO chat. Show the one-line placement now."
+				text = "Project proposal " + id + " awaits the owner's approval in the dialog or Inbox."
 				var start protocol.SessionStartRequest
 				if json.Unmarshal(item.Call.Args, &start) == nil {
 					model := firstNonEmpty(start.Model, start.Harness)
@@ -115,11 +115,6 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 		return nil, errors.New("bad CTO dialog answer")
 	}
 	err := lc.d.proposalRunner().decide(ctx, q.ID, *q.Approve)
-	lc.d.mu.Lock()
-	if lc.d.ctoPendingProject == q.ID {
-		lc.d.ctoPendingProject = ""
-	}
-	lc.d.mu.Unlock()
 	if err != nil && err.Error() == "proposal is not open" {
 		return nil, err
 	}
@@ -139,41 +134,6 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 		}
 	}
 	return nil, err
-}
-
-// ctoOwnerProjectAnswer accepts only an owner message for the pending project.
-func (d *Daemon) ctoOwnerProjectAnswer(ctx context.Context, text string, owner bool) (string, bool, error) {
-	if !owner {
-		return "", false, nil
-	}
-	d.mu.Lock()
-	id := d.ctoPendingProject
-	d.ctoPendingProject = ""
-	d.mu.Unlock()
-	if id == "" || !strings.EqualFold(strings.TrimSpace(text), "yes") {
-		return "", false, nil
-	}
-	if err := d.proposalRunner().decide(ctx, id, true); err != nil {
-		if err.Error() == "proposal is not open" {
-			return "", false, nil
-		}
-		return "", true, err
-	}
-	items, err := d.proposalRunner().list()
-	if err != nil {
-		return "", true, err
-	}
-	for _, item := range items {
-		if item.ID != id {
-			continue
-		}
-		var start protocol.StartedSession
-		if item.Status == "applied" && json.Unmarshal(item.Result, &start) == nil && start.ID != "" {
-			return d.ctoProjectStartOutcome(ctx, start), true, nil
-		}
-		return item.Note, true, nil
-	}
-	return "", true, errors.New("project proposal not found")
 }
 
 // ctoProjectStartOutcome waits for the registered session before reporting it ready.

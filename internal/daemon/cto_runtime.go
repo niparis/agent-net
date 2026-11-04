@@ -106,13 +106,6 @@ func (d *Daemon) ctoSendTriggered(ctx context.Context, text, sender, trigger str
 	}
 	defer d.ctoDispatchMu.unlock()
 	defer d.scheduleCTOPresence()
-	outcome, handled, err := d.ctoOwnerProjectAnswer(ctx, text, trigger == "owner")
-	if err != nil {
-		return nil, err
-	}
-	if handled {
-		text = "[agent-net] The owner approved the project in the CTO window. " + outcome
-	}
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return nil, err

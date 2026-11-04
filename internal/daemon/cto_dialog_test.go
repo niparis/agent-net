@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -208,12 +210,9 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 	if !strings.Contains(fmt.Sprint(out), "company-rag is ready: session company-rag is waiting in tab 1 (Sessions). Press Enter on it to dive in.") {
 		t.Fatalf("outcome: %v", out)
 	}
-	if _, handled, err := c.d.ctoOwnerProjectAnswer(context.Background(), "yes", true); err != nil || handled {
-		t.Fatalf("dialog left stale chat approval: handled=%v err=%v", handled, err)
-	}
 }
 
-func TestCTOProjectOwnerChatApproval(t *testing.T) {
+func TestCTOProjectPlainTextDoesNotApprove(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
 	c := startClaudeNode(t, g, shortSet)
@@ -225,32 +224,67 @@ func TestCTOProjectOwnerChatApproval(t *testing.T) {
 	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
 		t.Fatal(err)
 	}
-	if _, handled, err := c.d.ctoOwnerProjectAnswer(context.Background(), "yes", false); err != nil || handled {
-		t.Fatalf("peer approved: %v %v", handled, err)
-	}
+	c.cli.mustCall("cto_send", map[string]string{"text": "yes"})
 	items, err := c.d.proposalRunner().list()
 	if err != nil || len(items) != 1 || items[0].Status != "open" {
-		t.Fatalf("proposal before owner: %v %v", items, err)
+		t.Fatalf("plain text approved proposal: %v %v", items, err)
 	}
-	c.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: c.d.ctoSessionID(), Body: "yes"})
-	eventually(t, "owner chat approves project", func() bool {
-		items, err = c.d.proposalRunner().list()
-		return err == nil && items[0].Status == "applied"
-	})
-	var started protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &started); err != nil {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("folder created before dialog: %v", err)
+	}
+}
+
+func TestCTOProjectCreationMCPDialog(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.d.cto.pid.Store(int64(os.Getpid()))
+	defer c.d.cto.pid.Store(0)
+	path := filepath.Join(home, "code", "company-rag")
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
+	srv := mcpserver.NewCTO(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		var payload any = params
+		if method != "cto_dialog_answer" {
+			payload = map[string]any{"name": method, "arguments": params}
+			method = "cto_tool"
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		v, err := cto.dispatch(ctx, method, raw)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(v)
+	}, "test")
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := srv.Connect(context.Background(), st, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	started = waitSessionStartPath(t, c.workerNode, started)
-	if started.Status != "started" || started.SessionID == "" {
-		t.Fatalf("start: %+v", started)
-	}
-	eventually(t, "ready outcome reaches CTO", func() bool {
-		raw, err := os.ReadFile(filepath.Join(c.d.cfg.StateDir, "cto", "fake-opencode.json"))
-		if err != nil {
-			return false
+	defer ss.Close()
+	asked := false
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, &mcp.ClientOptions{ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+		asked = true
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("folder exists before approval: %v", err)
 		}
-		var rec fakeOCRecord
-		return json.Unmarshal(raw, &rec) == nil && strings.Contains(strings.Join(rec.Turns, "\n"), "company-rag is ready: session company-rag is waiting in tab 1 (Sessions). Press Enter on it to dive in.")
-	})
+		if strings.Contains(req.Params.Message, "\n") || !strings.Contains(req.Params.Message, "company-rag -> ") {
+			t.Errorf("dialog: %q", req.Params.Message)
+		}
+		return &mcp.ElicitResult{Action: "accept"}, nil
+	}}).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "project_change", Arguments: map[string]any{"action": "create", "path": path, "harness": "claude", "model": "claude-opus-5-5"}})
+	if err != nil || result.IsError || !asked {
+		t.Fatalf("result=%+v asked=%v err=%v", result, asked, err)
+	}
+	if len(result.Content) == 0 || !strings.Contains(fmt.Sprint(result.Content[0]), "company-rag is ready") {
+		t.Fatalf("result: %+v", result)
+	}
 }

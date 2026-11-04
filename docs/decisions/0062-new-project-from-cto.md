@@ -20,9 +20,8 @@ projects_layout change.
 The CTO stores placement answers in its private daemon state and reads them
 when choosing later placements. It proposes the folder, machine and agent,
 then asks for approval in a one-line dialog in the CTO conversation. When the
-harness has no dialog, it shows the line and waits for an owner message.
-Only an owner message can approve that pending project proposal. A correction
-clears the pending confirmation. The folder is made, git is initialized and
+harness has no dialog, the proposal stays open in the Inbox. A correction
+requires a fresh proposal. The folder is made, git is initialized and
 the project registered only after approval.
 
 The default main agent is Claude with claude-opus-5-5, unless the owner names

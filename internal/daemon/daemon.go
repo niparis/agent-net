@@ -266,7 +266,6 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
-	ctoPendingProject   string // guarded by mu
 	files               fileState
 	settingsMu          sync.Mutex
 	settingsSnapshot    atomic.Pointer[settings.Snapshot]

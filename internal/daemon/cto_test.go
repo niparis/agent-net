@@ -18,7 +18,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Every non-graph owner-only change is a proposal in the Inbox", "Other approvals typed in this chat never count", "approval dialog opens in the chat", "`proposal_ask`", "The Inbox stays the other way", "with A in the Inbox (tab 7 of the TUI)", "presses w", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "`cto_ui_show`", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with `settings_change` in the worker_profile_add area under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
+	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Every non-graph owner-only change is a proposal in the Inbox", "An approval typed in this chat never counts", "approval dialog opens in the chat", "`proposal_ask`", "The Inbox stays the other way", "with A in the Inbox (tab 7 of the TUI)", "presses w", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "`cto_ui_show`", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with `settings_change` in the worker_profile_add area under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}

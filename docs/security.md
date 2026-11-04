@@ -631,11 +631,7 @@ daemon's runner executes an approved call, with actor
 `owner (CTO proposal p_N)`. For a dialog answer the daemon accepts only the private CTO MCP connection, and checks its process tree again on each call. The MCP server sends an answer only after the harness returns an elicitation response; the model has no approval tool. The dialog text comes from the stored proposal. The daemon wraps ordinary tool results separately so their contents cannot masquerade as a proposal. This relies on the harness presenting elicitation to the owner, and on the existing local process checks described above. The model cannot approve its own proposals through the tool interface. Identical open calls are refused, open proposals expire after 24
 hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
 only the status or a bounded error, never a successful call's result.
-For a pending project creation, an owner `yes` in the CTO conversation also
-approves the stored call. The owner-only CLI gate and the gateway's owner
-sender attribution distinguish that message from agent input. A different
-owner answer clears the pending chat confirmation. The pending ID is in daemon
-memory and is lost on restart. The CTO's advisory placement memory is stored
+The CTO's advisory placement memory is stored
 in the private state database. Purpose and placement are each limited to 512
 bytes, and a read returns at most 100 entries. It does not authorize a change.
 
