@@ -287,7 +287,13 @@ func (w *workerNode) workerStopped(t *testing.T, g *testGateway, reason string) 
 	})
 }
 
-var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
+var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1, KillGrace: 100 * time.Millisecond}
+
+func TestShortWorkerSettingsBoundShutdown(t *testing.T) {
+	if got := shortSet.filled().KillGrace; got > 500*time.Millisecond {
+		t.Fatalf("test worker shutdown grace = %s, want at most 500ms", got)
+	}
+}
 
 // ---- the lifecycle ----
 
