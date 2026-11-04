@@ -39,11 +39,61 @@ const needsTimeoutSeconds = 2
 // fires about 60 seconds after any turn ends and means the session finished,
 // not that the owner is needed. An older install that still matches it is
 // harmless, because `agent-net needs-hook` ignores that notification type.
+// AskUserQuestion and ExitPlanMode always stop for the user: their PreToolUse
+// starts the wait with the question, and their result (PostToolUse, or
+// PostToolUseFailure for a refused call) ends it, even when the model then
+// ends its turn without another tool (decision 0057).
 var needsEvents = []struct{ event, matcher string }{
 	{"PermissionRequest", ""},
 	{"Notification", "agent_needs_input|elicitation_dialog|elicitation_url_dialog"},
 	{"PreToolUse", ""},
 	{"UserPromptSubmit", ""},
+	{"PostToolUse", needsDialogTools},
+	{"PostToolUseFailure", needsDialogTools},
+}
+
+// needsDialogTools are the Claude Code tools that always stop for the user.
+const needsDialogTools = "AskUserQuestion|ExitPlanMode"
+
+// refreshExecutable is the binary the refreshed hooks run. Tests replace it.
+var refreshExecutable = os.Executable
+
+// refreshNeedsHook brings the hooks up to date when the owner turned them on
+// and agent-net added them. The daemon applies unchanged answers without a
+// setup run, so a new agent-net version that adds an event reaches machines
+// set up before. It writes and logs only when the hooks differ. A binary whose
+// name does not say agent-net is left alone: its hooks could not be told from
+// the owner's, and every daemon start would add them again.
+func refreshNeedsHook(want bool, logf func(format string, args ...any)) {
+	st := loadNeedsState()
+	if !want || !st.Installed || claudePath() == "" {
+		return
+	}
+	exe, err := refreshExecutable()
+	if err != nil || !isNeedsCommand(needsCommand(exe)) {
+		return
+	}
+	path := st.Settings
+	if path == "" {
+		path = claudeSettingsPath()
+	}
+	doc, err := readSettings(path)
+	if err != nil {
+		return
+	}
+	changed, err := withHooks(doc, needsCommand(exe), isNeedsCommand, needsEvents, needsTimeoutSeconds)
+	if err != nil || !changed {
+		return
+	}
+	if err := atomicWrite(path, doc.encode(), 0o644); err != nil {
+		if logf != nil {
+			logf("%s: could not update the hooks in %s: %v", needsStepName, displayPath(path), err)
+		}
+		return
+	}
+	if logf != nil {
+		logf("%s: updated (hooks in %s)", needsStepName, displayPath(path))
+	}
 }
 
 type needsState struct {

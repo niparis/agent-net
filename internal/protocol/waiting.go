@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"unicode"
+
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // "Needs you" (decision 0016). A session says it is waiting for its user: a
@@ -16,6 +18,11 @@ const (
 	WaitingQuestion   = "question"
 	WaitingInput      = "input"
 )
+
+// StatusWaitingForUser is the status agent_sessions_find and agent_session_get
+// show for an online session that waits for its user. It is a read status
+// only: a daemon never reports it, and the stored status stays as reported.
+const StatusWaitingForUser = "waiting for its user"
 
 // MaxWaitingTextLen is the longest waiting text the gateway keeps, in
 // characters. The text is shown on one line.
@@ -78,7 +85,9 @@ func CleanWaitingText(s string) string {
 
 // CleanWaiting returns the state to store, or nil when there is nothing to
 // wait for. A text with no kind is an input question; an unknown kind is not
-// accepted from a client and becomes input.
+// accepted from a client and becomes input. Secrets in the text and the
+// options are masked first: the text leaves the machine, goes to every TUI,
+// and is quoted to agents and bots that write to the session.
 func CleanWaiting(w *Waiting) *Waiting {
 	if w == nil {
 		return nil
@@ -87,7 +96,7 @@ func CleanWaiting(w *Waiting) *Waiting {
 	if !ValidWaitingKind(kind) {
 		kind = WaitingInput
 	}
-	text := CleanWaitingText(w.Text)
+	text := CleanWaitingText(redact.Secrets(w.Text))
 	if text == "" && !ValidWaitingKind(strings.ToLower(strings.TrimSpace(w.Kind))) {
 		return nil
 	}
@@ -96,7 +105,7 @@ func CleanWaiting(w *Waiting) *Waiting {
 		if len(options) == 4 {
 			break
 		}
-		if option = CleanWaitingText(option); option != "" {
+		if option = CleanWaitingText(redact.Secrets(option)); option != "" {
 			options = append(options, option)
 		}
 	}

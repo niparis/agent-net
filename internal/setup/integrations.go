@@ -22,6 +22,7 @@ func ApplyIntegrations(net protocol.Integrations, logf func(format string, args 
 	want := integrations.Effective(net, local)
 	applied, ok := integrations.LoadApplied(daemon.ConfigDir())
 	if ok && applied == want {
+		refreshNeedsHook(want.NeedsHook, logf)
 		applyQuotaAnswer(want.QuotaAXI, logf)
 		return nil
 	}

@@ -129,6 +129,11 @@ type SessionInfo struct {
 	ToolsOld     bool   `json:"tools_old,omitempty"`
 	// Waiting is set while the session waits for its user (decision 0016).
 	Waiting *Waiting `json:"waiting,omitempty"`
+	// HarnessWaits is set by a discovery adapter when the harness itself says
+	// the session waits for its user: Claude Code's session file or a Codex
+	// thread flag (decision 0057). The daemon uses it to see when that wait
+	// ends. It stays on this machine.
+	HarnessWaits bool `json:"-"`
 	// LastActive is when the session last did something: a turn started or
 	// ended, a message was sent or received, a task was announced, or a wait
 	// started. It is not the time the daemon last saw the session alive.

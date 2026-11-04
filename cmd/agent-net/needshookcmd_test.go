@@ -105,10 +105,42 @@ func TestNeedsHookIgnoresOtherNotifications(t *testing.T) {
 		`{"session_id":"abc","hook_event_name":"Notification","notification_type":"auth_success","message":"logged in"}`,
 		`{"session_id":"","hook_event_name":"Notification","notification_type":"permission_prompt","message":"x"}`,
 		`not json`,
-		`{"session_id":"abc","hook_event_name":"PostToolUse"}`,
+		`{"session_id":"abc","hook_event_name":"Stop"}`,
 	} {
 		if _, called := notification(t, input); called {
 			t.Errorf("reported a wait for %q", input)
+		}
+	}
+}
+
+// AskUserQuestion and ExitPlanMode always stop for the user. PreToolUse fires
+// just before the dialog with the full input, so it starts the wait with the
+// question itself (decision 0057). A PermissionRequest for the same call
+// gives the same words, so the two hooks describe one wait.
+func TestNeedsHookReportsAskUserQuestion(t *testing.T) {
+	ask := `"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Merge branch w_1 into main?","header":"Merge",
+		"options":[{"label":"Merge now","description":"fast-forward"},{"label":"Wait"}],"multiSelect":false}]}`
+	for _, event := range []string{"PreToolUse", "PermissionRequest"} {
+		got, called := notification(t, `{"session_id":"abc","hook_event_name":"`+event+`",`+ask+`}`)
+		if !called || got.Clear || got.Kind != protocol.WaitingQuestion || got.Text != "Merge branch w_1 into main?" ||
+			strings.Join(got.Options, "|") != "Merge now|Wait" || got.NativeID != "abc" || got.Harness != "claude" {
+			t.Fatalf("%s: called=%v request=%+v", event, called, got)
+		}
+	}
+	got, called := notification(t, `{"session_id":"abc","hook_event_name":"PreToolUse","tool_name":"ExitPlanMode","tool_input":{"plan":"1. do it"}}`)
+	if !called || got.Clear || got.Kind != protocol.WaitingPermission || got.Text != "approve the plan" {
+		t.Fatalf("ExitPlanMode: called=%v request=%+v", called, got)
+	}
+}
+
+// The answer to the dialog is the tool's result: PostToolUse (or
+// PostToolUseFailure for a refused call) ends the wait at once, even when the
+// model then ends its turn without another tool.
+func TestNeedsHookClearsWhenTheDialogIsAnswered(t *testing.T) {
+	for _, event := range []string{"PostToolUse", "PostToolUseFailure"} {
+		got, called := notification(t, `{"session_id":"abc","hook_event_name":"`+event+`","tool_name":"AskUserQuestion","tool_input":{}}`)
+		if !called || !got.Clear || got.NativeID != "abc" {
+			t.Fatalf("%s: called=%v request=%+v", event, called, got)
 		}
 	}
 }

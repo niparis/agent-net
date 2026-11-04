@@ -133,6 +133,7 @@ type sessionFile struct {
 	NameSource          string `json:"nameSource"`
 	Cwd                 string `json:"cwd"`
 	Status              string `json:"status"`
+	WaitingFor          string `json:"waitingFor"`
 	Kind                string `json:"kind"`
 	MessagingSocketPath string `json:"messagingSocketPath"`
 	JobID               string `json:"jobId"`
@@ -168,6 +169,14 @@ func (a *Adapter) poll() {
 		if !pidAlive(sf.PID) {
 			continue
 		}
+		// While a dialog blocks the turn, Claude Code says "waiting". The wait
+		// says what for. The status stays unknown, as before: a worker stuck
+		// on a prompt must not count as busy, or it would never reach its idle
+		// limit.
+		var wait *protocol.Waiting
+		if sf.Status == "waiting" && sf.WaitingFor != "dialog open" {
+			wait = harnessWait(sf.Status, sf.WaitingFor, a.models.PendingTool(sf.SessionID, sf.Cwd))
+		}
 		status := sf.Status
 		switch status {
 		case "idle", "busy", "shell":
@@ -183,7 +192,7 @@ func (a *Adapter) poll() {
 		}
 		info := protocol.SessionInfo{Harness: "claude", NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd,
 			Name: title, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
-			Model: a.models.Model(sf.SessionID, sf.Cwd)}
+			Model: a.models.Model(sf.SessionID, sf.Cwd), Waiting: wait, HarnessWaits: wait != nil}
 		// Real activity, from the harness: the transcript or the session file.
 		// Polling the same idle session does not move it.
 		active := time.Time{}

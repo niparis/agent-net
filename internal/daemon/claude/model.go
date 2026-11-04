@@ -59,10 +59,11 @@ type modelReader struct {
 
 	mu    sync.Mutex
 	cache map[string]modelEntry // session ID -> last result
+	waits map[string]waitEntry  // session ID -> last pending tool call (wait.go)
 }
 
 func newModelReader(projectsDir string) *modelReader {
-	return &modelReader{projects: projectsDir, cache: map[string]modelEntry{}}
+	return &modelReader{projects: projectsDir, cache: map[string]modelEntry{}, waits: map[string]waitEntry{}}
 }
 
 // transcript returns the path of the session's transcript, or "".
@@ -141,15 +142,35 @@ func (r *modelReader) forget(keep map[string]bool) {
 			delete(r.cache, id)
 		}
 	}
+	for id := range r.waits {
+		if !keep[id] {
+			delete(r.waits, id)
+		}
+	}
 }
 
 // lastModel reads path from the end and returns the "model" of the newest
 // assistant entry that has one. Entries of sub-agents (isSidechain) and
 // Claude Code's own placeholder model ("<synthetic>") are skipped.
 func lastModel(path string, size int64) (string, bool) {
+	var model string
+	found := scanTail(path, size, func(line []byte) bool {
+		m, ok := modelOfLine(line)
+		if ok {
+			model = m
+		}
+		return ok
+	})
+	return model, found
+}
+
+// scanTail reads path from the end, in blocks of growing size, and gives each
+// complete line to visit, newest first, until visit returns true (scanTail
+// then returns true) or tailMaxBytes were read.
+func scanTail(path string, size int64, visit func(line []byte) bool) bool {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return false
 	}
 	defer f.Close()
 	// tail holds the bytes from offset to the end of what has been read. The
@@ -163,7 +184,7 @@ func lastModel(path string, size int64) (string, bool) {
 		block *= 2 // a long line needs fewer rounds
 		buf := make([]byte, end-start)
 		if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
-			return "", false
+			return false
 		}
 		read += int64(len(buf))
 		tail = append(buf, tail...)
@@ -174,8 +195,8 @@ func lastModel(path string, size int64) (string, bool) {
 			first = 1 // lines[0] may be cut off; the next block completes it
 		}
 		for i := len(lines) - 1; i >= first; i-- {
-			if m, ok := modelOfLine(lines[i]); ok {
-				return m, true
+			if visit(lines[i]) {
+				return true
 			}
 		}
 		if end > 0 {
@@ -183,7 +204,7 @@ func lastModel(path string, size int64) (string, bool) {
 			tail = lines[0]
 		}
 	}
-	return "", false
+	return false
 }
 
 var assistantMark = []byte(`"assistant"`)

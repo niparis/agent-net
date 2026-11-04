@@ -654,8 +654,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		old.GraphExcluded, old.GraphChecked = false, false
 		old.ToolsVersion, old.ToolsOld = "", false // set by the MCP hello, not by discovery
 		old.Waiting = nil                          // set by the local hello, not by discovery
+		old.HarnessWaits = false                   // a wait does not change the repository
 		probe := infos[i]
-		probe.Repo, probe.SessionID, probe.Waiting = protocol.RepoInfo{}, "", nil
+		probe.Repo, probe.SessionID, probe.Waiting, probe.HarnessWaits = protocol.RepoInfo{}, "", nil, false
 		probe.NoProject = false
 		probe.GraphExcluded, probe.GraphChecked = false, false
 		fresh := known && old != probe
