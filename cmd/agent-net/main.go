@@ -65,6 +65,7 @@ const usage = `usage: agent-net <command>
   charter    show, set or list the history of a node's charter
   graph      show the graph or undo a change
   node       add or remove an architect
+  merger     set or clear a project merger registration
   edge       set or remove an edge
   send       send a message as yourself: agent-net send <session or name> <message...>
   scores     model scores and worker providers: scores providers [provider ...|--default]

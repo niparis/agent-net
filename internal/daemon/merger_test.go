@@ -154,9 +154,44 @@ func TestMergerCTORecipe(t *testing.T) {
 }
 
 func TestMergerFirstMessagePushRules(t *testing.T) {
-	for _, rule := range []string{"CI branch", "merge-<change id>", "CI to pass on that exact commit", "fast-forward and push the default branch", "CI link", "push nothing to the default branch", "tests on the merged commit", "Never force-push", "never push tags", "never release", "Retry a failed push a few times"} {
+	for _, rule := range []string{"CI branch", "merge-<change id>", "CI to pass on that exact commit", "fast-forward and push the default branch", "CI link", "push nothing to the default branch", "tests on the merged commit", "Never force-push", "never push tags", "never release", "Retry a failed push a few times", "If no CI run appears for the CI branch within the project's usual time, report fail and push nothing to the default branch."} {
 		if !strings.Contains(MergerFirstMessage, rule) {
 			t.Errorf("missing push rule %q", rule)
 		}
 	}
+}
+
+func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "garden")
+	c.register(t, repo)
+	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
+	ctx := context.WithValue(context.Background(), proposalActorKey{}, "owner (CTO proposal p_1)")
+	value, err := c.d.executeApprovedCTOTool(ctx, "merger_start", json.RawMessage(`{"project":"garden","folder":"worktree","branch":"hidden-branch","create":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := value.(protocol.StartedSession)
+	if started.Path != repo || started.Branch != "main" {
+		t.Fatalf("hidden folder options applied: %+v", started)
+	}
+	t.Cleanup(func() {
+		raw, _ := os.ReadFile(filepath.Join(repo, "fake-claude.json"))
+		var rec fakeClaudeRecord
+		if json.Unmarshal(raw, &rec) == nil && rec.Pgid > 1 {
+			syscall.Kill(-rec.Pgid, syscall.SIGKILL)
+		}
+	})
+	eventually(t, "merger started", func() bool {
+		var err error
+		started, err = c.d.sessionStartGet(ctx, started.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if started.Status == "failed" {
+			t.Fatal(started.Error)
+		}
+		return started.Status == "started"
+	})
 }

@@ -68,3 +68,13 @@ func TestMergerOwnerCLI(t *testing.T) {
 		}
 	}
 }
+
+func TestMergerHelp(t *testing.T) {
+	if !strings.Contains(usage, "merger") {
+		t.Fatal("top-level help lacks merger")
+	}
+	err := runGraphCommand(context.Background(), &graphFake{}, &bytes.Buffer{}, "graph", []string{"invalid"})
+	if err == nil || !strings.Contains(err.Error(), "merger") {
+		t.Fatalf("graph usage lacks merger: %v", err)
+	}
+}

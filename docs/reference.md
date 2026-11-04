@@ -2546,15 +2546,23 @@ requirements remain in force.
 
 A merger registration maps a project and machine to one session. Only that
 session receives, claims, and reports `@merger` steps for changes on that
-machine. While it is offline, tasks stay queued and Delivery says "waiting
-for merger". Removing the session clears its registration. Registrations
-are stored in the gateway's `project_mergers` table.
+machine. Stopping the merger's harness session or taking it offline keeps
+its registration; tasks wait and Delivery says "waiting for merger". Deleting
+the session record clears the registration. Explicitly stopping routing with
+`merger_stop` or clearing the registration does the same. All of the project's
+`@merger` assignments and unfinished tasks, including after-merge steps, return
+to the caller. Accept keeps its current owner. Replacing the registered session
+keeps `@merger` ownership, releases the old claims and queues notices for the
+new merger. Completed evidence is preserved. Registrations are stored in the
+gateway's `project_mergers` table.
 
 The merger reads the project's own instructions and build files, tests the
 changed parts, reads CI results where available, and merges in its own merge
 worktree. When the project has CI, it pushes the merged commit to a CI
 branch, for example `merge-<change id>`, and waits for CI to pass on that exact
-commit. It then fast-forwards and pushes the default branch. If CI fails, it
+commit. If no CI run appears for the CI branch within the project's usual
+time, it reports fail and pushes nothing to the default branch. Once CI passes,
+it fast-forwards and pushes the default branch. If CI fails, it
 reports the merge step fail with the CI link and pushes nothing to the default
 branch. Without CI, it runs the project's tests on the merged commit, then
 pushes the default branch. It never force-pushes, pushes tags, or releases.
@@ -2567,11 +2575,16 @@ owners. An offline merger is marked "offline, tasks wait".
 
 To stop routing to it, ask the CTO for `session_change` action `merger_stop`
 with `project` and optional `node_id`. Approval clears the registration and
-returns test and merge to the caller. The Claude conversation stays available.
+returns every `@merger` step to the caller, including after-merge tests.
+It leaves the accept owner unchanged. The Claude conversation stays available.
 The owner can also register an existing project Claude session with
 `agent-net merger set <project> <node-id> <session-id>`, or clear that record
-with `agent-net merger clear <project> <node-id>`. These commands only change
-the registration; use the Settings delivery owner rows to assign `@merger`.
+with `agent-net merger clear <project> <node-id>`. Registering an existing
+session keeps step assignments; use the Settings delivery owner rows to assign
+`@merger`. Clearing the record returns existing `@merger` assignments to caller.
 The local owner operation is `merger_set` with `project`, `node_id`, and
 `session_id` (empty clears). Its `configure: true` option also applies the
-start/stop delivery assignments, as the approved CTO action does.
+start delivery assignments, as the approved CTO action does. Merger starts
+always use the registered project folder; folder, branch and create options
+are cleared. Cross-machine registration changes carry the calling machine's
+authenticated owner session, as session relays do.

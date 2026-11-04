@@ -2,6 +2,7 @@ package protocol
 
 // MergerSetRequest is owner-only. An empty SessionID removes the assignment.
 type MergerSetRequest struct {
+	Owner     string `json:"owner_session,omitempty"`
 	Configure bool   `json:"configure,omitempty"`
 	Project   string `json:"project"`
 	NodeID    string `json:"node_id"`

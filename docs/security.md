@@ -1336,14 +1336,22 @@ may register a project's merger. Ordinary agent sessions and workers cannot
 call the owner-only `merger_set` operation. A session cannot become a merger
 by announcing a type. The gateway derives that type from its registration.
 A registration must name a non-worker Claude session of the same project on
-the named machine. Removing that session clears the record.
+the named machine. Deleting that session record clears the registration;
+stopping the harness session or taking it offline keeps the registration and
+leaves its tasks waiting. The gateway accepts registration changes from the
+machine that holds the session, or an owner relay whose owner pseudo-session
+belongs to the authenticated calling machine. A peer node without that owner
+authority cannot register or clear another machine's merger.
 
 `@merger` is a reserved delivery owner for test and merge. Tasks go only to
 the registered session for the change's project and machine. Claim and report
 check that registration, the authenticated reporting machine, and that the
 session is online. Other sessions of the same project cannot take over.
-Offline tasks wait. Stopping merger routing removes unfinished claims and
-queued notices before returning those owners to the caller. Completed step
+Offline tasks wait. Removing a registration, including by deleting its
+session, releases every unfinished `@merger` claim and queued notice and returns
+those owners to the caller. This includes after-merge steps and preserves the
+accept owner. Replacement releases the old claims and queues tasks for the new
+merger. Cleanup runs atomically on the registration record. Completed step
 evidence remains tied to its recorded revision and commit.
 
 A CTO `merger_start` proposal pins the registered project and machine before

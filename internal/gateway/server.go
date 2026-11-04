@@ -1414,6 +1414,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad merger request")
 		}
+		if p.NodeID != nc.id {
+			owner, ok, err := st.Agent(p.Owner)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || owner.NodeID != nc.id || !protocol.IsOwner(owner.Harness) || owner.Worker != nil {
+				return nil, reject("only the session's machine or an authenticated owner relay may change a merger")
+			}
+		}
 		err = st.SetMerger(p, graphActor(raw))
 		if err == nil {
 			g.dispatchStepTasks(ctx)
