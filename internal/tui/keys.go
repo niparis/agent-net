@@ -130,6 +130,7 @@ var keyBindings = []keyBinding{
 	bind(contextDelivery, "pgdown", "page down", "ten changes down", 2),
 	bind(contextDelivery, "enter", "open", "evidence", 1),
 	bind(contextDelivery, "esc", "back", "back", 1),
+	bind(contextDelivery, "a", "all", "show all", 2),
 	bind(contextDelivery, "R", "refresh", "refresh", 2),
 	bind(contextDelivery, "?", "help", "help", 4),
 	bind(contextDelivery, "q|ctrl+c", "quit", "quit", 5),

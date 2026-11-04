@@ -1,15 +1,15 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
   Quotas      Workers log    [ Delivery ]
-╭─Delivery──────────────────────────────────────────────────────3 open changes─╮
-│   REPO       BRANCH              REV STEP    OWNER  WAIT  EVIDENCE           │
-│ ▸ agent-net  delivery-pipeline   r1  approve owner  6m    a✓r✓t✓p*m·l·d·v·   │
-│   voicemechs feature/deploy-gate r1  review  merger 5h0m  a✓r✗t✓p–m·l·d·v·   │
-│   agent-net  w_0123456789abcdef  r2  review  merger 2h0m  a✓r·t·p·m·l·d·v·   │
-│ a accept  r review  t test  p approve                                        │
-│ m merge  l release  d deploy  v verify                                       │
-│ ✓ passed  ✗ failed  * running  – not needed  · waiting                       │
+╭─Delivery─────────────────────────────────────────────────────────────3 shown─╮
+│   TITLE              STEP     STATUS                 AGE    EVIDENCE         │
+│ Needs you · 1                                                                │
+│ ▸ Say what a delive… approve  waiting for you        6m     a✓r✓t✓p·m·l·d·v· │
+│ Waiting on agents · 2                                                        │
+│   Fix the deploy ga… review   failed                 5h0m   a✓r✗t✓p-m·l·d·v· │
+│   Show the provider… review   waiting for merger     2h0m   a✓r·t·p·m·l·d·v· │
+│ a accept · r review · t test · m merge · l release · v verify.               │
+│ ✓ passed ✗ failed · waiting - not needed                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
@@ -21,4 +21,4 @@
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────╯
-tab Quotas  up/down select  enter evidence  R refresh  ? help  q quit
+tab Quotas  up/down select  enter evidence  a show all  R refresh  ? help

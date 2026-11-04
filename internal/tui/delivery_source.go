@@ -50,24 +50,28 @@ func (g *gatewayDelivery) find(ctx context.Context, a protocol.ChangesFindArgs) 
 	return out, nil
 }
 
-// Changes lists the open changes (state active: open, and merged but not
-// done), newest first. It follows the pages up to deliveryMaxChanges.
+// Changes lists the changes the view can show. Active (open and merged) comes
+// first, so a long history of done changes never pushes live work off the
+// list; done and stopped follow for the Done band, which is hidden by default.
+// It follows the pages of each state up to deliveryMaxChanges.
 func (g *gatewayDelivery) Changes(ctx context.Context, repo string) ([]deliveryChange, error) {
 	var out []deliveryChange
-	cursor := ""
-	for len(out) < deliveryMaxChanges {
-		page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: cursor})
-		if err != nil {
-			return nil, err
+	for _, state := range []string{protocol.ChangeListActive, protocol.ChangeDone, protocol.ChangeStopped} {
+		cursor := ""
+		for len(out) < deliveryMaxChanges {
+			page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, Cursor: cursor})
+			if err != nil {
+				return nil, err
+			}
+			now := g.now()
+			for _, v := range page.Items {
+				out = append(out, deliveryChangeFromView(v, now))
+			}
+			if page.NextCursor == "" || len(page.Items) == 0 {
+				break
+			}
+			cursor = page.NextCursor
 		}
-		now := g.now()
-		for _, v := range page.Items {
-			out = append(out, deliveryChangeFromView(v, now))
-		}
-		if page.NextCursor == "" || len(page.Items) == 0 {
-			break
-		}
-		cursor = page.NextCursor
 	}
 	return out[:min(len(out), deliveryMaxChanges)], nil
 }
@@ -118,7 +122,7 @@ func deliveryMarks(steps []protocol.StepStatus) []stripState {
 	marks := make([]stripState, len(deliverySteps))
 	for i, name := range deliverySteps {
 		var active, passed int
-		failed, needsOwner := false, false
+		failed, running := false, false
 		for _, st := range steps {
 			if st.Step != name {
 				continue
@@ -130,22 +134,22 @@ func deliveryMarks(steps []protocol.StepStatus) []stripState {
 				passed++
 			case protocol.StepStateFailed, protocol.StepStateClosed:
 				failed = true
-			case protocol.StepStateNeedsOwner, protocol.StepStateRunning:
-				needsOwner = true
+			case protocol.StepStateRunning:
+				running = true
 			}
 			active++
 		}
 		switch {
 		case failed:
 			marks[i] = stripFailed
-		case needsOwner:
+		case running:
+			// Only a claimed step task shows as running. A ready step waits
+			// for its owner; it is not work in progress.
 			marks[i] = stripRunning
 		case active == 0 && hasStep(steps, name):
 			marks[i] = stripNotNeeded
 		case active > 0 && passed == active:
 			marks[i] = stripPassed
-		case passed > 0:
-			marks[i] = stripRunning
 		}
 	}
 	return marks
@@ -162,27 +166,29 @@ func hasStep(steps []protocol.StepStatus, name string) bool {
 
 // currentStep is the step the change is in: the first step that may start now.
 // With none, a running step, then the step that needs the owner, else one that
-// failed, else one that waits.
-func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, bool) {
-	ownerOf := func(r protocol.StepRef) protocol.StepOwner {
+// failed, else one that waits. The state goes with it, so the list can say
+// "waiting for" or "running" from what is true.
+func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, string, bool) {
+	ownerOf := func(r protocol.StepRef) (protocol.StepOwner, string) {
 		for _, st := range v.Steps {
 			if st.StepRef == r {
-				return st.Owner
+				return st.Owner, st.State
 			}
 		}
-		return protocol.StepOwner{}
+		return protocol.StepOwner{}, ""
 	}
 	if len(v.Next) > 0 {
-		return v.Next[0], ownerOf(v.Next[0]), true
+		owner, state := ownerOf(v.Next[0])
+		return v.Next[0], owner, state, true
 	}
 	for _, state := range []string{protocol.StepStateRunning, protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateWaiting} {
 		for _, st := range v.Steps {
 			if st.State == state {
-				return st.StepRef, st.Owner, true
+				return st.StepRef, st.Owner, st.State, true
 			}
 		}
 	}
-	return protocol.StepRef{}, protocol.StepOwner{}, false
+	return protocol.StepRef{}, protocol.StepOwner{}, "", false
 }
 
 // deliveryChangeFromView maps one change of the gateway. A view that has a
@@ -190,13 +196,13 @@ func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, b
 // A list view has only the latest counted result of each step.
 func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange {
 	c := v.Change
-	out := deliveryChange{ID: c.ID, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
-		Marks: deliveryMarks(v.Steps), Full: v.Pipeline != nil}
+	out := deliveryChange{ID: c.ID, Title: c.Title, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
+		State: c.State, Caller: c.Caller, Marks: deliveryMarks(v.Steps), Full: v.Pipeline != nil}
 	for _, st := range v.Steps {
 		out.Steps = append(out.Steps, deliveryStep{Name: st.StepRef.String(), Owner: deliveryOwnerLabel(st.Owner), State: st.State, Note: st.Note})
 	}
-	if r, owner, ok := currentStep(v); ok {
-		out.Step, out.StepOwner = r.Step, deliveryOwnerLabel(owner)
+	if r, owner, state, ok := currentStep(v); ok {
+		out.Step, out.StepOwner, out.OwnerKind, out.StepState = r.Step, deliveryOwnerLabel(owner), owner.Kind, state
 	}
 
 	var raw []protocol.Evidence

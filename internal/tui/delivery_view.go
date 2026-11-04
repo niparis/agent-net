@@ -7,13 +7,15 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // stripLetters are the one-letter names of the steps, in deliverySteps order.
 const stripLetters = "artpmldv"
 
 // stripSpacedFrom is the inner width from which the strip and the list get
-// room for spaces between marks and a head column.
+// room for spaces between marks and a repo column.
 const stripSpacedFrom = 96
 
 func stripGlyph(s stripState) string {
@@ -25,7 +27,7 @@ func stripGlyph(s stripState) string {
 	case stripRunning:
 		return "*"
 	case stripNotNeeded:
-		return "–"
+		return "-"
 	}
 	return "·"
 }
@@ -65,39 +67,32 @@ func deliveryStrip(states []stripState, spaced bool) string {
 	return b.String()
 }
 
-// deliveryLegend names the letters and the marks. It wraps between items, so a
-// name is never split.
+// deliveryLegendLine is the one-line legend at 120 columns and wider. At 80
+// it splits into two lines between items, so no word is cut.
+const deliveryLegendLine = "a accept · r review · t test · m merge · l release · v verify. ✓ passed ✗ failed · waiting - not needed"
+
 func deliveryLegend(w int) []string {
-	steps := make([]string, len(deliverySteps))
-	for i, s := range deliverySteps {
-		steps[i] = string(stripLetters[i]) + " " + s
+	if ansi.StringWidth(deliveryLegendLine) <= w {
+		return []string{sDim.Render(deliveryLegendLine)}
 	}
-	marks := []string{"✓ passed", "✗ failed", "* running", "– not needed", "· waiting"}
-	var out []string
-	for _, items := range [][]string{steps, marks} {
-		// Split a list that does not fit in half, so the lines look even.
-		parts := [][]string{items}
-		if ansi.StringWidth(strings.Join(items, "  ")) > w {
-			parts = [][]string{items[:(len(items)+1)/2], items[(len(items)+1)/2:]}
-		}
-		for _, p := range parts {
-			out = append(out, sDim.Render(clip(strings.Join(p, "  "), w)))
-		}
+	return []string{
+		sDim.Render("a accept · r review · t test · m merge · l release · v verify."),
+		sDim.Render("✓ passed ✗ failed · waiting - not needed"),
 	}
-	return out
 }
 
-// deliveryColumns is the layout of the list for one width.
+// deliveryColumns is the layout of the list for one width. The title is the
+// main column; the branch, head and revision live in the detail view.
 type deliveryColumns struct {
-	repo, branch, head, owner int // head is 0 when the column is left out
-	spaced                    bool
+	title, repo, step, status, age int
+	spaced                         bool
 }
 
 const (
-	deliveryRevW  = 3 // "r12" fits, longer revisions are cut
-	deliveryStepW = 7
-	deliveryWaitW = 5
-	deliveryLead  = 2
+	deliveryStepW   = 8 // "approve" fits
+	deliveryStatusW = 22
+	deliveryAgeW    = 6
+	deliveryLead    = 2
 )
 
 // gap is the space between columns: tighter when the screen is narrow.
@@ -111,69 +106,126 @@ func (c deliveryColumns) gap() int {
 func deliveryLayout(inner int, changes []deliveryChange) deliveryColumns {
 	var c deliveryColumns
 	c.spaced = inner >= stripSpacedFrom
-	longest := func(f func(deliveryChange) string, floor, ceil int) int {
-		n := floor
-		for _, ch := range changes {
-			n = max(n, ansi.StringWidth(sanitize(f(ch))))
-		}
-		return min(n, ceil)
-	}
-	c.owner = longest(func(ch deliveryChange) string { return ch.StepOwner }, 5, 16)
-	fixed := deliveryLead + deliveryRevW + deliveryStepW + c.owner + deliveryWaitW + deliveryStripWidth(c.spaced)
-	columns := 6 // repo, branch, rev, step, owner, wait; the strip is the 7th
+	gaps := 4 // between the five columns without a repo
 	if c.spaced {
-		c.head = 7
-		fixed += c.head
-		columns++
+		c.repo = 10
+		for _, ch := range changes {
+			c.repo = max(c.repo, ansi.StringWidth(sanitize(ch.Repo)))
+		}
+		c.repo = min(c.repo, 16)
+		gaps = 5
 	}
-	fixed += columns * c.gap()
-	avail := max(inner-fixed, 8)
-	c.repo = longest(func(ch deliveryChange) string { return ch.Repo }, 6, 24)
-	c.repo = min(c.repo, max(avail*2/5, 4))
-	c.branch = max(avail-c.repo, 4)
-	// A branch column wider than the longest branch only moves the rest away.
-	c.branch = min(c.branch, longest(func(ch deliveryChange) string { return shortBranch(ch.Branch) }, 8, 60))
+	fixed := deliveryLead + c.repo + deliveryStepW + deliveryStatusW + deliveryAgeW + deliveryStripWidth(c.spaced) + gaps*c.gap()
+	c.title = max(inner-fixed, 12)
 	return c
 }
 
 func (c deliveryColumns) width() int {
-	n := deliveryLead + c.repo + c.branch + deliveryRevW + deliveryStepW + c.owner + deliveryWaitW + deliveryStripWidth(c.spaced) + 6*c.gap()
-	if c.head > 0 {
-		n += c.head + c.gap()
+	n := deliveryLead + c.title + c.repo + deliveryStepW + deliveryStatusW + deliveryAgeW + deliveryStripWidth(c.spaced) + 4*c.gap()
+	if c.repo > 0 {
+		n += c.gap()
 	}
 	return n
 }
 
 func (c deliveryColumns) header() string {
 	gap := strings.Repeat(" ", c.gap())
-	parts := []string{cell("REPO", c.repo), cell("BRANCH", c.branch)}
-	if c.head > 0 {
-		parts = append(parts, cell("HEAD", c.head))
+	parts := []string{cell("TITLE", c.title)}
+	if c.repo > 0 {
+		parts = append(parts, cell("REPO", c.repo))
 	}
-	parts = append(parts, cell("REV", deliveryRevW), cell("STEP", deliveryStepW), cell("OWNER", c.owner), cell("WAIT", deliveryWaitW), "EVIDENCE")
+	parts = append(parts, cell("STEP", deliveryStepW), cell("STATUS", deliveryStatusW), cell("AGE", deliveryAgeW), "EVIDENCE")
 	return sDim.Render(strings.Repeat(" ", deliveryLead) + strings.Join(parts, gap))
 }
 
-func (c deliveryColumns) row(ch deliveryChange, selected bool) string {
+func (m Model) deliveryRow(c deliveryColumns, ch deliveryChange, selected bool) string {
 	gap := strings.Repeat(" ", c.gap())
 	lead := "  "
 	if selected {
 		lead = "▸ "
 	}
-	parts := []string{cell(ch.Repo, c.repo), sDim.Render(cell(shortBranch(ch.Branch), c.branch))}
-	if c.head > 0 {
-		parts = append(parts, sDim.Render(cell(shortCommit(ch.Head), c.head)))
+	parts := []string{cell(deliveryTitle(ch), c.title)}
+	if c.repo > 0 {
+		parts = append(parts, sDim.Render(cell(ch.Repo, c.repo)))
 	}
-	rev := "-"
-	if ch.Revision > 0 {
-		rev = "r" + strconv.Itoa(ch.Revision)
+	status, style := m.deliveryStatusText(ch)
+	age := deliveryWaitText(ch.Waiting)
+	ageStyle := sDim
+	if deliveryStale(ch) {
+		age += "!"
+		ageStyle = lipgloss.NewStyle().Foreground(roleWarning)
 	}
-	parts = append(parts, cell(rev, deliveryRevW), cell(firstNonEmpty(ch.Step, "-"), deliveryStepW), cell(firstNonEmpty(ch.StepOwner, "-"), c.owner), cell(deliveryWaitText(ch.Waiting), deliveryWaitW), deliveryStrip(deliveryStripStates(ch), c.spaced))
+	parts = append(parts, cell(firstNonEmpty(ch.Step, "-"), deliveryStepW), style.Render(cell(status, deliveryStatusW)), ageStyle.Render(cell(age, deliveryAgeW)), deliveryStrip(deliveryStripStates(ch), c.spaced))
 	line := lead + strings.Join(parts, gap)
 	if selected {
 		line = selectedRow(line)
 	}
 	return line
+}
+
+// deliveryTitle is the main column: what the work is, never the branch.
+func deliveryTitle(ch deliveryChange) string {
+	if title := strings.TrimSpace(sanitize(ch.Title)); title != "" {
+		return title
+	}
+	return "(untitled) " + shortID(ch.ID)
+}
+
+// deliveryWho names the session or node a ready step waits for. The owner is
+// "you"; a caller session is the name the sessions list shows for it.
+func (m Model) deliveryWho(ch deliveryChange) string {
+	switch ch.OwnerKind {
+	case protocol.OwnerPerson, protocol.OwnerDelegate:
+		return "you"
+	case protocol.OwnerGitHub:
+		return "github"
+	case protocol.OwnerNode:
+		return firstNonEmpty(sanitize(ch.StepOwner), "a node")
+	case protocol.OwnerCaller:
+		if ch.Caller == "" {
+			return firstNonEmpty(sanitize(ch.StepOwner), "the caller")
+		}
+		if ch.Caller == m.snap.OwnerSession {
+			return "you"
+		}
+		if a, ok := m.agentByID(ch.Caller); ok {
+			return m.needsName(a)
+		}
+		return shortID(ch.Caller)
+	}
+	return firstNonEmpty(sanitize(ch.StepOwner), "someone")
+}
+
+// deliveryStatusText says what is true of the current step: waiting for its
+// owner, running only when a task is claimed, or how it ended.
+func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
+	if ch.State == protocol.ChangeDone {
+		return "done", sDim
+	}
+	if ch.State == protocol.ChangeStopped {
+		return "stopped", sDim
+	}
+	switch ch.StepState {
+	case protocol.StepStateClosed:
+		return "closed", sDim
+	case protocol.StepStateRunning:
+		return "running", sBusy
+	case protocol.StepStateFailed:
+		return "failed", sBad
+	case protocol.StepStatePassed:
+		return "passed", sBusy
+	case protocol.StepStateSkipped:
+		return "not needed", sDim
+	case protocol.StepStateWaiting:
+		return "blocked", sDim
+	case protocol.StepStateReady, protocol.StepStateNeedsOwner:
+		// The owner has to act; an agent waits for the owner's word.
+		return "waiting for " + m.deliveryWho(ch), lipgloss.NewStyle().Foreground(roleWarning)
+	}
+	if ch.State == protocol.ChangeMerged {
+		return "merged", sDim
+	}
+	return "-", sDim
 }
 
 // quotasSubtabs is the line under the title: the three sub-tabs of Quotas.
@@ -209,54 +261,121 @@ func (m Model) deliveryView(w, h int) []string {
 			errLine = append(errLine, sBad.Render(l))
 		}
 	}
-	sel := min(max(d.row, 0), max(len(d.changes)-1, 0))
+	visible := m.deliveryVisible()
+	owner := m.snap.OwnerSession
+	sel := min(max(d.row, 0), max(len(visible)-1, 0))
 	if d.detail && d.detailErr != "" {
 		for _, l := range wrap("Could not load change: "+sanitize(d.detailErr), inner) {
 			errLine = append(errLine, sBad.Render(l))
 		}
 	}
-	if d.detail && len(d.changes) > 0 {
-		return append(out, m.deliveryDetail(d.changes[sel], errLine, w, room)...)
+	if d.detail {
+		if ch, ok := m.selectedChange(); ok {
+			return append(out, m.deliveryDetail(ch, errLine, w, room)...)
+		}
 	}
-	if len(d.changes) == 0 {
+	if len(visible) == 0 {
 		var body []string
 		body = append(body, errLine...)
 		switch {
 		case d.err != "":
 		case m.deliverySrc != nil && !d.loaded:
 			body = append(body, sDim.Render("Loading changes..."))
+		case len(d.changes) > 0:
+			done, stale := m.deliveryHidden()
+			body = append(body, "Nothing needs attention.", sDim.Render(deliveryHiddenText(done, stale)))
 		default:
 			body = append(body, "No open changes.", sDim.Render("A change shows up here when a worker hands back finished work."))
 		}
 		return append(out, panel("Delivery", messageFit(body, min(len(body), room), 0), w, roleAccent)...)
 	}
-	cols := deliveryLayout(inner, d.changes)
+	cols := deliveryLayout(inner, visible)
 	legend := deliveryLegend(inner)
 	body := append([]string{}, errLine...)
 	body = append(body, cols.header())
 	var offline []string
-	for _, step := range d.changes[sel].Steps {
+	for _, step := range visible[sel].Steps {
 		if strings.HasPrefix(step.Note, "waiting for ") && strings.HasSuffix(step.Note, " (offline)") {
 			offline = append(offline, wrap(sanitize(step.Note), inner)...)
 		}
 	}
-	listRoom := max(room-len(body)-len(legend)-len(offline), 1)
-	var list []string
-	for i, ch := range d.changes {
-		list = append(list, cols.row(ch, i == sel))
+	var footer []string
+	done, stale := m.deliveryHidden()
+	if !d.showAll && done+stale > 0 {
+		footer = append(footer, sDim.Render(deliveryHiddenText(done, stale)))
 	}
-	body = append(body, messageFit(list, min(listRoom, len(list)), sel)...)
+	listRoom := max(room-len(body)-len(legend)-len(footer)-len(offline), 1)
+	var list []string
+	selLine, prev, first := 0, groupNeedsYou, true
+	for i, ch := range visible {
+		if group := deliveryGroupOf(ch, owner); first || group != prev {
+			list = append(list, deliveryGroupHeader(group, deliveryGroupCount(visible, group, owner)))
+			prev, first = group, false
+		}
+		if i == sel {
+			selLine = len(list)
+		}
+		list = append(list, m.deliveryRow(cols, ch, i == sel))
+	}
+	body = append(body, messageFit(list, min(listRoom, len(list)), selLine)...)
 	body = append(body, messageFit(offline, min(len(offline), max(room-len(body), 0)), 0)...)
+	if len(footer) > 0 && room-len(body) >= len(legend)+len(footer) {
+		body = append(body, footer...)
+	}
 	if room-len(body) >= len(legend) {
 		body = append(body, legend...)
 	}
-	title := strconv.Itoa(len(d.changes)) + " open"
-	if len(d.changes) == 1 {
-		title += " change"
-	} else {
-		title += " changes"
-	}
+	title := strconv.Itoa(len(visible)) + " shown"
 	return append(out, panelWithRightHeader("Delivery", title, body, w, roleAccent)...)
+}
+
+// deliveryGroupHeader names a band of the list and counts its changes.
+func deliveryGroupHeader(group deliveryGroup, n int) string {
+	label := group.title() + " · " + strconv.Itoa(n)
+	switch group {
+	case groupNeedsYou:
+		return lipgloss.NewStyle().Bold(true).Foreground(roleWarning).Render(label)
+	case groupDone:
+		return sDim.Render(label)
+	}
+	return sBold.Render(label)
+}
+
+func deliveryGroupCount(changes []deliveryChange, group deliveryGroup, ownerSession string) int {
+	n := 0
+	for _, ch := range changes {
+		if deliveryGroupOf(ch, ownerSession) == group {
+			n++
+		}
+	}
+	return n
+}
+
+// deliveryHidden counts the rows the list leaves out until the owner asks.
+func (m Model) deliveryHidden() (done, stale int) {
+	owner := m.snap.OwnerSession
+	for _, ch := range m.delivery.changes {
+		if deliveryGroupOf(ch, owner) == groupDone {
+			done++
+		} else if deliveryStale(ch) {
+			stale++
+		}
+	}
+	return done, stale
+}
+
+func deliveryHiddenText(done, stale int) string {
+	var parts []string
+	if done > 0 {
+		parts = append(parts, strconv.Itoa(done)+" done")
+	}
+	if stale > 0 {
+		parts = append(parts, strconv.Itoa(stale)+" stale")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " and ") + " hidden · a shows all"
 }
 
 func resultStyle(result string) lipgloss.Style { return stripStyle(normalResult(result)) }
@@ -279,12 +398,14 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	inner := max(w-4, 1)
 	spaced := inner >= stripSpacedFrom
 	var head []string
-	head = append(head, sBold.Render(sanitize(ch.Repo))+"  "+sanitize(shortBranch(ch.Branch)))
+	head = append(head, sBold.Render(deliveryTitle(ch)))
+	head = append(head, sDim.Render(sanitize(ch.Repo)+"  "+sanitize(shortBranch(ch.Branch))))
 	revision := "-"
 	if ch.Revision > 0 {
 		revision = "r" + strconv.Itoa(ch.Revision)
 	}
-	facts := "head: " + firstNonEmpty(sanitize(ch.Head[:min(len(ch.Head), 12)]), "-") + "  revision: " + revision + "  step: " + firstNonEmpty(sanitize(ch.Step), "-") + "  owner: " + firstNonEmpty(sanitize(ch.StepOwner), "-") + "  waiting: " + deliveryWaitText(ch.Waiting)
+	status, _ := m.deliveryStatusText(ch)
+	facts := "head: " + firstNonEmpty(sanitize(ch.Head[:min(len(ch.Head), 12)]), "-") + "  revision: " + revision + "  state: " + firstNonEmpty(sanitize(ch.State), "-") + "  step: " + firstNonEmpty(sanitize(ch.Step), "-") + "  owner: " + firstNonEmpty(sanitize(ch.StepOwner), "-") + "  status: " + sanitize(status) + "  waiting: " + deliveryWaitText(ch.Waiting)
 	for _, l := range wrap(facts, inner) {
 		head = append(head, sDim.Render(l))
 	}

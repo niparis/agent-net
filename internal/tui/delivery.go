@@ -2,11 +2,14 @@ package tui
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The Delivery view shows the open changes of the delivery pipeline (see
@@ -15,22 +18,32 @@ import (
 // things the owner watches, like the log, and a tab of its own would break the
 // seven numbered tabs (1-7) that every key hint and the help overlay name.
 //
-// The view reads a small interface with its own types. A later step maps the
-// gateway's real types onto them, so nothing here imports the protocol.
+// The view reads a small interface with its own types. delivery_source.go maps
+// the gateway's real types onto them; the list groups rows by who has to act,
+// so it reads the protocol's change and step state names.
 
 // deliverySteps are the steps of the pipeline, in the order the strip shows
 // them.
 var deliverySteps = []string{"accept", "review", "test", "approve", "merge", "release", "deploy", "verify"}
 
-// deliveryChange is one open change.
+// deliveryChange is one change.
 type deliveryChange struct {
-	ID        string
-	Repo      string
-	Branch    string
-	Head      string // the commit of the current revision
-	Revision  int
-	Step      string // the step the change is in
-	StepOwner string // who owns that step: a node, "caller", "owner", "github"
+	ID       string
+	Title    string // what the work is, as the owner reads it
+	Repo     string
+	Branch   string
+	Head     string // the commit of the current revision
+	Revision int
+	State    string // the change state: open, merged, done or stopped
+	Caller   string // the session that gets the final notice
+	Step     string // the step the change is in
+	// StepOwner is who owns that step, as text: a node name, "caller",
+	// "owner", "github". OwnerKind is the protocol kind behind it.
+	StepOwner string
+	OwnerKind string
+	// StepState is the state of Step: ready, running, needs_owner, passed,
+	// failed, waiting, skipped or closed. Empty when no step is current.
+	StepState string
 	Waiting   time.Duration
 	Evidence  []deliveryEvidence
 	Steps     []deliveryStep
@@ -82,6 +95,7 @@ const deliveryRefreshEvery = 30 * time.Second
 type deliveryState struct {
 	on      bool // the Delivery sub-tab is showing
 	detail  bool // the evidence of the selected change is showing
+	showAll bool // done and stale changes are on screen too
 	row     int
 	scroll  int // detail scroll, in lines
 	loaded  bool
@@ -148,12 +162,88 @@ func (m Model) deliveryTick() (Model, tea.Cmd) {
 	return m.startDeliveryLoad()
 }
 
+// deliveryGroup is one band of the list. The bands appear in this order, so a
+// change the owner has to act on is never below one that waits on an agent.
+type deliveryGroup int
+
+const (
+	groupNeedsYou deliveryGroup = iota
+	groupWaiting
+	groupDone
+)
+
+func (g deliveryGroup) title() string {
+	switch g {
+	case groupNeedsYou:
+		return "Needs you"
+	case groupWaiting:
+		return "Waiting on agents"
+	}
+	return "Done"
+}
+
+// deliveryGroupOf says who has to act on a change next.
+func deliveryGroupOf(ch deliveryChange, ownerSession string) deliveryGroup {
+	if ch.State == protocol.ChangeDone || ch.State == protocol.ChangeStopped || ch.StepState == protocol.StepStateClosed {
+		return groupDone
+	}
+	// A passed, skipped or blocked step has no action for anyone yet.
+	switch ch.StepState {
+	case "", protocol.StepStatePassed, protocol.StepStateSkipped, protocol.StepStateWaiting:
+		return groupWaiting
+	}
+	switch ch.OwnerKind {
+	case protocol.OwnerPerson, protocol.OwnerDelegate:
+		return groupNeedsYou
+	}
+	if ch.Step == protocol.StepApprove {
+		return groupNeedsYou
+	}
+	if ch.OwnerKind == protocol.OwnerCaller && ownerSession != "" && ch.Caller == ownerSession {
+		return groupNeedsYou
+	}
+	return groupWaiting
+}
+
+// deliveryStale says nothing happened on a change for a day and it is not
+// merged. A merged change may wait for its after-merge steps for as long as it
+// takes; an open one that nobody touched is abandoned or superseded.
+func deliveryStale(ch deliveryChange) bool {
+	switch ch.State {
+	case protocol.ChangeMerged, protocol.ChangeDone, protocol.ChangeStopped:
+		return false
+	}
+	if ch.StepState == protocol.StepStateClosed {
+		return false
+	}
+	return ch.Waiting >= 24*time.Hour
+}
+
+// deliveryVisible is the list on screen: grouped by who has to act, with done
+// and stale rows left out until the owner asks for them.
+func (m Model) deliveryVisible() []deliveryChange {
+	owner := m.snap.OwnerSession
+	var out []deliveryChange
+	for _, ch := range m.delivery.changes {
+		group := deliveryGroupOf(ch, owner)
+		if !m.delivery.showAll && (group == groupDone || deliveryStale(ch)) {
+			continue
+		}
+		out = append(out, ch)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return deliveryGroupOf(out[i], owner) < deliveryGroupOf(out[j], owner)
+	})
+	return out
+}
+
 // selectedChange is the change under the cursor.
-func (d deliveryState) selectedChange() (deliveryChange, bool) {
-	if len(d.changes) == 0 {
+func (m Model) selectedChange() (deliveryChange, bool) {
+	visible := m.deliveryVisible()
+	if len(visible) == 0 {
 		return deliveryChange{}, false
 	}
-	return d.changes[min(max(d.row, 0), len(d.changes)-1)], true
+	return visible[min(max(m.delivery.row, 0), len(visible)-1)], true
 }
 
 // deliveryDetailCmd reads one change in full. A source that cannot do it
@@ -177,33 +267,39 @@ func (m Model) deliveryDetailCmd(id string) tea.Cmd {
 // fresh one arrives.
 func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 	d := m.delivery
+	prev, had := m.selectedChange()
 	d.loaded, d.loading = true, false
 	if msg.err != nil {
 		d.err = msg.err.Error()
 	} else {
 		d.err = ""
-		prev, had := d.selectedChange()
 		changes := msg.changes
-		found := false
 		for i := range changes {
 			if had && changes[i].ID == prev.ID {
-				found, d.row = true, i
 				if prev.Full && !changes[i].Full && prev.Revision == changes[i].Revision && sameCommit(prev.Head, changes[i].Head) {
 					changes[i].Evidence, changes[i].Full = prev.Evidence, true
 				}
 			}
 		}
-		if had && !found {
-			d.detail = false
-		}
 		d.changes = changes
 	}
-	d.row = min(max(d.row, 0), max(len(d.changes)-1, 0))
-	if len(d.changes) == 0 {
+	m.delivery = d
+	visible := m.deliveryVisible()
+	found := false
+	for i := range visible {
+		if had && visible[i].ID == prev.ID {
+			d.row, found = i, true
+		}
+	}
+	if had && !found {
+		d.detail = false
+	}
+	d.row = min(max(d.row, 0), max(len(visible)-1, 0))
+	if len(visible) == 0 {
 		d.detail = false
 	}
 	m.delivery = d
-	if sel, ok := d.selectedChange(); ok && d.detail && msg.err == nil {
+	if sel, ok := m.selectedChange(); ok && d.detail && msg.err == nil {
 		m.delivery.detailLoading = true
 		return m, m.deliveryDetailCmd(sel.ID)
 	}
@@ -214,7 +310,7 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 // change with the same ID.
 func (m Model) deliveryDetailLoaded(msg deliveryDetailMsg) Model {
 	d := m.delivery
-	if sel, ok := d.selectedChange(); ok && sel.ID == msg.id {
+	if sel, ok := m.selectedChange(); ok && sel.ID == msg.id {
 		d.detailLoading = false
 	}
 	if msg.err != nil {
@@ -250,8 +346,17 @@ func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 
 func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	d := m.delivery
-	last := max(len(d.changes)-1, 0)
-	switch keyAction(contextDelivery, k.String()) {
+	action := keyAction(contextDelivery, k.String())
+	if action == "all" {
+		d.showAll = !d.showAll
+		d.detail = false
+		m.delivery = d
+		d.row = min(max(d.row, 0), max(len(m.deliveryVisible())-1, 0))
+		m.delivery = d
+		return m, nil
+	}
+	last := max(len(m.deliveryVisible())-1, 0)
+	switch action {
 	case "up":
 		if d.detail {
 			d.scroll = max(d.scroll-1, 0)
@@ -277,7 +382,7 @@ func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			d.row = min(d.row+10, last)
 		}
 	case "open":
-		if sel, ok := d.selectedChange(); ok && !d.detail {
+		if sel, ok := m.selectedChange(); ok && !d.detail {
 			d.detail, d.scroll, d.detailErr = true, 0, ""
 			cmd := m.deliveryDetailCmd(sel.ID)
 			d.detailLoading = cmd != nil
@@ -407,5 +512,5 @@ func (m Model) deliveryHints() []hint {
 		scroll.label = "scroll"
 		return []hint{scroll, bindingHint(contextDelivery, "back"), help, quit}
 	}
-	return []hint{bindingHint(contextDelivery, "workers log"), bindingPairHint(contextDelivery, actUp, actDown), bindingHint(contextDelivery, "open"), bindingHint(contextDelivery, "refresh"), help, quit}
+	return []hint{bindingHint(contextDelivery, "workers log"), bindingPairHint(contextDelivery, actUp, actDown), bindingHint(contextDelivery, "open"), bindingHint(contextDelivery, "all"), bindingHint(contextDelivery, "refresh"), help, quit}
 }
