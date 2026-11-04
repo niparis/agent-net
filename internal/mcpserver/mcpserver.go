@@ -154,6 +154,12 @@ func announceReminder() mcp.Middleware {
 			if !ok || !ok2 || out == nil || call.Params == nil || !strings.HasPrefix(call.Params.Name, "agent_") {
 				return res, err
 			}
+			// Workers cannot announce; keep the file-send refusal to one line.
+			if call.Params.Name == "agent_file_send" && out.IsError && len(out.Content) == 1 {
+				if msg, ok := out.Content[0].(*mcp.TextContent); ok && msg.Text == "workers send files with agent_handback" {
+					return res, nil
+				}
+			}
 			if call.Params.Name == "agent_announce" && !out.IsError {
 				announced.Store(true)
 				return res, err

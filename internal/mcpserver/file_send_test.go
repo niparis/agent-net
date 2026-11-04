@@ -99,3 +99,14 @@ func TestAgentFileSendConnectionLossDoesNotRetry(t *testing.T) {
 	ln.Close()
 	<-done
 }
+
+func TestAgentFileSendWorkerRefusalIsOneLine(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "1")
+	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
+		return nil, errors.New("workers send files with agent_handback")
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_file_send", Arguments: map[string]any{"to": "s_b", "paths": []string{"/tmp/a"}, "note": "x"}})
+	if err != nil || !res.IsError || len(res.Content) != 1 || resultText(t, res) != "workers send files with agent_handback" {
+		t.Fatalf("worker refusal: %v %+v", err, res)
+	}
+}
