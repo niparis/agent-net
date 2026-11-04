@@ -1209,6 +1209,13 @@ export const TOOL_CATALOG = [
         "effort": {
           "type": "string",
           "description": "Reasoning effort or thinking level."
+        },
+        "not_family": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Exclude model families from automatic selection, for example [\"openai\"]."
         }
       },
       "required": [],
