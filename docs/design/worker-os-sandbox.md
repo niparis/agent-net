@@ -140,4 +140,6 @@ A worker that is prompt-injected or careless, running as the owner's user:
 - **Other sockets on the filesystem** outside `/tmp`, `$XDG_RUNTIME_DIR` and `/run/docker.sock` stay reachable, because a read-only mount does not stop `connect()`.
 - **Its own state.** The worker can change its own session history and its private copy of the credentials.
 - **Kernel and bubblewrap flaws.** A namespace sandbox is as strong as the kernel.
+
+MCP servers the harness starts run in the sandbox too, so one that needs a hidden socket or a write outside it fails. Seen on the research machine: the owner's OpenCode config starts the GitHub MCP server with `docker run`, which cannot reach the hidden Docker socket. That is the intended trade: the Docker socket gives root.
 - **Claude workers** are refused, not sandboxed. Codex and Antigravity keep their own sandboxes, unchanged.

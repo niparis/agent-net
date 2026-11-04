@@ -432,6 +432,8 @@ What it does not cover:
 - **Its own state.** It can change its own session history and its private copy of the credentials.
 - **Kernel and bubblewrap flaws.**
 
+MCP servers that the harness starts are inside the sandbox too. One that needs a hidden socket or a write outside the sandbox fails there: for example an MCP server started with `docker run` cannot reach the Docker socket.
+
 There is no `--die-with-parent`: a worker outlives a daemon restart. The daemon stops it with SIGTERM, then SIGKILL, to bubblewrap's process group, which holds every process of the sandbox.
 
 ## Peer trust
