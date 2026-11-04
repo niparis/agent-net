@@ -6,19 +6,16 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
-	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // Run shows the screen until the person quits or ctx ends. It uses the
 // alternate screen and needs no mouse.
 func Run(ctx context.Context, src Source) error {
 	defer src.Close()
-	// Resolve Lip Gloss's adaptive colors before Bubble Tea acquires the
-	// terminal. Non-TUI commands never need to ask the terminal for its palette.
-	palette.SetDark(lipgloss.HasDarkBackground(os.Stdin, os.Stdout))
+	// The TUI asks for the background from Init, as a Bubble Tea command.
+	// Non-TUI commands never query the terminal.
 	m := New(src)
 	m.graphPixel.set(graphview.Detect(os.Getenv, graphview.QueryTerminal))
 	m.graphPixel.motion = os.Getenv("AGENT_NET_GRAPH_MOTION") == "1"

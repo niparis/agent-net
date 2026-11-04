@@ -888,8 +888,8 @@ func TestInitStartsFetchAndClock(t *testing.T) {
 	m := New(&fakeSource{snap: fakeSnapshot()})
 	cmd := m.Init()
 	batch, ok := cmd().(tea.BatchMsg)
-	if !ok || len(batch) != 2 {
-		t.Fatalf("Init must batch a fetch and a tick, got %T", cmd())
+	if !ok || len(batch) != 3 {
+		t.Fatalf("Init must batch a background request, a fetch and a tick, got %T", cmd())
 	}
 	var sawFetch bool
 	for _, c := range batch {
