@@ -77,7 +77,7 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
 			return nil, true, err
 		}
-		res, err := d.stepReport(ctx, sid, a)
+		res, err := d.stepReport(ctx, sid, info, a)
 		return res, true, err
 	default:
 		var a protocol.ChangesFindArgs
@@ -229,7 +229,7 @@ func branchUncommitted(ctx context.Context, dir, branch string) (bool, error) {
 
 // stepReport sends step.report for the calling session, after checking that
 // done_by is a worker it started.
-func (d *Daemon) stepReport(ctx context.Context, sid string, a protocol.StepReportArgs) (protocol.StepReportResult, error) {
+func (d *Daemon) stepReport(ctx context.Context, sid string, info protocol.SessionInfo, a protocol.StepReportArgs) (protocol.StepReportResult, error) {
 	var out protocol.StepReportResult
 	doneBy := a.DoneBy
 	if doneBy == sid {
@@ -248,6 +248,23 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, a protocol.StepRepo
 		if err := d.checkStartedWorker(ctx, sid, doneBy); err != nil {
 			return out, err
 		}
+	}
+	if q.Step == protocol.StepMerge && q.Result == protocol.StepResultPass && q.Fields[protocol.FieldMergedCommit] != "" {
+		var view protocol.ChangeView
+		if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: q.ChangeID}, &view); err != nil {
+			return out, err
+		}
+		// The gateway checks this again in its write transaction. If a new
+		// revision arrives during the git check, this report cannot count.
+		if q.Commit != view.Change.HeadCommit {
+			return out, fmt.Errorf("commit %s is not the head of change %s (now at %s)", q.Commit, q.ChangeID, view.Change.HeadCommit)
+		}
+		folder, err := d.deliveryMergeRepo(ctx, info, view.Change.Project)
+		if err != nil {
+			return out, err
+		}
+		contains := deliveryMergeContainsHead(ctx, folder, q.Commit, q.Fields[protocol.FieldMergedCommit])
+		q.MergeContainsHead = &contains
 	}
 	if err := d.deliveryCall(ctx, protocol.FrameStepReport, q, &out); err != nil {
 		return out, err
@@ -499,4 +516,46 @@ func deliverySensitivePath(ctx context.Context, dir, base, head string) string {
 		}
 	}
 	return ""
+}
+
+// A step owner may work in its own project. Use the target project's local
+// registration in that case, never a path from another machine's change.
+func (d *Daemon) deliveryMergeRepo(ctx context.Context, info protocol.SessionInfo, project string) (string, error) {
+	if info.Repo.Project == project && info.Repo.Root != "" {
+		return first(info.Repo.Worktree, info.Repo.Root), nil
+	}
+	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
+	if err != nil {
+		return "", fmt.Errorf("cannot find merge repository: %w", err)
+	}
+	var projects protocol.ProjectsResult
+	if err := json.Unmarshal(raw, &projects); err != nil {
+		return "", fmt.Errorf("cannot read merge repositories: %w", err)
+	}
+	folder := ""
+	for _, p := range projects.Projects {
+		if p.NodeID != d.cfg.NodeID || p.Name != project {
+			continue
+		}
+		if folder != "" && folder != p.Path {
+			return "", fmt.Errorf("more than one local repository for project %q: report the merge from a session in the target repository", project)
+		}
+		folder = p.Path
+	}
+	if folder == "" {
+		return "", fmt.Errorf("no local repository for project %q: report the merge from a session in that repository or register its local path", project)
+	}
+	return folder, nil
+}
+
+// Object existence alone is not proof: merged must be a commit object, and
+// the exact reported change head must be reachable from it. Git failures,
+// missing objects and incomplete clones all give negative proof.
+func deliveryMergeContainsHead(ctx context.Context, folder, head, merged string) bool {
+	kind, err := gitOut(ctx, folder, "cat-file", "-t", merged)
+	if err != nil || kind != "commit" {
+		return false
+	}
+	_, err = gitOut(ctx, folder, "merge-base", "--is-ancestor", head, merged)
+	return err == nil
 }

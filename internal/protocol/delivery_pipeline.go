@@ -1596,6 +1596,10 @@ type StepReportRequest struct {
 	Fields map[string]string `json:"fields,omitempty"`
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
+	// MergeContainsHead is the daemon's git check for a merge pass. Nil is
+	// an older daemon without the check; false refuses the merge report.
+	// The check binds Commit to Fields[merged_commit] in this same request.
+	MergeContainsHead *bool `json:"merge_contains_head,omitempty"`
 }
 
 // Validate checks a report before it is sent.

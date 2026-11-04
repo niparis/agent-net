@@ -1918,6 +1918,18 @@ erase a risk or sensitive-path trigger already recorded on the change.
 Older daemons omit these fields, so unknown risk keeps the difficulty rule.
 Worker risk is kept in the daemon's `worker_delivery_risk` table across restarts.
 
+For a merge pass with `merged_commit`, the daemon checks that the object is a
+commit in the target repository and runs `git merge-base --is-ancestor` to
+check that it contains the change's exact head. It uses the reporting session's
+repository when it is the target project, or that project's local registration
+when the reporter works elsewhere. Missing objects and failed git checks send
+`merge_contains_head: false`; the gateway refuses the report without recording
+merge evidence or changing the change's state. A positive proof still needs
+all required steps. The optional proof belongs to the reported head and merged
+commit. The gateway checks the head again when saving, so a concurrent revision
+cannot reuse the proof. An older daemon that omits the field keeps the existing
+behavior. An older gateway ignores the new field. This does not block git itself.
+
 The daemon methods behind them are `change_submit`, `step_claim`, `step_report` and `changes_find`. They need an agent session; the command line is refused.
 
 In Settings, select a repo to see its `delivery.owner` rows. Enter a graph

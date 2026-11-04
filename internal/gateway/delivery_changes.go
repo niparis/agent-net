@@ -464,6 +464,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := p.Accepts(c, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
+	if q.Step == protocol.StepMerge && q.Result == protocol.StepResultPass && q.MergeContainsHead != nil && !*q.MergeContainsHead {
+		return protocol.StepReportResult{}, reject("merge refused: daemon could not verify merged_commit %s exists and contains change head %s", q.Fields[protocol.FieldMergedCommit], c.HeadCommit)
+	}
 	if err := checkMergeReady(tx, p, c, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
