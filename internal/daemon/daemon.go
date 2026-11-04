@@ -983,6 +983,9 @@ func (d *Daemon) Sessions() []protocol.SessionInfo {
 
 var errNotConnected = errors.New("not connected to the gateway")
 
+// errGatewayTimeout is a call that the gateway did not answer in time.
+var errGatewayTimeout = errors.New("gateway did not answer in time")
+
 // RemoteError is a refusal from the gateway.
 type RemoteError string
 

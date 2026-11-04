@@ -702,9 +702,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				d.notStarted(d.ctoCtx, e, err.Error())
 				return
 			}
-			cctx, cancel := context.WithTimeout(d.ctoCtx, 30*time.Second)
-			_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, OSSandbox: out.OSSandbox, FromCTO: l.FromCTO})
-			cancel()
+			err = d.sendQueuedStart(d.ctoCtx, set.BackgroundStartTimeout, l.Project, protocol.WorkerQueuedStart{Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, OSSandbox: out.OSSandbox, FromCTO: l.FromCTO})
 			if err != nil {
 				d.endWorker(w, protocol.StopStartFails)
 				d.notStarted(d.ctoCtx, e, "the worker started, but its task could not be sent: "+err.Error())
