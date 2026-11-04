@@ -237,12 +237,12 @@ A machine joins with a one-time code.
 
 ## Files between machines
 
-Files do not travel in messages. A message carries only a manifest: name, size, SHA-256 and an ID per file. The bytes go over Taildrop on the same tailnet, or through the gateway in parts when Taildrop is not available. The gateway transfer in parts and the daemon's send and receive are built; the session tools and the TUI flow are later steps (decision [0054](decisions/0054-files-between-machines.md)).
+Files do not travel in messages. A message carries only a manifest: name, size, SHA-256 and an ID per file. The bytes go over Taildrop on the same tailnet, or through the gateway in parts when Taildrop is not available. The MCP `agent_file_send` tool is available to agent sessions; hand-back files, other harnesses and the TUI flow are later steps (decision [0054](decisions/0054-files-between-machines.md)).
 
 What the sending daemon checks, before the message is stored:
 
 - **Limits.** At most 100 MB per file and 10 files per message. The gateway checks the manifest again when it stores the message: a file name is a plain name of at most 200 bytes (no `/`, `\`, control character, `.` or `..`), the IDs and names are unique, and each hash is a SHA-256.
-- **Allowed folders.** Only files in the sending session's project or worktree, or in `/tmp`. Symlinks are resolved first, so a link in the project that points elsewhere is judged by its target. A path must be absolute and name a regular file. The file system root never counts as a project.
+- **Allowed folders.** Only files in the sending session's project or worktree, or in `/tmp`. Symlinks are resolved first. For `agent_file_send`, a link must stay inside the most specific allowed project, worktree or `/tmp` folder that contains the named path. A path must be absolute and name a regular file. The file system root never counts as a project.
 - **Never sent, whatever the project.** The credential folders and files under the home folder: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, `~/.pki`, `~/.password-store`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.config/gcloud`, `~/.config/gh`, `~/.config/hub`, `~/.local/share/keyrings`, `~/Library/Keychains`, and the harness logins `~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.local/share/opencode/auth.json`, `~/.pi/agent/auth.json`, `~/.gemini/oauth_creds.json`. Also agent-net's own folders: the daemon state folder, the config folder, the gateway data folder, `~/.local/state/agent-net`, `~/.local/share/agent-net` and `~/.config/agent-net`. One exception: a worker's worktree lives in the state folder, and it is that worker's project, so the worker may send files from its own worktree, and nothing else there.
 - **Secret scan.** Every text file (no NUL byte and valid UTF-8 in its first 8000 bytes) goes through the same scanner that keeps secrets out of skills. A hit refuses the file. The refusal names the file but never repeats the text. Only the owner can send such a file anyway (a flag the owner flow sets; no agent tool sets it). Binary files are not scanned.
 - **A snapshot is sent.** The daemon copies each file into `<state>/files/outgoing/` while it hashes it, and sends from the copy. A file that changes after the check cannot reach the receiver under the old hash. The copies are deleted when the send ends, and a crash leftover after a day.
@@ -253,6 +253,8 @@ How the bytes travel:
 - **Taildrop** is used only when the receiving machine reported a Tailscale address that this machine's `tailscale status` lists as an online peer, so both machines are on one tailnet. A Taildrop that fails falls back to the gateway. A message held for the owner's approval keeps its files on the gateway, which deletes them after 7 days if nobody approves.
 - **The gateway** stores the parts (below). The receiver finds an upload by its unique name with `xfer.find`, which lists only finished uploads addressed to the calling machine.
 - **Same machine.** Between two sessions of one machine the copy moves through `<state>/files/local/`, never through the network.
+
+A peer may send you up to 10 files of 100 MB each with a message. A peer controls the contents and names of those files; a matching hash verifies transfer integrity, not that the contents are safe. The secret scan is on the sending daemon and does not scan binary files.
 
 What the receiving daemon does:
 
