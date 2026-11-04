@@ -293,6 +293,8 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			}
 			if ghosts > 0 {
 				g.logLine("worker.ghosts.cleaned", "node", nc.id, "host", g.store.hostname(nc.id), "sessions", ghosts)
+				// A deleted merger session frees its tasks; tell the caller now.
+				g.dispatchStepTasks(ctx)
 			}
 		}
 		return map[string]any{"cleaned": n}, nil

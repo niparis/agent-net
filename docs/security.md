@@ -1361,10 +1361,10 @@ by announcing a type. The gateway derives that type from its registration.
 A registration must name a non-worker Claude session of the same project on
 the named machine. Deleting that session record clears the registration;
 stopping the harness session or taking it offline keeps the registration and
-leaves its tasks waiting. The gateway accepts registration changes from the
-machine that holds the session, or an owner relay whose owner pseudo-session
-belongs to the authenticated calling machine. A peer node without that owner
-authority cannot register or clear another machine's merger.
+leaves its tasks waiting. The gateway accepts a cross-machine change when the
+caller presents an owner session of its own node. Every enrolled node has such
+a session, so this proves only that the caller is an enrolled daemon. It is the
+same trust model as graph and settings changes, and no stronger.
 
 `@merger` is a reserved delivery owner for test and merge. Tasks go only to
 the registered session for the change's project and machine. Claim and report

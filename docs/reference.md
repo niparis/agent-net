@@ -2581,7 +2581,10 @@ its registration; tasks wait and Delivery says "waiting for merger". Deleting
 the session record clears the registration. Explicitly stopping routing with
 `merger_stop` or clearing the registration does the same. All of the project's
 `@merger` assignments and unfinished tasks, including after-merge steps, return
-to the caller. Accept keeps its current owner. Replacing the registered session
+to the caller. Accept keeps its current owner. A stop works even when no
+registration record exists. Stopping the merger stops it for the project on
+every machine: the project's other registrations are removed too, so no merger
+session stays registered without routing. Replacing the registered session
 keeps `@merger` ownership, releases the old claims and queues notices for the
 new merger. Completed evidence is preserved. Registrations are stored in the
 gateway's `project_mergers` table.
@@ -2605,8 +2608,9 @@ owners. An offline merger is marked "offline, tasks wait".
 
 To stop routing to it, ask the CTO for `session_change` action `merger_stop`
 with `project` and optional `node_id`. Approval clears the registration and
-returns every `@merger` step to the caller, including after-merge tests.
-It leaves the accept owner unchanged. The Claude conversation stays available.
+returns every `@merger` step to the caller, including after-merge tests. It
+stops the merger for the project on every machine. It leaves the accept owner
+unchanged. The Claude conversation stays available.
 The owner can also register an existing project Claude session with
 `agent-net merger set <project> <node-id> <session-id>`, or clear that record
 with `agent-net merger clear <project> <node-id>`. Registering an existing

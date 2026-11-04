@@ -415,13 +415,27 @@ func (g *Gateway) RunLearning(ctx context.Context) {
 // RetentionInterval is how often RunRetention deletes old data.
 const RetentionInterval = time.Hour
 
+// prune deletes data past retention. A merger session removed by retention
+// frees its tasks, so the caller learns about them now rather than at the next
+// delivery change.
+func (g *Gateway) prune(ctx context.Context) (PruneResult, error) {
+	res, err := g.store.Prune(g.opts.Retention)
+	if err != nil {
+		return res, err
+	}
+	if res.Sessions > 0 {
+		g.dispatchStepTasks(ctx)
+	}
+	return res, nil
+}
+
 // RunRetention deletes data older than Options.Retention, once at start and
 // then every RetentionInterval, until ctx ends.
 func (g *Gateway) RunRetention(ctx context.Context) {
 	t := time.NewTicker(RetentionInterval)
 	defer t.Stop()
 	for {
-		if _, err := g.store.Prune(g.opts.Retention); err != nil {
+		if _, err := g.prune(ctx); err != nil {
 			g.logLine("error", "where", "retention", "err", err)
 		}
 		// A vacuum rewrites gateway.db. It runs at most once a week and only

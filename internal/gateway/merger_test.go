@@ -268,3 +268,128 @@ func TestMergerStartMovesExistingCallerClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A configured stop without a registration must still return the project's
+// @merger assignments to the caller.
+func TestMergerConfiguredStopWithoutRegistration(t *testing.T) {
+	r := newDeliveryRig(t)
+	for _, step := range []string{"test", "merge"} {
+		if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: step, Node: "@merger"}, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := r.submit(r.a, r.workerSubmit("feature/unregistered", commitA)).Change.Change
+	r.g.dispatchStepTasks(context.Background())
+	var owner string
+	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step='test' AND after_merge=0`, c.ID, c.Revision).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner != "/merger" {
+		t.Fatalf("test task owner=%q, want /merger before the stop", owner)
+	}
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"tests", "merges"} {
+		var source string
+		if err := r.s.db.QueryRow(`SELECT source FROM graph_edges WHERE target='demo' AND kind=?`, kind).Scan(&source); err != nil {
+			t.Fatalf("%s edge: %v", kind, err)
+		}
+		if source != "/delivery/caller" {
+			t.Fatalf("%s owner=%q, want /delivery/caller", kind, source)
+		}
+	}
+	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step='test' AND after_merge=0`, c.ID, c.Revision).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner != "/caller" {
+		t.Fatalf("test task owner=%q, want /caller after the stop", owner)
+	}
+	var history int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM graph_history WHERE node='/delivery/merger' AND attr='tests'`).Scan(&history); err != nil {
+		t.Fatal(err)
+	}
+	if history == 0 {
+		t.Fatal("stopping without a registration did not record the edge change in graph history")
+	}
+}
+
+// Removing one machine's merger stops routing for the whole project, so a
+// registration on another machine must not stay behind without routing.
+func TestMergerStopClearsEveryMachine(t *testing.T) {
+	for _, action := range []string{"stop", "delete"} {
+		t.Run(action, func(t *testing.T) {
+			r := newDeliveryRig(t)
+			demo := protocol.RepoInfo{Root: "/code/demo", Project: "demo"}
+			other, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "claude", NativeID: "merger-b", Repo: demo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet}, "owner"); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.b, SessionID: other}, "owner"); err != nil {
+				t.Fatal(err)
+			}
+			switch action {
+			case "stop":
+				if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, Configure: true}, "owner"); err != nil {
+					t.Fatal(err)
+				}
+			case "delete":
+				if _, err := r.s.db.Exec(`DELETE FROM sessions WHERE id=?`, r.sonnet); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var n int
+			if err := r.s.db.QueryRow(`SELECT count(*) FROM project_mergers WHERE project='demo'`).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			if n != 0 {
+				t.Fatalf("registrations=%d, want 0 after the project's merger was removed", n)
+			}
+			a, _, err := r.s.Agent(other)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.Type == "merger" {
+				t.Fatal("other machine's session stayed a merger without routing")
+			}
+		})
+	}
+}
+
+// Pruning the merger session returns its task to the caller and tells the
+// caller about it.
+func TestMergerPruneNotifiesCaller(t *testing.T) {
+	r := newDeliveryRig(t)
+	r.g.opts.Retention = DefaultRetention()
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	c := r.submit(r.a, r.workerSubmit("feature/prune", commitA)).Change.Change
+	r.g.dispatchStepTasks(context.Background())
+	if err := r.s.SetSessionOffline(r.a, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET last_seen=0 WHERE id=?`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.g.prune(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var owner string
+	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step='test' AND after_merge=0`, c.ID, c.Revision).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner != "/caller" {
+		t.Fatalf("test task owner=%q, want /caller after pruning the merger", owner)
+	}
+	var notices int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND revision=? AND step='test' AND session_id=?`, c.ID, c.Revision, r.caller).Scan(&notices); err != nil {
+		t.Fatal(err)
+	}
+	if notices != 1 {
+		t.Fatalf("caller notices=%d, want 1 after pruning the merger", notices)
+	}
+}
