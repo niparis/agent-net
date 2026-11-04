@@ -1,9 +1,15 @@
 package mcpserver
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -40,4 +46,56 @@ func TestAgentFileSendDaemonError(t *testing.T) {
 	if err != nil || !res.IsError {
 		t.Fatalf("daemon error: %v %+v", err, res)
 	}
+}
+
+// A send may have reached the daemon before the socket breaks. Retrying it
+// blindly would store another message and transfer a second set of files.
+func TestAgentFileSendConnectionLossDoesNotRetry(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "daemon.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var count atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				scan := bufio.NewScanner(c)
+				for scan.Scan() {
+					var req struct {
+						ID     string `json:"id"`
+						Method string `json:"method"`
+					}
+					_ = json.Unmarshal(scan.Bytes(), &req)
+					if req.Method == "hello" {
+						fmt.Fprintf(c, "{\"id\":%q,\"result\":{}}\n", req.ID)
+						continue
+					}
+					if req.Method == "file_send" {
+						count.Add(1)
+						return
+					}
+				}
+			}()
+		}
+	}()
+	d := NewDaemon(socket, map[string]any{"client": "mcp"})
+	t.Cleanup(d.Close)
+	_, err = d.Call(context.Background(), "file_send", map[string]any{"to": "s_b", "paths": []string{"/tmp/a"}, "note": "read"})
+	if err == nil || !strings.Contains(err.Error(), "may have been sent") {
+		t.Errorf("error = %v", err)
+	}
+	if got := count.Load(); got != 1 {
+		t.Errorf("file sends = %d, want 1", got)
+	}
+	ln.Close()
+	<-done
 }

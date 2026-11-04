@@ -309,11 +309,15 @@ func (d *Daemon) once(ctx context.Context, method string, params any) (json.RawM
 
 // Call makes one daemon call. If the connection fails it dials again and
 // retries once. Sends carry an idempotency key made before the first attempt,
-// so a retry never stores a message twice.
+// so a retry never stores a message twice. File sends cannot safely retry:
+// the first call may already have stored its message and transferred bytes.
 func (d *Daemon) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	res, err := d.once(ctx, method, params)
 	if !client.IsConnError(err) {
 		return res, err
+	}
+	if method == "file_send" {
+		return nil, errors.New("connection lost; the files may have been sent. Check your messages before sending again")
 	}
 	res, err = d.once(ctx, method, params)
 	if client.IsConnError(err) {
