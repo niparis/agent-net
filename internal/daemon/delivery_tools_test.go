@@ -190,7 +190,7 @@ func TestChangeSubmitFromWorktreeSession(t *testing.T) {
 	}
 	var q protocol.ChangeSubmitRequest
 	_ = json.Unmarshal(sent[0], &q)
-	want := protocol.ChangeSubmitRequest{SessionID: sid, Project: "demo", Branch: "feat/x", HeadCommit: head, Title: "Add a",
+	want := protocol.ChangeSubmitRequest{SessionID: sid, Project: "demo", Branch: "feat/x", HeadCommit: head, Title: "Add a", SensitivePath: "diff unavailable",
 		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: sid, Model: "claude-opus-5-5", ModelFamily: "anthropic"}}
 	if deliveryJSON(q) != deliveryJSON(want) {
 		t.Fatalf("change.submit\n got %s\nwant %s", deliveryJSON(q), deliveryJSON(want))

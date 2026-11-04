@@ -464,8 +464,18 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := p.Accepts(c, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
-	if q.Step == protocol.StepMerge && q.Result == protocol.StepResultPass && q.MergeContainsHead != nil && !*q.MergeContainsHead {
-		return protocol.StepReportResult{}, reject("merge refused: daemon could not verify merged_commit %s exists and contains change head %s", q.Fields[protocol.FieldMergedCommit], c.HeadCommit)
+	if q.Step == protocol.StepMerge && q.Result == protocol.StepResultPass {
+		if q.MergeContainsHead == nil {
+			var version string
+			if err := tx.QueryRow(`SELECT version FROM nodes WHERE id=?`, machine).Scan(&version); err != nil {
+				return protocol.StepReportResult{}, err
+			}
+			if deliveryMergeProofRequired(version) {
+				return protocol.StepReportResult{}, reject("merge_contains_head proof is required from daemon %s (since %s)", version, deliveryMergeProofMinVersion)
+			}
+		} else if !*q.MergeContainsHead {
+			return protocol.StepReportResult{}, reject("merge refused: daemon could not verify merged_commit %s exists and contains change head %s", q.Fields[protocol.FieldMergedCommit], c.HeadCommit)
+		}
 	}
 	if err := checkMergeReady(tx, p, c, e); err != nil {
 		return protocol.StepReportResult{}, err
@@ -910,4 +920,26 @@ func deliveryStatusNote(existing, status string) string {
 		return existing + "; " + status
 	}
 	return status
+}
+
+const deliveryMergeProofMinVersion = "0.4.130"
+
+// Older daemons omit proof. Use the authenticated machine's hello version,
+// not a field supplied in the report. Dev builds support current checks.
+func deliveryMergeProofRequired(version string) bool {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if version == "dev" {
+		return true
+	}
+	have, ok := parseReleaseVersion(version)
+	if !ok {
+		return false
+	}
+	want, _ := parseReleaseVersion(deliveryMergeProofMinVersion)
+	for i := range want {
+		if have[i] != want[i] {
+			return have[i] > want[i]
+		}
+	}
+	return true
 }

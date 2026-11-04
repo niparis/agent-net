@@ -185,9 +185,7 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 			}
 		}
 	}
-	if q.BaseCommit != "" {
-		q.SensitivePath = deliverySensitivePath(ctx, folder, q.BaseCommit, commit)
-	}
+	q.SensitivePath = deliverySensitivePath(ctx, folder, q.BaseCommit, commit)
 	if err := d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out); err != nil {
 		return out, err
 	}
@@ -504,10 +502,11 @@ func deliverySensitivePath(ctx context.Context, dir, base, head string) string {
 		}
 	}
 	for _, name := range paths {
-		file := strings.ToLower(path.Base(name))
+		lowerPath := strings.ToLower(name)
+		file := path.Base(lowerPath)
 		sensitive := name == "internal/gateway/store.go" || name == "install.sh" || strings.HasPrefix(name, ".github/workflows/") ||
 			(path.Dir(name) == "internal/daemon" && strings.HasPrefix(file, "files") && strings.HasSuffix(file, ".go")) ||
-			strings.Contains(file, "auth") || strings.Contains(file, "token") || strings.Contains(file, "security")
+			strings.Contains(lowerPath, "auth") || strings.Contains(lowerPath, "token") || strings.Contains(lowerPath, "security")
 		if sensitive {
 			if len(name) > 1024 || strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 				return "sensitive file"

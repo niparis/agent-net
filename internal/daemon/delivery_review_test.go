@@ -18,6 +18,10 @@ func TestDeliverySensitiveDiff(t *testing.T) {
 		{"internal/gateway/store.go", "internal/gateway/store.go"},
 		{"internal/gateway/authorization.go", "internal/gateway/authorization.go"},
 		{"internal/token.go", "internal/token.go"},
+		{"internal/auth/provider.go", "internal/auth/provider.go"},
+		{"internal/security/rule.go", "internal/security/rule.go"},
+		{"internal/ToKeN/provider.go", "internal/ToKeN/provider.go"},
+		{"internal/tui/view.go", ""},
 		{"docs/security.md", "docs/security.md"},
 		{"internal/daemon/files_send.go", "internal/daemon/files_send.go"},
 		{"install.sh", "install.sh"},
@@ -117,5 +121,35 @@ func TestDeliveryHandbackUsesJudgeRisk(t *testing.T) {
 		if st.Step == protocol.StepReview && (st.State == protocol.StepStateSkipped || !strings.Contains(st.Note, "required: risk 4")) {
 			t.Fatalf("high-risk normal change skipped review: %+v", st)
 		}
+	}
+}
+
+func TestDeliverySubmitWithoutDiffRequiresReview(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	if err := os.WriteFile(filepath.Join(wt, "install.sh"), []byte("changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", ".")
+	gitIn(t, wt, "commit", "-qm", "installer")
+	lc, _ := helloDelivery(t, n, "submit-no-base", wt, "claude-opus-5-5")
+	for _, target := range []string{"", "missing-target"} {
+		t.Run("target="+target, func(t *testing.T) {
+			lc.mustCall(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{TargetBranch: target})
+			frames := f.frames(protocol.FrameChangeSubmit)
+			var q protocol.ChangeSubmitRequest
+			if err := json.Unmarshal(frames[len(frames)-1], &q); err != nil {
+				t.Fatal(err)
+			}
+			if q.BaseCommit != "" || q.SensitivePath != "diff unavailable" {
+				t.Fatalf("unknown diff skipped review: %+v", q)
+			}
+			c := protocol.Change{HeadCommit: q.HeadCommit, SensitivePath: q.SensitivePath}
+			for _, st := range protocol.PipelineToday().Status(c, nil) {
+				if st.Step == protocol.StepReview && st.State == protocol.StepStateSkipped {
+					t.Fatal("unknown diff left review out")
+				}
+			}
+		})
 	}
 }

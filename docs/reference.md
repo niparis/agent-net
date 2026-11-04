@@ -1908,11 +1908,13 @@ a change is 0 when unknown. It comes from `WorkerAssessment.Risk` (shown as
 rule `delivery.pipeline.review.required_risk` defaults to 4. Network and repo
 values may lower it to 1, 2 or 3; a repo cannot raise its network threshold.
 Sensitive paths always require review: `internal/gateway/store.go`, a
-`testdata/migrations.lock`, filenames containing `auth`, `token` or `security`
+`testdata/migrations.lock`, path components containing `auth`, `token` or `security`
 (case insensitive), `internal/daemon/files*.go`, `install.sh`, and files under
 `.github/workflows/`. The daemon checks both sides of a rename at hand-back.
 If the diff cannot be read, review is required. A session submission with a
-local `target_branch` also checks its diff. The step note says, for example,
+local `target_branch` also checks its diff. Without a target branch, or when it
+cannot be resolved, the trigger is `diff unavailable` and review is required.
+The step note says, for example,
 `required: risk 4` or `required: touches migrations`. A later submit cannot
 erase a risk or sensitive-path trigger already recorded on the change.
 Older daemons omit these fields, so unknown risk keeps the difficulty rule.
@@ -1927,8 +1929,10 @@ when the reporter works elsewhere. Missing objects and failed git checks send
 merge evidence or changing the change's state. A positive proof still needs
 all required steps. The optional proof belongs to the reported head and merged
 commit. The gateway checks the head again when saving, so a concurrent revision
-cannot reuse the proof. An older daemon that omits the field keeps the existing
-behavior. An older gateway ignores the new field. This does not block git itself.
+cannot reuse the proof. A daemon at version 0.4.130 or newer must send proof;
+the gateway refuses a merge pass without it. Older daemons that omit the field keep the existing
+behavior. Dev builds must also send proof. An older gateway ignores the new
+field. This does not block git itself.
 
 The daemon methods behind them are `change_submit`, `step_claim`, `step_report` and `changes_find`. They need an agent session; the command line is refused.
 

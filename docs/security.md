@@ -440,15 +440,17 @@ Sensitive paths include migrations, authority and token files, security files,
 file transfer code, the installer and workflows. The daemon sends an optional
 risk score and sensitive-path reason; older peers may omit them. The gateway
 keeps recorded triggers on later submissions so omitted fields cannot erase a
-review requirement. A missing diff at hand-back requires review. These rules
-apply to pipeline evidence; git itself still allows direct merges.
+review requirement. A missing diff at hand-back or session submission requires
+review. Sensitive names in directory components also require review, with
+case-insensitive matching. These rules apply to pipeline evidence; git itself still allows direct merges.
 
 A new daemon checks merge ancestry in the target repository before reporting a
 merge pass. It sends an optional `merge_contains_head` result for the exact
 reported head and merged commit. A negative result is refused by the gateway
 before evidence is stored. Missing commits, non-commit objects and failed git
-checks count as negative. A positive result cannot bypass required steps or a
-head change. Older daemons omit the proof and retain the existing checks.
+checks count as negative. Daemons from version 0.4.130 and dev builds must send
+proof; the gateway reads their version from the authenticated machine's hello.
+A positive result cannot bypass required steps or a head change. Older daemons omit the proof and retain the existing checks.
 
 - **A machine speaks only for its own sessions.** A submit names a session on the sending machine, or the hand-back of a worker on that machine which the session started. A session submits only its own work. A step report comes from a session on the sending machine. `done_by` names a worker that session started, or `owner` for a direct owner approval of a delegated step.
 - **The owner reads every change.** The TUI reads changes with the daemon method `changes_owner_find`, which is read only and follows the same gate as the other owner reads: only the owner's command line or TUI, not an agent connection and not a command line that runs inside an agent session. Agents keep `changes_find`, and a TUI connection cannot call it or the write methods.

@@ -11,13 +11,25 @@ func TestMergeDaemonAncestryProof(t *testing.T) {
 	yes, no := true, false
 	for _, tc := range []struct {
 		name     string
+		version  string
+		refusal  string
 		proof    *bool
 		accepted bool
 	}{
-		{"older daemon", nil, true}, {"contains head", &yes, true}, {"does not contain head", &no, false},
+		{name: "older daemon", version: "0.4.129", accepted: true},
+		{name: "first proof daemon", version: "0.4.130", refusal: "merge_contains_head"},
+		{name: "newer daemon", version: "v0.4.131", refusal: "merge_contains_head"},
+		{name: "newer minor", version: "0.5.0", refusal: "merge_contains_head"},
+		{name: "dev daemon", version: "dev", refusal: "merge_contains_head"},
+		{name: "unknown old version", version: "", accepted: true},
+		{name: "contains head", version: "0.4.130", proof: &yes, accepted: true},
+		{name: "does not contain head", version: "0.4.130", proof: &no, refusal: "exists and contains change head"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newDeliveryRig(t)
+			if err := r.s.SetNodeHello(r.a, "ha", tc.version); err != nil {
+				t.Fatal(err)
+			}
 			c := r.submit(r.a, r.workerSubmit("feat/merge", commitA)).Change.Change
 			for _, step := range []string{protocol.StepAccept, protocol.StepTest} {
 				fields := map[string]string{}
@@ -35,7 +47,7 @@ func TestMergeDaemonAncestryProof(t *testing.T) {
 					t.Fatalf("merge not stored: %+v", got)
 				}
 			} else {
-				if err == nil || !strings.Contains(err.Error(), "exists and contains change head") {
+				if err == nil || !strings.Contains(err.Error(), tc.refusal) {
 					t.Fatalf("unclear ancestry refusal: %v", err)
 				}
 				got := r.get(c.ID)
