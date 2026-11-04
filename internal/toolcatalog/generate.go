@@ -27,6 +27,7 @@ var pluginMethods = map[string]string{
 	"agent_messages_find": "messages", "agent_message_get": "message_status",
 	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
 	"agent_worker_profiles_find": "worker_profiles", "agent_message_send": "send",
+	"agent_file_send":     "file_send",
 	"agent_message_reply": "reply", "agent_announce": "announce",
 	"agent_owner_ask": "waiting", "agent_learn": "agent_learn",
 	"agent_worker_start": "worker_start", "agent_worker_stop": "worker_stop",
@@ -40,10 +41,6 @@ var pluginMethods = map[string]string{
 func PluginTools() ([]PluginTool, error) {
 	var out []PluginTool
 	for _, tool := range Tools {
-		// File sending is available through MCP only in this layer.
-		if tool.Name == "agent_file_send" {
-			continue
-		}
 		var roles []Role
 		for _, role := range tool.Roles {
 			if role == RoleAgent || role == RoleWorker {

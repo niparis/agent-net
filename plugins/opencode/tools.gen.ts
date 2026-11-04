@@ -142,6 +142,46 @@ export const TOOL_CATALOG = [
     "method": "changes_find"
   },
   {
+    "name": "agent_file_send",
+    "description": "Send files from this session to one peer with a note. Paths must be absolute and within the session project, worktree or /tmp. Workers send files with agent_handback.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Recipient session ID or exact name."
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Absolute paths to files on this machine."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Message to the recipient."
+        }
+      },
+      "required": [
+        "to",
+        "paths",
+        "note"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "file_send"
+  },
+  {
     "name": "agent_graph_read",
     "description": "Read the graph: nodes with their charters and rules, and the edges between them. Give node to read one node and its edges.",
     "inputSchema": {
@@ -194,6 +234,15 @@ export const TOOL_CATALOG = [
         "complete": {
           "type": "boolean",
           "description": "Whether the whole task was completed."
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Absolute paths to files inside this worker's worktree."
         }
       },
       "required": [

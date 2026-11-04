@@ -394,13 +394,4 @@ func TestFileSendCatalog(t *testing.T) {
 	if !reflect.DeepEqual(output["required"], []any{"message_id", "files"}) {
 		t.Errorf("output required = %v", output["required"])
 	}
-	plugins, err := PluginTools()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range plugins {
-		if p.Name == found.Name {
-			t.Error("file send is MCP-only")
-		}
-	}
 }

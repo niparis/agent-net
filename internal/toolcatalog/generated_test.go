@@ -36,7 +36,7 @@ func TestGeneratedPluginCatalogsAreCurrent(t *testing.T) {
 		for _, role := range []Role{RoleAgent, RoleWorker} {
 			var wantNames, gotNames []string
 			for _, tool := range ForRole(role) {
-				if tool.Name != "agent_file_send" && (role == RoleAgent || hasRole(tool.Roles, RoleWorker)) {
+				if role == RoleAgent || hasRole(tool.Roles, RoleWorker) {
 					wantNames = append(wantNames, tool.Name)
 				}
 			}
@@ -49,6 +49,28 @@ func TestGeneratedPluginCatalogsAreCurrent(t *testing.T) {
 				t.Errorf("%s role %s tools = %v, want %v", path, role, gotNames, wantNames)
 			}
 		}
+	}
+}
+
+func TestPluginFileTools(t *testing.T) {
+	tools, err := PluginTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var send, handback *PluginTool
+	for i := range tools {
+		switch tools[i].Name {
+		case "agent_file_send":
+			send = &tools[i]
+		case "agent_handback":
+			handback = &tools[i]
+		}
+	}
+	if send == nil || send.Method != "file_send" || !hasRole(send.Roles, RoleAgent) || !hasRole(send.Roles, RoleWorker) {
+		t.Fatalf("file send tool: %+v", send)
+	}
+	if handback == nil || !bytes.Contains(handback.InputSchema, []byte(`"files"`)) {
+		t.Fatalf("handback tool: %+v", handback)
 	}
 }
 
