@@ -340,7 +340,6 @@ func computeLayoutRoots(homeDir string, repos []discoveredRepo) ([]protocol.Layo
 
 	type repoWithSegments struct {
 		repo     discoveredRepo
-		rel      string
 		segments []string
 	}
 
@@ -351,7 +350,7 @@ func computeLayoutRoots(homeDir string, repos []discoveredRepo) ([]protocol.Layo
 			continue
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		list = append(list, repoWithSegments{repo: r, rel: rel, segments: parts})
+		list = append(list, repoWithSegments{repo: r, segments: parts})
 	}
 
 	// Find candidate root folders (folders between home and repos, not home itself).
