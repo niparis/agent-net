@@ -249,7 +249,7 @@ func TestTestsAdded(t *testing.T) {
 			if c.reason != "" && !strings.Contains(got.Reason, c.reason) {
 				t.Fatalf("Reason = %q, want it to contain %q", got.Reason, c.reason)
 			}
-			if strings.Contains(got.Reason, "—") {
+			if strings.Contains(got.Reason, "\u2014") {
 				t.Fatalf("Reason has an em dash: %q", got.Reason)
 			}
 		})
