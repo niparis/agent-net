@@ -955,6 +955,9 @@ func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 			}
 		}
 	}
+	if deficit := sumMin(cols) - avail; deficit > 0 {
+		cols[0].min = max(5, cols[0].min-deficit)
+	}
 	for i := range cols {
 		cols[i].width = cols[i].min
 	}
@@ -1266,7 +1269,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			switch c.name {
 			case "NAME":
 				v = sanitize(a.Profile.Name)
-			case "AGENT":
+			case "TYPE", "AGENT":
 				v = "bot"
 			case "PROJECT", "MODEL", "TRUST", "RULE", "DELEGATE":
 				v = "-"

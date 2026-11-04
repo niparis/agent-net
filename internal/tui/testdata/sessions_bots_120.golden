@@ -13,7 +13,7 @@
   ci-runner          agent  pi       agent-net  gpt-6      idle   -     normal -           5%  300M
   scratch            agent  pi       -          -          shell  -     normal -          <1%   80M
  Bots 1 session ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  weather-bot               bot      -          -          online -     -      -                    las…
+  weather-bot        bot    bot      -          -          online -     -      -                    las…
 
 
 

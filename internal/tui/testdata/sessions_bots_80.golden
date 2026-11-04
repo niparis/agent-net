@@ -13,7 +13,7 @@
   ci-runner      agent  idle   -     normal -           5%  300M
   scratch        agent  shell  -     normal -          <1%   80M
  Bots 1 session ────────────────────────────────────────────────────────────────
-  weather-bot           online -     -      -
+  weather-bot    bot    online -     -      -
 
 
 
