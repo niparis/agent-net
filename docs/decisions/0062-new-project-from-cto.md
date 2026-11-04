@@ -24,6 +24,12 @@ harness has no dialog, the proposal stays open in the Inbox. A correction
 requires a fresh proposal. The folder is made, git is initialized and
 the project registered only after approval.
 
+When the owner supplies a remote, project creation clones it instead of
+initializing an empty repository. The confirmation names the remote. Only
+`git@host:owner/repo.git` and `https://host/owner/repo.git` forms are accepted.
+The destination must not exist. The clone is registered and started under
+the same rules as a new project.
+
 The default main agent is Claude with claude-opus-5-5, unless the owner names
 another agent or has given a different default. An approved Claude start runs
 in the background and opens no view, locally or remotely. The owner selects

@@ -22,12 +22,21 @@ func (d *Daemon) sessionOwnerRelay(ctx context.Context, typ string, raw []byte) 
 		return nil, err
 	}
 	switch typ {
-	case protocol.FrameSessionOwnerProposalStart:
+	case protocol.FrameSessionOwnerProposalStart, protocol.FrameSessionOwnerProposalClone:
+		if typ == protocol.FrameSessionOwnerProposalClone && p.Remote == "" {
+			return nil, errors.New("clone relay needs a remote")
+		}
+		if typ == protocol.FrameSessionOwnerProposalStart && p.Remote != "" {
+			return nil, errors.New("clone relay requires a supported clone frame")
+		}
 		p.CTOProposal = true
 		p.TrustClaude = false
 		ctx = context.WithValue(ctx, proposalRemoteOwnerKey{}, true)
 		return d.sessionStartLocal(ctx, p.SessionStartRequest)
 	case protocol.FrameSessionOwnerStart:
+		if p.Remote != "" {
+			return nil, errors.New("clone relay requires a supported clone frame")
+		}
 		return d.sessionStartLocal(ctx, p.SessionStartRequest)
 	case protocol.FrameSessionOwnerResume:
 		return d.sessionResumeLocal(ctx, p.SessionID)

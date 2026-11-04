@@ -781,7 +781,7 @@ func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
 
 func TestCTONewProjectRecipe(t *testing.T) {
 	for _, want := range []string{
-		"projects_layout", "NAME -> MACHINE, PATH, Claude Opus, background. OK?",
+		"projects_layout", "NAME -> MACHINE, PATH, Claude Opus, background. OK?", "NAME -> MACHINE, PATH, clone of REMOTE, Claude Opus, background. OK?",
 		"claude-opus-5-5", "exactly one short question", "project_change",
 		"NAME is ready: session NAME is waiting in tab 1 (Sessions). Press Enter on it to dive in.",
 	} {

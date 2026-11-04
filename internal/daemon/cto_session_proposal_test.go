@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
@@ -234,5 +235,234 @@ func TestCTOSessionProposalRemoteStartOnce(t *testing.T) {
 	}
 	if creates.Load() != 1 {
 		t.Fatalf("started %d times", creates.Load())
+	}
+}
+
+func TestCTOProjectCreateRejectsExistingPath(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	path := filepath.Join(home, "code", "already")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
+	ctx := context.Background()
+	if _, err := c.d.runCTOToolRaw(ctx, "project_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+	err = c.d.proposalRunner().decide(ctx, items[0].ID, true)
+	if err == nil || !strings.Contains(err.Error(), "already exists") || !strings.Contains(err.Error(), "register it") {
+		t.Fatalf("approval error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(path, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected git repository: %v", err)
+	}
+}
+
+func TestCTOProjectCloneRemoteValidation(t *testing.T) {
+	for _, tc := range []struct {
+		remote string
+		valid  bool
+	}{
+		{"git@git.example:team/repo.git", true}, {"https://git.example/team/repo.git", true},
+		{"file:///tmp/repo.git", false}, {"/tmp/repo.git", false}, {"../repo.git", false},
+		{"http://git.example/team/repo.git", false}, {"ssh://git@git.example/team/repo.git", false},
+		{"https://user:pass@git.example/team/repo.git", false}, {"https://git.example/team/../repo.git", false},
+		{"git@git.example:team/repo.git?x=y", false}, {"https://git.example/team/repo.git#fragment", false},
+	} {
+		err := validateProjectRemote(tc.remote)
+		if (err == nil) != tc.valid {
+			t.Errorf("remote %q: %v", tc.remote, err)
+		}
+	}
+}
+
+func TestCTOProjectCloneRegistersAndStarts(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	source := newHomeRepo(t, home, "source")
+	bare := filepath.Join(home, "source.git")
+	gitIn(t, home, "clone", "--bare", source, bare)
+	path := filepath.Join(home, "code", "company-rag")
+	c.d.cloneProject = func(ctx context.Context, remote, dest string) error {
+		if remote != "git@git.example:team/repo.git" {
+			return fmt.Errorf("unexpected remote %q", remote)
+		}
+		if _, err := gitOut(ctx, home, "-c", "protocol.file.allow=always", "clone", "--", bare, dest); err != nil {
+			return err
+		}
+		_, err := gitOut(ctx, dest, "remote", "set-url", "origin", remote)
+		return err
+	}
+	ctx := context.Background()
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "remote": "git@git.example:team/repo.git", "harness": "claude"})
+	if _, err := c.d.runCTOToolRaw(ctx, "project_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("cloned before approval: %v", err)
+	}
+	if err := c.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	items, err = c.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var started protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &started); err != nil {
+		t.Fatal(err)
+	}
+	started = waitSessionStartPath(t, c.workerNode, started)
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	if started.Status != "started" {
+		t.Fatalf("start: %+v", started)
+	}
+	if _, err := os.Stat(filepath.Join(path, "README.md")); err != nil {
+		t.Fatal(err)
+	}
+	if trusted, err := claudetrust.Trusted(path); err != nil || !trusted {
+		t.Fatalf("trust=%v err=%v", trusted, err)
+	}
+	if started.EnterPlan != nil {
+		t.Fatalf("clone opened a view: %+v", started.EnterPlan)
+	}
+	var projects protocol.ProjectsResult
+	if err := json.Unmarshal(c.cli.mustCall("projects", protocol.QueryProjects{Name: "repo"}), &projects); err != nil || len(projects.Projects) != 1 || projects.Projects[0].Path != path {
+		t.Fatalf("projects=%+v err=%v", projects, err)
+	}
+}
+
+func TestCTOProjectCloneRejectsUnsafeRemotesBeforeHook(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	called := false
+	c.d.cloneProject = func(context.Context, string, string) error { called = true; return nil }
+	for _, remote := range []string{"file:///tmp/repo.git", "/tmp/repo.git", "https://u:p@git.example/team/repo.git"} {
+		args, _ := json.Marshal(map[string]any{"action": "create", "path": filepath.Join(home, "code", "target"), "remote": remote, "harness": "claude"})
+		if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err == nil {
+			t.Errorf("accepted %q", remote)
+		}
+	}
+	if called {
+		t.Fatal("clone hook ran for an unsafe remote")
+	}
+}
+
+func TestCTOProjectCloneRejectsExistingPath(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	path := filepath.Join(home, "code", "target")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	c.d.cloneProject = func(context.Context, string, string) error { called = true; return nil }
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "remote": "https://git.example/team/repo.git", "harness": "claude"})
+	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+	err = c.d.proposalRunner().decide(context.Background(), items[0].ID, true)
+	if err == nil || !strings.Contains(err.Error(), "already exists") || called {
+		t.Fatalf("err=%v cloned=%v", err, called)
+	}
+}
+
+func TestCTOProjectCloneRemoteRelay(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	a := startWorkerNode(t, g, shortSet, nil)
+	b := startClaudeNode(t, g, shortSet)
+	source := newHomeRepo(t, home, "source")
+	bare := filepath.Join(home, "source.git")
+	gitIn(t, home, "clone", "--bare", source, bare)
+	path := filepath.Join(home, "code", "company-rag")
+	remote := "git@git.example:team/repo.git"
+	b.d.cloneProject = func(ctx context.Context, got, dest string) error {
+		if got != remote {
+			return fmt.Errorf("remote lost in relay: %q", got)
+		}
+		_, err := gitOut(ctx, home, "-c", "protocol.file.allow=always", "clone", "--", bare, dest)
+		return err
+	}
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "node_id": b.d.NodeID(), "remote": remote, "harness": "claude"})
+	if _, err := a.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := a.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+	if err := a.d.proposalRunner().decide(context.Background(), items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	items, _ = a.d.proposalRunner().list()
+	var result protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "remote clone starts", func() bool {
+		var err error
+		result, err = a.d.sessionStartGet(context.Background(), result.ID)
+		return err == nil && result.Status == "started"
+	})
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	if _, err := os.Stat(filepath.Join(path, "README.md")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCTOProjectCloneRejectsLegacyRelay(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	a := startWorkerNode(t, g, shortSet, nil)
+	b := startClaudeNode(t, g, shortSet)
+	path := filepath.Join(home, "code", "company-rag")
+	p := protocol.SessionOwnerRequest{Owner: a.ownerID(), FromNode: a.d.NodeID(), SessionStartRequest: protocol.SessionStartRequest{Path: path, Harness: "claude", Create: true, Remote: "git@git.example:team/repo.git"}}
+	raw, _ := json.Marshal(p)
+	_, err := b.d.sessionOwnerRelay(context.Background(), protocol.FrameSessionOwnerProposalStart, raw)
+	if err == nil || !strings.Contains(err.Error(), "clone relay") {
+		t.Fatalf("legacy relay accepted clone: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("legacy relay created path: %v", err)
+	}
+}
+
+func TestCTOProjectCloneDestinationRejectsUnsafeRemote(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	called := false
+	c.d.cloneProject = func(context.Context, string, string) error { called = true; return nil }
+	_, err := c.d.sessionStartLocal(context.Background(), protocol.SessionStartRequest{Path: filepath.Join(home, "code", "target"), Harness: "claude", Create: true, CTOProposal: true, Remote: "file:///tmp/repo.git"})
+	if err == nil || called {
+		t.Fatalf("unsafe remote accepted: err=%v cloned=%v", err, called)
+	}
+}
+
+func TestCTOProjectCloneOnlyForApprovedCreate(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	_, err := c.d.sessionStart(context.Background(), protocol.SessionStartRequest{Path: filepath.Join(home, "target"), NodeID: "n_other", Harness: "claude", Create: true, Remote: "git@git.example:team/repo.git"})
+	if err == nil || !strings.Contains(err.Error(), "approved project create") {
+		t.Fatalf("unapproved clone: %v", err)
 	}
 }

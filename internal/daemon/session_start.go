@@ -20,6 +20,9 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	p.Project = strings.TrimSpace(p.Project)
 	p.Path = strings.TrimSpace(p.Path)
 	p.NodeID = strings.TrimSpace(p.NodeID)
+	if err := validateCloneStart(p); err != nil {
+		return protocol.StartedSession{}, err
+	}
 	if p.Project == "" && p.Path == "" {
 		return protocol.StartedSession{}, errors.New("session_start needs project or path")
 	}
@@ -103,8 +106,21 @@ func (d *Daemon) sessionStartMachine(ctx context.Context, p protocol.SessionStar
 	return "", errors.New("project is on more than one machine: use name@machine")
 }
 
+func validateCloneStart(p protocol.SessionStartRequest) error {
+	if p.Remote == "" {
+		return nil
+	}
+	if !p.CTOProposal || !p.Create || p.Path == "" {
+		return errors.New("remote requires an approved project create")
+	}
+	return validateProjectRemote(p.Remote)
+}
+
 // sessionStartLocal starts the session on this machine.
 func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartRequest) (protocol.StartedSession, error) {
+	if err := validateCloneStart(p); err != nil {
+		return protocol.StartedSession{}, err
+	}
 	bin, err := d.harnessBinary(p.Harness)
 	if err != nil {
 		return protocol.StartedSession{}, err
@@ -119,6 +135,10 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 			return protocol.StartedSession{}, err
 		}
 		info, statErr := os.Stat(path)
+		_, linkErr := os.Lstat(path)
+		if p.CTOProposal && p.Create && linkErr == nil {
+			return protocol.StartedSession{}, fmt.Errorf("%s already exists; choose another name or ask to register it", p.Path)
+		}
 		switch {
 		case errors.Is(statErr, os.ErrNotExist):
 			if !p.Create {
@@ -126,7 +146,11 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 					NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness,
 					Project: filepath.Base(path), Path: path, Model: p.Model, StartedAt: time.Now().Unix()}, nil
 			}
-			if err := createOwnerFolder(ctx, path); err != nil {
+			if p.Remote != "" {
+				if err := d.cloneOwnerProject(ctx, p.Remote, path); err != nil {
+					return protocol.StartedSession{}, err
+				}
+			} else if err := createOwnerFolder(ctx, path); err != nil {
 				return protocol.StartedSession{}, err
 			}
 			created = true
@@ -248,6 +272,9 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	typ := protocol.FrameSessionStart
 	if p.CTOProposal {
 		typ = protocol.FrameSessionProposalStart
+		if p.Remote != "" {
+			typ = protocol.FrameSessionProposalClone
+		}
 	}
 	data, err := d.call(ctx, typ, frame)
 	if err != nil {

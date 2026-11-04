@@ -288,3 +288,23 @@ func TestCTOProjectCreationMCPDialog(t *testing.T) {
 		t.Fatalf("result: %+v", result)
 	}
 }
+
+func TestCTOProjectCloneDialogNamesRemote(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.d.cto.pid.Store(int64(os.Getpid()))
+	defer c.d.cto.pid.Store(0)
+	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
+	path := filepath.Join(home, "code", "company-rag")
+	remote := "git@git.example:team/repo.git"
+	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "remote": remote, "harness": "claude", "model": "claude-opus-5-5"}})
+	value, err := cto.dispatch(context.Background(), "cto_tool", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, _ := value.(map[string]any)["message"].(string)
+	if strings.Contains(message, "\n") || !strings.Contains(message, path+", clone of "+remote+", Claude Opus, background. OK?") {
+		t.Fatalf("dialog %q", message)
+	}
+}

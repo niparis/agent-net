@@ -631,6 +631,13 @@ daemon's runner executes an approved call, with actor
 `owner (CTO proposal p_N)`. For a dialog answer the daemon accepts only the private CTO MCP connection, and checks its process tree again on each call. The MCP server sends an answer only after the harness returns an elicitation response; the model has no approval tool. The dialog text comes from the stored proposal. The daemon wraps ordinary tool results separately so their contents cannot masquerade as a proposal. This relies on the harness presenting elicitation to the owner, and on the existing local process checks described above. The model cannot approve its own proposals through the tool interface. Identical open calls are refused, open proposals expire after 24
 hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
 only the status or a bounded error, never a successful call's result.
+A CTO project clone accepts only `git@host:owner/repo.git` and
+`https://host/owner/repo.git` remotes. It refuses local and file URLs, reserves
+a previously absent destination, disables file and external Git transports,
+and times out after 45 seconds. The destination daemon repeats the remote
+and home-folder checks before cloning. The test-only clone hook is not set in
+production.
+
 The CTO's advisory placement memory is stored
 in the private state database. Purpose and placement are each limited to 512
 bytes, and a read returns at most 100 entries. It does not authorize a change.
@@ -1277,7 +1284,7 @@ deleting the oldest first, and deletes any remaining hashes 90 days after use.
 A reused hash that has been removed can no longer trigger family revocation.
 Before an authorization code is exchanged, its plaintext is stored temporarily
 in the private gateway database so a lost polling response can be retried with
-the same code. It expires after two minutes, is cleared on exchange or cleanup,
+the same code. It expires after 45 seconds, is cleared on exchange or cleanup,
 and requires the PKCE verifier. A successful exchange consumes the approval. Active address bans
 are stored separately from rate buckets, with at most 50,000 bans retained.
 

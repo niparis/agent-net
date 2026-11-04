@@ -266,6 +266,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	cloneProject        func(context.Context, string, string) error // test hook
 	files               fileState
 	settingsMu          sync.Mutex
 	settingsSnapshot    atomic.Pointer[settings.Snapshot]

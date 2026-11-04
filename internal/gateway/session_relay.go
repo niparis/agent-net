@@ -36,7 +36,7 @@ func firstNonEmpty(values ...string) string {
 
 func isSessionRelay(typ string) bool {
 	switch typ {
-	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
+	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionProposalClone, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
 		return true
 	}
 	return false
@@ -74,7 +74,7 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	}
 	sessionID := strings.TrimSpace(relay.SessionID)
 	switch typ {
-	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart:
+	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionProposalClone:
 		if nodeID == "" {
 			if nodeID, err = g.sessionStartNode(relay.SessionStartRequest); err != nil {
 				return nil, err
@@ -124,6 +124,7 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	frameType := map[string]string{
 		protocol.FrameSessionStart:         protocol.FrameSessionOwnerStart,
 		protocol.FrameSessionProposalStart: protocol.FrameSessionOwnerProposalStart,
+		protocol.FrameSessionProposalClone: protocol.FrameSessionOwnerProposalClone,
 		protocol.FrameSessionResume:        protocol.FrameSessionOwnerResume,
 		protocol.FrameSessionStop:          protocol.FrameSessionOwnerStop,
 		protocol.FrameSessionGet:           protocol.FrameSessionOwnerGet,
@@ -142,7 +143,7 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 		return nil, reject("machine %s refused the session: %v", where, err)
 	}
 	switch typ {
-	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionResume:
+	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionProposalClone, protocol.FrameSessionResume:
 		var res protocol.StartedSession
 		if err := json.Unmarshal(data, &res); err != nil {
 			return nil, reject("machine %s answered without a start", firstNonEmpty(host, nodeID))

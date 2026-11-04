@@ -62,7 +62,11 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 						model = "Claude Opus"
 					}
 					name := filepath.Base(filepath.Clean(start.Path))
-					message = fmt.Sprintf("%s -> %s, %s, %s, background. OK?", name, start.NodeID, start.Path, model)
+					if start.Remote != "" {
+						message = fmt.Sprintf("%s -> %s, %s, clone of %s, %s, background. OK?", name, start.NodeID, start.Path, start.Remote, model)
+					} else {
+						message = fmt.Sprintf("%s -> %s, %s, %s, background. OK?", name, start.NodeID, start.Path, model)
+					}
 					if reason := ctoCut(cleanLine(item.Reason), 120); reason != "" {
 						message += " " + reason
 					}
