@@ -32,6 +32,7 @@ func TestConnectedAppsOwnerGate(t *testing.T) {
 }
 
 func TestConnectedAppsSocketPath(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{}, nil)
 	cli := cliClient(t, n)
@@ -57,6 +58,7 @@ func TestConnectedAppsSocketPath(t *testing.T) {
 }
 
 func TestConnectedAppsOperatorToGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{}, nil)
 	db, err := sql.Open("sqlite", "file:"+filepath.Join(g.dir, "gateway.db")+"?_pragma=busy_timeout(5000)")

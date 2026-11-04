@@ -13,6 +13,7 @@ import (
 )
 
 func TestCleanupWorktreeMergedRunningAndUnique(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	state := t.TempDir()
 	dir := filepath.Join(state, "worktrees", "w_old")
@@ -54,6 +55,7 @@ func TestCleanupWorktreeMergedRunningAndUnique(t *testing.T) {
 }
 
 func TestCleanupWorktreeEndTimePersists(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +75,7 @@ func TestCleanupWorktreeEndTimePersists(t *testing.T) {
 }
 
 func TestCleanupWorktreeObservesLegacy(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_legacy")
@@ -103,6 +106,7 @@ func TestCleanupWorktreeObservesLegacy(t *testing.T) {
 }
 
 func TestCleanupWorktreeKeepsQueuedBranch(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_old")
@@ -132,6 +136,7 @@ func TestCleanupWorktreeKeepsQueuedBranch(t *testing.T) {
 }
 
 func TestCleanupWorktreeKeepsPersistedRunning(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_running")
@@ -159,6 +164,7 @@ func TestCleanupWorktreeKeepsPersistedRunning(t *testing.T) {
 }
 
 func TestCleanupWorktreeRemovesLedger(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_done")
@@ -191,6 +197,7 @@ func TestCleanupWorktreeRemovesLedger(t *testing.T) {
 }
 
 func TestCleanupWorktreeKeepsCommitOnlyOnAnotherBranch(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_other")
@@ -218,6 +225,7 @@ func TestCleanupWorktreeKeepsCommitOnlyOnAnotherBranch(t *testing.T) {
 }
 
 func TestCleanupWorktreeKeepsDifferentCheckedOutBranch(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_changed")
@@ -237,6 +245,7 @@ func TestCleanupWorktreeKeepsDifferentCheckedOutBranch(t *testing.T) {
 }
 
 func TestCleanupWorktreeBranchWhenWorktreeAlreadyGone(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_gone")
@@ -256,6 +265,7 @@ func TestCleanupWorktreeBranchWhenWorktreeAlreadyGone(t *testing.T) {
 }
 
 func TestCleanupWorktreeForgetsAlreadyRemoved(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_removed")
@@ -292,6 +302,7 @@ func TestCleanupWorktreeForgetsAlreadyRemoved(t *testing.T) {
 // A cleanup line in a project's worker.md is no longer honoured: the daemon
 // only removes its own worker worktrees.
 func TestCleanupIgnoresDeclaredFolders(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	project := newRepo(t, "project")
@@ -321,6 +332,7 @@ func TestCleanupIgnoresDeclaredFolders(t *testing.T) {
 }
 
 func TestCleanupWorktreeKeepsRecentlyRestarted(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_recent")
@@ -348,6 +360,7 @@ func TestCleanupWorktreeKeepsRecentlyRestarted(t *testing.T) {
 }
 
 func TestCleanupWorktreeRemovesIgnoredBuildFiles(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_build")
@@ -369,6 +382,7 @@ func TestCleanupWorktreeRemovesIgnoredBuildFiles(t *testing.T) {
 }
 
 func TestCleanupWorktreeKeepsStartingBase(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_base")
@@ -395,6 +409,7 @@ func TestCleanupWorktreeKeepsStartingBase(t *testing.T) {
 }
 
 func TestCleanupStartingBranchReservedByAdmission(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -415,6 +430,7 @@ func TestCleanupStartingBranchReservedByAdmission(t *testing.T) {
 }
 
 func TestCleanupWorktreeKeepsBranchCheckedOutElsewhere(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_shared")
@@ -458,6 +474,7 @@ func TestCleanupWorktreeRemovesClaudeTrust(t *testing.T) {
 }
 
 func TestCleanupRegisteredProjectRemovesEndedWorktree(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	project := newRepo(t, "project")
@@ -481,6 +498,7 @@ func TestCleanupRegisteredProjectRemovesEndedWorktree(t *testing.T) {
 }
 
 func TestCleanupWorktreeUsesConfiguredDefaultBranch(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_default")
@@ -515,6 +533,7 @@ func TestCleanupWorktreeUsesConfiguredDefaultBranch(t *testing.T) {
 // A project that agent-net only saw (a session works there, nobody registered
 // it) still gets its ended worker worktrees cleaned: they are the daemon's own.
 func TestCleanupSeenProjectRemovesEndedWorktree(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	project := newRepo(t, "project")
@@ -539,6 +558,7 @@ func TestCleanupSeenProjectRemovesEndedWorktree(t *testing.T) {
 }
 
 func TestCleanupWorktreeFindsPreviousCustomPrefix(t *testing.T) {
+	t.Parallel()
 	project := newRepo(t, "project")
 	state := t.TempDir()
 	dir := filepath.Join(state, "worktrees", "w_old")

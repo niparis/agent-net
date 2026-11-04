@@ -18,6 +18,7 @@ func workerIDOf(res protocol.WorkerStartResult) string {
 // A worker that is stopped with uncommitted changes in its worktree: the
 // daemon commits them on the worker's branch, and the notice says so.
 func TestStoppedWorkerKeepsUnfinishedWork(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -48,6 +49,7 @@ func TestStoppedWorkerKeepsUnfinishedWork(t *testing.T) {
 
 // A worker lost while the daemon was down: the new daemon commits its changes.
 func TestLostWorkerKeepsUnfinishedWork(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -74,6 +76,7 @@ func TestLostWorkerKeepsUnfinishedWork(t *testing.T) {
 
 // A worker with no changes leaves no commit and no mention in its notice.
 func TestNoUnfinishedCommitWithoutChanges(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -89,6 +92,7 @@ func TestNoUnfinishedCommitWithoutChanges(t *testing.T) {
 // Continue an ended worker by its session ID or its worker ID: a new worker on
 // a new branch from the old branch, with the full first task.
 func TestContinueEndedWorker(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -153,6 +157,7 @@ func TestContinueEndedWorker(t *testing.T) {
 // Only the owner may continue a worker. The gateway checks, and the machine
 // checks its own record too.
 func TestContinueNeedsTheOwner(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -173,6 +178,7 @@ func TestContinueNeedsTheOwner(t *testing.T) {
 
 // The full first task is kept in the worker record.
 func TestWorkerRecordKeepsTheFullFirstTask(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -191,6 +197,7 @@ func TestWorkerRecordKeepsTheFullFirstTask(t *testing.T) {
 // A worker that handed back can be continued too: its uncommitted changes are
 // committed first, so the new branch has them.
 func TestContinueAfterHandback(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -211,6 +218,7 @@ func TestContinueAfterHandback(t *testing.T) {
 }
 
 func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -222,7 +230,10 @@ func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
 	if !strings.Contains(firstNotice.Body, "status: done") {
 		t.Fatalf("first hand-back: %s", firstNotice.Body)
 	}
-	eventually(t, "the first Codex worker ends", func() bool { return w.d.workerCount() == 0 })
+	eventually(t, "the first Codex worker ends and is reported", func() bool {
+		row, ok, err := w.d.st.workerBySession(old.SessionID)
+		return w.d.workerCount() == 0 && err == nil && ok && row.EndedReason == protocol.StopHandback && row.Reported && row.Resumable
+	})
 
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: old.SessionID, Body: "continue the same task"}), &sent)
@@ -233,7 +244,10 @@ func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
 	if !strings.Contains(secondNotice.Body, "status: done") {
 		t.Fatalf("second hand-back: %s", secondNotice.Body)
 	}
-	eventually(t, "the resumed Codex worker ends", func() bool { return w.d.workerCount() == 0 })
+	eventually(t, "the resumed Codex worker ends and is reported", func() bool {
+		row, ok, err := w.d.st.workerBySession(old.SessionID)
+		return w.d.workerCount() == 0 && err == nil && ok && row.EndedReason == protocol.StopHandback && row.Reported && row.Resumable
+	})
 
 	continued, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID})
 	if err != nil {
@@ -248,6 +262,7 @@ func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
 // A continued start goes through admission like any start: with no room it is
 // queued, keeps its base and its task, and starts when there is room.
 func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: roomyLoad()}
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
@@ -330,6 +345,7 @@ func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
 
 // The machine that ran the old worker must be online.
 func TestContinueNeedsTheMachineOnline(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	far := startWorkerNode(t, g, shortSet, nil)
@@ -346,6 +362,7 @@ func TestContinueNeedsTheMachineOnline(t *testing.T) {
 }
 
 func TestUnrestorableAdoptedWorkerSavesChanges(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"opencode", "codex"} {
 		t.Run(harness, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -391,6 +408,7 @@ func TestUnrestorableAdoptedWorkerSavesChanges(t *testing.T) {
 }
 
 func TestContinueChainKeepsEarlierCommits(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

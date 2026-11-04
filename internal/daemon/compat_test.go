@@ -19,6 +19,7 @@ import (
 // An older daemon sends a hello without harnesses and sessions without repo
 // info. The new gateway must accept both and show the node as "not reported".
 func TestOldDaemonAgainstNewGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	cfgDir := t.TempDir()
 	if _, err := Join(context.Background(), g.joinString(), cfgDir); err != nil {
@@ -145,6 +146,7 @@ func fakeOldGateway(t *testing.T, ctoCaps ...map[string]bool) (url string, hello
 }
 
 func TestNewDaemonAgainstOldGateway(t *testing.T) {
+	t.Parallel()
 	url, helloSeen := fakeOldGateway(t)
 	detected := make(chan struct{}, 4)
 	fa := &fakeAdapter{harness: "fake"}

@@ -19,6 +19,7 @@ func piHello() map[string]any {
 }
 
 func TestMCPClientReconnectsAfterDaemonRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
 	md := mcpserver.NewDaemon(b.sock, piHello())
@@ -48,6 +49,7 @@ func TestMCPClientReconnectsAfterDaemonRestart(t *testing.T) {
 // A send whose connection drops after the daemon got it is retried with the
 // same idempotency key and is stored once.
 func TestMCPSendRetriedAfterDropStoredOnce(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	startNode(t, g, nodeOpts{adapter: fa})

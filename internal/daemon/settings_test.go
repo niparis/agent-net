@@ -21,6 +21,7 @@ import (
 )
 
 func TestSettingsSnapshotOfflineAndOrder(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := openState(dir)
 	if err != nil {
@@ -97,6 +98,7 @@ func TestDeliveryAssignmentsSurviveSnapshotValidation(t *testing.T) {
 }
 
 func TestSettingsSnapshotLinkIgnoresUnknownFrames(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +147,7 @@ func TestSettingsSnapshotLinkIgnoresUnknownFrames(t *testing.T) {
 }
 
 func TestSettingsGuidanceRefreshOnChange(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -169,6 +172,7 @@ func TestSettingsGuidanceRefreshOnChange(t *testing.T) {
 }
 
 func TestSettingsCTOApprovalAndRead(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
@@ -212,6 +216,7 @@ func TestSettingsCTOApprovalAndRead(t *testing.T) {
 }
 
 func TestSettingsOwnerGateAndUndo(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
@@ -263,6 +268,7 @@ func TestSettingsOwnerGateAndUndo(t *testing.T) {
 }
 
 func TestSettingsProposalConflictAndOwnerWindow(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
@@ -291,6 +297,7 @@ func TestSettingsProposalConflictAndOwnerWindow(t *testing.T) {
 }
 
 func TestSettingsDeliveryRuleCTOProposesOwnerApplies(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
@@ -318,6 +325,7 @@ func TestSettingsDeliveryRuleCTOProposesOwnerApplies(t *testing.T) {
 }
 
 func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
@@ -432,6 +440,7 @@ func TestSettingsLegacyGraphOverridesBeforeDeliverySync(t *testing.T) {
 }
 
 func TestSettingsDeliveryCutoverSurvivesOfflineRestart(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -451,6 +460,7 @@ func TestSettingsDeliveryCutoverSurvivesOfflineRestart(t *testing.T) {
 }
 
 func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -472,6 +482,7 @@ func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
 }
 
 func TestWorkerBriefRuleCTOProposesOwnerApplies(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()

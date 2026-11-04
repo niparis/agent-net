@@ -13,6 +13,7 @@ import (
 // An SSE server works for the first check and for the long-lived connection,
 // and a call from another node reaches it.
 func TestMCPSSE(t *testing.T) {
+	t.Parallel()
 	h := mcp.NewSSEHandler(func(*http.Request) *mcp.Server { return tools.New() }, nil)
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)

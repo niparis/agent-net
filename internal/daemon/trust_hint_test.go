@@ -28,6 +28,7 @@ func trustAgent(as []protocol.AgentView, id string) protocol.AgentView {
 }
 
 func TestPeerTrustIsOwnerOnlyAndReachesDelivery(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	p1, s1 := helloPi(t, n, "p1", "/w/one", true)
@@ -78,6 +79,7 @@ func TestPeerTrustIsOwnerOnlyAndReachesDelivery(t *testing.T) {
 }
 
 func TestPeerTrustSurvivesAReconnectOfTheSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	p, sid := helloPi(t, n, "p1", "/w/one", true)
@@ -159,6 +161,7 @@ func TestHintRateLimitsAndSkipsSelfAndPlainOutput(t *testing.T) {
 }
 
 func TestHintNeverNamesAnOfflineSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	client, _ := helloPi(t, n, "p1", "/w/client-app", true)
@@ -174,17 +177,21 @@ func TestHintNeverNamesAnOfflineSession(t *testing.T) {
 }
 
 func TestHintMachineNamesIncludeEnrolledMachinesWithoutSessions(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	other := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	cli := cliClient(t, n)
 	cli.mustCall(protocol.OpNodeRename, protocol.NodeRenameRequest{NodeID: other.cfg.NodeID, Name: "research"})
 
-	names := n.d.hintMachines(t.Context())
-	for _, name := range names {
-		if name == "research" {
-			return
+	// The short hint fetch deadline may expire while parallel test nodes
+	// are enrolling. Retry the read, as the next hint request would.
+	eventually(t, "the enrolled machine name is included", func() bool {
+		for _, name := range n.d.hintMachines(t.Context()) {
+			if name == "research" {
+				return true
+			}
 		}
-	}
-	t.Fatalf("the enrolled machine name was not included: %v", names)
+		return false
+	})
 }

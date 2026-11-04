@@ -11,6 +11,7 @@ import (
 // expiry plus a week, so a message that is still alive can never be delivered
 // twice, and older rows go.
 func TestPruneDeliveredKeepsRecentRows(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

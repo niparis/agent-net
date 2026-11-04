@@ -25,6 +25,7 @@ func waitingOf(t *testing.T, n *node, id string) *protocol.Waiting {
 }
 
 func TestPluginWaitingGoesToTheGatewayAndBusyClearsIt(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, id := helloPi(t, n, "nb", "/work/bob", false)
@@ -41,6 +42,7 @@ func TestPluginWaitingGoesToTheGatewayAndBusyClearsIt(t *testing.T) {
 }
 
 func TestWaitingSurvivesDiscoveryAndClearsOnBusy(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa})
@@ -69,6 +71,7 @@ func TestWaitingSurvivesDiscoveryAndClearsOnBusy(t *testing.T) {
 }
 
 func TestAnnounceSetsAndClearsWaiting(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, id := helloPi(t, n, "nb", "/work/bob", false)
@@ -88,6 +91,7 @@ func TestAnnounceSetsAndClearsWaiting(t *testing.T) {
 // nothing else. An unknown session is silent, not an error: the hook runs in
 // the middle of a Claude turn and must never disturb it.
 func TestWaitingFromCLIIsSilentForUnknownSessions(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := dialLocal(t, n.sock)
@@ -99,6 +103,7 @@ func TestWaitingFromCLIIsSilentForUnknownSessions(t *testing.T) {
 // generic text. It must not stay in "Needs you": a later request with that
 // text clears it, and a discovery refresh drops it as well.
 func TestIdlePromptWaitingClearsTheStaleWait(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, id := helloPi(t, n, "nb", "/work/bob", false)
@@ -125,6 +130,7 @@ func TestKeepWaitingDropsTheGenericIdleText(t *testing.T) {
 // the daemon, so it must survive; a session that is really working again sends
 // status busy.
 func TestPluginReconnectKeepsWaiting(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, id := helloPi(t, n, "nb", "/work/bob", false)
@@ -145,6 +151,7 @@ func TestPluginReconnectKeepsWaiting(t *testing.T) {
 }
 
 func TestWaitingClearsWhenOwnerMessageDelivered(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa})
@@ -160,6 +167,7 @@ func TestWaitingClearsWhenOwnerMessageDelivered(t *testing.T) {
 }
 
 func TestCodexTurnStartedClearsWaiting(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	n.d.SetSessions("codex", []protocol.SessionInfo{{Harness: "codex", NativeID: "thread-one", Status: "busy"}})
@@ -185,6 +193,7 @@ func TestWorkerAskOwnerIsRefused(t *testing.T) {
 }
 
 func TestWorkerWaitingNotice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

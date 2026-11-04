@@ -29,6 +29,7 @@ func askPolicy(t *testing.T, lc *localClient, req protocol.PolicyRequest) protoc
 }
 
 func TestPolicyIsOwnerOnlyAndReachesTheSessionEveryTurn(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", detect: piModels, interval: time.Hour}, nil)
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
@@ -108,6 +109,7 @@ func TestPolicyIsOwnerOnlyAndReachesTheSessionEveryTurn(t *testing.T) {
 }
 
 func TestPolicyKeepsTheLastAnswerWhenTheGatewayIsGone(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
@@ -200,6 +202,7 @@ func TestInventoryTellsWhetherTheClaudePolicyHookIsInstalled(t *testing.T) {
 }
 
 func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	p, _ := helloPi(t, n, "p1", "/w/cogforge", true)

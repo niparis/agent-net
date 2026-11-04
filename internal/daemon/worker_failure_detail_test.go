@@ -40,6 +40,7 @@ func TestWorkerModelFailureDetailPersists(t *testing.T) {
 }
 
 func TestWorkerProfileNameStartAndModelNote(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -54,6 +55,7 @@ func TestWorkerProfileNameStartAndModelNote(t *testing.T) {
 }
 
 func TestWorkerModelAuthFailureReport(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"openai/gpt-6.1-sol"}), nil)
 	repo := newRepo(t, "shop")

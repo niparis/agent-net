@@ -11,6 +11,7 @@ import (
 )
 
 func TestCTOUIBroadcast(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour})
 	call := func(name, args string) (any, error) {

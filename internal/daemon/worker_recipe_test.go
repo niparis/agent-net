@@ -66,6 +66,7 @@ func TestWorkerRecipeIsolation(t *testing.T) {
 }
 
 func TestWorkerRecipeCostHistoryAndMemory(t *testing.T) {
+	t.Parallel()
 	snap := settings.Snapshot{Values: []settings.Value{
 		{Key: "workers.memory_reserve_min", Level: "network", Scope: "network", Value: json.RawMessage(`100`)},
 		{Key: "workers.memory_reserve_share", Level: "network", Scope: "network", Value: json.RawMessage(`0.25`)},
@@ -105,6 +106,7 @@ func TestWorkerRecipeQueuedIsolationReleasesBase(t *testing.T) {
 }
 
 func TestWorkerRecipeAppliedToWorkerLaunch(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

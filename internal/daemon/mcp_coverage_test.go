@@ -33,6 +33,7 @@ func coverageRequest(project string, harnesses ...string) protocol.MCPCoverageRe
 }
 
 func TestMCPCoveragePlanApplyWritesEachHarnessFormatAndUndoRestores(t *testing.T) {
+	t.Parallel()
 	d, project := coverageDaemon(t, coverageSource)
 	plan := d.mcpCoveragePlan(coverageRequest(project, "pi", "opencode"))
 	if plan.State != "pending" {

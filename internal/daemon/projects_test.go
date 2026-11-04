@@ -157,6 +157,7 @@ func TestProjectAddByPathsResolvesAndSkips(t *testing.T) {
 }
 
 func TestProjectAddRefusesBadRequests(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)

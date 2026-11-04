@@ -12,6 +12,7 @@ import (
 )
 
 func TestLocalDeliveryRequiresConfirmation(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"write-error", "timeout", "closed", "canceled", "ack", "refused", "missing-turn-ack"} {
 		t.Run(mode, func(t *testing.T) {
 			client, plugin := net.Pipe()

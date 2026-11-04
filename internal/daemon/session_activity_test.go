@@ -20,6 +20,7 @@ func testSession(t *testing.T, n *node, native string) *localSession {
 }
 
 func TestSessionLastActiveSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "pi"}})
 	n.d.SetSessions("pi", []protocol.SessionInfo{{NativeID: "s1", Status: "idle", Cwd: "/work/x"}})
@@ -55,6 +56,7 @@ func TestSessionLastActiveSurvivesRestart(t *testing.T) {
 // A local caller alias can share the owner's gateway ID. Message activity must
 // not upsert that alias as a new session and change which owner its workers see.
 func TestMessageActivityKeepsSharedGatewayID(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "pi"}})
 	eventually(t, "owner session", func() bool { return n.d.ownerSessionID() != "" })
@@ -102,6 +104,7 @@ func TestRepeatedWaitKeepsActivity(t *testing.T) {
 // the first status nor a change between idle, dormant and offline is a turn.
 // Only becoming busy, or becoming idle after busy, moves the activity time.
 func TestRestartWithoutATurnKeepsActivity(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "pi"}})
 	harnesses := []string{"opencode", "claude", "codex", "pi"}
@@ -179,6 +182,7 @@ func TestRestartWithoutATurnKeepsActivity(t *testing.T) {
 // for a session that has been quiet. That second status must not look like
 // activity, on a fresh daemon or after a restart.
 func TestPluginDormantStatusIsNotActivity(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{exe: "/opt/x/node_modules/@opencode/cli/bin/opencode.exe"})
 	lc, _ := helloOpenCode(t, n, "ses_quiet", "/work/quiet")

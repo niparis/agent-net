@@ -417,10 +417,11 @@ func TestClaudeTranscriptStats(t *testing.T) {
 func startPiNode(t *testing.T, g *testGateway, set WorkerSettings) *workerNode {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv(envFakePi, "1")
-	t.Setenv("PI_CODING_AGENT_SESSION_DIR", dir)
+	// Keep the fake's session directory in its own process environment, so
+	// independent Pi nodes can run concurrently without changing this process.
+	bin := fakeHarnessLauncher(t, "pi", map[string]string{envFakePi: "1", "PI_CODING_AGENT_SESSION_DIR": dir})
 	return startWorkerNode(t, g, set, func(c *Config) {
-		c.HarnessPaths = map[string]string{"pi": os.Args[0]}
+		c.HarnessPaths = map[string]string{"pi": bin}
 		c.PiSessionsDir = dir
 	})
 }
@@ -437,6 +438,7 @@ func readPi(t *testing.T, dir string) fakePiRecord {
 // session that the daemon chose, the worker answers, and only its own process
 // can be that session.
 func TestPiWorkerLifecycle(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -497,6 +499,7 @@ func TestPiWorkerLifecycle(t *testing.T) {
 // message and the model's context window from `pi --list-models`, so a running
 // Pi worker shows both.
 func TestPiWorkerUsageReachesTheWorkersView(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	w.register(t, newRepo(t, "shop"))
@@ -547,6 +550,7 @@ func TestPiSessionStats(t *testing.T) {
 // A Pi worker hands back with agent_handback (the extension has it), with the
 // facts; a Pi that cannot start is reported with its own output.
 func TestPiWorkerHandbackAndStartFailure(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -582,6 +586,7 @@ func TestPiWorkerStartFails(t *testing.T) {
 // The extension in a Pi that survives a restart of the daemon connects again,
 // and the daemon, which took the worker back, accepts it as the worker.
 func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -605,6 +610,20 @@ func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
 	eventually(t, "the restarted daemon is connected", func() bool { return w.node.d.Connected() })
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "still there?"}), &sent)
+	if sent.Message == nil && sent.Queued {
+		eventually(t, "the queued owner message reaches the worker", func() bool {
+			for _, m := range w.messagesOf(t, res.SessionID) {
+				if m.From == owner && m.To == res.SessionID && m.Body == "still there?" && m.IdempotencyKey == sent.IdempotencyKey {
+					sent.Message = &m
+					return true
+				}
+			}
+			return false
+		})
+	}
+	if sent.Message == nil {
+		t.Fatalf("owner_send did not deliver: %+v", sent)
+	}
 	w.replyTo(t, owner, sent.Message.ID)
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the process is gone", func() bool { return !alive(rec.Pid) })
@@ -613,6 +632,7 @@ func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
 // Pi has no permission prompts, so a Pi worker is refused unless it gets its own
 // worktree, and nothing is started.
 func TestPiWorkerNeedsAWorktree(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -636,9 +656,8 @@ func TestPiWorkerNeedsAWorktree(t *testing.T) {
 
 func startCodexNode(t *testing.T, g *testGateway, set WorkerSettings) *workerNode {
 	t.Helper()
-	t.Setenv(envFakeCodex, "1")
-	// The user's Codex config is not read by tests: an empty one.
-	t.Setenv("CODEX_HOME", t.TempDir())
+	// TestMain supplies the fake binary flag and a shared empty config.
+	// Tests that write Codex config set CODEX_HOME to their own directory.
 	return startWorkerNode(t, g, set, func(c *Config) { c.HarnessPaths = map[string]string{"codex": os.Args[0]} })
 }
 
@@ -658,6 +677,7 @@ func readCodex(t *testing.T, dir string, ok func(fakeCodexRecord) bool) fakeCode
 // the task as a turn, and hands the final answer back, with the tokens. A
 // follow-up from the person is another turn, answered to the person.
 func TestCodexWorkerLifecycle(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -748,6 +768,7 @@ func TestCodexWorkerLifecycle(t *testing.T) {
 }
 
 func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -785,6 +806,7 @@ func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
 // An approval is never given: Codex gets "decline", and the hand-back says
 // blocked, with what was asked and where to approve it (W6, W15).
 func TestCodexWorkerBlockedOnAnApproval(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -808,6 +830,7 @@ func TestCodexWorkerBlockedOnAnApproval(t *testing.T) {
 // A failed turn is a failed hand-back with the reason; the worktree facts are
 // in the notice.
 func TestCodexWorkerFailedTurnAndWorktree(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -831,6 +854,7 @@ func TestCodexWorkerFailedTurnAndWorktree(t *testing.T) {
 // states to check, each on its own worker: running (the daemon refuses the
 // message at delivery) and ended (the gateway refuses it at send).
 func TestCodexWorkerRefusesOtherAgents(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -877,6 +901,7 @@ func TestCodexWorkerRefusesOtherAgents(t *testing.T) {
 // running, the daemon connects again from the address in the database and the
 // token file, and resumes the thread.
 func TestCodexWorkerSurvivesADaemonRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -939,6 +964,7 @@ func TestStartedHarnessesAreListed(t *testing.T) {
 }
 
 func TestAdoptedCodexCompletesOriginalTurn(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -960,6 +986,7 @@ func TestAdoptedCodexCompletesOriginalTurn(t *testing.T) {
 }
 
 func TestAdoptedOpenCodeStartsTurn(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -985,6 +1012,7 @@ func TestAdoptedOpenCodeStartsTurn(t *testing.T) {
 
 // A turn can finish while there is no daemon to receive its completion event.
 func TestAdoptedCodexTurnFinishedWhileDaemonDown(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")

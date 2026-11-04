@@ -59,6 +59,7 @@ func TestCTODialogAnswerGate(t *testing.T) {
 }
 
 func TestCTODialogApprovalAppliesProposal(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
@@ -92,6 +93,7 @@ func TestCTODialogApprovalAppliesProposal(t *testing.T) {
 }
 
 func TestCTOProposalAsk(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)

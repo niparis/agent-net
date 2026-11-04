@@ -11,6 +11,7 @@ import (
 // A worker that hands back partial work marks the run partial in the gateway's
 // track record, and the next start shows that record and the playbook note.
 func TestPartialHandbackTrackRecordAndPlaybook(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.StartGap = -1 // two starts in this test, without the machine's start gap
@@ -75,6 +76,7 @@ func TestPartialHandbackTrackRecordAndPlaybook(t *testing.T) {
 }
 
 func TestPlaybookOwnerGateAndCLI(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n, "book-agent", "/w/book", true)
@@ -99,6 +101,7 @@ func TestPlaybookOwnerGateAndCLI(t *testing.T) {
 }
 
 func TestAgentLearnThroughDaemon(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, agentID := helloPi(t, n, "learn-agent", "/w/learn", true)

@@ -21,6 +21,7 @@ func workerTaskID(t *testing.T, row workerRow) string {
 }
 
 func TestWorkerContinueLinksTaskAndCountsRework(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, task string
 		partial    bool
@@ -69,6 +70,7 @@ func TestWorkerContinueLinksTaskAndCountsRework(t *testing.T) {
 }
 
 func TestWorkerMidrunFollowUpsReachGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -102,6 +104,7 @@ func TestWorkerMidrunFollowUpsReachGateway(t *testing.T) {
 // A daemon upgraded after the gateway backfilled historical links has an old
 // local row without a task ID. The gateway's stored root must win in that case.
 func TestWorkerContinueUsesBackfilledGatewayRoot(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -122,6 +125,7 @@ func TestWorkerContinueUsesBackfilledGatewayRoot(t *testing.T) {
 }
 
 func TestWorkerMidrunAfterNoticeSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -148,6 +152,7 @@ func TestWorkerMidrunAfterNoticeSurvivesRestart(t *testing.T) {
 }
 
 func TestWorkerMidrunCountsQueuedRequestOnArrival(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

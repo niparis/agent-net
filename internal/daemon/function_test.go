@@ -12,6 +12,7 @@ import (
 // the gateway with the session, follows the file when it changes, and cannot
 // be set by announce. Announce sets the task only (decision 0033).
 func TestFunctionComesFromAgentsMd(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	repo, err := filepath.EvalSymlinks(t.TempDir())
@@ -71,6 +72,7 @@ func TestFunctionComesFromAgentsMd(t *testing.T) {
 }
 
 func TestAnnounceNeedsATask(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, _ := helloPi(t, n, "nb", "/work/bob", true)

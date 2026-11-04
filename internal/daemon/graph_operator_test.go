@@ -11,6 +11,7 @@ import (
 )
 
 func TestGraphOwnerRelay(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n, "graph-agent", "/w/graph", true)
@@ -58,6 +59,7 @@ func TestGraphOwnerRelay(t *testing.T) {
 }
 
 func TestGraphCTOActor(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
@@ -77,6 +79,7 @@ func TestGraphCTOActor(t *testing.T) {
 }
 
 func TestNodeSettingsOwnerOnly(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	agent, _ := helloPi(t, n, "settings-agent", "/w/shop", true)
@@ -104,6 +107,7 @@ func TestNodeSettingsOwnerOnly(t *testing.T) {
 }
 
 func TestCTOGatewayCapability(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	raw, err := n.d.call(context.Background(), "cto.capabilities", nil)
@@ -119,6 +123,7 @@ func TestCTOGatewayCapability(t *testing.T) {
 }
 
 func TestCharterSetReturnsBudgetWarnings(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)

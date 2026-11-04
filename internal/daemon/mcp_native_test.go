@@ -134,6 +134,7 @@ func TestNativeEditRefusesWhenTheFileChangedSincePlan(t *testing.T) {
 }
 
 func TestNativeEditUndoRestoresOnlyAnUntouchedPostimage(t *testing.T) {
+	t.Parallel()
 	n := newNativeDaemon(t, map[string]string{".claude.json": nativeClaudeFile})
 	file := filepath.Join(n.home, ".claude.json")
 	plan := n.d.nativeEdit(n.claudeUser())
@@ -277,6 +278,7 @@ func TestPruneKeepsMCPBackupsLikeSkillBackups(t *testing.T) {
 // The rename in replaceNative is the last compare-and-swap: it refuses when the
 // file no longer has the hash the edit started from.
 func TestReplaceNativeRefusesWhenTheFileChanged(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cfg.json")
 	if err := os.WriteFile(path, []byte("one"), 0o640); err != nil {
@@ -302,6 +304,7 @@ func TestReplaceNativeRefusesWhenTheFileChanged(t *testing.T) {
 // Undo trusts nothing in the request except the backup ID: the backup must
 // match the edit the owner is undoing, and must be unchanged on disk.
 func TestNativeEditUndoRefusesAMismatchedOrTamperedBackup(t *testing.T) {
+	t.Parallel()
 	n := newNativeDaemon(t, map[string]string{".claude.json": nativeClaudeFile})
 	file := filepath.Join(n.home, ".claude.json")
 	plan := n.d.nativeEdit(n.claudeUser())
@@ -342,6 +345,7 @@ func TestNativeEditUndoRefusesAMismatchedOrTamperedBackup(t *testing.T) {
 
 // No backup, no edit: if the original cannot be saved, the file stays as it is.
 func TestNativeEditDoesNotTouchTheFileWithoutABackup(t *testing.T) {
+	t.Parallel()
 	n := newNativeDaemon(t, map[string]string{".claude.json": nativeClaudeFile})
 	file := filepath.Join(n.home, ".claude.json")
 	plan := n.d.nativeEdit(n.claudeUser())
@@ -361,6 +365,7 @@ func TestNativeEditDoesNotTouchTheFileWithoutABackup(t *testing.T) {
 }
 
 func TestCTOProposalNativeUndoValidationDoesNotRestoreFile(t *testing.T) {
+	t.Parallel()
 	n := newNativeDaemon(t, map[string]string{".claude.json": nativeClaudeFile})
 	plan := n.d.nativeEdit(n.claudeUser())
 	req := n.claudeUser()

@@ -322,6 +322,7 @@ func TestEnterPiRPCWorkerExplainsNoTerminal(t *testing.T) {
 }
 
 func TestEnterHerdrFocusesExistingPane(t *testing.T) {
+	t.Parallel()
 	f := newFakeHerdr(t)
 	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
 	pid := f.session(t, "w1:pB")
@@ -530,6 +531,7 @@ func TestSessionStartHerdrRemoteCodex(t *testing.T) {
 }
 
 func TestEnterHerdrFocusesPlainTerminal(t *testing.T) {
+	t.Parallel()
 	f := newFakeHerdr(t)
 	f.panes(t, `{"pane_id":"w1:pB","terminal_id":"term_b","tab_id":"w1:t1"}`)
 	pid := f.session(t, "w1:pB")
@@ -705,6 +707,7 @@ func TestHerdrRunsQuotedCommandFromAnyShell(t *testing.T) {
 }
 
 func TestEnterHerdrFindsExistingClientBySessionID(t *testing.T) {
+	t.Parallel()
 	f := newFakeHerdr(t)
 	native := "abcdefgh-1234-5678-0000-012345678901"
 	f.panes(t, `{"pane_id":"w1:pB","tab_id":"w1:t1","terminal_id":"term_b","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"`+native+`"}}`)

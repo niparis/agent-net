@@ -18,6 +18,7 @@ func autoContinueOff() *bool {
 // third stop reaches the caller, with the count. The automatic continues are
 // kept apart from the caller's rework counters and show in the track record.
 func TestAutoContinuePartialHandbackStopsAtTwo(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = time.Hour // this test is about hand-backs, not idleness
@@ -84,6 +85,7 @@ func TestAutoContinuePartialHandbackStopsAtTwo(t *testing.T) {
 // auto_continue false keeps the old behavior: the first partial hand-back is
 // reported to the caller at once.
 func TestAutoContinueOffSendsNoContinue(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -112,6 +114,7 @@ func TestAutoContinueOffSendsNoContinue(t *testing.T) {
 // A worker that goes idle without a hand-back also gets automatic continues,
 // and only after the second one is the caller told.
 func TestAutoContinueIdleWithoutHandback(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = 150 * time.Millisecond
@@ -145,6 +148,7 @@ func TestAutoContinueIdleWithoutHandback(t *testing.T) {
 // A worker whose model call failed is never continued: it did not stop early,
 // it failed.
 func TestAutoContinueFailedWorkerGetsNone(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Idle = time.Hour
@@ -174,6 +178,7 @@ func TestAutoContinueFailedWorkerGetsNone(t *testing.T) {
 // caller, not back to that sender (v0.4.93 and earlier: "unknown recipient
 // session", and the caller was told "idle without hand-back").
 func TestAutoContinueCodexReportReachesTheCaller(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = time.Hour

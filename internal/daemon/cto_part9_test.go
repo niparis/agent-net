@@ -12,6 +12,7 @@ import (
 )
 
 func TestCTOListCursorsAndParity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)

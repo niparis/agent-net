@@ -12,6 +12,7 @@ import (
 // A worker stopped in the middle of a git merge is not committed: a commit
 // would drop the merge parent. The worktree is left as it is.
 func TestStoppedWorkerInAMergeIsLeftAsIs(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

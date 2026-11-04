@@ -263,9 +263,8 @@ func shortDir(t *testing.T) string {
 
 func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	t.Helper()
-	// Worker starts also invoke the one-shot judge; never run the test binary
-	// as a normal test process, or find a real model in these tests.
-	t.Setenv(envFakeOpenCode, "1")
+	// TestMain enables the fake judge once for the package. Keeping that
+	// environment constant lets isolated node tests run in parallel.
 	cfgDir := t.TempDir()
 	nc, ca, err := func() (NodeConfig, []byte, error) {
 		if _, err := Join(context.Background(), g.joinString(), cfgDir); err != nil {
@@ -281,7 +280,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		NodeConfigDir: cfgDir, Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: sock,
 		EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
-		PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger,
+		ClaudeDiscoveryGrace: 100 * time.Millisecond, PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger,
 		// The helper sessions live in the test's own temporary folders. A
 		// test that wants the temp rule sets TempFolders itself.
 		TempFolders: []string{}}
@@ -460,4 +459,22 @@ func messageState(t *testing.T, lc *localClient, id string) string {
 	}
 	json.Unmarshal(res, &r)
 	return r.Message.State
+}
+
+func TestClaudeDiscoveryGrace(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		configured, want time.Duration
+	}{
+		{"default", 0, 3 * time.Second},
+		{"override", 100 * time.Millisecond, 100 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.ClaudeDiscoveryGrace = tc.configured }})
+			if got := n.d.cfg.ClaudeDiscoveryGrace; got != tc.want {
+				t.Fatalf("discovery grace = %s, want %s", got, tc.want)
+			}
+		})
+	}
 }

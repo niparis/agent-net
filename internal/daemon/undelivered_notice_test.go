@@ -22,6 +22,7 @@ func noticesTo(a *fakeAdapter) []protocol.Message {
 // W4.3: a refusal at the receiving harness reaches the sender's harness as one
 // notice from agent-net itself, through the real gateway and both daemons.
 func TestUndeliveredNoticeReachesSenderEndToEnd(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fb := &fakeAdapter{harness: "fake", fail: "plugin refused: busy"}
 	recv := startNode(t, g, nodeOpts{adapter: fb})

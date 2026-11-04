@@ -20,6 +20,7 @@ func replyIDs(rs []ClaudeDelivery) []string {
 // new open of the database (a daemon restart) still finds the open requests,
 // newest first, filtered by recipient, sender and conversation (W4.4).
 func TestClaudeRepliesSurviveReopen(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := openState(dir)
 	if err != nil {
@@ -98,6 +99,7 @@ func TestClaudeRepliesSurviveReopen(t *testing.T) {
 // A request is open until its message expires; the row is pruned at the
 // expiry plus a margin, and its reply address goes with it.
 func TestClaudeRepliesExpiryClosesAndPrunes(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +141,7 @@ func TestClaudeRepliesExpiryClosesAndPrunes(t *testing.T) {
 
 // The hourly housekeeping prunes the Claude rows with the delivery records.
 func TestHousekeepingPrunesClaudeDeliveries(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

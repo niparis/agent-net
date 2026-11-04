@@ -277,9 +277,8 @@ func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
 func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("FAKE_AGY_RECORDS", dir)
 	bin := filepath.Join(dir, "agy")
-	script := "#!/bin/sh\nFAKE_AGY_PROCESS=1 exec '" + strings.ReplaceAll(os.Args[0], "'", "'\\''") + "' -test.run '^TestAgyProcess$' -- \"$@\"\n"
+	script := "#!/bin/sh\nFAKE_AGY_RECORDS=" + shellQuote(dir) + " FAKE_AGY_PROCESS=1 exec " + shellQuote(os.Args[0]) + " -test.run '^TestAgyProcess$' -- \"$@\"\n"
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -309,6 +308,7 @@ func sendAgy(t *testing.T, w *workerNode, sid, body string) {
 }
 
 func TestAgyWorkerLifecycleAndResume(t *testing.T) {
+	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback", Isolation: protocol.IsolationWorktree})
 	n := w.waitNotice(t, 1)[0]
@@ -347,6 +347,7 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 // context of the last agent_response step, the run's tokens, and a notice
 // with the token count alone.
 func TestAgyWorkerContextFromSteps(t *testing.T) {
+	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:usage FAKE:gate FAKE:handback", Isolation: protocol.IsolationWorktree})
 	wk := w.d.workerBySession(res.SessionID)
@@ -367,6 +368,7 @@ func TestAgyWorkerContextFromSteps(t *testing.T) {
 }
 
 func TestAgyWorkerFollowupAndAutoContinue(t *testing.T) {
+	t.Parallel()
 	set := shortSet
 	set.Idle = time.Hour
 	set.IdleNotice = 30 * time.Millisecond
@@ -392,6 +394,7 @@ func TestAgyWorkerFollowupAndAutoContinue(t *testing.T) {
 }
 
 func TestAgyWorkerPartialHandbackAutoContinue(t *testing.T) {
+	t.Parallel()
 	set := shortSet
 	set.IdleNotice = time.Hour
 	w, dir, _ := startAgyNode(t, set)
@@ -408,6 +411,7 @@ func TestAgyWorkerPartialHandbackAutoContinue(t *testing.T) {
 }
 
 func TestAgyWorkerQueuesFollowups(t *testing.T) {
+	t.Parallel()
 	set := shortSet
 	set.IdleNotice = time.Hour
 	w, dir, _ := startAgyNode(t, set)
@@ -428,6 +432,7 @@ func TestAgyWorkerQueuesFollowups(t *testing.T) {
 }
 
 func TestAgyWorkerStopClosesInput(t *testing.T) {
+	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "reply OK", AutoContinue: autoContinueOff()})
 	w.cli.mustCall(protocol.OpWorkerStop, protocol.WorkerStopRequest{Session: res.SessionID})
@@ -435,6 +440,7 @@ func TestAgyWorkerStopClosesInput(t *testing.T) {
 }
 
 func TestAgyWorkerHandbackKeepsQueuedFollowup(t *testing.T) {
+	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:gate FAKE:handback"})
 	wk := w.d.workerBySession(res.SessionID)
@@ -487,6 +493,7 @@ func TestAgyWorkerStopInterruptsBlockedInput(t *testing.T) {
 }
 
 func TestAgyWorkerResumeAfterProcessExit(t *testing.T) {
+	t.Parallel()
 	set := shortSet
 	set.IdleNotice = time.Hour
 	set.Idle = time.Hour
@@ -515,6 +522,7 @@ func TestAgyWorkerResumeAfterProcessExit(t *testing.T) {
 }
 
 func TestAgyWorkerExitedProcessStillExpires(t *testing.T) {
+	t.Parallel()
 	set := shortSet
 	set.Idle = scaled(500 * time.Millisecond)
 	set.IdleNotice = time.Hour
@@ -570,6 +578,7 @@ func TestAgyWorkerDrainsEventsBeforeExit(t *testing.T) {
 }
 
 func TestAgyWorkerStopKillsGroup(t *testing.T) {
+	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:hang"})
 	var r fakeAgyRecord
@@ -585,6 +594,7 @@ func TestAgyWorkerStopKillsGroup(t *testing.T) {
 }
 
 func TestAgyWorkerFailures(t *testing.T) {
+	t.Parallel()
 	for _, task := range []string{"FAKE:error", "FAKE:failed-result", "FAKE:timeout", "FAKE:quota"} {
 		t.Run(task, func(t *testing.T) {
 			w, _, _ := startAgyNode(t, shortSet)
@@ -604,6 +614,7 @@ func TestAgyWorkerFailures(t *testing.T) {
 }
 
 func TestAgyWorkerReadOnly(t *testing.T) {
+	t.Parallel()
 	w, dir, repo := startAgyNode(t, shortSet)
 	setWorkersLevel(t, w, repo, protocol.WorkersReadOnly)
 	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback"})
@@ -616,6 +627,7 @@ func TestAgyWorkerReadOnly(t *testing.T) {
 
 // The same user cannot impersonate a worker conversation from another group.
 func TestAgyWorkerMCPRejectsOutsideProcess(t *testing.T) {
+	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
 	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "reply OK"})
 	r := agyRecords(dir)[0]
@@ -638,6 +650,7 @@ func TestAgyWorkerMCPRejectsOutsideProcess(t *testing.T) {
 
 // Keep the same harness process and request across daemon replacement.
 func TestAgyWorkerRestart(t *testing.T) {
+	t.Parallel()
 	for _, afterHandback := range []bool{false, true} {
 		t.Run(fmt.Sprint(afterHandback), func(t *testing.T) {
 			set := shortSet
@@ -701,6 +714,7 @@ func TestAgyWorkerRestart(t *testing.T) {
 }
 
 func TestAgyHandbackCommit(t *testing.T) {
+	t.Parallel()
 	w, _, repo := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Title: "Finish agy work", Task: "FAKE:edit FAKE:handback", Isolation: protocol.IsolationWorktree})
 	w.waitNotice(t, 1)
@@ -714,6 +728,7 @@ func TestAgyHandbackCommit(t *testing.T) {
 }
 
 func TestAgyHandbackCommitScope(t *testing.T) {
+	t.Parallel()
 	w, _, repo := startAgyNode(t, shortSet)
 	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("ignored.txt\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -742,6 +757,7 @@ func TestAgyHandbackCommitScope(t *testing.T) {
 }
 
 func TestAgyHandbackNoWorktreeCommit(t *testing.T) {
+	t.Parallel()
 	w, _, repo := startAgyNode(t, shortSet)
 	base := gitOutT(t, repo, "rev-parse", "HEAD")
 	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:edit FAKE:handback", Isolation: protocol.IsolationNone})
@@ -755,6 +771,7 @@ func TestAgyHandbackNoWorktreeCommit(t *testing.T) {
 }
 
 func TestAgyHandbackSelfCommit(t *testing.T) {
+	t.Parallel()
 	w, _, repo := startAgyNode(t, shortSet)
 	base := gitOutT(t, repo, "rev-parse", "HEAD")
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:edit FAKE:selfcommit FAKE:handback", Isolation: protocol.IsolationWorktree})
@@ -768,6 +785,7 @@ func TestAgyHandbackSelfCommit(t *testing.T) {
 }
 
 func TestAgyUnfinishedCommitUsesTitle(t *testing.T) {
+	t.Parallel()
 	w, _, repo := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Title: "Finish unfinished work", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	eventually(t, "fake agy writes work", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "agy-work.txt")); return err == nil })

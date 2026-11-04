@@ -13,6 +13,7 @@ import (
 )
 
 func TestCTOToolsDifferencesFindsTwoCopiesAndHonoursAccepted(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	for dir, text := range map[string]string{".claude/skills/demo": "one", ".agents/skills/demo": "two"} {
 		p := filepath.Join(home, dir)
@@ -71,6 +72,7 @@ func TestCTOToolsDifferencesFindsTwoCopiesAndHonoursAccepted(t *testing.T) {
 // A large network gives a bounded answer that says how many differences it
 // left out, and the tool reads every page of items to find them.
 func TestCTOToolsDifferencesCapsTheAnswerAndReadsEveryPage(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	write := func(dir, text string) {
 		p := filepath.Join(home, dir)

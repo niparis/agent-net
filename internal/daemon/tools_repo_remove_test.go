@@ -13,6 +13,7 @@ import (
 )
 
 func TestRepoSkillRemovalUsesTemporaryWorktreeAndKeepsBranch(t *testing.T) {
+	t.Parallel()
 	repo := initRepoSkill(t)
 	state := t.TempDir()
 	d := &Daemon{cfg: Config{StateDir: state}}
@@ -93,6 +94,7 @@ func TestRepoSkillRemovalPlanListsTrackedFilesAndLocalEdits(t *testing.T) {
 }
 
 func TestToolsRepoRemovalPlanApplyAndOwnerGate(t *testing.T) {
+	t.Parallel()
 	repo := initRepoSkill(t)
 	localSkill := filepath.Join(repo, ".claude/skills/x/SKILL.md")
 	if err := os.WriteFile(localSkill, []byte("owner's uncommitted edit\n"), 0o600); err != nil {

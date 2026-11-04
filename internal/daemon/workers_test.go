@@ -288,7 +288,13 @@ func (w *workerNode) workerStopped(t *testing.T, g *testGateway, reason string) 
 }
 
 // Fake workers need no production-length grace period before SIGKILL.
-var shortSet = WorkerSettings{KillGrace: 100 * time.Millisecond, Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
+var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1, KillGrace: 100 * time.Millisecond}
+
+func TestShortWorkerSettingsBoundShutdown(t *testing.T) {
+	if got := shortSet.filled().KillGrace; got > 500*time.Millisecond {
+		t.Fatalf("test worker shutdown grace = %s, want at most 500ms", got)
+	}
+}
 
 // ---- the lifecycle ----
 
@@ -296,6 +302,7 @@ var shortSet = WorkerSettings{KillGrace: 100 * time.Millisecond, Tick: 25 * time
 // the owner, send it a follow-up as the owner, and stop it. The process, its
 // child and the whole group go away.
 func TestWorkerLifecycleStartReplyStop(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -459,6 +466,7 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 // total, refreshed on the tick, in the workers view that a TUI on another
 // machine also reads.
 func TestWorkerUsageReachesTheWorkersView(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -498,6 +506,7 @@ func TestWorkerStopKillsAProcessThatIgnoresTerm(t *testing.T) {
 // ---- the timers ----
 
 func TestWorkerEndsWhenIdle(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Idle = 400 * time.Millisecond
@@ -512,6 +521,7 @@ func TestWorkerEndsWhenIdle(t *testing.T) {
 
 // A message to or from the worker restarts the idle time.
 func TestWorkerMessagesKeepItAlive(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	// One send to the worker can take about a second under the race detector
@@ -539,6 +549,7 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 
 // A busy session is working, even when no message has come for the idle time.
 func TestBusyWorkerIsNotIdle(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Idle = 400 * time.Millisecond
@@ -638,6 +649,7 @@ func TestWorkerWithGrowingTokensIsNotIdle(t *testing.T) {
 }
 
 func TestWorkerEndsAtMaxAge(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.MaxAge = time.Hour
@@ -661,6 +673,7 @@ func ageWorkers(w *workerNode, age time.Duration) {
 // When the owner session ends and stays away longer than the grace time, its
 // worker ends. A worker whose owner is back in time stays.
 func TestWorkerEndsWhenItsOwnerIsGone(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.OwnerGrace = 500 * time.Millisecond
@@ -695,6 +708,7 @@ func mustWorker(t *testing.T, raw json.RawMessage) protocol.WorkerStartResult {
 // ---- the limit, and who may start ----
 
 func TestWorkerLimitPerMachine(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Max = 2
@@ -730,6 +744,7 @@ func TestWorkerLimitPerMachine(t *testing.T) {
 // A worker cannot start workers: the daemon checks the worker flag of the
 // calling session, whatever the model says.
 func TestWorkerCannotStartWorkers(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	shop := newRepo(t, "shop")
@@ -773,6 +788,7 @@ func (w *workerNode) workerSession(t *testing.T, id string) string {
 // A start from the command line that comes from inside an agent (its shell
 // tool) is refused: the process is a descendant of an agent session.
 func TestOwnerActionsRefuseACallerInsideAnAgent(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
 	n := startNode(t, g, nodeOpts{adapter: fa, realGate: true})
@@ -808,6 +824,7 @@ func TestOwnerActionsRefuseACallerInsideAnAgent(t *testing.T) {
 // ---- who may connect as a worker's session ----
 
 func TestOnlyTheWorkersProcessCanConnectAsItsSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -829,6 +846,7 @@ func TestOnlyTheWorkersProcessCanConnectAsItsSession(t *testing.T) {
 }
 
 func TestPluginHelloRefusesSessionsInTheWorktreesFolder(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	wt := filepath.Join(w.cfg.StateDir, "worktrees")
@@ -853,6 +871,7 @@ func TestPluginHelloRefusesSessionsInTheWorktreesFolder(t *testing.T) {
 }
 
 func TestDropWorktreeSessionsClosesGhosts(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	lc := dialLocal(t, w.sock)
@@ -927,6 +946,7 @@ func TestWorkerStartFailures(t *testing.T) {
 // ---- refusals at the gateway ----
 
 func TestWorkerRefusals(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	shop := newRepo(t, "shop")
@@ -1002,6 +1022,7 @@ func launchOf(t *testing.T, cli *localClient, node string) *bool {
 
 // A project that is on two machines needs the machine to be named.
 func TestWorkerProjectOnTwoMachines(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startWorkerNode(t, g, shortSet, nil)
 	b := startWorkerNode(t, g, shortSet, nil)
@@ -1039,6 +1060,7 @@ func TestWorkerProjectOnTwoMachines(t *testing.T) {
 
 // An agent may stop its own workers, and only those.
 func TestAgentStopsOnlyItsOwnWorkers(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -1070,6 +1092,7 @@ func TestAgentStopsOnlyItsOwnWorkers(t *testing.T) {
 // ---- the owner as a sender ----
 
 func TestOwnerSendsAsTheUserInPerson(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	cli := cliClient(t, n)
@@ -1112,6 +1135,7 @@ func TestOwnerSendsAsTheUserInPerson(t *testing.T) {
 
 // An agent connection cannot send as the owner, with any method.
 func TestAgentsCannotSendAsTheOwner(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	cli := cliClient(t, n)
@@ -1147,6 +1171,7 @@ func TestAgentsCannotSendAsTheOwner(t *testing.T) {
 // The daemon takes its workers back after a restart, and cleans up after the
 // ones that died while it was down.
 func TestWorkersSurviveADaemonRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	shop, other := newRepo(t, "shop"), newRepo(t, "other")
@@ -1240,6 +1265,7 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 // while the daemon was down. They can run at the same time, and a lost worker
 // must be told to the gateway once.
 func TestLostWorkerIsReportedOnceByConcurrentReporters(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	// A session the lost worker had, and a row for the worker that died while
@@ -1272,6 +1298,7 @@ func TestLostWorkerIsReportedOnceByConcurrentReporters(t *testing.T) {
 
 // A process ID that was reused is not a worker: the start time differs.
 func TestAdoptIgnoresAReusedProcessID(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	// A row for a process that is alive, with another start time.
@@ -1298,6 +1325,7 @@ func TestAdoptIgnoresAReusedProcessID(t *testing.T) {
 // A worker's task and its recent end are in the workers view, and the view can
 // be kept to the local Claude session that owns the worker.
 func TestWorkersQueryTaskRecentAndOwner(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -1347,6 +1375,7 @@ func TestWorkersQueryTaskRecentAndOwner(t *testing.T) {
 }
 
 func TestOwnerSessionIsRegisteredPerMachine(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startNode(t, g, nodeOpts{})
 	b := startNode(t, g, nodeOpts{})
@@ -1387,6 +1416,7 @@ func TestOwnerSessionIsRegisteredPerMachine(t *testing.T) {
 // Every operator method is recognized. Agent-only methods refuse the CLI;
 // the other methods are served. This keeps the protocol and daemon together.
 func TestEveryOperatorMethodIsServed(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)

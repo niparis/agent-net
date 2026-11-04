@@ -32,6 +32,7 @@ func TestWorkerMachineSettingsPrecedence(t *testing.T) {
 }
 
 func TestWorkerMachineSettingsAppliedToAdmission(t *testing.T) {
+	t.Parallel()
 	st, err := openState(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +51,7 @@ func TestWorkerMachineSettingsAppliedToAdmission(t *testing.T) {
 }
 
 func TestWorkerMachineSettingsReadPaths(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, func(c *Config) { c.Hostname = "test-machine"; c.Workers.Max = 8 })
 	cli := cliClient(t, n)

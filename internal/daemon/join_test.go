@@ -31,6 +31,7 @@ func TestEnterSSHIsOnUnlessNodeConfigSaysFalse(t *testing.T) {
 
 // Joining again keeps the ssh settings set by hand, including false.
 func TestJoinKeepsEnterSSH(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	dir := t.TempDir()
 	raw := `{"enter_ssh":false,"enter_ssh_hosts":{"box":"me@box"}}`

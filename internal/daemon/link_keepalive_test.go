@@ -103,6 +103,7 @@ func (g *keepaliveGateway) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestLinkKeepaliveDaemonEmptyFragments(t *testing.T) {
+	t.Parallel()
 	peer := &keepaliveGateway{}
 	d := startKeepaliveDaemon(t, peer)
 	first := currentLink(d)
@@ -161,6 +162,7 @@ func currentLink(d *Daemon) *link {
 }
 
 func TestLinkKeepaliveDaemonSilentPeerReconnects(t *testing.T) {
+	t.Parallel()
 	peer := &keepaliveGateway{}
 	d := startKeepaliveDaemon(t, peer)
 	first := currentLink(d)
@@ -187,6 +189,7 @@ func TestLinkKeepaliveDaemonSilentPeerReconnects(t *testing.T) {
 }
 
 func TestLinkKeepaliveDaemonLiveTraffic(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"pongs", "data without pongs", "pings without pongs"} {
 		t.Run(mode, func(t *testing.T) {
 			peer := &keepaliveGateway{}

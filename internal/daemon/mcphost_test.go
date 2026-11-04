@@ -77,6 +77,8 @@ func TestMain(m *testing.M) {
 	// The race runtime has already initialized in this process. Child test
 	// binaries do not need its one-second exit delay.
 	os.Setenv("GORACE", "atexit_sleep_ms=0")
+	os.Setenv(envFakeOpenCode, "1")
+	os.Setenv(envFakeCodex, "1")
 	quotaaxi.SetDiscoveryRootForTesting(os.TempDir())
 	quotaaxi.SetSystemNodeDirsForTesting(nil)
 	hideRealHerdr()
@@ -88,6 +90,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	os.Setenv(envFakePids, fakes)
+	// Parallel Codex fixtures only read this empty home. Config-writing tests
+	// use their own CODEX_HOME instead.
+	codexHome := filepath.Join(fakes, "codex")
+	if err := os.MkdirAll(codexHome, 0500); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv("CODEX_HOME", codexHome)
 	// OpenCode status checks must never discover the machine's shared service.
 	os.Setenv("XDG_STATE_HOME", filepath.Join(fakes, "state"))
 	// Test daemons must not find the machine's quota collector. It can start
@@ -436,6 +446,7 @@ func bearerServer(t *testing.T, token string) *httptest.Server {
 // A streamable HTTP server with a bearer token read from a file on the host.
 // A wrong token gives a clear error that holds no secret, before and after saving.
 func TestMCPHTTPBearerFromFile(t *testing.T) {
+	t.Parallel()
 	const token, wrong = "right-token-abcdef", "wrong-token-zzzzzz"
 	ts := bearerServer(t, token)
 	g := startGateway(t, t.TempDir(), "")

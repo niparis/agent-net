@@ -169,6 +169,7 @@ func TestLearnedCostIgnoresPeaks(t *testing.T) {
 // ---- cost learning ----
 
 func TestWorkerCostLearning(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	d := w.d
@@ -203,6 +204,7 @@ func TestWorkerCostLearning(t *testing.T) {
 
 // A worker that ends leaves its measured cost: the sampler follows its tree.
 func TestEndedWorkerLeavesItsCost(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fr := &procReader{}
 	sampler := usage.NewWith(fr, time.Hour, 5*time.Minute, nil)
@@ -309,6 +311,7 @@ func startFrom(t *testing.T, pi *localClient, req protocol.WorkerStartRequest) p
 }
 
 func TestStartIsQueuedWhenTheMachineIsBusyAndStartsInOrder(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
 	set := queueSet
@@ -396,6 +399,7 @@ func TestStartIsQueuedWhenTheMachineIsBusyAndStartsInOrder(t *testing.T) {
 }
 
 func TestQueuedStartCanBeCancelled(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
@@ -452,6 +456,7 @@ func TestQueuedStartCanBeCancelled(t *testing.T) {
 }
 
 func TestQueuedStartTimesOutWithANotice(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
 	set := queueSet
@@ -525,6 +530,7 @@ func TestNotStartedNoticeIsFromAgentNetNotTheOwner(t *testing.T) {
 }
 
 func TestQueueSurvivesADaemonRestart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
@@ -567,6 +573,7 @@ func TestQueueSurvivesADaemonRestart(t *testing.T) {
 }
 
 func TestQueuedStartIsDroppedWhenItsOwnerLeaves(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: cpuBusy()}
 	set := queueSet
@@ -598,6 +605,7 @@ func TestQueuedStartIsDroppedWhenItsOwnerLeaves(t *testing.T) {
 
 // With room and an empty queue, a start goes straight through.
 func TestStartWithRoomIsNotQueued(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: roomyLoad()}
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
@@ -612,6 +620,7 @@ func TestStartWithRoomIsNotQueued(t *testing.T) {
 // A worker that started in the last 5 minutes counts against the room, even
 // before the 5-minute average shows it.
 func TestAdmissionCountsWorkersStartedInTheLastFiveMinutes(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: roomyLoad()}
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
@@ -641,6 +650,7 @@ func TestAdmissionCountsWorkersStartedInTheLastFiveMinutes(t *testing.T) {
 
 // The gap: a start within the gap of the last one waits, then goes.
 func TestStartGapQueuesTheSecondStart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: roomyLoad()}
 	set := queueSet

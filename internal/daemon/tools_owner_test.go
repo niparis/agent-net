@@ -10,6 +10,7 @@ import (
 )
 
 func TestToolsMCPAndFolderMethodsRefuseAgents(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory})
 	agent, _ := helloPi(t, n, "tools-owner-gate", "/work", true)
@@ -21,6 +22,7 @@ func TestToolsMCPAndFolderMethodsRefuseAgents(t *testing.T) {
 }
 
 func TestToolsMCPListOwner(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory})
 	if _, err := cliClient(t, n).call("tools_mcp_list", nil); err != nil {
@@ -29,6 +31,7 @@ func TestToolsMCPListOwner(t *testing.T) {
 }
 
 func TestToolsImportFolderOnChosenMachine(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "folder-skill")
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
@@ -92,6 +95,7 @@ func TestToolsMCPWrappersUseRegistry(t *testing.T) {
 }
 
 func TestToolsKeepCopyRefusesAgents(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory})
 	agent, _ := helloPi(t, n, "copy-choice-agent", "/work", true)
@@ -101,6 +105,7 @@ func TestToolsKeepCopyRefusesAgents(t *testing.T) {
 }
 
 func TestToolsKeepCopyBacksUpOtherVariant(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := filepath.Join(home, ".claude/skills/choice")
 	b := filepath.Join(home, ".agents/skills/choice")

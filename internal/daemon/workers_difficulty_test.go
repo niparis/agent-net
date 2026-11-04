@@ -71,6 +71,7 @@ func TestWorkerAutomaticProfileResolvesProviderPerMachine(t *testing.T) {
 }
 
 func TestWorkerAutomaticSkipsStaleProfileWithReason(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -94,6 +95,7 @@ func TestWorkerAutomaticSkipsStaleProfileWithReason(t *testing.T) {
 }
 
 func TestWorkerUnscoredFallback(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -106,6 +108,7 @@ func TestWorkerUnscoredFallback(t *testing.T) {
 }
 
 func TestWorkerAutomaticChoosesHarness(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -121,6 +124,7 @@ func TestWorkerAutomaticChoosesHarness(t *testing.T) {
 }
 
 func TestWorkerAutomaticRejectsUnapprovedProvider(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -138,6 +142,7 @@ func TestWorkerAutomaticRejectsUnapprovedProvider(t *testing.T) {
 }
 
 func TestWorkerAutomaticPrefersRecentSuccess(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -159,6 +164,7 @@ func TestWorkerAutomaticPrefersRecentSuccess(t *testing.T) {
 }
 
 func TestWorkerProfilesAgentManagement(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -195,6 +201,7 @@ func TestWorkerProfilesAgentManagement(t *testing.T) {
 }
 
 func TestWorkerAutomaticUsesOnlyRegisteredProfiles(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -211,6 +218,7 @@ func TestWorkerAutomaticUsesOnlyRegisteredProfiles(t *testing.T) {
 }
 
 func TestWorkerRegisteredOpenCodeEffort(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -231,6 +239,7 @@ func TestWorkerRegisteredOpenCodeEffort(t *testing.T) {
 }
 
 func TestWorkerProfilesResolveUsingTrackRecord(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -248,6 +257,7 @@ func TestWorkerProfilesResolveUsingTrackRecord(t *testing.T) {
 }
 
 func TestWorkerExplicitProtectedProviderNote(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
@@ -259,6 +269,7 @@ func TestWorkerExplicitProtectedProviderNote(t *testing.T) {
 }
 
 func TestWorkerStartMaximumLevelRule(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))

@@ -13,6 +13,7 @@ import (
 )
 
 func TestProposalLifecycle(t *testing.T) {
+	t.Parallel()
 	s, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +88,7 @@ func TestProposalLifecycle(t *testing.T) {
 }
 
 func TestProposalLimitAndApproveAllStops(t *testing.T) {
+	t.Parallel()
 	s, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
@@ -151,6 +153,7 @@ func TestProposalOutcomeDelivery(t *testing.T) {
 }
 
 func TestProposalConcurrentOutcomeDelivery(t *testing.T) {
+	t.Parallel()
 	s, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)

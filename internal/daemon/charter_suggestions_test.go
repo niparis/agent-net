@@ -62,6 +62,7 @@ func TestCharterSuggestionsSizeAndEvidence(t *testing.T) {
 }
 
 func TestCTOCharterSuggestionsRemoved(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, WorkerSettings{}, nil)
 	st := g.gw.Store()

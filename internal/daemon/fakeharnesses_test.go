@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -632,6 +633,28 @@ func useFakeClaude(t *testing.T) (sessions, stopLog string) {
 	t.Setenv(envFakeClaudeSessions, sessions)
 	t.Setenv(envFakeClaudeLog, stopLog)
 	return
+}
+
+// fakeHarnessLauncher applies node-specific settings only to the fake child.
+// exec preserves its PID, process group and signal behavior.
+func fakeHarnessLauncher(t *testing.T, name string, env map[string]string) string {
+	t.Helper()
+	var keys []string
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var script strings.Builder
+	script.WriteString("#!/bin/sh\n")
+	for _, key := range keys {
+		script.WriteString(key + "=" + shellQuote(env[key]) + " ")
+	}
+	script.WriteString("exec " + shellQuote(os.Args[0]) + " \"$@\"\n")
+	bin := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(bin, []byte(script.String()), 0700); err != nil {
+		t.Fatal(err)
+	}
+	return bin
 }
 
 // ---- Pi ----

@@ -155,6 +155,7 @@ func TestCTOReadCanary(t *testing.T) {
 }
 
 func TestCTOAgentReadCanary(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	caller, _ := helloPi(t, n, "reader", "/fixture", true)
@@ -171,6 +172,7 @@ func TestCTOAgentReadCanary(t *testing.T) {
 }
 
 func TestCTOReadParity(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	_, id := helloPi(t, w.node, "parity", "/fixture", true)
@@ -231,6 +233,7 @@ func withoutLastSeenAgo(t *testing.T, raw []byte) []byte {
 }
 
 func TestCTOOutcomeCanary(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"applied", "failed", "declined", "expired"} {
 		t.Run(status, func(t *testing.T) {
 			state, err := openState(seededStateDir(t))

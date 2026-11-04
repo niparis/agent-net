@@ -17,6 +17,7 @@ func undoTargetOf(t protocol.ToolTarget, action string) protocol.ToolTarget {
 }
 
 func TestUndoRemoveRestoresFromBackup(t *testing.T) {
+	t.Parallel()
 	d, target, state, source, hash := removeFixture(t)
 	if r := d.removeSkill(target); r.State != "applied" {
 		t.Fatalf("remove: %+v", r)
@@ -230,6 +231,7 @@ func TestToolFolderCopiesAndUndo(t *testing.T) {
 }
 
 func TestToolGlobalFolderCopiesAndGemini(t *testing.T) {
+	t.Parallel()
 	d, old, _, _ := installedCopy(t)
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "SKILL.md"), []byte("fixture"), 0600); err != nil {

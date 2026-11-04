@@ -18,6 +18,7 @@ import (
 // gone, the notice says so, and the worker leaves the list. The owner's next
 // message starts the same harness session again, and it answers.
 func TestHandbackEndsTheWorkerAndOwnerFollowUpResumesIt(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -70,6 +71,7 @@ func TestHandbackEndsTheWorkerAndOwnerFollowUpResumesIt(t *testing.T) {
 }
 
 func TestOpenCodeWorkerQueuedDeliveryAfterHandback(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -107,6 +109,7 @@ func TestOpenCodeWorkerQueuedDeliveryAfterHandback(t *testing.T) {
 // A Pi worker cannot be started again: Pi's rpc mode has no resume, so the
 // owner gets that reason, and no process is started.
 func TestPiWorkerCannotBeResumed(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -141,6 +144,7 @@ func TestPiWorkerCannotBeResumed(t *testing.T) {
 
 // A send queued while disconnected still reports a restart refusal.
 func TestQueuedWorkerResumeRefusalNotifiesSender(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -169,6 +173,7 @@ func TestQueuedWorkerResumeRefusalNotifiesSender(t *testing.T) {
 
 // Only the session that started a worker can start it again.
 func TestNonOwnerCannotResumeAWorker(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -198,6 +203,7 @@ func TestNonOwnerCannotResumeAWorker(t *testing.T) {
 // record after its hand-back, and refuses a hello for that native session from
 // any process that is not the worker's own private server.
 func TestPluginMayNotRegisterAWorkersSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	owner := w.ownerID()
@@ -230,6 +236,7 @@ func TestPluginMayNotRegisterAWorkersSession(t *testing.T) {
 // A worker that the machine says it does not run leaves the gateway's list at
 // once, instead of staying as an online worker.
 func TestWorkerUnknownToItsMachineLeavesTheList(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	owner := w.ownerID()
@@ -255,6 +262,7 @@ func TestWorkerUnknownToItsMachineLeavesTheList(t *testing.T) {
 // A worker record that is offline and older than the longest run time is
 // cleaned when the daemon starts, so it does not stay listed for weeks.
 func TestLeftoverWorkerRecordIsCleanedAtStart(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	// The record is added while the daemon is stopped: a running daemon cleans
@@ -280,6 +288,7 @@ func TestLeftoverWorkerRecordIsCleanedAtStart(t *testing.T) {
 // The same cleanup runs periodically, so a record that goes stale while the
 // daemon runs does not stay either.
 func TestLeftoverWorkerRecordIsCleanedPeriodically(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Cleanup = 100 * time.Millisecond
@@ -315,6 +324,7 @@ func addLeftoverWorkerOf(t *testing.T, g *testGateway, w *workerNode, owner, har
 }
 
 func TestOpenCodeWorkerIdleAfterMissedEndEvent(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -328,6 +338,7 @@ func TestOpenCodeWorkerIdleAfterMissedEndEvent(t *testing.T) {
 }
 
 func TestOpenCodeWorkerQueueAfterMissedEndEvent(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -381,6 +392,7 @@ func TestOpenCodeWorkerQueueAfterMissedEndEvent(t *testing.T) {
 // The owner's next message makes the worktree again on that branch, with the
 // commits it already holds, instead of failing because the branch exists.
 func TestResumeRecreatesARemovedWorktreeOnItsBranch(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

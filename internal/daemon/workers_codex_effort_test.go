@@ -12,6 +12,7 @@ import (
 // every turn/start (also after thread/resume), and the worker shows the full
 // "model:effort".
 func TestCodexWorkerReasoningEffort(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -54,6 +55,7 @@ func TestCodexWorkerReasoningEffort(t *testing.T) {
 // An effort the model does not list is refused at start, with the levels it
 // does list.
 func TestCodexWorkerRefusesUnsupportedEffort(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -76,6 +78,7 @@ func TestCodexWorkerRefusesUnsupportedEffort(t *testing.T) {
 // A continued worker gets the old worker's model, effort included, so its
 // turns run at the same level.
 func TestCodexContinuedWorkerKeepsEffort(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")

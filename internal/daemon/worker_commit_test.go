@@ -113,6 +113,7 @@ func wantTrailers(w *worker) map[string]string {
 }
 
 func TestWorkerCommitHasIdentityTrailers(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	env := d.workerCommitEnv(w)
@@ -132,6 +133,7 @@ func TestWorkerCommitHasIdentityTrailers(t *testing.T) {
 }
 
 func TestWorkerCommitRunsProjectHook(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	hooks := filepath.Join(w.mainPath, ".git", "hooks")
@@ -168,6 +170,7 @@ func TestWorkerWithoutWorktreeHasNoCommitHook(t *testing.T) {
 }
 
 func TestWorkerCommitPreCommitHookCanBlock(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	hooks := filepath.Join(w.mainPath, ".git", "hooks")
@@ -190,6 +193,7 @@ func TestWorkerCommitPreCommitHookCanBlock(t *testing.T) {
 }
 
 func TestWorkerCommitMsgHookRuns(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	hooks := filepath.Join(w.mainPath, ".git", "hooks")
@@ -211,6 +215,7 @@ func TestWorkerCommitMsgHookRuns(t *testing.T) {
 }
 
 func TestCommitOutsideWorkerEnvironmentHasNoTrailers(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	_ = w
@@ -226,6 +231,7 @@ func TestCommitOutsideWorkerEnvironmentHasNoTrailers(t *testing.T) {
 }
 
 func TestWorkerCommitUsesSessionLearnedAfterLaunch(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	w.sessionID = ""
@@ -244,6 +250,7 @@ func TestWorkerCommitUsesSessionLearnedAfterLaunch(t *testing.T) {
 }
 
 func TestWorkerCommitAmendKeepsOneSet(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	env := d.workerCommitEnv(w)
@@ -267,6 +274,7 @@ func TestWorkerCommitAmendKeepsOneSet(t *testing.T) {
 }
 
 func TestAgyCommitNoWorktreeOrChanges(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	if d.saveWorkerChanges(&worker{harness: "agy"}, "report", "handback", false) {
 		t.Fatal("committed without a worktree")
@@ -287,6 +295,7 @@ func TestAgyCommitNoWorktreeOrChanges(t *testing.T) {
 }
 
 func TestWorkerResumeKeepsBranchAfterPrefixChange(t *testing.T) {
+	t.Parallel()
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	oldBranch := w.branch

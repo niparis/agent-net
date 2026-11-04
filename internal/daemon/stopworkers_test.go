@@ -22,6 +22,7 @@ func startSleeper(t *testing.T) (pid int, token string) {
 }
 
 func TestStopRecordedWorkersKillsRunningWorkersOnly(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	livePid, liveTok := startSleeper(t)
 	reusedPid, _ := startSleeper(t) // a process that is not the recorded run

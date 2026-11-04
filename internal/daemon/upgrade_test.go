@@ -149,6 +149,7 @@ func byNode(res []protocol.UpgradeResult) map[string]protocol.UpgradeResult {
 }
 
 func TestGatewayUpgradesNodes(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 
 	// ok: installs v2, restarts, comes back reporting v2.
@@ -214,6 +215,7 @@ func TestGatewayUpgradesNodes(t *testing.T) {
 }
 
 func TestNodeReportsVersionLocally(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startUpNode(t, g, "v1.2.3", nil)
 	b := startUpNode(t, g, "v1.2.4", nil)
@@ -241,6 +243,7 @@ func TestNodeReportsVersionLocally(t *testing.T) {
 }
 
 func TestOldLocalClientGetsRestartSessionError(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	// A future release that dropped compatibility with protocol 0 clients.
 	n := startUpNode(t, g, "v2", nil, func(c *Config) { c.MinLocalProtocol = 1 })
@@ -257,6 +260,7 @@ func TestOldLocalClientGetsRestartSessionError(t *testing.T) {
 }
 
 func TestOldClientsAreServedByDefault(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startUpNode(t, g, "v2", nil)
 	old := dialLocal(t, n.cfg.SocketPath)
@@ -266,6 +270,7 @@ func TestOldClientsAreServedByDefault(t *testing.T) {
 }
 
 func TestRestartIsForTheCLIOnly(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	restarted := make(chan struct{}, 1)
 	n := startUpNode(t, g, "v2", nil, func(c *Config) { c.Restart = func() { restarted <- struct{}{} } })

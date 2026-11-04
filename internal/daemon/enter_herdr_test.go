@@ -373,6 +373,7 @@ func TestEnterHerdrStalePane(t *testing.T) {
 // Only when the service cannot be reached either does the note say what was
 // tried.
 func TestEnterOpenCodeClosedHerdrPaneUsesTheService(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "opencode")
 	cwd := t.TempDir()
@@ -632,6 +633,7 @@ func TestEnterLocalHerdrStaysAttach(t *testing.T) {
 // The whole path: session_enter on a node answers a herdr plan for an
 // interactive Claude session, and the TUI's herdr socket is read from the request.
 func TestEnterHerdrThroughSessionEnter(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	f := newFakeHerdr(t)
 	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
