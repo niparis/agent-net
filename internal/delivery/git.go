@@ -19,6 +19,8 @@ import (
 //   - runs the git binary found on GitPath (or on this process's PATH), with an
 //     explicit argument list and no shell;
 //   - switches off hooks, the fsmonitor hook, automatic gc and maintenance;
+//   - runs only in a repository whose own config names no program and no
+//     rewrite of the remote (checkRepo, in config.go);
 //   - ignores replace refs (GIT_NO_REPLACE_OBJECTS=1), so a commit ID always
 //     names the content that was checked;
 //   - drops inherited GIT_* variables, except a few that say how to reach a
@@ -48,6 +50,9 @@ var gitFixedArgs = []string{
 	"-c", "core.fsmonitor=false",
 	"-c", "gc.auto=0",
 	"-c", "maintenance.auto=false",
+	// Command line config beats every file, so this one cannot be undone by
+	// the repository: the ext:: transport runs a program named in the URL.
+	"-c", "protocol.ext.allow=never",
 }
 
 // gitEnvKeep lists the GIT_* variables a call inherits: how to reach a remote

@@ -117,6 +117,12 @@ type MergeRequest struct {
 	// credential helpers are found too. The daemon passes its login PATH.
 	// Empty means this process's PATH.
 	GitPath string
+	// RemoteURL is optional: the URL the caller knows for Remote, taken from
+	// its own record and not from the repository. When set, Merge refuses
+	// (ErrRemoteURL) unless git resolves both the fetch URL and the push URL
+	// of Remote to exactly this string. Without it the URL in the
+	// repository's config is used.
+	RemoteURL string
 }
 
 // MergeResult says what Merge did.
@@ -181,7 +187,10 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 
 	// 1. Refuse a repository whose history was altered. Ask the remote
 	// itself where the target is, then fetch, then check that nothing moved.
-	if err := checkHistory(ctx, repo); err != nil {
+	if err := checkRepo(ctx, repo); err != nil {
+		return res, err
+	}
+	if err := checkRemoteURL(ctx, repo, req.Remote, req.RemoteURL); err != nil {
 		return res, err
 	}
 	tip, exists, err := remoteBranchTip(ctx, repo, req.Remote, req.TargetBranch)
@@ -225,7 +234,11 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 		return res, nil
 	}
 
-	// 3. Prepare the worktree at the tip.
+	// 3. Prepare the worktree at the tip. The config is read again first:
+	// reset, checkout and merge run filter and merge drivers.
+	if err := checkConfig(ctx, repo); err != nil {
+		return res, err
+	}
 	if err := prepareMergeWorktree(ctx, req, repo, wt, tip); err != nil {
 		return res, err
 	}
@@ -251,6 +264,12 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 	if req.Push {
 		if m.beforePush != nil {
 			m.beforePush()
+		}
+		if err := checkConfig(ctx, wt); err != nil {
+			return res, err
+		}
+		if err := checkRemoteURL(ctx, wt, req.Remote, req.RemoteURL); err != nil {
+			return res, err
 		}
 		if err := pushWithLease(ctx, wt, req, tip, res.Created, after); err != nil {
 			return res, err

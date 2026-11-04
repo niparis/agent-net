@@ -127,7 +127,7 @@ func NewCommits(ctx context.Context, req WatchRequest) (WatchResult, error) {
 	if err := checkRefName(ctx, g, "branch", req.Branch); err != nil {
 		return WatchResult{}, fmt.Errorf("new commits: %w", err)
 	}
-	if err := checkHistory(ctx, g); err != nil {
+	if err := checkRepo(ctx, g); err != nil {
 		return WatchResult{}, err
 	}
 
