@@ -652,7 +652,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 
 | What | Default path | Notes |
 |---|---|---|
-| Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). Optional `"quota_axi"` is an absolute path to quota-axi when it is not on `PATH` or in `~/.local/bin`. |
+| Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). `"no_auto_upgrade": true` disables daemon catch-up upgrades. Optional `"quota_axi"` is an absolute path to quota-axi when it is not on `PATH` or in `~/.local/bin`. |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
 | Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivery records (for duplicates and interrupted writes), the `claude_deliveries` table (the messages delivered to Claude sessions, to match their replies, see [Claude replies](#claude-replies)), the outbox for sends made while the gateway is away, the `settings_snapshot` table (the last validated settings snapshot for offline use), and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. A delivery record is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its private data and state folders and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. A worker in the OS sandbox also has `os-sandbox` (the wrapper's name), `tmp` (its private `/tmp`) and, for Pi, `pi-agent` (its private agent folder with a copy of the Pi credentials, made new at each start). Kept after hand-back for resume, otherwise deleted when the worker ends. OpenCode configuration remains shared. At each start OpenCode credentials are exported and imported through memory into the private database (mode 0600); OAuth token refresh in the copy may affect the original login. |
@@ -685,6 +685,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Same-machine file handoff | `~/.local/state/agent-net/daemon/files/local/` | A file sent between two sessions of this machine waits here, under its unique name, until the receiving side takes it into the inbox. Deleted after 7 days if nobody takes it. |
 | Taildrop staging (Linux) | `~/.local/state/agent-net/daemon/files/taildrop/` | `tailscale file get` writes here while the daemon collects files. Announced files go to the inbox; every other file goes to `~/Downloads` at once. |
 | Gateway binaries | `~/.local/share/agent-net/dist/agent-net-<os>-<arch>` | The four binaries the gateway hands out to new machines. |
+| Signed release manifest | `~/.local/share/agent-net/dist/checksums.txt`, `checksums.txt.sig` | Original checksum file and Ed25519 signature served to upgrading nodes. Setup removes them before changing a dist binary; gateway rollback also clears them before running older setup. Kept on uninstall like the gateway binaries. |
 | Binary | `~/.local/bin/agent-net` | |
 | Claude Code sessions (read) | `~/.claude/sessions/` | The daemon reads one file per live session. It never writes here. |
 | Linux services | `~/.config/systemd/user/agent-net-daemon.service`, `agent-net-gateway.service` | systemd user units. |
@@ -916,6 +917,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_BASE_URL` | `install.sh` | Replaces the release download URL. For tests. |
 | `AGENT_NET_DIST` | `scripts/dist.sh` | Output directory for the built binaries. |
 | `AGENT_NET_NO_INSTALL` | `scripts/dist.sh` | Set it to skip copying the binary to `~/.local/bin`. |
+| `RELEASE_SIGNING_KEY` | `scripts/release-key sign` | PKCS#8 Ed25519 private key PEM supplied by the release workflow secret. Never print it. |
 | `AGENT_NET_WORKER`, `AGENT_NET_WORKER_SESSION_FILE` | OpenCode plugin | Set by the daemon in a worker's environment: the worker ID, and a file that holds the worker's one session ID. The plugin then skips its start-up discovery and registers only that session. Do not set them. The daemon also sets `AGENT_NET_WORKER` and `AGENT_NET_SOCKET` for Pi workers, and for Claude Code workers through the `env` of their `--settings`. |
 | `AGENT_NET_NO_AUTO_UPGRADE` | daemon, `agent-net mcp` | `1` means: do not upgrade by itself. For the daemon: no automatic catch-up. For `agent-net mcp`: do not switch to a newer binary. |
 | `AGENT_NET_IGNORE` | daemon | `1` in a session's environment keeps that session off the network: the daemon registers no session and no project for it, and removes one it had. Set it on the harness process (`AGENT_NET_IGNORE=1 claude`, or the equivalent for Pi and OpenCode). A Codex thread has no process of its own, so set it where the shared Codex app server starts; it then hides every thread of that server. A worker started by the daemon is always registered. |
@@ -942,6 +944,7 @@ The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUS
 | `daemon` | `--gateway URL` | from `node.json` |
 | | `--config-dir DIR` | `~/.config/agent-net` |
 | `setup` | `--join STRING` | none. A join string from `invite` or `enroll`. |
+| | `--no-auto-upgrade`, `--auto-upgrade` | Save or clear the daemon automatic upgrade opt-out in `node.json`. Later setup runs and rejoining preserve it. |
 | | `--no-launch` | off. This machine refuses workers. Saved as `no_launch` in `node.json`. It stays until `--launch`. |
 | | `--launch` | off. Accept workers again. |
 | | `--gateway` | off. Also install and start the gateway here. On a fresh setup with Tailscale present, setup offers to bind to the Tailscale address instead. Existing setups keep theirs. |

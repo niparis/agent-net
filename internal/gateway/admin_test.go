@@ -191,3 +191,22 @@ func TestVersionOfDistBinary(t *testing.T) {
 		t.Fatalf("plain version = %q", v)
 	}
 }
+
+func TestSignedChecksumEndpoints(t *testing.T) {
+	data, dist := t.TempDir(), t.TempDir()
+	gw, err := New(Options{DataDir: data, DistDir: dist})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+	h := gw.Handler()
+	for _, name := range []string{"checksums.txt", "checksums.txt.sig"} {
+		content := []byte("release bytes for " + name + "\n")
+		if err := os.WriteFile(filepath.Join(dist, name), content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if rec := adminReq(t, h, "GET", "/install/"+name, ""); rec.Code != http.StatusOK || rec.Body.String() != string(content) {
+			t.Errorf("%s: got %d %q", name, rec.Code, rec.Body.String())
+		}
+	}
+}

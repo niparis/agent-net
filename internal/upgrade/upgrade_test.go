@@ -2,6 +2,8 @@ package upgrade
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +14,18 @@ import (
 	"strings"
 	"testing"
 )
+
+func testSigningKey(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
+	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := releaseKey
+	releaseKey = pub
+	t.Cleanup(func() { releaseKey = old })
+	return key
+}
 
 // fakeBinary is a shell script that prints its version, like `agent-net version`.
 func fakeBinary(version string) []byte {
@@ -37,10 +51,11 @@ type fakeGitHub struct {
 	latest   string
 	releases map[string]map[string][]byte // tag -> file -> content
 	hits     int
+	key      ed25519.PrivateKey
 }
 
 func newFakeGitHub(t *testing.T) *fakeGitHub {
-	f := &fakeGitHub{releases: map[string]map[string][]byte{}}
+	f := &fakeGitHub{releases: map[string]map[string][]byte{}, key: testSigningKey(t)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/latest/download/{file}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/download/"+f.latest+"/"+r.PathValue("file"), http.StatusFound)
@@ -69,6 +84,7 @@ func (f *fakeGitHub) addRelease(tag string) {
 		fmt.Fprintf(&sums, "%s  %s\n", sum(b), n)
 	}
 	files["checksums.txt"] = []byte(sums.String())
+	files["checksums.txt.sig"] = ed25519.Sign(f.key, files["checksums.txt"])
 	f.releases[tag] = files
 }
 
@@ -129,6 +145,7 @@ func TestDownloadMissingFromChecksums(t *testing.T) {
 	f := newFakeGitHub(t)
 	f.addRelease("v0.2.0")
 	f.releases["v0.2.0"]["checksums.txt"] = []byte(sum(fakeBinary("v0.2.0")) + "  agent-net-linux-amd64\n")
+	f.releases["v0.2.0"]["checksums.txt.sig"] = ed25519.Sign(f.key, f.releases["v0.2.0"]["checksums.txt"])
 	err := Download(context.Background(), http.DefaultClient, TagURL(f.URL, "v0.2.0"), AllAssets(), t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "not listed") {
 		t.Fatalf("want 'not listed', got %v", err)
@@ -187,7 +204,9 @@ func TestRollbackWithoutPrev(t *testing.T) {
 
 // fakeGateway serves the node-side endpoints.
 func fakeGateway(t *testing.T, bin, checksums []byte) *httptest.Server {
+	key := testSigningKey(t)
 	mux := http.NewServeMux()
+	mux.HandleFunc("/install/checksums.txt.sig", func(w http.ResponseWriter, r *http.Request) { w.Write(ed25519.Sign(key, checksums)) })
 	mux.HandleFunc("/install/checksums.txt", func(w http.ResponseWriter, r *http.Request) { w.Write(checksums) })
 	mux.HandleFunc("/install/bin/{os}/{arch}", func(w http.ResponseWriter, r *http.Request) { w.Write(bin) })
 	srv := httptest.NewServer(mux)
@@ -264,5 +283,94 @@ func TestFromGatewayAlreadyInstalled(t *testing.T) {
 	}
 	if _, err := os.Stat(PrevPath(exe)); err == nil {
 		t.Fatal("unexpected .prev")
+	}
+}
+
+func TestReleaseSignatureRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		alter func(*testing.T, map[string][]byte)
+	}{
+		{"missing", func(_ *testing.T, f map[string][]byte) { delete(f, "checksums.txt.sig") }},
+		{"bad", func(_ *testing.T, f map[string][]byte) { f["checksums.txt.sig"][0] ^= 1 }},
+		{"wrong key", func(t *testing.T, f map[string][]byte) {
+			_, other, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f["checksums.txt.sig"] = ed25519.Sign(other, f["checksums.txt"])
+		}},
+		{"tampered checksum", func(_ *testing.T, f map[string][]byte) { f["checksums.txt"] = append(f["checksums.txt"], 'x') }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeGitHub(t)
+			f.addRelease("v0.2.0")
+			files := f.releases["v0.2.0"]
+			tc.alter(t, files)
+			err := Download(context.Background(), http.DefaultClient, TagURL(f.URL, "v0.2.0"), AllAssets(), t.TempDir())
+			if err == nil || !strings.Contains(err.Error(), "signature") || strings.Contains(err.Error(), "\n") {
+				t.Fatalf("want a one-line signature error, got %v", err)
+			}
+			if f.hits != 2 {
+				t.Fatalf("downloaded a binary before verifying the signature: %d requests", f.hits)
+			}
+		})
+	}
+}
+
+func TestFromGatewaySignatureRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		alter func(*testing.T, []byte, []byte) ([]byte, []byte)
+	}{
+		{"missing", func(_ *testing.T, sums, _ []byte) ([]byte, []byte) { return sums, nil }},
+		{"bad", func(_ *testing.T, sums, sig []byte) ([]byte, []byte) { sig[0] ^= 1; return sums, sig }},
+		{"wrong key", func(t *testing.T, sums, _ []byte) ([]byte, []byte) {
+			_, key, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return sums, ed25519.Sign(key, sums)
+		}},
+		{"tampered checksum", func(_ *testing.T, sums, sig []byte) ([]byte, []byte) { return append(sums, 'x'), sig }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key := testSigningKey(t)
+			bin := fakeBinary("v2")
+			sums := []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset()))
+			sums, sig := tc.alter(t, sums, ed25519.Sign(key, sums))
+			binRequests := 0
+			gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/install/checksums.txt":
+					w.Write(sums)
+				case "/install/checksums.txt.sig":
+					if sig == nil {
+						http.NotFound(w, r)
+					} else {
+						w.Write(sig)
+					}
+				default:
+					binRequests++
+					w.Write(bin)
+				}
+			}))
+			defer gw.Close()
+			exe := filepath.Join(t.TempDir(), "agent-net")
+			writeBin(t, exe, "v1")
+			_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, "v1", "v2")
+			if err == nil || !strings.Contains(err.Error(), "signature") {
+				t.Fatalf("want signature error, got %v", err)
+			}
+			if binRequests != 0 {
+				t.Fatal("downloaded binary before verifying signature")
+			}
+			if v, _ := BinaryVersion(context.Background(), exe); v != "v1" {
+				t.Fatal("exe changed")
+			}
+			if _, err := os.Stat(PrevPath(exe)); !os.IsNotExist(err) {
+				t.Fatal("previous binary was written")
+			}
+		})
 	}
 }

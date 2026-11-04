@@ -52,6 +52,7 @@ func (g *Gateway) WriteAdminInfo(listen string) error {
 func (g *Gateway) upgradeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /install/version", g.handleVersion)
 	mux.HandleFunc("GET /install/checksums.txt", g.handleChecksums)
+	mux.HandleFunc("GET /install/checksums.txt.sig", g.handleChecksumSignature)
 	mux.HandleFunc("GET /v1/admin/nodes", g.admin(func(w http.ResponseWriter, r *http.Request) {
 		info, err := g.NodesInfo()
 		writeJSON(w, info, err)
@@ -227,10 +228,14 @@ var (
 	sumCache = map[string]sumEntry{}
 )
 
-// handleChecksums serves the SHA-256 of every binary in the dist dir in
-// sha256sum format. It is computed from the files, so it always matches what
-// /install/bin serves.
+// handleChecksums serves the original signed file when present. With no
+// manifest, keep the generated checksums for older clients and local builds.
 func (g *Gateway) handleChecksums(w http.ResponseWriter, r *http.Request) {
+	path := filepath.Join(g.opts.DistDir, "checksums.txt")
+	if _, err := os.Stat(path); err == nil {
+		http.ServeFile(w, r, path)
+		return
+	}
 	names := upgrade.AllAssets()
 	sort.Strings(names)
 	var b strings.Builder
@@ -257,6 +262,10 @@ func (g *Gateway) handleChecksums(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, b.String())
+}
+
+func (g *Gateway) handleChecksumSignature(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, filepath.Join(g.opts.DistDir, "checksums.txt.sig"))
 }
 
 // ---- upgrade ----

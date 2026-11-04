@@ -30,6 +30,8 @@ main() {
   set -eu
 
   REPO="niparis/agent-net"
+  # The release signing public key (SSH form). Rotation: see RELEASING.md.
+  RELEASE_SSH_PUBLIC_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICfe4AYiEPeRCxo90cOw16p3SMEGTKIE0egPpfCuBfAB"
   MODE=""
   FRESH=""
   PEER_FLAG=""
@@ -61,6 +63,7 @@ main() {
   done
 
   command -v curl >/dev/null 2>&1 || die "curl is required"
+  command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen (OpenSSH 8.1 or newer) is required to verify the release signature"
   [ -n "${HOME:-}" ] || die "HOME is not set"
 
   # No option given: look at what is on this machine.
@@ -122,6 +125,13 @@ main() {
 
   echo "downloading checksums ($BASE)"
   curl -fsSL -o "$WORK/checksums.txt" "$BASE/checksums.txt" || die "cannot download $BASE/checksums.txt (is the version right?)"
+  curl -fsSL -o "$WORK/checksums.txt.sshsig" "$BASE/checksums.txt.sshsig" 2>/dev/null || die "release checksums signature is missing or invalid"
+  printf 'agent-net %s\n' "$RELEASE_SSH_PUBLIC_KEY" > "$WORK/allowed_signers"
+  ssh-keygen -Y verify -f "$WORK/allowed_signers" -I agent-net -n agent-net \
+    -s "$WORK/checksums.txt.sshsig" < "$WORK/checksums.txt" >/dev/null 2>&1 || die "release checksums signature is missing or invalid (ssh-keygen needs OpenSSH 8.1 or newer)"
+  if [ "$MODE" = gateway ]; then
+    curl -fsSL -o "$WORK/checksums.txt.sig" "$BASE/checksums.txt.sig" 2>/dev/null || die "release checksums signature is missing or invalid"
+  fi
 
   # fetch NAME: download into $WORK and check its SHA-256 against checksums.txt.
   fetch() {
@@ -151,6 +161,8 @@ main() {
         place "$WORK/agent-net-$o-$a" "$DIST_DIR" "agent-net-$o-$a"
       done
     done
+    place "$WORK/checksums.txt" "$DIST_DIR" checksums.txt
+    place "$WORK/checksums.txt.sig" "$DIST_DIR" checksums.txt.sig
     place "$WORK/agent-net-$OS-$ARCH" "$BIN_DIR" agent-net
   else
     echo "downloading agent-net-$OS-$ARCH"

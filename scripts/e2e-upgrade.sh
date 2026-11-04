@@ -62,11 +62,31 @@ say "build $V1, $V2 and $V3"
 REL="$T/releases"
 # $V1 embeds old agent files: go build -overlay swaps the embedded sources.
 mkdir -p "$T/old"
+# The test uses a new disposable key and builds binaries with its public key.
+# No production key, user setup, or external release server is used.
+"$GO" run ./scripts/release-key generate "$T/release-key.pem" > "$T/public-keys"
+TEST_GO_PUBLIC="$(awk '/^Go public key/ {print $NF}' "$T/public-keys")"
+TEST_SSH_PUBLIC="$(awk '/^SSH public key/ {print $NF}' "$T/public-keys")"
+# Match the declarations, so this keeps working after real keys or rotations.
+GO_KEY_PATTERN='^[[:space:]]*const[[:space:]]+ReleasePublicKeyBase64[[:space:]]*=[[:space:]]*"[^"]*"[[:space:]]*$'
+SSH_KEY_PATTERN='^[[:space:]]*RELEASE_SSH_PUBLIC_KEY="[^"]*"[[:space:]]*$'
+if [ "$(grep -Ec "$GO_KEY_PATTERN" internal/upgrade/release.go)" != 1 ] ||
+   [ "$(grep -Ec "$SSH_KEY_PATTERN" install.sh)" != 1 ]; then
+  echo "expected one release public key declaration in each file" >&2
+  exit 1
+fi
+sed -E "s@^([[:space:]]*const[[:space:]]+ReleasePublicKeyBase64[[:space:]]*=[[:space:]]*)\"[^\"]*\"[[:space:]]*\$@\\1\"$TEST_GO_PUBLIC\"@" internal/upgrade/release.go > "$T/release.go"
+sed -E "s@^([[:space:]]*RELEASE_SSH_PUBLIC_KEY=)\"[^\"]*\"[[:space:]]*\$@\\1\"ssh-ed25519 $TEST_SSH_PUBLIC\"@" install.sh > "$T/install.sh"
+cat > "$T/overlay.json" <<EOF2
+{"Replace": {"$ROOT/internal/upgrade/release.go": "$T/release.go"}}
+EOF2
+"$GO" build -overlay "$T/overlay.json" -o "$T/sign-release" ./scripts/release-key || exit 1
 echo "// old pi extension" > "$T/old/pi.ts"
 echo "// old opencode plugin" > "$T/old/opencode.ts"
 printf '## agent-net: OLD GUIDANCE\n\nold text {{reply}}\n' > "$T/old/guidance.md"
 cat > "$T/old/overlay.json" <<EOF2
 {"Replace": {
+  "$ROOT/internal/upgrade/release.go": "$T/release.go",
   "$ROOT/plugins/pi/agent-net.ts": "$T/old/pi.ts",
   "$ROOT/plugins/opencode/agent-net.ts": "$T/old/opencode.ts",
   "$ROOT/internal/guidance/guidance.md": "$T/old/guidance.md"
@@ -74,7 +94,7 @@ cat > "$T/old/overlay.json" <<EOF2
 EOF2
 for v in $V1 $V2 $V3; do
   mkdir -p "$REL/download/$v"
-  OVERLAY=()
+  OVERLAY=(-overlay "$T/overlay.json")
   if [ "$v" = "$V1" ]; then OVERLAY=(-overlay "$T/old/overlay.json"); fi
   for os in linux darwin; do
     for arch in amd64 arm64; do
@@ -83,6 +103,7 @@ for v in $V1 $V2 $V3; do
     done
   done
   (cd "$REL/download/$v" && sha256sum agent-net-* > checksums.txt)
+  RELEASE_SIGNING_KEY="$(cat "$T/release-key.pem")" "$T/sign-release" sign "$REL/download/$v/checksums.txt" "$T/install.sh" || exit 1
 done
 echo "$V2" > "$REL/LATEST"
 
@@ -206,6 +227,7 @@ offline() { local m; for m in "$@"; do node_line "$m" | grep -q false || return 
 say "start from $V1: gateway host, B, C and D"
 for m in gw b c d; do install_v $m $V1; done
 cp "$REL/download/$V1"/agent-net-* "$T/gw/dist/"
+cp "$REL/download/$V1/checksums.txt" "$REL/download/$V1/checksums.txt.sig" "$T/gw/dist/"
 bg gw gateway gateway --listen "127.0.0.1:$GP" --data "$T/gw/data" --dist "$T/gw/dist"
 wait_for "gateway" 15 test -f "$T/gw/data/admin.json"
 machine gw setup --gateway --no-service --port "$GP" --data "$T/gw/data" --dist "$T/gw/dist" | sed 's/^/  gw setup: /'
@@ -321,8 +343,8 @@ check "(1) C keeps its own notes in CLAUDE.md" notes_kept c
 # ---- (2) a bad dist binary: D tries once, does not loop ----
 say "(2) the dist binary for D's platform does not match what the gateway says"
 cp "$T/gw/dist/agent-net-linux-amd64" "$T/dist-amd64.orig"
-# The gateway runs it from the dist dir and reads $V2. D runs the downloaded copy
-# from a temp dir, where it reports $V1: the version check must refuse it.
+# The gateway runs it from the dist dir and reads $V2. Its bytes do not match
+# the signed manifest, so D refuses it at the checksum check before running it.
 cat > "$T/gw/dist/agent-net-linux-amd64" <<EOF
 #!/bin/sh
 case "\$0" in
@@ -341,12 +363,11 @@ for i in 1 2; do
   bg d daemon daemon
   wait_for "D reconnect $i is seen and skipped" 30 bash -c "[ \"\$(grep -cF 'auto-upgrade: not upgrading' '$T/d/daemon.log')\" -ge $i ]"
 done
-sleep 3
 echo "--- D daemon log"; grep -E 'auto-upgrade|connected' "$T/d/daemon.log"
 echo "--- D state file"; cat "$T/d/state/auto-upgrade.json"; echo
 check "(2) D tried exactly once over three connects" test "$(log_count d "auto-upgrade: the gateway serves")" = 1
 check "(2) D logged one failure" test "$(log_count d "auto-upgrade to $V2 failed")" = 1
-check "(2) the failure names the version mismatch" test "$(log_count d "the gateway serves $V1 but $V2 was asked for")" = 1
+check "(2) the failure names the checksum mismatch" test "$(log_count d "checksum mismatch for agent-net-linux-amd64")" = 1
 check "(2) D skipped the version on the reconnects" test "$(log_count d "auto-upgrade: not upgrading $V1 to $V2")" = 2
 check "(2) failure remembered in the state dir" grep -q "\"version\":\"$V2\"" "$T/d/state/auto-upgrade.json"
 check "(2) D binary is still $V1" test "$(machine d version)" = "$V1"
@@ -369,7 +390,6 @@ machine b nodes
 check "rollback: gateway host untouched ($V2)" test "$(machine gw version)" = "$V2"
 say "(3) B reconnected on $V1 while the gateway serves $V2: held"
 wait_for "B logged the hold" 20 log_has b "held at $V2 after rollback"
-sleep 4
 echo "--- B daemon log"; grep -E 'auto-upgrade|connected' "$T/b/daemon.log"
 check "(3) B still $V1 (binary)" test "$(machine b version)" = "$V1"
 check "(3) B still $V1 (daemon)" test "$(daemon_version b)" = "$V1"
@@ -428,7 +448,12 @@ bg e daemon daemon
 bg f daemon daemon --no-auto-upgrade
 bg g daemon daemon
 for m in e f g; do wait_for "$m connected" 20 grep -q "connected to gateway" "$T/$m/daemon.log"; done
-sleep 6   # more than the 1 s random delay, and time for a download
+# Watch for an unexpected attempt beyond the 1 s random delay. Stop early if
+# any opt-out is broken; the checks below report which machine attempted one.
+for _ in $(seq 30); do
+  if log_has e auto-upgrade || log_has f auto-upgrade || log_has g auto-upgrade; then break; fi
+  sleep 0.2
+done
 echo "--- E (AGENT_NET_NO_AUTO_UPGRADE=1)"; daemon_version e; grep -c 'auto-upgrade' "$T/e/daemon.log"
 echo "--- F (--no-auto-upgrade)";           daemon_version f; grep -c 'auto-upgrade' "$T/f/daemon.log"
 echo "--- G (dev build)";                    daemon_version g; grep -c 'auto-upgrade' "$T/g/daemon.log"
