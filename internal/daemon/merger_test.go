@@ -152,3 +152,11 @@ func TestMergerCTORecipe(t *testing.T) {
 		}
 	}
 }
+
+func TestMergerFirstMessagePushRules(t *testing.T) {
+	for _, rule := range []string{"CI branch", "merge-<change id>", "CI to pass on that exact commit", "fast-forward and push the default branch", "CI link", "push nothing to the default branch", "tests on the merged commit", "Never force-push", "never push tags", "never release", "Retry a failed push a few times"} {
+		if !strings.Contains(MergerFirstMessage, rule) {
+			t.Errorf("missing push rule %q", rule)
+		}
+	}
+}

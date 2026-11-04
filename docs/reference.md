@@ -2552,8 +2552,18 @@ are stored in the gateway's `project_mergers` table.
 
 The merger reads the project's own instructions and build files, tests the
 changed parts, reads CI results where available, and merges in its own merge
-worktree. It reports each step with commit hashes read from git. It reports
-failures without fixing code or writing features. Git itself is not blocked.
+worktree. When the project has CI, it pushes the merged commit to a CI
+branch, for example `merge-<change id>`, and waits for CI to pass on that exact
+commit. It then fast-forwards and pushes the default branch. If CI fails, it
+reports the merge step fail with the CI link and pushes nothing to the default
+branch. Without CI, it runs the project's tests on the merged commit, then
+pushes the default branch. It never force-pushes, pushes tags, or releases.
+It retries a failed push a few times, then reports fail.
+
+It reports each step with commit hashes read from git and reports failures
+without fixing code or writing features. Git itself is not blocked. The Graph
+tab's selected project and project details card show the accept, test and merge
+owners. An offline merger is marked "offline, tasks wait".
 
 To stop routing to it, ask the CTO for `session_change` action `merger_stop`
 with `project` and optional `node_id`. Approval clears the registration and
