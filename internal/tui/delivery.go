@@ -272,7 +272,9 @@ func deliveryWaitText(d time.Duration) string {
 func (m Model) deliveryHints() []hint {
 	help, quit := bindingHint(contextDelivery, "help"), bindingHint(contextDelivery, actQuit)
 	if m.delivery.detail {
-		return []hint{bindingPairHint(contextDelivery, actUp, actDown), bindingHint(contextDelivery, "back"), help, quit}
+		scroll := bindingPairHint(contextDelivery, actUp, actDown)
+		scroll.label = "scroll"
+		return []hint{scroll, bindingHint(contextDelivery, "back"), help, quit}
 	}
 	return []hint{bindingHint(contextDelivery, "workers log"), bindingPairHint(contextDelivery, actUp, actDown), bindingHint(contextDelivery, "open"), bindingHint(contextDelivery, "refresh"), help, quit}
 }

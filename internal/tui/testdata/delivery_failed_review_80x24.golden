@@ -2,12 +2,12 @@
   Quotas      Workers log    [ Delivery ]
 ╭─Delivery──────────────────────────────────────────────────────3 open changes─╮
 │   REPO       BRANCH                REV STEP    OWNER  WAIT  EVIDENCE         │
-│   agent-net  w_1bcfc4c4a93b2687    r2  review  merger 2h14m a✓r●t✓p·m·l·d·v· │
+│   agent-net  w_1bcfc4c4a93b2687    r2  review  merger 2h14m a✓r*t✓p·m·l·d·v· │
 │   agent-net  delivery-pipeline     r1  merge   caller 6m    a✓r✓t✓p–m·l·d·v· │
 │ ▸ voicemechs feature/a-very-long-… r3  review  owner  1d2h  a✓r✗t·p·m·l·d·v· │
 │ a accept  r review  t test  p approve                                        │
 │ m merge  l release  d deploy  v verify                                       │
-│ ✓ passed  ✗ failed  ● running  – not needed  · waiting                       │
+│ ✓ passed  ✗ failed  * running  – not needed  · waiting                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 

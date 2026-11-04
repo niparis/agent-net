@@ -23,7 +23,7 @@ func stripGlyph(s stripState) string {
 	case stripFailed:
 		return "✗"
 	case stripRunning:
-		return "●"
+		return "*"
 	case stripNotNeeded:
 		return "–"
 	}
@@ -72,7 +72,7 @@ func deliveryLegend(w int) []string {
 	for i, s := range deliverySteps {
 		steps[i] = string(stripLetters[i]) + " " + s
 	}
-	marks := []string{"✓ passed", "✗ failed", "● running", "– not needed", "· waiting"}
+	marks := []string{"✓ passed", "✗ failed", "* running", "– not needed", "· waiting"}
 	var out []string
 	for _, items := range [][]string{steps, marks} {
 		// Split a list that does not fit in half, so the lines look even.
