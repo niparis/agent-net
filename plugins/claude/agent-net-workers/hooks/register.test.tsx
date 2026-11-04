@@ -469,3 +469,23 @@ test('a failed judge shows only the level the picker used', async () => {
   expect(rows[0].difficulty).toBe('normal')
   expect(rows[0].line).toMatch(/sol:medium +normal +12m/)
 })
+
+test('an outdated panel warns even without workers and clears for an older binary', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  let payload = { panel_version: 'different-build', workers: [] }
+  on('process.run', () => ({ value: runResult(JSON.stringify(payload)) }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.render', ($, e) => { const { Text } = $.ui.resolve(e); return <Text>engine</Text> })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const band = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await band.find({ type: 'Text', text: /agent-net panel is out of date: run \/reload-plugins or restart Claude Code/ })).toBeDefined()
+  await band.unmount()
+  payload = { workers: [] } as typeof payload
+  await clock.advance(3000)
+  const fresh = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await fresh.find({ type: 'Text', text: /agent-net panel is out of date/ })).toBeUndefined()
+  await fresh.unmount()
+})

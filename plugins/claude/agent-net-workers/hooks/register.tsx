@@ -7,6 +7,9 @@ const workersAtom = atom({ plugin: 'agent-net-workers', key: 'workers' } as cons
 const notifiedAtom = atom({ plugin: 'agent-net-workers', key: 'notified' } as const, [] as string[])
 const staleSecondsAtom = atom({ plugin: 'agent-net-workers', key: 'stale-seconds' } as const, 0)
 
+const PANEL_VERSION = '__AGENT_NET_PANEL_VERSION__'
+const outdatedAtom = atom({ plugin: 'agent-net-workers', key: 'outdated' } as const, false)
+
 const POLL_MS = 3000
 const RUN_TIMEOUT_MS = 2000
 const NOTIFIED_MAX = 200
@@ -296,7 +299,7 @@ async function poll($: EngineInterface, sessionId: string, state: PollState): Pr
       await failedPoll($, state)
       return
     }
-    const parsed = JSON.parse(stdout) as { workers?: RawWorker[] }
+    const parsed = JSON.parse(stdout) as { workers?: RawWorker[]; panel_version?: string }
     const rows: AgentNetWorker[] = []
     for (const raw of parsed.workers ?? []) {
       const worker = workerOf(raw)
@@ -304,6 +307,7 @@ async function poll($: EngineInterface, sessionId: string, state: PollState): Pr
     }
     state.lastGoodAt = await $.clock.now()
     state.failedAt = undefined
+    await update($, outdatedAtom, () => Boolean(parsed.panel_version && parsed.panel_version !== PANEL_VERSION))
     await update($, workersAtom, () => rows)
     await update($, staleSecondsAtom, () => 0)
     $.ui.status(statusText(rows))
@@ -329,7 +333,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const workers = (await read($, workersAtom)).filter(isVisible)
-    if (workers.length === 0 || e.props.hasSurvey) {
+    const outdated = await read($, outdatedAtom)
+    if ((!outdated && workers.length === 0) || e.props.hasSurvey) {
       return next(e)
     }
 
@@ -344,6 +349,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor wrap="truncate-end">{rule}</Text>
+        {outdated && <Text dimColor>agent-net panel is out of date: run /reload-plugins or restart Claude Code</Text>}
         {formatWorkerRows(workers, now, columns).map(row => (
           <Box key={row.sessionId}>
             <Text wrap="truncate-end">

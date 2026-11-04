@@ -2487,3 +2487,5 @@ Open a fresh Claude session and check that the installed Claude Code version
 still exposes the inbox socket. If an update removed the inbox contract, use a
 compatible Claude Code version and restart the daemon to check again. Do not
 send test user frames to a working session just to test the transport.
+
+The workers panel shows "agent-net panel is out of date: run /reload-plugins or restart Claude Code" when its loaded build differs from the installed build; run /reload-plugins or restart Claude Code to load the update.

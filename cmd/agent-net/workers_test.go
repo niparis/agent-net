@@ -295,3 +295,17 @@ func TestWorkersJSONIncludesAssessment(t *testing.T) {
 		t.Fatalf("output: %s", out.String())
 	}
 }
+
+func TestWorkersJSONPanelVersion(t *testing.T) {
+	var out bytes.Buffer
+	if err := runWorkers(context.Background(), &fakeOp{}, &out, []string{"-json"}); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := got["panel_version"].(string); !ok || v == "" {
+		t.Fatalf("missing panel_version: %s", out.String())
+	}
+}
