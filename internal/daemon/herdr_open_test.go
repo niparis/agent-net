@@ -642,7 +642,7 @@ func TestSessionStartHerdrPiDoesNotNeedTmux(t *testing.T) {
 	}
 }
 
-func TestCTOSessionProposalStartsInHerdr(t *testing.T) {
+func TestCTOSessionProposalStartsInBackground(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -667,10 +667,12 @@ func TestCTOSessionProposalStartsInHerdr(t *testing.T) {
 	}
 	r = waitSessionStartPath(t, c.workerNode, r)
 	t.Cleanup(func() { killFakeClaude(t, path) })
-	if r.Status != "started" || r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
+	if r.Status != "started" || r.EnterPlan != nil {
 		t.Fatalf("start %+v", r)
 	}
-	requireHerdrOpened(t, log, "garden", "attach", r.JobID)
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("proposal opened a view: %s", raw)
+	}
 }
 
 func TestHerdrRunsQuotedCommandFromAnyShell(t *testing.T) {

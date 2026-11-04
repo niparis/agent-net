@@ -233,7 +233,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.FirstMessage != "" {
 		args = append(args, "--", p.FirstMessage)
 	}
-	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner), nil
+	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner, p.CTOProposal), nil
 }
 
 // relaySessionStart asks the gateway to start the session on another machine.
@@ -390,7 +390,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false, false), nil
+	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false, false, false), nil
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {
@@ -414,7 +414,7 @@ func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, s
 // relayed says the owner approved the start from another machine. That machine
 // has no herdr location for the owner's TUI, so this one must return the attach
 // plan for the owner's machine to wrap and open.
-func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify, relayed bool) protocol.StartedSession {
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify, relayed, background bool) protocol.StartedSession {
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -471,8 +471,13 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 				plan.Argv = nil
 				plan.Note = "The session started but has no Claude background ID to attach."
 			}
-			opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
-			if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
+			opened := plan
+			if !background {
+				opened = d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
+			}
+			if background {
+				r.EnterNote = "Enter opens it."
+			} else if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
 				r.EnterPlan = &opened
 			} else {
 				r.EnterNote = "Enter opens it."
