@@ -125,12 +125,14 @@ func startFilesNet(t *testing.T, o filesNetOpts) *filesNet {
 	fa := &fakeAdapter{harness: "fake"}
 	fb := &fakeAdapter{harness: "fake"}
 	a := startNode(t, g, nodeOpts{adapter: fa, cfg: func(c *Config) {
+		c.Files.Home = t.TempDir()
 		c.Files.TailscalePATH = bin // the fake tailscale is the only one on the daemon's path
 		c.Files.TailscaleIP = func() string { return filesSenderIP }
 		c.Files.Poll = 20 * time.Millisecond
 		c.Files.PollMax = 50 * time.Millisecond
 	}})
 	b := startNode(t, g, nodeOpts{adapter: fb, cfg: func(c *Config) {
+		c.Files.Home = t.TempDir()
 		c.Files.TailscalePATH = bin
 		c.Files.Layout = o.layout
 		c.Files.Downloads = downloads

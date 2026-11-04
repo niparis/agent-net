@@ -71,8 +71,12 @@ func TestFileSendToolRefusesWorker(t *testing.T) {
 func TestFileSendToolTwoNodes(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	fb := &fakeAdapter{harness: "fake"}
-	a := startNode(t, g, nodeOpts{cmdline: "pi"})
-	b := startNode(t, g, nodeOpts{adapter: fb, cfg: func(c *Config) { c.Files.Poll = 20 * time.Millisecond; c.Files.PollMax = 50 * time.Millisecond }})
+	a := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.Files.Home = t.TempDir() }})
+	b := startNode(t, g, nodeOpts{adapter: fb, cfg: func(c *Config) {
+		c.Files.Home = t.TempDir()
+		c.Files.Poll = 20 * time.Millisecond
+		c.Files.PollMax = 50 * time.Millisecond
+	}})
 	project := t.TempDir()
 	bobProject := t.TempDir()
 	fb.setSessions(protocol.SessionInfo{Harness: "fake", NativeID: "nb", Cwd: bobProject, Name: "bob", Status: "idle"})
