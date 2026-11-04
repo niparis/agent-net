@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -191,10 +192,22 @@ func (d *Daemon) scanProjectsLayout(ctx context.Context, homeDir string) (protoc
 	}, nil
 }
 
+func setProcessGroup(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process != nil && cmd.Process.Pid > 0 {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
+}
+
 func readRepoRemote(ctx context.Context, dir string) string {
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "git", "-C", dir, "config", "--get", "remote.origin.url")
+	setProcessGroup(cmd)
+	cmd.WaitDelay = 200 * time.Millisecond
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -206,6 +219,8 @@ func readRepoCommit(ctx context.Context, dir string) int64 {
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "git", "-C", dir, "log", "-1", "--format=%ct")
+	setProcessGroup(cmd)
+	cmd.WaitDelay = 200 * time.Millisecond
 	out, err := cmd.Output()
 	if err != nil {
 		return 0

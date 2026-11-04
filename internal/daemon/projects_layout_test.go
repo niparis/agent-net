@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -343,5 +344,26 @@ func TestProjectsLayoutLoneAndHomeRepos(t *testing.T) {
 	}
 	if len(layout2.Loose) != 0 {
 		t.Errorf("layout2.Loose count = %d, want 0: %+v", len(layout2.Loose), layout2.Loose)
+	}
+}
+
+func TestProjectsLayoutGitWaitDelay(t *testing.T) {
+	fakeBinDir := t.TempDir()
+	fakeGit := filepath.Join(fakeBinDir, "git")
+	// Fake git that spawns a background child inheriting stdout and sleeping
+	script := "#!/bin/sh\n(sleep 5 >&1) &\nexit 0\n"
+	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_ = readRepoRemote(ctx, t.TempDir())
+	elapsed := time.Since(start)
+	if elapsed > 1*time.Second {
+		t.Fatalf("readRepoRemote took %v; bounds did not hold", elapsed)
 	}
 }
