@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,5 +207,69 @@ func TestSetupLocalOptOutWinsOverNetwork(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.home, ".claude", "settings.json")); strings.Contains(string(b), "agent-net hint") {
 		t.Errorf("hint hook installed despite the local opt out:\n%s", b)
+	}
+}
+
+// An upgrade can add a hook event (decision 0057 added PostToolUse and
+// PostToolUseFailure to the needs hook). The daemon applies the same answers
+// at start, which used to do nothing, so a machine set up before kept the old
+// hooks. Now the hooks of an integration that is on are brought up to date,
+// and left alone when current.
+func TestApplyIntegrationsUpdatesTheNeedsHookOfAnOlderVersion(t *testing.T) {
+	f := newFixture(t)
+	fakeClaude(t, f.home)
+	old := refreshExecutable
+	refreshExecutable = func() (string, error) { return "/opt/test/agent-net", nil }
+	t.Cleanup(func() { refreshExecutable = old })
+	// What an older agent-net wrote: the same command on four events, no
+	// PostToolUse, and the record that it added them.
+	writeSettings(t, f, otherKeys)
+	doc, err := readSettings(settingsFile(f))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := withHooks(doc, needsCommand("/opt/test/agent-net"), isNeedsCommand, needsEvents[:4], needsTimeoutSeconds); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWrite(settingsFile(f), doc.encode(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveNeedsState(needsState{Asked: true, Installed: true, Settings: settingsFile(f)}); err != nil {
+		t.Fatal(err)
+	}
+	var answers integrations.Answers
+	answers.NeedsHook = true
+	if err := integrations.SaveApplied(filepath.Join(f.home, "cfg"), answers); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs []string
+	logf := func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) }
+	if err := ApplyIntegrations(answers, logf); err != nil {
+		t.Fatal(err)
+	}
+	h := hooksOfFile(t, f)
+	for _, event := range []string{"PostToolUse", "PostToolUseFailure"} {
+		if g := h[event]; len(g) != 1 || g[0].Matcher != "AskUserQuestion|ExitPlanMode" || g[0].Hooks[0].Command != "/opt/test/agent-net needs-hook" {
+			t.Fatalf("%s after the upgrade apply: %+v", event, g)
+		}
+	}
+	if n := strings.Count(readSettingsFile(t, f), "needs-hook"); n != 6 {
+		t.Fatalf("want 6 needs hooks, got %d:\n%s", n, readSettingsFile(t, f))
+	}
+	if !strings.Contains(readSettingsFile(t, f), `"Bash(ls)"`) {
+		t.Fatal("the owner's settings were lost")
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "claude needs hook: updated") {
+		t.Fatalf("logs: %q", logs)
+	}
+	// Current hooks: nothing is written and nothing is logged.
+	before := readSettingsFile(t, f)
+	logs = nil
+	if err := ApplyIntegrations(answers, logf); err != nil {
+		t.Fatal(err)
+	}
+	if readSettingsFile(t, f) != before || len(logs) != 0 {
+		t.Fatalf("a current install was rewritten or logged: %q", logs)
 	}
 }

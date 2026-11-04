@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+// hookGroupOf is one group of the hooks object, as hooksOfFile decodes it.
+type hookGroupOf = struct {
+	Matcher string `json:"matcher"`
+	Hooks   []struct {
+		Type    string `json:"type"`
+		Command string `json:"command"`
+		Timeout int    `json:"timeout"`
+	} `json:"hooks"`
+}
+
+// withCommand keeps the groups whose first command ends with suffix.
+func withCommand(groups []hookGroupOf, suffix string) []hookGroupOf {
+	var out []hookGroupOf
+	for _, g := range groups {
+		if len(g.Hooks) > 0 && strings.HasSuffix(g.Hooks[0].Command, suffix) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // hooksOfFile decodes the hooks object of the settings file.
 func hooksOfFile(t *testing.T, f *fixture) map[string][]struct {
 	Matcher string `json:"matcher"`
@@ -43,12 +64,14 @@ func TestHintHookIsAskedAndAddedOnYes(t *testing.T) {
 		t.Fatalf("output:\n%s", out)
 	}
 	h := hooksOfFile(t, f)
-	fail := h["PostToolUseFailure"]
+	// The needs hook shares PostToolUse and PostToolUseFailure: look only at
+	// the hint hook's groups.
+	fail := withCommand(h["PostToolUseFailure"], " hint")
 	if len(fail) != 1 || fail[0].Matcher != "" || len(fail[0].Hooks) != 1 ||
 		fail[0].Hooks[0].Type != "command" || fail[0].Hooks[0].Command != "/opt/test/agent-net hint" || fail[0].Hooks[0].Timeout != 2 {
 		t.Fatalf("PostToolUseFailure: %+v", fail)
 	}
-	post := h["PostToolUse"]
+	post := withCommand(h["PostToolUse"], " hint")
 	if len(post) != 1 || post[0].Matcher != "Bash" || post[0].Hooks[0].Command != "/opt/test/agent-net hint" {
 		t.Fatalf("PostToolUse: %+v", post)
 	}

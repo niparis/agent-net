@@ -438,32 +438,19 @@ func inboxItemSummary(item protocol.InboxItem) string {
 	return inboxFirstLine(item.Text)
 }
 
-// inboxWaitingSummary says what a waiting session asks.
+// inboxWaitingSummary says that a session waits for the owner, after its
+// name: "waits for you: <question>" (decision 0057). The words are short so
+// the question keeps most of a narrow row.
 func inboxWaitingSummary(w *protocol.Waiting) string {
 	text := inboxFirstLine(w.Text)
-	switch w.Kind {
-	case protocol.WaitingPermission:
-		if text == "" {
-			return "asks for permission"
-		}
-		return "asks for permission: " + text
-	case protocol.WaitingQuestion:
-		if text == "" {
-			return "asks a question"
-		}
-		return "asks: " + text
-	case "held":
-		return "held request"
-	case "learned":
-		if text == "" {
-			return "learned suggestion"
-		}
-		return "learned suggestion: " + text
+	lead := "waits for you"
+	if w.Kind == protocol.WaitingPermission {
+		lead = "waits for your approval"
 	}
 	if text == "" {
-		return "asks for input"
+		return lead
 	}
-	return "asks: " + text
+	return lead + ": " + text
 }
 
 // inboxSessionName is the name the Inbox shows for a session.
@@ -759,7 +746,7 @@ func (m Model) inboxPanelTitle(row inboxRow) string {
 	case "question":
 		return sanitize(row.name) + " asks"
 	case "waiting":
-		return sanitize(row.name) + " asks"
+		return sanitize(row.name) + " waits for you"
 	case "outcome":
 		return sanitize(row.outcome.From) + " → " + sanitize(row.outcome.To)
 	case "learned":

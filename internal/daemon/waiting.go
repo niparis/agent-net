@@ -154,13 +154,40 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 // Discovery (the Claude adapter, for example) reports only the session file,
 // so it would erase the wait on every poll. A session that becomes busy again
 // is no longer waiting.
+//
+// A harness that says itself that the session waits (in.HarnessWaits: Claude
+// Code's session file, a Codex thread flag; decision 0057) starts and ends the
+// wait. While it keeps waiting, the wait keeps its start, also when a hook
+// reported the same dialog first. When it stops waiting, the user answered:
+// every wait but an explicit ask ends. A worker's wait is its caller's
+// business (setWaiting), never discovery's.
 func keepWaiting(old protocol.SessionInfo, in protocol.SessionInfo) *protocol.Waiting {
+	if in.Worker != nil {
+		return nil
+	}
 	if in.Waiting != nil {
 		w := protocol.CleanWaiting(in.Waiting)
 		if isIdlePromptWait(w) {
 			return nil
 		}
+		if w != nil && in.HarnessWaits {
+			if old.Waiting != nil && old.Waiting.Kind == w.Kind && old.Waiting.Text == w.Text {
+				return old.Waiting
+			}
+			if old.Waiting != nil && !old.Waiting.Explicit {
+				w.Since = old.Waiting.Since
+			}
+			if w.Since == 0 {
+				w.Since = time.Now().Unix()
+			}
+		}
 		return w
+	}
+	if old.HarnessWaits && !in.HarnessWaits {
+		if old.Waiting != nil && old.Waiting.Explicit {
+			return old.Waiting
+		}
+		return nil
 	}
 	if old.Status != "busy" && in.Status == "busy" {
 		return nil

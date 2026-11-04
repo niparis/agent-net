@@ -267,6 +267,10 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		started := rfc3339(a.TaskStarted)
 		row.TaskStarted = &started
 	}
+	if w := a.Waiting; w != nil && a.Online && a.Worker == nil && !protocol.IsOwner(a.Harness) {
+		row.Status = protocol.StatusWaitingForUser
+		row.Waiting = &protocol.WaitingRow{Kind: w.Kind, Since: rfc3339(w.Since)}
+	}
 	if !full {
 		return row
 	}

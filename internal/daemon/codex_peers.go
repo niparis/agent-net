@@ -43,6 +43,7 @@ type codexAdapter struct {
 // codexThread is what the adapter keeps of one open thread.
 type codexThread struct {
 	ID, Cwd, Name, Model, Status, Mode string
+	Wait                               *protocol.Waiting // from the thread's active flags
 }
 
 func newCodexAdapter(d *Daemon) *codexAdapter {
@@ -182,9 +183,25 @@ type codexThreadRead struct {
 		ParentThreadID *string         `json:"parentThreadId"`
 		Source         json.RawMessage `json:"source"`
 		Status         struct {
-			Type string `json:"type"`
+			Type        string   `json:"type"`
+			ActiveFlags []string `json:"activeFlags"`
 		} `json:"status"`
 	} `json:"thread"`
+}
+
+// codexWait is the wait an active thread's flags say (decision 0057): Codex
+// marks a thread that waits for an approval or for the user's answer. The
+// flags do not carry the question, so the text says what kind of answer.
+func codexWait(flags []string) *protocol.Waiting {
+	for _, f := range flags {
+		switch f {
+		case "waitingOnApproval":
+			return &protocol.Waiting{Kind: protocol.WaitingPermission, Text: "approve a command or a change"}
+		case "waitingOnUserInput":
+			return &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "answer a question"}
+		}
+	}
+	return nil
 }
 
 // codexSource tells where a thread came from: "cli", "vscode", "exec",
@@ -272,6 +289,7 @@ func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
 		switch t.Status.Type {
 		case "active":
 			th.Status = "busy"
+			th.Wait = codexWait(t.Status.ActiveFlags)
 		case "systemError":
 			th.Status = "unknown"
 		}
@@ -295,7 +313,7 @@ func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
 	for _, id := range keys {
 		t := threads[id]
 		infos = append(infos, protocol.SessionInfo{Harness: "codex", NativeID: id, Cwd: t.Cwd, Name: t.Name,
-			Status: t.Status, Delivery: "codex-app-server", Mode: t.Mode, Model: t.Model})
+			Status: t.Status, Delivery: "codex-app-server", Mode: t.Mode, Model: t.Model, Waiting: t.Wait, HarnessWaits: t.Wait != nil})
 	}
 	a.d.SetSessions("codex", infos)
 	return nil

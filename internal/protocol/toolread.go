@@ -81,6 +81,9 @@ type SessionRow struct {
 	Task         string  `json:"task"`
 	LastSeen     string  `json:"last_seen"`
 	TaskStarted  *string `json:"task_started"`
+	// Waiting is set while the session waits for its user. Status then says
+	// StatusWaitingForUser.
+	Waiting *WaitingRow `json:"waiting,omitempty"`
 
 	LastSeenAgo  string            `json:"last_seen_ago,omitempty"`
 	Folder       string            `json:"folder,omitempty"`
@@ -94,6 +97,14 @@ type SessionRow struct {
 	Rules        map[string]string `json:"rules,omitempty"`
 	Delegation   string            `json:"delegation,omitempty"`
 	Worker       *SessionWorker    `json:"worker,omitempty"`
+}
+
+// WaitingRow says that a session waits for its user: the kind (permission,
+// question or input) and when the wait began (RFC 3339). The question itself
+// is for the owner only and is never in an agent read.
+type WaitingRow struct {
+	Kind  string `json:"kind"`
+	Since string `json:"since"`
 }
 
 // ReadCharter is the agent-facing charter subset carried by full read rows.

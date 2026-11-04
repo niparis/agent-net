@@ -6,9 +6,11 @@ import (
 	"testing"
 )
 
-// The one consent question adds one command on four events: a permission
+// The one consent question adds one command on five events: a permission
 // request and a notification that mean a person is needed, the tool use that
-// shows the session moved on, and the prompt that answers them (decision 0016).
+// shows the session moved on, the prompt that answers them (decision 0016),
+// and the result of a question or plan approval that ends its wait (decision
+// 0057).
 func TestNeedsHookIsAddedWithTheOneQuestion(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
@@ -24,9 +26,13 @@ func TestNeedsHookIsAddedWithTheOneQuestion(t *testing.T) {
 		{"Notification", "agent_needs_input|elicitation_dialog|elicitation_url_dialog"},
 		{"PreToolUse", ""},
 		{"UserPromptSubmit", ""},
+		{"PostToolUse", "AskUserQuestion|ExitPlanMode"},
+		{"PostToolUseFailure", "AskUserQuestion|ExitPlanMode"},
 	}
 	for _, w := range want {
-		groups := h[w.event]
+		// Other hooks of agent-net may share an event (the hint hook uses
+		// PostToolUse too): look only at the needs hook's groups.
+		groups := withCommand(h[w.event], " needs-hook")
 		if len(groups) != 1 || groups[0].Matcher != w.matcher || len(groups[0].Hooks) != 1 ||
 			groups[0].Hooks[0].Type != "command" || groups[0].Hooks[0].Command != "/opt/test/agent-net needs-hook" ||
 			groups[0].Hooks[0].Timeout != 2 {
