@@ -81,9 +81,17 @@ func TestProjectsLayoutScanAndNoiseDrop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 7. Noise: node_modules with a .git repo inside
-	nmRepo := filepath.Join(tempHome, "code", "niparis", "a2a-ocs", "node_modules", "some-pkg")
+	// 7. Noise: node_modules with a .git repo inside (not inside an already detected repo)
+	nmRepo := filepath.Join(tempHome, "noise-check", "node_modules", "some-pkg")
 	initTestGitRepo(t, nmRepo, "")
+
+	// Noise: vendor with a .git repo inside (not inside an already detected repo)
+	vendorRepo := filepath.Join(tempHome, "noise-check", "vendor", "some-pkg")
+	initTestGitRepo(t, vendorRepo, "")
+
+	// Noise: cache with a .git repo inside (not inside an already detected repo)
+	cacheRepo := filepath.Join(tempHome, "noise-check", "cache", "some-pkg")
+	initTestGitRepo(t, cacheRepo, "")
 
 	// 8. Noise: .claude/worktrees
 	claudeWt := filepath.Join(tempHome, ".claude", "worktrees", "wt-1")
@@ -92,6 +100,10 @@ func TestProjectsLayoutScanAndNoiseDrop(t *testing.T) {
 	// 9. Noise: agent-net worker worktree path
 	anWt := filepath.Join(tempHome, ".local", "state", "agent-net", "daemon", "worktrees", "w_123")
 	initTestGitRepo(t, anWt, "")
+
+	// 10. Noise: ~/code/isolated-worktrees
+	isoWt := filepath.Join(tempHome, "code", "isolated-worktrees", "wt-iso")
+	initTestGitRepo(t, isoWt, "")
 
 	d := &Daemon{
 		cfg: Config{
@@ -183,6 +195,14 @@ func TestProjectsLayoutScanAndNoiseDrop(t *testing.T) {
 	}
 	if projRoot.Projects[1].Name != "app2" || projRoot.Projects[1].Path != "~/projects/app2" {
 		t.Errorf("app2 project mismatch: %+v", projRoot.Projects[1])
+	}
+
+	// Loose projects: single/lonely is the only loose project (all noise items dropped)
+	if len(layout.Loose) != 1 {
+		t.Fatalf("layout.Loose count = %d, want 1 (lonely): %+v", len(layout.Loose), layout.Loose)
+	}
+	if layout.Loose[0].Name != "lonely" || layout.Loose[0].Path != "~/single/lonely" {
+		t.Errorf("layout.Loose[0] = %+v, want lonely", layout.Loose[0])
 	}
 
 	// Test 10-minute caching

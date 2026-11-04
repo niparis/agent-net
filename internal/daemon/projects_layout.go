@@ -150,23 +150,34 @@ func (d *Daemon) scanProjectsLayout(ctx context.Context, homeDir string) (protoc
 				continue
 			}
 			name := ent.Name()
-			if strings.HasPrefix(name, ".") {
-				// Skip hidden folders
+			childPath := filepath.Join(dir, name)
+			relToHome, err := filepath.Rel(cleanHome, childPath)
+			if err != nil {
 				continue
 			}
+			relSlash := filepath.ToSlash(relToHome)
+
+			if strings.Contains(relSlash, ".local/state/agent-net/daemon/worktrees") ||
+				strings.Contains(relSlash, ".claude/worktrees") ||
+				strings.Contains(relSlash, "code/isolated-worktrees") {
+				continue
+			}
+
+			if strings.HasPrefix(name, ".") {
+				if name != ".local" && name != ".claude" {
+					continue
+				}
+			}
+			if strings.HasPrefix(relSlash, ".local") && !strings.HasPrefix(relSlash, ".local/state") {
+				continue
+			}
+			if strings.HasPrefix(relSlash, ".claude") && relSlash != ".claude" {
+				continue
+			}
+
 			if noiseFolders[strings.ToLower(name)] {
 				// Skip dependency, cache, temp and worktree folders
 				continue
-			}
-			childPath := filepath.Join(dir, name)
-			relToHome, err := filepath.Rel(cleanHome, childPath)
-			if err == nil {
-				relSlash := filepath.ToSlash(relToHome)
-				if strings.Contains(relSlash, ".local/state/agent-net/daemon/worktrees") ||
-					strings.Contains(relSlash, ".claude/worktrees") ||
-					strings.Contains(relSlash, "code/isolated-worktrees") {
-					continue
-				}
 			}
 			walk(childPath, level+1)
 		}
