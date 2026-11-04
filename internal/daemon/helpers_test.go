@@ -285,6 +285,9 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		// The helper sessions live in the test's own temporary folders. A
 		// test that wants the temp rule sets TempFolders itself.
 		TempFolders: []string{}}
+	// Files between machines: never the machine's own Tailscale or Downloads.
+	cfg.Files = FileConfig{Downloads: filepath.Join(t.TempDir(), "Downloads"), TailscaleIP: func() string { return "" },
+		TailscalePATH: t.TempDir(), TailscaleFallback: []string{}}
 	if o.adapter != nil {
 		cfg.Adapters = []Adapter{o.adapter}
 	}

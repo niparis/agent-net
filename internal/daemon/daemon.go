@@ -217,6 +217,9 @@ type Config struct {
 	// to its ssh target.
 	EnterSSH      bool
 	EnterSSHHosts map[string]string
+	// Files holds the folders and timings of files between machines
+	// (decision 0054). Zero fields take the defaults.
+	Files FileConfig
 }
 
 type localSession struct {
@@ -240,6 +243,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	files               fileState
 	settingsMu          sync.Mutex
 	settingsSnapshot    atomic.Pointer[settings.Snapshot]
 	agyEvents           map[string]antigravityEvent // guarded by mu
@@ -391,6 +395,7 @@ func New(cfg Config) (*Daemon, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(io.Discard, "", 0)
 	}
+	cfg.Files = cfg.Files.withDefaults()
 	if cfg.BackoffMin == 0 {
 		cfg.BackoffMin = time.Second
 	}
@@ -487,6 +492,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	ctx, d.cancel = context.WithCancel(ctx)
 	d.workerStreamCtx = ctx
 	d.ctoCtx = ctx
+	d.files.mu.Lock()
+	d.files.ctx = ctx
+	d.files.mu.Unlock()
 	if d.cfg.RefreshAgentFiles != nil {
 		d.cfg.RefreshAgentFiles(d.Logf, d.SettingsSnapshot())
 	}
@@ -526,6 +534,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.cleanupLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.deliveredPruneLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.filesHousekeepingLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.proposalNotesLoop(ctx) }()
 	d.wg.Add(1)
@@ -1214,6 +1224,7 @@ func (d *Daemon) releaseDelivery(id string) {
 }
 
 func (d *Daemon) finishDelivery(ctx context.Context, m protocol.Message, res Result) {
+	res.Detail = d.withFileRoute(m.ID, res.Detail)
 	status := protocol.StateFailed
 	var err error
 	switch {
