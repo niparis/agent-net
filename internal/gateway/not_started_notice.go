@@ -45,10 +45,10 @@ func oneLine(s string, limit int) string {
 // one short line and marked as the machine's words. No notice is stored for
 // the owner (the TUI feed shows the event), for a bot, or for a session that
 // is gone.
-func (s *Store) notStartedNotice(w workerStart, host, reason string) (protocol.Message, bool, error) {
+func (s *Store) notStartedNotice(tx *sql.Tx, w workerStart, host, reason string) (protocol.Message, bool, error) {
 	var none protocol.Message
 	var harness string
-	err := s.db.QueryRow(`SELECT harness FROM sessions WHERE id=?`, w.Owner).Scan(&harness)
+	err := tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, w.Owner).Scan(&harness)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return none, false, nil
@@ -65,11 +65,6 @@ func (s *Store) notStartedNotice(w workerStart, host, reason string) (protocol.M
 	n := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
 		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: w.Owner, Type: protocol.TypeNotification,
 		Body: body, IdempotencyKey: notStartedKeyPrefix + w.Ref, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(), State: protocol.StateStored}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return none, false, err
-	}
-	defer tx.Rollback()
 	res, err := tx.Exec(`INSERT OR IGNORE INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
 		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, n.ID, n.ConversationID, n.ParentID, n.From, n.To, n.Type, n.Body,
 		n.IdempotencyKey, n.CreatedAt.UnixNano(), n.ExpiresAt.UnixNano(), n.State)
@@ -80,8 +75,5 @@ func (s *Store) notStartedNotice(w workerStart, host, reason string) (protocol.M
 		return none, false, err
 	}
 	s.event(tx, "msg.stored", "", n.From, n.ID, "type=notification by=agent-net not_started")
-	if err := tx.Commit(); err != nil {
-		return none, false, err
-	}
 	return n, true, nil
 }

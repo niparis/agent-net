@@ -23,16 +23,17 @@ import (
 type startsFixture struct {
 	g            *Gateway
 	s            *Store
+	clock        *clock
 	a, b         string // sessions
 	nodeA, nodeB string
 }
 
 func newStartsFixture(t *testing.T) *startsFixture {
 	t.Helper()
-	s, _ := newTestStore(t)
+	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{}}
-	return &startsFixture{g: g, s: s, a: a, b: b, nodeA: mustNode(t, s, a), nodeB: mustNode(t, s, b)}
+	return &startsFixture{g: g, s: s, clock: c, a: a, b: b, nodeA: mustNode(t, s, a), nodeB: mustNode(t, s, b)}
 }
 
 func (f *startsFixture) frame(t *testing.T, node, typ string, v any) error {
@@ -269,7 +270,7 @@ func sendsTask(sent *atomic.Int32) func(f *startsFixture, worker string) func(pr
 				return nil
 			}
 			sent.Add(1)
-			_, _, err := f.s.StoreMessage(protocol.MsgSend{Sender: f.b, Recipient: worker, Type: protocol.TypeRequest, Body: "the task"})
+			_, _, err := f.s.StoreMessage(protocol.MsgSend{Sender: f.b, Recipient: worker, Type: protocol.TypeRequest, Body: taskBriefPrefix + " the task"})
 			return err
 		}
 	}
@@ -432,5 +433,233 @@ func TestQueuedTaskRelayRefusalIsFinal(t *testing.T) {
 	var te protocol.TransientError
 	if err == nil || errors.As(err, &te) || !errors.As(err, new(Rejection)) {
 		t.Errorf("a refusal by the owner's machine: %v", err)
+	}
+}
+
+// ---- the initial task is stored once, by the gateway ----
+
+func (f *startsFixture) briefs(t *testing.T, worker string) int {
+	t.Helper()
+	var n int
+	if err := f.s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE recipient=? AND substr(body,1,?)=?`, worker, len(taskBriefPrefix), taskBriefPrefix).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func (f *startsFixture) ownerSends(worker, body string) (protocol.Message, bool, error) {
+	return f.s.StoreMessage(protocol.MsgSend{Sender: f.b, Recipient: worker, Type: protocol.TypeRequest, Body: body})
+}
+
+// A relay that the gateway gave up on still runs on the owner's machine. Its
+// send lands later, after the retry already sent the task. An owner machine of
+// an older version sends no key. The task is stored once.
+func TestDelayedFirstTaskSendAcrossATimeoutIsStoredOnce(t *testing.T) {
+	var calls atomic.Int32
+	landed := make(chan struct{})
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			if h.Type != "worker.task" {
+				return nil
+			}
+			send := func() error {
+				_, _, err := f.ownerSends(w, taskBriefPrefix+" the task")
+				return err
+			}
+			if calls.Add(1) == 1 {
+				time.Sleep(400 * time.Millisecond) // past the gateway's wait
+				err := send()
+				close(landed)
+				return err
+			}
+			return send()
+		}
+	})
+	f.g.relayWait = 100 * time.Millisecond
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.b, "shop", "codex", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_1"))
+	var te protocol.TransientError
+	if !errors.As(err, &te) {
+		t.Fatalf("first relay: %v", err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_1")); err != nil {
+		t.Fatalf("second relay: %v", err)
+	}
+	<-landed
+	time.Sleep(50 * time.Millisecond)
+	if n := f.briefs(t, worker); n != 1 {
+		t.Errorf("the task was stored %d times", n)
+	}
+}
+
+// A task for a worker that ended or whose start was declared not started is
+// refused, also when it arrives late, and it does not start the worker again.
+func TestTaskAfterTheWorkerStoppedIsRefused(t *testing.T) {
+	var resumed atomic.Int32
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(protocol.Header, []byte) error { return nil }
+	})
+	fakeOwnerNode(t, f.g, f.nodeA, func(h protocol.Header, raw []byte) error {
+		if h.Type == "worker.resume" {
+			resumed.Add(1)
+		}
+		return nil
+	})
+	send := func() error {
+		raw, _ := json.Marshal(protocol.MsgSend{Sender: f.b, Recipient: worker, Type: protocol.TypeRequest, Body: taskBriefPrefix + " the task"})
+		_, err := f.g.handle(context.Background(), &nodeConn{id: f.nodeB}, "msg.send", raw)
+		return err
+	}
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.b, "shop", "codex", "", worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SetSessionOffline(f.nodeA, worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := send(); err == nil || !errors.As(err, new(Rejection)) {
+		t.Errorf("a task for an ended worker: %v", err)
+	}
+	if resumed.Load() != 0 || f.briefs(t, worker) != 0 {
+		t.Errorf("the ended worker was resumed (%d) or got the task (%d)", resumed.Load(), f.briefs(t, worker))
+	}
+
+	// Declared not started.
+	if _, err := f.s.UpsertSession(f.nodeA, protocol.SessionInfo{Harness: "codex", NativeID: "w1", Name: "w1", Worker: &protocol.WorkerInfo{ID: "w_1", Owner: f.b}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_1", Reason: "gave up"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := send(); err == nil || !errors.As(err, new(Rejection)) {
+		t.Errorf("a task for a start declared not started: %v", err)
+	}
+	if f.briefs(t, worker) != 0 {
+		t.Error("a start declared not started got its task")
+	}
+}
+
+// A repeat of a task that was stored does not start the ended worker again.
+func TestRepeatedTaskDoesNotResumeAnEndedWorker(t *testing.T) {
+	var resumed atomic.Int32
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(protocol.Header, []byte) error { return nil }
+	})
+	fakeOwnerNode(t, f.g, f.nodeA, func(h protocol.Header, raw []byte) error {
+		if h.Type == "worker.resume" {
+			resumed.Add(1)
+		}
+		return nil
+	})
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.b, "shop", "codex", "", worker); err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := f.ownerSends(worker, taskBriefPrefix+" the task"); err != nil || !created {
+		t.Fatalf("task: %v %v", created, err)
+	}
+	if err := f.s.SetSessionOffline(f.nodeA, worker); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(protocol.MsgSend{Sender: f.b, Recipient: worker, Type: protocol.TypeRequest, Body: taskBriefPrefix + " the task"})
+	if _, err := f.g.handle(context.Background(), &nodeConn{id: f.nodeB}, "msg.send", raw); err != nil {
+		t.Fatalf("a repeat of the stored task: %v", err)
+	}
+	if resumed.Load() != 0 || f.briefs(t, worker) != 1 {
+		t.Errorf("resumed %d times, %d tasks stored", resumed.Load(), f.briefs(t, worker))
+	}
+}
+
+// Another request of the owner is not the task. It neither suppresses the task
+// nor closes the start.
+func TestUnrelatedOwnerRequestIsNotTheTask(t *testing.T) {
+	var sent atomic.Int32
+	f, worker := newRelayFixture(t, sendsTask(&sent))
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.b, "shop", "codex", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.ownerSends(worker, "are you there?"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_1")); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Load() != 1 || f.briefs(t, worker) != 1 {
+		t.Errorf("owner asked %d times, %d tasks stored", sent.Load(), f.briefs(t, worker))
+	}
+}
+
+// A machine cannot say a start never began once its worker has the task.
+func TestNotStartedAfterTheTaskWasStoredIsRefused(t *testing.T) {
+	var sent atomic.Int32
+	f, worker := newRelayFixture(t, sendsTask(&sent))
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.b, "shop", "codex", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_1")); err != nil {
+		t.Fatal(err)
+	}
+	err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_1", Reason: "false report"})
+	if err == nil || !errors.As(err, new(Rejection)) {
+		t.Errorf("a false report after delivery: %v", err)
+	}
+	if ns := f.notices(t, f.b); len(ns) != 0 {
+		t.Errorf("a false report made a notice: %q", ns[0].Body)
+	}
+}
+
+// The state change and the notice are one transaction: a notice that cannot be
+// stored leaves the start open, the report fails, and the report can be made
+// again.
+func TestNotStartedNoticeIsAtomicWithTheStateChange(t *testing.T) {
+	f := newStartsFixture(t)
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.a, "shop", "codex", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.db.Exec(`CREATE TRIGGER fail_notice BEFORE INSERT ON messages WHEN NEW.sender='agent-net'
+		BEGIN SELECT RAISE(ABORT, 'disk full'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_1", Reason: "x"}); err == nil {
+		t.Fatal("the report succeeded though its notice was lost")
+	}
+	var state string
+	if err := f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_1'`).Scan(&state); err != nil || state != "open" {
+		t.Fatalf("state after a failed notice: %q %v", state, err)
+	}
+	if _, err := f.s.db.Exec(`DROP TRIGGER fail_notice`); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_1", Reason: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if ns := f.notices(t, f.a); len(ns) != 1 {
+		t.Errorf("notices after the retry: %d", len(ns))
+	}
+}
+
+// Closed starts are removed after a month. An open start may still be reported
+// and stays.
+func TestPruneKeepsOpenStarts(t *testing.T) {
+	f := newStartsFixture(t)
+	for _, ref := range []string{"q_open", "q_closed"} {
+		if err := f.s.trackWorkerStart(ref, f.nodeA, f.a, "shop", "codex", "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_closed", Reason: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.t = f.clock.t.Add(90 * 24 * time.Hour)
+	if err := f.s.trackWorkerStart("q_new", f.nodeA, f.a, "shop", "codex", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	has := func(ref string) bool {
+		var n int
+		f.s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE ref=?`, ref).Scan(&n)
+		return n == 1
+	}
+	if !has("q_open") || !has("q_new") || has("q_closed") {
+		t.Errorf("after the prune: open=%v new=%v closed=%v", has("q_open"), has("q_new"), has("q_closed"))
 	}
 }

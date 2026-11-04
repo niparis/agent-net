@@ -691,7 +691,7 @@ CREATE TABLE IF NOT EXISTS worker_starts (
  ref TEXT PRIMARY KEY, node_id TEXT NOT NULL, owner TEXT NOT NULL,
  project TEXT NOT NULL DEFAULT '', harness TEXT NOT NULL DEFAULT '',
  permissions TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
- state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'not_started')),
+ state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'delivered', 'not_started')),
  created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_starts_session ON worker_starts(session_id) WHERE session_id <> '';
 `}
@@ -2115,6 +2115,12 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	}
 	defer tx.Rollback()
 
+	// The initial task of a tracked start is stored once, under a key of the
+	// gateway's own, whatever key or version the sender has.
+	claim, err := s.claimInitialTask(tx, &p)
+	if err != nil {
+		return msg, false, err
+	}
 	if p.IdempotencyKey == "" {
 		p.IdempotencyKey = protocol.NewID("k")
 	}
@@ -2242,6 +2248,11 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved)
 	if err != nil {
 		return msg, false, err
+	}
+	if claim != "" {
+		if _, err := tx.Exec(`UPDATE worker_starts SET state='delivered' WHERE ref=? AND state='open'`, claim); err != nil {
+			return msg, false, err
+		}
 	}
 	if len(p.Files) > 0 {
 		raw, err := json.Marshal(p.Files)

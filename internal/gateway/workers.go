@@ -55,8 +55,12 @@ func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol
 			"project", p.Project, "harness", p.Harness, "reason", p.Reason)
 		return nil
 	}
-	rec, first, err := g.store.declareNotStarted(nc.id, p.Ref)
+	rec, n, noticed, first, err := g.store.declareNotStarted(nc.id, p.Ref, g.store.hostname(nc.id), full.Reason)
 	if err != nil {
+		var rj Rejection
+		if !errors.As(err, &rj) {
+			g.logLine("error", "where", "worker.not_started", "err", err)
+		}
 		return err
 	}
 	if rec.Ref == "" {
@@ -71,12 +75,7 @@ func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol
 	g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", rec.Owner,
 		"project", rec.Project, "harness", rec.Harness, "reason", p.Reason)
 	g.cancelRelay(rec.SessionID)
-	n, ok, err := g.store.notStartedNotice(rec, g.store.hostname(nc.id), full.Reason)
-	if err != nil {
-		g.logLine("error", "where", "not_started_notice", "err", err)
-		return nil
-	}
-	if ok {
+	if noticed {
 		g.dispatch(ctx, n)
 	}
 	return nil
