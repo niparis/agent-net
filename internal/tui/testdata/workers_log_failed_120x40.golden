@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
-  Quotas    [ Workers log ]
+  Quotas    [ Workers log ]    Delivery
 ╭─Workers log──────────────────────────────────────────────────────────────────╮
 │   11-14 22:13  test-model:high      normal     owner      Review wo… running │
 │   11-14 22:11  test-model:high      normal     Agent One  Review worke… done │
