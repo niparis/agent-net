@@ -487,13 +487,18 @@ func (d *Daemon) sendNoticeTo(ctx context.Context, w *worker, n protocol.WorkerN
 }
 
 func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo, noticeKey string, final bool) (json.RawMessage, error) {
+	return d.sendNoticeToKeyWithFiles(ctx, w, n, report, to, replyTo, noticeKey, final, nil)
+}
+
+func (d *Daemon) sendNoticeToKeyWithFiles(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo, noticeKey string, final bool, files *OutgoingFiles) (json.RawMessage, error) {
 	if final && d.rateOffer(ctx, w) {
 		n.RateAsk = true
 	}
 	if len(report) > 48*1024 {
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
-	raw, err := d.sendWorkerNoticeBody(ctx, w, d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot())), to, replyTo, noticeKey)
+	body := d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot()))
+	raw, err := d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, files)
 	if err == nil {
 		switch n.Status {
 		case protocol.StatusDone, protocol.StatusFailed, protocol.StatusTimedOut, "partial", "idle without hand-back":
@@ -511,6 +516,10 @@ func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.Work
 // sendWorkerNoticeBody sends a worker notice through the same reply and outbox
 // path used for completion notices.
 func (d *Daemon) sendWorkerNoticeBody(ctx context.Context, w *worker, body, to, replyTo, noticeKey string) (json.RawMessage, error) {
+	return d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, nil)
+}
+
+func (d *Daemon) sendWorkerNoticeBodyWithFiles(ctx context.Context, w *worker, body, to, replyTo, noticeKey string, files *OutgoingFiles) (json.RawMessage, error) {
 	d.wmu.Lock()
 	sid, owner, parent := w.sessionID, w.owner, w.taskMsg
 	d.wmu.Unlock()
@@ -528,7 +537,37 @@ func (d *Daemon) sendWorkerNoticeBody(ctx context.Context, w *worker, body, to, 
 	if parent != "" {
 		p.Type, p.ParentID = protocol.TypeReply, parent
 	}
+	if files != nil {
+		sent, err := d.sendPreparedFiles(ctx, FileSend{From: sid, To: owner, Body: body, Type: p.Type, ParentID: p.ParentID, IdempotencyKey: noticeKey}, files)
+		if err != nil {
+			if sent.Message.ID != "" {
+				return nil, fmt.Errorf("handback message %s was stored but file transfer failed: %w", sent.Message.ID, err)
+			}
+			return nil, err
+		}
+		return json.Marshal(protocol.MessageSent{Message: &sent.Message})
+	}
 	return d.send(ctx, p)
+}
+
+// prepareHandbackFiles limits workers to their own worktree, even when the
+// project or /tmp would normally be a permitted source for a session.
+func (d *Daemon) prepareHandbackFiles(w *worker, paths []string) (*OutgoingFiles, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	d.wmu.Lock()
+	sid, root := w.sessionID, w.worktree
+	d.wmu.Unlock()
+	if root == "" {
+		return nil, errors.New("a worker needs its own worktree to send files")
+	}
+	rules, err := d.fileRules(sid, false)
+	if err != nil {
+		return nil, err
+	}
+	rules.Roots, rules.Temp, rules.ConfineSymlinks = []string{root}, []string{}, true
+	return PrepareFiles(paths, rules, filepath.Join(d.cfg.StateDir, fileOutgoingFolder))
 }
 
 // noticeFor maps why a worker ended to the status and note of its notice. An
@@ -564,6 +603,11 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 		return nil, errors.New("only a worker started by agent-net can hand back a report")
 	}
 	if w.harness == "agy" {
+		files, err := d.prepareHandbackFiles(w, req.Files)
+		if err != nil {
+			return nil, err
+		}
+		defer files.Remove()
 		return d.deferAgyHandback(w, req)
 	}
 	return d.handbackTo(ctx, w, req, "", "")
@@ -590,6 +634,11 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	if strings.TrimSpace(req.Report) == "" {
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
+	files, err := d.prepareHandbackFiles(w, req.Files)
+	if err != nil {
+		return nil, err
+	}
+	defer files.Remove()
 	// A partial hand-back is a worker that stopped early. Send it one more
 	// message ourselves, up to the limit, and do not tell the caller yet.
 	if req.Status == protocol.StatusDone && !req.IsComplete() && d.tryAutoContinue(ctx, w) {
@@ -642,7 +691,7 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	d.wmu.Lock()
 	w.handingBack = true
 	d.wmu.Unlock()
-	raw, err := d.sendNoticeToKey(ctx, w, n, req.Report, to, replyTo, noticeKey, true)
+	raw, err := d.sendNoticeToKeyWithFiles(ctx, w, n, req.Report, to, replyTo, noticeKey, true, files)
 	if err != nil {
 		d.wmu.Lock()
 		w.handingBack = false
