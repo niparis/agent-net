@@ -51,16 +51,16 @@ func sessionWait(q queryer, id string) (string, *protocol.Waiting, error) {
 }
 
 // waitingText says that a session waits for its user, for a peer that wrote to
-// it. It never quotes the question: waiting questions are for the owner only
-// (security.md, agent reads), and a bot is outside the owner's machines. The
-// kind and the start of the wait are enough to know the message will wait.
-// The name comes from the session's machine, so it is cleaned and cannot
-// forge agent-net's own framing.
+// it. The waiting text has already been cleaned by sessionWait. The name comes
+// from the session's machine, so it is cleaned and cannot forge the framing.
 func waitingText(name string, w *protocol.Waiting, outcome string) string {
 	name = protocol.NeutralizeMarkers(html.EscapeString(protocol.CleanWaitingText(name)))
-	what := "answer"
+	what, preposition := "answer", "to"
 	if w.Kind == protocol.WaitingPermission {
-		what = "approval"
+		what, preposition = "approval", "of"
+	}
+	if w.Text != "" {
+		what += " " + preposition + ": " + w.Text
 	}
 	return fmt.Sprintf("%s is waiting for its user's %s (since %s). Your message %s and will be read when the user answers. No reply is needed.",
 		name, what, time.Unix(w.Since, 0).UTC().Format("2006-01-02 15:04 UTC"), outcome)

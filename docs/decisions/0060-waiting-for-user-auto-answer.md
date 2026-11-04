@@ -60,20 +60,22 @@ The status of a Claude session in a dialog stays `unknown`, as before. Calling i
 When a daemon reports a request delivered to an online session that waits, and that is not a worker, the gateway stores one notice to the sender, in the same transaction, and dispatches it:
 
 ```
-[agent-net] bob is waiting for its user's answer (since 2026-11-04 10:12 UTC). Your message was delivered and will be read when the user answers. No reply is needed.
+[agent-net] bob is waiting for its user's answer to: Merge the branch? (since 2026-11-04 10:12 UTC). Your message was delivered and will be read when the user answers. No reply is needed.
 ```
 
-A permission wait says `approval` instead of `answer`. The key is `waiting:<recipient>:<since>:<sender>`: one notice per sender per waiting period, also across gateway restarts. A second request from the same sender in the same wait gets none; a different sender gets its own; a new wait is a new period. A gateway that sees the same wait again (same kind and text, for example after a daemon restart) keeps its first start time, so a restart does not start a new period.
+A permission wait says `approval of: <tool summary>` instead. The key is `waiting:<recipient>:<since>:<sender>`: one notice per sender per waiting period, also across gateway restarts. A second request from the same sender in the same wait gets none; a different sender gets its own; a new wait is a new period. A gateway that sees the same wait again (same kind and text, for example after a daemon restart) keeps its first start time, so a restart does not start a new period.
 
 No notice is stored for a notification or a reply, for agent-net's own messages (a notice never makes another), for the owner (the TUI shows the wait), or for a bot. A bot reads no queue of its own, so its send receipt carries the same words as `note`. The request itself is delivered as usual. The notice is not a reminder, so it is not held back by the reminder check.
 
-### The question is not quoted
+### Waiting text in notices
 
-The brief asked for the question in the notice. It is left out. [security.md](../security.md) says ordinary agent reads omit waiting-question contents, and a canary test pins it: a waiting question is addressed to the owner, can name a file, a command or a branch, and a bot is outside the owner's machines. The sender needs to know that the session waits, what kind of answer, and since when; that is in the notice. Quoting the question to peers would widen an owner-only read, which is the owner's decision. If the owner wants it, the change is one line in `waitingText` and a line in security.md.
+On 2026-11-04, the owner chose to include the question in notices to senders
+and bot receipts. Permission notices include the tool summary. The text is
+cleaned to one line, limited to 200 characters and has secrets redacted. When
+there is no text, the notice keeps the original wording.
 
-For the same reason, `agent_sessions_find` and `agent_session_get` show status `waiting for its user` and a `waiting` object with `kind` and `since` only.
-
-The waiting text is now also passed through the secret filter (`redact.Secrets`) at the daemon and the gateway, since it leaves the machine.
+`agent_sessions_find` and `agent_session_get` continue to show status
+`waiting for its user` and a `waiting` object with `kind` and `since` only.
 
 ## The Inbox
 
