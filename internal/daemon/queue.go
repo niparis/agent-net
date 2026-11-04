@@ -69,7 +69,7 @@ func (d *Daemon) queueLoop(ctx context.Context) {
 // processQueue ends the starts that waited too long or lost their owner, then
 // starts the head of the queue if it fits.
 func (d *Daemon) processQueue(ctx context.Context) {
-	set := d.workerSettings("")
+	snap := d.SettingsSnapshot()
 	entries, err := d.st.queue()
 	if err != nil || len(entries) == 0 {
 		return
@@ -77,6 +77,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 	now := time.Now()
 	var live []queuedStart
 	for _, e := range entries {
+		set := d.workerSettingsWith(snap, e.Project)
 		if now.Sub(e.QueuedAt) >= set.QueueTimeout {
 			d.qmu.Lock()
 			dec := d.admission(e.Harness, e.Model)
@@ -103,6 +104,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 	kept := live[:0]
 	checked := map[string]bool{} // owner -> offline
 	for _, e := range live {
+		set := d.workerSettingsWith(snap, e.Project)
 		off, seen := checked[e.Owner]
 		if !seen {
 			off = d.ownerOffline(ctx, e.Owner)
@@ -204,7 +206,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 	}
 	charter := d.charterBrief(ctx, p.Project)
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithSettings(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions, d.SettingsSnapshot())})
+		Body: protocol.WorkerTaskBodyWithSettingsForRepo(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions, d.SettingsSnapshot(), p.Project)})
 	return err
 }
 

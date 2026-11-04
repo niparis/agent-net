@@ -529,7 +529,8 @@ func projectWorkerRules(path string) string {
 
 // startWorker handles "worker.launch" from the gateway.
 func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out protocol.WorkerLaunched, err error) {
-	set := d.workerSettings("")
+	snap := d.SettingsSnapshot()
+	set := d.workerSettingsWith(snap, l.Project)
 	refuse := func(format string, a ...any) (protocol.WorkerLaunched, error) {
 		err := fmt.Errorf(format, a...)
 		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
@@ -555,6 +556,9 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
 		l.Isolation = protocol.IsolationWorktree
 	}
+	if e := validateWorkerIsolation(snap, l.Project, l.Isolation); e != nil {
+		return refuse("%v", e)
+	}
 	if l.Base != "" && l.Isolation != protocol.IsolationWorktree {
 		return refuse("a base branch needs worktree isolation")
 	}
@@ -571,27 +575,39 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		}
 		return *q, nil
 	}
-	out, err = d.runWorkerStartChecked(ctx, l, set, true)
+	out, err = d.runWorkerStartChecked(ctx, l, set, true, snap)
 	if err != nil {
 		d.clearStartReservation()
 	}
 	return out, err
 }
 
+func validateWorkerIsolation(snap settings.Snapshot, repo, isolation string) error {
+	if snap.String("workers.isolation_minimum", settings.Where{Repo: repo}) == "worktree-required" && isolation != protocol.IsolationWorktree {
+		return fmt.Errorf("workers.isolation_minimum requires worktree isolation for %s", repo)
+	}
+	return nil
+}
+
 // runWorkerStart starts a worker that admission has let through. The checks
 // of startWorker are done; l has its isolation filled in.
 func (d *Daemon) runWorkerStart(ctx context.Context, l protocol.WorkerLaunch) (protocol.WorkerLaunched, error) {
-	set := d.workerSettings("")
+	snap := d.SettingsSnapshot()
+	set := d.workerSettingsWith(snap, l.Project)
 	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
 		l.Isolation = protocol.IsolationWorktree
+	}
+	if err := validateWorkerIsolation(snap, l.Project, l.Isolation); err != nil {
+		d.releaseWorkerBase(l.Base)
+		return protocol.WorkerLaunched{}, err
 	}
 	if l.Isolation == protocol.IsolationWorktree {
 		set.StartTimeout = set.BackgroundStartTimeout
 	}
-	return d.runWorkerStartChecked(ctx, l, set, false)
+	return d.runWorkerStartChecked(ctx, l, set, false, snap)
 }
 
-func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, async bool) (out protocol.WorkerLaunched, err error) {
+func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, async bool, snap settings.Snapshot) (out protocol.WorkerLaunched, err error) {
 	selection := protocol.ParseModelSelection(l.Harness, l.Provider, l.Model, l.Effort)
 	l.Model = selection.LegacyModel()
 	transferredBase := false
@@ -625,11 +641,10 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		}
 	}
 	worktree, branch := "", ""
-	snap := d.SettingsSnapshot()
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranchWithSettings(w.id, snap)
 	}
-	if len(protocol.WorkerTaskBodyWithSettings(l.Harness, l.Task, worktree, branch, rules, "", "", snap)) > protocol.MaxBodyBytes {
+	if len(protocol.WorkerTaskBodyWithSettingsForRepo(l.Harness, l.Task, worktree, branch, rules, "", "", snap, l.Project)) > protocol.MaxBodyBytes {
 		return refuse("the task and project rules exceed the message limit")
 	}
 	w.lastActive = w.startedAt
@@ -1266,7 +1281,7 @@ func (d *Daemon) workerLoop(ctx context.Context) {
 }
 
 func (d *Daemon) checkWorkers(ctx context.Context) {
-	set := d.workerSettings("")
+	snap := d.SettingsSnapshot()
 	d.wmu.Lock()
 	list := make([]*worker, 0, len(d.workers))
 	for _, w := range d.workers {
@@ -1285,6 +1300,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 	d.wmu.Unlock()
 	now := time.Now()
 	for _, w := range list {
+		set := d.workerSettingsWith(snap, w.project)
 		if ctx.Err() != nil {
 			return
 		}

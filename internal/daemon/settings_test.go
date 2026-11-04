@@ -303,7 +303,7 @@ func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
 		`[{"key":"delivery.merge_authority","level":"team","scope":"alpha","value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"repo","scope":"","value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"other","value":"ask"}]`,
-		`[{"key":"workers.auto_continue","level":"repo","scope":"alpha","value":false}]`,
+		`[{"key":"workers.auto_continue","level":"session","scope":"alpha","value":false}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"network","item":"x","value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"network","delete":true,"value":"ask"}]`,
 		`[{"key":"delivery.merge_authority","level":"network","scope":"network"}]`,
@@ -425,5 +425,26 @@ func TestSettingsDeliveryCutoverSurvivesOfflineRestart(t *testing.T) {
 	}
 	if !restarted.SettingsSnapshot().DeliveryCutover {
 		t.Fatal("cutover flag lost on restart")
+	}
+}
+
+func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{st: st}
+	raw := []byte(`{"revision":1,"recipe":"current","worker_sandbox_cutover":true,"values":[{"key":"workers.sandbox_level","level":"repo","scope":"repo","value":"read-only"}],"maturity":{}}`)
+	if err = d.acceptSettingsSnapshot(raw, true); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &Daemon{st: st}
+	if err = restarted.loadSettingsSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	snap := restarted.SettingsSnapshot()
+	if !snap.WorkerSandboxCutover || protocol.NodeDefaultsWithSettings("early", map[string]string{protocol.SettingWorkerSandbox: "no-network"}, snap, "repo").WorkerSandbox != "read-only" {
+		t.Fatalf("lost sandbox snapshot: %+v", snap)
 	}
 }

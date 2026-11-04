@@ -399,7 +399,7 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 				return nil, fmt.Errorf("text contains an agent-net marker")
 			}
 		}
-		if !expected && d.Type == "text" && strings.HasPrefix(d.Key, "delivery.worker_") && strings.Contains(s, "\n\nTask:\n") {
+		if !expected && d.Type == "text" && (strings.HasPrefix(d.Key, "delivery.worker_") || strings.HasPrefix(d.Key, "workers.brief_") || strings.HasPrefix(d.Key, "workers.continue_")) && strings.Contains(s, "\n\nTask:\n") {
 			return nil, fmt.Errorf("worker text contains a task boundary")
 		}
 		if d.Type == "text" {
@@ -613,9 +613,17 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 	if d.Default.Kind != 0 {
 		v, err = d.yamlValue(&d.Default)
 	} else if d.DefaultGo == "memory_reserve" {
-		n := w.Host.RAMBytes / 10
-		if n < 1536*1024*1024 {
-			n = 1536 * 1024 * 1024
+		var minimum int64
+		var share float64
+		if e, eerr := s.Resolve("workers.memory_reserve_min", Where{}); eerr == nil {
+			_ = json.Unmarshal(e.Value, &minimum)
+		}
+		if e, eerr := s.Resolve("workers.memory_reserve_share", Where{}); eerr == nil {
+			_ = json.Unmarshal(e.Value, &share)
+		}
+		n := int64(float64(w.Host.RAMBytes) * share)
+		if n < minimum {
+			n = minimum
 		}
 		v, _ = json.Marshal(n)
 	} else {
