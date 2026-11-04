@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -38,47 +39,101 @@ func deliveryText(res *mcp.CallToolResult) string {
 	return b.String()
 }
 
-// Until the daemon part lands, each delivery tool checks its arguments against
-// the schema and says it is not built yet, without calling the daemon.
-func TestDeliveryToolsNotBuiltYet(t *testing.T) {
+func deliveryView() protocol.ChangeView {
+	c := protocol.Change{ID: "ch_1", Project: "demo", Branch: "agent-net/w_1", HeadCommit: deliveryCommit, Revision: 1,
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: "s_me"}, State: protocol.ChangeOpen, CreatedAt: 1}
+	return protocol.ChangeView{Change: c, Steps: protocol.PipelineToday().Status(c, nil)}
+}
+
+// Each delivery tool checks its arguments against the schema, sends them as
+// they are to its daemon method, and returns the daemon's result as its
+// structured output.
+func TestDeliveryToolsCallTheDaemon(t *testing.T) {
+	view := deliveryView()
+	ev := protocol.Evidence{ChangeID: "ch_1", Revision: 1, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: deliveryCommit, By: "s_me", At: 2}
+	results := map[string]any{
+		protocol.OpChangeSubmit: protocol.ChangeSubmitResult{Change: view},
+		protocol.OpStepReport:   protocol.StepReportResult{Evidence: ev, Change: view},
+		protocol.OpChangesFind:  protocol.ChangesFindResult{Items: []protocol.ChangeView{view}, Total: 1, NextCursor: "ch_1"},
+	}
 	var mu sync.Mutex
-	var methods []string
-	t.Setenv("AGENT_NET_WORKER", "")
-	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+	got := map[string]map[string]any{}
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		raw, _ := json.Marshal(params)
+		var m map[string]any
+		_ = json.Unmarshal(raw, &m)
 		mu.Lock()
-		methods = append(methods, method)
+		got[method] = m
 		mu.Unlock()
-		return json.RawMessage(`{}`), nil
+		res, ok := results[method]
+		if !ok {
+			return json.RawMessage(`{}`), nil
+		}
+		return json.Marshal(res)
 	})
 	listed := listedCatalogNames(t, cs)
+	ops := map[string]string{"agent_change_submit": protocol.OpChangeSubmit, "agent_step_report": protocol.OpStepReport, "agent_changes_find": protocol.OpChangesFind}
 	for name, args := range deliveryCalls {
 		if !deliveryHas(listed, name) {
 			t.Errorf("agent does not see %s", name)
 			continue
 		}
 		res := deliveryCall(t, cs, name, args)
-		if !res.IsError || !strings.Contains(deliveryText(res), name+" is not built yet") {
-			t.Errorf("%s = %v %q", name, res.IsError, deliveryText(res))
+		if res.IsError {
+			t.Errorf("%s: %s", name, deliveryText(res))
+			continue
 		}
-	}
-	mu.Lock()
-	for _, m := range methods {
-		for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepReport, protocol.OpChangesFind} {
-			if m == op {
-				t.Errorf("the daemon was called with %s", m)
+		if res.StructuredContent == nil {
+			t.Errorf("%s has no structured result", name)
+		}
+		var want map[string]any
+		_ = json.Unmarshal([]byte(args), &want)
+		mu.Lock()
+		sent := got[ops[name]]
+		mu.Unlock()
+		if sent == nil {
+			t.Errorf("%s did not call %s", name, ops[name])
+			continue
+		}
+		for k, v := range want {
+			if a, b := mustJSON(sent[k]), mustJSON(v); a != b {
+				t.Errorf("%s sent %s=%s, want %s", name, k, a, b)
 			}
 		}
 	}
-	mu.Unlock()
+	if !strings.Contains(deliveryText(deliveryCall(t, cs, "agent_changes_find", `{}`)), `"next_cursor":"ch_1"`) {
+		t.Error("agent_changes_find does not return the daemon's page")
+	}
 
 	// The schema still checks the arguments first.
+	mu.Lock()
+	got = map[string]map[string]any{}
+	mu.Unlock()
 	res := deliveryCall(t, cs, "agent_step_report", `{"change":"ch_1","step":"check","result":"pass","commit":"`+deliveryCommit+`"}`)
-	if !res.IsError || strings.Contains(deliveryText(res), "not built yet") {
+	if !res.IsError {
 		t.Errorf("bad step accepted: %q", deliveryText(res))
 	}
 	res = deliveryCall(t, cs, "agent_change_submit", `{}`)
-	if !res.IsError || strings.Contains(deliveryText(res), "not built yet") {
+	if !res.IsError {
 		t.Errorf("submit without a branch accepted: %q", deliveryText(res))
+	}
+	mu.Lock()
+	if len(got) != 0 {
+		t.Errorf("bad arguments reached the daemon: %v", got)
+	}
+	mu.Unlock()
+}
+
+// An error of the daemon or the gateway reaches the agent as the tool's error.
+func TestDeliveryToolsReturnDaemonErrors(t *testing.T) {
+	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		return nil, errors.New(method + ": commit is not the head of change ch_1")
+	})
+	for name, args := range deliveryCalls {
+		res := deliveryCall(t, cs, name, args)
+		if !res.IsError || !strings.Contains(deliveryText(res), "commit is not the head of change ch_1") {
+			t.Errorf("%s = %v %q", name, res.IsError, deliveryText(res))
+		}
 	}
 }
 

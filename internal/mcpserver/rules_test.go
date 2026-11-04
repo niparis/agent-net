@@ -52,6 +52,7 @@ func TestPluginsCarryTheSameNotesAndRules(t *testing.T) {
 
 func TestToolDescriptionsCarryTheAnnounceRuleAndExpertise(t *testing.T) {
 	call := func(context.Context, string, any) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }
+	t.Setenv("AGENT_NET_WORKER", "")
 	s := New(call, "test")
 	ct, st := mcp.NewInMemoryTransports()
 	ctx := context.Background()

@@ -14,6 +14,7 @@ import (
 func TestStaleToolsNoteShowsOnce(t *testing.T) {
 	d := NewDaemon("", nil)
 	d.note = "agent-net: your agent-net tools are v0.4.5 (this machine runs v0.5.0). Ask your user to reconnect agent-net."
+	t.Setenv("AGENT_NET_WORKER", "")
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := New(func(context.Context, string, any) (json.RawMessage, error) {

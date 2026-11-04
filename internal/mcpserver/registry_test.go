@@ -85,6 +85,7 @@ func listNames(t *testing.T, cs *mcp.ClientSession) []string {
 // tools go away when the server does.
 func TestDynamicToolsFollowRegistry(t *testing.T) {
 	reg := &fakeRegistry{}
+	t.Setenv("AGENT_NET_WORKER", "")
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := New(reg.call, "")
@@ -173,6 +174,7 @@ func TestDynamicToolsFollowRegistry(t *testing.T) {
 // the mark goes when the host returns. Nothing is dropped.
 func TestDynamicMarksToolsOfAnOfflineHost(t *testing.T) {
 	reg := &fakeRegistry{}
+	t.Setenv("AGENT_NET_WORKER", "")
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := New(reg.call, "")
