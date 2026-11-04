@@ -32,6 +32,7 @@ var pluginMethods = map[string]string{
 	"agent_worker_start": "worker_start", "agent_worker_stop": "worker_stop",
 	"agent_worker_rate": "rate", "agent_handback": "worker_handback",
 	"agent_project_add": "project_add", "agent_mcp_test": "mcp_test",
+	"agent_change_submit": "change_submit", "agent_step_report": "step_report", "agent_changes_find": "changes_find",
 }
 
 // PluginTools returns the generated native-plugin view of the agent and worker
