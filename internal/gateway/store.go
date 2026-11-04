@@ -690,7 +690,7 @@ BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
 CREATE TABLE IF NOT EXISTS worker_starts (
  ref TEXT PRIMARY KEY, node_id TEXT NOT NULL, owner TEXT NOT NULL,
  project TEXT NOT NULL DEFAULT '', harness TEXT NOT NULL DEFAULT '',
- permissions TEXT NOT NULL DEFAULT '',
+ permissions TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed', 'not_started')),
  created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0);
 `}

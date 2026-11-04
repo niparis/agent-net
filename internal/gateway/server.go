@@ -70,6 +70,8 @@ type Options struct {
 }
 
 type Gateway struct {
+	// relayWait overrides defaultRelayWait, for tests.
+	relayWait    time.Duration
 	publicMu     sync.Mutex
 	publicURLMu  sync.RWMutex
 	publicURL    string

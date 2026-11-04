@@ -39,13 +39,57 @@ func (s *Store) trackWorkerStart(ref, nodeID, owner, project, harness, permissio
 	return err
 }
 
-// closeStart closes an open start of this machine: its worker is running and
-// got its task. A start that is not open, or unknown, is left as it is.
-func (s *Store) closeStart(nodeID, ref string) error {
+// startSession records the session a start became, when the machine's launch
+// answer names it.
+func (s *Store) startSession(nodeID, ref, sessionID string) error {
+	if ref == "" || sessionID == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE worker_starts SET session_id=? WHERE ref=? AND node_id=? AND session_id=''`, sessionID, ref, nodeID)
+	return err
+}
+
+// verifyStart refuses a reference that belongs to another machine, another
+// owner or another worker than the one the call names. A reference the gateway
+// does not track passes: the start began before the gateway tracked starts,
+// and there is nothing to check.
+func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) error {
 	if ref == "" {
 		return nil
 	}
-	_, err := s.db.Exec(`UPDATE worker_starts SET state='closed', closed_at=? WHERE ref=? AND node_id=? AND state='open'`, s.now().UnixNano(), ref, nodeID)
+	var rn, ro, rs string
+	err := s.db.QueryRow(`SELECT node_id, owner, session_id FROM worker_starts WHERE ref=?`, ref).Scan(&rn, &ro, &rs)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if rn != nodeID || ro != owner || (rs != "" && rs != sessionID) {
+		return reject("start %s does not belong to that machine, owner and worker", ref)
+	}
+	return nil
+}
+
+// closeStart closes an open start of this machine: its worker is running and
+// got its task. A start that is not open, or unknown, is left as it is.
+func (s *Store) closeStart(nodeID, ref, sessionID string) error {
+	if ref == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE worker_starts SET state='closed', closed_at=?, session_id=CASE WHEN session_id='' THEN ? ELSE session_id END
+		WHERE ref=? AND node_id=? AND state='open'`, s.now().UnixNano(), sessionID, ref, nodeID)
+	return err
+}
+
+// abandonStart ends an open start that will never be a worker and needs no
+// notice, because the caller already knows: the machine refused the launch, or
+// the owner cancelled the queued start.
+func (s *Store) abandonStart(nodeID, ref string) error {
+	if ref == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE worker_starts SET state='not_started', closed_at=? WHERE ref=? AND node_id=? AND state='open'`, s.now().UnixNano(), ref, nodeID)
 	return err
 }
 
@@ -88,4 +132,13 @@ func (s *Store) declareNotStarted(nodeID, ref, host, reason string) (rec workerS
 		return rec, protocol.Message{}, false, false, err
 	}
 	return rec, notice, noticed, true, nil
+}
+
+// OpenStarts counts the starts that are still open: the gateway has not heard
+// that they became workers or that they did not. A start whose end the gateway
+// should have been told of must not stay here.
+func (s *Store) OpenStarts() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE state='open'`).Scan(&n)
+	return n, err
 }

@@ -414,10 +414,21 @@ func TestQueuedStartCanBeCancelled(t *testing.T) {
 	if n, _ := w.d.st.queueLen(); n != 1 {
 		t.Fatalf("queue length %d", n)
 	}
+	noOpenStarts := func() {
+		t.Helper()
+		eventually(t, "no start left open at the gateway", func() bool {
+			n, err := g.gw.Store().OpenStarts()
+			return err == nil && n == 0
+		})
+	}
+	if n, _ := g.gw.Store().OpenStarts(); n != 1 {
+		t.Fatalf("open starts before the cancel: %d", n)
+	}
 	// Its owner can.
 	if _, err := pi.call("worker_stop", protocol.WorkerStopRequest{Session: r.QueueID}); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
+	noOpenStarts()
 	if n, _ := w.d.st.queueLen(); n != 0 {
 		t.Fatalf("queue length %d after cancel", n)
 	}
@@ -437,6 +448,7 @@ func TestQueuedStartCanBeCancelled(t *testing.T) {
 	if _, err := w.cli.call("worker_stop", protocol.WorkerStopRequest{Session: r2.QueueID}); err != nil {
 		t.Errorf("owner cancel: %v", err)
 	}
+	noOpenStarts()
 }
 
 func TestQueuedStartTimesOutWithANotice(t *testing.T) {
@@ -459,6 +471,10 @@ func TestQueuedStartTimesOutWithANotice(t *testing.T) {
 			break
 		}
 	}
+	eventually(t, "the timed-out start is ended at the gateway", func() bool {
+		n, err := g.gw.Store().OpenStarts()
+		return err == nil && n == 0
+	})
 	if m.To != piID || !strings.Contains(m.Body, "waited") || !strings.Contains(m.Body, "CPU 5-min average 82%") || !strings.Contains(m.Body, "project shop") {
 		t.Errorf("not-started notice: %+v", m)
 	}
@@ -569,6 +585,10 @@ func TestQueuedStartIsDroppedWhenItsOwnerLeaves(t *testing.T) {
 		return n == 0
 	})
 	eventually(t, "the drop is logged", func() bool { return len(w.logs.lines("worker.queue_dropped")) == 1 })
+	eventually(t, "the dropped start is ended at the gateway", func() bool {
+		n, err := g.gw.Store().OpenStarts()
+		return err == nil && n == 0
+	})
 	fl.set(roomyLoad())
 	time.Sleep(150 * time.Millisecond)
 	if w.d.workerCount() != 0 {

@@ -111,6 +111,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 	// The caller left: drop its starts, as a running worker ends when its
 	// owner is gone.
 	kept := live[:0]
+	var dropped []queuedStart
 	checked := map[string]bool{} // owner -> offline
 	for _, e := range live {
 		set := d.workerSettingsWith(snap, e.Project)
@@ -129,11 +130,16 @@ func (d *Daemon) processQueue(ctx context.Context) {
 		if leave && d.st.removeQueued(e.ID) {
 			delete(d.qGone, e.ID)
 			d.Logf("worker.queue_dropped queue=%s project=%s owner=%s reason=%q", e.ID, e.Project, e.Owner, "its owner ended or stayed offline")
+			dropped = append(dropped, e)
 		}
 		d.qmu.Unlock()
 		if !leave {
 			kept = append(kept, e)
 		}
+	}
+	// The gateway tracks each start until it hears how it ended.
+	for _, e := range dropped {
+		d.notStarted(ctx, e, "its owner ended or stayed offline while the start waited in the queue")
 	}
 	if len(kept) == 0 {
 		return
@@ -188,6 +194,7 @@ func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out proto
 		Harness: e.Harness, Project: e.Project, Task: e.Task, Title: e.Title, Worktree: out.Worktree, Branch: out.Branch,
 		ProjectRules: out.ProjectRules, Permissions: e.Permissions, OSSandbox: out.OSSandbox, FromCTO: e.FromCTO})
 	if errors.Is(err, errWorkerEnded) {
+		d.notStarted(ctx, e, "the worker ended before its task was sent")
 		return
 	}
 	if err != nil {
@@ -259,7 +266,9 @@ func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
 		_, err := d.call(rctx, "worker.not_started", p)
 		cancel()
 		var refused RemoteError
-		if err == nil || errors.As(err, &refused) {
+		// A refusal is final. A fault of the gateway's own, marked by the
+		// gateway, and a call that did not get through are tried again.
+		if err == nil || (errors.As(err, &refused) && !errors.Is(err, errGatewayRetry)) {
 			if err != nil {
 				d.Logf("queue %s: not-started report refused: %v", e.ID, err)
 			}

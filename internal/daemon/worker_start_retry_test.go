@@ -2,11 +2,16 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -22,6 +27,15 @@ func gatewayHook(typ string, fn func(ctx context.Context, n int32) (json.RawMess
 			return fn(ctx, calls.Add(1))
 		}
 	}
+}
+
+// noOpenStarts waits until the gateway has no start left open.
+func noOpenStarts(t *testing.T, g *testGateway) {
+	t.Helper()
+	eventually(t, "no start left open at the gateway", func() bool {
+		n, err := g.gw.Store().OpenStarts()
+		return err == nil && n == 0
+	})
 }
 
 func startThroughGateway(t *testing.T, w *workerNode, pi *localClient) protocol.WorkerStartResult {
@@ -98,6 +112,7 @@ func TestQueuedStartTaskSendHasALongDeadline(t *testing.T) {
 	if w.d.workerBySession(r.SessionID) == nil {
 		t.Error("the worker was stopped")
 	}
+	noOpenStarts(t, g)
 }
 
 // A refusal, or a gateway that does not answer, ends the start: one call, one
@@ -128,6 +143,7 @@ func TestQueuedStartTaskSendFailureEndsTheStart(t *testing.T) {
 			if n := calls.Load(); n != 1 {
 				t.Errorf("worker.queued_start calls = %d, want 1", n)
 			}
+			noOpenStarts(t, g)
 			eventually(t, "a start_failed record", func() bool {
 				rows, _ := w.d.st.workers()
 				for _, row := range rows {
@@ -142,8 +158,7 @@ func TestQueuedStartTaskSendFailureEndsTheStart(t *testing.T) {
 }
 
 // The task send belongs to the worker: when the worker is stopped, the call is
-// cancelled, and no not-started notice follows (the worker's own end tells the
-// owner).
+// cancelled and the start is ended.
 func TestQueuedStartTaskSendStopsWhenTheWorkerEnds(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	var calls atomic.Int32
@@ -168,10 +183,13 @@ func TestQueuedStartTaskSendStopsWhenTheWorkerEnds(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the task send went on after the worker ended")
 	}
-	time.Sleep(300 * time.Millisecond)
-	if ns := notStartedNotices(t, w, owner); len(ns) != 0 {
-		t.Errorf("a not-started notice for a worker that was stopped:\n%s", ns[0].Body)
-	}
+	// The worker never got its task, and the gateway must not keep the start
+	// open: the owner hears once that it did not start.
+	eventually(t, "one not-started notice", func() bool {
+		ns := notStartedNotices(t, w, owner)
+		return len(ns) == 1 && strings.Contains(ns[0].Body, "ended before its task was sent")
+	})
+	noOpenStarts(t, g)
 }
 
 // The not-started report is tried again while the gateway does not answer, and
@@ -251,4 +269,83 @@ func TestQueuedStartTaskSendDoesNotBlockTheQueue(t *testing.T) {
 		}
 		return n == 2
 	})
+}
+
+// A launch the machine refuses is ended at once: the caller got the refusal,
+// and the gateway keeps no start open.
+func TestRefusedLaunchLeavesNoStartOpen(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	pi, _ := helloPi(t, w.node, "caller", repo, true)
+	// The machine refuses a task that, with the project rules, does not fit in
+	// one message. The gateway and the caller's own check pass it: they do not
+	// see the rules.
+	if err := os.MkdirAll(filepath.Join(repo, ".agent-net"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".agent-net", "worker.md"), []byte(strings.Repeat("rule\n", 3000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	task := strings.Repeat("x", protocol.MaxBodyBytes-len(protocol.WorkerTaskBody("", "/x", "b"))-100)
+	_, err := pi.call("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: task, Isolation: protocol.IsolationNone})
+	if err == nil {
+		t.Fatal("the launch was not refused")
+	}
+	// It was the machine that refused, after the gateway tracked the start.
+	if len(w.logs.lines("worker.refused")) == 0 {
+		t.Fatalf("the machine did not refuse the launch: %v", err)
+	}
+	noOpenStarts(t, g)
+}
+
+// A gateway storage error on the report reaches the daemon over the real link
+// marked as the gateway's own fault, and the report is tried again until it
+// is stored. A refusal is not tried again (TestQueuedStartTaskSendFailureEndsTheStart).
+func TestNotStartedReportRetriesAGatewayStorageError(t *testing.T) {
+	dir := t.TempDir()
+	g := startGateway(t, dir, "")
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	var sendCalls, reports atomic.Int32
+	refuse := gatewayHook("worker.queued_start", func(ctx context.Context, n int32) (json.RawMessage, bool, error) {
+		return nil, true, RemoteError("refused")
+	}, &sendCalls)
+	count := gatewayHook("worker.not_started", func(ctx context.Context, n int32) (json.RawMessage, bool, error) {
+		if n == 3 { // the storage works again
+			if _, err := db.Exec(`DROP TRIGGER fail_notice`); err != nil {
+				t.Error(err)
+			}
+		}
+		return nil, false, nil
+	}, &reports)
+	w := startWorkerNode(t, g, shortSet, func(c *Config) {
+		refuse(c)
+		first := c.testGatewayCall
+		count(c)
+		second := c.testGatewayCall
+		c.testGatewayCall = func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
+			if typ == "worker.queued_start" {
+				return first(ctx, typ, params)
+			}
+			return second(ctx, typ, params)
+		}
+	})
+	if _, err := db.Exec(`CREATE TRIGGER fail_notice BEFORE INSERT ON messages WHEN NEW.sender='agent-net'
+		BEGIN SELECT RAISE(ABORT, 'disk full'); END`); err != nil {
+		t.Fatal(err)
+	}
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	pi, owner := helloPi(t, w.node, "owner", repo, true)
+	startThroughGateway(t, w, pi)
+	eventually(t, "the notice once the storage works", func() bool { return len(notStartedNotices(t, w, owner)) == 1 })
+	if n := reports.Load(); n != 3 {
+		t.Errorf("worker.not_started calls = %d, want 3 (two storage errors, one success)", n)
+	}
+	noOpenStarts(t, g)
 }

@@ -58,10 +58,13 @@ func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol
 	rec, n, noticed, first, err := g.store.declareNotStarted(nc.id, p.Ref, g.store.hostname(nc.id), full.Reason)
 	if err != nil {
 		var rj Rejection
-		if !errors.As(err, &rj) {
-			g.logLine("error", "where", "worker.not_started", "err", err)
+		if errors.As(err, &rj) {
+			return err
 		}
-		return err
+		// A storage error is the gateway's fault, not a refusal: the machine
+		// may report again, and the start is still open.
+		g.logLine("error", "where", "worker.not_started", "err", err)
+		return protocol.RetryableError{Err: err}
 	}
 	if rec.Ref == "" {
 		g.logLine("msg.refused", "node", nc.id, "where", "worker.not_started", "ref", p.Ref, "reason", "no such start on this node")
@@ -226,11 +229,15 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil {
 			return nil, reject("bad worker.queued_start")
 		}
+		// A reference must belong to this machine, this owner and this worker.
+		if err := g.store.verifyStart(nc.id, p.Ref, p.Owner, p.SessionID); err != nil {
+			return nil, err
+		}
 		if err := g.relayQueuedTask(ctx, nc, p); err != nil {
 			return nil, err
 		}
 		// The task was sent: the start is closed, and no one can say it never began.
-		if err := g.store.closeStart(nc.id, p.Ref); err != nil {
+		if err := g.store.closeStart(nc.id, p.Ref, p.SessionID); err != nil {
 			g.logLine("error", "where", "close start", "err", err)
 		}
 		g.store.Event("worker.started", nc.id, p.SessionID, "", strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "owner", p.Owner, "branch", p.Branch), " "))
@@ -728,6 +735,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue})
 	if err != nil {
+		g.abandon(pick.NodeID, startRef)
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			return none, reject("machine %s did not start the worker: %v", pick.Hostname, err)
@@ -735,11 +743,20 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("machine %s refused the worker: %v", pick.Hostname, err)
 	}
 	launched, err := decode[protocol.WorkerLaunched](raw)
+	if err == nil && launched.SessionID != "" {
+		if serr := g.store.startSession(pick.NodeID, startRef, launched.SessionID); serr != nil {
+			g.logLine("error", "where", "start session", "err", serr)
+		}
+	}
 	if err == nil && launched.SessionID != "" && !launched.Starting && !launched.Queued {
 		// A worker that is running when the machine answers has started.
-		if cerr := g.store.closeStart(pick.NodeID, startRef); cerr != nil {
+		if cerr := g.store.closeStart(pick.NodeID, startRef, launched.SessionID); cerr != nil {
 			g.logLine("error", "where", "close start", "err", cerr)
 		}
+	}
+	if err != nil || (launched.SessionID == "" && !launched.Queued) {
+		// Nothing began: the caller is told, and the start ends here.
+		g.abandon(pick.NodeID, startRef)
 	}
 	if err == nil && launched.Queued && launched.QueueID != "" {
 		g.store.Event("worker.queued", pick.NodeID, p.Owner, "",
@@ -1120,16 +1137,25 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Title: p.Title, Touches: p.Touches,
 		Assessment: old.Worker.Assessment})
 	if err != nil {
+		g.abandon(old.NodeID, startRef)
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			return none, reject("machine %s did not start the worker: %v", old.Hostname, err)
 		}
 		return none, reject("machine %s refused the worker: %v", old.Hostname, err)
 	}
 	c, err := decode[protocol.WorkerContinued](raw)
+	if err == nil && c.SessionID != "" {
+		if serr := g.store.startSession(old.NodeID, startRef, c.SessionID); serr != nil {
+			g.logLine("error", "where", "start session", "err", serr)
+		}
+	}
 	if err == nil && c.SessionID != "" && !c.Starting && !c.Queued {
-		if cerr := g.store.closeStart(old.NodeID, startRef); cerr != nil {
+		if cerr := g.store.closeStart(old.NodeID, startRef, c.SessionID); cerr != nil {
 			g.logLine("error", "where", "close start", "err", cerr)
 		}
+	}
+	if err != nil || (c.SessionID == "" && !c.Queued) {
+		g.abandon(old.NodeID, startRef)
 	}
 	var modelNote string
 	if err == nil {
@@ -1236,6 +1262,26 @@ func roomWord(l protocol.WorkerLoad) string {
 	return "room: " + l.Room
 }
 
+// defaultRelayWait is how long the gateway waits for the owner's machine to
+// send a task. It matches the 2 minutes the starting machine waits for the whole
+// call, so a slow owner does not stop a running worker.
+const defaultRelayWait = 2 * time.Minute
+
+// relayDeadline is the relay wait, overridden in tests.
+func (g *Gateway) relayDeadline() time.Duration {
+	if g.relayWait > 0 {
+		return g.relayWait
+	}
+	return defaultRelayWait
+}
+
+// abandon ends a start that will never be a worker and logs a storage error.
+func (g *Gateway) abandon(nodeID, ref string) {
+	if err := g.store.abandonStart(nodeID, ref); err != nil {
+		g.logLine("error", "where", "abandon start", "err", err)
+	}
+}
+
 // relayQueuedTask passes a queued start that has become a worker to the
 // machine of its owner, which sends the task. The sending machine must hold
 // the worker, and the worker must name that owner.
@@ -1257,7 +1303,7 @@ func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.
 	if target == nil {
 		return reject("the machine of the owner is offline")
 	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, g.relayDeadline())
 	defer cancel()
 	if _, err := target.call(cctx, "worker.task", p); err != nil {
 		return reject("the owner's machine did not send the task: %v", err)
@@ -1335,6 +1381,7 @@ func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView,
 			if len(validate) > 0 && validate[0] {
 				return nil, nil
 			}
+			g.abandon(t.id, p.Session)
 			g.store.Event("worker.queue_cancelled", t.id, p.Requester, "", "queue="+p.Session)
 			g.logLine("worker.queue_cancelled", "node", t.id, "queue", p.Session, "by", p.Requester)
 			return map[string]any{"stopped": true}, nil

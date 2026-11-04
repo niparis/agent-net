@@ -376,15 +376,160 @@ func TestPruneKeepsOpenStartsAndCountsFromClosing(t *testing.T) {
 	track("q_open")
 	track("q_slow") // began long ago, closed just now
 	track("q_old")  // closed long ago
-	if err := f.s.closeStart(f.nodeA, "q_old"); err != nil {
+	if err := f.s.closeStart(f.nodeA, "q_old", ""); err != nil {
 		t.Fatal(err)
 	}
 	f.clock.t = f.clock.t.Add(40 * 24 * time.Hour)
-	if err := f.s.closeStart(f.nodeA, "q_slow"); err != nil {
+	if err := f.s.closeStart(f.nodeA, "q_slow", ""); err != nil {
 		t.Fatal(err)
 	}
 	track("q_new") // the prune runs here
 	if !has("q_open") || !has("q_slow") || !has("q_new") || has("q_old") {
 		t.Errorf("after the prune: open=%v slow=%v new=%v old=%v", has("q_open"), has("q_slow"), has("q_new"), has("q_old"))
+	}
+}
+
+// The relay waits as long as the starting machine does (2 minutes), not the 30 s
+// it used to. The wait is injected here, so the test does not sleep for minutes:
+// an owner that answers within the wait succeeds, one that is slower fails.
+func TestRelayDeadlineMatchesTheStartersWait(t *testing.T) {
+	g := &Gateway{}
+	if d := g.relayDeadline(); d != 2*time.Minute {
+		t.Errorf("default relay wait = %v, want 2m", d)
+	}
+	g.relayWait = 700 * time.Millisecond
+	if g.relayDeadline() != 700*time.Millisecond {
+		t.Error("the relay wait cannot be injected")
+	}
+	var delay atomic.Int64
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			if h.Type == "worker.task" {
+				time.Sleep(time.Duration(delay.Load()))
+			}
+			return nil
+		}
+	})
+	f.g.relayWait = 700 * time.Millisecond
+	delay.Store(int64(300 * time.Millisecond)) // slower than a fast owner, within the wait
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "")); err != nil {
+		t.Errorf("a slow owner within the wait: %v", err)
+	}
+	delay.Store(int64(1500 * time.Millisecond))
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "")); err == nil {
+		t.Error("an owner slower than the wait succeeded")
+	}
+}
+
+// A reference closes only the start it belongs to: same machine, same owner,
+// same worker. A mismatched reference is refused before the task is relayed.
+func TestQueuedStartRefMustBelongToTheWorkerOwnerAndNode(t *testing.T) {
+	var sent atomic.Int32
+	f, worker := newRelayFixture(t, sendsTask(&sent))
+	open := func(ref string) bool {
+		var state string
+		f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref=?`, ref).Scan(&state)
+		return state == "open"
+	}
+	// Another owner's start, another machine's start, and a start that became
+	// another worker.
+	if err := f.s.trackWorkerStart("q_owner", f.nodeA, f.a, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.trackWorkerStart("q_node", f.nodeB, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.trackWorkerStart("q_session", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.startSession(f.nodeA, "q_session", "s_other_worker"); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"q_owner", "q_node", "q_session"} {
+		err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, ref))
+		if err == nil || !errors.As(err, new(Rejection)) {
+			t.Errorf("%s: a mismatched reference was accepted: %v", ref, err)
+		}
+		if !open(ref) {
+			t.Errorf("%s: a mismatched reference closed the start", ref)
+		}
+	}
+	if sent.Load() != 0 {
+		t.Errorf("the task was relayed %d times for a mismatched reference", sent.Load())
+	}
+	// The right reference, and a reference the gateway does not track (a start
+	// from before it tracked them), both go through.
+	if err := f.s.trackWorkerStart("q_ok", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"q_ok", "q_untracked"} {
+		if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, ref)); err != nil {
+			t.Errorf("%s: %v", ref, err)
+		}
+	}
+	if open("q_ok") {
+		t.Error("the matching start stayed open")
+	}
+}
+
+// A start the machine refused to launch, or that the owner cancelled, is ended
+// at once and needs no notice. A start already closed is not touched.
+func TestAbandonedStartsLeaveNothingOpen(t *testing.T) {
+	f := newStartsFixture(t)
+	for _, ref := range []string{"q_a", "q_b"} {
+		if err := f.s.trackWorkerStart(ref, f.nodeA, f.a, "shop", "codex", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, _ := f.s.OpenStarts(); n != 2 {
+		t.Fatalf("open starts: %d", n)
+	}
+	if err := f.s.closeStart(f.nodeA, "q_b", "s_x"); err != nil {
+		t.Fatal(err)
+	}
+	f.g.abandon(f.nodeB, "q_a") // another machine cannot end it
+	if n, _ := f.s.OpenStarts(); n != 1 {
+		t.Errorf("another machine's abandon changed the start: %d open", n)
+	}
+	f.g.abandon(f.nodeA, "q_a")
+	f.g.abandon(f.nodeA, "q_b")
+	if n, _ := f.s.OpenStarts(); n != 0 {
+		t.Errorf("%d starts still open", n)
+	}
+	var state string
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_b'`).Scan(&state)
+	if state != "closed" {
+		t.Errorf("a closed start became %q", state)
+	}
+	if ns := f.notices(t, f.a); len(ns) != 0 {
+		t.Errorf("an abandoned start made a notice: %q", ns[0].Body)
+	}
+}
+
+// A storage error on the report is marked as the gateway's own fault, on the
+// wire; a refusal is not.
+func TestNotStartedStorageErrorIsMarkedRetryable(t *testing.T) {
+	f := newStartsFixture(t)
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.a, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.db.Exec(`CREATE TRIGGER fail_notice BEFORE INSERT ON messages WHEN NEW.sender='agent-net'
+		BEGIN SELECT RAISE(ABORT, 'disk full'); END`); err != nil {
+		t.Fatal(err)
+	}
+	err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_1", Reason: "x"})
+	b, _ := protocol.EncodeResult("1", nil, err)
+	var h protocol.Header
+	json.Unmarshal(b, &h)
+	if err == nil || !h.Retry {
+		t.Errorf("storage error: err=%v frame=%s", err, b)
+	}
+	// A refusal (an unknown reference) is final.
+	err = f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_none", Reason: "x"})
+	b, _ = protocol.EncodeResult("2", nil, err)
+	h = protocol.Header{}
+	json.Unmarshal(b, &h)
+	if err == nil || h.Retry {
+		t.Errorf("refusal: err=%v frame=%s", err, b)
 	}
 }
