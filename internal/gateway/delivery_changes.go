@@ -922,7 +922,7 @@ func deliveryStatusNote(existing, status string) string {
 	return status
 }
 
-const deliveryMergeProofMinVersion = "0.4.130"
+const deliveryMergeProofMinVersion = "0.4.131"
 
 // Older daemons omit proof. Use the authenticated machine's hello version,
 // not a field supplied in the report. Dev builds support current checks.

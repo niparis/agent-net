@@ -1929,7 +1929,7 @@ when the reporter works elsewhere. Missing objects and failed git checks send
 merge evidence or changing the change's state. A positive proof still needs
 all required steps. The optional proof belongs to the reported head and merged
 commit. The gateway checks the head again when saving, so a concurrent revision
-cannot reuse the proof. A daemon at version 0.4.130 or newer must send proof;
+cannot reuse the proof. A daemon at version 0.4.131 or newer must send proof;
 the gateway refuses a merge pass without it. Older daemons that omit the field keep the existing
 behavior. Dev builds must also send proof. An older gateway ignores the new
 field. This does not block git itself.

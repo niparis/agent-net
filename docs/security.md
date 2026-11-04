@@ -448,7 +448,7 @@ A new daemon checks merge ancestry in the target repository before reporting a
 merge pass. It sends an optional `merge_contains_head` result for the exact
 reported head and merged commit. A negative result is refused by the gateway
 before evidence is stored. Missing commits, non-commit objects and failed git
-checks count as negative. Daemons from version 0.4.130 and dev builds must send
+checks count as negative. Daemons from version 0.4.131 and dev builds must send
 proof; the gateway reads their version from the authenticated machine's hello.
 A positive result cannot bypass required steps or a head change. Older daemons omit the proof and retain the existing checks.
 
