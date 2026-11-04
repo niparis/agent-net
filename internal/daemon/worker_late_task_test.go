@@ -23,14 +23,18 @@ func TestQueuedWorkerLateTaskAfterTimeout(t *testing.T) {
 			return nil, false, nil
 		}
 	})
-	starter := startWorkerNode(t, g, shortSet, func(c *Config) { c.Version = "v0.4.126"; c.testQueuedTaskTimeout = 500 * time.Millisecond })
+	starter := startWorkerNode(t, g, shortSet, func(c *Config) { c.testQueuedTaskTimeout = 500 * time.Millisecond })
 	repo := newRepo(t, "late")
 	starter.register(t, repo)
 	_, ownerID := helloPi(t, ownerNode.node, "caller", repo, true)
+	ref := protocol.NewID("q")
+	if err := g.gw.Store().TrackWorkerStart(ref, starter.cfg.NodeID, ownerID, "late", "opencode", ""); err != nil {
+		t.Fatal(err)
+	}
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		starter.d.startQueued(context.Background(), queuedStart{Owner: ownerID, Project: "late", Path: repo, Harness: "opencode", Model: "fake/m1", Task: "late task canary", Isolation: protocol.IsolationNone, QueuedAt: time.Now()})
+		starter.d.startQueued(context.Background(), queuedStart{ID: ref, Owner: ownerID, Project: "late", Path: repo, Harness: "opencode", Model: "fake/m1", Task: "late task canary", Isolation: protocol.IsolationNone, QueuedAt: time.Now()})
 	}()
 	var task protocol.MsgSend
 	select {
@@ -81,11 +85,15 @@ func TestQueuedWorkerLateTaskAfterTimeout(t *testing.T) {
 func TestQueuedWorkerTaskArrivesOnRunningWorker(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	ownerNode := startWorkerNode(t, g, shortSet, nil)
-	starter := startWorkerNode(t, g, shortSet, func(c *Config) { c.Version = "v0.4.126" })
+	starter := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "running")
 	starter.register(t, repo)
 	_, ownerID := helloPi(t, ownerNode.node, "caller", repo, true)
-	starter.d.startQueued(context.Background(), queuedStart{Owner: ownerID, Project: "running", Path: repo, Harness: "opencode", Model: "fake/m1", Task: "running task canary", Isolation: protocol.IsolationNone, QueuedAt: time.Now()})
+	ref := protocol.NewID("q")
+	if err := g.gw.Store().TrackWorkerStart(ref, starter.cfg.NodeID, ownerID, "running", "opencode", ""); err != nil {
+		t.Fatal(err)
+	}
+	starter.d.startQueued(context.Background(), queuedStart{ID: ref, Owner: ownerID, Project: "running", Path: repo, Harness: "opencode", Model: "fake/m1", Task: "running task canary", Isolation: protocol.IsolationNone, QueuedAt: time.Now()})
 	eventually(t, "running worker receives task", func() bool {
 		for _, m := range ownerNode.messagesOf(t, ownerID) {
 			if m.From == ownerID && m.Type == protocol.TypeRequest && strings.Contains(m.Body, "running task canary") {

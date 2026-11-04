@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -437,12 +438,6 @@ func TestQueuedStartRaceWithExpireStarts(t *testing.T) {
 		t.Errorf("ExpireStarts produced notices while start was starting: %v", notices)
 	}
 
-	// Also declareNotStarted directly while starting must not touch it.
-	_, _, noticed, _, _ := f.s.declareNotStarted(f.nodeA, "q_race", "nodeA", "concurrent report")
-	if noticed {
-		t.Errorf("declareNotStarted emitted notice while start was starting")
-	}
-
 	// Let relay finish.
 	close(resumeTask)
 	if err := <-done; err != nil {
@@ -574,5 +569,139 @@ func TestReopenStoreResetsStartingStarts(t *testing.T) {
 	s2.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_stuck'`).Scan(&state)
 	if state != "not_started" {
 		t.Fatalf("state after expire = %q, want not_started", state)
+	}
+}
+
+// Review item 1: block the relay, send worker.not_started with the same Ref, release a failing relay: state not_started, exactly one notice.
+func TestStartingStartReportNotStartedThenRelayFails(t *testing.T) {
+	inTask := make(chan struct{})
+	resumeTask := make(chan struct{})
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			if h.Type == "worker.task" {
+				close(inTask)
+				<-resumeTask
+				return errors.New("relay network failure")
+			}
+			return nil
+		}
+	})
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.s.trackWorkerStart("q_fail", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.startSession(f.nodeA, "q_fail", worker); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_fail"))
+	}()
+
+	// Wait until relay has started and claimed 'starting'.
+	<-inTask
+
+	// While relay is in-flight, daemon reports worker.not_started.
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{
+		Ref:     "q_fail",
+		Owner:   f.b,
+		Project: "shop",
+		Harness: "codex",
+		Reason:  "task send timed out",
+	}); err != nil {
+		t.Fatalf("worker.not_started failed while starting: %v", err)
+	}
+
+	// Release the failing relay.
+	close(resumeTask)
+	if err := <-done; err == nil {
+		t.Fatal("queued_start succeeded, want error")
+	}
+
+	// Verify state is not_started.
+	var state string
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_fail'`).Scan(&state)
+	if state != "not_started" {
+		t.Errorf("state after failing relay = %q, want not_started", state)
+	}
+
+	// Verify exactly one not-started notice was emitted.
+	ns := f.notices(t, f.b)
+	if len(ns) != 1 {
+		t.Fatalf("notices = %d, want exactly 1: %v", len(ns), ns)
+	}
+	if !strings.Contains(ns[0].Body, "status: not started") {
+		t.Errorf("notice body: %s", ns[0].Body)
+	}
+}
+
+// Review item 2: block the relay, send worker.not_started with the same Ref, release a relay that succeeds after the report: still exactly one notice in total and no started notice from the gateway side.
+func TestStartingStartReportNotStartedThenRelaySucceeds(t *testing.T) {
+	inTask := make(chan struct{})
+	resumeTask := make(chan struct{})
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			if h.Type == "worker.task" {
+				close(inTask)
+				<-resumeTask
+				return nil
+			}
+			return nil
+		}
+	})
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.s.trackWorkerStart("q_succ", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.startSession(f.nodeA, "q_succ", worker); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_succ"))
+	}()
+
+	// Wait until relay has started and claimed 'starting'.
+	<-inTask
+
+	// While relay is in-flight, daemon reports worker.not_started.
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{
+		Ref:     "q_succ",
+		Owner:   f.b,
+		Project: "shop",
+		Harness: "codex",
+		Reason:  "task send timed out",
+	}); err != nil {
+		t.Fatalf("worker.not_started failed while starting: %v", err)
+	}
+
+	// Release the succeeding relay.
+	close(resumeTask)
+	if err := <-done; err != nil {
+		t.Fatalf("queued_start failed: %v", err)
+	}
+
+	// Verify state is not_started (closeStart did not overwrite it to closed).
+	var state string
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_succ'`).Scan(&state)
+	if state != "not_started" {
+		t.Errorf("state after succeeding relay = %q, want not_started", state)
+	}
+
+	// Verify exactly one notice in total (the not-started notice) and no started notice from the gateway side.
+	ns := f.notices(t, f.b)
+	if len(ns) != 1 {
+		t.Fatalf("notices = %d, want exactly 1: %v", len(ns), ns)
+	}
+	if !strings.Contains(ns[0].Body, "status: not started") {
+		t.Errorf("notice body: %s", ns[0].Body)
 	}
 }

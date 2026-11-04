@@ -64,6 +64,11 @@ func daemonTracksBinding(version string) bool {
 	return daemonVersionGTE(version, workerStartBindingMinVersion)
 }
 
+// TrackWorkerStart records a start that the gateway handed to a machine.
+func (s *Store) TrackWorkerStart(ref, nodeID, owner, project, harness, permissions string) error {
+	return s.trackWorkerStart(ref, nodeID, owner, project, harness, permissions)
+}
+
 // trackWorkerStart records a start that the gateway handed to a machine.
 func (s *Store) trackWorkerStart(ref, nodeID, owner, project, harness, permissions string) error {
 	if ref == "" || nodeID == "" || owner == "" {
@@ -269,10 +274,8 @@ func (s *Store) declareNotStarted(nodeID, ref, host, reason string) (rec workerS
 		return rec, notice, false, false, nil
 	case "closed":
 		return rec, notice, false, false, reject("the worker of start %s is running, so it did start", ref)
-	case "starting":
-		return rec, notice, false, false, reject("the worker of start %s is currently starting", ref)
 	}
-	if _, err = tx.Exec(`UPDATE worker_starts SET state='not_started', closed_at=? WHERE (ref=? OR (legacy_ref=? AND legacy_ref<>'')) AND state='open'`, s.now().UnixNano(), ref, ref); err != nil {
+	if _, err = tx.Exec(`UPDATE worker_starts SET state='not_started', closed_at=? WHERE (ref=? OR (legacy_ref=? AND legacy_ref<>'')) AND state IN ('open', 'starting')`, s.now().UnixNano(), ref, ref); err != nil {
 		return
 	}
 	notice, noticed, err = s.notStartedNotice(tx, rec, host, reason)
