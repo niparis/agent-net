@@ -42,6 +42,106 @@ export const TOOL_CATALOG = [
     "method": "announce"
   },
   {
+    "name": "agent_change_submit",
+    "description": "Submit work done outside a worker as a change, so agent-net moves it through the project's delivery steps. A worker's complete hand-back submits its change by itself. A new head commit on the same change makes a new revision.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "description": "Branch that holds the work."
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+          "description": "Full hash of the branch head to submit. Default: the branch's current head."
+        },
+        "target_branch": {
+          "type": "string",
+          "description": "Branch to merge into. Default: the project's default branch."
+        },
+        "project": {
+          "type": "string",
+          "description": "Project name. Default: your project."
+        },
+        "change": {
+          "type": "string",
+          "description": "Change ID this work continues (a continue or a fix on a new branch)."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "One line on what the change does."
+        }
+      },
+      "required": [
+        "branch"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "change_submit"
+  },
+  {
+    "name": "agent_changes_find",
+    "description": "Find delivery changes: their revision, the step each is in, who owns it and the evidence so far. Give change to read one change in full with its revisions and evidence.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "change": {
+          "type": "string",
+          "description": "Change ID: read one change in full, with its revisions and evidence."
+        },
+        "project": {
+          "type": "string",
+          "description": "Project name."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "open",
+            "merged",
+            "done",
+            "stopped",
+            "any"
+          ],
+          "default": "active",
+          "description": "Filter by state. active is open or merged."
+        },
+        "caller": {
+          "type": "string",
+          "enum": [
+            "me",
+            "anyone"
+          ],
+          "default": "anyone",
+          "description": "Changes whose caller is you, or anyone's."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25,
+          "description": "Maximum rows in this page, from 1 to 100."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Cursor from the previous page."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "changes_find"
+  },
+  {
     "name": "agent_graph_read",
     "description": "Read the graph: nodes with their charters and rules, and the edges between them. Give node to read one node and its edges.",
     "inputSchema": {
@@ -847,6 +947,90 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "settings_read"
+  },
+  {
+    "name": "agent_step_report",
+    "description": "Report the result of a delivery step you own for one change: pass, fail with findings, needs_owner, or close without merge. Name the exact commit you checked; a report for any other commit is refused.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "change": {
+          "type": "string",
+          "description": "Change ID, from the step task."
+        },
+        "step": {
+          "type": "string",
+          "enum": [
+            "accept",
+            "review",
+            "test",
+            "approve",
+            "merge",
+            "release",
+            "deploy",
+            "verify"
+          ],
+          "description": "The step you report."
+        },
+        "for": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "deploy"
+          ],
+          "description": "approve only: what the approval is for."
+        },
+        "after_merge": {
+          "type": "boolean",
+          "default": false,
+          "description": "True for a step that runs on the merged commit."
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "needs_owner",
+            "close"
+          ],
+          "description": "pass, fail with findings, needs_owner, or close without merge."
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+          "description": "Full hash of the exact commit you checked: the change head, or the merged commit after merge."
+        },
+        "fields": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": "Evidence fields the step task asks for, for example {\"suite\":\"full\",\"tests_added\":\"yes\"}, {\"findings_open\":\"0\"} or {\"merged_commit\":\"\u003chash\u003e\"}."
+        },
+        "done_by": {
+          "type": "string",
+          "description": "Session ID of a worker you started that did the work. Default: you."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 8192,
+          "description": "Findings, the command run, or why the owner is needed."
+        }
+      },
+      "required": [
+        "change",
+        "step",
+        "result",
+        "commit"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "step_report"
   },
   {
     "name": "agent_worker_profiles_find",

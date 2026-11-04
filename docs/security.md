@@ -389,6 +389,15 @@ This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` r
 
 A critical repository should also have branch protection on its default branch: require a pull request, require review, and stop force-pushes. Branch protection is enforced by the repository host; agent-net's merge authority is not.
 
+### Delivery steps and evidence
+
+The delivery pipeline (decision [0056](decisions/0056-delivery-pipeline.md)) records each step's result as evidence. Only the contract is built so far: the tools `agent_change_submit`, `agent_step_report` and `agent_changes_find` check their arguments and answer "not built yet", and nothing is stored, routed or refused.
+
+- **Evidence names one exact commit.** A commit must be a full 40 or 64 character lowercase hash; a short hash or a ref name is refused. A report for a commit that is not the change's head (or, after merge, its merged commit), or for an older revision, is refused (`Pipeline.Accepts`). Evidence of an older revision does not count.
+- **The reporter cannot claim independence.** The `independent` field is set by agent-net from the reporter's session and model maker, compared with the change's author. A report that sets it is refused.
+- **Evidence is never a message.** Only an authenticated step report, an answered Inbox item or a GitHub result counts. A message body, a trust note or a CTO note does not.
+- **Limits on a report:** at most 16 fields; field names of lowercase letters, digits and `_`, at most 40; each value at most 200 bytes with no control characters; a note at most 8 KiB; a branch name at most 255 bytes; a change title at most 200 bytes.
+
 ## What a worker can do: the sandbox level
 
 A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers), but it is enforced only for Codex and Antigravity workers today. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude Code, OpenCode and Pi workers run with the owner's permissions. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`.
