@@ -26,7 +26,7 @@ func isUndeliveredNotice(m protocol.Message) bool {
 // needsReminderCheck tells whether a message is a reminder from agent-net,
 // which is only delivered while the request it is about is still open.
 func needsReminderCheck(m protocol.Message) bool {
-	return m.From == "agent-net" && !isWakeMessage(m) && !isUndeliveredNotice(m)
+	return m.From == "agent-net" && !isWakeMessage(m) && !isUndeliveredNotice(m) && !strings.HasPrefix(m.IdempotencyKey, "step_")
 }
 
 // undeliveredNotice stores one notice to the sender of m, which has reached a

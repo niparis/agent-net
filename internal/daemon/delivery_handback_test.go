@@ -203,7 +203,11 @@ func TestCompleteHandbackRecordsAChange(t *testing.T) {
 
 	// The worker ended after its hand-back. A continue makes a new branch;
 	// its hand-back moves the same change there as revision 2.
-	eventually(t, "the worker ended", func() bool { return c.d.workerCount() == 0 })
+	eventually(t, "the worker ended and the gateway knows", func() bool {
+		row, ok, err := c.d.st.workerBySession(res.SessionID)
+		agent, known, gatewayErr := g.gw.Store().Agent(res.SessionID)
+		return c.d.workerCount() == 0 && err == nil && ok && row.EndedReason != "" && gatewayErr == nil && known && !agent.Online
+	})
 	var next protocol.WorkerStartResult
 	if err := json.Unmarshal(caller.mustCall("worker_start", protocol.WorkerStartRequest{Continue: res.SessionID, Task: "FAKE:edit"}), &next); err != nil || next.SessionID == "" {
 		t.Fatalf("continue: %+v %v", next, err)

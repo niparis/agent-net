@@ -1126,6 +1126,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		g.dispatchStepTasks(ctx)
 		res := make([]map[string]string, 0, len(out))
 		for _, s := range out {
 			res = append(res, map[string]string{"native_id": s.NativeID, "harness": s.Harness, "session_id": s.SessionID})
@@ -1141,6 +1142,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		g.dispatchStepTasks(ctx)
 		return map[string]string{"session_id": id}, nil
 
 	case "session.remove":
@@ -1924,7 +1926,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	if data, ok, err := g.handleToolRead(nc, typ, raw); ok {
 		return data, err
 	}
-	if data, ok, err := g.handleDelivery(nc, typ, raw); ok {
+	if data, ok, err := g.handleDelivery(ctx, nc, typ, raw); ok {
 		return data, err
 	}
 	return nil, reject("unknown frame type %q", typ)

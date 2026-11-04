@@ -1,12 +1,11 @@
 package gateway
 
-// The delivery pipeline, build step 1 (decision 0057,
-// docs/design/delivery-pipeline.md): the gateway stores changes, their
-// revisions and the evidence of each step, and answers the change frames.
-// Nothing is routed or refused yet: no step task goes out, and nothing checks
-// the evidence before a merge.
+// The delivery pipeline (decision 0057, docs/design/delivery-pipeline.md):
+// the gateway stores changes, revisions and evidence, and routes ready steps
+// assigned to graph nodes. Evidence is not yet enforced at merge.
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -29,7 +28,7 @@ type deliveryQuerier interface {
 }
 
 // handleDelivery answers the delivery pipeline frames from a daemon.
-func (g *Gateway) handleDelivery(nc *nodeConn, typ string, raw []byte) (any, bool, error) {
+func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, bool, error) {
 	var (
 		data any
 		err  error
@@ -65,12 +64,15 @@ func (g *Gateway) handleDelivery(nc *nodeConn, typ string, raw []byte) (any, boo
 	if err != nil {
 		return nil, true, err
 	}
+	if typ == protocol.FrameChangeSubmit || typ == protocol.FrameStepReport {
+		g.dispatchStepTasks(ctx)
+	}
 	return data, true, nil
 }
 
-// deliveryPipeline is the pipeline of a project's changes until step owners
-// and recipes are stored (build steps 2 and 6): the part the project's three
-// delivery settings describe, then the steps after merge of the owner's way
+// deliveryPipeline is the pipeline of a project's changes until the settings
+// cutover and recipes are built: the part the project's three delivery
+// settings describe, then the steps after merge of the owner's way
 // (CI on the merged commit, release, verify). With the default settings it is
 // protocol.PipelineToday. A project with no graph node gets the network
 // values.
@@ -101,7 +103,25 @@ func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
 			}
 		}
 	}
+	for i := range p.Steps {
+		for _, e := range graph.Edges {
+			if e.To == repo && deliveryEdgeStep(e.Kind) == p.Steps[i].Step {
+				p.Steps[i].Owner = protocol.StepOwner{Kind: protocol.OwnerNode, Node: e.From}
+			}
+		}
+	}
 	return p, p.Validate()
+}
+
+// deliveryEdgeStep maps an assignment edge to the step it owns. deploys is
+// the existing deploy owner edge. The same owner handles both test phases.
+func deliveryEdgeStep(kind string) string {
+	return map[string]string{
+		"accepts": protocol.StepAccept, "reviews": protocol.StepReview,
+		"tests": protocol.StepTest, "approves": protocol.StepApprove,
+		"merges": protocol.StepMerge, "releases": protocol.StepRelease,
+		"deploys": protocol.StepDeploy, "verifies": protocol.StepVerify,
+	}[kind]
 }
 
 // deliverySession is what the delivery frames need of a session: its
@@ -288,6 +308,9 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		}
 		c = next
 	}
+	if err := queueNodeSteps(tx, c, p, now); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
@@ -356,6 +379,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := p.Accepts(c, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
+	if err := claimNodeStep(tx, c, p, q); err != nil {
+		return protocol.StepReportResult{}, err
+	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
@@ -380,6 +406,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		if err := writeChange(tx, next, false); err != nil {
 			return protocol.StepReportResult{}, err
 		}
+	}
+	if err := queueNodeSteps(tx, next, p, now); err != nil {
+		return protocol.StepReportResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return protocol.StepReportResult{}, err
@@ -505,6 +534,22 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		return protocol.ChangeView{}, err
 	}
 	v := protocol.ChangeView{Change: c, Steps: p.Status(c, evidence), Next: p.NextSteps(c, evidence)}
+	for i := range v.Steps {
+		st := &v.Steps[i]
+		if st.State != protocol.StepStateReady || st.Owner.Kind != protocol.OwnerNode {
+			continue
+		}
+		var online int
+		err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+			WHERE s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','bot','cto')
+			AND COALESCE(NULLIF(s.repo_project,''),p.project,'')=?)`, st.Owner.Node).Scan(&online)
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+		if online == 0 {
+			st.Note = "waiting for " + st.Owner.Node + " (offline)"
+		}
+	}
 	if !full {
 		return v, nil
 	}

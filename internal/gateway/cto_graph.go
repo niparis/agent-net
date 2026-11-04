@@ -43,6 +43,9 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 		}
 		typ, node, old, value = "node", q.Name, "architect", ""
 	case "edge_set", "edge_remove":
+		if deliveryEdgeStep(q.Kind) != "" {
+			return "rule", nil
+		}
 		typ, node, attr = "edge", q.From, q.Kind
 		b, _ := json.Marshal(protocol.Edge{From: q.From, To: q.To, Kind: q.Kind, Mode: q.Mode, Rule: q.Rule})
 		value = string(b)
@@ -85,6 +88,9 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 }
 
 func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, error) {
+	if typ == "edge" && deliveryEdgeStep(attr) != "" {
+		return "rule", nil
+	}
 	critical := func(name string) (bool, error) {
 		var maturity string
 		err := tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr='maturity'`, name).Scan(&maturity)

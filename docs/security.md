@@ -485,6 +485,12 @@ There is no `--die-with-parent`: a worker outlives a daemon restart. The daemon 
 
 Requests use rules on graph edges. `normal` uses the normal peer guidance, `auto` adds the trust note, `ask` holds the request for the owner, and `never` refuses it. The sender-specific edge takes precedence over the wildcard edge into the recipient node. The `t` key cycles the wildcard through `normal`, `ask` and `auto`.
 
+Delivery assignment edges do not set request permissions and cannot override
+those rules. The owner or an approved CTO proposal may change or undo a step
+owner edge, including `deploys`; a CTO graph owner window alone is not enough.
+A node-owned task can be reported only by an online non-worker session of
+that node. The first report claims the task in the evidence transaction.
+
 The risk of `auto` is that text relayed by a peer can steer a session without the owner seeing it first. The trust note follows the receiving node's merge authority; an `auto` edge does not approve merges on a `delegated` or `ask` node. It is guidance to the model, not a replacement for harness permission rules. It still asks for owner approval before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond the brief.
 
 Only the owner can change edge rules or answer a held request through the local operator interface. `edge_set`, `session_trust`, `held_list` and `held_answer` are behind the owner gate. The gateway trusts enrolled daemons, so a compromised enrolled machine can send these gateway frames. Remove a lost machine at the gateway.
@@ -519,11 +525,13 @@ The Inbox (tab 7) excludes worker sessions. The daemon refuses a worker's explic
 its learned-change classifier for wording, accepts, needs, consumers and normal
 depends edges. New architect nodes are minor. Restrictive or narrowing wording,
 refuses, escalate, maturity, deploy rules, request rules (`auto`, `ask`, `never`),
-governs and deploys edges, node removal, all node settings and every change on
+governs edges, node removal, all node settings and every change on
 or touching a critical node are major. Clearing a charter field or removing an accepts, needs or consumers item is
 major. Undo is classified by its reverse change.
 The gateway repeats the minor check in the mutation transaction before commit;
 a concurrent maturity or edge-rule change cannot bypass the check.
+Delivery owner edges, including `deploys`, are rules: changing or undoing them
+requires an owner-approved proposal even during the window.
 
 Major graph changes need a proposal unless the owner opened the 30-minute
 "I'm driving" window with `w` on the focused CTO box. The owner gate and the

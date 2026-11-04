@@ -169,7 +169,6 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 		{"charter_set", `{"node":"first","attr":"maturity","value":"mature"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"auto"}`},
 		{"edge_set", `{"from":"first","to":"component","kind":"governs","mode":"owner"}`},
-		{"edge_set", `{"from":"first","to":"second","kind":"deploys"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"ask"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"never"}`},
 		{"edge_remove", `{"from":"first","to":"second","kind":"depends"}`},
@@ -290,6 +289,9 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 }
 
 func TestCTOGraphWindowStillProposesMovedNodeRule(t *testing.T) {
+	if !strings.Contains(ctoBrief, "Delivery owner edges, including deploys, always need an approved proposal") {
+		t.Fatal("CTO brief does not explain delivery owner approval")
+	}
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
@@ -304,5 +306,18 @@ func TestCTOGraphWindowStillProposesMovedNodeRule(t *testing.T) {
 	}
 	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
 		t.Fatalf("rule bypassed proposal: %v", got)
+	}
+	if _, err := g.gw.Store().UpsertSession(n.d.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "component", Repo: protocol.RepoInfo{Project: "component", Root: "/work/component"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"deploys", "merges"} {
+		args := `{"from":"alpha","to":"component","kind":"` + kind + `"}`
+		got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("edge_set", args))
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
+			t.Fatalf("%s owner bypassed proposal: %v", kind, got)
+		}
 	}
 }

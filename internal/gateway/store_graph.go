@@ -479,6 +479,9 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		if err = json.Unmarshal([]byte(data), &e); err != nil {
 			return err
 		}
+		if deliveryEdgeStep(e.Kind) != "" && !actorAllowed(actor, "rule") {
+			return reject("only the owner may change delivery step owners")
+		}
 		var current protocol.Edge
 		current.From, current.To, current.Kind = e.From, e.To, e.Kind
 		err = tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind).Scan(&current.Mode, &current.Rule)
@@ -497,6 +500,15 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		} else {
 			if err = json.Unmarshal([]byte(old), &e); err != nil {
 				return err
+			}
+			if deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys" {
+				var count int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE target=? AND kind=? AND source<>?`, e.To, e.Kind, e.From).Scan(&count); err != nil {
+					return err
+				}
+				if count != 0 {
+					return reject("%s already has an owner for %s", e.To, deliveryEdgeStep(e.Kind))
+				}
 			}
 			if e.From != "*" {
 				if _, err = graphKind(tx, e.From); err != nil {
@@ -590,10 +602,14 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" && e.Rule != "never" {
 		return reject("invalid edge rule")
 	}
-	if e.Kind != "depends" && e.Kind != "governs" && e.Kind != "deploys" {
+	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
+	if e.Kind != "depends" && e.Kind != "governs" && e.Kind != "deploys" && !deliveryEdge {
 		return reject("invalid edge kind")
 	}
-	if (e.Kind == "depends" || e.Kind == "deploys") && e.Mode != "" {
+	if deliveryEdgeStep(e.Kind) != "" && !actorAllowed(actor, "rule") {
+		return reject("only the owner may change delivery step owners")
+	}
+	if (e.Kind == "depends" || e.Kind == "deploys" || deliveryEdge) && e.Mode != "" {
 		return reject("this edge kind has no mode")
 	}
 	if e.Kind == "governs" && e.Mode != "advisor" && e.Mode != "arbiter" && e.Mode != "owner" {
@@ -615,6 +631,18 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	}
 	if e.Kind == "governs" && (from != "architect" || to != "component") {
 		return reject("governs requires architect to component")
+	}
+	if deliveryEdge {
+		if to != "component" || (from != "component" && from != "architect") {
+			return reject("delivery owner requires a component or architect to a component")
+		}
+		var count int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE target=? AND kind=? AND source<>?`, e.To, e.Kind, e.From).Scan(&count); err != nil {
+			return err
+		}
+		if count != 0 {
+			return reject("%s already has an owner for %s", e.To, deliveryEdgeStep(e.Kind))
+		}
 	}
 	var old protocol.Edge
 	old.From = e.From
@@ -643,6 +671,9 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 
 // RemoveEdge deletes an edge and records its previous value.
 func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) error {
+	if deliveryEdgeStep(e.Kind) != "" && !actorAllowed(actor, "rule") {
+		return reject("only the owner may change delivery step owners")
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err

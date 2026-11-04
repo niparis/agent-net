@@ -685,6 +685,20 @@ CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_update BEFORE UPDATE ON delive
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_delete BEFORE DELETE ON delivery_evidence
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
+`, `
+-- A node-owned step survives the owner's sessions going offline. The owner
+-- and the revision are captured when the step becomes ready.
+CREATE TABLE IF NOT EXISTS delivery_step_tasks (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0,
+ owner_node TEXT NOT NULL, claimed_by TEXT NOT NULL DEFAULT '',
+ completed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge));
+CREATE TABLE IF NOT EXISTS delivery_step_messages (
+ change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL,
+ for_step TEXT NOT NULL, after_merge INTEGER NOT NULL, session_id TEXT NOT NULL,
+ message_id TEXT NOT NULL,
+ PRIMARY KEY(change_id, revision, step, for_step, after_merge, session_id));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -2207,6 +2221,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
 			WHERE e.target=CASE WHEN dst.harness='cto' THEN ? ELSE COALESCE(NULLIF(dst.repo_project,''),dp.project,'') END
 			AND e.target<>'' AND (e.source=CASE WHEN src.harness='cto' THEN ? ELSE COALESCE(NULLIF(src.repo_project,''),sp.project,'') END OR e.source='*')
+			AND e.kind IN ('depends','governs','deploys')
 			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To, protocol.CTONodeName, protocol.CTONodeName).Scan(&rule)
 		if err != nil && err != sql.ErrNoRows {
 			return msg, false, err

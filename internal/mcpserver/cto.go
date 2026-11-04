@@ -44,7 +44,7 @@ var ctoCharterAttrs = func() []string {
 	return attrs
 }()
 
-var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
+var ctoEdgeKinds = []string{"depends", "governs", "deploys", "accepts", "reviews", "tests", "approves", "merges", "releases", "verifies"}
 
 func settingsChangesField() ctoField {
 	return ctoField{typ: "array", desc: "Setting changes with key, level, scope, value or delete, and expect.", items: map[string]any{"type": "object", "additionalProperties": false, "required": []string{"key", "level", "scope"}, "properties": map[string]any{"key": map[string]any{"type": "string"}, "level": map[string]any{"type": "string"}, "scope": map[string]any{"type": "string"}, "value": map[string]any{}, "delete": map[string]any{"type": "boolean"}, "expect": map[string]any{}}}}
@@ -85,7 +85,7 @@ var ctoTools = map[string]ctoToolDef{
 			"name":    {typ: "string", desc: "Node name."},
 			"from":    {typ: "string", desc: "Source."},
 			"to":      {typ: "string", desc: "Target."},
-			"kind":    {typ: "string", desc: "Consumer to provider, architect to component, deployer to app.", enum: ctoEdgeKinds},
+			"kind":    {typ: "string", desc: "Dependency, governance or delivery owner edge.", enum: ctoEdgeKinds},
 			"mode":    {typ: "string", desc: "Advise, arbitrate, decide.", enum: []string{"advisor", "arbiter", "owner"}},
 			"rule":    {typ: "string", desc: "Deliver, own, hold, refuse.", enum: []string{"normal", "auto", "ask", "never"}},
 			"id":      {typ: "integer", desc: "History ID; omit for latest."},

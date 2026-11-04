@@ -1,7 +1,7 @@
 # Delivery pipeline: steps done by nodes
 
 **Date:** 2026-11-04
-**Status:** Build step 1 is live in v0.4.123. Step 2 is not yet complete: the Delivery detail shows step owners and states, but owner configuration and routing are not built. Checked against the code on 2026-11-04: see [Checked against the code](#checked-against-the-code).
+**Status:** Build step 1 is live in v0.4.123. Step 2 is not yet complete: node-owned tasks have an initial queue and session delivery, but the pipeline setting, shorthand cutover and the full owner controls are not built. Checked against the code on 2026-11-04: see [Checked against the code](#checked-against-the-code).
 **Context:** [modularity.md](modularity.md) (objective, recipes, the "merge gate" gap), [settings-layer.md](settings-layer.md) (settings, levels, rules and advice).
 
 ## The problem
