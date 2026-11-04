@@ -371,3 +371,36 @@ func TestSSHHelpers(t *testing.T) {
 }
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
+
+func TestEnterClaudeExitedBackgroundRefusesAttach(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "claude")
+	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "bg", job: "abcd1234"}
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{ea} }})
+	native := "abcd1234-0000-4000-8000-000000000000"
+	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: native, PID: os.Getpid(), Cwd: t.TempDir(), Status: "exited", Mode: protocol.ModeBackground})
+	var id string
+	eventually(t, "session id", func() bool {
+		if s := n.d.Sessions(); len(s) == 1 {
+			id = s[0].SessionID
+		}
+		return id != ""
+	})
+	f := newFakeHerdr(t)
+	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
+	f.holds(t, "w1:pB", os.Getpid())
+	for _, q := range []protocol.EnterRequest{{SessionID: id}, inHerdrEnter(protocol.EnterRequest{SessionID: id}, f.sock), {SessionID: id, HerdrClient: true}} {
+		for range 2 {
+			p, err := n.d.localEnter(context.Background(), q, q.HerdrClient)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(p.Argv) != 0 || p.OpenedHerdr || !strings.Contains(p.Note, "claude --resume "+native) {
+				t.Fatalf("unsafe exit plan: %+v", p)
+			}
+		}
+	}
+	if calls := f.calls(t); calls != "" {
+		t.Fatalf("exited session opened herdr: %s", calls)
+	}
+}
