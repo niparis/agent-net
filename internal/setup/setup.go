@@ -25,6 +25,7 @@ import (
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tsnode"
 )
 
 // GatewayPort is the port the gateway service listens on.
@@ -40,19 +41,27 @@ type Options struct {
 	Purge        bool          // uninstall only: also remove credentials and state
 	Data         string        // gateway data dir
 	FunnelRunner funnel.Runner // optional Tailscale runner
-	Dist         string        // gateway dist dir
-	Port         string        // gateway port (default 7420)
-	Exe          string        // path of the agent-net binary; default: this binary
-	All          string        // "" ask; AllYes or AllNo answer every integration without a prompt
-	PeerMessages string        // "" leave to All/network; PeerMessagesAccept or PeerMessagesNo is a local answer
-	CodexTools   string        // "" leave; CodexToolsApprove or CodexToolsNo is a local answer
-	HintHook     string        // "" leave; HintHookYes or HintHookNo is a local answer
-	PolicyHook   string        // "" leave; PolicyHookYes or PolicyHookNo is a local answer
-	NeedsHook    string        // "" leave; NeedsHookYes or NeedsHookNo is a local answer
-	WorkersMod   string        // "" leave; WorkersModYes or WorkersModNo is a local answer
-	QuotaOnly    bool          // run only the quota setup step
-	QuotaAXI     string        // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
-	Out          io.Writer
+	// TailscaleName gives connected apps agent-net's own Tailscale node with
+	// this name (decision 0058). TailscaleAuthKeyFile is an optional path to
+	// a file with an auth key. TailscaleMachine goes back to the machine's
+	// node. Empty and false keep the saved choice.
+	TailscaleName        string
+	TailscaleAuthKeyFile string
+	TailscaleMachine     bool
+	TailscaleNode        tsnode.Opener // optional; tests use a fake node
+	Dist                 string        // gateway dist dir
+	Port                 string        // gateway port (default 7420)
+	Exe                  string        // path of the agent-net binary; default: this binary
+	All                  string        // "" ask; AllYes or AllNo answer every integration without a prompt
+	PeerMessages         string        // "" leave to All/network; PeerMessagesAccept or PeerMessagesNo is a local answer
+	CodexTools           string        // "" leave; CodexToolsApprove or CodexToolsNo is a local answer
+	HintHook             string        // "" leave; HintHookYes or HintHookNo is a local answer
+	PolicyHook           string        // "" leave; PolicyHookYes or PolicyHookNo is a local answer
+	NeedsHook            string        // "" leave; NeedsHookYes or NeedsHookNo is a local answer
+	WorkersMod           string        // "" leave; WorkersModYes or WorkersModNo is a local answer
+	QuotaOnly            bool          // run only the quota setup step
+	QuotaAXI             string        // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
+	Out                  io.Writer
 }
 
 // DefaultDist is where the gateway serves binaries from.
@@ -237,6 +246,8 @@ func (r *runner) setupGateway(ctx context.Context) {
 			}
 		}
 	}
+	// Before the gateway (re)starts, so the new gateway reads the choice.
+	r.setTailscaleChoice()
 	if r.NoService {
 		r.step("gateway service", "skipped (no service)", nil)
 	} else {
@@ -249,6 +260,19 @@ func (r *runner) setupGateway(ctx context.Context) {
 	}
 	res, err := r.syncDist(dist)
 	r.step("gateway binaries", res, err)
+}
+
+// setTailscaleChoice saves or removes the own-node choice in the gateway data
+// folder. The gateway reads it at start; without a flag the saved choice stays.
+func (r *runner) setTailscaleChoice() {
+	data := r.gatewayData()
+	switch {
+	case r.TailscaleMachine:
+		r.step("Tailscale name", "ok (the machine's own node)", tsnode.RemoveChoice(data))
+	case r.TailscaleName != "":
+		c := tsnode.Choice{Name: r.TailscaleName, AuthKeyFile: r.TailscaleAuthKeyFile}
+		r.step("Tailscale name", "ok ("+c.Name+": connected apps use agent-net's own node)", tsnode.SaveChoice(data, c))
+	}
 }
 
 // syncDist makes sure the dist dir has this binary for its own platform.

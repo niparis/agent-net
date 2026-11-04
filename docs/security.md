@@ -1207,6 +1207,28 @@ concurrent requests, app calls, and MCP sessions. An app may hold ten sessions;
 the listener permits 200 in total and closes idle sessions after ten minutes.
 Revoking an app closes its sessions.
 
+**Its own Tailscale node.** With `agent-net setup --gateway
+--apps-tailscale-name NAME` ([decision 0058](decisions/0058-own-tailscale-name.md)),
+the gateway runs its own Tailscale node in its process (tsnet) and serves the
+connected-apps handler on that node's Funnel listener, port 443 only. The
+listener takes only Funnel connections, not tailnet ones. The remote address of
+each request is the internet client that Funnel reports; X-Forwarded-For from
+that listener is ignored, as from any peer that is not loopback. The phone
+cookie and the MCP URL are then on a name that no other service shares. The
+same body, time, request and session limits apply. The node's state folder,
+`tailscale/` in the gateway data folder, holds the node's private keys: it is
+mode 0700, inside the data folder you back up, and nothing prints it. An auth
+key comes only from a file path (`--apps-tailscale-authkey-file`) or the
+`TS_AUTHKEY` environment variable. Setup saves only the path. The gateway reads
+the key only for the first login, and errors name the file, never the key.
+Without a key, the login link appears only in the owner's TUI. Whoever opens it
+first chooses the tailnet the node joins, so do not share it.
+Anyone who can read the state folder can act as that node in your tailnet. It
+is a normal tailnet machine, so limit what it may reach with your tailnet
+policy, for example with a tag. tsnet sends its logs to Tailscale's log
+service, as tailscaled does. Uninstall logs the node out and deletes the folder,
+only when it has agent-net's marker.
+
 Each OAuth sign-in requires a fresh code approved by the owner. Unapproved
 registrations expire after one hour and are limited to five per source per
 hour and 200 total. Pending sign-ins expire after ten minutes and are limited

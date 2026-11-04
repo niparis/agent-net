@@ -166,6 +166,18 @@ if ((check_only)); then
   exit 0
 fi
 
+# Tests must write under t.TempDir(). Note the untracked files before the run,
+# so a file a test leaves in the source tree fails the run instead of landing
+# in a commit.
+untracked_files() {
+  git ls-files --others --exclude-standard | LC_ALL=C sort
+}
+in_git=0
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  in_git=1
+  untracked_files >"$work/untracked-before"
+fi
+
 job_count=0
 job_pids=()
 job_labels=()
@@ -240,5 +252,15 @@ for ((job_id=0; job_id<job_count; job_id++)); do
     cat "$work/output-$job_id"
   fi
 done
+
+if ((in_git)); then
+  untracked_files >"$work/untracked-after"
+  LC_ALL=C comm -13 "$work/untracked-before" "$work/untracked-after" >"$work/untracked-new"
+  if [[ -s $work/untracked-new ]]; then
+    failed=1
+    echo "scripts/test.sh: tests left new files in the source tree; write them under t.TempDir():" >&2
+    cat "$work/untracked-new" >&2
+  fi
+fi
 
 exit "$failed"

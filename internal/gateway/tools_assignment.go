@@ -233,8 +233,11 @@ func (s *Store) toolSnapshot(tx *sql.Tx, item string) (string, error) {
 						}
 					}
 					report.Items = filtered
-				} else if report.Items == nil {
-					report.Items = []protocol.InventoryItem{}
+				}
+				// A report with no items is stored as null or as an empty
+				// list, depending on the scan. Both mean the same.
+				if len(report.Items) == 0 {
+					report.Items = nil
 				}
 				report.ScannedAt = time.Time{}
 				for i := range report.Items {

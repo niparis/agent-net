@@ -685,4 +685,7 @@ type AppsPublicStatus struct {
 	URL   string `json:"url"`
 	Port  int    `json:"port"`
 	Error string `json:"error"`
+	// Node is the Tailscale name of agent-net's own node when the Funnel
+	// runs there (decision 0058). Empty for the machine's node or a tunnel.
+	Node string `json:"node,omitempty"`
 }

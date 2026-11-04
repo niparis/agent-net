@@ -15,7 +15,7 @@ The tests that hold these rules are in `internal/daemon/enter_herdr_test.go`. Ru
 
 ## Build and test
 
-Go 1.27 or newer. If `go` is not on your `PATH`, add it first.
+Go 1.27.3 or newer. If `go` is not on your `PATH`, add it first.
 
 ```
 go build -o agent-net ./cmd/agent-net

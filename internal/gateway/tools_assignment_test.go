@@ -172,6 +172,44 @@ func TestToolPlanRejectsChangedObservation(t *testing.T) {
 	}
 }
 
+// A machine with no items is stored as null after one scan and as an empty
+// list after the next. Both mean "nothing here": the snapshot must not change,
+// or a plan made between the two scans is refused as out of date.
+func TestToolSnapshotTreatsNoItemsTheSame(t *testing.T) {
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	item := protocol.InventoryItem{Kind: "skill", Name: "sample", Hash: "abc", State: "ok", Location: "/fixture"}
+	if err = s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetInventory("other", protocol.InventoryReport{State: "ok", Items: nil}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","sample","abc"]`
+	for _, scope := range []string{id, ""} {
+		before, err := s.ToolSnapshot(scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.SetInventory("other", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{}}); err != nil {
+			t.Fatal(err)
+		}
+		after, err := s.ToolSnapshot(scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before != after {
+			t.Fatalf("snapshot for %q changed when an empty item list went from null to []", scope)
+		}
+		if err = s.SetInventory("other", protocol.InventoryReport{State: "ok", Items: nil}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestToolItemsShowDesiredAndPending(t *testing.T) {
 	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
