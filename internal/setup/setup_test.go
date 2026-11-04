@@ -704,3 +704,49 @@ func TestUninstallPiBothLayouts(t *testing.T) {
 		}
 	}
 }
+
+func TestUninstallRemovesPiExtensionDirectoryOnlyWhenEmpty(t *testing.T) {
+	tests := []struct {
+		name       string
+		foreign    bool
+		wantOutput string
+	}{
+		{name: "empty directory", wantOutput: "pi extension directory removed"},
+		{name: "foreign file", foreign: true, wantOutput: "pi extension directory kept (not empty)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			extDir := filepath.Join(f.home, ".pi", "agent", "extensions", "agent-net")
+			if err := os.MkdirAll(extDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(extDir, "index.ts"), pi.Extension, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			foreign := filepath.Join(extDir, "my-extension.ts")
+			if tt.foreign {
+				if err := os.WriteFile(foreign, []byte("// my extension\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var out bytes.Buffer
+			r := &runner{Options: Options{Out: &out}}
+			r.removePiExtension()
+			if !strings.Contains(norm(out.String()), tt.wantOutput) {
+				t.Errorf("output does not contain %q:\n%s", tt.wantOutput, norm(out.String()))
+			}
+			if tt.foreign {
+				if _, err := os.Stat(foreign); err != nil {
+					t.Errorf("foreign file was removed: %v", err)
+				}
+				if _, err := os.Stat(extDir); err != nil {
+					t.Errorf("directory with foreign file was removed: %v", err)
+				}
+			} else if _, err := os.Stat(extDir); !os.IsNotExist(err) {
+				t.Errorf("empty extension directory remains: %v", err)
+			}
+		})
+	}
+}

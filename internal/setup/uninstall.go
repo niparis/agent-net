@@ -174,6 +174,7 @@ func (r *runner) removePiExtension() {
 	case st.Mode()&os.ModeSymlink != 0:
 		if !agentfiles.SymlinkTargetIsAgentNet(path) {
 			r.step("pi extension", "skipped (symlink, left as is)", nil)
+			removePiExtensionDir(r, path)
 			return
 		}
 		if err := os.Remove(path); err != nil {
@@ -187,6 +188,25 @@ func (r *runner) removePiExtension() {
 			return
 		}
 		r.step("pi extension", "ok (removed)", nil)
+	}
+	removePiExtensionDir(r, path)
+}
+
+func removePiExtensionDir(r *runner, path string) {
+	dir := filepath.Dir(path)
+	err := os.Remove(dir)
+	switch {
+	case err == nil:
+		r.step("pi extension directory", "removed", nil)
+	case errors.Is(err, os.ErrNotExist):
+		return
+	default:
+		entries, readErr := os.ReadDir(dir)
+		if readErr == nil && len(entries) > 0 {
+			r.step("pi extension directory", "kept (not empty)", nil)
+			return
+		}
+		r.step("pi extension directory", "", fmt.Errorf("remove directory: %w", err))
 	}
 }
 
