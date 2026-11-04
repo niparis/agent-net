@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
-func keyRunes(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+func keyRunes(s string) tea.KeyPressMsg { return tea.KeyPressMsg{Text: s, Code: []rune(s)[0]} }
 
 // typeText types s into the open prompt, one key at a time.
 func typeName(m Model, s string) Model {
@@ -30,24 +30,24 @@ func TestRenameKeySavesTheMachineName(t *testing.T) {
 	if got := m.rename.Value(); got == "" {
 		t.Fatal("the prompt is empty: it must start with the current name")
 	}
-	foot := lines(m.View())
+	foot := lines(m.testView())
 	if !strings.Contains(foot[len(foot)-1], "enter saves, empty resets, esc cancels") {
 		t.Errorf("prompt line: %q", foot[len(foot)-1])
 	}
 	// esc cancels without a call.
-	if mm, _ := press(m, tea.KeyMsg{Type: tea.KeyEsc}); mm.mode != modeNormal || len(src.renames) != 0 {
+	if mm, _ := press(m, tea.KeyPressMsg{Code: tea.KeyEsc}); mm.mode != modeNormal || len(src.renames) != 0 {
 		t.Fatalf("esc: %v %v", mm.mode, src.renames)
 	}
 	// A bad name keeps the prompt open and calls nothing.
 	m.rename.SetValue("")
 	m = typeName(m, "bad name!")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeRename || cmd != nil || len(src.renames) != 0 || !m.notice.err {
 		t.Fatalf("bad name: mode %v renames %v notice %+v", m.mode, src.renames, m.notice)
 	}
 	m.rename.SetValue("")
 	m = typeName(m, "laptop-1")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeNormal {
 		t.Fatalf("enter must close the prompt: %v", m.mode)
 	}
@@ -75,7 +75,7 @@ func TestRenameWithEmptyNameResetsAndUnchangedDoesNothing(t *testing.T) {
 		t.Fatalf("prefill: %q", m.rename.Value())
 	}
 	m.rename.SetValue("")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = finish(t, m, cmd)
 	if len(src.renames) != 1 || src.renames[0] != (renameCall{a.NodeID, ""}) {
 		t.Fatalf("reset: %v", src.renames)
@@ -88,7 +88,7 @@ func TestRenameWithEmptyNameResetsAndUnchangedDoesNothing(t *testing.T) {
 	m = refresh(m, src)
 	m, _ = openSessionSetting(m, 3)
 	m.rename.SetValue(m.renameShown)
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil || m.mode != modeNormal || len(src.renames) != 1 {
 		t.Fatalf("unchanged: %v %v", cmd != nil, src.renames)
 	}
@@ -100,7 +100,7 @@ func TestRenameErrorAndHelp(t *testing.T) {
 	m = selectID(m, "s_0000000000000001")
 	m, _ = openSessionSetting(m, 3)
 	m.rename.SetValue("laptop-1")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = send(m, cmd())
 	if !m.notice.err || !strings.Contains(m.notice.text, "already called") {
 		t.Errorf("notice: %+v", m.notice)

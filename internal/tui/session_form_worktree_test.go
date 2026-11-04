@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -14,7 +14,7 @@ import (
 
 func openSessionFolder(m Model) (Model, tea.Cmd) {
 	m, _ = press(m, sessionKey())
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyUp}) // First message -> Folder
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyUp}) // First message -> Folder
 	return m, nil
 }
 
@@ -25,22 +25,22 @@ func TestNewSessionFolderSwitchChangesTheStartPlan(t *testing.T) {
 	if m.sform.folder != protocol.FolderProject {
 		t.Fatalf("folder %q, want the project folder", m.sform.folder)
 	}
-	if v := m.View(); strings.Contains(v, "Branch") {
+	if v := m.testView(); strings.Contains(v, "Branch") {
 		t.Fatalf("the project-folder form shows a branch line:\n%s", v)
 	}
 
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyUp}) // First message -> Folder
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyUp}) // First message -> Folder
 	if m.sform.cur != sFolder {
 		t.Fatalf("focus %v, want Folder", m.sform.cur)
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.sform.folder != protocol.FolderWorktree {
 		t.Fatalf("right did not switch to a worktree: %q", m.sform.folder)
 	}
 	if got := m.sform.value(sBranch); got != "agent-net/strategies-1" {
 		t.Fatalf("branch %q, want the lowest free number", got)
 	}
-	view := m.View()
+	view := m.testView()
 	for _, want := range []string{"new worktree", "Branch", "agent-net/strategies-1", "from HEAD"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the worktree form does not show %q:\n%s", want, view)
@@ -50,9 +50,9 @@ func TestNewSessionFolderSwitchChangesTheStartPlan(t *testing.T) {
 		t.Errorf("the worktree form does not say what the branch starts from:\n%s", view)
 	}
 
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // Folder -> Branch
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // Branch -> First message
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // Folder -> Branch
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // Branch -> First message
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -69,7 +69,7 @@ func TestNewSessionProjectFolderPlanHasNoBranch(t *testing.T) {
 	m, src := workerModel(120, 34)
 	m = selectID(m, "s_0000000000000002")
 	m, _ = press(m, sessionKey())
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -92,7 +92,7 @@ func TestNewSessionBusyFolderDefaultsToWorktree(t *testing.T) {
 	if got := m.sform.value(sBranch); got != "agent-net/tenebrae-1" {
 		t.Fatalf("branch %q", got)
 	}
-	view := m.View()
+	view := m.testView()
 	for _, want := range []string{"new worktree", "tenebrae is busy in the project folder", "from main (HEAD)", "agent-net/tenebrae-1"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the busy form does not show %q:\n%s", want, view)
@@ -101,20 +101,20 @@ func TestNewSessionBusyFolderDefaultsToWorktree(t *testing.T) {
 
 	// Left on the focused Folder sets it back to the project folder, and the
 	// plan follows. Left elsewhere in the form does not change the folder.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyUp}) // First message -> Branch
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyUp}) // Branch -> Folder
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyUp}) // First message -> Branch
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyUp}) // Branch -> Folder
 	if m.sform.cur != sFolder {
 		t.Fatalf("focus %v, want Folder", m.sform.cur)
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyLeft})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.sform.folder != protocol.FolderProject {
 		t.Fatalf("left did not return to the project folder: %q", m.sform.folder)
 	}
-	if v := m.View(); strings.Contains(v, "agent-net/tenebrae-1") {
+	if v := m.testView(); strings.Contains(v, "agent-net/tenebrae-1") {
 		t.Errorf("the project-folder form still shows the branch line:\n%s", v)
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // Folder -> First message
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // Folder -> First message
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -154,13 +154,13 @@ func TestNewSessionWorktreeGoldens(t *testing.T) {
 		m, _ := workerModel(size.w, size.h)
 		m = selectID(m, "s_0000000000000001")
 		m, _ = press(m, sessionKey())
-		golden(t, name("new_session_worktree"), m.View())
+		golden(t, name("new_session_worktree"), m.testView())
 
 		// Strategies is idle in a linked worktree: the project folder is free,
 		// so the switch stays on it and there is no branch line.
 		m, _ = workerModel(size.w, size.h)
 		m = selectID(m, "s_0000000000000002")
 		m, _ = press(m, sessionKey())
-		golden(t, name("new_session_folder"), m.View())
+		golden(t, name("new_session_folder"), m.testView())
 	}
 }

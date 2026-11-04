@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -78,11 +78,11 @@ func TestApprovedGraphKeys(t *testing.T) {
 
 func TestApprovedRefreshKeys(t *testing.T) {
 	m := newModel(120, 34)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	_, cmd := m.Update(tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
 	if cmd == nil {
 		t.Fatal("R did not refresh Sessions")
 	}
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd = m.Update(tea.KeyPressMsg{Text: "r", Code: []rune("r")[0]})
 	if cmd != nil {
 		t.Fatal("r still refreshes Sessions")
 	}
@@ -135,7 +135,7 @@ func TestApprovedSessionsAndHeldKeys(t *testing.T) {
 	n := New(src)
 	n.snap = src.snap
 	n.selected = "m_held"
-	_, cmd := n.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	_, cmd := n.Update(tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
 	if cmd != nil && src.answer.MessageID != "" {
 		t.Fatal("R answered held request")
 	}

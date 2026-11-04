@@ -9,14 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 func TestConnectedAppsSettingsEntry(t *testing.T) {
 	m := keys(newModel(120, 34), "6")
-	if !strings.Contains(m.View(), "Connected apps") {
+	if !strings.Contains(m.testView(), "Connected apps") {
 		t.Fatal("Connected apps missing from settings")
 	}
 }
@@ -52,7 +51,7 @@ func TestConnectedAppsFlow(t *testing.T) {
 	m.apps.public.On = true
 	m = keys(m, "a")
 	m.apps.input.SetValue("ABC-234")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	f.result = `{"pending":{"ID":"p1","ClientName":"Cursor","RedirectHost":"client.example"}}`
 	m = runAppsCmd(t, m, cmd)
 	if f.op != "apps.pending" || f.params["code"] != "ABC-234" || m.apps.input.Value() != "cursor" {
@@ -60,7 +59,7 @@ func TestConnectedAppsFlow(t *testing.T) {
 	}
 	m = keys(m, "down", "right", "up")
 	m.apps.input.SetValue("my app")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	f.result = `{}`
 	m = runAppsCmd(t, m, cmd)
 	if f.op != "apps.approve" || f.params["kind"] != "owner_app" || f.params["name"] != "my app" {
@@ -70,7 +69,7 @@ func TestConnectedAppsFlow(t *testing.T) {
 	m.apps.stage = "approve"
 	m.apps.editingName = false
 	m.apps.pending.ID = "p2"
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m, cmd = press(m, tea.KeyPressMsg{Text: "r", Code: []rune("r")[0]})
 	m = runAppsCmd(t, m, cmd)
 	if f.op != "apps.refuse" || f.params["id"] != "p2" {
 		t.Fatalf("refuse: %+v", f)
@@ -82,7 +81,7 @@ func TestConnectedAppsFlow(t *testing.T) {
 	if m.apps.stage != "confirm" {
 		t.Fatal("no confirmation")
 	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m, cmd = press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = runAppsCmd(t, m, cmd)
 	if f.op != "apps.revoke" || f.params["id"] != "a1" {
 		t.Fatalf("revoke: %+v", f)
@@ -107,15 +106,15 @@ func TestConnectedAppsScreens(t *testing.T) {
 		stamp := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
 		used := time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC)
 		name := func(s string) string { return fmt.Sprintf("connected_apps_%s_%d", s, sz[0]) }
-		golden(t, name("empty"), m.View())
+		golden(t, name("empty"), m.testView())
 		m.apps.apps = []connectedApp{{ID: "a", Name: "cursor", Kind: "bot", ClientName: "Cursor", RedirectURIs: []string{"https://www.cursor.com/cb"}, CreatedAt: stamp}, {ID: "b", Name: "iphone", Kind: "owner_app", ClientName: "iPhone Safari", RedirectURIs: []string{"https://phone.example/cb"}, CreatedAt: stamp, LastUsedAt: &used}}
-		golden(t, name("list"), m.View())
+		golden(t, name("list"), m.testView())
 		m.apps.stage = "confirm"
-		golden(t, name("revoke"), m.View())
+		golden(t, name("revoke"), m.testView())
 		m.apps.stage = "code"
-		m.apps.input = textinput.New()
+		m.apps.input = newTextInput()
 		m.apps.input.Focus()
-		golden(t, name("code"), m.View())
+		golden(t, name("code"), m.testView())
 		m.apps.stage = "approve"
 		m.apps.pending = pendingApp{ID: "p", ClientName: "Cursor", RedirectHost: "www.cursor.com"}
 		m.apps.kind = "bot"
@@ -123,7 +122,7 @@ func TestConnectedAppsScreens(t *testing.T) {
 		m.apps.input.CursorEnd()
 		m.apps.input.Focus()
 		m.apps.editingName = true
-		golden(t, name("approval"), m.View())
+		golden(t, name("approval"), m.testView())
 	}
 }
 
@@ -135,12 +134,12 @@ func TestConnectedAppRenameSettingsGoldens(t *testing.T) {
 		m.apps.apps = []connectedApp{{ID: "a", Name: "grok-bot", Kind: "bot", ClientName: "Grok Bot", CreatedAt: stamp}}
 		m.apps.stage = "rename"
 		m.apps.index = 0
-		m.apps.input = textinput.New()
+		m.apps.input = newTextInput()
 		m.apps.input.Prompt = "name for grok-bot> "
 		m.apps.input.SetValue("grok-bot")
 		m.apps.input.CursorEnd()
 		m.apps.input.Focus()
-		golden(t, fmt.Sprintf("connected_apps_rename_%d", sz[0]), m.View())
+		golden(t, fmt.Sprintf("connected_apps_rename_%d", sz[0]), m.testView())
 	}
 }
 
@@ -168,7 +167,7 @@ func TestConnectedAppsPolishedViews(t *testing.T) {
 	m.apps.stage = "approve"
 	m.apps.kind = "bot"
 	m.apps.pending = pendingApp{ClientName: "Cursor", RedirectHost: "www.cursor.com"}
-	m.apps.input = textinput.New()
+	m.apps.input = newTextInput()
 	m.apps.input.SetValue("cursor")
 	view = ansi.Strip(strings.Join(m.appsView(80, 20), "\n"))
 	for _, s := range []string{"Approve this app?", "Client       Cursor", "Return host  www.cursor.com", "Kind         ‹ bot ›", "Name         cursor", "Approve only if you just pressed connect"} {
@@ -216,11 +215,11 @@ func TestApprovalNameFocusedAndSettingsRename(t *testing.T) {
 	if !m.apps.editingName {
 		t.Fatal("name is not focused")
 	}
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	m, cmd := press(m, tea.KeyPressMsg{Text: "2", Code: []rune("2")[0]})
 	if m.apps.input.Value() != "grok-bot2" {
 		t.Fatalf("typing: %q", m.apps.input.Value())
 	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("approval did not issue a call")
 	}
@@ -241,19 +240,19 @@ func TestApprovalNameFocusedAndSettingsRename(t *testing.T) {
 		}
 	}
 	var next tea.Model
-	next, cmd = m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd = m.settingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd != nil || m.apps.stage != "rename" {
 		t.Fatalf("enter did not open rename field: stage=%q cmd=%v row=%d items=%+v", m.apps.stage, cmd != nil, m.settingsRow, m.settingsItems())
 	}
 	m.apps.input.SetValue(" ")
-	next, cmd = m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd = m.settingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd != nil || m.apps.stage != "rename" || m.apps.err == "" {
 		t.Fatal("empty app name was not refused")
 	}
 	m.apps.input.SetValue("new bot")
-	next, cmd = m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd = m.settingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd == nil {
 		t.Fatal("rename did not issue a call")
@@ -280,7 +279,7 @@ func TestAppsPublicKeys(t *testing.T) {
 	if m.apps.stage != "" {
 		t.Fatal(m.apps.stage)
 	}
-	_, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	_, cmd := press(m, tea.KeyPressMsg{Text: "p", Code: []rune("p")[0]})
 	if cmd == nil {
 		t.Fatal("p does nothing")
 	}
@@ -297,13 +296,13 @@ func TestAppsPublicSwitchAndURLFlow(t *testing.T) {
 	m.src = f
 	var cmd tea.Cmd
 	m = keys(m, "a")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m, cmd = press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = runAppsCmd(t, m, cmd)
 	if f.op != "apps.public.on" || m.apps.stage != "code" || !m.apps.public.On {
 		t.Fatalf("add on: %+v", m.apps)
 	}
 	m = keys(m, "esc")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m, cmd = press(m, tea.KeyPressMsg{Text: "p", Code: []rune("p")[0]})
 	f.result = `{"on":false}`
 	m = runAppsCmd(t, m, cmd)
 	if f.op != "apps.public.off" || m.apps.public.On {
@@ -311,7 +310,7 @@ func TestAppsPublicSwitchAndURLFlow(t *testing.T) {
 	}
 	m = keys(m, "u")
 	m.apps.input.SetValue("https://tunnel.example")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	f.result = `{"on":true,"url":"https://tunnel.example"}`
 	m = runAppsCmd(t, m, cmd)
 	if f.op != "apps.public.url" || f.params["url"] != "https://tunnel.example" || !m.apps.public.On {

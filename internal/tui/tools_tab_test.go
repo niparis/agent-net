@@ -1,10 +1,10 @@
 package tui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"errors"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +15,7 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-func plain(m Model) string { return ansi.Strip(m.View()) }
+func plain(m Model) string { return ansi.Strip(m.testView()) }
 
 func toolsAtScreen(w, h int) (Model, *fakeTools) {
 	m, src := newToolsModel(w, h)
@@ -228,7 +228,7 @@ func TestToolsTabGoldens(t *testing.T) {
 	initScreenColors()
 	for _, size := range [][2]int{{120, 34}, {80, 24}} {
 		m, _ := toolsAtScreen(size[0], size[1])
-		golden(t, fmt.Sprintf("tools_list_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_list_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -319,9 +319,9 @@ func TestToolsComparisonGoldens(t *testing.T) {
 		m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "two-copies:demo:research", Kind: toolsdiff.KindTwoCopies, Severity: toolsdiff.SevErr, Name: "demo", Title: "demo has 2 different copies on research, 3 files differ", Fix: "compare, then keep one", Action: toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, older}}}}
 		m.tl.row = 0
 		m = enterToolsPlan(m)
-		golden(t, fmt.Sprintf("tools_compare_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_compare_%dx%d", size[0], size[1]), m.testView())
 		m = pressKey(m, "a")
-		golden(t, fmt.Sprintf("tools_compare_plan_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_compare_plan_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -334,9 +334,9 @@ func TestToolsCompareFetchGoldens(t *testing.T) {
 		src.detailManifest = &protocol.SkillManifest{Newest: t0.Add(-72 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10, Fingerprint: "b"}, {Path: "notes.md", Size: 5, Fingerprint: "c"}}}
 		model, cmd := m.openChoose("Compare, then keep one", toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{withDetails, missing}})
 		m = model.(Model)
-		golden(t, fmt.Sprintf("tools_compare_fetching_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_compare_fetching_%dx%d", size[0], size[1]), m.testView())
 		m = send(m, cmd())
-		golden(t, fmt.Sprintf("tools_compare_fetched_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_compare_fetched_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -718,7 +718,7 @@ func TestCompareSummaryGoldens(t *testing.T) {
 		b := toolsdiff.Copy{Name: "demo", Item: "new", Hash: "b", Machine: "beta", Harness: "claude", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}}}}
 		model, cmd := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
 		m = send(model.(Model), cmd())
-		golden(t, fmt.Sprintf("tools_summary_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_summary_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 

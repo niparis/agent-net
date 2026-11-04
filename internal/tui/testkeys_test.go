@@ -1,7 +1,7 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // exec runs a command and feeds its message (or each message of a batch) back
@@ -27,22 +27,22 @@ func exec(m Model, cmd tea.Cmd) Model {
 
 // pressKey sends a key and runs the command it returns.
 func pressKey(m Model, k string) Model {
-	var msg tea.KeyMsg
+	var msg tea.KeyPressMsg
 	switch k {
 	case "up":
-		msg = tea.KeyMsg{Type: tea.KeyUp}
+		msg = tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
-		msg = tea.KeyMsg{Type: tea.KeyDown}
+		msg = tea.KeyPressMsg{Code: tea.KeyDown}
 	case "pgup":
-		msg = tea.KeyMsg{Type: tea.KeyPgUp}
+		msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 	case "pgdown":
-		msg = tea.KeyMsg{Type: tea.KeyPgDown}
+		msg = tea.KeyPressMsg{Code: tea.KeyPgDown}
 	case "enter":
-		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
-		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		msg = tea.KeyPressMsg{Code: tea.KeyEsc}
 	default:
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+		msg = tea.KeyPressMsg{Text: k, Code: []rune(k)[0]}
 	}
 	next, cmd := m.Update(msg)
 	return exec(next.(Model), cmd)

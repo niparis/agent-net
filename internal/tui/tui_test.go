@@ -1,18 +1,20 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/charmbracelet/colorprofile"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
@@ -24,10 +26,35 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 
 func TestMain(m *testing.M) {
 	// Plain text in tests: the golden files hold no colour codes.
-	lipgloss.SetColorProfile(termenv.Ascii)
+	setTestColorProfile(termenv.Ascii)
 	initScreenColors()
 	os.Exit(m.Run())
 }
+
+var testColorProfile = termenv.Ascii
+
+func setTestColorProfile(p termenv.Profile) { testColorProfile = p }
+
+var sgrPattern = regexp.MustCompile(`\x1b\[[0-9;:]*m`)
+
+func testOutput(content string) string {
+	if testColorProfile == termenv.Ascii {
+		return sgrPattern.ReplaceAllString(content, "")
+	}
+	if testColorProfile == termenv.TrueColor {
+		return content
+	}
+	var out bytes.Buffer
+	w := colorprofile.NewWriter(&out, nil)
+	if testColorProfile == termenv.ANSI {
+		w.Profile = colorprofile.ANSI
+	} else {
+		w.Profile = colorprofile.ANSI256
+	}
+	_, _ = w.WriteString(content)
+	return out.String()
+}
+func (m Model) testView() string { return testOutput(m.View().Content) }
 
 // ---- fake data ----
 
@@ -450,20 +477,20 @@ func send(m Model, msg tea.Msg) Model {
 
 func keys(m Model, ks ...string) Model {
 	for _, k := range ks {
-		var msg tea.KeyMsg
+		var msg tea.KeyPressMsg
 		switch k {
 		case "up":
-			msg = tea.KeyMsg{Type: tea.KeyUp}
+			msg = tea.KeyPressMsg{Code: tea.KeyUp}
 		case "down":
-			msg = tea.KeyMsg{Type: tea.KeyDown}
+			msg = tea.KeyPressMsg{Code: tea.KeyDown}
 		case "enter":
-			msg = tea.KeyMsg{Type: tea.KeyEnter}
+			msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 		case "esc":
-			msg = tea.KeyMsg{Type: tea.KeyEsc}
+			msg = tea.KeyPressMsg{Code: tea.KeyEsc}
 		case "tab":
-			msg = tea.KeyMsg{Type: tea.KeyTab}
+			msg = tea.KeyPressMsg{Code: tea.KeyTab}
 		default:
-			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+			msg = tea.KeyPressMsg{Text: k, Code: []rune(k)[0]}
 		}
 		m = send(m, msg)
 	}
@@ -504,11 +531,11 @@ func golden(t *testing.T, name, got string) {
 	}
 }
 
-func TestViewGolden120(t *testing.T) { golden(t, "view_120x34", newModel(120, 34).View()) }
+func TestViewGolden120(t *testing.T) { golden(t, "view_120x34", newModel(120, 34).testView()) }
 
 func TestViewGoldenOfflineAndFilter(t *testing.T) {
 	m := keys(newModel(100, 30), "v", "/", "p", "i", "enter", "down")
-	golden(t, "view_100x30_offline_filter", m.View())
+	golden(t, "view_100x30_offline_filter", m.testView())
 }
 
 func TestViewGoldenFeedFocusAndBody(t *testing.T) {
@@ -523,14 +550,14 @@ func TestViewGoldenFeedFocusAndBody(t *testing.T) {
 	m = keys(m, "4")
 	// Move up to the first message (the last items are newer).
 	m = selectFeedMessage(m, "m_1")
-	golden(t, "view_80x24_feed_focus", m.View())
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	golden(t, "view_80x24_feed_focus", m.testView())
+	m2, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = m2.(Model)
 	if cmd == nil || m.open == nil || !m.open.loading {
 		t.Fatal("v did not start fetching the body")
 	}
 	m = send(m, cmd())
-	golden(t, "view_80x24_body", m.View())
+	golden(t, "view_80x24_body", m.testView())
 }
 
 // ---- layout ----
@@ -543,7 +570,7 @@ func TestViewFitsEverySize(t *testing.T) {
 				v := keys(send(m, tea.WindowSizeMsg{Width: w, Height: h}), "v")
 				v.filter = filter
 				v.ensureSelection()
-				out := v.View()
+				out := v.testView()
 				ls := lines(out)
 				if len(ls) > max(h, 10) {
 					t.Fatalf("%dx%d: %d lines", w, h, len(ls))
@@ -559,7 +586,7 @@ func TestViewFitsEverySize(t *testing.T) {
 }
 
 func TestViewHasEverythingAt80Columns(t *testing.T) {
-	out := keys(newModel(80, 24), "down").View() // tenebrae-53
+	out := keys(newModel(80, 24), "down").testView() // tenebrae-53
 	for _, want := range []string{
 		"Mac (here)", "old-box", "12 online", "cpu", "mem", "disk 180G free", "disk 31G free",
 		"AGENT", "NAME", "STATUS", "TRUST", "RULE", "DLG", "CPU", "RAM",
@@ -595,11 +622,11 @@ func TestOfflineToggle(t *testing.T) {
 		t.Fatalf("with offline: %s", got)
 	}
 	m = keys(m, "end") // the offline session is last
-	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "view: offline") {
-		t.Fatalf("the offline session is not on screen:\n%s", m.View())
+	if !strings.Contains(m.testView(), "old-session") || !strings.Contains(m.testView(), "off") || !strings.Contains(m.testView(), "view: offline") {
+		t.Fatalf("the offline session is not on screen:\n%s", m.testView())
 	}
 	if !strings.Contains(detailText(m), "offline, last seen 13 Oct") && !strings.Contains(detailText(m), "offline, last seen 28 Oct") {
-		t.Fatalf("the detail of an offline session lacks its last seen time:\n%s", m.View())
+		t.Fatalf("the detail of an offline session lacks its last seen time:\n%s", m.testView())
 	}
 	m = keys(m, "v", "v", "v")
 	if strings.Contains(strings.Join(names(m), ","), "old-session") {
@@ -631,14 +658,14 @@ func TestFilter(t *testing.T) {
 	if got := strings.Join(names(m), ","); got != "ci-runner" {
 		t.Fatalf("filter gpt: %s", got) // matches the model openai/gpt-6
 	}
-	if v := m.View(); !strings.Contains(v, "/gpt") || !strings.Contains(v, "enter keeps the filter") {
+	if v := m.testView(); !strings.Contains(v, "/gpt") || !strings.Contains(v, "enter keeps the filter") {
 		t.Fatalf("the filter prompt is not shown:\n%s", v)
 	}
 	m = keys(m, "enter")
 	if m.filtering || m.filter != "gpt" {
 		t.Fatalf("enter must keep the filter: %v %q", m.filtering, m.filter)
 	}
-	if v := m.View(); !strings.Contains(v, "filter: /gpt") || strings.Contains(v, "tenebrae-53 ") && strings.Contains(v, "claude-opus-5-5") {
+	if v := m.testView(); !strings.Contains(v, "filter: /gpt") || strings.Contains(v, "tenebrae-53 ") && strings.Contains(v, "claude-opus-5-5") {
 		t.Fatalf("the active filter is not shown or not applied:\n%s", v)
 	}
 	if m.selected != "s_0000000000000004" {
@@ -657,7 +684,7 @@ func TestFilter(t *testing.T) {
 	}
 	m = keys(m, "enter", "esc")
 	m = keys(m, "/", "z", "z", "z", "enter")
-	if got := m.View(); !strings.Contains(got, "no session matches the filter") {
+	if got := m.testView(); !strings.Contains(got, "no session matches the filter") {
 		t.Fatalf("empty result not explained:\n%s", got)
 	}
 	if _, ok := m.selectedAgent(); ok {
@@ -728,7 +755,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = refresh(m, src)
 	m = keys(m, "end")
-	v := m.View()
+	v := m.testView()
 	last := m.visible()[len(m.visible())-1]
 	if !strings.Contains(v, "▸ ") || !strings.Contains(v, last.Profile.Name) {
 		t.Fatalf("the selected last session is not on screen:\n%s", v)
@@ -738,14 +765,14 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	}
 	// Scrolled into the middle of a machine, its heading stays on top.
 	m = keys(m, "g", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
-	if v := lines(m.View()); !strings.HasPrefix(strings.TrimSpace(v[7]), "build-vm") {
+	if v := lines(m.testView()); !strings.HasPrefix(strings.TrimSpace(v[7]), "build-vm") {
 		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
 	}
-	if !strings.Contains(m.View(), "▸ ") {
+	if !strings.Contains(m.testView(), "▸ ") {
 		t.Fatal("the selection scrolled out of the table")
 	}
 	m = keys(m, "g")
-	if !strings.Contains(m.View(), m.visible()[0].Profile.Name) {
+	if !strings.Contains(m.testView(), m.visible()[0].Profile.Name) {
 		t.Fatal("going back to the top did not scroll back")
 	}
 }
@@ -754,10 +781,10 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 
 func TestDaemonDownBanner(t *testing.T) {
 	m := newModel(80, 24)
-	good := m.View()
+	good := m.testView()
 	src := &fakeSource{snapErr: fmt.Errorf("%w (/tmp/x/daemon.sock)", ErrDaemonDown)}
 	m = refresh(m, src)
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "! Daemon not reachable (/tmp/x/daemon.sock). Showing last data. Retrying.") {
 		t.Fatalf("no daemon banner:\n%s", v)
 	}
@@ -776,10 +803,10 @@ func TestDaemonDownBanner(t *testing.T) {
 	}
 	// The daemon comes back: the banner goes.
 	m = refresh(m, &fakeSource{snap: fakeSnapshot(), events: fakeEvents()})
-	if m.problem != ProblemNone || strings.Contains(m.View(), "!") && strings.Contains(m.View(), "Retrying") {
-		t.Fatalf("the banner stayed:\n%s", m.View())
+	if m.problem != ProblemNone || strings.Contains(m.testView(), "!") && strings.Contains(m.testView(), "Retrying") {
+		t.Fatalf("the banner stayed:\n%s", m.testView())
 	}
-	golden(t, "view_80x24_daemon_down", keysBanner(t, newModel(80, 24)).View())
+	golden(t, "view_80x24_daemon_down", keysBanner(t, newModel(80, 24)).testView())
 }
 
 func keysBanner(t *testing.T, m Model) Model {
@@ -791,7 +818,7 @@ func TestGatewayOfflineBanner(t *testing.T) {
 	down := fakeSnapshot()
 	down.Connected, down.Agents, down.Nodes = false, nil, nil // what the daemon says
 	m = refresh(m, &fakeSource{snap: down})
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "! Gateway offline: the daemon cannot reach it. Showing last data. Retrying.") {
 		t.Fatalf("no gateway banner:\n%s", v)
 	}
@@ -800,22 +827,22 @@ func TestGatewayOfflineBanner(t *testing.T) {
 	}
 	// The same through an error from a call (the link dropped between two calls).
 	m = refresh(newModel(80, 24), &fakeSource{snapErr: fmt.Errorf("%w: not connected to the gateway", ErrGatewayDown)})
-	if m.problem != ProblemGateway || !strings.Contains(m.View(), "Gateway offline") {
+	if m.problem != ProblemGateway || !strings.Contains(m.testView(), "Gateway offline") {
 		t.Fatalf("problem %v", m.problem)
 	}
-	golden(t, "view_80x24_gateway_offline", refresh(newModel(80, 24), &fakeSource{snap: down}).View())
+	golden(t, "view_80x24_gateway_offline", refresh(newModel(80, 24), &fakeSource{snap: down}).testView())
 }
 
 func TestNoDataYet(t *testing.T) {
 	src := &fakeSource{snapErr: fmt.Errorf("%w (/tmp/x.sock)", ErrDaemonDown)}
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	v := send(m, tea.WindowSizeMsg{Width: 80, Height: 24}).View()
+	v := send(m, tea.WindowSizeMsg{Width: 80, Height: 24}).testView()
 	if !strings.Contains(v, "loading…") {
 		t.Fatalf("first frame:\n%s", v)
 	}
 	m = refresh(m, src)
-	v = m.View()
+	v = m.testView()
 	for _, want := range []string{"! Daemon not reachable", "no data yet", "no machines yet"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
@@ -825,8 +852,8 @@ func TestNoDataYet(t *testing.T) {
 
 func TestOtherErrorIsShown(t *testing.T) {
 	m := refresh(newModel(80, 24), &fakeSource{snapErr: errors.New("the first request must be hello")})
-	if m.problem != ProblemOther || !strings.Contains(m.View(), "! the first request must be hello") {
-		t.Fatalf("problem %v\n%s", m.problem, m.View())
+	if m.problem != ProblemOther || !strings.Contains(m.testView(), "! the first request must be hello") {
+		t.Fatalf("problem %v\n%s", m.problem, m.testView())
 	}
 }
 
@@ -946,8 +973,8 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
-	if !strings.Contains(m.View(), "tenebrae-53 (Mac) -> unknown") && !strings.Contains(m.View(), "s_00000000") {
-		t.Logf("a message to a vanished session shows its ID:\n%s", m.View())
+	if !strings.Contains(m.testView(), "tenebrae-53 (Mac) -> unknown") && !strings.Contains(m.testView(), "s_00000000") {
+		t.Logf("a message to a vanished session shows its ID:\n%s", m.testView())
 	}
 	// New events arrive on the next refresh, after the cursor.
 	src.events = append(src.events,
@@ -956,7 +983,7 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 		ev(15, time.Minute, "node.disconnected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build-vm" }),
 	)
 	m = refresh(m, src)
-	v := keys(m, "4", "l", "l").View()
+	v := keys(m, "4", "l", "l").testView()
 	if !strings.Contains(v, "ci-runner") || !strings.Contains(v, "tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
 		t.Fatalf("new events not shown:\n%s", v)
 	}
@@ -982,7 +1009,7 @@ func TestSessionDetailShowsItsMessages(t *testing.T) {
 		m = keys(m, "down")
 	}
 	if !strings.Contains(detailText(m), "none seen yet") {
-		t.Fatalf("no 'none seen yet':\n%s", m.View())
+		t.Fatalf("no 'none seen yet':\n%s", m.testView())
 	}
 }
 
@@ -992,12 +1019,12 @@ func TestFeedUnavailableOnOlderPeers(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
-	v := keys(m, "4").View()
+	v := keys(m, "4").testView()
 	plain := strings.ReplaceAll(ansi.Strip(v), "\n", " ")
 	if m.problem != ProblemNone || !strings.Contains(plain, "no message feed:") || !strings.Contains(plain, "older") || !strings.Contains(plain, "event feed") {
 		t.Fatalf("not explained:\n%s", v)
 	}
-	if !strings.Contains(m.View(), "tenebrae-53") {
+	if !strings.Contains(m.testView(), "tenebrae-53") {
 		t.Fatal("the sessions must still show")
 	}
 	// It does not ask again.
@@ -1021,18 +1048,18 @@ func TestOpenMessageBody(t *testing.T) {
 	m = refresh(m, src)
 
 	// Enter on a session enters it; it does not open a message body.
-	if next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); next.(Model).open != nil || cmd == nil {
+	if next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); next.(Model).open != nil || cmd == nil {
 		t.Fatal("enter on the sessions table opened the wrong thing")
 	}
 	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_3")
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = m2.(Model)
-	if !strings.Contains(m.View(), "fetching...") {
-		t.Fatalf("no loading state:\n%s", m.View())
+	if !strings.Contains(m.testView(), "fetching...") {
+		t.Fatalf("no loading state:\n%s", m.testView())
 	}
 	m = send(m, cmd())
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "line one[31m red?") || !strings.Contains(v, "two reversed") {
 		t.Fatalf("body not shown (escape sequences must be defanged):\n%s", v)
 	}
@@ -1046,15 +1073,15 @@ func TestOpenMessageBody(t *testing.T) {
 	}
 	// esc goes back to the lists.
 	m = keys(m, "esc")
-	if m.open != nil || !strings.Contains(m.View(), "Messages") {
+	if m.open != nil || !strings.Contains(m.testView(), "Messages") {
 		t.Fatal("esc did not close the body")
 	}
 
 	// A message the machine cannot read.
 	m = selectFeedMessage(m, "m_1")
-	m2, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = send(m2.(Model), cmd())
-	if v := m.View(); !strings.Contains(v, "The body is not available here") {
+	if v := m.testView(); !strings.Contains(v, "The body is not available here") {
 		t.Fatalf("no explanation:\n%s", v)
 	}
 	// A late answer for a message that is no longer open is ignored.
@@ -1075,7 +1102,7 @@ func TestSanitizeNetworkText(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = refresh(m, src)
-	for _, l := range lines(m.View()) {
+	for _, l := range lines(m.testView()) {
 		if strings.ContainsAny(l, "\x1b\x07") {
 			t.Fatalf("an escape sequence from the network reached the screen: %q", l)
 		}
@@ -1085,7 +1112,7 @@ func TestSanitizeNetworkText(t *testing.T) {
 // ---- keys ----
 
 func TestQuit(t *testing.T) {
-	for _, k := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("q")}, {Type: tea.KeyCtrlC}} {
+	for _, k := range []tea.KeyPressMsg{{Text: "q", Code: []rune("q")[0]}, {Code: 'c', Mod: tea.ModCtrl}} {
 		_, cmd := newModel(80, 24).Update(k)
 		if cmd == nil {
 			t.Fatalf("%v did not quit", k)
@@ -1096,7 +1123,7 @@ func TestQuit(t *testing.T) {
 	}
 	// q in the filter is text.
 	m := keys(newModel(80, 24), "/")
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}); cmd != nil {
+	if _, cmd := m.Update(tea.KeyPressMsg{Text: "q", Code: []rune("q")[0]}); cmd != nil {
 		if _, ok := cmd().(tea.QuitMsg); ok {
 			t.Fatal("q quit while filtering")
 		}
@@ -1137,11 +1164,11 @@ func (r *recordingSource) Events(ctx context.Context, a int64, l int) ([]protoco
 // broken by the clean-up of network text: stripping them leaves the plain view.
 func TestColourOutputIsWellFormed(t *testing.T) {
 	m := keys(newModel(100, 30), "v", "end")
-	plain := m.View()
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
+	plain := m.testView()
+	setTestColorProfile(termenv.ANSI256)
+	defer setTestColorProfile(termenv.Ascii)
 	initScreenColors()
-	coloured := m.View()
+	coloured := m.testView()
 	if coloured == plain {
 		t.Skip("this terminal profile draws no colour")
 	}
@@ -1251,16 +1278,16 @@ func TestProjectColumnFitsLongestName(t *testing.T) {
 
 func TestLoadingAndPartialSnapshot(t *testing.T) {
 	m := New(&fakeSource{})
-	if !strings.Contains(m.View(), "loading…") {
+	if !strings.Contains(m.testView(), "loading…") {
 		t.Fatal("first load must show loading")
 	}
-	golden(t, "view_80x24_loading", m.View())
+	golden(t, "view_80x24_loading", m.testView())
 	m = newModel(80, 24)
 	m.snap.FailedCalls = []string{protocol.OpNodes}
-	if !strings.Contains(m.View(), "machines list slow") {
+	if !strings.Contains(m.testView(), "machines list slow") {
 		t.Fatal("partial snapshot must name the missing data")
 	}
-	golden(t, "view_80x24_partial", m.View())
+	golden(t, "view_80x24_partial", m.testView())
 }
 
 func (f *fakeSource) ProjectDisplayName(_ context.Context, project string) (protocol.ProjectDisplayResult, error) {

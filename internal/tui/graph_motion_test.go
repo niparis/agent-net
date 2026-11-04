@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -29,7 +29,7 @@ func idleGraphModel(w, h int) Model {
 func TestGraphPixelStopsSendingWhenNothingMoves(t *testing.T) {
 	m := idleGraphModel(120, 34)
 	m = renderGraphFrame(t, m)
-	first := m.View()
+	first := m.testView()
 	if !strings.Contains(first, "\x1b_Ga=T") {
 		t.Fatalf("first frame did not transmit the image:\n%q", first)
 	}
@@ -38,7 +38,7 @@ func TestGraphPixelStopsSendingWhenNothingMoves(t *testing.T) {
 	if cmd := m.scheduleGraphRender(); cmd != nil {
 		t.Fatal("an idle scene scheduled another frame")
 	}
-	second := m.View()
+	second := m.testView()
 	if second != first {
 		t.Fatal("an unchanged idle frame changed, so the renderer would send it again")
 	}
@@ -100,7 +100,7 @@ func TestGraphPixelSendsNothingOnAnotherTab(t *testing.T) {
 	m := idleGraphModel(120, 34)
 	m = renderGraphFrame(t, m)
 	m.tab = sessionsTab
-	out := m.View()
+	out := m.testView()
 	if strings.Contains(out, "\x1b_G") || strings.Contains(out, "\U0010EEEE") {
 		t.Fatal("another tab sent kitty graphics")
 	}
@@ -109,7 +109,7 @@ func TestGraphPixelSendsNothingOnAnotherTab(t *testing.T) {
 		t.Fatal("graph animation continued on another tab")
 	}
 	m.tab = graphTab
-	if back := m.View(); !strings.Contains(back, "\x1b_Ga=T") {
+	if back := m.testView(); !strings.Contains(back, "\x1b_Ga=T") {
 		t.Fatal("the finished frame was not sent when the Graph tab returned")
 	}
 }
@@ -162,7 +162,7 @@ func TestGraphViewAndUpdateNeverRasterize(t *testing.T) {
 	m.graphPixel.cellW, m.graphPixel.cellH = 18, 38
 
 	start := time.Now()
-	out := m.View()
+	out := m.testView()
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("View took %v with a 200x45 scene", elapsed)
 	}

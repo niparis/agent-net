@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -288,7 +288,7 @@ func ctoMessage(raw json.RawMessage) string {
 	}
 	return fmt.Sprintf("%s: %s", who, text)
 }
-func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) ctoKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
 	if c.settingsForm != nil {
 		return m.ctoSettingsKey(k)
@@ -350,7 +350,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return ctoWindowMsg{window: window, err: err, generation: g}
 		}
 	case "model":
-		ti := textinput.New()
+		ti := newTextInput()
 		ti.Prompt = ""
 		ti.CharLimit = 4000
 		harness := c.harness
@@ -359,7 +359,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		ti.Placeholder = "default"
 		ti.SetValue(c.modelForHarness(harness))
-		title := textinput.New()
+		title := newTextInput()
 		title.Prompt = ""
 		title.CharLimit = 24
 		title.SetValue(protocol.CTOTitleOrDefault(c.title))
@@ -480,7 +480,7 @@ func (f *ctoSettingsForm) setField(n int) tea.Cmd {
 	return nil
 }
 
-func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) ctoSettingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
 	f := c.settingsForm
 	switch keyAction(contextForm, k.String()) {

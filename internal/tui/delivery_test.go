@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -245,12 +245,12 @@ func TestDeliveryStripShowsGlyphsNotOnlyColour(t *testing.T) {
 func TestDeliverySubtabCycle(t *testing.T) {
 	src := &fakeDelivery{changes: deliveryScenes()}
 	m := deliveryModel(src, 80, 24)
-	press := func(k tea.KeyMsg) tea.Cmd {
+	press := func(k tea.KeyPressMsg) tea.Cmd {
 		next, cmd := m.Update(k)
 		m = next.(Model)
 		return cmd
 	}
-	tab := tea.KeyMsg{Type: tea.KeyTab}
+	tab := tea.KeyPressMsg{Code: tea.KeyTab}
 	press(tab)
 	if !m.workersLog || m.delivery.on {
 		t.Fatal("first tab should open the Workers log")
@@ -267,7 +267,7 @@ func TestDeliverySubtabCycle(t *testing.T) {
 	if src.calls != 1 || src.repo != "" || len(m.delivery.changes) != 3 {
 		t.Fatalf("calls %d repo %q changes %d", src.calls, src.repo, len(m.delivery.changes))
 	}
-	if got := ansi.Strip(m.View()); !strings.Contains(got, "[ Delivery ]") {
+	if got := ansi.Strip(m.testView()); !strings.Contains(got, "[ Delivery ]") {
 		t.Errorf("subtab not marked: %s", got)
 	}
 	press(tab)
@@ -277,7 +277,7 @@ func TestDeliverySubtabCycle(t *testing.T) {
 	// R reloads while on the Delivery sub-tab.
 	press(tab)
 	press(tab)
-	cmd = press(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	cmd = press(tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
 	if cmd == nil {
 		t.Fatal("R should reload")
 	}
@@ -285,18 +285,18 @@ func TestDeliverySubtabCycle(t *testing.T) {
 
 func TestDeliveryEnterOpensDetailAndEscCloses(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
-	press := func(k tea.KeyMsg) {
+	press := func(k tea.KeyPressMsg) {
 		next, _ := m.Update(k)
 		m = next.(Model)
 	}
-	press(tea.KeyMsg{Type: tea.KeyDown})
-	press(tea.KeyMsg{Type: tea.KeyDown})
-	press(tea.KeyMsg{Type: tea.KeyDown}) // clamps at the last row
+	press(tea.KeyPressMsg{Code: tea.KeyDown})
+	press(tea.KeyPressMsg{Code: tea.KeyDown})
+	press(tea.KeyPressMsg{Code: tea.KeyDown}) // clamps at the last row
 	if m.delivery.row != 2 {
 		t.Fatalf("row %d", m.delivery.row)
 	}
-	press(tea.KeyMsg{Type: tea.KeyUp})
-	press(tea.KeyMsg{Type: tea.KeyEnter})
+	press(tea.KeyPressMsg{Code: tea.KeyUp})
+	press(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.delivery.detail {
 		t.Fatal("enter did not open the detail")
 	}
@@ -306,7 +306,7 @@ func TestDeliveryEnterOpensDetailAndEscCloses(t *testing.T) {
 			t.Errorf("detail missing %q: %s", want, got)
 		}
 	}
-	press(tea.KeyMsg{Type: tea.KeyEsc})
+	press(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.delivery.detail || m.tab != quotasTab || !m.delivery.on {
 		t.Fatal("esc should only close the detail")
 	}
@@ -401,7 +401,7 @@ func TestDeliveryGoldens(t *testing.T) {
 		for _, size := range [][2]int{{80, 24}, {120, 24}} {
 			m := openDelivery(t, deliveryModel(s.src, size[0], size[1]))
 			m.delivery.row, m.delivery.detail = s.row, s.detail
-			golden(t, fmt.Sprintf("%s_%dx%d", s.name, size[0], size[1]), m.View())
+			golden(t, fmt.Sprintf("%s_%dx%d", s.name, size[0], size[1]), m.testView())
 		}
 	}
 }

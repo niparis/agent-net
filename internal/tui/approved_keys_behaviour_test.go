@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
@@ -17,7 +17,7 @@ import (
 
 func TestApproved01RefreshOnEveryScreen(t *testing.T) {
 	pressRune := func(m Model, key string) (Model, tea.Cmd) {
-		return press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		return press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 	}
 
 	messages := newModel(120, 34)
@@ -64,13 +64,13 @@ func TestApproved01RefreshOnEveryScreen(t *testing.T) {
 func TestApproved05SessionEIsNotEnter(t *testing.T) {
 	m := newModel(120, 34)
 	src := m.src.(*fakeSource)
-	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}); cmd != nil {
+	if _, cmd := press(m, tea.KeyPressMsg{Text: "e", Code: []rune("e")[0]}); cmd != nil {
 		t.Fatal("e still enters a session")
 	}
 	if len(src.enters) != 0 {
 		t.Fatal("e asked to enter a session")
 	}
-	_, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter no longer enters a session")
 	}
@@ -87,7 +87,7 @@ func TestApproved07HeldRequestDoesNotAnswerOnShiftKeys(t *testing.T) {
 	m.snap.Held = []protocol.Message{{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"}}
 	m.tab = inboxTab
 	for _, key := range []string{"A", "R"} {
-		_, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		_, cmd := press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 		if cmd != nil && src.answer.MessageID != "" {
 			t.Fatalf("%s answered the held request", key)
 		}
@@ -95,7 +95,7 @@ func TestApproved07HeldRequestDoesNotAnswerOnShiftKeys(t *testing.T) {
 			t.Fatalf("%s answered the held request with %q", key, src.answer.Action)
 		}
 	}
-	_, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	_, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 	if cmd == nil {
 		t.Fatal("a no longer approves a held request")
 	}
@@ -110,7 +110,7 @@ func TestApproved08OutcomeOIsNotOverrule(t *testing.T) {
 	m := New(src)
 	m.snap = Snapshot{Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"}}}
 	m.selected = "outcome:r"
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	next, cmd := press(m, tea.KeyPressMsg{Text: "o", Code: []rune("o")[0]})
 	if cmd != nil || src.action != "" {
 		t.Fatalf("o still overrules: action %q", src.action)
 	}
@@ -126,10 +126,10 @@ func TestApproved09ProposalDeclineOnRAndNotX(t *testing.T) {
 	m := New(s)
 	m.proposals = s.proposals
 	m.tab = inboxTab
-	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}); cmd != nil || len(s.answers) != 0 {
+	if _, cmd := press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]}); cmd != nil || len(s.answers) != 0 {
 		t.Fatal("x still declines a proposal")
 	}
-	_, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := press(m, tea.KeyPressMsg{Text: "r", Code: []rune("r")[0]})
 	if cmd == nil {
 		t.Fatal("r did not decline a proposal")
 	}
@@ -141,7 +141,7 @@ func TestApproved09ProposalDeclineOnRAndNotX(t *testing.T) {
 	detail := &proposalSource{proposals: []protocol.CTOProposal{p}}
 	m = New(detail)
 	m.proposalDetail = &proposalDetail{proposal: p}
-	_, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd = press(m, tea.KeyPressMsg{Text: "r", Code: []rune("r")[0]})
 	if cmd == nil {
 		t.Fatal("r did not decline in the proposal detail")
 	}
@@ -156,13 +156,13 @@ func TestApproved12MessageVIsNotTheBody(t *testing.T) {
 	m.tab, m.focus = messagesTab, focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0}, ConversationID: "a"}})
-	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")}); cmd != nil {
+	if _, cmd := press(m, tea.KeyPressMsg{Text: "v", Code: []rune("v")[0]}); cmd != nil {
 		t.Fatal("v still opens the message body")
 	}
 	if m.open != nil {
 		t.Fatal("v still opens the message body")
 	}
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil || next.open == nil {
 		t.Fatal("enter no longer opens the message body")
 	}
@@ -264,10 +264,10 @@ func TestApproved27HelpNIsTheNotificationKey(t *testing.T) {
 	m := newModel(100, 30)
 	m.src = src
 	m.help = true
-	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}); cmd != nil || src.disabled {
+	if _, cmd := press(m, tea.KeyPressMsg{Text: "n", Code: []rune("n")[0]}); cmd != nil || src.disabled {
 		t.Fatal("n still toggles desktop notifications")
 	}
-	if _, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")}); cmd != nil {
+	if _, cmd := press(m, tea.KeyPressMsg{Text: "N", Code: []rune("N")[0]}); cmd != nil {
 		t.Fatal("N still toggles desktop notifications")
 	}
 }

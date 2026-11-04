@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -12,11 +12,11 @@ import (
 func TestBDoesNotReadTheSession(t *testing.T) {
 	m, src := workerModel(100, 30)
 	m = selectID(m, workerID)
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	next, cmd := press(m, tea.KeyPressMsg{Text: "b", Code: []rune("b")[0]})
 	if cmd != nil {
 		t.Fatal("b started a command")
 	}
-	if next.View() != m.View() {
+	if next.testView() != m.testView() {
 		t.Fatal("b changed the screen")
 	}
 	if len(src.queries) != 0 {
@@ -29,15 +29,15 @@ func TestOutcomeRemovedKeys(t *testing.T) {
 	m := New(&fakeSource{})
 	m.snap = Snapshot{Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r", From: "a", To: "b"}, Sender: "sender", Recipient: "receiver", Request: "deploy?"}}}
 	m.selected = "outcome:r"
-	next, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	next, cmd := press(m, tea.KeyPressMsg{Text: "b", Code: []rune("b")[0]})
 	if cmd != nil {
 		t.Fatal("b started a command")
 	}
-	if next.View() != m.View() {
+	if next.testView() != m.testView() {
 		t.Fatal("b changed the screen")
 	}
 	m.fetching = false
-	next, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	next, cmd = press(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
 	if cmd == nil || !next.fetching {
 		t.Fatal("R did not refresh")
 	}

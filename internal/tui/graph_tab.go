@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -230,7 +230,7 @@ func (m Model) startGraph() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
-func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.mp.finding {
 		switch keyAction(contextGraphFind, k.String()) {
 		case "clear or back":
@@ -250,8 +250,8 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.mp.findQuery = string(r[:len(r)-1])
 			}
 		default:
-			if k.Type == tea.KeyRunes {
-				m.mp.findQuery += string(k.Runes)
+			if k.Text != "" {
+				m.mp.findQuery += k.Text
 			}
 		}
 		return m, nil
@@ -508,24 +508,25 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 	if !m.graphMouseActive() || m.graphState.Graph == nil {
 		return m
 	}
+	mouse := msg.Mouse()
 	w, h := m.graphSize()
-	x, y := msg.X-2, msg.Y-1
+	x, y := mouse.X-2, mouse.Y-1
 	inside := x >= 0 && y >= 0 && x < w && y < h
-	if msg.Action == tea.MouseActionRelease {
+	if _, ok := msg.(tea.MouseReleaseMsg); ok {
 		m.graphDragging = false
 		return m
 	}
-	if msg.Action == tea.MouseActionMotion && m.graphDragging {
-		m.graphState, _ = graphview.Update(m.graphState, graphview.DragPan{DX: float64(msg.X - m.graphDragX), DY: float64(msg.Y - m.graphDragY)})
-		m.graphDragX, m.graphDragY = msg.X, msg.Y
+	if _, ok := msg.(tea.MouseMotionMsg); ok && m.graphDragging {
+		m.graphState, _ = graphview.Update(m.graphState, graphview.DragPan{DX: float64(mouse.X - m.graphDragX), DY: float64(mouse.Y - m.graphDragY)})
+		m.graphDragX, m.graphDragY = mouse.X, mouse.Y
 		return m
 	}
-	if !inside || msg.Action != tea.MouseActionPress {
+	if !inside {
 		return m
 	}
-	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+	if mouse.Button == tea.MouseWheelUp || mouse.Button == tea.MouseWheelDown {
 		factor := 1.25
-		if msg.Button == tea.MouseButtonWheelDown {
+		if mouse.Button == tea.MouseWheelDown {
 			factor = 1 / factor
 		}
 		m.smoothCamera()
@@ -533,7 +534,10 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 		m.graphState, _ = graphview.Update(m.graphState, graphview.ZoomAt{X: float64(x) + .5, Y: float64(y) + .5, Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}, Factor: factor})
 		return m
 	}
-	if msg.Button != tea.MouseButtonLeft {
+	if _, ok := msg.(tea.MouseClickMsg); !ok {
+		return m
+	}
+	if mouse.Button != tea.MouseLeft {
 		return m
 	}
 	size := graphview.Size{Width: w, Height: h}
@@ -550,7 +554,7 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 	}
 	if hit == "" {
 		m.graphDragging = true
-		m.graphDragX, m.graphDragY = msg.X, msg.Y
+		m.graphDragX, m.graphDragY = mouse.X, mouse.Y
 		m.graphLastNode = ""
 		return m
 	}

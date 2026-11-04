@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 var screens = flag.String("screens", "", "write coloured golden scenes to this directory")
@@ -51,7 +52,7 @@ func writeScreen(t *testing.T, name, got string) {
 
 func initScreenColors() {
 	if os.Getenv("AGENT_NET_SCREEN_CHILD") != "" {
-		lipgloss.SetColorProfile(termenv.TrueColor)
-		lipgloss.SetHasDarkBackground(true)
+		setTestColorProfile(termenv.TrueColor)
+		palette.SetDark(true)
 	}
 }

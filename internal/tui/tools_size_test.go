@@ -80,9 +80,9 @@ func TestToolsOversizedGoldens(t *testing.T) {
 		m = pressKey(m, "/")
 		m = typeText(m, "oversize")
 		m = pressKey(m, "enter")
-		golden(t, fmt.Sprintf("tools_oversized_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_oversized_%dx%d", size[0], size[1]), m.testView())
 		m = pressKey(m, "i")
-		golden(t, fmt.Sprintf("tools_import_skip_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_import_skip_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 

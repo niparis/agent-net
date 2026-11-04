@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -15,7 +15,7 @@ func TestWorkersLogSwitchAndDetails(t *testing.T) {
 	m := New(&fakeSource{snap: fakeSnapshot()})
 	m.tab = quotasTab
 	m.snap.WorkerLog = []protocol.WorkerLogEntry{{StartedAt: 123, Title: "Inspect history", Model: "test:high", Status: "running", Hostname: "test-machine", Project: "demo", Harness: "codex", Caller: "Agent One", CallerHost: "test-machine", Assessment: &protocol.WorkerAssessment{Reasoning: 3, D: 2.1, Label: "normal", JudgeModel: "judge", Reasons: map[string]string{"reasoning": "history checks"}, PickerLabel: "selected normal"}}}
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = next.(Model)
 	if !m.workersLog {
 		t.Fatal("tab did not switch")
@@ -38,17 +38,17 @@ func TestWorkersLogSwitchAndDetails(t *testing.T) {
 	if got := ansi.Strip(strings.Join(m.workersLogView(120, 35), "\n")); strings.Contains(got, "Assessment: -") {
 		t.Fatalf("empty assessment should be hidden: %s", got)
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = next.(Model)
 	if m.workerLogDetail != 1 {
 		t.Fatal("details did not scroll")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = next.(Model)
 	if m.workersLog || !m.delivery.on {
 		t.Fatal("tab did not move on to Delivery")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m = next.(Model); m.workersLog || m.delivery.on {
 		t.Fatal("tab did not return to Quotas")
 	}
@@ -81,15 +81,15 @@ func TestWorkersLogGoldens(t *testing.T) {
 	m.workerLogRow = 1
 	for _, size := range [][2]int{{120, 40}, {80, 40}} {
 		m.width, m.height = size[0], size[1]
-		golden(t, fmt.Sprintf("workers_log_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("workers_log_%dx%d", size[0], size[1]), m.testView())
 	}
 	// A judge failure has a distinct compact layout with no score rows.
 	m.snap.WorkerLog[1].Assessment = &protocol.WorkerAssessment{Label: "normal", D: 1.2, Error: "judge timed out while evaluating the worker run; retry later"}
 	m.workerLogRow = 1
 	m.width, m.height = 120, 40
-	golden(t, "workers_log_judge_failed_120x40", m.View())
+	golden(t, "workers_log_judge_failed_120x40", m.testView())
 	m.workerLogRow = 3
-	golden(t, "workers_log_failed_120x40", m.View())
+	golden(t, "workers_log_failed_120x40", m.testView())
 }
 
 func TestWrapHangingIndent(t *testing.T) {
@@ -152,7 +152,7 @@ func TestWorkersLogNoteOnlyForFailedStatus(t *testing.T) {
 
 func TestWorkersLogBelongsToQuotasAndPickerNote(t *testing.T) {
 	m := New(&fakeSource{snap: fakeSnapshot()})
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if next.(Model).workersLog {
 		t.Fatal("Sessions toggled the workers log")
 	}
@@ -172,12 +172,12 @@ func TestWorkersLogBelongsToQuotasAndPickerNote(t *testing.T) {
 		t.Fatalf("stored picker note missing: %s", got)
 	}
 	m.workersLog = false
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	next, _ = m.Update(tea.KeyPressMsg{Text: "s", Code: []rune("s")[0]})
 	m = next.(Model)
 	if !m.quotaShowUnset || m.workersLog {
 		t.Fatal("s no longer toggles other subscriptions")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	next, _ = m.Update(tea.KeyPressMsg{Text: "d", Code: []rune("d")[0]})
 	m = next.(Model)
 	if !m.qualityDetail || m.workersLog {
 		t.Fatal("d no longer opens quality details")

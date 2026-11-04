@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"strings"
@@ -10,9 +9,9 @@ import (
 )
 
 func TestThemeRolesProduceColor(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	if !strings.Contains(sNeeds.Render("wait"), "\x1b[") {
 		t.Fatal("warning has no colour")
 	}
@@ -28,16 +27,16 @@ func TestSharedPieces(t *testing.T) {
 	if got := panel("Machines", []string{"one"}, 20, roleAccent); len(got) != 3 || !strings.Contains(got[0], "Machines") {
 		t.Fatalf("panel: %q", got)
 	}
-	if got := keyHints("q", "quit"); !strings.Contains(got, "q quit") {
+	if got := keyHints("q", "quit"); !strings.Contains(testOutput(got), "q quit") {
 		t.Fatalf("keys: %q", got)
 	}
-	if got := progressBar(.5, 4, roleGood); !strings.Contains(got, "██░░") {
+	if got := progressBar(.5, 4, roleGood); !strings.Contains(testOutput(got), "██░░") {
 		t.Fatalf("bar: %q", got)
 	}
 }
 
 func TestSessionsUsePanels(t *testing.T) {
-	v := newModel(80, 24).View()
+	v := newModel(80, 24).testView()
 	for _, want := range []string{"╭─Machines", "╭─CTO", "╰"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
@@ -57,20 +56,20 @@ func TestCTOHintFitsAndProgressShowsTrickle(t *testing.T) {
 }
 
 func TestPaddedBusyStatusHasBackground(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	if !strings.Contains(statusLabel("busy  "), ";48;") {
 		t.Fatalf("padded busy status has no background: %q", statusLabel("busy  "))
 	}
 }
 
 func TestSelectedSessionKeepsColors(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	m := newModel(120, 34)
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "▸") {
 		t.Fatal("missing selection marker")
 	}
@@ -85,9 +84,9 @@ func TestSelectedSessionKeepsColors(t *testing.T) {
 }
 
 func TestMachineDotColors(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	m := newModel(120, 34)
 	rows := m.machineRows()
 	for _, r := range rows {
@@ -114,9 +113,9 @@ func TestMachineLoadColors(t *testing.T) {
 }
 
 func TestCTOTitleAndFocusedBorder(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	m := newModel(120, 34)
 	m.cto.harness, m.cto.model = "claude", "sonnet"
 	unfocused := m.ctoView(120, 10)[0]
@@ -156,7 +155,7 @@ func TestPanelPadsAndClipsInnerWidth(t *testing.T) {
 func TestMachinePanelDoesNotClipPadding(t *testing.T) {
 	m := newModel(80, 24)
 	m.usage.have = false
-	for _, line := range strings.Split(m.View(), "\n") {
+	for _, line := range strings.Split(m.testView(), "\n") {
 		if strings.Contains(line, "Mac (here)") && strings.Contains(line, "cpu ?") && strings.Contains(line, "…") {
 			t.Fatalf("machine row clipped padding: %q", line)
 		}

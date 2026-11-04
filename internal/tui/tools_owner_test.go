@@ -165,7 +165,7 @@ func TestToolsOwnerGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		fresh := func() Model { m, _ := newToolsModel(size[0], size[1]); return openTools(m) }
 		snap := func(name string, m Model) {
-			golden(t, fmt.Sprintf("tools_owner_%s_%dx%d", name, size[0], size[1]), m.View())
+			golden(t, fmt.Sprintf("tools_owner_%s_%dx%d", name, size[0], size[1]), m.testView())
 			for _, l := range strings.Split(plain(m), "\n") {
 				if ansi.StringWidth(l) > size[0] {
 					t.Fatalf("line too wide: %s", l)

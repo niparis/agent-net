@@ -128,22 +128,22 @@ func TestQuotaQualityOverflowKeepsBordersAndScrolls(t *testing.T) {
 			m := newModel(size[0], size[1])
 			m.tab = quotasTab
 			m.snap.Calibration = calibrationSnapshot()
-			initial := ansi.Strip(m.View())
+			initial := ansi.Strip(m.testView())
 			view := initial
 			quality := quotaPanelText(t, view, "Quality analysis")
 			quotaPanelText(t, view, "Subscriptions")
 			if size[0] == 80 && !strings.Contains(quality, "more below") {
 				t.Errorf("overflow hint missing:\n%s", quality)
 			}
-			golden(t, fmt.Sprintf("calibration_%dx%d", size[0], size[1]), m.View())
+			golden(t, fmt.Sprintf("calibration_%dx%d", size[0], size[1]), m.testView())
 			found := false
 			for range 60 {
 				m = keys(m, "down")
-				view = ansi.Strip(m.View())
+				view = ansi.Strip(m.testView())
 				quality = quotaPanelText(t, view, "Quality analysis")
 				if strings.Contains(quality, "My time =") {
 					found = true
-					golden(t, fmt.Sprintf("calibration_scrolled_%dx%d", size[0], size[1]), m.View())
+					golden(t, fmt.Sprintf("calibration_scrolled_%dx%d", size[0], size[1]), m.testView())
 					break
 				}
 			}
@@ -153,7 +153,7 @@ func TestQuotaQualityOverflowKeepsBordersAndScrolls(t *testing.T) {
 			for range 60 {
 				m = keys(m, "up")
 			}
-			if got := ansi.Strip(m.View()); got != initial {
+			if got := ansi.Strip(m.testView()); got != initial {
 				t.Error("scrolling up did not restore the first page")
 			}
 		})
@@ -212,7 +212,7 @@ func TestQuotaCalibrationGoldens(t *testing.T) {
 		m := newModel(size[0], size[1])
 		m.tab = 2
 		m.snap.Calibration = calibrationSnapshot()
-		view := m.View()
+		view := m.testView()
 		for _, line := range lines(view) {
 			if ansi.StringWidth(line) > size[0] {
 				t.Fatalf("wide line at %d columns: %q", size[0], line)

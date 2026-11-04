@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -49,7 +49,7 @@ func TestCTOSessionsRowShowsTheOwnersTitle(t *testing.T) {
 		m.filter = "CTO" // keep the machine group and the one row in view
 		m.ensureSelection()
 		m.fixScroll()
-		view := m.View()
+		view := m.testView()
 		plain := ansi.Strip(view)
 		if !strings.Contains(plain, "Atlas") {
 			t.Fatalf("%dx%d: the row does not show the owner's title:\n%s", size[0], size[1], plain)
@@ -66,7 +66,7 @@ func TestCTOBoxShowsOpenProposals(t *testing.T) {
 		m := ctoPart8Model(size[0], size[1], "Atlas", 2)
 		m.focus = focusCTO
 		m.cto.messages = []string{"you: hello", "cto: hi"}
-		view := m.View()
+		view := m.testView()
 		if !strings.Contains(ansi.Strip(view), "2 open proposals") {
 			t.Fatalf("%dx%d: the box does not show the proposal count:\n%s", size[0], size[1], ansi.Strip(view))
 		}
@@ -108,14 +108,14 @@ func ctoGraphModel(w, h int) Model {
 func TestGraphShowsTheCTONodeAndItsRequestRule(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := ctoGraphModel(size[0], size[1])
-		plain := ansi.Strip(m.View())
+		plain := ansi.Strip(m.testView())
 		if !strings.Contains(plain, protocol.CTONodeName) {
 			t.Fatalf("%dx%d: no CTO node:\n%s", size[0], size[1], plain)
 		}
 		if strings.Contains(plain, "…") {
 			t.Fatalf("%dx%d: a graph label is cut:\n%s", size[0], size[1], plain)
 		}
-		golden(t, fmt.Sprintf("graph_cto_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("graph_cto_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -124,7 +124,7 @@ func TestCTOCardShowsTheRequestRule(t *testing.T) {
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: protocol.CTONodeName})
 	m.mp.selected = protocol.CTONodeName
 	m.mapOn = true
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "project-01") || !strings.Contains(view, "ask") {
 		t.Fatalf("the CTO card does not show the incoming rule:\n%s", view)
 	}
@@ -148,7 +148,7 @@ func TestEnterOnTheCTORowAndBoxGiveTheSamePlan(t *testing.T) {
 
 	boxModel := m
 	boxModel.focus = focusCTO
-	_, boxCmd := boxModel.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, boxCmd := boxModel.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if boxCmd == nil {
 		t.Fatal("Enter on the CTO box did not ask for a plan")
 	}

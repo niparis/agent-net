@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -114,7 +114,7 @@ func TestMessageListLoadsTheNextPageWhenTheCursorNearsTheEnd(t *testing.T) {
 	}
 
 	m.convSel = len(m.messageConversations()) - 2
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(Model)
 	m = runCommands(t, m, cmd)
 	if got := len(m.messageConversations()); got != 8 {
@@ -142,7 +142,7 @@ func TestMessagesViewNeverCallsTheConversationSource(t *testing.T) {
 
 	src.convCalls, src.convMsgCalls = nil, nil
 	for i := 0; i < 5; i++ {
-		_ = m.View()
+		_ = m.testView()
 	}
 	if len(src.convCalls) != 0 {
 		t.Fatalf("View asked for conversations %d times", len(src.convCalls))
@@ -284,7 +284,7 @@ func TestConversationEndedWorkerScreens(t *testing.T) {
 		m.tab, m.focus = messagesTab, focusFeed
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refreshAndRun(t, m, src)
-		golden(t, fmt.Sprintf("messages_ended_workers_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("messages_ended_workers_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -395,6 +395,6 @@ func TestConversationFullListScreens(t *testing.T) {
 		m.tab, m.focus = messagesTab, focusFeed
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refreshAndRun(t, m, src)
-		golden(t, fmt.Sprintf("messages_full_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("messages_full_%dx%d", size[0], size[1]), m.testView())
 	}
 }

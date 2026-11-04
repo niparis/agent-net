@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -262,9 +262,9 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 	if len(rows) != 4 || rows[0].id != "instruction" || rows[1].id != "recent" || rows[2].id != "older" || !rows[3].worker {
 		t.Fatalf("instruction, recent agent threads, then worker threads expected: %+v", rows)
 	}
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	line := m.messageConversationLine(rows[0], 110, false)
 	if !strings.Contains(ansi.Strip(line), "you→") {
 		t.Fatalf("owner instruction marker missing: %s", line)
@@ -347,7 +347,7 @@ func TestMessageSelectBodyWithinConversation(t *testing.T) {
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0}, ConversationID: "a"}, {Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0}, ConversationID: "a"}})
 	m.feedCur = 0
 	m = keys(m, "right")
-	next, _ := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if m.open == nil || m.open.id != "two" {
 		t.Fatalf("opened %+v", m.open)
@@ -392,13 +392,13 @@ func TestConversationScreens(t *testing.T) {
 			}
 		}
 		m = keys(m, "end")
-		v := m.View()
+		v := m.testView()
 		if !strings.Contains(ansi.Strip(v), "Polish") {
 			t.Fatal(v)
 		}
 		golden(t, fmt.Sprintf("messages_conversations_%dx%d", size[0], size[1]), v)
 		m = keys(m, "l", "l")
-		golden(t, fmt.Sprintf("messages_events_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("messages_events_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 

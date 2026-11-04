@@ -44,7 +44,7 @@ func richGraph() protocol.GraphView {
 func TestMapCardShowsWildcardAsAllProjectsAndRuleOnlyWhenNotNormal(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, richGraph()))
 	m.mp.selected = "tenebrae"
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, "all projects ──▶ depends") {
 		t.Fatal(v)
 	}
@@ -59,11 +59,11 @@ func TestMapCardShowsWildcardAsAllProjectsAndRuleOnlyWhenNotNormal(t *testing.T)
 func TestMapCardGovernedByAppearsOnlyWithAnArchitect(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, richGraph()))
 	m.mp.selected = "tenebrae"
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "governed by: wbg-architect (advisor)") {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "governed by: wbg-architect (advisor)") {
 		t.Fatal(v)
 	}
 	m.mp.selected = "homelab"
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if strings.Contains(v, "governed by") || strings.Contains(strings.ToLower(v), "add architect") {
 		t.Fatal(v)
 	}
@@ -72,7 +72,7 @@ func TestMapCardGovernedByAppearsOnlyWithAnArchitect(t *testing.T) {
 func TestMapCardCharterShowsBlockFieldsWrappedAndNeverCut(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, richGraph()))
 	m.mp.selected = "tenebrae"
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	for _, want := range []string{"accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes", "New document sources", "one-off client reports.", "triages them every Monday.", "nightly report job", "public ids.", "tenebrae-library", "read only on laptops."} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
@@ -110,7 +110,7 @@ func TestMapCardShowsPurposeAndMaturityOnce(t *testing.T) {
 	}})
 	m := openMap(t, mapModel(120, 34, g))
 	m.mp.selected = "once"
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if n := strings.Count(v, "Serves exactly one purpose."); n != 1 {
 		t.Fatalf("purpose shown %d times, want 1:\n%s", n, v)
 	}
@@ -122,19 +122,19 @@ func TestMapCardShowsPurposeAndMaturityOnce(t *testing.T) {
 func TestMapCardCharterScrolls(t *testing.T) {
 	m := openMap(t, mapModel(80, 24, richGraph()))
 	m.mp.selected = "tenebrae"
-	before := ansi.Strip(m.View())
+	before := ansi.Strip(m.testView())
 	if !strings.Contains(before, "ctrl+u/ctrl+d scroll") || strings.Contains(before, "embeddings.") {
 		t.Fatal(before)
 	}
 	for i := 0; i < 3; i++ {
 		m = keys(m, "ctrl+d")
 	}
-	if after := ansi.Strip(m.View()); !strings.Contains(after, "embeddings.") {
+	if after := ansi.Strip(m.testView()); !strings.Contains(after, "embeddings.") {
 		t.Fatal(after)
 	}
 	// Another node starts at the top again.
 	m.mp.selected = "cogforge"
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "accepts") {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "accepts") {
 		t.Fatal(v)
 	}
 }
@@ -329,6 +329,6 @@ func TestGoldenMapCard(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {190, 45}} {
 		m := openMap(t, mapModel(size[0], size[1], richGraph()))
 		m.mp.selected = "tenebrae"
-		golden(t, fmt.Sprintf("map_card_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("map_card_%dx%d", size[0], size[1]), m.testView())
 	}
 }

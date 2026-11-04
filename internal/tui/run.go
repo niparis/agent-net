@@ -5,10 +5,11 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // Run shows the screen until the person quits or ctx ends. It uses the
@@ -17,7 +18,7 @@ func Run(ctx context.Context, src Source) error {
 	defer src.Close()
 	// Resolve Lip Gloss's adaptive colors before Bubble Tea acquires the
 	// terminal. Non-TUI commands never need to ask the terminal for its palette.
-	_ = lipgloss.HasDarkBackground()
+	palette.SetDark(lipgloss.HasDarkBackground(os.Stdin, os.Stdout))
 	m := New(src)
 	m.graphPixel.set(graphview.Detect(os.Getenv, graphview.QueryTerminal))
 	m.graphPixel.motion = os.Getenv("AGENT_NET_GRAPH_MOTION") == "1"
@@ -26,7 +27,7 @@ func Run(ctx context.Context, src Source) error {
 	if m.herdrSocket != "" {
 		m.herdrPaneID = os.Getenv("HERDR_PANE_ID")
 	}
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
+	p := tea.NewProgram(m, tea.WithContext(ctx))
 	if receiver, ok := src.(interface {
 		SetUIPush(func(protocol.UIRequest))
 	}); ok {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -101,13 +101,13 @@ func TestTreeGolden(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		name := "tree_" + itoa(size.w) + "x" + itoa(size.h)
 		m := treeModel(size.w, size.h, treeFixture())
-		golden(t, name, selectID(m, kidB).View())
+		golden(t, name, selectID(m, kidB).testView())
 		// The caller hides: the filter matches the workers only.
 		f := m
 		f.filter = "probe"
 		f.ensureSelection()
 		f.fixScroll()
-		golden(t, name+"_hidden_caller", f.View())
+		golden(t, name+"_hidden_caller", f.testView())
 	}
 }
 

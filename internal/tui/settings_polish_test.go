@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/niparis/agent-net/internal/funnel"
@@ -78,27 +77,27 @@ func TestSettingsColumnsAndSectionSpacing(t *testing.T) {
 	if !strings.Contains(view, machine) {
 		t.Errorf("machine columns: want %q", machine)
 	}
-	old := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	setTestColorProfile(termenv.TrueColor)
 	colored := strings.Join(m.settingsView(120, 80), "\n")
 	for _, name := range []string{"Connected apps", "Integrations", "Machines", "Notifications", "Tips"} {
 		if !strings.Contains(colored, sBold.Render(name)) {
 			t.Errorf("section title %q is not bold", name)
 		}
 	}
-	lipgloss.SetColorProfile(old)
+	setTestColorProfile(old)
 	m.height = 24
 	m.width = 80
 	m = selectSettingsKind(m, "restart")
-	if !strings.Contains(ansi.Strip(m.View()), "▸ Restart tips") {
+	if !strings.Contains(ansi.Strip(m.testView()), "▸ Restart tips") {
 		t.Fatal("selected row scrolled out of view")
 	}
 }
 
 func TestSessionSettingsColors(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	m := newModel(120, 34)
 	a := m.snap.Agents[0]
 	m.selected = "other"

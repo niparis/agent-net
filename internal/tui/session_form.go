@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/operator"
@@ -73,10 +72,10 @@ type sessionForm struct {
 func newSessionForm() sessionForm {
 	var f sessionForm
 	for i := range f.in {
-		t := textinput.New()
+		t := newTextInput()
 		t.Prompt = ""
 		t.CharLimit = 4000
-		t.Cursor.SetMode(cursor.CursorHide)
+		t.SetVirtualCursor(false)
 		f.in[i] = t
 	}
 	f.folder = protocol.FolderProject
@@ -683,7 +682,7 @@ func (m *Model) completeSessionProject() bool {
 // worker form: tab and enter move down, up moves back. Left and right act on
 // the field that has the focus: the Harness, Model and Folder switches change
 // their choice, and a text field moves its cursor.
-func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) sessionFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	f := &m.sform
 	key := keyAction(contextForm, k.String())
 	switch key {
@@ -740,12 +739,21 @@ func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// The switches take no text; only the keys above act on them.
 		return m, nil
 	}
+	return m.sessionFormInput(k)
+}
+
+// sessionFormInput handles both native key presses and bracketed paste.
+func (m Model) sessionFormInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	f := &m.sform
+	if f.cur == sHarness || f.cur == sModel || f.cur == sFolder {
+		return m, nil
+	}
 	f.err = ""
 	if f.cur == sBranch {
 		f.branchAuto = false
 	}
 	var cmd tea.Cmd
-	f.in[f.cur], cmd = f.in[f.cur].Update(k)
+	f.in[f.cur], cmd = f.in[f.cur].Update(msg)
 	if f.cur == sProject {
 		m.refreshSessionPathFolder()
 		if f.worktree() && f.branchAuto {

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
@@ -359,7 +359,7 @@ func (m Model) openToolMenu() (tea.Model, tea.Cmd) {
 	md.foot = []string{"j/k", "move", "enter", "choose", "esc", "back"}
 	return m, nil
 }
-func (m Model) toolMenuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) toolMenuKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	p := m.tl.modal.menu
 	switch keyAction(contextToolsMenu, k.String()) {
 	case "help":
@@ -750,7 +750,7 @@ func toolAddLines(f *toolAddForm) []string {
 	out = append(out, lead+"Machine: "+machine)
 	return out
 }
-func (m Model) toolAddKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) toolAddKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	f := m.tl.modal.form
 	n := len(f.values)
 	key := keyAction(contextToolsAdd, k.String())
@@ -779,8 +779,8 @@ func (m Model) toolAddKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	default:
-		if f.field < n && (k.Type == tea.KeyRunes || k.Type == tea.KeySpace) {
-			f.values[f.field] += string(k.Runes)
+		if f.field < n && (k.Text != "") {
+			f.values[f.field] += k.Text
 		}
 	}
 	return m, nil

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -22,7 +22,7 @@ func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 	m := keys(newModel(80, 24), "?", "?")
 	var seen strings.Builder
 	for i := 0; i < len(m.helpContent(80))+20; i++ {
-		v := ansi.Strip(m.View())
+		v := ansi.Strip(m.testView())
 		if strings.Contains(v, "…") {
 			t.Fatalf("help has an ellipsis:\n%s", v)
 		}
@@ -43,7 +43,7 @@ func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 		}
 	}
 	m = keys(m, "up")
-	if !strings.Contains(ansi.Strip(m.View()), "more above") {
+	if !strings.Contains(ansi.Strip(m.testView()), "more above") {
 		t.Fatal("up did not scroll back")
 	}
 }
@@ -53,7 +53,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 10})
 	var seen strings.Builder
 	for i := 0; i < len(m.helpContent(80))+20; i++ {
-		seen.WriteString(ansi.Strip(m.View()))
+		seen.WriteString(ansi.Strip(m.testView()))
 		m = keys(m, "j")
 	}
 	for _, want := range []string{"Keys · Tools", "add an MCP server or a skill from a folder", "open the actions for the selected tool", "? all screens", "esc close", "more below", "more above"} {
@@ -67,7 +67,7 @@ func TestToolsHelpWrapsAndEveryLineCanBeReached(t *testing.T) {
 	m := keys(newModel(40, 10), "5", "?")
 	var seen strings.Builder
 	for i := 0; i < len(m.helpContent(40))+20; i++ {
-		v := ansi.Strip(m.View())
+		v := ansi.Strip(m.testView())
 		if strings.Contains(v, "…") {
 			t.Fatalf("tools help has an ellipsis:\n%s", v)
 		}

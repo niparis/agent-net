@@ -10,10 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -137,7 +135,7 @@ func (m Model) settingsItems() []settingsItem {
 	return items
 }
 
-func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.apps.stage == "rename" {
 		next, cmd := m.appsKey(k)
 		return next, cmd
@@ -214,7 +212,7 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "setting-repo":
 			if open {
 				m.mode = modeSettingRepo
-				m.rename = textinput.New()
+				m.rename = newTextInput()
 				m.rename.Prompt = "repo (empty for network)> "
 				m.rename.SetValue(m.settingRepo)
 				return m, m.rename.Focus()
@@ -236,7 +234,7 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "app":
 			if open {
 				m.apps.index = item.index
-				return m.appsKey(tea.KeyMsg{Type: tea.KeyEnter})
+				return m.appsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 			}
 		case "integrations":
 			if open {
@@ -278,8 +276,8 @@ func (m Model) settingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func keyRunesForSettings(s string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+func keyRunesForSettings(s string) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Text: s, Code: []rune(s)[0]}
 }
 
 // startTimeZoneEdit asks for the display time zone: auto, or a name the zone
@@ -292,10 +290,10 @@ func (m Model) startTimeZoneEdit() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeTimeZone
-	m.rename = textinput.New()
+	m.rename = newTextInput()
 	m.rename.Prompt = "time zone (auto or a name like Europe/Paris)> "
 	m.rename.CharLimit = 64
-	m.rename.Cursor.SetMode(cursor.CursorHide)
+	m.rename.SetVirtualCursor(false)
 	shown := m.snap.TimeZone
 	if shown == "" {
 		shown = protocol.TimeZoneAuto
@@ -306,7 +304,7 @@ func (m Model) startTimeZoneEdit() (Model, tea.Cmd) {
 	return m, m.rename.Focus()
 }
 
-func (m Model) timeZoneKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) timeZoneKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal
@@ -351,7 +349,7 @@ func (m Model) timeZoneKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) settingsAppsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) settingsAppsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	next, cmd := m.appsKey(k)
 	m = next.(Model)
 	if m.apps.stage != "" && m.apps.stage != "rename" {
@@ -643,14 +641,14 @@ func (m Model) startSettingValueEdit(i int) (Model, tea.Cmd) {
 	}
 	m.settingEdit = i
 	m.mode = modeSettingValue
-	m.rename = textinput.New()
+	m.rename = newTextInput()
 	m.rename.Prompt = "JSON value> "
 	m.rename.CharLimit = 0
 	m.rename.SetValue(string(m.settingValues[i].Value))
 	m.rename.CursorEnd()
 	return m, m.rename.Focus()
 }
-func (m Model) settingValueKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) settingValueKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal
@@ -722,7 +720,7 @@ func (m Model) settingValueKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) settingRepoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) settingRepoKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal
@@ -738,7 +736,7 @@ func (m Model) settingRepoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) settingUndoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) settingUndoKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":
 		m.mode = modeNormal

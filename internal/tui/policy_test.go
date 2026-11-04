@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -67,23 +67,23 @@ func TestPolicyFormResolvesBeforeSavingAndSaves(t *testing.T) {
 	m = runPreviews(t, m, cmd)
 	// Delegate: right x2 = native.
 	for i := 0; i < 2; i++ {
-		m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 		m = runPreviews(t, m, cmd)
 	}
 	if m.pol.delegateValue() != protocol.DelegateNative {
 		t.Fatalf("delegate %q", m.pol.delegateValue())
 	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Coder
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // to Coder
 	m = runPreviews(t, m, cmd)
 	m = typeText(m, "deepseek 4.1")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Main
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // to Main
 	m = runPreviews(t, m, cmd)
 	m = typeText(m, "sol")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Workers
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // to Workers
 	m = runPreviews(t, m, cmd)
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Scope
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // to Scope
 	m = runPreviews(t, m, cmd)
-	screen := strings.Join(lines(m.View()), "\n") + "\n" + detailText(m)
+	screen := strings.Join(lines(m.testView()), "\n") + "\n" + detailText(m)
 	for _, want := range []string{"Delegation policy", "native", "-> deepseek/deepseek-v4.1-flash", "-> sol/sol-6.1", "session"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("form lacks %q:\n%s", want, screen)
@@ -92,7 +92,7 @@ func TestPolicyFormResolvesBeforeSavingAndSaves(t *testing.T) {
 	if len(saved) != 0 {
 		t.Fatal("nothing may be saved before the last Enter")
 	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	msg := cmd()
 	if _, ok := msg.(policySavedMsg); !ok {
 		t.Fatalf("save gave %T", msg)
@@ -115,23 +115,23 @@ func TestPolicyFormShowsResolutionErrorsAndRefusesAnEmptyCoder(t *testing.T) {
 	m = selectID(m, "s_0000000000000003")
 	m, cmd := openSessionSetting(m, 1)
 	m = runPreviews(t, m, cmd)
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	m = runPreviews(t, m, cmd)
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	m = runPreviews(t, m, cmd)
 	// Jump to Scope with no coder: save is refused with a plain line.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.pol.err != "Name the coder model." || len(saved) != 0 {
 		t.Fatalf("err %q saved %v", m.pol.err, saved)
 	}
 	m = typeText(m, "nothing like it")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	m = runPreviews(t, m, cmd)
-	if s := strings.Join(lines(m.View()), "\n"); !strings.Contains(s, "! no model in the list matches nothing like it") {
+	if s := strings.Join(lines(m.testView()), "\n"); !strings.Contains(s, "! no model in the list matches nothing like it") {
 		t.Errorf("resolution error not shown:\n%s", s)
 	}
 }
@@ -146,18 +146,18 @@ func TestPolicyGatewayRefusalKeepsTheFormOpen(t *testing.T) {
 	}
 	m = selectID(m, "s_0000000000000003")
 	m, _ = openSessionSetting(m, 1)
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight}) // off needs no coder
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight}) // off needs no coder
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = send(m, cmd())
 	if m.mode != modePolicy || !strings.Contains(m.pol.err, "no model matches") {
 		t.Fatalf("mode %v err %q", m.mode, m.pol.err)
 	}
 	// esc closes without saving.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.mode != modeNormal || m.notice.text != "Policy unchanged." {
 		t.Errorf("esc: %v %q", m.mode, m.notice.text)
 	}
@@ -175,13 +175,13 @@ func TestPolicyShowsInTheTableAndDetailAndHelp(t *testing.T) {
 	}
 	m = refresh(m, src)
 	m = selectID(m, target)
-	screen := strings.Join(lines(m.View()), "\n") + "\n" + detailText(m)
+	screen := strings.Join(lines(m.testView()), "\n") + "\n" + detailText(m)
 	for _, want := range []string{"DELEGATE", "native", "native -> deepseek/deepseek-v4.1-flash (project)", "sol/sol-6.1"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("screen lacks %q:\n%s", want, screen)
 		}
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "?", Code: []rune("?")[0]})
 	if !strings.Contains(strings.Join(m.helpContent(140), "\n"), "delegation policy") {
 		t.Error("help lacks the p key")
 	}
@@ -221,14 +221,14 @@ func TestPolicyFormGolden(t *testing.T) {
 	m, cmd := openSessionSetting(m, 1)
 	m = runPreviews(t, m, cmd)
 	for i := 0; i < 2; i++ {
-		m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 		m = runPreviews(t, m, cmd)
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = typeText(m, "deepseek 4.1")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = runPreviews(t, m, cmd)
-	golden(t, "view_120x34_policy_form", m.View())
+	golden(t, "view_120x34_policy_form", m.testView())
 }
 
 // The Workers line has the three levels and a default. Choosing one moves the
@@ -241,32 +241,32 @@ func TestPolicyFormWorkersLine(t *testing.T) {
 	m, cmd := openSessionSetting(m, 1)
 	m = runPreviews(t, m, cmd)
 	for i := 0; i < 3; i++ {
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown}) // Delegate, Coder, Main -> Workers
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown}) // Delegate, Coder, Main -> Workers
 	}
 	if m.pol.cur != pfWorkers {
 		t.Fatalf("cursor on %v, want Workers", m.pol.cur)
 	}
-	if s := strings.Join(lines(m.View()), "\n"); !strings.Contains(s, "Workers") || !strings.Contains(s, "sandboxed (default)") {
+	if s := strings.Join(lines(m.testView()), "\n"); !strings.Contains(s, "Workers") || !strings.Contains(s, "sandboxed (default)") {
 		t.Errorf("the Workers line shows no default:\n%s", s)
 	}
 	var seen []string
 	for i := 0; i < 4; i++ {
-		m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 		m = runPreviews(t, m, cmd)
 		seen = append(seen, workersChoices[m.pol.workers])
 	}
 	if strings.Join(seen, ",") != "sandboxed,no-network,read-only," {
 		t.Errorf("choices: %v", seen)
 	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight}) // sandboxed
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight}) // sandboxed
 	m = runPreviews(t, m, cmd)
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight}) // no-network
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight}) // no-network
 	m = runPreviews(t, m, cmd)
 	if m.pol.scope != protocol.ScopeProject {
 		t.Errorf("scope %q: a workers level is per project", m.pol.scope)
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Scope
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter}) // to Scope
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	msg, ok := cmd().(policySavedMsg)
 	if !ok {
 		t.Fatalf("save gave %T", msg)
@@ -287,7 +287,7 @@ func TestPolicyFormRefusesWorkersAtSessionScope(t *testing.T) {
 	m.pol.workers = 3
 	m.pol.scope = protocol.ScopeSession
 	m.pol.cur = pfScope
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !strings.Contains(m.pol.err, "per project") || len(saved) != 0 {
 		t.Errorf("err %q saved %v", m.pol.err, saved)
 	}

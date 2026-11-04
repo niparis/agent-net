@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -121,7 +120,7 @@ func TestTrustIsAlwaysAColumn(t *testing.T) {
 
 func TestTableShowsTheNewColumnsAndNotTheMovedOnes(t *testing.T) {
 	m := newModel(120, 34)
-	out := m.View()
+	out := m.testView()
 	for _, want := range []string{"NAME", "AGENT", "PROJECT", "MODEL", "STATUS", "TRUST", "CPU", "RAM", "TASK"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing column %q", want)
@@ -231,7 +230,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	if strings.Contains(strings.Join(names(m), ","), "web") {
 		t.Fatalf("web was not hidden: %v", names(m))
 	}
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "view: active") {
 		t.Fatalf("the header does not show the view:\n%s", v)
 	}
@@ -252,7 +251,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 
 func TestActiveFilterCombinesWithTheTextFilterInTheHeader(t *testing.T) {
 	m := keys(newModel(120, 34), "v", "v", "v", "/", "t", "e", "enter")
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "view: active") || !strings.Contains(v, "filter: /te") {
 		t.Fatalf("the view and the text filter are not listed together:\n%s", v)
 	}
@@ -270,9 +269,9 @@ func TestIdleSessionsAreDim(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = settle(refresh(m, src))
-	lipgloss.SetColorProfile(termenv.ANSI)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
-	for _, l := range lines(m.View()) {
+	setTestColorProfile(termenv.ANSI)
+	defer setTestColorProfile(termenv.Ascii)
+	for _, l := range lines(m.testView()) {
 		if strings.Contains(l, "web") {
 			if !strings.Contains(l, "\x1b[36m") {
 				t.Fatalf("the quiet session is not dim: %q", l)

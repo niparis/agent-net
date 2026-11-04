@@ -1,9 +1,9 @@
 package tui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
 	"sort"

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -38,8 +38,8 @@ func TestCTOBackHintsAndKeys(t *testing.T) {
 			if !strings.Contains(help, "back to Sessions") || strings.Contains(help, "tab returns") {
 				t.Errorf("CTO help does not describe the return key correctly: %s", help)
 			}
-			for _, key := range []tea.KeyType{tea.KeyCtrlCloseBracket, tea.KeyTab} {
-				next := send(m, tea.KeyMsg{Type: key})
+			for _, key := range []tea.KeyPressMsg{{Code: ']', Mod: tea.ModCtrl}, {Code: tea.KeyTab}} {
+				next := send(m, key)
 				if next.focus != focusSessions {
 					t.Errorf("%v did not return focus to Sessions", key)
 				}
@@ -54,7 +54,7 @@ func TestCTOOnboardingTipCanStillBeSkipped(t *testing.T) {
 	if hint := ansi.Strip(m.onboardingLine(120)); !strings.Contains(hint, "esc skip") {
 		t.Errorf("tip does not show the skip key: %s", hint)
 	}
-	next, cmd := m.key(tea.KeyMsg{Type: tea.KeyEsc})
+	next, cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = onboardingRun(next.(Model), cmd)
 	if src.progress.Steps["see"] != "skipped" || m.focus != focusCTO {
 		t.Fatalf("skip key did not skip the tip while retaining focus: %+v", src.progress.Steps)
@@ -85,7 +85,7 @@ func TestCTOShortcutFromCardAndStartsWhenMissing(t *testing.T) {
 		src := &fakeCTOSource{fakeSource: &fakeSource{}}
 		m := New(src)
 		m.cto = nil
-		next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		next, cmd := m.Update(tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 		m = next.(Model)
 		if m.focus != focusCTO || m.cto == nil || !m.cto.polling || cmd == nil {
 			t.Errorf("%s did not start the missing CTO", key)
@@ -99,7 +99,7 @@ func TestCTOCompactHeightAndLatestLine(t *testing.T) {
 			t.Run(fmt.Sprintf("%dx%d/tab%s", size[0], size[1], tab), func(t *testing.T) {
 				m := keys(newModel(size[0], size[1]), tab)
 				m.cto.messages = []string{"old CTO line", "latest CTO line"}
-				view := strings.Split(ansi.Strip(m.View()), "\n")
+				view := strings.Split(ansi.Strip(m.testView()), "\n")
 				start := -1
 				for i, line := range view {
 					if strings.HasPrefix(line, "╭─CTO") {
@@ -161,7 +161,7 @@ func TestCTOCompactSettingsAndTextInputs(t *testing.T) {
 		if i > 0 {
 			m = keys(m, "down")
 		}
-		if view := ansi.Strip(m.View()); !strings.Contains(view, "> "+label) {
+		if view := ansi.Strip(m.testView()); !strings.Contains(view, "> "+label) {
 			t.Errorf("focused field %s is hidden:\n%s", label, view)
 		}
 		if i == 1 {
@@ -179,8 +179,8 @@ func TestCTOCompactSettingsAndTextInputs(t *testing.T) {
 	}
 	m.cto.settingsForm.titleInput.SetValue("Atlas [agent-net")
 	m = keys(m, "enter")
-	if m.cto.settingsForm == nil || !strings.Contains(ansi.Strip(m.View()), "agent-net") {
-		t.Fatalf("the compact settings form hid the title error:\n%s", ansi.Strip(m.View()))
+	if m.cto.settingsForm == nil || !strings.Contains(ansi.Strip(m.testView()), "agent-net") {
+		t.Fatalf("the compact settings form hid the title error:\n%s", ansi.Strip(m.testView()))
 	}
 }
 
@@ -191,7 +191,7 @@ func TestCTOcOpensSessionDirectly(t *testing.T) {
 			src := &fakeCTOSource{fakeSource: &fakeSource{}}
 			m := keys(New(src), tab)
 			focus := m.focus
-			next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+			next, cmd := m.Update(tea.KeyPressMsg{Text: "c", Code: []rune("c")[0]})
 			m = next.(Model)
 			if m.focus != focus {
 				t.Errorf("c moved focus from %v to %v", focus, m.focus)

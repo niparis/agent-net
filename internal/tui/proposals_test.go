@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -43,7 +43,7 @@ func TestProposalKeysAndConfirm(t *testing.T) {
 			m := New(s)
 			m.proposals = s.proposals
 			m.tab = inboxTab
-			_, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			_, cmd := m.update(tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 			if cmd == nil {
 				t.Fatal("no command")
 			}
@@ -62,12 +62,12 @@ func TestProposalKeysAndConfirm(t *testing.T) {
 	m := New(s)
 	m.proposals = s.proposals
 	m.tab = inboxTab
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+	updated, cmd := m.update(tea.KeyPressMsg{Text: "A", Code: []rune("A")[0]})
 	m = updated.(Model)
-	if cmd != nil || len(s.answers) != 0 || !strings.Contains(ansi.Strip(m.View()), "Approve all") {
+	if cmd != nil || len(s.answers) != 0 || !strings.Contains(ansi.Strip(m.testView()), "Approve all") {
 		t.Fatal("missing confirmation or ran early")
 	}
-	_, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.update(tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	if cmd == nil {
 		t.Fatal("no confirm command")
 	}
@@ -84,7 +84,7 @@ func TestProposalExpiredHidden(t *testing.T) {
 	updated, _ := m.update(m.fetchCmd()())
 	m = updated.(Model)
 	m = keys(m, "7")
-	if len(m.proposals) != 1 || !strings.Contains(m.View(), "CTO proposal") {
+	if len(m.proposals) != 1 || !strings.Contains(m.testView(), "CTO proposal") {
 		t.Fatal("open proposal not fetched")
 	}
 	s.proposals[0].Status = "expired"
@@ -102,35 +102,35 @@ func TestProposalFreshDiffAndResult(t *testing.T) {
 	m := New(s)
 	m.proposals = s.proposals
 	m.tab = inboxTab
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 	if cmd == nil {
 		t.Fatal("detail did not fetch")
 	}
 	updated, _ = m.update(cmd())
 	m = updated.(Model)
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "- old value") || !strings.Contains(view, "+ new purpose") || !strings.Contains(view, "peer") || !strings.Contains(view, "CTO's words") {
 		t.Fatalf("detail: %s", view)
 	}
 	s.graph.Nodes[0].Charter.Purpose = "changed value"
-	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ = m.update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = updated.(Model)
-	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd = m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 	updated, _ = m.update(cmd())
 	m = updated.(Model)
-	if !strings.Contains(ansi.Strip(m.View()), "- changed value") {
+	if !strings.Contains(ansi.Strip(m.testView()), "- changed value") {
 		t.Fatal("diff was not refreshed")
 	}
-	beforeLines := strings.Split(m.View(), "\n")
+	beforeLines := strings.Split(m.testView(), "\n")
 	m.say("applied")
-	afterLines := strings.Split(m.View(), "\n")
+	afterLines := strings.Split(m.testView(), "\n")
 	if len(afterLines) != len(beforeLines) || strings.Join(afterLines[:len(afterLines)-1], "\n") != strings.Join(beforeLines[:len(beforeLines)-1], "\n") {
 		t.Fatal("result line moved the detail")
 	}
 	m.proposalDetail.proposal.Result = json.RawMessage(`{"answer":"full-result"}`)
-	if !strings.Contains(m.View(), "full-result") {
+	if !strings.Contains(m.testView(), "full-result") {
 		t.Fatal("full result missing")
 	}
 }
@@ -142,12 +142,12 @@ func TestProposalGoldens(t *testing.T) {
 		m.proposals = []protocol.CTOProposal{p}
 		m.tab = inboxTab
 		m.selIdx = 0
-		golden(t, fmt.Sprintf("proposal_row_%d", w), m.View())
+		golden(t, fmt.Sprintf("proposal_row_%d", w), m.testView())
 		m.proposalDetail = &proposalDetail{proposal: p, diff: []string{"- old purpose", "+ new purpose"}}
-		golden(t, fmt.Sprintf("proposal_detail_%d", w), m.View())
+		golden(t, fmt.Sprintf("proposal_detail_%d", w), m.testView())
 		m.proposalDetail = nil
 		m.openProposalConfirm()
-		golden(t, fmt.Sprintf("proposal_confirm_%d", w), m.View())
+		golden(t, fmt.Sprintf("proposal_confirm_%d", w), m.testView())
 	}
 }
 
@@ -160,6 +160,6 @@ func TestProposalSessionStartGoldens(t *testing.T) {
 		m.proposals = []protocol.CTOProposal{p}
 		m.tab = inboxTab
 		m.selIdx = 0
-		golden(t, fmt.Sprintf("proposal_session_start_%d", w), m.View())
+		golden(t, fmt.Sprintf("proposal_session_start_%d", w), m.testView())
 	}
 }

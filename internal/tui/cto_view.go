@@ -2,15 +2,18 @@ package tui
 
 import (
 	"fmt"
-	"github.com/charmbracelet/glamour"
-	ga "github.com/charmbracelet/glamour/ansi"
-	"github.com/charmbracelet/glamour/styles"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"image/color"
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/glamour"
+	ga "github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/muesli/termenv"
+
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // ctoTitle is the name on the owner's screens. Agents never see it.
@@ -81,8 +84,8 @@ func (m Model) ctoView(w, h int) []string {
 			}
 			return " "
 		}
-		f.input.Width = max(w-12, 1)
-		f.titleInput.Width = max(w-12, 1)
+		f.input.SetWidth(max(w-12, 1))
+		f.titleInput.SetWidth(max(w-12, 1))
 		model := f.input.View()
 		if f.input.Value() == "" {
 			model = sDim.Render("default")
@@ -197,7 +200,7 @@ func (c *ctoState) renderMessage(text string, width int) []string {
 	if !strings.HasPrefix(text, "cto: ") {
 		return wrapCTOLine(text, width)
 	}
-	key := ctoRenderKey{text, width, lipgloss.HasDarkBackground(), lipgloss.ColorProfile()}
+	key := ctoRenderKey{text, width, palette.IsDark(), termenv.TrueColor}
 	if lines, ok := c.renderCache[key]; ok {
 		return lines
 	}
@@ -205,12 +208,14 @@ func (c *ctoState) renderMessage(text string, width int) []string {
 	if !key.dark {
 		style = styles.LightStyleConfig
 	}
-	color := func(role lipgloss.TerminalColor) *string {
-		adaptive := role.(lipgloss.AdaptiveColor)
-		value := adaptive.Light
+	color := func(role color.Color) *string {
+		adaptive := role.(palette.Adaptive)
+		original := adaptive.Light
 		if key.dark {
-			value = adaptive.Dark
+			original = adaptive.Dark
 		}
+		r, g, b, _ := original.RGBA()
+		value := fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
 		return &value
 	}
 	zero := uint(0)

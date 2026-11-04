@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -18,7 +18,7 @@ import (
 // exactly that, and shows the note when there is nothing to run.
 
 func pressE(m Model) (Model, tea.Cmd) {
-	return press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	return press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 }
 
 // capture replaces the terminal hand-over and records the command it got.
@@ -56,7 +56,7 @@ func TestEnterKeyEntersTheSession(t *testing.T) {
 			got, dir, _, _ := capture(&m)
 			var cmd tea.Cmd
 			if key == "enter" {
-				m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+				m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			} else {
 				m, cmd = pressE(m)
 			}
@@ -80,7 +80,7 @@ func TestEnterOnAWaitingRowEntersItWithoutCompose(t *testing.T) {
 	m.selIdx = tableOrdinal(m, cogforgeMaintenanceID)
 	src.enterPlan = protocol.EnterPlan{Note: "cogforge-maintenance is not in a tmux pane agent-net can reach: open its window on build-vm"}
 
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeNormal {
 		t.Fatalf("enter opened mode %v, want no compose form", m.mode)
 	}
@@ -91,7 +91,7 @@ func TestEnterOnAWaitingRowEntersItWithoutCompose(t *testing.T) {
 	if len(src.enters) != 1 || src.enters[0].SessionID != cogforgeMaintenanceID {
 		t.Fatalf("enter asked for %+v", src.enters)
 	}
-	if v := m.View(); !strings.Contains(v, "open its window on build-vm") {
+	if v := m.testView(); !strings.Contains(v, "open its window on build-vm") {
 		t.Errorf("the plan note is not on screen:\n%s", v)
 	}
 }
@@ -112,8 +112,8 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 	if len(src.enters) != 0 {
 		t.Fatal("the daemon is asked inside the command, not in Update")
 	}
-	if !strings.Contains(m.View(), "Looking up how to enter tenebrae (Mac)") {
-		t.Errorf("no status line while asking:\n%s", m.View())
+	if !strings.Contains(m.testView(), "Looking up how to enter tenebrae (Mac)") {
+		t.Errorf("no status line while asking:\n%s", m.testView())
 	}
 	msg := cmd()
 	if want := (protocol.EnterRequest{SessionID: workerID, TmuxSocket: "/tmp/tmux-1/default", HerdrSocket: "/tmp/herdr-1/herdr.sock"}); !reflect.DeepEqual(src.enters, []protocol.EnterRequest{want}) {
@@ -132,12 +132,12 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 
 	// The owner leaves the session: a status line and a refresh.
 	m, cmd = press2(m, (*done)(nil))
-	if !strings.Contains(m.View(), "Back from tenebrae (Mac).") || cmd == nil {
-		t.Errorf("after the session:\n%s", m.View())
+	if !strings.Contains(m.testView(), "Back from tenebrae (Mac).") || cmd == nil {
+		t.Errorf("after the session:\n%s", m.testView())
 	}
 	m, _ = press2(m, (*done)(errors.New("exit status 1")))
-	if !strings.Contains(m.View(), "Left tenebrae (Mac): exit status 1. Press ctrl+b q to come back.") {
-		t.Errorf("after a failed session:\n%s", m.View())
+	if !strings.Contains(m.testView(), "Left tenebrae (Mac): exit status 1. Press ctrl+b q to come back.") {
+		t.Errorf("after a failed session:\n%s", m.testView())
 	}
 }
 
@@ -151,7 +151,7 @@ func TestEnterWithNoCommandShowsTheNote(t *testing.T) {
 	if len(*got) != 0 || cmd != nil {
 		t.Fatalf("something ran: %v", *got)
 	}
-	if v := m.View(); !strings.Contains(v, "open its window on Mac") {
+	if v := m.testView(); !strings.Contains(v, "open its window on Mac") {
 		t.Errorf("the note is not on screen:\n%s", v)
 	}
 }
@@ -184,13 +184,13 @@ func TestEnterSSHFailureShowsTheFallback(t *testing.T) {
 	// exit status.
 	m, _ = press2(m, (*done)(exitStatus(255)))
 	want := "Could not ssh to research. Set enter_ssh_hosts in node.json, or on research run: cd /work && exec claude attach x"
-	if v := m.View(); !strings.Contains(v, want) {
+	if v := m.testView(); !strings.Contains(v, want) {
 		t.Errorf("after ssh exit 255:\n%s", v)
 	}
 
 	// Any other exit status is the session ending, as before.
 	m, _ = press2(m, (*done)(exitStatus(1)))
-	if v := m.View(); !strings.Contains(v, "Left tenebrae (Mac): exit status 1") {
+	if v := m.testView(); !strings.Contains(v, "Left tenebrae (Mac): exit status 1") {
 		t.Errorf("after exit 1:\n%s", v)
 	}
 }
@@ -202,7 +202,7 @@ func TestEnterErrorsAreShown(t *testing.T) {
 	capture(&m)
 	m, cmd := pressE(m)
 	m, _ = press2(m, cmd())
-	if v := m.View(); !strings.Contains(v, "Cannot enter tenebrae (Mac)") || !strings.Contains(v, "no such session") {
+	if v := m.testView(); !strings.Contains(v, "Cannot enter tenebrae (Mac)") || !strings.Contains(v, "no such session") {
 		t.Errorf("the error is not on screen:\n%s", v)
 	}
 }
@@ -215,18 +215,18 @@ func TestEnterWithoutASelection(t *testing.T) {
 	if cmd != nil || len(src.enters) != 0 {
 		t.Fatal("asked with nothing selected")
 	}
-	if !strings.Contains(m.View(), "Nothing is selected") {
-		t.Errorf("no message:\n%s", m.View())
+	if !strings.Contains(m.testView(), "Nothing is selected") {
+		t.Errorf("no message:\n%s", m.testView())
 	}
 }
 
 func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	m, _ := workerModel(140, 30)
-	if foot := lines(m.View())[29]; !strings.Contains(foot, "enter open") || !strings.Contains(foot, "x stop") {
+	if foot := lines(m.testView())[29]; !strings.Contains(foot, "enter open") || !strings.Contains(foot, "x stop") {
 		t.Errorf("footer: %q", foot)
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	v := m.View()
+	m, _ = press(m, tea.KeyPressMsg{Text: "?", Code: []rune("?")[0]})
+	v := m.testView()
 	if !strings.Contains(v, "go into the selected thing") {
 		t.Errorf("help does not list enter:\n%s", v)
 	}

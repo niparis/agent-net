@@ -63,7 +63,7 @@ func TestToolsImportAllGoldens(t *testing.T) {
 		s.items = append(s.items, toolSkill("outside-helper", "helper", toolLoc(toolNodeR, "research", "/tmp/skills/outside-helper", "user", "", "codex")))
 		m = pressKey(m, "5")
 		m = pressKey(m, "i")
-		golden(t, fmt.Sprintf("tools_import_all_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_import_all_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -109,7 +109,7 @@ func TestToolsCompleteKeyBars(t *testing.T) {
 					t.Errorf("%s overflows: %s", name, line)
 				}
 			}
-			if len(strings.Split(m.View(), "\n")) != m.height {
+			if len(strings.Split(m.testView(), "\n")) != m.height {
 				t.Errorf("%s changed screen height", name)
 			}
 		}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -29,18 +29,18 @@ func TestMachineActionsConfirmNamedTarget(t *testing.T) {
 		m.tab = settingsTab
 		m = selectSettingsKind(m, "machine")
 		target := m.machineRows()[m.settingsItems()[m.settingsRow].index]
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		m, cmd := press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 		if m.mode != modeConfirm || cmd != nil {
 			t.Fatalf("%s did not ask: mode %v", key, m.mode)
 		}
 		if !strings.Contains(ansi.Strip(m.helpLine(140)), target.host) {
 			t.Fatal("confirmation does not name machine")
 		}
-		cancelled, _ := press(m, tea.KeyMsg{Type: tea.KeyEsc})
+		cancelled, _ := press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 		if cancelled.mode != modeNormal || src.id != "" {
 			t.Fatal("cancel acted")
 		}
-		_, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		_, cmd = press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 		if cmd == nil {
 			t.Fatal("confirm did not act")
 		}
@@ -61,11 +61,11 @@ func TestMachineOfflineRotationRefused(t *testing.T) {
 		m.snap.Agents[i].Online = false
 	}
 	m = selectSettingsKind(m, "machine")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m, cmd := press(m, tea.KeyPressMsg{Text: "r", Code: []rune("r")[0]})
 	if cmd != nil || m.mode != modeNormal || !strings.Contains(m.notice.text, "offline") {
 		t.Fatalf("offline rotation mode=%v notice=%s", m.mode, m.notice.text)
 	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m, cmd = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 	if cmd != nil || m.mode != modeConfirm {
 		t.Fatal("offline removal unavailable")
 	}

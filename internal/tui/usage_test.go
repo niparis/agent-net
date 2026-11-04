@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -104,32 +104,32 @@ func modelWith(snap Snapshot, u *Usage, w, h int) Model {
 // ---- golden files ----
 
 func TestGoldenMainWithUsage(t *testing.T) {
-	golden(t, "usage_80x24", newModel(80, 24).View())
-	golden(t, "usage_120x40", newModel(120, 40).View())
+	golden(t, "usage_80x24", newModel(80, 24).testView())
+	golden(t, "usage_120x40", newModel(120, 40).testView())
 }
 
 func TestGoldenDetailWithTopProcesses(t *testing.T) {
-	golden(t, "detail_80x24", keys(newModel(80, 24), "d").View())
-	golden(t, "detail_120x40", keys(newModel(120, 40), "d").View())
+	golden(t, "detail_80x24", keys(newModel(80, 24), "d").testView())
+	golden(t, "detail_120x40", keys(newModel(120, 40), "d").testView())
 }
 
 func TestGoldenStaleUsage(t *testing.T) {
 	m := newModel(80, 24)
 	m.now = func() time.Time { return t0.Add(2 * time.Minute) }
-	golden(t, "stale_80x24", m.View())
+	golden(t, "stale_80x24", m.testView())
 	m = newModel(120, 40)
 	m.now = func() time.Time { return t0.Add(2 * time.Minute) }
-	golden(t, "stale_120x40", m.View())
+	golden(t, "stale_120x40", m.testView())
 }
 
 func TestGoldenOpenCodeSharedTree(t *testing.T) {
 	snap, u := openCodeSnapshot()
-	golden(t, "shared_80x24", modelWith(snap, u, 80, 24).View())
+	golden(t, "shared_80x24", modelWith(snap, u, 80, 24).testView())
 	m := modelWith(snap, u, 120, 40)
 	m.selected = "s_0000000000000003" // web, on the shared tree
 	m.ensureSelection()
 	m = settle(m)
-	golden(t, "shared_120x40", m.View())
+	golden(t, "shared_120x40", m.testView())
 }
 
 func TestHeaderQuotaWarning(t *testing.T) {
@@ -137,12 +137,12 @@ func TestHeaderQuotaWarning(t *testing.T) {
 	snap.WorkerProfiles = append(snap.WorkerProfiles, protocol.WorkerProfile{Harness: "codex"})
 	u.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92}}}}}
 	m := modelWith(snap, u, 120, 40)
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, "codex 92% week · 3") || strings.Contains(v, "quotas:") {
 		t.Fatal(v)
 	}
 	u.Local.Quotas.Providers[0].Windows[0].PercentUsed = 80
-	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).View()), "codex 80%") {
+	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).testView()), "codex 80%") {
 		t.Fatal("80% should not warn")
 	}
 }
@@ -155,19 +155,19 @@ func TestGoldenHelp(t *testing.T) {
 			t.Errorf("the help lacks %q:\n%s", want, help)
 		}
 	}
-	golden(t, "help_80x24", keys(newModel(80, 24), "?").View())
-	golden(t, "help_120x40", keys(newModel(120, 40), "?").View())
-	golden(t, "help_tools_120x40", keys(newModel(120, 40), "5", "?").View())
-	golden(t, "help_graph_80x24", keys(newModel(80, 24), "2", "?").View())
-	golden(t, "help_graph_120x40", keys(newModel(120, 40), "2", "?").View())
-	golden(t, "help_all_120x40", keys(newModel(120, 40), "?", "?").View())
+	golden(t, "help_80x24", keys(newModel(80, 24), "?").testView())
+	golden(t, "help_120x40", keys(newModel(120, 40), "?").testView())
+	golden(t, "help_tools_120x40", keys(newModel(120, 40), "5", "?").testView())
+	golden(t, "help_graph_80x24", keys(newModel(80, 24), "2", "?").testView())
+	golden(t, "help_graph_120x40", keys(newModel(120, 40), "2", "?").testView())
+	golden(t, "help_all_120x40", keys(newModel(120, 40), "?", "?").testView())
 }
 
 // ---- model rules ----
 
 func TestHeaderUsesCounts(t *testing.T) {
 	m := newModel(100, 30)
-	head := lines(m.View())[0]
+	head := lines(m.testView())[0]
 	if !strings.Contains(head, "12 online · 1 busy") {
 		t.Fatalf("header %q", head)
 	}
@@ -180,7 +180,7 @@ func TestHeaderUsesCounts(t *testing.T) {
 	old.loc, old.now = time.UTC, func() time.Time { return t0 }
 	old = send(old, tea.WindowSizeMsg{Width: 100, Height: 30})
 	old = refresh(old, src)
-	if head := lines(old.View())[0]; !strings.Contains(head, "6 sessions, 5 online · 1 busy") {
+	if head := lines(old.testView())[0]; !strings.Contains(head, "6 sessions, 5 online · 1 busy") {
 		t.Fatalf("header without counts %q", head)
 	}
 }
@@ -191,7 +191,7 @@ func TestOlderDaemonShowsQuestionMarks(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = settle(refresh(m, src))
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "cpu ?") || !strings.Contains(v, "mem ?") {
 		t.Fatalf("no question marks:\n%s", v)
 	}
@@ -238,7 +238,7 @@ func TestStaleUsageReadsAsUnknown(t *testing.T) {
 	if _, st := m.nodeUsage("n_mac"); st != usageStale {
 		t.Fatalf("this machine's report is old too once the screen stops asking: %v", st)
 	}
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "cpu ?") || !strings.Contains(v, "mem ?") || strings.Contains(v, "12% of 10") {
 		t.Fatalf("stale figures are shown:\n%s", v)
 	}
@@ -263,7 +263,7 @@ func TestHeavyTrees(t *testing.T) {
 func TestSharedTreeIsNotARowAndTopUsesHighestSessionCPU(t *testing.T) {
 	snap, u := openCodeSnapshot()
 	m := modelWith(snap, u, 160, 40)
-	v := m.View()
+	v := m.testView()
 	if strings.Contains(v, "service, shared by") {
 		t.Fatalf("the shared service still has a row of its own:\n%s", v)
 	}
@@ -301,13 +301,13 @@ func TestPrivateServiceIsOnTheWorkerRow(t *testing.T) {
 	u.Local.Trees = append(u.Local.Trees, private)
 	m := modelWith(snap, u, 140, 40)
 	var row string
-	for _, l := range lines(m.View()) {
+	for _, l := range lines(m.testView()) {
 		if strings.Contains(l, "deploy the routes") {
 			row = l
 		}
 	}
 	if row == "" {
-		t.Fatalf("the worker row has no task:\n%s", m.View())
+		t.Fatalf("the worker row has no task:\n%s", m.testView())
 	}
 	if !strings.Contains(row, "42%") || !strings.Contains(row, "1.2G") || strings.Contains(row, "shared") {
 		t.Fatalf("the worker's own server is not on its row: %q", row)
@@ -323,7 +323,7 @@ func TestMachineHeadingUsesTheNodeNameAndMatchesByNodeID(t *testing.T) {
 		}
 	}
 	m := modelWith(snap, nil, 100, 30)
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "NicolassMBP950 (here)") {
 		t.Fatalf("no heading with the node name:\n%s", v)
 	}
@@ -332,7 +332,7 @@ func TestMachineHeadingUsesTheNodeNameAndMatchesByNodeID(t *testing.T) {
 	}
 	// "(here)" follows the node ID, not the name.
 	m.snap.NodeID = "n_vm"
-	v = m.View()
+	v = m.testView()
 	if strings.Contains(v, "NicolassMBP950 (here)") || !strings.Contains(v, "build-vm (here)") {
 		t.Fatalf("(here) did not follow the node ID:\n%s", v)
 	}
@@ -366,7 +366,7 @@ func TestTopProcessesAreFetchedOnDemandAndCached(t *testing.T) {
 		t.Fatalf("requests %v", src.topReqs)
 	}
 	if !strings.Contains(detailText(m), "node /srv/app") {
-		t.Fatalf("top processes not shown:\n%s", m.View())
+		t.Fatalf("top processes not shown:\n%s", m.testView())
 	}
 	// Cached for a few seconds, fetched again after.
 	now = now.Add(3 * time.Second)
@@ -387,7 +387,7 @@ func TestTopProcessesAreFetchedOnDemandAndCached(t *testing.T) {
 
 func TestSelectingASessionStartsItsTopFetch(t *testing.T) {
 	m := newModel(100, 30)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if cmd == nil {
 		t.Fatal("moving the selection did not start the top fetch")
 	}
@@ -472,7 +472,7 @@ func TestEverySizeFitsWithUsage(t *testing.T) {
 		for h := 10; h <= 60; h += 7 {
 			for _, ks := range [][]string{nil, {"d"}, {"?"}, {"o", "G"}} {
 				m := keys(modelWith(snap, u, w, h), ks...)
-				ls := lines(m.View())
+				ls := lines(m.testView())
 				if len(ls) > max(h, 10) {
 					t.Fatalf("%dx%d %v: %d lines", w, h, ks, len(ls))
 				}
@@ -505,7 +505,7 @@ func TestKeyLineGivesUpTheLeastUsefulHints(t *testing.T) {
 
 func TestHelpOverlay(t *testing.T) {
 	m := keys(newModel(100, 40), "?", "?")
-	v := strings.Join(strings.Fields(ansi.Strip(m.View()+strings.Join(m.helpContent(100), "\n"))), " ")
+	v := strings.Join(strings.Fields(ansi.Strip(m.testView()+strings.Join(m.helpContent(100), "\n"))), " ")
 	for _, want := range []string{"Keys", "go into the selected thing", "q, ctrl+c", "Legend"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help lacks %q:\n%s", want, v)

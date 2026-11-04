@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -19,12 +19,12 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		m, src := workerModel(size.w, size.h)
 		m = selectID(m, "s_0000000000000001")
-		before := lines(ansi.Strip(m.View()))
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+		before := lines(ansi.Strip(m.testView()))
+		m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 		if m.mode != modeConfirm || src.stopped != "" {
 			t.Fatalf("mode %v stopped %q", m.mode, src.stopped)
 		}
-		view := ansi.Strip(m.View())
+		view := ansi.Strip(m.testView())
 		// The key line changes; every other row stays put.
 		joined := strings.Join(strings.Fields(view), " ")
 		name := "tenebrae-53"
@@ -41,8 +41,8 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 				t.Fatalf("layout shifted at row %d: %q -> %q", i, line, after[i])
 			}
 		}
-		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_confirm_stop_owner", m.View())
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_confirm_stop_owner", m.testView())
+		m, cmd := press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 		m = finish(t, m, cmd)
 		if src.stopped != "s_0000000000000001" || m.notice.err || !strings.Contains(m.notice.text, "stays in the service") {
 			t.Fatalf("stop %q %+v", src.stopped, m.notice)
@@ -53,15 +53,15 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 func TestStopOwnerSessionCancelAndRefusal(t *testing.T) {
 	m, src := workerModel(120, 34)
 	m = selectID(m, "s_0000000000000001")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune("n")}} {
+	m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, {Text: "n", Code: []rune("n")[0]}} {
 		cancelled, cmd := press(m, key)
 		if cmd != nil || cancelled.mode != modeNormal || src.stopped != "" {
 			t.Fatalf("cancel: mode %v stopped %q", cancelled.mode, src.stopped)
 		}
 	}
 	src.actErr = fmt.Errorf("tenebrae-53 runs in your terminal on Mac: end it there")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m, cmd := press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = finish(t, m, cmd)
 	if !m.notice.err || m.notice.text != "Not stopped: tenebrae-53 runs in your terminal on Mac: end it there" {
 		t.Fatalf("refusal: %+v", m.notice)

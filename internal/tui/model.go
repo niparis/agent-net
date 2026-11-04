@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -218,10 +217,10 @@ type Model struct {
 
 // New returns a model that reads from src.
 func New(src Source) Model {
-	ti := textinput.New()
+	ti := newTextInput()
 	ti.Prompt = "/"
 	ti.CharLimit = 80
-	ti.Cursor.SetMode(cursor.CursorHide)
+	ti.SetVirtualCursor(false)
 	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
@@ -425,23 +424,10 @@ func (m Model) bodyCmd(id string) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	nm := next.(Model)
-	if m.graphMouseActive() && nm.quitting {
-		return nm, tea.Sequence(tea.DisableMouse, cmd)
-	}
-	// After any change, fetch the top processes the detail pane wants.
 	cmds := []tea.Cmd{cmd}
-	wasMouse := m.graphMouseActive()
-	isMouse := nm.graphMouseActive() && !nm.quitting
-	if !isMouse {
+	if !nm.graphMouseActive() || nm.quitting {
 		nm.graphDragging = false
 		nm.graphLastNode = ""
-	}
-	if wasMouse != isMouse {
-		if isMouse {
-			cmds = append(cmds, tea.EnableMouseCellMotion)
-		} else {
-			cmds = append(cmds, tea.DisableMouse)
-		}
 	}
 
 	if !nm.mapOn {
@@ -468,6 +454,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
 		return m.graphMouse(msg), nil
+	case tea.PasteMsg:
+		return m.paste(msg)
 	case protocol.UIRequest:
 		return m.applyCTOUI(msg)
 	case tea.WindowSizeMsg:
@@ -934,7 +922,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Any key dismisses a result at once, on every screen.
 		m.notice = notice{}
 		m.frozenOrder = make(map[string]int)
@@ -1060,8 +1048,8 @@ func (m *Model) applyUsage(r fetchedMsg) {
 
 // ---- keys ----
 
-func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if k.Type == tea.KeyCtrlC {
+func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if k.String() == "ctrl+c" {
 		m.quitting = true
 		return m, tea.Quit
 	}
@@ -1223,12 +1211,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mapOn {
 		return m.mapKey(k)
 	}
-	if m.tab == sessionsTab && m.focus == focusSessions && m.sessionCell != 0 && k.Type == tea.KeyEsc {
+	if m.tab == sessionsTab && m.focus == focusSessions && m.sessionCell != 0 && k.Code == tea.KeyEsc {
 		m.sessionCell = 0
 		return m, nil
 	}
 	if m.filtering {
-		switch k.Type {
+		switch k.Code {
 		case tea.KeyEsc:
 			if m.filter != "" {
 				m.filter = ""

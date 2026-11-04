@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -97,7 +97,7 @@ func TestToolsMCPCoverageRowsAndPlan(t *testing.T) {
 func TestToolsMCPCoverageGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := coverageToolsModel(size[0], size[1])
-		golden(t, fmt.Sprintf("tools_mcp_coverage_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_mcp_coverage_%dx%d", size[0], size[1]), m.testView())
 
 		gap := coverageRowIndex(m, "mcp-coverage-gap:")
 		if gap < 0 {
@@ -105,7 +105,7 @@ func TestToolsMCPCoverageGoldens(t *testing.T) {
 		}
 		m.tl.row = gap
 		m = enterToolsPlan(m)
-		golden(t, fmt.Sprintf("tools_mcp_coverage_plan_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_mcp_coverage_plan_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 

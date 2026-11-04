@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -15,20 +15,20 @@ import (
 // The "n" form on Sessions and on the Graph card (docs/design/start-sessions.md,
 // build plan part 2). It starts an owner session, not a worker.
 
-func sessionKey() tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
+func sessionKey() tea.KeyPressMsg {
+	return tea.KeyPressMsg{Text: "n", Code: []rune("n")[0]}
 }
 
 func TestSDoesNotOpenAWorkerFormAndNOpensANewSession(t *testing.T) {
 	m, src := workerModel(120, 34)
 	m = selectID(m, "s_0000000000000001")
 
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m, cmd := press(m, tea.KeyPressMsg{Text: "s", Code: []rune("s")[0]})
 	if m.mode != modeNormal || cmd != nil || src.started != nil {
 		t.Fatalf("s opened a form or started a worker: mode %v, cmd %v, started %+v", m.mode, cmd != nil, src.started)
 	}
-	if strings.Contains(m.View(), "Start a worker") {
-		t.Fatalf("worker form is still visible:\n%s", m.View())
+	if strings.Contains(m.testView(), "Start a worker") {
+		t.Fatalf("worker form is still visible:\n%s", m.testView())
 	}
 
 	m, _ = press(m, sessionKey())
@@ -41,7 +41,7 @@ func TestSKeyLinesGoldenAt80And120Columns(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		m, _ := workerModel(size.w, size.h)
 		m = selectID(m, "s_0000000000000004")
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+		m, _ = press(m, tea.KeyPressMsg{Text: "s", Code: []rune("s")[0]})
 		golden(t, "keyline_sessions_"+itoa(size.w), m.helpLine(size.w))
 
 		quota := newModel(size.w, size.h)
@@ -86,7 +86,7 @@ func TestNewSessionFormFilledFromTheSelectedRow(t *testing.T) {
 	if m.sform.folder != protocol.FolderProject {
 		t.Errorf("folder %q, want the project folder", m.sform.folder)
 	}
-	v := m.View()
+	v := m.testView()
 	for _, want := range []string{
 		"New session", "Project", "strategies", "Harness", "claude", "Model",
 		"Folder", "project folder", "no other session here", "First message",
@@ -110,7 +110,7 @@ func TestNewSessionEnterWithEmptyMessageStartsAndEnters(t *testing.T) {
 	got, dir, _, _ := capture(&m)
 
 	m, _ = press(m, sessionKey())
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -150,7 +150,7 @@ func TestNewSessionEnterWithTextStartsInTheBackground(t *testing.T) {
 
 	m, _ = press(m, sessionKey())
 	m = typeText(m, "Refactor the outbox retry into its own file.")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -171,7 +171,7 @@ func TestNewSessionEnterWithTextStartsInTheBackground(t *testing.T) {
 	if !strings.Contains(m.notice.text, want) {
 		t.Fatalf("result line %q, want %q", m.notice.text, want)
 	}
-	if v := m.View(); !strings.Contains(v, want) {
+	if v := m.testView(); !strings.Contains(v, want) {
 		t.Errorf("result line is not on screen:\n%s", v)
 	}
 }
@@ -189,15 +189,15 @@ func TestNewSessionRefusesOtherHarnesses(t *testing.T) {
 				t.Fatalf("n opened mode %v", m.mode)
 			}
 			m.sform.in[sHarness].SetValue(tc.harness)
-			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude, opencode, codex and pi for now") {
+			if v := m.testView(); !strings.Contains(strings.ToLower(v), "only claude, opencode, codex and pi for now") {
 				t.Errorf("the form does not refuse:\n%s", v)
 			}
-			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("refused start still ran: cmd %v, asks %+v", cmd != nil, src.sessionStarts)
 			}
-			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude, opencode, codex and pi for now") {
-				t.Errorf("the refusal is not on the form:\n%s", m.View())
+			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.testView()), "only claude, opencode, codex and pi for now") {
+				t.Errorf("the refusal is not on the form:\n%s", m.testView())
 			}
 		})
 	}
@@ -209,7 +209,7 @@ func TestNewSessionShowsTheFailureReason(t *testing.T) {
 	src.sessionStart = protocol.StartedSession{ID: "start_1", Status: "failed", Error: "Claude Code does not trust ~/code/tenebrae"}
 
 	m, _ = press(m, sessionKey())
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")
 	}
@@ -223,7 +223,7 @@ func TestNewSessionEscCancels(t *testing.T) {
 	m, _ := workerModel(120, 34)
 	m = selectID(m, "s_0000000000000001")
 	m, _ = press(m, sessionKey())
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.mode != modeNormal || cmd != nil || m.notice.text != "Start cancelled." {
 		t.Fatalf("esc: mode %v cmd %v notice %q", m.mode, cmd != nil, m.notice.text)
 	}
@@ -245,7 +245,7 @@ func TestNewSessionFromTheGraphCard(t *testing.T) {
 	if m.sform.cur != sFirstMessage {
 		t.Errorf("focus %v", m.sform.cur)
 	}
-	if v := m.View(); !strings.Contains(v, "New session") {
+	if v := m.testView(); !strings.Contains(v, "New session") {
 		t.Errorf("the card did not open the form:\n%s", v)
 	}
 }
@@ -257,18 +257,18 @@ func TestNewSessionFormGoldens(t *testing.T) {
 		m, src := workerModel(size.w, size.h)
 		m = selectID(m, "s_0000000000000002") // strategies, idle, project folder free
 		m, _ = press(m, sessionKey())
-		golden(t, name("new_session_empty"), m.View())
+		golden(t, name("new_session_empty"), m.testView())
 
 		m = typeText(m, "Refactor the outbox retry into its own file.")
-		golden(t, name("new_session_typed"), m.View())
+		golden(t, name("new_session_typed"), m.testView())
 
 		src.sessionStart = startedSession("strategies", "claude")
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatalf("%dx%d: enter gave no command", size.w, size.h)
 		}
 		m, _ = press2(m, cmd())
-		golden(t, name("new_session_started"), m.View())
+		golden(t, name("new_session_started"), m.testView())
 	}
 }
 
@@ -277,7 +277,7 @@ func TestNewSessionRefusalUsesHarnessWords(t *testing.T) {
 	m = selectID(m, "s_0000000000000001")
 	src.sessionErr = errors.New("Claude Code is not installed on Mac")
 	m, _ = press(m, sessionKey())
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m, _ = press2(m, cmd())
 	if !m.notice.err || !strings.Contains(m.notice.text, "Claude Code is not installed on Mac") {
 		t.Fatalf("failure line %+v", m.notice)
@@ -321,7 +321,7 @@ func TestNewSessionOpenCodeStartsAndEnters(t *testing.T) {
 	src.enterPlan = protocol.EnterPlan{Argv: []string{"opencode", "--session", "ses_owner"}, Dir: "/Users/n/code/web"}
 	got, _, _, _ := captureName(&m, "web (Mac)")
 	m, _ = press(m, sessionKey())
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("OpenCode refused")
 	}
@@ -343,11 +343,11 @@ func TestNewSessionHarnessSupportGoldens(t *testing.T) {
 		m, _ := workerModel(size.w, size.h)
 		m = selectID(m, "s_0000000000000003")
 		m, _ = press(m, sessionKey())
-		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_opencode", m.View())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_opencode", m.testView())
 		m.sform.in[sHarness].SetValue("pi")
-		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_pi", m.View())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_pi", m.testView())
 		m.sform.in[sHarness].SetValue("aider")
-		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_unsupported", m.View())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_unsupported", m.testView())
 	}
 }
 
@@ -362,11 +362,11 @@ func TestNewSessionCodexAlwaysEnters(t *testing.T) {
 			m, _ = press(m, sessionKey())
 			m.sform.in[sHarness].SetValue("codex")
 			m = typeText(m, prompt)
-			view := m.View()
+			view := m.testView()
 			if !strings.Contains(view, "codex: opens it now") || strings.Contains(view, "background and send") {
 				t.Fatalf("misleading Codex form:\n%s", view)
 			}
-			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if cmd == nil {
 				t.Fatal("Codex refused")
 			}
@@ -391,7 +391,7 @@ func TestNewSessionCodexGoldens(t *testing.T) {
 		m = selectID(m, "s_0000000000000002")
 		m, _ = press(m, sessionKey())
 		m.sform.in[sHarness].SetValue("codex")
-		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_codex", m.View())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_codex", m.testView())
 	}
 }
 
@@ -434,7 +434,7 @@ func TestGraphNewSessionHelp(t *testing.T) {
 	m.mapOn = false
 	m = keys(m, "?")
 	if !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "start a new session") {
-		t.Fatalf("Graph help: %s", m.View())
+		t.Fatalf("Graph help: %s", m.testView())
 	}
 	m.mapOn, m.help = true, false
 	if !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "n") || !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "filled from here") {
@@ -448,7 +448,7 @@ func TestNewSessionGraphGoldens(t *testing.T) {
 		m.mapOn = false
 		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "tenebrae"})
 		m, _ = press(m, sessionKey())
-		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_graph", m.View())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_graph", m.testView())
 	}
 }
 
@@ -459,7 +459,7 @@ func TestNewSessionHerdrNoticeWithFirstMessage(t *testing.T) {
 	src.sessionStart.EnterPlan = &protocol.EnterPlan{OpenedHerdr: true, Note: "opened tenebrae in herdr"}
 	m, _ = press(m, sessionKey())
 	m = typeText(m, "Inspect it")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m, _ = press2(m, cmd())
 	if m.notice.text != "opened tenebrae in herdr" || len(src.enters) != 0 {
 		t.Fatalf("notice %q, enters %+v", m.notice.text, src.enters)

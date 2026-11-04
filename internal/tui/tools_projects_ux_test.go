@@ -1,8 +1,8 @@
 package tui
 
 import (
+	"charm.land/lipgloss/v2"
 	"errors"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -109,9 +109,9 @@ func TestToolsProjectToggleErrorAndSkipped(t *testing.T) {
 }
 
 func TestToolsProjectDescriptionAndFocus(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
 	m, s := agentToolsFixture(80, 24)
 	s.items[0].Description = strings.Repeat("A description from front matter. ", 20)
 	m = pressKey(m, "5")

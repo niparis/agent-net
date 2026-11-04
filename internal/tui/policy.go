@@ -5,9 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -72,10 +71,10 @@ type policySavedMsg struct {
 }
 
 func newPolicyInput(v string) textinput.Model {
-	t := textinput.New()
+	t := newTextInput()
 	t.Prompt = ""
 	t.CharLimit = protocol.MaxModelName
-	t.Cursor.SetMode(cursor.CursorHide)
+	t.SetVirtualCursor(false)
 	t.SetValue(v)
 	return t
 }
@@ -185,7 +184,7 @@ func (m Model) onPolicySaved(r policySavedMsg) (Model, tea.Cmd) {
 	return m.onAction(actionMsg{text: text})
 }
 
-func (m Model) policyKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) policyKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	f := &m.pol
 	changed := false
 	key := keyAction(contextForm, k.String())
@@ -235,7 +234,7 @@ func (m Model) policyKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if f.cur == pfDelegate || f.cur == pfWorkers || f.cur == pfScope {
 		if keyAction(contextForm, k.String()) == "toggle" {
-			return m.policyKey(tea.KeyMsg{Type: tea.KeyRight})
+			return m.policyKey(tea.KeyPressMsg{Code: tea.KeyRight})
 		}
 		return m, nil
 	}

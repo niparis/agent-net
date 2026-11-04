@@ -1,12 +1,13 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -35,7 +36,7 @@ func drainSnippets(t *testing.T, m Model) Model {
 
 // feedText draws the whole feed, newest lines included.
 func feedText(m Model, w int) string {
-	return strings.Join(m.feedLines(w, len(m.feed.items)+5), "\n")
+	return testOutput(strings.Join(m.feedLines(w, len(m.feed.items)+5), "\n"))
 }
 
 func feedModel(events []protocol.FeedEvent, messages map[string]protocol.Message) (Model, *fakeSource) {
@@ -266,7 +267,7 @@ func TestFeedEndSelectsTheLatestMessageInTheThread(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_1")
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	m = next.(Model)
 	if m.open != nil {
 		t.Fatalf("end opened another view: body=%+v", m.open)
@@ -280,7 +281,7 @@ func TestFeedEnterOpensTheMessageBody(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_1")
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if m.open == nil || m.open.id != "m_1" || cmd == nil {
 		t.Fatalf("enter did not open the body: %+v", m.open)
@@ -301,7 +302,7 @@ func TestGoldenFeedSnippets(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = settle(refresh(m, src))
 	m = drainSnippets(t, m)
-	golden(t, "view_120x34_feed_snippets", m.View())
+	golden(t, "view_120x34_feed_snippets", m.testView())
 }
 
 func TestHelpListsTheMessageStates(t *testing.T) {
@@ -318,10 +319,10 @@ func TestMessagesPanelAndCTOColors(t *testing.T) {
 	m := keys(newModel(120, 34), "4")
 	it := m.feed.items[m.feedCur]
 	it.FromCTO = true
-	old := lipgloss.ColorProfile()
-	defer lipgloss.SetColorProfile(old)
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	v := m.View()
+	old := testColorProfile
+	defer setTestColorProfile(old)
+	setTestColorProfile(termenv.TrueColor)
+	v := m.testView()
 	for _, want := range []string{"Messages", "▸", "CTO", "48;2;34;48;58"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q", want)
@@ -332,7 +333,7 @@ func TestMessagesPanelAndCTOColors(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		state string
-		color lipgloss.TerminalColor
+		color color.Color
 	}{{protocol.StateDelivered, roleGood}, {protocol.StateFailed, roleError}, {protocol.StateReplied, roleAccent}, {protocol.StateStored, roleDim}} {
 		if !strings.Contains(messageState(tc.state), lipgloss.NewStyle().Foreground(tc.color).Render(stateSymbol(tc.state))) {
 			t.Errorf("wrong state color: %s", tc.state)
@@ -369,9 +370,9 @@ func TestMessagesOwnerInstruction(t *testing.T) {
 	m := keys(newModel(120, 34), "4")
 	it := m.feed.items[m.feedCur]
 	m.applySnippet(snippetMsg{id: it.MsgID, msg: protocol.Message{Body: "work", OwnerInstruction: "ask the agent"}})
-	v := m.View()
+	v := m.testView()
 	if !strings.Contains(v, "you→") || !strings.Contains(v, "ask the agent") {
 		t.Fatal(v)
 	}
-	golden(t, "messages_owner_instruction_120x34", m.View())
+	golden(t, "messages_owner_instruction_120x34", m.testView())
 }

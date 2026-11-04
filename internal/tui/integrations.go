@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -76,7 +76,7 @@ func (m Model) onIntegrationsSaved(r integrationsSavedMsg) (Model, tea.Cmd) {
 	return m.onAction(actionMsg{text: "Integrations saved for all machines. Each machine applies them at its next daemon start or within a minute."})
 }
 
-func (m Model) integrationsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) integrationsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	f := &m.intg
 	switch keyAction(contextForm, k.String()) {
 	case "cancel":

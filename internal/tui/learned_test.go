@@ -26,7 +26,7 @@ func TestLearnedListAndQuietHeaderCount(t *testing.T) {
 	// The overlay is gone; the notes stay on the Graph agent card and the
 	// header count stays quiet.
 	m = keys(m, "L")
-	if strings.Contains(m.View(), "auto, support 3") {
+	if strings.Contains(m.testView(), "auto, support 3") {
 		t.Error("L still opens a learned overlay")
 	}
 }

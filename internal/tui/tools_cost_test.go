@@ -58,10 +58,10 @@ func TestToolsCostPanelAndProjects(t *testing.T) {
 func TestToolsCostGoldens(t *testing.T) {
 	for _, size := range [][2]int{{120, 34}, {80, 24}} {
 		m := costModel(size[0], size[1])
-		golden(t, fmtCostName(size[0], size[1]), m.View())
+		golden(t, fmtCostName(size[0], size[1]), m.testView())
 		if size[0] == 120 {
 			m = pressKey(m, "t")
-			golden(t, "tools_cost_projects_120x34", m.View())
+			golden(t, "tools_cost_projects_120x34", m.testView())
 		}
 	}
 }

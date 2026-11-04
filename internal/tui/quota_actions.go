@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func (m Model) quotaConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) quotaConfirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	yes, no := confirmAnswer(k)
 	switch {
 	case no:

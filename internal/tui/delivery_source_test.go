@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -475,7 +475,7 @@ func fullScenes() (*detailSource, []deliveryChange) {
 	return src, src.changes
 }
 
-func dpress(m Model, k tea.KeyMsg) (Model, tea.Cmd) {
+func dpress(m Model, k tea.KeyPressMsg) (Model, tea.Cmd) {
 	next, cmd := m.Update(k)
 	return next.(Model), cmd
 }
@@ -483,8 +483,8 @@ func dpress(m Model, k tea.KeyMsg) (Model, tea.Cmd) {
 func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	m, _ = dpress(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, cmd := dpress(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = dpress(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.delivery.detail || cmd == nil {
 		t.Fatal("enter should open the detail and fetch the change")
 	}
@@ -505,8 +505,8 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	}
 	// An error shows above the detail and keeps what is there.
 	src.err = errors.New("no such change")
-	m, cmd = dpress(m, tea.KeyMsg{Type: tea.KeyEsc})
-	m, cmd = dpress(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = dpress(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	m, cmd = dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	next, _ = m.Update(cmd())
 	m = next.(Model)
 	if got := deliveryText(m, 120, 30); !strings.Contains(got, "Could not load change: no such change") || !strings.Contains(got, "verify") {
@@ -517,8 +517,8 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 func TestDeliveryReloadKeepsTheSelectionAndTheFullDetail(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	m, _ = dpress(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, cmd := dpress(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = dpress(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	next, _ := m.Update(cmd())
 	m = next.(Model)
 	// A newer change arrives on top: the selected change moves down one row, and stays selected.
@@ -630,12 +630,12 @@ func TestDeliveryRefreshKeyAndOpenStartALoad(t *testing.T) {
 	if m.delivery.loading || !m.delivery.loaded {
 		t.Fatal("the answer did not end the load")
 	}
-	m, cmd = dpress(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	m, cmd = dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
 	if cmd == nil || !m.delivery.loading {
 		t.Fatal("R did not reload")
 	}
 	// R asks again even when a load is out; the timer does not (see the tick test).
-	if _, again := dpress(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")}); again == nil {
+	if _, again := dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]}); again == nil {
 		t.Fatal("R did nothing while a load was out")
 	}
 }
@@ -692,11 +692,11 @@ func TestDeliveryGoldenFromGatewayData(t *testing.T) {
 	full := deliveryChangeFromView(a, now)
 	for _, size := range [][2]int{{80, 24}, {120, 24}} {
 		m := openDelivery(t, deliveryModel(&fakeDelivery{changes: list}, size[0], size[1]))
-		golden(t, fmt.Sprintf("delivery_gateway_list_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("delivery_gateway_list_%dx%d", size[0], size[1]), m.testView())
 		list2 := append([]deliveryChange(nil), list...)
 		list2[2] = full
 		m = openDelivery(t, deliveryModel(&fakeDelivery{changes: list2}, size[0], size[1]))
 		m.delivery.row, m.delivery.detail = 2, true
-		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), m.testView())
 	}
 }

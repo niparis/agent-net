@@ -1,10 +1,10 @@
 package tui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"errors"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
 	"time"
@@ -90,9 +90,9 @@ func TestToolsAgentsPendingPlan(t *testing.T) {
 func TestToolsAgentsGoldens(t *testing.T) {
 	for _, size := range [][2]int{{120, 34}, {80, 24}} {
 		m, _ := agentToolsFixture(size[0], size[1])
-		golden(t, fmt.Sprintf("tools_agents_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_agents_%dx%d", size[0], size[1]), m.testView())
 		m = pressKey(m, "right")
-		golden(t, fmt.Sprintf("tools_agents_skill_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_agents_skill_%dx%d", size[0], size[1]), m.testView())
 		m = pressKey(m, "right")
 		m = pressKey(m, " ")
 		m = pressKey(m, "esc")
@@ -100,14 +100,14 @@ func TestToolsAgentsGoldens(t *testing.T) {
 		m = pressKey(m, "down")
 		m = pressKey(m, " ")
 		m = pressKey(m, "esc")
-		golden(t, fmt.Sprintf("tools_agents_pending_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_agents_pending_%dx%d", size[0], size[1]), m.testView())
 		for _, line := range strings.Split(plain(m), "\n") {
 			if ansi.StringWidth(line) > size[0] {
 				t.Fatalf("line too wide: %s", line)
 			}
 		}
 		m = pressKey(m, "enter")
-		golden(t, fmt.Sprintf("tools_agents_plan_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("tools_agents_plan_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -216,7 +216,7 @@ func TestToolsAgentsPlanningEscapeCancels(t *testing.T) {
 	result := make(chan tea.Msg, 1)
 	go func() { result <- cmd() }()
 	<-started
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = next.(Model)
 	select {
 	case <-canceled:

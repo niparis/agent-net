@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -55,7 +54,7 @@ func (b inboxBox) title() string {
 	return ""
 }
 
-func (b inboxBox) color() lipgloss.TerminalColor {
+func (b inboxBox) color() color.Color {
 	if b == inboxBoxAnswer {
 		return roleWarning
 	}
@@ -1019,10 +1018,10 @@ func (m *Model) dropInboxItem(id string) {
 }
 
 // inboxTabKey handles the Inbox tab and its detail view.
-func (m Model) inboxTabKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.inboxRows()
 	if m.inboxEditing {
-		switch k.Type {
+		switch k.Code {
 		case tea.KeyEsc:
 			m.inboxEditing = false
 			m.inboxDeliveryID = ""
@@ -1128,7 +1127,7 @@ func (m Model) inboxTabKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "answer":
 		if row.kind == "approval" || row.kind == "question" {
-			m.inboxInput = textinput.New()
+			m.inboxInput = newTextInput()
 			m.inboxInput.CharLimit = protocol.MaxBodyBytes
 			m.inboxInput.Focus()
 			m.inboxEditing = true
@@ -1199,7 +1198,7 @@ func (m Model) inboxDecide(row inboxRow, approve bool) (tea.Model, tea.Cmd) {
 				fields[field] = ""
 			}
 			value, _ := json.Marshal(fields)
-			m.inboxInput = textinput.New()
+			m.inboxInput = newTextInput()
 			m.inboxInput.Prompt = "evidence JSON> "
 			m.inboxInput.CharLimit = protocol.MaxBodyBytes
 			m.inboxInput.SetValue(string(value))

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -20,16 +20,16 @@ func TestResumeConfirmAgeAndCancel(t *testing.T) {
 		m.snap.Agents[0].LastSeen = t0.Add(-tc.age).Unix()
 		m.showOffline = true
 		m = selectID(m, "s_0000000000000001")
-		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
-		if got := strings.Contains(m.View(), "and enter it?"); got != tc.confirm {
-			t.Fatalf("age %v: confirm %v, view %s", tc.age, got, m.View())
+		m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if got := strings.Contains(m.testView(), "and enter it?"); got != tc.confirm {
+			t.Fatalf("age %v: confirm %v, view %s", tc.age, got, m.testView())
 		}
 		if tc.confirm {
 			if cmd != nil {
 				t.Fatal("started before confirm")
 			}
-			m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEsc})
-			if cmd != nil || strings.Contains(m.View(), "and enter it?") {
+			m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+			if cmd != nil || strings.Contains(m.testView(), "and enter it?") {
 				t.Fatal("escape did not cancel")
 			}
 		} else if cmd == nil {
@@ -44,7 +44,7 @@ func TestResumeEntersRegisteredSession(t *testing.T) {
 	m.showOffline = true
 	m = selectID(m, "s_0000000000000001")
 	src.sessionStart = startedSession("tenebrae", "claude")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m, cmd = press2(m, cmd())
 	if len(src.sessionResumes) != 1 || src.sessionResumes[0].SessionID != "s_0000000000000001" || cmd == nil {
 		t.Fatalf("resume %+v", src.sessionResumes)
@@ -61,10 +61,10 @@ func TestResumeMissingFolderLine(t *testing.T) {
 	m.showOffline = true
 	m = selectID(m, "s_0000000000000001")
 	src.sessionErr = errors.New("session folder is gone: /gone")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m, _ = press2(m, cmd())
-	if !strings.Contains(m.View(), "session folder is gone: /gone") {
-		t.Fatal(m.View())
+	if !strings.Contains(m.testView(), "session folder is gone: /gone") {
+		t.Fatal(m.testView())
 	}
 }
 
@@ -76,13 +76,13 @@ func TestResumeConfirmGoldens(t *testing.T) {
 		m.snap.Agents[0].Profile.Name = "tenebrae"
 		m.showOffline = true
 		m = selectID(m, "s_0000000000000001")
-		before := strings.Split(m.View(), "\n")
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-		after := strings.Split(m.View(), "\n")
+		before := strings.Split(m.testView(), "\n")
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		after := strings.Split(m.testView(), "\n")
 		if len(before) != len(after) || strings.Join(before[:len(before)-1], "\n") != strings.Join(after[:len(after)-1], "\n") {
 			t.Fatal("confirm shifted layout")
 		}
-		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_resume_confirm", m.View())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_resume_confirm", m.testView())
 	}
 }
 
@@ -105,7 +105,7 @@ func TestResumeUnsupportedRowsAndExistingEnterPlans(t *testing.T) {
 			m.showOffline = true
 			m = selectID(m, a.SessionID)
 			src.sessionStart = startedSession("tenebrae", tc.harness)
-			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if tc.unsupported {
 				if cmd != nil || !strings.Contains(m.notice.text, "resume works for Claude and Pi for now") {
 					t.Fatalf("notice %+v", m.notice)
@@ -136,7 +136,7 @@ func TestResumeHerdrDoesNotEnterTwice(t *testing.T) {
 	m = selectID(m, "s_0000000000000001")
 	src.sessionStart = startedSession("tenebrae", "claude")
 	src.sessionStart.EnterPlan = &protocol.EnterPlan{OpenedHerdr: true, Note: "opened tenebrae in herdr"}
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m, cmd = press2(m, cmd())
 	if cmd != nil || len(src.enters) != 0 || m.notice.text != "opened tenebrae in herdr" {
 		t.Fatalf("notice %q, enters %+v, command %v", m.notice.text, src.enters, cmd != nil)

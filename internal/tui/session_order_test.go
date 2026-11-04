@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -48,7 +48,7 @@ func TestOrderFreezeAndSelection(t *testing.T) {
 	m := treeModel(80, 24, snap)
 	m.now = func() time.Time { return now }
 	m.selected = "first"
-	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	selected := m.selected
 	snap.Agents[1].Status = "busy"
 	m = refresh(m, &fakeSource{snap: snap})
@@ -97,7 +97,7 @@ func TestNewBusySessionDoesNotMoveRowsDuringFreeze(t *testing.T) {
 	snap := fakeSnapshot()
 	snap.Agents = []protocol.AgentView{agent("first", "n_mac", "Mac", "claude", "first", nil)}
 	m := treeModel(80, 24, snap)
-	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	snap.Agents = append(snap.Agents, agent("second", "n_mac", "Mac", "claude", "second", func(a *protocol.AgentView) { a.Status = "busy" }))
 	m = refresh(m, &fakeSource{snap: snap})
 	if got := strings.Join(names(m), ","); got != "first,second" {
@@ -177,7 +177,7 @@ func TestSessionSelectionFollowsActivityOrderDuringFreeze(t *testing.T) {
 		t.Fatalf("initial selection is %q at %d, want the first table row", m.selected, m.selIdx)
 	}
 
-	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.selected != "recent-session" || m.selIdx != 1 {
 		t.Fatalf("down selected %q at %d, want the second table row", m.selected, m.selIdx)
 	}

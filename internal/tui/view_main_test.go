@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
@@ -44,7 +44,7 @@ func headerModel(w, h int) Model {
 }
 
 func TestHeaderCountsOnlineBusyNeedsAndWorkers(t *testing.T) {
-	head := lines(headerModel(160, 30).View())[0]
+	head := lines(headerModel(160, 30).testView())[0]
 	want := "12 online · 3 busy · 1 needs you · workers 4 running, 1 queued"
 	if !strings.Contains(head, want) {
 		t.Fatalf("header %q lacks %q", head, want)
@@ -55,7 +55,7 @@ func TestHeaderCountsOnlineBusyNeedsAndWorkers(t *testing.T) {
 }
 
 func TestHeaderHidesNeedsYouAtZero(t *testing.T) {
-	head := lines(newModel(160, 30).View())[0]
+	head := lines(newModel(160, 30).testView())[0]
 	if strings.Contains(head, "needs you") {
 		t.Fatalf("header shows needs you with nobody waiting: %q", head)
 	}
@@ -65,10 +65,10 @@ func TestHeaderHidesNeedsYouAtZero(t *testing.T) {
 }
 
 func TestHeaderNeedsYouUsesTheWarningColour(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(old)
-	head := lines(headerModel(160, 30).View())[0]
+	old := testColorProfile
+	setTestColorProfile(termenv.TrueColor)
+	defer setTestColorProfile(old)
+	head := lines(headerModel(160, 30).testView())[0]
 	if !strings.Contains(head, sNeeds.Render("1 needs you")) {
 		t.Fatalf("needs you is not in the warning colour: %q", head)
 	}
@@ -84,7 +84,7 @@ func TestHeaderQueuedWorkersCountsEachMachineOnce(t *testing.T) {
 		Usage: protocol.UsageReport{Workers: &protocol.WorkerLoad{Queued: 2, Room: protocol.RoomOK}},
 	})
 	u.Gateway.Nodes[0].Usage.Workers = &protocol.WorkerLoad{Queued: 1, Room: protocol.RoomCPU}
-	head := lines(modelWith(fakeSnapshot(), u, 160, 30).View())[0]
+	head := lines(modelWith(fakeSnapshot(), u, 160, 30).testView())[0]
 	if !strings.Contains(head, "workers 0 running, 3 queued") {
 		t.Fatalf("header %q lacks the queue of both machines", head)
 	}
@@ -96,14 +96,14 @@ func TestMachineCPUAt100Fits(t *testing.T) {
 		u.Local.Machine.CPU, u.Local.Machine.CPUAvg = 100, 100
 		m := modelWith(fakeSnapshot(), u, w, 24)
 		var line string
-		for _, l := range lines(m.View()) {
+		for _, l := range lines(m.testView()) {
 			if strings.Contains(l, "cpu ") {
 				line = l
 				break
 			}
 		}
 		if line == "" {
-			t.Fatalf("%d columns: no machine line:\n%s", w, m.View())
+			t.Fatalf("%d columns: no machine line:\n%s", w, m.testView())
 		}
 		if strings.Contains(line, "10…") {
 			t.Fatalf("%d columns: the CPU cell cuts 100%%: %q", w, line)
@@ -141,9 +141,9 @@ func TestMachineRowsShowAgentNetVersions(t *testing.T) {
 }
 
 func TestMachineVersionColorsCompareOnlineNodes(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(old)
+	old := testColorProfile
+	setTestColorProfile(termenv.TrueColor)
+	defer setTestColorProfile(old)
 
 	snap := fakeSnapshot()
 	snap.Nodes[0].Version = "v0.4.30"
@@ -242,7 +242,7 @@ func TestMachineRowsShowCapacityDiskWorkersAndTop(t *testing.T) {
 func TestMachineRowsHaveNoLoneDashCells(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := newModel(size[0], size[1])
-		for _, line := range lines(m.View()) {
+		for _, line := range lines(m.testView()) {
 			plain := strings.TrimSpace(ansi.Strip(line))
 			if !strings.Contains(plain, "cpu ") {
 				continue
@@ -342,9 +342,9 @@ func TestMachineHarnessNoteShowsOnlyMissingOrOutdatedSharedHarnesses(t *testing.
 }
 
 func TestMachineDiskFreeUsesLowAndWarningColors(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(old)
+	old := testColorProfile
+	setTestColorProfile(termenv.TrueColor)
+	defer setTestColorProfile(old)
 	m := newModel(160, 34)
 	for _, tc := range []struct {
 		free uint64

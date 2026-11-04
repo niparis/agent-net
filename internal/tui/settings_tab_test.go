@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/funnel"
 )
@@ -25,7 +25,7 @@ func TestSettingsTabAndRemovedKeys(t *testing.T) {
 	if m.tab != 5 {
 		t.Fatalf("6: tab = %d", m.tab)
 	}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	for _, want := range []string{"Connected apps", "Integrations", "Machines", "Notifications", "Tips"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("settings lacks %q", want)
@@ -38,11 +38,11 @@ func TestSettingsSessionCells(t *testing.T) {
 	m := newModel(120, 34)
 	m.src = src
 	m = selectID(m, "s_0000000000000001")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	if got := ansi.Strip(m.helpLine(120)); !strings.Contains(got, "space") || !strings.Contains(got, "ask") {
 		t.Errorf("rule hint: %s", got)
 	}
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeySpace})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeySpace})
 	if cmd == nil {
 		t.Fatal("space on RULE did not call the request rule operation")
 	}
@@ -50,8 +50,8 @@ func TestSettingsSessionCells(t *testing.T) {
 	if len(src.edges) != 1 || src.edges[0].Rule != "ask" {
 		t.Errorf("rule calls: %+v", src.edges)
 	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modePolicy {
 		t.Fatalf("enter on DELEGATE: mode %v", m.mode)
 	}
@@ -66,7 +66,7 @@ func TestSettingsOtherRoutesAndViewIndicators(t *testing.T) {
 	m = keys(m, "6")
 	result := appsResult{op: "apps.public.status", raw: json.RawMessage(`{"on":true,"url":"https://example.test","other_routes":[8443,10000]}`)}
 	m, _ = m.onAppsResult(result)
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	if !strings.Contains(view, "8443") || !strings.Contains(strings.Join(strings.Fields(view), " "), "sign-in cookie") {
 		t.Errorf("missing other routes warning:\n%s", view)
 	}
@@ -111,7 +111,7 @@ func TestSettingsActionsUseExistingOperations(t *testing.T) {
 	}
 	m.apps.loading = false
 	m = selectSettingsKind(m, "public")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeySpace})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeySpace})
 	if cmd == nil {
 		t.Fatal("public toggle")
 	}
@@ -122,14 +122,14 @@ func TestSettingsActionsUseExistingOperations(t *testing.T) {
 	m.apps.loading = false
 	m.apps.public.Error = funnel.ErrNotInstalled.Error()
 	m = selectSettingsKind(m, "url")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeApps || m.apps.stage != "url" {
 		t.Fatal("URL editor")
 	}
 	m = keys(m, "esc")
 	m.apps.public.On = true
 	m = selectSettingsKind(m, "add")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.apps.stage != "code" {
 		t.Fatal("add flow")
 	}
@@ -152,19 +152,19 @@ func TestSettingsActionsUseExistingOperations(t *testing.T) {
 	base, src := workerModel(120, 34)
 	base.tab = settingsTab
 	base = selectSettingsKind(base, "integrations")
-	base, cmd = press(base, tea.KeyMsg{Type: tea.KeyEnter})
+	base, cmd = press(base, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if base.mode != modeIntegrations || cmd == nil {
 		t.Fatal("integrations form")
 	}
 	base.mode = modeNormal
 	base = selectSettingsKind(base, "machine")
 	machine := base.machineRows()[base.settingsItems()[base.settingsRow].index]
-	base, cmd = press(base, tea.KeyMsg{Type: tea.KeyEnter})
+	base, cmd = press(base, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if base.mode != modeRename || base.renameNode != machine.nodeID {
 		t.Fatal("machine rename")
 	}
 	base.rename.SetValue("desk")
-	base, cmd = press(base, tea.KeyMsg{Type: tea.KeyEnter})
+	base, cmd = press(base, tea.KeyPressMsg{Code: tea.KeyEnter})
 	_ = finish(t, base, cmd)
 	if len(src.renames) != 1 || src.renames[0].id != machine.nodeID {
 		t.Fatalf("rename %+v", src.renames)
@@ -175,7 +175,7 @@ func TestSettingsSectionNavigationAndHelp(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = settingsTab
 	for _, want := range []string{"integrations", "machine", "timezone", "notifications", "tips", "setting-repo", "public"} {
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyTab})
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 		if got := m.settingsItems()[m.settingsRow].kind; got != want {
 			t.Fatalf("tab: got %s want %s", got, want)
 		}
@@ -209,16 +209,16 @@ func TestSettingsGoldens(t *testing.T) {
 		m.apps.public.URL = "https://example.test:8443"
 		m.apps.public.OtherRoutes = json.RawMessage(`[10000]`)
 		m.apps.apps = []connectedApp{{ID: "a1", Name: "phone", Kind: "owner_app", ClientName: "Safari"}, {ID: "a2", Name: "helper", Kind: "bot", ClientName: "Cursor"}}
-		golden(t, fmt.Sprintf("settings_%dx%d", w, h), m.View())
+		golden(t, fmt.Sprintf("settings_%dx%d", w, h), m.testView())
 		m.apps.public = appsPublicStatus{}
-		golden(t, fmt.Sprintf("settings_off_%dx%d", w, h), m.View())
+		golden(t, fmt.Sprintf("settings_off_%dx%d", w, h), m.testView())
 		m.apps.public.Error = "Tailscale is not installed on research-gateway (the gateway machine). Install it there, or use your own tunnel URL (u)."
-		golden(t, fmt.Sprintf("settings_public_error_%dx%d", w, h), m.View())
+		golden(t, fmt.Sprintf("settings_public_error_%dx%d", w, h), m.testView())
 		s := newModel(w, h)
-		s, _ = press(s, tea.KeyMsg{Type: tea.KeyRight})
-		golden(t, fmt.Sprintf("sessions_cells_%dx%d", w, h), s.View())
+		s, _ = press(s, tea.KeyPressMsg{Code: tea.KeyRight})
+		golden(t, fmt.Sprintf("sessions_cells_%dx%d", w, h), s.testView())
 		s.activeOnly = true
-		golden(t, fmt.Sprintf("sessions_active_%dx%d", w, h), s.View())
+		golden(t, fmt.Sprintf("sessions_active_%dx%d", w, h), s.testView())
 	}
 }
 
@@ -241,14 +241,14 @@ func TestSettingsValuesRenderAndSave(t *testing.T) {
 			break
 		}
 	}
-	m2, _ := m.settingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, _ := m.settingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = m2.(Model)
 	view = ansi.Strip(strings.Join(m.settingsView(120, 50), "\n"))
 	if !strings.Contains(view, "test") {
 		t.Fatal("history missing")
 	}
 	m.rename.SetValue("false")
-	next, cmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.settingValueKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	_ = next
 	if cmd == nil {
 		t.Fatal("no save")
@@ -322,13 +322,13 @@ func TestSettingsDeliveryNodeOwnerEdit(t *testing.T) {
 	}
 	m, _ = m.startSettingValueEdit(index)
 	m.rename.SetValue(`true`)
-	invalid, invalidCmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	invalid, invalidCmd := m.settingValueKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if invalidCmd != nil || invalid.(Model).mode != modeSettingValue {
 		t.Fatal("invalid owner value did not keep the editor open")
 	}
 	m = invalid.(Model)
 	m.rename.SetValue(`"other"`)
-	_, cmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.settingValueKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("owner assignment was not sent")
 	}
@@ -348,7 +348,7 @@ func TestSettingsRepoEditUsesRepoAddress(t *testing.T) {
 	m.settingValues = []protocol.SettingView{{Key: "delivery.merge_authority", Levels: []string{"network", "repo"}, Value: json.RawMessage(`"full"`), Source: "repo alpha", Explicit: json.RawMessage(`"full"`)}}
 	m, _ = m.startSettingValueEdit(0)
 	m.rename.SetValue(`"ask"`)
-	_, cmd := m.settingValueKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.settingValueKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	_ = cmd()
 	change := src.write.Changes[0]
 	if change.Level != "repo" || change.Scope != "alpha" || string(change.Expect) != `"full"` {
@@ -372,7 +372,7 @@ func TestSettingsUndoSelectedRevision(t *testing.T) {
 	if m.mode != modeSettingUndo {
 		t.Fatal("undo confirmation missing")
 	}
-	_, cmd := m.settingUndoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.settingUndoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("undo not sent")
 	}

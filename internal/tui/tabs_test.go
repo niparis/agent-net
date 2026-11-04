@@ -1,15 +1,14 @@
 package tui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"encoding/json"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
@@ -92,7 +91,7 @@ func TestQuotaViewGoldens(t *testing.T) {
 			{Provider: "claude", Plan: "max", Stale: true, Windows: []protocol.QuotaWindow{{ID: "5h", PercentUsed: 50, Pace: protocol.QuotaPaceBehind}}},
 		}}
 		m.usage.raw.Gateway.Nodes = append(m.usage.raw.Gateway.Nodes, protocol.UsageNode{NodeID: "other", Hostname: "other", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Add(-time.Minute).Unix(), Providers: []protocol.QuotaProvider{{Provider: "codex", Plan: "pro"}}}}})
-		view := m.View()
+		view := m.testView()
 		if !strings.Contains(ansi.Strip(view), "model gone - ask the CTO to fix") {
 			t.Fatalf("stale profile note missing:\n%s", ansi.Strip(view))
 		}
@@ -129,7 +128,7 @@ func TestQuotaViewGoldens(t *testing.T) {
 		m.snap.Nodes[0].Harnesses = append(m.snap.Nodes[0].Harnesses, protocol.HarnessInfo{Name: "opencode", Models: []string{"openrouter/anthropic/claude-opus-5.5:high"}})
 		m.snap.WorkerProfiles = append(m.snap.WorkerProfiles, protocol.WorkerProfile{Name: "router", Harness: "opencode", Model: "openrouter/anthropic/claude-opus-5.5", Effort: "high"})
 		m.snap.Nodes[0].Harnesses[len(m.snap.Nodes[0].Harnesses)-1].Models = []string{"openrouter/anthropic/claude-opus-5.5"}
-		golden(t, fmt.Sprintf("quotas_excluded_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("quotas_excluded_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -144,7 +143,7 @@ func TestQuotaViewKeepsFooterWithManyRows(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		m = keys(m, "down")
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "Workers ·") {
+	if !strings.Contains(ansi.Strip(m.testView()), "Workers ·") {
 		t.Fatal("workers panel lost")
 	}
 }
@@ -159,7 +158,7 @@ func TestQuotaViewClosesPanelAtCTOWhenRowsOverflow(t *testing.T) {
 			})
 		}
 		m.refreshWorkerForecast()
-		view := lines(ansi.Strip(m.View()))
+		view := lines(ansi.Strip(m.testView()))
 		for i, line := range view {
 			if strings.HasPrefix(line, "╭─CTO") {
 				if i == 0 || !strings.HasPrefix(view[i-1], "╰") {
@@ -169,7 +168,7 @@ func TestQuotaViewClosesPanelAtCTOWhenRowsOverflow(t *testing.T) {
 			}
 		}
 		m.quotaScroll = 100
-		if !strings.Contains(ansi.Strip(m.View()), "profile-29") {
+		if !strings.Contains(ansi.Strip(m.testView()), "profile-29") {
 			t.Errorf("%dx%d: scrolling cannot reach the last profile", size[0], size[1])
 		}
 	}
@@ -184,13 +183,13 @@ func TestQuotaViewScrolls(t *testing.T) {
 	}
 	m.usage.raw.Local.Quotas = q
 	m = keys(m, "s")
-	if strings.Contains(ansi.Strip(m.View()), "p29") {
+	if strings.Contains(ansi.Strip(m.testView()), "p29") {
 		t.Fatal("last row visible before scroll")
 	}
 	for i := 0; i < 80; i++ {
 		m = keys(m, "down")
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "p29") {
+	if !strings.Contains(ansi.Strip(m.testView()), "p29") {
 		t.Fatal("last row not reachable")
 	}
 }
@@ -198,12 +197,12 @@ func TestQuotaViewScrolls(t *testing.T) {
 func TestQuotaEmptyAndMachineErrors(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota).") || strings.Contains(v, "PROVIDER") {
 		t.Fatal(v)
 	}
 	m.usage.raw.Gateway.Nodes = append(m.usage.raw.Gateway.Nodes, protocol.UsageNode{NodeID: "error-node", Hostname: "build", Usage: protocol.UsageReport{QuotaError: "it failed: exit status 1"}})
-	v = ansi.Strip(m.View())
+	v = ansi.Strip(m.testView())
 	if !strings.Contains(v, "build: it failed: exit status 1") || strings.Contains(v, "not installed on any machine") || strings.Contains(v, "PROVIDER") {
 		t.Fatal(v)
 	}
@@ -213,7 +212,7 @@ func TestQuotaEmptyStateReportsMissingNode(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
 	m.usage.raw.Local.QuotaNote = quotaaxi.NeedNodeMessage
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, quotaaxi.NeedNodeMessage) {
 		t.Fatalf("the Node line is missing:\n%s", v)
 	}
@@ -238,15 +237,15 @@ func TestTabStyleAndTitleSeparator(t *testing.T) {
 
 func TestTabsMoveFeedToMessages(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.Contains(m.View(), "1 Sessions") {
+	if !strings.Contains(m.testView(), "1 Sessions") {
 		t.Fatal("sessions tab missing")
 	}
 	m = keys(m, "4")
-	if !strings.Contains(m.View(), "4 Messages") || !strings.Contains(m.View(), "Messages") {
+	if !strings.Contains(m.testView(), "4 Messages") || !strings.Contains(m.testView(), "Messages") {
 		t.Fatal("messages tab missing")
 	}
 	m = keys(m, "3")
-	if !strings.Contains(m.View(), "3 Quotas") {
+	if !strings.Contains(m.testView(), "3 Quotas") {
 		t.Fatal("quotas tab missing")
 	}
 }
@@ -262,7 +261,7 @@ func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 	if len(src.sent) != 0 {
 		t.Fatalf("the box sent a message: %v", src.sent)
 	}
-	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd == nil {
 		t.Fatal("enter did not open the CTO")
@@ -270,7 +269,7 @@ func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 	if _, ok := cmd().(enterMsg); !ok {
 		t.Fatal("enter did not return an enter plan")
 	}
-	m = send(m, tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = send(m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
 	if m.focus != focusSessions {
 		t.Fatal("ctrl+] did not return focus")
 	}
@@ -278,7 +277,7 @@ func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 
 func TestCTOBoxAlwaysVisibleAndFocusReturns(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.Contains(m.View(), "c: open the CTO") {
+	if !strings.Contains(m.testView(), "c: open the CTO") {
 		t.Fatal("CTO box hint missing")
 	}
 	m = keys(m, "4", "C")
@@ -294,12 +293,12 @@ func TestCTOBoxAlwaysVisibleAndFocusReturns(t *testing.T) {
 func TestCTONewRequiresConfirmation(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
 	m := keys(New(src), "C")
-	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	next, cmd := m.update(tea.KeyPressMsg{Text: "n", Code: []rune("n")[0]})
 	m = next.(Model)
 	if cmd != nil || !m.cto.confirming || src.fresh != 0 {
 		t.Fatal("new did not ask")
 	}
-	next, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	next, cmd = m.update(tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = next.(Model)
 	if cmd == nil {
 		t.Fatal("confirmation did not start new conversation")
@@ -312,16 +311,16 @@ func TestCTONewRequiresConfirmation(t *testing.T) {
 
 func TestDetailToggleKeepsCTOVisible(t *testing.T) {
 	m := keys(newModel(120, 40), "d")
-	if !strings.Contains(m.View(), "Selected session") || !strings.Contains(m.View(), "CTO") {
+	if !strings.Contains(m.testView(), "Selected session") || !strings.Contains(m.testView(), "CTO") {
 		t.Fatal("detail or CTO missing")
 	}
 	m = keys(m, "d")
-	if !strings.Contains(m.View(), "NAME") {
+	if !strings.Contains(m.testView(), "NAME") {
 		t.Fatal("session list did not return")
 	}
 }
 
-func detailText(m Model) string { return strings.Join(m.detailLines(m.width, 40), "\n") }
+func detailText(m Model) string { return testOutput(strings.Join(m.detailLines(m.width, 40), "\n")) }
 
 func TestLayoutGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
@@ -341,7 +340,7 @@ func TestLayoutGoldens(t *testing.T) {
 			if conversation {
 				kind = "conversation"
 			}
-			v := m.View()
+			v := m.testView()
 			for _, line := range lines(v) {
 				if ansi.StringWidth(line) > size[0] {
 					t.Fatalf("line exceeds %d: %q", size[0], line)
@@ -369,7 +368,7 @@ func TestLayoutGoldens(t *testing.T) {
 				break
 			}
 		}
-		v := m.View()
+		v := m.testView()
 		plain := ansi.Strip(v)
 		if strings.Contains(plain, "loading body") || !strings.Contains(plain, "The deployment plan looks good.") || !strings.Contains(plain, "Can you check the latest deployment plan?") {
 			t.Fatalf("the Messages golden fixture should show fetched previews and thread bodies:\n%s", plain)
@@ -388,7 +387,7 @@ func TestLayoutGoldens(t *testing.T) {
 				break
 			}
 		}
-		golden(t, fmt.Sprintf("messages_cto_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("messages_cto_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -415,7 +414,7 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 func TestCTOFrameOnEveryTab(t *testing.T) {
 	for _, key := range []string{"1", "2", "3", "4", "5"} {
 		m := keys(newModel(80, 24), key)
-		if !strings.Contains(m.View(), "c: open the CTO") {
+		if !strings.Contains(m.testView(), "c: open the CTO") {
 			t.Errorf("%s missing CTO", key)
 		}
 		m = keys(m, "C")
@@ -434,7 +433,7 @@ func TestQuotaModelsSection(t *testing.T) {
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "unknown-model"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}, {Name: "unscored", Harness: "codex", Model: "unknown-model"}}
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	for _, want := range []string{"Workers · 2 registered", "gpt-6.1-terra:high", "42.3/high", "USED", "scores: Artificial Analysis", "unscored"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)
@@ -461,7 +460,7 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	m.snap.Nodes[0].RecentModelFailures = map[string]map[string]bool{"codex": {"fake/a": true}}
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if forecastPickForTest(m, "fake/b") == false || strings.Contains(v, "◀") {
 		t.Fatalf("choice ignored failed run:\n%s", v)
 	}
@@ -472,7 +471,7 @@ func TestQuotaShowsExcludedRegisteredWorker(t *testing.T) {
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "opencode", Models: []string{"openrouter/anthropic/claude-opus-5.5"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "router", Harness: "opencode", Model: "openrouter/anthropic/claude-opus-5.5", Effort: "high"}}
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, "router") || !strings.Contains(v, "not a worker provider") {
 		t.Fatalf("profile missing: %s", v)
 	}
@@ -485,7 +484,7 @@ func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
 	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	if v := ansi.Strip(m.View()); forecastPickForTest(m, "fake/b") == false || strings.Contains(v, "◀") {
+	if v := ansi.Strip(m.testView()); forecastPickForTest(m, "fake/b") == false || strings.Contains(v, "◀") {
 		t.Fatalf("choice ignored success:\n%s", v)
 	}
 }
@@ -495,7 +494,7 @@ func TestQuotaShowsOnlyWorkerProfiles(t *testing.T) {
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "my worker", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	for _, want := range []string{"my worker", "gpt-6.1-terra:high", "1 registered"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
@@ -550,9 +549,9 @@ func TestWorkerPanelPicksAndTrackRecord(t *testing.T) {
 }
 
 func TestWorkersPanelRedesign(t *testing.T) {
-	profile := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(profile)
+	profile := testColorProfile
+	setTestColorProfile(termenv.TrueColor)
+	defer setTestColorProfile(profile)
 	m := newModel(120, 34)
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"openai/gpt-6-luna", "openai-codex/gpt-6.1-terra", "openrouter/anthropic/claude-opus-5.5"}}}
@@ -839,7 +838,7 @@ func TestQuotaDisplayDedupesEmptyProvidersAndFitsColumns(t *testing.T) {
 	if strings.Count(v, "cursor") != 1 || strings.Count(v, "deepseek") != 1 || !strings.Contains(v, "sign in") || !strings.Contains(v, "no key") || strings.Contains(v, "credential_unavailable") || !strings.Contains(v, "on pace") || strings.Contains(v, "behind") {
 		t.Fatalf("error or pace label: %s", v)
 	}
-	golden(t, "quotas_machine_status_140x34", m.View())
+	golden(t, "quotas_machine_status_140x34", m.testView())
 	narrow := ansi.Strip(strings.Join(m.quotasView(80, 34), "\n"))
 	if !strings.Contains(narrow, "…") || strings.Contains(narrow, "premium interactions") {
 		t.Fatalf("narrow columns should truncate: %s", narrow)
@@ -918,7 +917,7 @@ func TestQuotaLiveFixtureGoldens(t *testing.T) {
 		m.usage.raw.Local.Quotas = q
 		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
 		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra"}}}
-		v := m.View()
+		v := m.testView()
 		if !strings.Contains(ansi.Strip(v), "19 other subscriptions · s to show") || strings.Contains(ansi.Strip(v), "copilot") {
 			t.Fatal(v)
 		}
@@ -934,7 +933,7 @@ func TestQuotaDoesNotShowOrphanWorkerFooter(t *testing.T) {
 		q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: fmt.Sprintf("p%02d", i), Windows: []protocol.QuotaWindow{{ID: "week"}}})
 	}
 	m.usage.raw.Local.Quotas = q
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if strings.Contains(v, "workers now:") {
 		t.Fatal(v)
 	}
@@ -1022,17 +1021,17 @@ func TestProtectedQuotaGoldens(t *testing.T) {
 		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "claude", Models: []string{"claude-sonnet-4"}}}
 		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet", Harness: "claude", Model: "claude-sonnet-4"}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "claude", Plan: "max", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 30}}}}}
-		view := ansi.Strip(m.View())
+		view := ansi.Strip(m.testView())
 		if !strings.Contains(view, "🔒 claude") || !strings.Contains(view, "🔒 sonnet") {
 			t.Fatalf("missing subscription or profile lock:\n%s", view)
 		}
-		golden(t, fmt.Sprintf("quotas_protected_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("quotas_protected_%dx%d", size[0], size[1]), m.testView())
 		m = keys(m, "p")
-		golden(t, fmt.Sprintf("quotas_unprotect_confirm_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("quotas_unprotect_confirm_%dx%d", size[0], size[1]), m.testView())
 		m = keys(m, "n")
 		m.snap.ProtectedProviders = protocol.ProtectedProviders{}
 		m = keys(m, "p")
-		golden(t, fmt.Sprintf("quotas_protect_confirm_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("quotas_protect_confirm_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
@@ -1042,7 +1041,7 @@ func TestQuotaFailedReadingHasNoBar(t *testing.T) {
 		m.tab = 2
 		m.quotaShowUnset = true
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Copy: &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}, Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "provider_auth_rejected", NeedsAttention: true}}}
-		view := ansi.Strip(m.View())
+		view := ansi.Strip(m.testView())
 		for _, line := range lines(view) {
 			if strings.Contains(line, "opencode-go") && !strings.Contains(line, "provider_auth_rejected") {
 				if strings.Contains(line, "%") || strings.Contains(line, "█") {
@@ -1057,11 +1056,11 @@ func TestQuotaFailedReadingHasNoBar(t *testing.T) {
 func TestQuotaProtectedSummary(t *testing.T) {
 	m := newModel(80, 24)
 	m.tab = 2
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "no provider protected") {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "no provider protected") {
 		t.Fatalf("missing empty summary: %s", v)
 	}
 	m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "saved for orchestrator"}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "protected: anthropic · saved for orchestrator") {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "protected: anthropic · saved for orchestrator") {
 		t.Fatalf("missing summary: %s", v)
 	}
 }
@@ -1071,11 +1070,11 @@ func TestQuotaProtectionConfirm(t *testing.T) {
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	m = keys(m, "s", "p")
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "workers use others first") {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "workers use others first") {
 		t.Fatalf("missing confirmation: %s", v)
 	}
 	m = keys(m, "n")
-	if v := ansi.Strip(m.View()); strings.Contains(v, "workers use others first") {
+	if v := ansi.Strip(m.testView()); strings.Contains(v, "workers use others first") {
 		t.Fatal("confirmation did not close")
 	}
 }
@@ -1085,12 +1084,12 @@ func TestQuotaSelectionVisible(t *testing.T) {
 	m.tab = 2
 	m.quotaShowUnset = true
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
-	v := ansi.Strip(m.View())
+	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, "> claude") {
 		t.Fatalf("selection missing: %s", v)
 	}
 	m = keys(m, "down")
-	v = ansi.Strip(m.View())
+	v = ansi.Strip(m.testView())
 	if !strings.Contains(v, "> codex") {
 		t.Fatalf("selection did not move: %s", v)
 	}
@@ -1101,14 +1100,14 @@ func TestQuotaCopyAndAttention(t *testing.T) {
 	m.tab = 2
 	m.quotaShowUnset = true
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Copy: &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}, Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "provider_auth_rejected", NeedsAttention: true}}}
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.testView())
 	for _, want := range []string{"quota-axi 0.1.66 · yours (/opt/homebrew/bin)", "provider_…"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q:\n%s", want, view)
 		}
 	}
 	m.usage.raw.Local.Quotas.Copy.Private = true
-	view = ansi.Strip(m.View())
+	view = ansi.Strip(m.testView())
 	if !strings.Contains(view, "agent-net's copy") {
 		t.Fatal(view)
 	}
@@ -1120,7 +1119,7 @@ func TestQuotaCopyShownBeforeFirstReading(t *testing.T) {
 	m.usage.raw.Local.Quotas = nil
 	m.usage.raw.Local.QuotaCopy = &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}
 	m.usage.raw.Local.QuotaError = "it failed"
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "quota-axi 0.1.66 · yours (/opt/homebrew/bin)") {
+	if view := ansi.Strip(m.testView()); !strings.Contains(view, "quota-axi 0.1.66 · yours (/opt/homebrew/bin)") {
 		t.Fatal(view)
 	}
 }

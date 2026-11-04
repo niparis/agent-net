@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -86,18 +86,18 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 func TestCTOTitleFormSavesTheTitle(t *testing.T) {
 	m, src := titledCTO(t)
 	m.focus = focusCTO
-	next, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	next, _ := m.update(tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 	m = next.(Model)
 	if m.cto.settingsForm == nil {
 		t.Fatal("the m form did not open")
 	}
-	next, _ = m.update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(Model)
 	if m.cto.settingsForm.field != 1 || m.cto.settingsForm.titleInput.Value() != "Atlas" {
 		t.Fatalf("Title field not focused: %+v", m.cto.settingsForm)
 	}
 	m.cto.settingsForm.titleInput.SetValue("Harbour")
-	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd == nil {
 		t.Fatal("save did not start")
@@ -107,20 +107,20 @@ func TestCTOTitleFormSavesTheTitle(t *testing.T) {
 	if src.saved.Title == nil || *src.saved.Title != "Harbour" {
 		t.Fatalf("saved title = %v", src.saved.Title)
 	}
-	if !strings.Contains(m.View(), "Harbour · opencode") {
-		t.Fatalf("the box did not take the saved title:\n%s", m.View())
+	if !strings.Contains(m.testView(), "Harbour · opencode") {
+		t.Fatalf("the box did not take the saved title:\n%s", m.testView())
 	}
 }
 
 func TestCTOTitleFormRefusesMarkers(t *testing.T) {
 	m, _ := titledCTO(t)
 	m.focus = focusCTO
-	next, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	next, _ := m.update(tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 	m = next.(Model)
-	next, _ = m.update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(Model)
 	m.cto.settingsForm.titleInput.SetValue("Atlas [agent-net")
-	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd != nil {
 		t.Fatal("an invalid title was sent")
@@ -156,6 +156,6 @@ func TestCTOTitleGoldens(t *testing.T) {
 		src := m.src.(*fakeCTOSource)
 		src.messages = map[string]protocol.Message{"m_cto": {ID: "m_cto", ConversationID: "c_cto", Body: "Please check the deployment.\nIt is on staging."}}
 		m = drainSnippets(t, m)
-		golden(t, fmt.Sprintf("cto_title_messages_%dx%d", size[0], size[1]), m.View())
+		golden(t, fmt.Sprintf("cto_title_messages_%dx%d", size[0], size[1]), m.testView())
 	}
 }

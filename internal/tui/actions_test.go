@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/client"
@@ -82,14 +82,14 @@ func finish(t *testing.T, m Model, cmd tea.Cmd) Model {
 	return next.(Model)
 }
 
-func press(m Model, k tea.KeyMsg) (Model, tea.Cmd) {
+func press(m Model, k tea.KeyPressMsg) (Model, tea.Cmd) {
 	next, cmd := m.Update(k)
 	return next.(Model), cmd
 }
 
 func typeText(m Model, s string) Model {
 	for _, r := range s {
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m, _ = press(m, tea.KeyPressMsg{Text: string(r), Code: r})
 	}
 	return m
 }
@@ -106,11 +106,11 @@ func TestOwnerIsNotARowButIsNamedInTheFeed(t *testing.T) {
 	if got := m.who(ownerID); got != "you (on Mac)" {
 		t.Errorf("who(owner) = %q", got)
 	}
-	v := keys(send(m, tea.WindowSizeMsg{Width: 80, Height: 40}), "4").View() // the feed needs room
+	v := keys(send(m, tea.WindowSizeMsg{Width: 80, Height: 40}), "4").testView() // the feed needs room
 	if !strings.Contains(v, "you → worker: tenebrae") {
 		t.Errorf("the feed does not show the owner:\n%s", v)
 	}
-	title := lines(send(m, tea.WindowSizeMsg{Width: 160, Height: 40}).View())[0]
+	title := lines(send(m, tea.WindowSizeMsg{Width: 160, Height: 40}).testView())[0]
 	if !strings.Contains(title, "7 sessions, 6 online") {
 		t.Errorf("title: %q", title)
 	}
@@ -119,7 +119,7 @@ func TestOwnerIsNotARowButIsNamedInTheFeed(t *testing.T) {
 func TestWorkerShowsItsOwner(t *testing.T) {
 	m, _ := workerModel(120, 34)
 	m = selectID(m, workerID)
-	v := m.View() + "\n" + detailText(m) + "\n" + feedText(m, 120)
+	v := m.testView() + "\n" + detailText(m) + "\n" + feedText(m, 120)
 	for _, want := range []string{"↳ tenebrae", "worker   started by you (on Mac), 14:00, project tenebrae", "s_0000000000000008 w_1",
 		"worker started: tenebrae opencode in tenebrae for you", "worker refused in nope: no project named nope is known"} {
 		if !strings.Contains(v, want) {
@@ -133,20 +133,20 @@ func TestWorkerShowsItsOwner(t *testing.T) {
 func TestSendAsOwner(t *testing.T) {
 	m, src := workerModel(80, 24)
 	m = selectID(m, workerID)
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 	if m.mode != modeCompose {
 		t.Fatal("m did not open the prompt")
 	}
-	if h := lines(m.View())[23]; !strings.Contains(h, "to tenebrae> ") || !strings.Contains(h, "esc cancels") {
+	if h := lines(m.testView())[23]; !strings.Contains(h, "to tenebrae> ") || !strings.Contains(h, "esc cancels") {
 		t.Errorf("help row: %q", h)
 	}
 	// An empty message is refused, and the prompt stays.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeCompose || m.activeNotice() == nil || !m.notice.err {
 		t.Fatalf("empty message: mode %v notice %+v", m.mode, m.notice)
 	}
 	m = typeText(m, "also run the tests")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeNormal {
 		t.Fatal("enter did not close the prompt")
 	}
@@ -158,11 +158,11 @@ func TestSendAsOwner(t *testing.T) {
 	if n == nil || n.err || !strings.Contains(n.text, "Sent to tenebrae (Mac) (m_sent) as you") {
 		t.Fatalf("notice: %+v", n)
 	}
-	if v := m.View(); !strings.Contains(v, "Sent to tenebrae (Mac) (m_sent) as you") {
+	if v := m.testView(); !strings.Contains(v, "Sent to tenebrae (Mac) (m_sent) as you") {
 		t.Errorf("the result is not on screen:\n%s", v)
 	}
 	// The next key clears the result line.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.activeNotice() != nil {
 		t.Error("the result stayed after a key")
 	}
@@ -171,34 +171,34 @@ func TestSendAsOwner(t *testing.T) {
 func TestSendCancelAndErrors(t *testing.T) {
 	m, src := workerModel(80, 24)
 	m = selectID(m, workerID)
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 	m = typeText(m, "never sent")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.mode != modeNormal || cmd != nil || src.sentTo != "" || m.activeNotice() == nil || m.notice.text != "Message cancelled." {
 		t.Errorf("esc: mode %v sent %q notice %+v", m.mode, src.sentTo, m.notice)
 	}
 	// A refusal from the daemon shows as one red line.
 	src.actErr = client.RemoteError("only the owner at the command line can do this")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 	m = typeText(m, "hi")
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = finish(t, m, cmd)
 	if n := m.activeNotice(); n == nil || !n.err || !strings.Contains(n.text, "Not sent to tenebrae (Mac): only the owner") {
 		t.Errorf("error notice: %+v", n)
 	}
-	if l := lastLine(m.View()); !strings.HasPrefix(l, "! Not sent to") {
+	if l := lastLine(m.testView()); !strings.HasPrefix(l, "! Not sent to") {
 		t.Errorf("error line: %q", l)
 	}
 	// An offline session and an empty selection say why they cannot get a message.
 	m = selectID(m, "s_0000000000000006") // offline
 	m.showOffline = true
 	m = selectID(m, "s_0000000000000006")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 	if m.mode != modeNormal || m.activeNotice() == nil || !strings.Contains(m.notice.text, "offline") {
 		t.Errorf("offline: %+v", m.notice)
 	}
 	m.selected = ""
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 	if !strings.Contains(m.notice.text, "Nothing is selected") {
 		t.Errorf("nothing selected: %+v", m.notice)
 	}
@@ -210,28 +210,28 @@ func TestStopAWorkerAsksFirst(t *testing.T) {
 	m, src := workerModel(80, 24)
 	// An owner session uses its own confirmation.
 	m = selectID(m, "s_0000000000000001")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 	if m.mode != modeConfirm || m.notice.err {
 		t.Errorf("x on a plain session: %+v", m.notice)
 	}
 	m.mode = modeNormal
 	m = selectID(m, workerID)
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	if m.mode != modeConfirm || !strings.Contains(lines(m.View())[23], "Stop worker tenebrae (Mac)?"+confirmSuffix) {
-		t.Fatalf("confirm: mode %v help %q", m.mode, lines(m.View())[23])
+	m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
+	if m.mode != modeConfirm || !strings.Contains(lines(m.testView())[23], "Stop worker tenebrae (Mac)?"+confirmSuffix) {
+		t.Fatalf("confirm: mode %v help %q", m.mode, lines(m.testView())[23])
 	}
 	// n and esc leave it alone.
-	for _, k := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("n")}, {Type: tea.KeyEsc}} {
+	for _, k := range []tea.KeyPressMsg{{Text: "n", Code: []rune("n")[0]}, {Code: tea.KeyEsc}} {
 		mm, cmd := press(m, k)
 		if mm.mode != modeNormal || cmd != nil || src.stopped != "" || mm.notice.text != "Not stopped." {
 			t.Errorf("%v: mode %v stopped %q notice %q", k, mm.mode, src.stopped, mm.notice.text)
 		}
 	}
 	// Other keys are ignored: the question stays.
-	if mm, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}); mm.mode != modeConfirm || mm.quitting {
+	if mm, _ := press(m, tea.KeyPressMsg{Text: "q", Code: []rune("q")[0]}); mm.mode != modeConfirm || mm.quitting {
 		t.Error("q must not quit while asking")
 	}
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m, cmd := press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = finish(t, m, cmd)
 	if src.stopped != workerID || m.notice.err || m.notice.text != "Stopped worker tenebrae (Mac)." {
 		t.Errorf("stop: %q %+v", src.stopped, m.notice)
@@ -239,8 +239,8 @@ func TestStopAWorkerAsksFirst(t *testing.T) {
 	// An error is a red line.
 	src.actErr = errors.New("machine Mac is offline")
 	m = selectID(m, workerID)
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
+	m, cmd = press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = finish(t, m, cmd)
 	if !m.notice.err || m.notice.text != "Not stopped: machine Mac is offline" {
 		t.Errorf("stop error: %+v", m.notice)
@@ -254,26 +254,26 @@ func TestActionScreensGolden(t *testing.T) {
 		name := func(s string) string { return "view_" + itoa(size.w) + "x" + itoa(size.h) + "_" + s }
 
 		m, _ := workerModel(size.w, size.h)
-		golden(t, name("worker"), selectID(m, workerID).View())
+		golden(t, name("worker"), selectID(m, workerID).testView())
 
-		compose, _ := press(selectID(m, workerID), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
-		golden(t, name("compose"), typeText(compose, "also run the tests").View())
+		compose, _ := press(selectID(m, workerID), tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
+		golden(t, name("compose"), typeText(compose, "also run the tests").testView())
 
-		confirm, _ := press(selectID(m, workerID), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-		golden(t, name("confirm_stop"), confirm.View())
+		confirm, _ := press(selectID(m, workerID), tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
+		golden(t, name("confirm_stop"), confirm.testView())
 
 		ok := m
 		ok.say("Sent to tenebrae (Mac) (m_sent) as you. The reply will show in the messages.")
-		golden(t, name("notice_ok"), ok.View())
+		golden(t, name("notice_ok"), ok.testView())
 		bad := m
 		bad.fail("Not stopped: machine build-vm is offline")
-		golden(t, name("notice_error"), bad.View())
+		golden(t, name("notice_error"), bad.testView())
 
 		feed := keys(selectID(m, ownerID), "C")
 		if feed.focus != focusCTO {
 			t.Fatal("C did not focus the CTO")
 		}
-		golden(t, name("feed_owner_reply"), feed.View())
+		golden(t, name("feed_owner_reply"), feed.testView())
 	}
 }
 
@@ -297,7 +297,7 @@ func TestTitledWorkerScreenGolden(t *testing.T) {
 		}
 	}
 	m = refresh(m, src)
-	golden(t, "view_120x34_worker_title", selectID(m, workerID).View())
+	golden(t, "view_120x34_worker_title", selectID(m, workerID).testView())
 }
 
 func itoa(i int) string {
@@ -317,10 +317,10 @@ func TestActionScreensFitEverySize(t *testing.T) {
 	base = selectID(base, workerID)
 	setups := map[string]func(Model) Model{
 		"compose": func(m Model) Model {
-			m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+			m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
 			return typeText(m, strings.Repeat("long ", 40))
 		},
-		"confirm": func(m Model) Model { m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}); return m },
+		"confirm": func(m Model) Model { m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]}); return m },
 		"new session": func(m Model) Model {
 			m, _ = press(m, sessionKey())
 			return typeText(m, strings.Repeat("long ", 40))
@@ -334,7 +334,7 @@ func TestActionScreensFitEverySize(t *testing.T) {
 		for w := 30; w <= 200; w += 17 {
 			for h := 8; h <= 60; h += 7 {
 				m := setup(send(base, tea.WindowSizeMsg{Width: w, Height: h}))
-				ls := lines(m.View())
+				ls := lines(m.testView())
 				if len(ls) > max(h, 10) {
 					t.Fatalf("%s %dx%d: %d lines", name, w, h, len(ls))
 				}
