@@ -174,6 +174,9 @@ func (d *Daemon) scanProjectsLayout(ctx context.Context, homeDir string) (protoc
 	walk(cleanHome, 0)
 
 	roots := computeLayoutRoots(cleanHome, repos)
+	if roots == nil {
+		roots = []protocol.LayoutRoot{}
+	}
 
 	return protocol.MachineLayout{
 		Machine:   host,
@@ -345,7 +348,7 @@ func computeLayoutRoots(homeDir string, repos []discoveredRepo) []protocol.Layou
 	})
 
 	claimed := map[string]bool{}
-	var roots []protocol.LayoutRoot
+	roots := []protocol.LayoutRoot{}
 
 	for _, cand := range candidates {
 		// Check repos under this candidate at depth 1 or depth 2

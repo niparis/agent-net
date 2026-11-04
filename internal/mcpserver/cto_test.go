@@ -421,3 +421,37 @@ func TestCTOWorkerStartWithoutTouches(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectsLayoutOutputSchemaValidation(t *testing.T) {
+	// A machine with nil roots (the bug) must fail schema validation.
+	badRes := protocol.ProjectsLayoutResult{
+		Machines: []protocol.MachineLayout{
+			{
+				Machine:   "box-bad",
+				Home:      "/home/test",
+				Roots:     nil,
+				ScannedAt: 123456,
+				Truncated: false,
+			},
+		},
+	}
+	if res, err := catalogResult("projects_layout", badRes); err == nil && !res.IsError {
+		t.Fatalf("expected catalogResult to fail on MachineLayout with nil Roots")
+	}
+
+	// Valid result with non-nil roots (e.g. one-repo machine or top-level repos machine before roots qualifying)
+	goodRes := protocol.ProjectsLayoutResult{
+		Machines: []protocol.MachineLayout{
+			{
+				Machine:   "box-solo",
+				Home:      "/home/test",
+				Roots:     []protocol.LayoutRoot{},
+				ScannedAt: 123456,
+				Truncated: false,
+			},
+		},
+	}
+	if res, err := catalogResult("projects_layout", goodRes); err != nil || res.IsError {
+		t.Fatalf("catalogResult failed for non-nil empty roots: %v (res=%+v)", err, res)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -231,5 +232,52 @@ func TestCTOProjectsLayout(t *testing.T) {
 	m := res.Machines[0]
 	if m.Machine != "box-test" || len(m.Roots) != 1 || m.Roots[0].Path != "~/code" {
 		t.Errorf("machine layout mismatch: %+v", m)
+	}
+}
+
+func TestProjectsLayoutNonNilRoots(t *testing.T) {
+	// 1. One-repo machine
+	tempHome1 := t.TempDir()
+	initTestGitRepo(t, filepath.Join(tempHome1, "solo", "myrepo"), "git@github.com:test/myrepo.git")
+
+	d1 := &Daemon{
+		cfg: Config{
+			HomeDir:  tempHome1,
+			Hostname: "box-solo",
+		},
+	}
+	layout1, err := d1.ProjectsLayoutLocal(context.Background())
+	if err != nil {
+		t.Fatalf("ProjectsLayoutLocal 1: %v", err)
+	}
+	if layout1.Roots == nil {
+		t.Fatalf("layout1.Roots is nil for one-repo machine")
+	}
+	data1, _ := json.Marshal(layout1)
+	if strings.Contains(string(data1), `"roots":null`) {
+		t.Fatalf("JSON marshaled roots as null for one-repo machine: %s", string(data1))
+	}
+
+	// 2. Machine with only top-level repos directly under home
+	tempHome2 := t.TempDir()
+	initTestGitRepo(t, filepath.Join(tempHome2, "repo1"), "git@github.com:test/repo1.git")
+	initTestGitRepo(t, filepath.Join(tempHome2, "repo2"), "git@github.com:test/repo2.git")
+
+	d2 := &Daemon{
+		cfg: Config{
+			HomeDir:  tempHome2,
+			Hostname: "box-toplevel",
+		},
+	}
+	layout2, err := d2.ProjectsLayoutLocal(context.Background())
+	if err != nil {
+		t.Fatalf("ProjectsLayoutLocal 2: %v", err)
+	}
+	if layout2.Roots == nil {
+		t.Fatalf("layout2.Roots is nil for top-level repos machine")
+	}
+	data2, _ := json.Marshal(layout2)
+	if strings.Contains(string(data2), `"roots":null`) {
+		t.Fatalf("JSON marshaled roots as null for top-level repos machine: %s", string(data2))
 	}
 }
