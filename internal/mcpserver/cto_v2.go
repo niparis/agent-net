@@ -14,7 +14,7 @@ import (
 
 var ctoV2Tools = map[string]bool{
 	"graph_change": true, "session_change": true, "worker_change": true,
-	"cto_ui_show": true, "cto_proposals_find": true, "proposal_ask": true,
+	"cto_ui_show": true, "cto_placement_memory": true, "cto_proposals_find": true, "proposal_ask": true,
 	"answer": true, "tools_change": true, "mcp_change": true,
 	"settings_change": true, "project_change": true, "mcp_call": true, "cto_new": true,
 }
@@ -264,7 +264,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				if strings.TrimSpace(stringValue(q["id"])) == "" {
 					return v2Error(fmt.Errorf("id is required; example: %s", `{"id":"p_1"}`)), nil
 				}
-			} else if name == "cto_ui_show" {
+			} else if name == "cto_ui_show" || name == "cto_placement_memory" {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(err), nil
 				}

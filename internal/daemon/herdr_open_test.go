@@ -642,7 +642,7 @@ func TestSessionStartHerdrPiDoesNotNeedTmux(t *testing.T) {
 	}
 }
 
-func TestCTOSessionProposalStartsInHerdr(t *testing.T) {
+func TestCTOSessionProposalStartsInBackground(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -667,10 +667,12 @@ func TestCTOSessionProposalStartsInHerdr(t *testing.T) {
 	}
 	r = waitSessionStartPath(t, c.workerNode, r)
 	t.Cleanup(func() { killFakeClaude(t, path) })
-	if r.Status != "started" || r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
+	if r.Status != "started" || r.EnterPlan != nil {
 		t.Fatalf("start %+v", r)
 	}
-	requireHerdrOpened(t, log, "garden", "attach", r.JobID)
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("proposal opened a view: %s", raw)
+	}
 }
 
 func TestHerdrRunsQuotedCommandFromAnyShell(t *testing.T) {
@@ -820,7 +822,7 @@ func TestCTOEnterHerdrReportsConversationRestart(t *testing.T) {
 	}
 }
 
-func TestCTOSessionProposalRemoteStartOpensLocalHerdr(t *testing.T) {
+func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 	remoteBin, remoteLog := fakeOpenHerdr(t)
 	localBin, localLog := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -844,11 +846,25 @@ func TestCTOSessionProposalRemoteStartOpensLocalHerdr(t *testing.T) {
 		t.Fatalf("proposals %v %v", items, err)
 	}
 	local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, fakeHerdrSocket(localLog)))
-	eventually(t, "remote proposal opened locally", func() bool { data, _ := os.ReadFile(localLog); return strings.Contains(string(data), "pane run w1:p1") })
-	if raw, _ := os.ReadFile(remoteLog); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
-		t.Fatalf("remote proposal opened a view there: %s", raw)
+	items, err = local.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
 	}
-	requireHerdrOpened(t, localLog, "garden", "ssh", remote.d.cfg.Hostname)
+	var r protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &r); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "remote proposal starts", func() bool {
+		var err error
+		r, err = local.d.sessionStartGet(context.Background(), r.ID)
+		return err == nil && r.Status == "started"
+	})
+	waitSessionOnGateway(t, local.node, r.SessionID)
+	for _, log := range []string{localLog, remoteLog} {
+		if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+			t.Fatalf("proposal opened a view: %s", raw)
+		}
+	}
 }
 
 func TestEnterWithoutHerdrOrTerminalExplainsChecks(t *testing.T) {
@@ -908,7 +924,7 @@ func TestSessionResumeHerdrUsesIDWhenNameMissing(t *testing.T) {
 	requireHerdrOpened(t, log, native, "attach")
 }
 
-func TestCTOProposalApprovalSplitsBesideOwnerTUI(t *testing.T) {
+func TestCTOProposalApprovalLeavesOwnerTUIViewUnchanged(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -925,21 +941,20 @@ func TestCTOProposalApprovalSplitsBesideOwnerTUI(t *testing.T) {
 		t.Fatalf("proposal %v %v", items, err)
 	}
 	c.cli.mustCall("proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a", "herdr_socket": "/tmp/herdr-test.sock", "herdr_pane_id": "w1:p0"})
-	eventually(t, "approved session opened beside TUI", func() bool { raw, _ := os.ReadFile(log); return strings.Contains(string(raw), "pane run w1:p1") })
-	raw, _ := os.ReadFile(log)
-	if !strings.Contains(string(raw), "pane split --pane w1:p0") || strings.Contains(string(raw), "tab create") {
-		t.Fatalf("calls %s", raw)
-	}
-	if q := waitHerdrNotice(t, notices); q["text"] != "opened garden in herdr" || q["herdr_opened"] != true {
+	q := waitHerdrNotice(t, notices)
+	if q["text"] != "Enter opens it." || q["daemon_notice"] != true {
 		t.Fatalf("notice %v", q)
+	}
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "pane split") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("proposal opened a view: %s", raw)
 	}
 }
 
-func TestRemoteCTOProposalApprovalOpensOwnerHerdr(t *testing.T) {
+func TestRemoteCTOProposalApprovalBackground(t *testing.T) {
 	testRemoteCTOProposalApproval(t, false)
 }
 
-func TestRemoteCTOProposalApproveAllOpensOwnerHerdr(t *testing.T) {
+func TestRemoteCTOProposalApproveAllBackground(t *testing.T) {
 	testRemoteCTOProposalApproval(t, true)
 }
 
@@ -951,7 +966,6 @@ func testRemoteCTOProposalApproval(t *testing.T, all bool) {
 	home := pathTestHome(t)
 	sessions, _ := useFakeClaude(t)
 	local := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} })
-	notices := herdrNoticeChannel(t, local.node)
 	remote := startWorkerNode(t, g, shortSet, func(c *Config) {
 		c.ClaudeSessionsDir = sessions
 		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
@@ -973,17 +987,28 @@ func testRemoteCTOProposalApproval(t *testing.T, all bool) {
 	} else {
 		local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{NodeID: remote.d.NodeID(), ID: items[0].ID, Action: "a"}, socket))
 	}
-	eventually(t, "remote proposal opened on owner", func() bool { raw, _ := os.ReadFile(localLog); return strings.Contains(string(raw), "pane run w1:p1") })
-	if raw, _ := os.ReadFile(remoteLog); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
-		t.Fatalf("remote proposal opened a view there: %s", raw)
+	items, err = remote.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
 	}
-	requireHerdrOpened(t, localLog, "garden", "ssh", remote.d.cfg.Hostname)
-	if q := waitHerdrNotice(t, notices); q["text"] != "opened garden in herdr" || q["herdr_opened"] != true {
-		t.Fatalf("notice %v", q)
+	var r protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &r); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "remote proposal starts", func() bool {
+		var err error
+		r, err = remote.d.sessionStartGet(context.Background(), r.ID)
+		return err == nil && r.Status == "started"
+	})
+	waitSessionOnGateway(t, local.node, r.SessionID)
+	for _, log := range []string{localLog, remoteLog} {
+		if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+			t.Fatalf("proposal opened a view: %s", raw)
+		}
 	}
 }
 
-func TestCTOProposalWithoutHerdrShowsInstallNotice(t *testing.T) {
+func TestCTOProposalWithoutHerdrShowsEnterNotice(t *testing.T) {
 	withoutLocalHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -1002,7 +1027,7 @@ func TestCTOProposalWithoutHerdrShowsInstallNotice(t *testing.T) {
 	c.cli.mustCall("proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a"})
 	q := waitHerdrNotice(t, notices)
 	text, _ := q["text"].(string)
-	if q["daemon_notice"] != true || !strings.Contains(text, "Herdr was not found") || !strings.Contains(text, "install") {
+	if q["daemon_notice"] != true || text != "Enter opens it." {
 		t.Fatalf("notice %v", q)
 	}
 }

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	projectsLayoutMinVersion       = "0.4.132"
+	projectsLayoutMinVersion       = "0.4.133"
 	gatewayLayoutOverallTimeout    = 15 * time.Second
 	gatewayLayoutPerMachineTimeout = 8 * time.Second
 )

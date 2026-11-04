@@ -202,6 +202,14 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 		if err := json.Unmarshal(call.Args, &p); err != nil {
 			return err
 		}
+		if p.Remote != "" {
+			if call.Tool != "project_create" {
+				return errors.New("remote is only supported for project creation")
+			}
+			if err := validateProjectRemote(p.Remote); err != nil {
+				return err
+			}
+		}
 		if call.Tool == "project_create" && strings.TrimSpace(p.Path) == "" {
 			return errors.New("project_create needs path")
 		}

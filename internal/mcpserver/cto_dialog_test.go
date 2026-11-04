@@ -333,3 +333,36 @@ func TestCTOProposalAskDialog(t *testing.T) {
 		}
 	})
 }
+
+func TestCTOProjectCreateUsesChatConfirmation(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	asked, answered := false, false
+	srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		if method == "cto_dialog_answer" {
+			answered = true
+			return json.RawMessage(`"ready"`), nil
+		}
+		return json.RawMessage(`{"kind":"proposal","proposal_id":"p_1","message":"garden -> machine, ~/code/garden, Claude Opus, background. OK?","text":"waiting for the owner's yes in CTO chat"}`), nil
+	}, "test")
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, &mcp.ClientOptions{ElicitationHandler: func(_ context.Context, request *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+		if request.Params.Message != "garden -> machine, ~/code/garden, Claude Opus, background. OK?" {
+			t.Errorf("confirmation: %q", request.Params.Message)
+		}
+		asked = true
+		return &mcp.ElicitResult{Action: "accept"}, nil
+	}}).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "project_change", Arguments: map[string]any{"action": "create", "path": "~/code/garden", "harness": "claude"}})
+	if err != nil || result.IsError || !asked || !answered {
+		t.Fatalf("result=%v elicited=%v err=%v", result, asked, err)
+	}
+}

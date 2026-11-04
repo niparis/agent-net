@@ -39,6 +39,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 			createFields[k] = v
 		}
 	}
+	createFields["remote"] = s("Optional git@host:owner/repo.git or https://host/owner/repo.git.")
 	add("project_create", "Create a project and start a session.", createFields)
 	add("session_rename", "Rename a session for the owner.", map[string]ctoField{"session_id": sid, "name": s("Name; empty resets.")})
 	add("session_trust", "Set session peer trust.", map[string]ctoField{"session_id": sid, "on": b("Enable.")})

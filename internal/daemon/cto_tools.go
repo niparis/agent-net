@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 
@@ -50,7 +51,28 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 			if item.Status != "open" {
 				return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
 			}
-			return map[string]any{"kind": "proposal", "proposal_id": id, "text": ProposalToolResult(id), "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
+			text := ProposalToolResult(id)
+			message := fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)
+			if item.Call.Tool == "project_change" && item.Call.Action == "create" {
+				text = "Project proposal " + id + " awaits the owner's approval in the dialog or Inbox."
+				var start protocol.SessionStartRequest
+				if json.Unmarshal(item.Call.Args, &start) == nil {
+					model := firstNonEmpty(start.Model, start.Harness)
+					if start.Harness == "claude" && start.Model == "claude-opus-5-5" {
+						model = "Claude Opus"
+					}
+					name := filepath.Base(filepath.Clean(start.Path))
+					if start.Remote != "" {
+						message = fmt.Sprintf("%s -> %s, %s, clone of %s, %s, background. OK?", name, start.NodeID, start.Path, start.Remote, model)
+					} else {
+						message = fmt.Sprintf("%s -> %s, %s, %s, background. OK?", name, start.NodeID, start.Path, model)
+					}
+					if reason := ctoCut(cleanLine(item.Reason), 120); reason != "" {
+						message += " " + reason
+					}
+				}
+			}
+			return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": message}, nil
 		}
 	}
 	return nil, errors.New("proposal not found")
@@ -106,10 +128,41 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 	}
 	for _, item := range items {
 		if item.ID == q.ID && (err == nil || item.Status == "failed") && item.Status != "open" {
+			if *q.Approve && item.Status == "applied" && item.Call.Tool == "project_change" && item.Call.Action == "create" {
+				var start protocol.StartedSession
+				if json.Unmarshal(item.Result, &start) == nil && start.ID != "" {
+					return lc.d.ctoProjectStartOutcome(ctx, start), nil
+				}
+			}
 			return item.Note, nil
 		}
 	}
 	return nil, err
+}
+
+// ctoProjectStartOutcome waits for the registered session before reporting it ready.
+func (d *Daemon) ctoProjectStartOutcome(ctx context.Context, start protocol.StartedSession) string {
+	ctx, cancel := context.WithTimeout(ctx, d.workerSettings("").StartTimeout)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for start.Status == "starting" {
+		select {
+		case <-ctx.Done():
+			return "Project creation was approved; the session is still starting."
+		case <-ticker.C:
+			var err error
+			start, err = d.sessionStartGet(ctx, start.ID)
+			if err != nil {
+				return "Project creation was approved; could not check the session: " + cleanLine(err.Error())
+			}
+		}
+	}
+	if start.Status != "started" || start.SessionID == "" {
+		return "Project creation was approved; the session did not start: " + cleanLine(firstNonEmpty(start.Error, start.Status))
+	}
+	name := cleanLine(start.Project)
+	return fmt.Sprintf("%s is ready: session %s is waiting in tab 1 (Sessions). Press Enter on it to dive in.", name, name)
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
@@ -129,6 +182,9 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 
 // executeCTOTool is used only for immediate reads/talk or by the approved runner.
 func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "cto_placement_memory" {
+		return d.ctoPlacementMemory(ctx, raw)
+	}
 	if ctoToolClasses[name] == ctoRead {
 		return d.readCTOTool(ctx, name, raw)
 	}
@@ -708,4 +764,50 @@ func compactCTONeedsYou(agents []protocol.AgentView, now time.Time) any {
 		out = append(out, item{a.Waiting.Kind, a.SessionID, name, project, a.Hostname, string(text), age})
 	}
 	return map[string]any{"agents": out}
+}
+
+// ctoPlacementMemory stores only advisory owner placement answers.
+func (d *Daemon) ctoPlacementMemory(ctx context.Context, raw json.RawMessage) (any, error) {
+	var q struct {
+		Action    string `json:"action"`
+		Purpose   string `json:"purpose"`
+		Placement string `json:"placement"`
+	}
+	if json.Unmarshal(raw, &q) != nil {
+		return nil, errors.New("bad placement memory")
+	}
+	q.Purpose, q.Placement = strings.TrimSpace(q.Purpose), strings.TrimSpace(q.Placement)
+	switch q.Action {
+	case "save":
+		if q.Purpose == "" || q.Placement == "" || len(q.Purpose) > 512 || len(q.Placement) > 512 {
+			return nil, errors.New("placement memory needs a purpose and placement of at most 512 bytes")
+		}
+		if _, err := d.st.db.ExecContext(ctx, `INSERT INTO cto_placements(purpose,placement) VALUES(?,?) ON CONFLICT(purpose) DO UPDATE SET placement=excluded.placement`, q.Purpose, q.Placement); err != nil {
+			return nil, err
+		}
+	case "read":
+	default:
+		return nil, errors.New("placement memory action must be read or save")
+	}
+	rows, err := d.st.db.QueryContext(ctx, `SELECT purpose,placement FROM cto_placements ORDER BY purpose LIMIT 100`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type entry struct {
+		Purpose   string `json:"purpose"`
+		Placement string `json:"placement"`
+	}
+	items := []entry{}
+	for rows.Next() {
+		var e entry
+		if err := rows.Scan(&e.Purpose, &e.Placement); err != nil {
+			return nil, err
+		}
+		items = append(items, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return map[string]any{"items": items}, nil
 }

@@ -205,6 +205,7 @@ var ctoTools = map[string]ctoToolDef{
 			"dry_run": {typ: "boolean", desc: "Preview."},
 			"name":    {typ: "string", desc: "Project name; empty clears."},
 			"path":    {typ: "string", desc: "Path."},
+			"remote":  {typ: "string", desc: "Optional clone remote."},
 			"project": {typ: "string", desc: "Project."},
 		},
 	},

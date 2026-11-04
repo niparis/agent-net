@@ -203,7 +203,7 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetNodeHello(idFast, "box-fast", "v0.4.132"); err != nil {
+	if err := s.SetNodeHello(idFast, "box-fast", "v0.4.133"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -212,7 +212,7 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetNodeHello(idOld, "box-old", "v0.4.130"); err != nil {
+	if err := s.SetNodeHello(idOld, "box-old", "v0.4.132"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -221,7 +221,7 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetNodeHello(idSlow, "box-slow", "v0.4.132"); err != nil {
+	if err := s.SetNodeHello(idSlow, "box-slow", "v0.4.133"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -230,7 +230,7 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetNodeHello(idOffline, "box-offline", "v0.4.132"); err != nil {
+	if err := s.SetNodeHello(idOffline, "box-offline", "v0.4.133"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -291,14 +291,14 @@ func TestGatewayProjectsLayoutUnknownMachineFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetNodeHello(idA, "box-alpha", "v0.4.132"); err != nil {
+	if err := s.SetNodeHello(idA, "box-alpha", "v0.4.133"); err != nil {
 		t.Fatal(err)
 	}
 	idB, _, err := s.CreateNode("box-beta", "linux")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetNodeHello(idB, "box-beta", "v0.4.132"); err != nil {
+	if err := s.SetNodeHello(idB, "box-beta", "v0.4.133"); err != nil {
 		t.Fatal(err)
 	}
 

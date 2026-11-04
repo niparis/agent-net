@@ -19,11 +19,13 @@ const (
 const (
 	FrameSessionStart              = "session.start"
 	FrameSessionProposalStart      = "session.proposal_start"
+	FrameSessionProposalClone      = "session.proposal_clone"
 	FrameSessionResume             = "session.resume"
 	FrameSessionStop               = "session.stop"
 	FrameSessionGet                = "session.get"
 	FrameSessionOwnerStart         = "session.owner_start"
 	FrameSessionOwnerProposalStart = "session.owner_proposal_start"
+	FrameSessionOwnerProposalClone = "session.owner_proposal_clone"
 	FrameSessionOwnerResume        = "session.owner_resume"
 	FrameSessionOwnerStop          = "session.owner_stop"
 	FrameSessionOwnerGet           = "session.owner_get"
@@ -85,6 +87,7 @@ func OwnerWorktreeBranch(project string, n int) string {
 // machine that runs the start. Branch names the new worktree's branch; empty
 // asks the machine for the lowest free agent-net/<project>-<n>.
 type SessionStartRequest struct {
+	Remote       string `json:"remote,omitempty"`
 	Project      string `json:"project"`
 	Harness      string `json:"harness,omitempty"`
 	Model        string `json:"model,omitempty"`
@@ -144,15 +147,16 @@ type SessionStartQuery struct {
 // StartedSession is separate from a worker. It has no owner agent, brief,
 // deadline or cleanup rules. SessionID is filled after normal registration.
 type StartedSession struct {
-	ID       string `json:"id"`
-	Status   string `json:"status"` // starting, started, failed
-	NodeID   string `json:"node_id"`
-	Hostname string `json:"hostname,omitempty"`
-	Harness  string `json:"harness"`
-	Project  string `json:"project"`
-	Path     string `json:"path"`
-	Branch   string `json:"branch,omitempty"`
-	Model    string `json:"model,omitempty"`
+	Background bool   `json:"background,omitempty"`
+	ID         string `json:"id"`
+	Status     string `json:"status"` // starting, started, failed
+	NodeID     string `json:"node_id"`
+	Hostname   string `json:"hostname,omitempty"`
+	Harness    string `json:"harness"`
+	Project    string `json:"project"`
+	Path       string `json:"path"`
+	Branch     string `json:"branch,omitempty"`
+	Model      string `json:"model,omitempty"`
 	// EnterNote says how Enter reaches a session on another machine, for the
 	// result line after a start with a first message. Empty on this machine.
 	EnterNote string     `json:"enter_note,omitempty"`

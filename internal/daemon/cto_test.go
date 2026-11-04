@@ -778,3 +778,39 @@ func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
 		t.Fatalf("CTO brief missing %q", want)
 	}
 }
+
+func TestCTONewProjectRecipe(t *testing.T) {
+	for _, want := range []string{
+		"projects_layout", "NAME -> MACHINE, PATH, Claude Opus, background. OK?", "NAME -> MACHINE, PATH, clone of REMOTE, Claude Opus, background. OK?",
+		"claude-opus-5-5", "exactly one short question", "project_change",
+		"NAME is ready: session NAME is waiting in tab 1 (Sessions). Press Enter on it to dive in.",
+	} {
+		if !strings.Contains(ctoBrief, want) {
+			t.Errorf("CTO brief lacks %q", want)
+		}
+	}
+}
+
+func TestCTOLearnedProjectPlacement(t *testing.T) {
+	s, err := openState(seededStateDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	d := &Daemon{st: s}
+	ctx := context.Background()
+	if _, err := d.runCTOToolRaw(ctx, "cto_placement_memory", json.RawMessage(`{"action":"save","purpose":"company knowledge tools","placement":"lab:~/code/work"}`)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := d.runCTOToolRaw(ctx, "cto_placement_memory", json.RawMessage(`{"action":"read"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(result)
+	if !strings.Contains(string(raw), "company knowledge tools") || !strings.Contains(string(raw), "lab:~/code/work") {
+		t.Fatalf("memory: %s", raw)
+	}
+	if !strings.Contains(ctoBrief, "cto_placement_memory") {
+		t.Fatal("brief does not read placement memory")
+	}
+}

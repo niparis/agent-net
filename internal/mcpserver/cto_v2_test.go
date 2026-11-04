@@ -353,3 +353,15 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 		t.Fatalf("mcp add route: %s %s", calls[8].name, calls[8].args)
 	}
 }
+
+func TestCTOProjectCreateRemoteSchema(t *testing.T) {
+	if err := ValidateCTOActionSchema("project_change", json.RawMessage(`{"action":"create","path":"~/repo","remote":"git@git.example:team/repo.git"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCTOActionSchema("project_change", json.RawMessage(`{"action":"add","paths":["/tmp/repo"],"remote":"git@git.example:team/repo.git"}`)); err == nil {
+		t.Fatal("remote accepted for add")
+	}
+	if err := ValidateCTOActionSchema("session_change", json.RawMessage(`{"action":"session_start","path":"~/repo","remote":"git@git.example:team/repo.git"}`)); err == nil {
+		t.Fatal("remote accepted for session start")
+	}
+}

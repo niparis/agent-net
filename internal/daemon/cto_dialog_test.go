@@ -3,11 +3,15 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -173,5 +177,134 @@ func TestCTOProposalAsk(t *testing.T) {
 	}
 	if _, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"proposal_ask","arguments":{"id":"`+id2+`"}}`)); err == nil || !strings.Contains(err.Error(), "not open") {
 		t.Fatalf("declined proposal reopened: %v", err)
+	}
+}
+
+func TestCTODialogProjectCreateReportsReady(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.d.cto.pid.Store(int64(os.Getpid()))
+	defer c.d.cto.pid.Store(0)
+	path := filepath.Join(home, "code", "company-rag")
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
+	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "harness": "claude", "model": "claude-opus-5-5", "reason": "matching group"}})
+	v, err := cto.dispatch(context.Background(), "cto_tool", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := v.(map[string]any)
+	if p["kind"] != "proposal" {
+		t.Fatalf("response: %v", p)
+	}
+	message, _ := p["message"].(string)
+	if strings.Contains(message, "\n") || !strings.Contains(message, "company-rag -> ") || !strings.Contains(message, path+", Claude Opus, background. OK?") || !strings.Contains(message, "matching group") {
+		t.Fatalf("confirmation: %q", message)
+	}
+	answer, _ := json.Marshal(map[string]any{"id": p["proposal_id"], "approve": true})
+	out, err := cto.dispatch(context.Background(), "cto_dialog_answer", answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmt.Sprint(out), "company-rag is ready: session company-rag is waiting in tab 1 (Sessions). Press Enter on it to dive in.") {
+		t.Fatalf("outcome: %v", out)
+	}
+}
+
+func TestCTOProjectPlainTextDoesNotApprove(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.d.cfg.HarnessPaths["opencode"] = os.Args[0]
+	c.cli.mustCall("cto_send", map[string]string{"text": "start"})
+	path := filepath.Join(home, "code", "company-rag")
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
+	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+		t.Fatal(err)
+	}
+	c.cli.mustCall("cto_send", map[string]string{"text": "yes"})
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 || items[0].Status != "open" {
+		t.Fatalf("plain text approved proposal: %v %v", items, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("folder created before dialog: %v", err)
+	}
+}
+
+func TestCTOProjectCreationMCPDialog(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.d.cto.pid.Store(int64(os.Getpid()))
+	defer c.d.cto.pid.Store(0)
+	path := filepath.Join(home, "code", "company-rag")
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
+	srv := mcpserver.NewCTO(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		var payload any = params
+		if method != "cto_dialog_answer" {
+			payload = map[string]any{"name": method, "arguments": params}
+			method = "cto_tool"
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		v, err := cto.dispatch(ctx, method, raw)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(v)
+	}, "test")
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := srv.Connect(context.Background(), st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	asked := false
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, &mcp.ClientOptions{ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+		asked = true
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("folder exists before approval: %v", err)
+		}
+		if strings.Contains(req.Params.Message, "\n") || !strings.Contains(req.Params.Message, "company-rag -> ") {
+			t.Errorf("dialog: %q", req.Params.Message)
+		}
+		return &mcp.ElicitResult{Action: "accept"}, nil
+	}}).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "project_change", Arguments: map[string]any{"action": "create", "path": path, "harness": "claude", "model": "claude-opus-5-5"}})
+	if err != nil || result.IsError || !asked {
+		t.Fatalf("result=%+v asked=%v err=%v", result, asked, err)
+	}
+	if len(result.Content) == 0 || !strings.Contains(fmt.Sprint(result.Content[0]), "company-rag is ready") {
+		t.Fatalf("result: %+v", result)
+	}
+}
+
+func TestCTOProjectCloneDialogNamesRemote(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.d.cto.pid.Store(int64(os.Getpid()))
+	defer c.d.cto.pid.Store(0)
+	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
+	path := filepath.Join(home, "code", "company-rag")
+	remote := "git@git.example:team/repo.git"
+	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "remote": remote, "harness": "claude", "model": "claude-opus-5-5"}})
+	value, err := cto.dispatch(context.Background(), "cto_tool", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, _ := value.(map[string]any)["message"].(string)
+	if strings.Contains(message, "\n") || !strings.Contains(message, path+", clone of "+remote+", Claude Opus, background. OK?") {
+		t.Fatalf("dialog %q", message)
 	}
 }

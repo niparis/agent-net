@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/claudetrust"
@@ -107,7 +109,13 @@ func createOwnerFolder(ctx context.Context, path string) error {
 	if err := checkOwnerHome(path); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("cannot create parent of %s: %w", path, err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists; choose another name or ask to register it", path)
+		}
 		return fmt.Errorf("cannot create %s: %w", path, err)
 	}
 	if _, err := gitOut(ctx, path, "init", "-q"); err != nil {
@@ -163,4 +171,41 @@ func ownerClaudeTrust(path string, created, worktree bool, confirmed bool) (bool
 		return false, fmt.Errorf("cannot trust %s for Claude Code: %w", path, err)
 	}
 	return false, nil
+}
+
+var projectRemotePattern = regexp.MustCompile(`^(?:git@[A-Za-z0-9][A-Za-z0-9.-]*:|https://[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]{1,5})?/)[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_-][A-Za-z0-9_.-]*[.]git$`)
+
+func validateProjectRemote(remote string) error {
+	if len(remote) > 2048 || !projectRemotePattern.MatchString(remote) {
+		return errors.New("remote must be git@host:owner/repo.git or https://host/owner/repo.git")
+	}
+	return nil
+}
+
+func (d *Daemon) cloneOwnerProject(ctx context.Context, remote, path string) error {
+	if err := validateProjectRemote(remote); err != nil {
+		return err
+	}
+	if err := checkOwnerHome(path); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("cannot create parent of %s: %w", path, err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists; choose another name or ask to register it", path)
+		}
+		return fmt.Errorf("cannot create %s: %w", path, err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	if d.cloneProject != nil {
+		return d.cloneProject(ctx, remote, path)
+	}
+	_, err := gitOutWithEnv(ctx, filepath.Dir(path), []string{"GIT_ALLOW_PROTOCOL=ssh:https"}, "-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never", "clone", "--", remote, path)
+	if err != nil {
+		return fmt.Errorf("cannot clone %s: %w", remote, err)
+	}
+	return nil
 }

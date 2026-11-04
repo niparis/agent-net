@@ -20,6 +20,9 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	p.Project = strings.TrimSpace(p.Project)
 	p.Path = strings.TrimSpace(p.Path)
 	p.NodeID = strings.TrimSpace(p.NodeID)
+	if err := validateCloneStart(p); err != nil {
+		return protocol.StartedSession{}, err
+	}
 	if p.Project == "" && p.Path == "" {
 		return protocol.StartedSession{}, errors.New("session_start needs project or path")
 	}
@@ -103,8 +106,21 @@ func (d *Daemon) sessionStartMachine(ctx context.Context, p protocol.SessionStar
 	return "", errors.New("project is on more than one machine: use name@machine")
 }
 
+func validateCloneStart(p protocol.SessionStartRequest) error {
+	if p.Remote == "" {
+		return nil
+	}
+	if !p.CTOProposal || !p.Create || p.Path == "" {
+		return errors.New("remote requires an approved project create")
+	}
+	return validateProjectRemote(p.Remote)
+}
+
 // sessionStartLocal starts the session on this machine.
 func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartRequest) (protocol.StartedSession, error) {
+	if err := validateCloneStart(p); err != nil {
+		return protocol.StartedSession{}, err
+	}
 	bin, err := d.harnessBinary(p.Harness)
 	if err != nil {
 		return protocol.StartedSession{}, err
@@ -119,6 +135,10 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 			return protocol.StartedSession{}, err
 		}
 		info, statErr := os.Stat(path)
+		_, linkErr := os.Lstat(path)
+		if p.CTOProposal && p.Create && linkErr == nil {
+			return protocol.StartedSession{}, fmt.Errorf("%s already exists; choose another name or ask to register it", p.Path)
+		}
 		switch {
 		case errors.Is(statErr, os.ErrNotExist):
 			if !p.Create {
@@ -126,7 +146,11 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 					NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness,
 					Project: filepath.Base(path), Path: path, Model: p.Model, StartedAt: time.Now().Unix()}, nil
 			}
-			if err := createOwnerFolder(ctx, path); err != nil {
+			if p.Remote != "" {
+				if err := d.cloneOwnerProject(ctx, p.Remote, path); err != nil {
+					return protocol.StartedSession{}, err
+				}
+			} else if err := createOwnerFolder(ctx, path); err != nil {
 				return protocol.StartedSession{}, err
 			}
 			created = true
@@ -197,7 +221,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 				StartedAt: time.Now().Unix()}, nil
 		}
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
+	r := protocol.StartedSession{Background: p.CTOProposal && p.Harness == "claude", ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
@@ -233,7 +257,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.FirstMessage != "" {
 		args = append(args, "--", p.FirstMessage)
 	}
-	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner), nil
+	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner, p.CTOProposal), nil
 }
 
 // relaySessionStart asks the gateway to start the session on another machine.
@@ -248,6 +272,9 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	typ := protocol.FrameSessionStart
 	if p.CTOProposal {
 		typ = protocol.FrameSessionProposalStart
+		if p.Remote != "" {
+			typ = protocol.FrameSessionProposalClone
+		}
 	}
 	data, err := d.call(ctx, typ, frame)
 	if err != nil {
@@ -298,6 +325,11 @@ func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) 
 // remoteStartResult fills the fields that only the owner's machine can know:
 // the other machine's host name, the ssh note, and a remote Codex plan.
 func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSession, socket, pane string) protocol.StartedSession {
+	if res.Background {
+		res.EnterPlan = nil
+		res.EnterNote = "Enter opens it."
+		return res
+	}
 	if res.NodeID == "" || res.NodeID == d.cfg.NodeID {
 		return res
 	}
@@ -390,7 +422,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false, false), nil
+	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false, false, false), nil
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {
@@ -414,7 +446,7 @@ func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, s
 // relayed says the owner approved the start from another machine. That machine
 // has no herdr location for the owner's TUI, so this one must return the attach
 // plan for the owner's machine to wrap and open.
-func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify, relayed bool) protocol.StartedSession {
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify, relayed, background bool) protocol.StartedSession {
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -471,8 +503,13 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 				plan.Argv = nil
 				plan.Note = "The session started but has no Claude background ID to attach."
 			}
-			opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
-			if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
+			opened := plan
+			if !background {
+				opened = d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
+			}
+			if background {
+				r.EnterNote = "Enter opens it."
+			} else if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
 				r.EnterPlan = &opened
 			} else {
 				r.EnterNote = "Enter opens it."
