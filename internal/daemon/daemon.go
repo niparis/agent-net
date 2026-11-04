@@ -198,7 +198,7 @@ type Config struct {
 	DifficultyJudgeModel        string
 	DifficultyRetryJudgeHarness string
 	DifficultyRetryJudgeModel   string
-	testJudgeFirstTimeout       time.Duration
+	testJudgeHedgeAfter         time.Duration
 	// DifficultyTimeout bounds each one-shot difficulty run. Default 3 minutes.
 	DifficultyTimeout time.Duration
 	// ModelProviders is model_providers of node.json. It goes to the gateway

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -204,7 +205,81 @@ func judgeBriefForTask(task string) string {
 Score each dimension 1 to 5 from the facts in this task brief (its Evidence section if present, otherwise the brief text). Start every dimension at 1 and raise it only for a concrete reason you name. Reply with JSON only, in exactly this shape: {"reasoning":2,"scope":1,"coupling":1,"uncertainty":1,"verification":2,"risk":1,"reasons":{"reasoning":"...","scope":"...","coupling":"...","uncertainty":"...","verification":"...","risk":"..."},"confidence":"high"}. Each score is a whole number from 1 to 5; each reason is one line; confidence is low, medium, or high. Do not use INSUFFICIENT_EVIDENCE. A missing fact means score from what is there and lower confidence.
 
 Task brief:
-` + strings.TrimSpace(task)
+` + judgeTaskText(task)
+}
+
+// judgeTaskLimit caps the brief the judge reads. The judge's time grows with
+// the brief: the briefs it failed on were 5 to 8 KB (2026-11-04). The goal at
+// the top and the Evidence section carry what the scores need.
+const judgeTaskLimit = 4000
+
+// judgeEvidenceLimit caps the Evidence section that a trimmed brief keeps.
+const judgeEvidenceLimit = 2000
+
+// judgeTailLimit is how much of the end of a long brief is kept.
+const judgeTailLimit = 400
+
+var evidenceHeading = regexp.MustCompile(`(?im)^[ \t#*]*evidence\b`)
+
+// judgeTaskText returns task, or for a brief over judgeTaskLimit its head, its
+// Evidence section and its tail, with a marker where text was cut. Cuts fall
+// on line ends.
+func judgeTaskText(task string) string {
+	task = strings.TrimSpace(task)
+	if len(task) <= judgeTaskLimit {
+		return task
+	}
+	tail := task[len(task)-judgeTailLimit:]
+	if i := strings.IndexByte(tail, '\n'); i >= 0 {
+		tail = tail[i+1:]
+	}
+	tailStart := len(task) - len(tail)
+	// The Evidence section runs from its heading to the first blank line.
+	evStart, evEnd := -1, -1
+	if loc := evidenceHeading.FindStringIndex(task[:tailStart]); loc != nil {
+		evStart, evEnd = loc[0], tailStart
+		if i := strings.Index(task[evStart:tailStart], "\n\n"); i >= 0 {
+			evEnd = evStart + i
+		}
+		evEnd = evStart + len(cutAtLine(task[evStart:evEnd], judgeEvidenceLimit))
+	}
+	head := cutAtLine(task, judgeTaskLimit-max(evEnd-evStart, 0)-len(tail))
+	var parts []string
+	keptEnd := len(head)
+	switch {
+	case evStart < 0:
+		parts = []string{head}
+	case evStart < len(head):
+		// The section starts in the head: the head runs to its end.
+		keptEnd = max(len(head), evEnd)
+		parts = []string{task[:keptEnd]}
+	default:
+		parts = []string{head, cutMarker(evStart - len(head)), task[evStart:evEnd]}
+		keptEnd = evEnd
+	}
+	parts = append(parts, cutMarker(tailStart-keptEnd), tail)
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func cutMarker(n int) string {
+	return fmt.Sprintf("[... %d bytes of the brief cut ...]", n)
+}
+
+// cutAtLine returns the first n bytes of s, shortened to the last line end.
+func cutAtLine(s string, n int) string {
+	if n >= len(s) {
+		return s
+	}
+	if n <= 0 {
+		return ""
+	}
+	if i := strings.LastIndexByte(s[:n], '\n'); i > 0 {
+		return s[:i]
+	}
+	return s[:n]
 }
 
 // mergeDifficultyProfile replaces the named sections of base with the sections

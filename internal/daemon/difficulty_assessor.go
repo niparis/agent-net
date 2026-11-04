@@ -112,40 +112,6 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 			return fallback("difficulty: cannot make a judge folder: " + err.Error() + "; started at normal")
 		}
 		defer os.RemoveAll(judgeDir)
-		budgetCtx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		deadline, _ := budgetCtx.Deadline()
-		firstTimeout := timeout
-		// Reserve 20 seconds for a retry when the budget is large enough.
-		if timeout >= 40*time.Second {
-			firstTimeout = timeout - 21*time.Second
-		}
-		if a.cfg.testJudgeFirstTimeout > 0 {
-			firstTimeout = a.cfg.testJudgeFirstTimeout
-		}
-		firstStart := time.Now()
-		raw, runErr := a.runDifficultyOneShot(budgetCtx, judgeHarness, judgeModel, judgeDir, judgeBriefForTask(task), firstTimeout)
-		firstDuration := time.Since(firstStart)
-		var scores difficulty.Scores
-		var insufficient []string
-		var parseErr error
-		if runErr == nil {
-			scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
-		}
-		firstResult := judgeAttemptResult(runErr, parseErr)
-		a.logAttempt(judgeHarness, judgeModel, firstDuration, firstResult)
-
-		firstTimedOut := firstResult == "timeout"
-		firstTimeoutMsg := fmt.Sprintf("first judge %s timed out at %s of the %s budget", judgeName(judgeHarness, judgeModel), formatSeconds(firstTimeout), formatSeconds(timeout))
-		failure := ""
-		if firstTimedOut {
-			failure = firstTimeoutMsg
-		} else if runErr != nil {
-			failure = "the judge " + runErr.Error()
-		} else if parseErr != nil {
-			failure = "the judge reply did not parse: " + parseErr.Error()
-		}
-		retryable := parseErr != nil || firstTimedOut
 		retryHarness := strings.ToLower(strings.TrimSpace(a.cfg.DifficultyRetryJudgeHarness))
 		retryModel := strings.TrimSpace(a.cfg.DifficultyRetryJudgeModel)
 		if retryHarness == "" {
@@ -154,49 +120,17 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		if retryModel == "" {
 			retryModel = "gpt-6.1-sol"
 		}
-		remaining := time.Until(deadline)
-		minRetryRemaining := 20 * time.Second
-		if a.cfg.testJudgeFirstTimeout > 0 {
-			minRetryRemaining = 50 * time.Millisecond
+		res := a.judgeWithRetry(ctx, judgeDir, judgeBriefForTask(task), timeout,
+			judgeSpec{judgeHarness, judgeModel}, judgeSpec{retryHarness, retryModel})
+		a0.JudgeModel = res.judge.harness + ":" + res.judge.model
+		judgeNote = res.note
+		if res.failure != "" {
+			return fallback("difficulty: " + res.failure + "; started at normal")
 		}
-		if retryable && remaining >= minRetryRemaining && budgetCtx.Err() == nil {
-			if _, lookupErr := a.harnessBinary(retryHarness); lookupErr == nil {
-				judgeNote = failure
-				a0.JudgeModel = retryHarness + ":" + retryModel
-				retryStart := time.Now()
-				raw, runErr = a.runDifficultyOneShot(budgetCtx, retryHarness, retryModel, judgeDir, judgeBriefForTask(task), remaining)
-				retryDuration := time.Since(retryStart)
-				if runErr == nil {
-					scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
-				} else {
-					parseErr = nil
-				}
-				retryResult := judgeAttemptResult(runErr, parseErr)
-				a.logAttempt(retryHarness, retryModel, retryDuration, retryResult)
-
-				if retryResult == "timeout" {
-					if firstTimedOut {
-						failure = formatJudgeTimeoutNote(judgeHarness, judgeModel, firstTimeout, timeout, retryHarness, retryModel, remaining)
-					} else {
-						failure = fmt.Sprintf("%s; retry judge %s timed out after the remaining %s", failure, judgeName(retryHarness, retryModel), formatSeconds(remaining))
-					}
-					judgeNote = ""
-				} else if runErr != nil {
-					failure = "the retry judge " + runErr.Error()
-				} else if parseErr != nil {
-					failure = "the retry judge reply did not parse: " + parseErr.Error()
-				} else {
-					failure = ""
-				}
-			}
-		}
-		if failure != "" {
-			return fallback("difficulty: " + failure + "; started at normal")
-		}
-
-		if len(insufficient) > 0 {
+		if len(res.insufficient) > 0 {
 			return fallback("difficulty: the judge returned INSUFFICIENT_EVIDENCE in judge-only mode; started at normal")
 		}
+		scores := res.scores
 		a0.Scores = scores
 		a0.Confidence = scores.Confidence
 		if a0.Confidence == "" {
@@ -279,6 +213,191 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	return a0, nil
 }
 
+// The judge-only path gives the retry judge this much of the budget: the first
+// judge answers in 8 to 35 s (median 17 s, 2026-11-03 and 04, 27 runs) and the
+// Codex retry needs about 20 s. The retry starts no later than the hedge point
+// and only when at least judgeRetryMinimum is left.
+const (
+	judgeRetryShare   = 35 * time.Second
+	judgeRetryMinimum = 20 * time.Second
+)
+
+// judgeHedge is when the retry judge starts if the first has not answered:
+// judgeRetryShare before the end, but never before a third of a short budget.
+func judgeHedge(budget time.Duration) time.Duration {
+	return max(budget-judgeRetryShare, budget/3)
+}
+
+type judgeSpec struct{ harness, model string }
+
+func (j judgeSpec) name() string { return judgeName(j.harness, j.model) }
+
+type judgeOutcome struct {
+	retry        bool
+	scores       difficulty.Scores
+	insufficient []string
+	runErr       error
+	parseErr     error
+	dur          time.Duration
+	raw          string
+}
+
+func (o judgeOutcome) ok() bool { return o.runErr == nil && o.parseErr == nil }
+
+// judgeResult is the answer of judgeWithRetry. failure is set when no judge
+// answered; note says how an answer was reached when it was not the plain
+// first judge.
+type judgeResult struct {
+	judge        judgeSpec
+	scores       difficulty.Scores
+	insufficient []string
+	note         string
+	failure      string
+}
+
+// judgeWithRetry scores prompt with the first judge and, as a hedge, the retry
+// judge. The first judge may use the whole budget. The retry judge starts when
+// the first fails, or at the hedge point if the first has not answered yet,
+// and runs to the end of the budget. The first valid answer wins and the other
+// judge is stopped. Before, the first judge was cut off at 39 s and the retry
+// got only the remaining 21 s, so a slow first judge failed both.
+func (a *DifficultyAssessor) judgeWithRetry(ctx context.Context, dir, prompt string, budget time.Duration, first, retry judgeSpec) judgeResult {
+	budgetCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	deadline, _ := budgetCtx.Deadline()
+	hedge, minRetry := judgeHedge(budget), judgeRetryMinimum
+	if a.cfg.testJudgeHedgeAfter > 0 {
+		hedge, minRetry = a.cfg.testJudgeHedgeAfter, 50*time.Millisecond
+	}
+	started := time.Now()
+	results := make(chan judgeOutcome, 2)
+	run := func(runCtx context.Context, j judgeSpec, isRetry bool, timeout time.Duration) {
+		t0 := time.Now()
+		raw, err := a.runDifficultyOneShot(runCtx, j.harness, j.model, dir, prompt, timeout)
+		o := judgeOutcome{retry: isRetry, runErr: err, dur: time.Since(t0), raw: raw}
+		if err == nil {
+			o.scores, o.insufficient, o.parseErr = parseJudgeReply(raw)
+		}
+		results <- o
+	}
+	firstCtx, stopFirst := context.WithCancel(budgetCtx)
+	defer stopFirst()
+	retryCtx, stopRetry := context.WithCancel(budgetCtx)
+	defer stopRetry()
+	go run(firstCtx, first, false, budget)
+	pending := 1
+	hedgeTimer := time.NewTimer(hedge)
+	defer hedgeTimer.Stop()
+
+	retryTried, retryStarted := false, false
+	var retryAt, retryTime time.Duration
+	startRetry := func() {
+		if retryTried {
+			return
+		}
+		retryTried = true
+		remaining := time.Until(deadline)
+		if remaining < minRetry || budgetCtx.Err() != nil {
+			return
+		}
+		if _, err := a.harnessBinary(retry.harness); err != nil {
+			return
+		}
+		retryStarted, retryAt, retryTime = true, time.Since(started), remaining
+		pending++
+		go run(retryCtx, retry, true, remaining)
+	}
+	firstFailure := func(o judgeOutcome) string {
+		switch judgeAttemptResult(o.runErr, o.parseErr) {
+		case "timeout":
+			return formatJudgeTimeoutNote(first.harness, first.model, budget, budget, "", "", 0)
+		case "parse error":
+			return "the judge reply did not parse: " + o.parseErr.Error()
+		}
+		return "the judge " + o.runErr.Error()
+	}
+	retryFailure := func(o judgeOutcome) string {
+		switch judgeAttemptResult(o.runErr, o.parseErr) {
+		case "timeout":
+			return fmt.Sprintf("retry judge %s timed out after the remaining %s", retry.name(), formatSeconds(retryTime))
+		case "parse error":
+			return "the retry judge reply did not parse: " + o.parseErr.Error()
+		}
+		return "the retry judge " + o.runErr.Error()
+	}
+	// Logs are written here, not in the judge goroutines, so a caller's Logf
+	// is never called from two goroutines at once.
+	logOutcome := func(o judgeOutcome, res string) {
+		j := first
+		if o.retry {
+			j = retry
+		}
+		a.logAttempt(j.harness, j.model, o.dur, res)
+		if o.runErr == nil && o.parseErr != nil {
+			a.logReply(j.harness, j.model, o.raw)
+		}
+	}
+
+	var firstOut, retryOut *judgeOutcome
+	for pending > 0 {
+		select {
+		case <-hedgeTimer.C:
+			startRetry()
+		case o := <-results:
+			pending--
+			if !o.ok() {
+				logOutcome(o, judgeAttemptResult(o.runErr, o.parseErr))
+				if o.retry {
+					retryOut = &o
+				} else {
+					firstOut = &o
+					startRetry()
+				}
+				continue
+			}
+			logOutcome(o, "ok")
+			if o.retry {
+				stopFirst()
+			} else {
+				stopRetry()
+			}
+			// Wait for the other judge so no process outlives the assessment.
+			for ; pending > 0; pending-- {
+				other := <-results
+				res := judgeAttemptResult(other.runErr, other.parseErr)
+				if res == "other error" && ctx.Err() == nil {
+					res = "stopped"
+				}
+				logOutcome(other, res)
+			}
+			out := judgeResult{judge: first, scores: o.scores, insufficient: o.insufficient}
+			switch {
+			case o.retry:
+				out.judge = retry
+				if firstOut != nil {
+					out.note = firstFailure(*firstOut)
+				} else {
+					out.note = fmt.Sprintf("first judge %s had no answer after %s; retry judge %s answered first", first.name(), formatSeconds(retryAt), retry.name())
+				}
+			case retryStarted && retryOut != nil:
+				out.note = fmt.Sprintf("first judge %s answered after %s; %s", first.name(), formatSeconds(o.dur), retryFailure(*retryOut))
+			case retryStarted:
+				out.note = fmt.Sprintf("first judge %s answered after %s; retry judge %s was stopped", first.name(), formatSeconds(o.dur), retry.name())
+			}
+			return out
+		}
+	}
+	out := judgeResult{judge: first}
+	if firstOut != nil {
+		out.failure = firstFailure(*firstOut)
+	}
+	if retryOut != nil {
+		out.judge = retry
+		out.failure += "; " + retryFailure(*retryOut)
+	}
+	return out
+}
+
 // difficultyModel returns the harness and model of both runs. An explicit
 // config pair wins. Otherwise it takes the lowest-max Codex profile of the
 // worker roster: the weakest model the owner has registered is the cheapest
@@ -345,10 +464,13 @@ func (a *DifficultyAssessor) judgeDifficulty(ctx context.Context, harness, model
 	var insufficient []string
 	var parseErr error
 	if err == nil {
-		scores, insufficient, parseErr = difficulty.ParseScores([]byte(extractDifficultyJudgeReply(raw)))
+		scores, insufficient, parseErr = parseJudgeReply(raw)
 	}
 	res := judgeAttemptResult(err, parseErr)
 	a.logAttempt(harness, model, dur, res)
+	if parseErr != nil {
+		a.logReply(harness, model, raw)
+	}
 	if err != nil {
 		return difficulty.Scores{}, nil, err
 	}
@@ -375,50 +497,61 @@ func (a *DifficultyAssessor) runDifficultyOneShot(ctx context.Context, harness, 
 
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
-// extractDifficultyJudgeReply strips terminal formatting and returns the last
-// complete JSON object. OpenCode may print progress before its final answer.
-func extractDifficultyJudgeReply(raw string) string {
-	clean := ansiEscape.ReplaceAllString(raw, "")
-	start, depth := -1, 0
-	inString, escaped := false, false
-	last := ""
-	for i, r := range clean {
-		if start < 0 {
-			if r == '{' {
-				start, depth = i, 1
-			}
+// judgeReplyScan is how much of the end of a reply parseJudgeReply reads. A
+// judge's answer is a few hundred bytes at the end of its output.
+const judgeReplyScan = 64 << 10
+
+// parseJudgeReply finds the scores in a judge's final text. OpenCode may print
+// progress before the answer, and a model may wrap the JSON in a code fence or
+// write text around it, so every complete JSON object in the text is a
+// candidate, the last one first. A stray brace in the text does not hide a
+// later object. The error says what was wrong with the reply and its size,
+// never only "unexpected end of JSON input".
+func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
+	clean := strings.TrimSpace(ansiEscape.ReplaceAllString(raw, ""))
+	if clean == "" {
+		return difficulty.Scores{}, nil, errors.New("the reply is empty")
+	}
+	text := clean
+	if len(text) > judgeReplyScan {
+		text = text[len(text)-judgeReplyScan:]
+	}
+	var objects []string
+	for i := 0; i < len(text); {
+		j := strings.IndexByte(text[i:], '{')
+		if j < 0 {
+			break
+		}
+		i += j
+		dec := json.NewDecoder(strings.NewReader(text[i:]))
+		var obj json.RawMessage
+		if dec.Decode(&obj) == nil && len(obj) > 0 && obj[0] == '{' {
+			objects = append(objects, string(obj))
+			i += int(dec.InputOffset())
 			continue
 		}
-		if inString {
-			if escaped {
-				escaped = false
-			} else if r == '\\' {
-				escaped = true
-			} else if r == '"' {
-				inString = false
-			}
-			continue
+		i++
+	}
+	var lastErr error
+	for k := len(objects) - 1; k >= 0; k-- {
+		scores, insufficient, err := difficulty.ParseScores([]byte(objects[k]))
+		if err == nil {
+			return scores, insufficient, nil
 		}
-		switch r {
-		case '"':
-			inString = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				last = clean[start : i+1]
-				start = -1
-			}
+		if lastErr == nil {
+			lastErr = err
 		}
 	}
-	if last != "" {
-		return last
+	if lastErr != nil {
+		return difficulty.Scores{}, nil, lastErr
 	}
 	if i := strings.Index(strings.ToUpper(clean), "INSUFFICIENT_EVIDENCE"); i >= 0 {
-		return strings.TrimSpace(clean[i:])
+		return difficulty.ParseScores([]byte(strings.TrimSpace(clean[i:])))
 	}
-	return strings.TrimSpace(clean)
+	if strings.Contains(clean, "{") {
+		return difficulty.Scores{}, nil, fmt.Errorf("no complete JSON object in the %d-byte reply (it may be cut off)", len(clean))
+	}
+	return difficulty.Scores{}, nil, fmt.Errorf("no JSON object in the %d-byte reply", len(clean))
 }
 
 // runOpenCode starts a one-shot judge in a fresh empty folder. OpenCode accepts
@@ -645,6 +778,16 @@ func (a *DifficultyAssessor) logf(format string, args ...any) {
 	if a.sources.Logf != nil {
 		a.sources.Logf(format, args...)
 	}
+}
+
+// judgeReplyLogLimit caps the reply that a parse failure writes to the log.
+const judgeReplyLogLimit = 800
+
+// logReply writes a reply that did not parse, without secrets and capped, so
+// the next failure shows what the judge said.
+func (a *DifficultyAssessor) logReply(harness, model, raw string) {
+	clean := strings.TrimSpace(ansiEscape.ReplaceAllString(raw, ""))
+	a.logf("judge.reply harness=%s model=%s bytes=%d reply=%q", harness, model, len(clean), redact.Cut(redact.Secrets(clean), judgeReplyLogLimit))
 }
 
 func (a *DifficultyAssessor) logAttempt(harness, model string, dur time.Duration, res string) {
