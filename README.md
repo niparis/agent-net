@@ -91,7 +91,7 @@ Ask an agent to "do this with a worker". It calls `agent_worker_start` with a br
 
 1. **Scores the brief.** A cheap judge rates six things (reasoning, scope, coupling, uncertainty, verification, risk) from 1 to 5. A fixed formula turns them into a level, from `trivial` to `very_complex`. The agent tells you the result in one line, and the Claude workers panel shows it next to the worker.
 2. **Picks a model.** Among the worker profiles you registered, it keeps the ones good enough for that level, prefers providers that are behind their quota pace, keeps the protected ones (your orchestrator's subscription) for last, and rotates so no model takes every task.
-3. **Starts the worker** in its own git worktree by default. Only Codex workers and Antigravity workers are sandboxed today. Antigravity uses its own `--sandbox` flag. Claude, Pi and OpenCode workers run with the owner's permissions. See the roadmap for the planned sandbox for every worker.
+3. **Starts the worker** in its own git worktree by default. Codex workers and Antigravity workers are sandboxed by their own sandboxes. On Linux, Pi and OpenCode workers run in bubblewrap when the project has the OS sandbox on (`workers.os_sandbox` in `node.json`). Otherwise Claude, Pi and OpenCode workers run with the owner's permissions. See the roadmap.
 4. **Sends a notice** when the worker ends: status, run time, tokens, the branch and the diff stat, with the worker's report. The calling agent reviews the diff and runs the tests before it tells you the work is done.
 
 Each task's outcome is recorded: nudges, fixes, and bugs found later. The Quality panel (tab 3, `d` for details) shows how much of the orchestrator's time each model costs per task, by level.
@@ -202,7 +202,7 @@ agent-net uses MCP to give agents their tools. It is not an implementation of A2
 ## Roadmap
 
 - **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
-- **An optional sandbox for every worker.** Today only Codex workers and Antigravity workers with its own `--sandbox` flag are sandboxed. An OS-level wrapper (bubblewrap or Landlock on Linux, sandbox-exec on macOS) for every worker launcher, switched on per project. Plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
+- **An optional sandbox for every worker.** Linux is done for Pi and OpenCode workers: bubblewrap, switched on per project with `workers.os_sandbox` in `node.json`. Still to do: macOS (sandbox-exec, designed), and Claude workers, which are refused while the switch is on because `claude --bg` runs outside any wrapper (the plan is Claude Code's own sandbox settings). Codex and Antigravity keep their own sandboxes. Design: [docs/design/worker-os-sandbox.md](docs/design/worker-os-sandbox.md); plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
 - **A modular agent-net:** agent-net keeps the mechanisms, and a way of working (who does what, how work is tested and merged, what agents are told) becomes data at network, team, repo or agent level, which the CTO can propose to change. Plan: [docs/design/modularity.md](docs/design/modularity.md).
 - **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
 - **The phone app.**

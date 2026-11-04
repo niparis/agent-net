@@ -126,9 +126,9 @@ Four independent items; they can run in parallel.
    - a setup option to turn auto-upgrade off.
 Scheduled backups were dropped: the owner keeps backups outside agent-net. The manual `gateway backup` command stays.
 
-### W7. A sandbox for every worker (roadmap only)
+### W7. A sandbox for every worker
 
-Not started. On the README roadmap. When built it is optional, switched on per project.
+Linux built for Pi and OpenCode workers (bubblewrap), optional, switched on per project in `node.json`. Claude workers are refused while the switch is on; macOS is designed, not built. See [worker-os-sandbox.md](worker-os-sandbox.md).
 
 - **D. Design note:**
   - Linux options: bubblewrap, Landlock;

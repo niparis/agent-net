@@ -1,6 +1,6 @@
 # Sandbox for OpenCode and Pi workers
 
-Status: unconfirmed roadmap. The owner has not approved building this; nothing is scheduled. Not implemented. Research on 2026-11-01. Decision [0020](../decisions/0020-worker-sandbox.md) defines the owner-selected levels. This proposal does not change Codex or Claude workers.
+Status: research. The Linux wrapper for Pi and OpenCode workers is built as described in [worker-os-sandbox.md](worker-os-sandbox.md), which settles the open points it needed. Research on 2026-11-01. Decision [0020](../decisions/0020-worker-sandbox.md) defines the owner-selected levels. This proposal does not change Codex or Claude workers.
 
 ## Evidence
 

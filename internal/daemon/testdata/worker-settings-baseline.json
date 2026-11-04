@@ -26,7 +26,8 @@
     "BackgroundStartTimeout": 600000000000,
     "KillGrace": 3000000000,
     "MCPSettle": 3000000000,
-    "Cleanup": 600000000000
+    "Cleanup": 600000000000,
+    "OSSandbox": null
   },
   "node_json": {
     "Max": 3,
@@ -44,6 +45,7 @@
     "BackgroundStartTimeout": 600000000000,
     "KillGrace": 3000000000,
     "MCPSettle": 3000000000,
-    "Cleanup": 600000000000
+    "Cleanup": 600000000000,
+    "OSSandbox": null
   }
 }

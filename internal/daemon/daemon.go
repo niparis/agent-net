@@ -110,6 +110,10 @@ type Config struct {
 	// PluginAckTimeout is how long to wait for a plugin to confirm a push.
 	PluginAckTimeout time.Duration
 
+	// testOSSandboxReady replaces the check that the OS sandbox can run on
+	// this machine (bubblewrap installed, user namespaces on).
+	testOSSandboxReady func() error
+
 	// Version is the agent-net version of this process (sent in hello).
 	Version string
 	// Exe is the path of this binary, taken before it is ever replaced.

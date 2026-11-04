@@ -83,6 +83,12 @@ func (claudeLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
 }
 
 func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) error {
+	// `claude --bg` runs the session in Claude Code's own background service,
+	// so no OS wrapper can reach it: with the OS sandbox on, neither a start
+	// nor a follow-up may run (docs/design/worker-os-sandbox.md).
+	if _, err := d.osSandboxChoice(w.project, "claude", w.permissions, false); err != nil {
+		return err
+	}
 	bin, err := d.harnessBinary("claude")
 	if err != nil {
 		return err

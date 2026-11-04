@@ -360,6 +360,9 @@ type WorkerStartResult struct {
 	// Permissions is the level the worker runs with (sandboxed, no-network
 	// or read-only), set by the owner per project (decision 0020).
 	Permissions string `json:"permissions,omitempty"`
+	// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
+	// (docs/design/worker-os-sandbox.md).
+	OSSandbox string `json:"os_sandbox,omitempty"`
 	// Task is the message that carried the task, with its message ID.
 	Task *Message `json:"task,omitempty"`
 	// Title is the worker's short title: the one that was asked for, or the
