@@ -411,6 +411,8 @@ func (r Requirement) String() string {
 // true exactly for the steps listed after merge. RequiredFrom is a difficulty
 // (DifficultyLevels): below it the step is left out unless it ran anyway;
 // empty means always. A change with no difficulty label counts as normal.
+// For review, RequiredRisk is an additional risk threshold (zero means 4);
+// sensitive paths require review regardless of either threshold.
 type PipelineStep struct {
 	StepRef
 	Owner        StepOwner     `json:"owner"`
@@ -418,6 +420,7 @@ type PipelineStep struct {
 	Independent  string        `json:"independent,omitempty"`
 	OnFail       string        `json:"on_fail,omitempty"`
 	RequiredFrom string        `json:"required_from,omitempty"`
+	RequiredRisk int           `json:"required_risk,omitempty"`
 }
 
 // Pipeline is a repo's ordered delivery steps. Steps without a requirement
@@ -448,28 +451,31 @@ type ChangeOrigin struct {
 // Uncommitted says the worktree still had uncommitted changes when the head was
 // recorded. Caller is the session that gets the final notice. Difficulty is
 // the judge's label for the worker run, empty when there is none (counts as
-// normal). Times are Unix seconds.
+// normal). Risk is the judge's risk score, or 0 when unknown. SensitivePath
+// is the daemon's reason for requiring a review of the diff. Times are Unix seconds.
 //
 // Change is a record, not a frame: never embed it anonymously in a request,
 // because its id would clash with the frame's id.
 type Change struct {
-	ID           string       `json:"id"`
-	Project      string       `json:"project"`
-	Machine      string       `json:"machine,omitempty"`
-	Branch       string       `json:"branch"`
-	TargetBranch string       `json:"target_branch,omitempty"`
-	BaseCommit   string       `json:"base_commit,omitempty"`
-	HeadCommit   string       `json:"head_commit"`
-	Uncommitted  bool         `json:"uncommitted,omitempty"`
-	Revision     int          `json:"revision"`
-	Origin       ChangeOrigin `json:"origin"`
-	Caller       string       `json:"caller_session_id,omitempty"`
-	Title        string       `json:"title,omitempty"`
-	Difficulty   string       `json:"difficulty,omitempty"`
-	State        string       `json:"state"`
-	MergedCommit string       `json:"merged_commit,omitempty"`
-	CreatedAt    int64        `json:"created_at"`
-	UpdatedAt    int64        `json:"updated_at,omitempty"`
+	ID            string       `json:"id"`
+	Project       string       `json:"project"`
+	Machine       string       `json:"machine,omitempty"`
+	Branch        string       `json:"branch"`
+	TargetBranch  string       `json:"target_branch,omitempty"`
+	BaseCommit    string       `json:"base_commit,omitempty"`
+	HeadCommit    string       `json:"head_commit"`
+	Uncommitted   bool         `json:"uncommitted,omitempty"`
+	Revision      int          `json:"revision"`
+	Origin        ChangeOrigin `json:"origin"`
+	Caller        string       `json:"caller_session_id,omitempty"`
+	Title         string       `json:"title,omitempty"`
+	Difficulty    string       `json:"difficulty,omitempty"`
+	Risk          int          `json:"risk,omitempty"`
+	SensitivePath string       `json:"sensitive_path,omitempty"`
+	State         string       `json:"state"`
+	MergedCommit  string       `json:"merged_commit,omitempty"`
+	CreatedAt     int64        `json:"created_at"`
+	UpdatedAt     int64        `json:"updated_at,omitempty"`
 }
 
 // Revision is the head of a change at one complete hand-back or one submit.
@@ -774,6 +780,12 @@ func (c Change) Validate() error {
 }
 
 func (c Change) validateWork() error {
+	if c.Risk < 0 || c.Risk > 5 {
+		return errors.New("risk must be 0 (unknown) or a score from 1 to 5")
+	}
+	if err := validText("sensitive_path", c.SensitivePath, 1024); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.Project) == "" {
 		return errors.New("project is empty")
 	}
@@ -917,6 +929,9 @@ func (p Pipeline) Validate() error {
 		default:
 			return fmt.Errorf("%s: on_fail must be caller or author", s.StepRef)
 		}
+		if s.RequiredRisk < 0 || s.RequiredRisk > 4 {
+			return fmt.Errorf("%s: required_risk must be 0 (default 4) or a score from 1 to 4", s.StepRef)
+		}
 		if s.RequiredFrom != "" {
 			if err := validDifficulty(s.RequiredFrom); err != nil {
 				return fmt.Errorf("%s: required_from %w", s.StepRef, err)
@@ -990,7 +1005,7 @@ func leftOut(s PipelineStep, c Change, latest *Evidence) string {
 	if s.Owner.Kind == OwnerNone {
 		return "left out: owner none"
 	}
-	if s.RequiredFrom == "" || latest != nil {
+	if s.RequiredFrom == "" || latest != nil || reviewRequiredReason(s, c) != "" {
 		return ""
 	}
 	have := c.Difficulty
@@ -999,6 +1014,25 @@ func leftOut(s PipelineStep, c Change, latest *Evidence) string {
 	}
 	if difficultyRank(have) < difficultyRank(s.RequiredFrom) {
 		return "left out: required from difficulty " + s.RequiredFrom + ", the change is " + have
+	}
+	return ""
+}
+
+// Risk and sensitive paths add review requirements even below required_from.
+// A zero RequiredRisk uses the default, including pipelines from older peers.
+func reviewRequiredReason(s PipelineStep, c Change) string {
+	if s.Step != StepReview {
+		return ""
+	}
+	threshold := s.RequiredRisk
+	if threshold == 0 {
+		threshold = 4
+	}
+	if c.Risk >= threshold {
+		return fmt.Sprintf("required: risk %d", c.Risk)
+	}
+	if c.SensitivePath != "" {
+		return "required: touches " + c.SensitivePath
 	}
 	return ""
 }
@@ -1102,6 +1136,12 @@ func (p Pipeline) Status(c Change, evidence []Evidence) []StepStatus {
 		st := StepStatus{StepRef: s.StepRef, Owner: s.Owner}
 		ev, note := latest(s, c, evidence)
 		st.Note = note
+		if why := reviewRequiredReason(s, c); why != "" {
+			st.Note = why
+			if note != "" {
+				st.Note += "; " + note
+			}
+		}
 		if why := leftOut(s, c, ev); why != "" {
 			st.State, st.Note = StepStateSkipped, why
 		} else if ev != nil {
@@ -1432,18 +1472,20 @@ const (
 // change is that change; otherwise it is a new change. Either way a new head
 // commit makes a new revision.
 type ChangeSubmitRequest struct {
-	SessionID    string       `json:"session_id"`
-	ChangeID     string       `json:"change_id,omitempty"`
-	Project      string       `json:"project"`
-	Branch       string       `json:"branch"`
-	TargetBranch string       `json:"target_branch,omitempty"`
-	BaseCommit   string       `json:"base_commit,omitempty"`
-	HeadCommit   string       `json:"head_commit"`
-	Uncommitted  bool         `json:"uncommitted,omitempty"`
-	Origin       ChangeOrigin `json:"origin"`
-	Difficulty   string       `json:"difficulty,omitempty"`
-	Title        string       `json:"title,omitempty"`
-	DiffStat     string       `json:"diff_stat,omitempty"`
+	SessionID     string       `json:"session_id"`
+	ChangeID      string       `json:"change_id,omitempty"`
+	Project       string       `json:"project"`
+	Branch        string       `json:"branch"`
+	TargetBranch  string       `json:"target_branch,omitempty"`
+	BaseCommit    string       `json:"base_commit,omitempty"`
+	HeadCommit    string       `json:"head_commit"`
+	Uncommitted   bool         `json:"uncommitted,omitempty"`
+	Origin        ChangeOrigin `json:"origin"`
+	Difficulty    string       `json:"difficulty,omitempty"`
+	Risk          int          `json:"risk,omitempty"`
+	SensitivePath string       `json:"sensitive_path,omitempty"`
+	Title         string       `json:"title,omitempty"`
+	DiffStat      string       `json:"diff_stat,omitempty"`
 }
 
 // Validate checks a submit before it is sent.
@@ -1464,7 +1506,7 @@ func (q ChangeSubmitRequest) Validate() error {
 			return errors.New("diff stat holds a control character")
 		}
 	}
-	return Change{Project: q.Project, Branch: q.Branch, TargetBranch: q.TargetBranch, BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Origin: q.Origin, Difficulty: q.Difficulty, Title: q.Title}.validateWork()
+	return Change{Project: q.Project, Branch: q.Branch, TargetBranch: q.TargetBranch, BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Origin: q.Origin, Difficulty: q.Difficulty, Risk: q.Risk, SensitivePath: q.SensitivePath, Title: q.Title}.validateWork()
 }
 
 // ChangeView is a change with where each of its steps stands and the steps

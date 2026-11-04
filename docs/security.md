@@ -434,6 +434,15 @@ A critical repository should also have branch protection on its default branch: 
 
 The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. The gateway stores changes, their revisions and evidence in `gateway.db`, and routes ready node-owned steps to that node's sessions. The tools `agent_change_submit`, `agent_step_claim`, `agent_step_report` and `agent_changes_find` go through the daemon to the gateway. The pipeline settings cutover and owner controls are available. No merge is refused in git. A worker's complete hand-back submits its change from the worker's machine, with the worker's caller as the change's session; the gateway accepts it only when that session is on the machine, or the worker's session is on the machine and that session started it. A change ID passed on by a continue comes only from the machine's own worker record, never from a frame.
 
+Review is required for hard or very_complex changes, a judge risk of at least
+4 (or a lower configured threshold), or sensitive paths in the daemon's diff.
+Sensitive paths include migrations, authority and token files, security files,
+file transfer code, the installer and workflows. The daemon sends an optional
+risk score and sensitive-path reason; older peers may omit them. The gateway
+keeps recorded triggers on later submissions so omitted fields cannot erase a
+review requirement. A missing diff at hand-back requires review. These rules
+apply to pipeline evidence; git itself still allows direct merges.
+
 - **A machine speaks only for its own sessions.** A submit names a session on the sending machine, or the hand-back of a worker on that machine which the session started. A session submits only its own work. A step report comes from a session on the sending machine. `done_by` names a worker that session started, or `owner` for a direct owner approval of a delegated step.
 - **The owner reads every change.** The TUI reads changes with the daemon method `changes_owner_find`, which is read only and follows the same gate as the other owner reads: only the owner's command line or TUI, not an agent connection and not a command line that runs inside an agent session. Agents keep `changes_find`, and a TUI connection cannot call it or the write methods.
 - **Evidence is append-only.** The gateway never changes or deletes a stored piece of evidence; database triggers refuse an update or a delete.

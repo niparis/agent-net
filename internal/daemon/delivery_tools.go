@@ -11,9 +11,11 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -182,6 +184,9 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 				}
 			}
 		}
+	}
+	if q.BaseCommit != "" {
+		q.SensitivePath = deliverySensitivePath(ctx, folder, q.BaseCommit, commit)
 	}
 	if err := d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out); err != nil {
 		return out, err
@@ -391,8 +396,12 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	if !protocol.ValidCommit(base) {
 		base = ""
 	}
+	var risk int
+	if err := d.st.db.QueryRow(`SELECT risk FROM worker_delivery_risk WHERE worker_id=?`, w.id).Scan(&risk); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fail(fmt.Errorf("read delivery risk: %w", err))
+	}
 	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
-		HeadCommit: head, Uncommitted: uncommitted, Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
+		HeadCommit: head, Uncommitted: uncommitted, Risk: risk, SensitivePath: deliverySensitivePath(ctx, dir, base, head), Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
 		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model}}
 	if base != "" {
 		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
@@ -443,4 +452,51 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	d.wmu.Unlock()
 	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s", w.id, sid, id, out.Change.Change.Revision, head)
 	return id, pushProblem
+}
+
+// Keep the start's risk across daemon restarts. Risk is the judge's Risk
+// field (K in its six-score note), not Reasoning (R). A later assessment
+// cannot erase a higher risk already known for this worker.
+func (d *Daemon) recordDeliveryRisk(workerID string, a *protocol.WorkerAssessment) error {
+	if a == nil {
+		return nil
+	}
+	if a.Risk < 0 || a.Risk > 5 {
+		return errors.New("judge risk must be 0 to 5")
+	}
+	_, err := d.st.db.Exec(`INSERT INTO worker_delivery_risk(worker_id,risk) VALUES(?,?)
+ ON CONFLICT(worker_id) DO UPDATE SET risk=MAX(risk,excluded.risk)`, workerID, a.Risk)
+	return err
+}
+
+// Diff names, not the printed stat: -z preserves spaces and unusual names,
+// and --no-renames checks both the removed and added path of a rename.
+// Missing git evidence requires review rather than silently skipping it.
+func deliverySensitivePath(ctx context.Context, dir, base, head string) string {
+	if !protocol.ValidCommit(base) || !protocol.ValidCommit(head) {
+		return "diff unavailable"
+	}
+	names, err := gitOut(ctx, dir, "diff", "--no-renames", "--name-only", "-z", base, head, "--")
+	if err != nil {
+		return "diff unavailable"
+	}
+	paths := strings.Split(names, "\x00")
+	for _, name := range paths {
+		if name == "testdata/migrations.lock" || strings.HasSuffix(name, "/testdata/migrations.lock") {
+			return "migrations"
+		}
+	}
+	for _, name := range paths {
+		file := strings.ToLower(path.Base(name))
+		sensitive := name == "internal/gateway/store.go" || name == "install.sh" || strings.HasPrefix(name, ".github/workflows/") ||
+			(path.Dir(name) == "internal/daemon" && strings.HasPrefix(file, "files") && strings.HasSuffix(file, ".go")) ||
+			strings.Contains(file, "auth") || strings.Contains(file, "token") || strings.Contains(file, "security")
+		if sensitive {
+			if len(name) > 1024 || strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+				return "sensitive file"
+			}
+			return name
+		}
+	}
+	return ""
 }

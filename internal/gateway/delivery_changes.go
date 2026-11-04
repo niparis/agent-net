@@ -21,7 +21,7 @@ const (
 	changeListMax     = 100
 )
 
-const changeColumns = `id, project, machine, branch, target_branch, base_commit, head_commit, uncommitted, revision, origin, caller, title, difficulty, state, merged_commit, created_at, updated_at`
+const changeColumns = `id, project, machine, branch, target_branch, base_commit, head_commit, uncommitted, revision, origin, caller, title, difficulty, state, merged_commit, created_at, updated_at, risk, sensitive_path`
 
 // deliveryQuerier is a *sql.DB or a *sql.Tx.
 type deliveryQuerier interface {
@@ -286,7 +286,7 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 	if !found {
 		c = protocol.Change{ID: protocol.NewID("ch"), Project: q.Project, Machine: machine, Branch: q.Branch, TargetBranch: q.TargetBranch,
 			BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Uncommitted: q.Uncommitted, Revision: 1, Origin: q.Origin, Caller: q.SessionID,
-			Title: q.Title, Difficulty: q.Difficulty, State: protocol.ChangeOpen, CreatedAt: now}
+			Title: q.Title, Difficulty: q.Difficulty, Risk: q.Risk, SensitivePath: q.SensitivePath, State: protocol.ChangeOpen, CreatedAt: now}
 		if err := c.Validate(); err != nil {
 			return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
 		}
@@ -326,6 +326,13 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		}
 		if q.Difficulty != "" {
 			next.Difficulty = q.Difficulty
+		}
+
+		// A missing field from an older daemon or a later plain submit must
+		// not erase a review requirement already recorded on this change.
+		next.Risk = max(next.Risk, q.Risk)
+		if q.SensitivePath != "" {
+			next.SensitivePath = q.SensitivePath
 		}
 		if next != c {
 			next.UpdatedAt = now
@@ -669,7 +676,8 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 				return protocol.ChangeView{}, err
 			}
 			if claimed != "" {
-				st.State, st.Note = protocol.StepStateRunning, "claimed by "+claimed
+				st.State = protocol.StepStateRunning
+				st.Note = deliveryStatusNote(st.Note, "claimed by "+claimed)
 				startedSteps[st.StepRef] = true
 				continue
 			}
@@ -714,7 +722,8 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 			continue
 		}
 		if claimed != "" {
-			st.State, st.Note = protocol.StepStateRunning, "claimed by "+claimed
+			st.State = protocol.StepStateRunning
+			st.Note = deliveryStatusNote(st.Note, "claimed by "+claimed)
 			startedSteps[st.StepRef] = true
 			continue
 		}
@@ -734,7 +743,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 			if st.Owner.Kind == protocol.OwnerCaller {
 				owner = "caller"
 			}
-			st.Note = "waiting for " + owner + " (offline)"
+			st.Note = deliveryStatusNote(st.Note, "waiting for "+owner+" (offline)")
 		}
 	}
 	if len(startedSteps) > 0 {
@@ -780,7 +789,7 @@ func scanChange(row interface{ Scan(...any) error }) (protocol.Change, error) {
 	var origin string
 	var uncommitted int
 	if err := row.Scan(&c.ID, &c.Project, &c.Machine, &c.Branch, &c.TargetBranch, &c.BaseCommit, &c.HeadCommit, &uncommitted, &c.Revision,
-		&origin, &c.Caller, &c.Title, &c.Difficulty, &c.State, &c.MergedCommit, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		&origin, &c.Caller, &c.Title, &c.Difficulty, &c.State, &c.MergedCommit, &c.CreatedAt, &c.UpdatedAt, &c.Risk, &c.SensitivePath); err != nil {
 		return c, err
 	}
 	c.Uncommitted = uncommitted != 0
@@ -794,15 +803,15 @@ func writeChange(tx *sql.Tx, c protocol.Change, insert bool) error {
 		return err
 	}
 	if insert {
-		_, err = tx.Exec(`INSERT INTO delivery_changes(`+changeColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		_, err = tx.Exec(`INSERT INTO delivery_changes(`+changeColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			c.ID, c.Project, c.Machine, c.Branch, c.TargetBranch, c.BaseCommit, c.HeadCommit, boolInt(c.Uncommitted), c.Revision,
-			string(origin), c.Caller, c.Title, c.Difficulty, c.State, c.MergedCommit, c.CreatedAt, c.UpdatedAt)
+			string(origin), c.Caller, c.Title, c.Difficulty, c.State, c.MergedCommit, c.CreatedAt, c.UpdatedAt, c.Risk, c.SensitivePath)
 		return err
 	}
 	_, err = tx.Exec(`UPDATE delivery_changes SET machine=?, branch=?, target_branch=?, base_commit=?, head_commit=?, uncommitted=?, revision=?,
-		origin=?, title=?, difficulty=?, state=?, merged_commit=?, updated_at=? WHERE id=?`,
+		origin=?, title=?, difficulty=?, state=?, merged_commit=?, updated_at=?, risk=?, sensitive_path=? WHERE id=?`,
 		c.Machine, c.Branch, c.TargetBranch, c.BaseCommit, c.HeadCommit, boolInt(c.Uncommitted), c.Revision,
-		string(origin), c.Title, c.Difficulty, c.State, c.MergedCommit, c.UpdatedAt, c.ID)
+		string(origin), c.Title, c.Difficulty, c.State, c.MergedCommit, c.UpdatedAt, c.Risk, c.SensitivePath, c.ID)
 	return err
 }
 
@@ -870,4 +879,32 @@ func checkMergeReady(tx *sql.Tx, p protocol.Pipeline, c protocol.Change, e proto
 		return reject("merge is not ready: %s", strings.Join(missing, "; "))
 	}
 	return nil
+}
+
+// Older upgrade tests replay later migrations. Add each column only once,
+// leaving existing changes with unknown risk and no sensitive-path reason.
+func migrateDeliveryReviewRisk(tx *sql.Tx) error {
+	for _, col := range []struct{ name, spec string }{
+		{"risk", "risk INTEGER NOT NULL DEFAULT 0"},
+		{"sensitive_path", "sensitive_path TEXT NOT NULL DEFAULT ''"},
+	} {
+		var has int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_changes') WHERE name=?`, col.name).Scan(&has); err != nil {
+			return err
+		}
+		if has == 0 {
+			if _, err := tx.Exec(`ALTER TABLE delivery_changes ADD COLUMN ` + col.spec); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Keep the reason review is required when the gateway adds who it waits for.
+func deliveryStatusNote(existing, status string) string {
+	if strings.HasPrefix(existing, "required: ") {
+		return existing + "; " + status
+	}
+	return status
 }

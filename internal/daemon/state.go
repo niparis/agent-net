@@ -53,6 +53,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS cto_proposals_open_call ON cto_proposals(tool,
 CREATE INDEX IF NOT EXISTS cto_history_harness ON cto_history(harness,kind,id);
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS worker_delivery_risk (worker_id TEXT PRIMARY KEY, risk INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS worker_assessment_outbox (run_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS worker_idle_notice (worker_id TEXT PRIMARY KEY, since INTEGER NOT NULL, notice_key TEXT NOT NULL, report TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS inventory_scan (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, at INTEGER NOT NULL);

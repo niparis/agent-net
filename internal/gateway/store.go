@@ -732,6 +732,9 @@ CREATE TABLE IF NOT EXISTS delivery_settings_legacy (
  key TEXT NOT NULL, level TEXT NOT NULL, scope TEXT NOT NULL,
  item TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, revision INTEGER NOT NULL,
  PRIMARY KEY(key, level, scope, item));
+`, `
+SELECT 1 /* delivery review risk columns */;
+
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1088,6 +1091,12 @@ func (s *Store) migrate() error {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
+			}
+		}
+		if strings.Contains(migrations[i], "delivery review risk columns") {
+			if err := migrateDeliveryReviewRisk(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
 		if strings.Contains(migrations[i], "worker picker note") {

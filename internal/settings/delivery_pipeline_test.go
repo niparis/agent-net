@@ -33,3 +33,19 @@ func TestDeliveryPipelineRejectsUnknownRequirement(t *testing.T) {
 		t.Fatal("unknown requirement was accepted")
 	}
 }
+
+func TestDeliveryReviewRiskBoundsAndOrdering(t *testing.T) {
+	d, ok := DefinitionFor("delivery.pipeline.review.required_risk")
+	if !ok {
+		t.Fatal("risk threshold is missing")
+	}
+	for _, raw := range []string{"0", "5", "-1", "2.5"} {
+		if _, err := d.Codec(json.RawMessage(raw)); err == nil {
+			t.Errorf("accepted risk threshold %s", raw)
+		}
+	}
+	value, err := d.StricterValue(json.RawMessage(`4`), json.RawMessage(`2`))
+	if err != nil || string(value) != "2" {
+		t.Fatalf("stricter risk=%s err=%v", value, err)
+	}
+}

@@ -1,5 +1,16 @@
 format: 1
 settings:
+  - key: delivery.pipeline.review.required_risk
+    rows: [127]
+    description: The lowest risk score that requires review, in addition to difficulty and sensitive paths.
+    kind: rule
+    type: int
+    stricter: lower
+    min: 1
+    max: 4
+    levels: [network, repo]
+    default: 4
+    live: true
   - key: delivery.pipeline.review.required_from
     rows: [127]
     description: The lowest difficulty that requires review.

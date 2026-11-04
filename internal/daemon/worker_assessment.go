@@ -129,6 +129,10 @@ func (d *Daemon) startWorkerAssessment(w *worker, project, task string) {
 	d.wmu.Unlock()
 	d.goBackground(func() {
 		a := d.assessWorkerStart(d.ctoCtx, project, task)
+		if err := d.recordDeliveryRisk(w.id, a); err != nil {
+			d.Logf("worker %s: could not record delivery risk: %v", sid, err)
+			return
+		}
 		a.SessionID = sid
 		if err := d.st.enqueueWorkerAssessment(*a); err != nil {
 			d.Logf("worker %s: could not queue difficulty assessment: %v", sid, err)
