@@ -37,18 +37,18 @@ func TestCTONetworkMessages(t *testing.T) {
 	}
 	send := func(asOwner bool) protocol.Message {
 		t.Helper()
-		args := map[string]any{"action": "send", "to": target, "body": "network hello", "as_owner": asOwner}
+		args := map[string]any{"to": target, "body": "network hello", "as_owner": asOwner}
 		if !asOwner {
 			args["sender_cto"] = true
 			args["sender"] = w.ownerID()
 		}
 		raw, _ := json.Marshal(args)
-		result, err := w.d.runCTOTool(context.Background(), "message", raw)
+		result, err := w.d.runCTOTool(context.Background(), "agent_message_send", raw)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if asOwner {
-			approveCTOToolResult(t, w.d, result.(string))
+			approveOwnerMessage(t, w.d, result)
 		}
 		select {
 		case msg := <-peer.Pushes:
@@ -69,19 +69,19 @@ func TestCTONetworkMessages(t *testing.T) {
 	if approved.From != id || !approved.FromCTO || !approved.OwnerApproved {
 		t.Fatalf("approved: %+v", approved)
 	}
-	result, err := w.d.readCTOTool(context.Background(), "messages", json.RawMessage(`{}`))
+	result, err := w.d.readCTOTool(context.Background(), "agent_messages_find", json.RawMessage(`{}`))
 	b, _ := json.Marshal(result)
 	if err != nil || !strings.Contains(string(b), "network hello") {
 		t.Fatalf("own messages: %s %v", b, err)
 	}
 	// A reply belongs to the CTO's conversation, including approved replies.
 	incoming := sendResult(t, peer.mustCall("send", map[string]string{"to": id, "body": "question for CTO"}))
-	raw, _ := json.Marshal(map[string]any{"action": "reply", "message_id": incoming.ID, "body": "approved answer", "as_owner": true})
-	proposal, err := w.d.runCTOTool(context.Background(), "message", raw)
+	raw, _ := json.Marshal(map[string]any{"message": incoming.ID, "body": "approved answer", "as_owner": true})
+	proposal, err := w.d.runCTOTool(context.Background(), "agent_message_reply", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	approveCTOToolResult(t, w.d, proposal.(string))
+	approveOwnerMessage(t, w.d, proposal)
 	select {
 	case reply := <-peer.Pushes:
 		if reply.From != id || !reply.FromCTO || reply.ParentID != incoming.ID || reply.Body != "approved answer" {
@@ -90,7 +90,7 @@ func TestCTONetworkMessages(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("missing approved reply")
 	}
-	status, err := w.d.readCTOTool(context.Background(), "messages", json.RawMessage(fmt.Sprintf(`{"message_id":%q}`, incoming.ID)))
+	status, err := w.d.readCTOTool(context.Background(), "agent_message_get", json.RawMessage(fmt.Sprintf(`{"message":%q}`, incoming.ID)))
 	b, _ = json.Marshal(status)
 	if err != nil || !strings.Contains(string(b), "question for CTO") {
 		t.Fatalf("own status: %s %v", b, err)
@@ -167,8 +167,8 @@ func TestCTONetworkReplyDelivered(t *testing.T) {
 	w := startWorkerNode(t, g, WorkerSettings{}, nil)
 	peer, target := helloPi(t, w.node, "reply-peer", "/w/peer", true)
 	w.cli.mustCall("cto_send", map[string]string{"text": "start"})
-	raw, _ := json.Marshal(map[string]string{"action": "send", "to": target, "body": "question"})
-	if _, err := w.d.runCTOTool(context.Background(), "message", raw); err != nil {
+	raw, _ := json.Marshal(map[string]string{"to": target, "body": "question"})
+	if _, err := w.d.runCTOTool(context.Background(), "agent_message_send", raw); err != nil {
 		t.Fatal(err)
 	}
 	sent := peer.nextPush()
@@ -205,8 +205,8 @@ func TestCTOReplyFollowsHarnessSwitch(t *testing.T) {
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
 	cli.mustCall("cto_send", map[string]string{"text": "start open"})
 	send := func(body string) protocol.Message {
-		raw, _ := json.Marshal(map[string]string{"action": "send", "to": target, "body": body})
-		if _, err := n.d.runCTOTool(context.Background(), "message", raw); err != nil {
+		raw, _ := json.Marshal(map[string]string{"to": target, "body": body})
+		if _, err := n.d.runCTOTool(context.Background(), "agent_message_send", raw); err != nil {
 			t.Fatal(err)
 		}
 		return peer.nextPush()
@@ -228,4 +228,27 @@ func TestCTOReplyFollowsHarnessSwitch(t *testing.T) {
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
 	peer.mustCall("reply", map[string]string{"message_id": second.ID, "body": "to open"})
 	eventually(t, "reply in OpenCode", func() bool { return strings.Contains(string(cli.mustCall("cto_events", nil)), "to open") })
+}
+
+// approveOwnerMessage approves the proposal behind an as-owner send or reply
+// receipt, as the owner would in the Inbox.
+func approveOwnerMessage(t *testing.T, d *Daemon, result any) {
+	t.Helper()
+	var id string
+	switch r := result.(type) {
+	case messageReceipts:
+		if len(r.Sent) == 1 && r.Sent[0].State == "proposed" {
+			id = r.Sent[0].MessageID
+		}
+	case messageReceipt:
+		if r.State == "proposed" {
+			id = r.MessageID
+		}
+	}
+	if !strings.HasPrefix(id, "p_") {
+		t.Fatalf("expected a proposal receipt, got %#v", result)
+	}
+	if err := d.proposalRunner().decide(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
 }

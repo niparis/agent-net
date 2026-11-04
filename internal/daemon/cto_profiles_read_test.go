@@ -17,7 +17,7 @@ func TestCTOReadsWorkerProfiles(t *testing.T) {
 	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra:high", AddedBy: w.ownerID()}); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ name, args string }{{"settings", `{"area":"worker_profiles"}`}, {"agent_worker_profiles_find", `{}`}} {
+	for _, tc := range []struct{ name, args string }{{"agent_worker_profiles_find", `{}`}} {
 		v, err := w.d.runCTOToolRaw(context.Background(), tc.name, json.RawMessage(tc.args))
 		raw, _ := json.Marshal(v)
 		if err != nil || !strings.Contains(string(raw), "gpt-6.1-terra:high") {

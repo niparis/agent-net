@@ -70,6 +70,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net", Version: version}, &mcp.ServerOptions{Instructions: Instructions})
 	s.AddReceivingMiddleware(announceReminder())
+	s.AddReceivingMiddleware(renamedTools())
 	if len(note) > 0 && note[0] != nil {
 		s.AddReceivingMiddleware(staleToolsNote(note[0]))
 	}

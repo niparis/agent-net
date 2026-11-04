@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +56,6 @@ var ctoNodeSettings = []string{"tests_before_merge", "merge_authority", "worker_
 // tool. The daemon keeps the authoritative action table.
 var ctoRoutingField = map[string]string{
 	"message":         "action",
-	"ui":              "action",
 	"graph_change":    "action",
 	"session_change":  "action",
 	"worker_change":   "action",
@@ -68,26 +66,14 @@ var ctoRoutingField = map[string]string{
 	"project_change":  "action",
 }
 
-// ctoTools is the single place to add a CTO tool and its argument schema. Every
-// change is one action tool, so the whole list stays small.
+// ctoTools holds the argument schemas of the merged CTO change tools and of
+// the stored as-owner message call. The listed CTO tools come from the catalog;
+// these schemas validate stored proposals.
 var ctoTools = map[string]ctoToolDef{
-	"workers":   {desc: "List workers or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"tools":     {desc: "List shared MCP servers.", fields: map[string]ctoField{"view": {typ: "string", enum: []string{"mcp"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"settings":  {desc: "Read public settings, values, sources and history, or worker profiles.", fields: map[string]ctoField{"key": {typ: "string"}, "repo": {typ: "string"}, "area": {typ: "string", enum: []string{"worker_profiles", "values"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"graph":     {desc: "Read the public graph: charters, maturity, rules, edges; one node's full charter and rules; view guide.", fields: map[string]ctoField{"view": {typ: "string"}, "node": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"machines":  {desc: "List machines or a harness's models.", fields: map[string]ctoField{"machine": {typ: "string"}, "harness": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"proposals": {desc: "List own proposals or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"feed":      {desc: "List own conversation metadata.", fields: map[string]ctoField{"limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"overview":  {desc: "Public network counts."},
-	"sessions":  {desc: "List sessions.", fields: map[string]ctoField{"limit": {typ: "integer"}, "offset": {typ: "integer"}, "text": {typ: "string"}, "project": {typ: "string"}, "harness": {typ: "string"}, "capability": {typ: "string"}, "online_only": {typ: "boolean"}, "include_owners": {typ: "boolean"}}},
-	"session":   {desc: "Read a session profile.", fields: map[string]ctoField{"session_id": {typ: "string"}}},
-	"projects":  {desc: "List projects.", fields: map[string]ctoField{"name": {typ: "string", desc: "Filter."}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-	"messages":  {desc: "List own messages or read one.", fields: map[string]ctoField{"message_id": {typ: "string"}, "conversation_id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
-
-	"message":   {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
-	"ask_owner": {desc: "Ask the owner a question with a recommendation.", fields: map[string]ctoField{"question": {typ: "string", desc: "Question, one line."}, "options": {typ: "array", desc: "Up to four short answers."}, "recommendation": {typ: "string", desc: "Your recommendation."}, "urgency": {typ: "string", desc: "Normal or high.", enum: []string{"normal", "high"}}}},
-	"learn":     {desc: "Record a finding.", fields: map[string]ctoField{"subject_kind": {typ: "string", desc: "Kind.", enum: []string{"model", "harness", "model_harness", "project", "mcp", "machine"}}, "subject": {typ: "string", desc: "Subject."}, "finding": {typ: "string", desc: "Finding."}, "evidence": {typ: "array", desc: "Evidence."}}},
-	"ui":        {desc: "Show a TUI view or a notice.", fields: map[string]ctoField{"action": {typ: "string", enum: []string{"show", "notice"}}, "tab": {typ: "string", enum: []string{"sessions", "messages", "quotas", "graph", "tools"}}, "select": {typ: "string", desc: "Selection."}, "filter": {typ: "string", desc: "Filter."}, "why": {typ: "string", desc: "Reason."}, "text": {typ: "string", desc: "Notice."}}},
+	// message is not listed. It is the stored call of an as-owner send or reply
+	// that agent_message_send or agent_message_reply proposes; this schema
+	// validates that call.
+	"message": {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
 
 	"graph_change": {
 		desc: "Change the graph: charter_set, node_add, node_remove, edge_set, edge_remove, settings_set or undo. Minor changes apply; major ones are proposals.",
@@ -370,10 +356,11 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 	return schema
 }
 
-// NewCTO is deliberately separate from the network MCP registry. ctoTools is
-// the single place to add a CTO tool and its argument schema.
+// NewCTO is deliberately separate from the network MCP registry. It lists the
+// catalog tools of the CTO role.
 func NewCTO(call Caller, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net-cto", Version: version}, nil)
+	s.AddReceivingMiddleware(renamedTools())
 	originalCall := call
 	call = func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		raw, err := originalCall(ctx, method, params)
@@ -393,30 +380,6 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		return raw, nil
 	}
 	addTool := ctoDialogTools(s, originalCall)
-	for name, spec := range ctoTools {
-		if ctoV2Tools[name] {
-			continue
-		}
-		tool := &mcp.Tool{Name: name, Description: strings.TrimSuffix(spec.desc, "."), InputSchema: ctoSchema(name, spec)}
-		method := name
-		addTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if method == "worker_change" {
-				if err := CTOArguments(method, req.Params.Arguments); err != nil {
-					return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
-				}
-			}
-			raw, err := call(ctx, method, req.Params.Arguments)
-			if err != nil {
-				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
-			}
-			text := string(raw)
-			var message string
-			if json.Unmarshal(raw, &message) == nil {
-				text = message
-			}
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
-		})
-	}
 	addCTOV2Tools(s, call, addTool)
 	addCTOSharedTools(s, call, addTool)
 	filterCatalogTools(s, toolcatalog.RoleCTO)
@@ -516,13 +479,14 @@ func ctoDialogTools(s *mcp.Server, call Caller) ctoToolAdder {
 	}
 }
 
-// CTOToolNames returns the exposed CTO tool names, sorted.
+// CTOToolNames returns the listed CTO tool names, sorted: the catalog tools of
+// the CTO role.
 func CTOToolNames() []string {
-	names := make([]string, 0, len(ctoTools))
-	for name := range ctoTools {
-		names = append(names, name)
+	tools := toolcatalog.ForRole(toolcatalog.RoleCTO)
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
 	}
-	sort.Strings(names)
 	return names
 }
 

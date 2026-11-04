@@ -179,7 +179,7 @@ func TestSettingsCTOApprovalAndRead(t *testing.T) {
 	if string(e.Value) != "false" {
 		t.Fatalf("after approval: %s", e.Value)
 	}
-	out, err := n.d.readCTOTool(ctx, "settings", json.RawMessage(`{"area":"values","key":"workers.auto_continue"}`))
+	out, err := n.d.readCTOTool(ctx, "agent_settings_read", json.RawMessage(`{"key":"workers.auto_continue"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

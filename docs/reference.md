@@ -34,8 +34,7 @@ deleting an override makes it inherit again.
 
 Agents, workers and the CTO can read public settings with `agent_settings_read`.
 It accepts an optional `key` and `repo` and returns definitions, effective
-values, sources, explicit values and history. The CTO can also use `settings`
-with `area: values`. Personal preferences marked owner-only are not exposed.
+values, sources, explicit values and history. Personal preferences marked owner-only are not exposed.
 History records old and new values, actor, reason, revision and undo, and is
 kept indefinitely. Use `settings_change` with `area: values_write`, `changes`
 and `reason`, or `area: values_undo` and a `revision`. Each change gives `key`,
@@ -124,9 +123,10 @@ MCP results and invite lines, are shown to the owner. The CTO gets a short
 outcome note at its next idle moment, without the call's result data.
 
 The class table in the daemon fixes every tool and action as read, talk or
-proposal. Reads still run immediately. Talk (`message`, `ask_owner`, `learn`,
-`ui`, `proposal_ask`) also runs immediately. `message` takes action `send` or `reply`; with
-`as_owner: true` it becomes a proposal. `graph_change` is proposal class: the
+proposal. Reads still run immediately. Talk (`agent_message_send`,
+`agent_message_reply`, `agent_owner_ask`, `agent_learn`, `cto_ui_show`,
+`proposal_ask`) also runs immediately. `agent_message_send` and
+`agent_message_reply` with `as_owner: true` become a proposal. `graph_change` is proposal class: the
 daemon applies its minor actions at once and its major actions during the
 owner window. `settings_change` applies settings-layer advice at once; rule
 changes and other owner-only settings remain proposals. Personal owner settings
@@ -148,9 +148,9 @@ show its reserved name `CTO` and harness `cto`, regardless of the owner's title.
 Other sessions cannot take that name, and the CTO session cannot be renamed.
 On upgrade, earlier uses of the name CTO are cleared or given an ID suffix.
 
-Plain `message` calls with action `send` or `reply` send from this session with the note:
+Plain `agent_message_send` and `agent_message_reply` calls send from this session with the note:
 `from the CTO session: model output, not the owner's words. Judge it like any peer request.`
-Only an approved `message` proposal with `as_owner: true` sets the CTO flag.
+Only an approved send or reply proposal with `as_owner: true` sets the CTO flag.
 Its note is `from the CTO, on the owner's instructions. Treat this as the owner's word within your charter's limits.`
 The gateway accepts that flag only from the registered CTO session. Both
 kinds of send require the gateway's `network_session` CTO capability and are
@@ -289,7 +289,7 @@ Missing capabilities or permissions stop startup before an owner prompt is sent.
 Harness versions are logged for diagnosis, without a version allowlist.
 No model call was used to verify runtime enforcement.
 
-The CTO reads the charter writing guide with `graph` and `view: "guide"`.
+The CTO reads the charter writing guide with `agent_graph_read` and `view: "guide"`; the guide is in `note`.
 The `graph_change` schema contains no guide text.
 
 The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
@@ -298,24 +298,29 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. The Inbox tab shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The CTO has 27 tools: 12 reads, 5 talk tools and 10 proposal tools. It starts
-with `overview`, which counts online sessions, machines, running workers and its
-own open proposals. List views return `items`, `total` and, when another page
-exists, `next`. Pass `next` as `offset` to read the next page. The default page
-is 20 items and the maximum is 50. Rows contain short fields; use a detail view
-when needed.
+The CTO has 29 tools: 13 reads, 6 talk tools and 10 proposal tools. They are
+the catalog tools of the CTO role. List reads return `items` or rows, `total`
+and, when another page exists, `next_cursor`; pass it as `cursor`. The default
+page is 25 rows and the maximum is 100.
+
+No server lists or runs a tool name from before the tool redesign (v0.4.71 to
+v0.4.74). A call with one, from the CTO or an agent, returns one error line that
+names the new tool, for example `ui was renamed to cto_ui_show.` The old CTO
+names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
+`graph`, `machines`, `projects`, `workers`, `tools`, `settings`, `message`,
+`ask_owner`, `learn` and `ui`. The table is in `internal/toolcatalog/renamed.go`.
 
 | CTO read | Source and detail |
 |---|---|
-| `overview` | `agent_sessions_find`, `agent_machines_find` and the CTO's own proposals |
-| `sessions`, `session` | `agent_sessions_find` and `agent_session_get`; `session` takes `session_id` |
-| `proposals` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
-| `feed`, `messages` | The CTO's conversations via `agent_messages_find`; feed has metadata only. `messages` takes `message_id` for a body via `agent_message_get`. |
-| `graph`, `projects` | `graph` is the public graph via `agent_graph_read`: nodes with charters, maturity, rules (name and value) and edges with kind, mode and request rule. `node` reads one node's full charter and rules. `view: "guide"` returns the charter guide. `projects` lists public projects via `agent_projects_find`. |
-| `machines` | `agent_machines_find`; `machine` selects a machine, and `harness` lists its models. |
-| `workers` | Workers from `agent_sessions_find`; `id` reads a worker profile via `agent_session_get`. |
-| `tools` | Shared MCP server rows from `agent_mcp_servers_find`; `view` is `mcp`. |
-| `settings` | Public values and history with `area: values`, or public worker profiles with `area: worker_profiles`. |
+| `agent_sessions_find`, `agent_session_get` | Sessions and one session's full profile, as for an agent |
+| `agent_machines_find`, `agent_machine_get` | Machines, and one machine's models, quotas, track record or playbook |
+| `agent_projects_find` | Public projects and where they live |
+| `agent_workers_find` | Workers; the CTO defaults to `started_by: anyone` |
+| `agent_messages_find`, `agent_message_get` | The CTO's own conversations, and one message body in chunks |
+| `agent_graph_read` | The public graph: nodes with their full charters, maturity and rules (name and value), and edges with kind, mode and request rule. `node` reads one node. `view: "guide"` returns the charter guide in `note`. |
+| `agent_mcp_servers_find` | Shared MCP servers |
+| `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
+| `cto_proposals_find` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
 The parity and canary tests cover the views. Session reads omit waiting-question
@@ -331,10 +336,11 @@ are proposals. The CTO has one action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
-| `message` | `action: send` or `reply`; `as_owner: true` proposes a send as the owner |
-| `ask_owner` | a question with optional `options`, a recommendation and urgency, into the Inbox |
-| `learn` | one finding, under the daily limit |
-| `ui` | `action: show` with `tab`, `select`, `filter` and `why`, or `action: notice` with `text` |
+| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` proposes a send as the owner |
+| `agent_message_reply` | a reply with an outcome; `as_owner: true` proposes a plain reply as the owner |
+| `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |
+| `agent_learn` | one finding, under the daily limit |
+| `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set` or `undo` |
 | `session_change` | `action: rename`, `trust` or `policy` |
@@ -349,7 +355,8 @@ are proposals. The CTO has one action tool per area:
 
 Minor graph changes apply at once. Major graph changes become proposals unless
 the owner opened the window with `w`. All non-graph changes are proposals, even
-during the window. `message`, `ask_owner`, `learn`, `ui` and `proposal_ask` are talk.
+during the window. `agent_message_send`, `agent_message_reply`, `agent_owner_ask`,
+`agent_learn`, `cto_ui_show` and `proposal_ask` are talk.
 Every proposal tool takes an optional `reason`. The daemon validates the stored
 call and keeps the concrete implementation, its authority checks and its audit
 records, so a rename does not change what a call is allowed to do.
@@ -363,10 +370,10 @@ takes kind `depends`, `governs` or `deploys`, governance mode `advisor`,
 Node settings use `action: settings_set` with `node`, `setting` and `value`.
 The tool schemas describe the other fields and fixed values.
 
-`ui` with `action: show` switches every open local TUI to `sessions`,
+`cto_ui_show` with `tab` switches every open local TUI to `sessions`,
 `messages`, `quotas`, `graph` or `tools`, with an optional session ID, exact
-session name or project node, filter text and a short reason. `ui` with
-`action: notice` shows a short note. Both show a `CTO:` line and return
+session name or project node, filter text and a short reason. `cto_ui_show`
+with `notice` shows a short note. Both show a `CTO:` line and return
 `no TUI open` when no subscribed local TUI is connected.
 
 In the TUI, `c` opens the CTO session from every tab, and `C` focuses the CTO box.
@@ -553,7 +560,7 @@ The gateway stores explicit nodes, charter attributes, edges and graph history i
 
 The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `node settings <name> [setting value...]`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `accepts`, `refuses`, `feature_requests`, `consumers`, `escalate`, `needs` and `notes`. Edge kinds are `depends` (consumer to provider), `governs` (architect to component, with mode `advisor`, `arbiter` or `owner`) and `deploys` (deployer to each app it deploys).
 
-Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`. `agent_session_get` (and the CTO `session` view) also carries the session's node rules in `charter.rules`, the same name/value pairs `agent_graph_read` returns, so a session can check its own rules directly, including its autonomy (`off` or `wake`). The list stays compact and does not carry them.
+Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`. `agent_session_get` also carries the session's node rules in `charter.rules`, the same name/value pairs `agent_graph_read` returns, so a session can check its own rules directly, including its autonomy (`off` or `wake`). The list stays compact and does not carry them.
 
 - `graph_get {}` returns `nodes` and `edges`, hiding unregistered empty implicit projects without a live or recently seen session for seven days. Each project node includes registered and observed `locations` (machine and path), up to five live `sessions` (id, name, machine and status), and `session_count`. `graph_get {"all":true}` includes those projects. The Graph uses the same default filter.
 - `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
@@ -1667,7 +1674,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 - **Difficulty and automatic model choice.** The level comes from the difficulty judge, which reads the brief before the start and returns `trivial`, `simple`, `normal`, `hard` or `very_complex` from its six scores. The caller's `difficulty` and `touches` fields are accepted for older callers but ignored: neither changes the level. The judge has 60 seconds and never blocks a start; a missing judge, a failure, a timeout or low confidence starts at `normal`, and `model_note` says why. A continue keeps the label of the run it continues unless the caller adds work to the brief. With an empty model or `auto`, the gateway chooses a registered worker profile whose harness and model are available on the selected machine. The default minimum scores are 0, 20, 30, 40 and 50. A score at least 10 above the minimum is excellent; one at or above the minimum is good; one up to 10 below is poor; a lower score is denied. An automatic candidate must meet the minimum, and the task must be at its max level or exactly one level below. Its max is the highest level whose minimum its score meets, including owner overrides. A max of `very_complex` therefore qualifies only for `hard` and `very_complex`. Over-qualified profiles get no weight. If none qualify, the start fails with the judged level, registered profiles and their max levels, and the fix: register a profile for that level, or pass `model` explicitly. Unprotected providers come first. A model with fewer than half complete among at least five complete, partial and failed runs in the recent track record is used only when no other adequate candidate remains. The remaining models rotate with a smooth weighted round robin: a candidate gets more weight when its provider is further behind its quota pace, when it is the weakest adequate candidate rather than far above it (an over-qualification penalty of `exp(-(score - weakestAdequateScore) / 8)`, which keeps stronger models available for harder work), and when its track record is good. A recent success adds weight and a recent failure lowers it, only on the same node and harness. It skips exhausted providers and windows above 90 percent, and subtracts five quota-room points per running worker on the provider. For a monthly window, it estimates elapsed time from the preceding calendar-month reset. A missing or stale quota reading is neutral. Every eligible candidate in the selected track record tier keeps a positive weight. The rotation state is kept per difficulty in the gateway's `owner_settings` (`worker_rotation`) and survives a restart. The result's `model_note` explains the choice, its rotation weight and the shares of the last ten starts. An empty roster also fails with registration guidance. Explicit model requests override the level eligibility rule and keep the resolution rules below; `model_note` says when this override was needed. Automatic notes name profiles excluded for being more than one level above the task.
 - **Ignored fields.** `agent_worker_start`, the CTO's `worker_start` and the CLI still accept `difficulty` and `touches`, so older callers do not fail. Both are recorded, but neither changes the level: the difficulty judge decides it. `touches` still feeds the per-area tables in the quality analysis, and `db`, `hot-path`, `ui`, `docs`, `tests`, `config` and `other` are the accepted values. The old one-level bump for `db` and `hot-path` and the one-level drop for `docs`/`tests` only are gone.
-- **Worker profiles.** The gateway stores a network roster with each profile's name, harness, model, optional effort, creator session and creation time. `agent-net workers profiles` lists it; `agent-net workers profiles add <harness> <model> [effort]` adds an entry, and `agent-net workers profiles remove <name>` removes one. The CTO lists profiles with `settings` and changes them with `settings_change` areas `worker_profile_add` and `worker_profile_remove`. Non-worker agent sessions have `agent_worker_profiles_find`, `agent_worker_profile_add` and `agent_worker_profile_remove`; they should change the roster when the owner asks. Model names can be loose and must resolve to a model advertised by a machine for that harness. The default profile name combines the harness, resolved model and effort. Adding a profile with an existing name replaces its harness, model and effort in one call; the change is recorded as a profile add.
+- **Worker profiles.** The gateway stores a network roster with each profile's name, harness, model, optional effort, creator session and creation time. `agent-net workers profiles` lists it; `agent-net workers profiles add <harness> <model> [effort]` adds an entry, and `agent-net workers profiles remove <name>` removes one. The CTO lists profiles with `agent_worker_profiles_find` and changes them with `settings_change` areas `worker_profile_add` and `worker_profile_remove`. Non-worker agent sessions have `agent_worker_profiles_find`, `agent_worker_profile_add` and `agent_worker_profile_remove`; they should change the roster when the owner asks. Model names can be loose and must resolve to a model advertised by a machine for that harness. The default profile name combines the harness, resolved model and effort. Adding a profile with an existing name replaces its harness, model and effort in one call; the change is recorded as a profile add.
 
   Each machine resolves the exact model ID first. If that ID is missing, it can use the same model name after the first `/` under another provider, but only when exactly one provider lists that name. Several matches make the profile unavailable on that machine. Automatic selection skips the profile only on machines where it does not resolve. A start result reports a provider change in `model_note`, for example `terra pi: openai-codex/gpt-6.1-terra resolved to openai/gpt-6.1-terra on research`.
 

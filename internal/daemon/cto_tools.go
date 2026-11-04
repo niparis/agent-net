@@ -13,6 +13,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
 // ctoTool is the only entry to the private CTO channel. Check the process
@@ -112,6 +113,11 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	// The CTO server lists only the new names. An old name, including the
+	// internal stored "message" call, is refused on the channel.
+	if err := toolcatalog.RenamedError(name); err != nil {
+		return nil, err
+	}
 	if name == "settings_change" {
 		return d.routeCTOSettings(ctx, raw)
 	}
@@ -276,66 +282,24 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, err
 		}
 		return map[string]any{"recorded": out.Accepted, "id": strconv.FormatInt(out.ID, 10), "left_today": out.Remaining}, nil
-	case "message":
+	case "cto_ui_show":
+		// The catalog tool shows a tab, or a notice when notice is set.
 		var q struct {
-			Action string `json:"action"`
-		}
-		if err := json.Unmarshal(raw, &q); err != nil {
-			return nil, err
-		}
-		if q.Action != "send" && q.Action != "reply" {
-			return nil, errors.New("message needs action send or reply")
-		}
-		return d.executeCTOTool(ctx, q.Action, raw)
-	case "ask_owner":
-		var p struct {
-			Question       string   `json:"question"`
-			Options        []string `json:"options"`
-			Recommendation string   `json:"recommendation"`
-			Urgency        string   `json:"urgency"`
-		}
-		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Question) == "" {
-			return nil, errors.New("ask_owner needs a question")
-		}
-		sid := d.ctoSessionID()
-		if sid == "" {
-			return nil, errors.New("CTO network session is not registered; start the CTO from the owner interface")
-		}
-		return d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": "question", "text": p.Question, "recommendation": p.Recommendation})
-	case "ui":
-		var q struct {
-			Action string `json:"action"`
 			Tab    string `json:"tab"`
 			Select string `json:"select"`
 			Filter string `json:"filter"`
 			Why    string `json:"why"`
-			Text   string `json:"text"`
+			Notice string `json:"notice"`
 		}
 		if json.Unmarshal(raw, &q) != nil {
-			return nil, errors.New("bad UI request")
+			return nil, errors.New("bad cto_ui_show request")
 		}
-		req := protocol.UIRequest{Tab: cleanLine(q.Tab), Select: cleanLine(q.Select), Filter: cleanLine(q.Filter), Why: cleanLine(q.Why), Text: cleanLine(q.Text)}
-		switch q.Action {
-		case "show":
-			if req.Tab != "sessions" && req.Tab != "messages" && req.Tab != "quotas" && req.Tab != "graph" && req.Tab != "map" && req.Tab != "tools" {
-				return nil, errors.New("ui show tab must be sessions, messages, quotas, graph or tools")
-			}
-			req.Text = ""
-			if req.Why == "" {
-				req.Why = "Showing " + req.Tab
-			}
-		case "notice":
-			if req.Text == "" {
-				return nil, errors.New("ui notice needs text")
-			}
-			req = protocol.UIRequest{Text: req.Text}
-		default:
-			return nil, errors.New("ui needs action show or notice")
+		if q.Notice != "" {
+			b, _ := json.Marshal(protocol.UIRequest{Text: q.Notice})
+			return d.executeCTOTool(ctx, "ui_notice", b)
 		}
-		if d.broadcastCTOUI(req) == 0 {
-			return "no TUI open", nil
-		}
-		return "shown", nil
+		b, _ := json.Marshal(protocol.UIRequest{Tab: q.Tab, Select: q.Select, Filter: q.Filter, Why: q.Why})
+		return d.executeCTOTool(ctx, "ui_show", b)
 	case "ui_show", "ui_notice":
 		var q protocol.UIRequest
 		if json.Unmarshal(raw, &q) != nil {
@@ -362,12 +326,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return "no TUI open", nil
 		}
 		return "shown", nil
-	case "send", "reply":
-		p, err := d.ctoMessage(ctx, name, raw)
-		if err != nil {
-			return nil, err
-		}
-		return d.send(ctx, p)
 	case "worker_stop":
 		var p protocol.WorkerStopRequest
 		if json.Unmarshal(raw, &p) != nil || p.Session == "" {
@@ -382,16 +340,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, tooOldGateway(err)
 		}
 		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, nil
-	case "learn":
-		var p protocol.LearnRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad learn params")
-		}
-		sid := d.ownerSessionID()
-		if sid == "" {
-			return nil, errNotConnected
-		}
-		return d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid})
 	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set":
 		delete(args, "by")
 		if name == "graph_undo" {
@@ -473,21 +421,21 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		auditName = concrete
 	}
 	switch name {
-	case "message":
+	case "agent_message_send", "agent_message_reply":
+		// A plain send or reply keeps its short audit name; an as-owner one is
+		// a proposal and keeps the tool name.
 		var m struct {
-			Action  string `json:"action"`
-			AsOwner bool   `json:"as_owner"`
+			AsOwner bool `json:"as_owner"`
 		}
-		if json.Unmarshal(raw, &m) == nil && !m.AsOwner && (m.Action == "send" || m.Action == "reply") {
-			auditName = m.Action
+		if json.Unmarshal(raw, &m) == nil && !m.AsOwner {
+			auditName = map[string]string{"agent_message_send": "send", "agent_message_reply": "reply"}[name]
 		}
-	case "ui":
+	case "cto_ui_show":
 		var u struct {
-			Action string `json:"action"`
+			Notice string `json:"notice"`
 		}
-		if json.Unmarshal(raw, &u) == nil && u.Action == "show" {
-			auditName = "ui_show"
-		} else if json.Unmarshal(raw, &u) == nil && u.Action == "notice" {
+		auditName = "ui_show"
+		if json.Unmarshal(raw, &u) == nil && u.Notice != "" {
 			auditName = "ui_notice"
 		}
 	}
@@ -515,13 +463,13 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 			text = "read charter history: " + a.Node
 		case "edge_history":
 			text = "read edge history: " + a.Node
-		case "sessions":
+		case "agent_sessions_find":
 			text = "read sessions"
-		case "workers":
+		case "agent_workers_find":
 			text = "read workers"
 		case "needs_you":
 			text = "read needs you"
-		case "feed":
+		case "agent_messages_find":
 			text = "read feed"
 		case "charter_set":
 			text = fmt.Sprintf("charter %s: %s updated · u to undo", a.Node, a.Attr)

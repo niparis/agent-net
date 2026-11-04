@@ -14,7 +14,7 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "cto_proposals_find": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "settings_read,worker_profiles",
+	"cto_proposals_find":  "own proposals",
 	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
@@ -121,21 +121,17 @@ func TestCTOReadCanary(t *testing.T) {
 		}
 		cases := []map[string]any{{}}
 		switch name {
-		case "proposals":
+		case "cto_proposals_find":
 			cases = append(cases, map[string]any{"id": "p_1"})
-		case "session":
-			cases = []map[string]any{{"session_id": id}}
 		case "agent_session_get":
 			cases = []map[string]any{{"session": id}}
 		case "agent_machine_get":
 			cases = []map[string]any{{"machine": w.cfg.Hostname}}
 		case "agent_message_get":
 			cases = []map[string]any{{"message": held.ID}}
-		case "settings":
-			cases = []map[string]any{{"area": "worker_profiles"}}
-		case "messages":
-			cases = append(cases, map[string]any{"message_id": held.ID}, map[string]any{"conversation_id": held.ConversationID})
-		case "graph":
+		case "agent_messages_find":
+			cases = append(cases, map[string]any{"conversation": held.ConversationID})
+		case "agent_graph_read":
 			cases = append(cases, map[string]any{"view": "guide"})
 		}
 		for _, args := range cases {
@@ -151,7 +147,7 @@ func TestCTOReadCanary(t *testing.T) {
 					t.Errorf("%s leaked %s", name, secret)
 				}
 			}
-			if err != nil && !(name == "messages" && len(args) > 0) && name != "agent_message_get" {
+			if err != nil && name != "agent_message_get" {
 				t.Errorf("%s %v: %v", name, args, err)
 			}
 		}
@@ -178,14 +174,19 @@ func TestCTOReadParity(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	_, id := helloPi(t, w.node, "parity", "/fixture", true)
-	args, _ := json.Marshal(map[string]any{"session_id": id, "message_id": "missing"})
+	args, _ := json.Marshal(map[string]any{"session": id})
 	for view, source := range wantCTOReads {
 		if ctoReadSources[view] != source {
 			t.Errorf("%s source %q, want %q", view, ctoReadSources[view], source)
 		}
 	}
-	got, ge := w.d.runCTOToolRaw(context.Background(), "session", args)
-	want, we := w.d.ctoReadConn().dispatch(context.Background(), "get", args)
+	for view := range ctoReadSources {
+		if wantCTOReads[view] == "" {
+			t.Errorf("%s has a source the allowlist does not pin", view)
+		}
+	}
+	got, ge := w.d.runCTOToolRaw(context.Background(), "agent_session_get", args)
+	want, we := w.d.ctoReadConn().dispatch(context.Background(), "session_get", args)
 	gb, _ := json.Marshal(got)
 	wb, _ := json.Marshal(want)
 	if string(gb) != string(wb) || fmt.Sprint(ge) != fmt.Sprint(we) {

@@ -184,10 +184,10 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 		}
 	}
 
-	if ctoToolClasses["graph"] != ctoRead {
-		t.Fatalf("CTO graph class = %q", ctoToolClasses["graph"])
+	if ctoToolClasses["agent_graph_read"] != ctoRead {
+		t.Fatalf("CTO graph class = %q", ctoToolClasses["agent_graph_read"])
 	}
-	cto, err := w.d.runCTOToolRaw(context.Background(), "graph", json.RawMessage(`{"node":"shop"}`))
+	cto, err := w.d.runCTOToolRaw(context.Background(), "agent_graph_read", json.RawMessage(`{"node":"shop"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,32 +210,33 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ctoDetail struct {
-		Node  string                     `json:"node"`
-		Items []protocol.PublicGraphNode `json:"items"`
+		Nodes []struct {
+			Name    string            `json:"name"`
+			Purpose string            `json:"purpose"`
+			Rules   map[string]string `json:"rules"`
+			Charter map[string]any    `json:"charter"`
+		} `json:"nodes"`
 		Edges []protocol.PublicGraphEdge `json:"edges"`
-		Total int                        `json:"total"`
 	}
-	rawDetail, _ := json.Marshal(cto)
-	if err := json.Unmarshal(rawDetail, &ctoDetail); err != nil {
+	if err := json.Unmarshal(raw, &ctoDetail); err != nil {
 		t.Fatal(err)
 	}
-	if ctoDetail.Node != "shop" || ctoDetail.Total != 1 || len(ctoDetail.Items) != 1 {
-		t.Fatalf("CTO graph detail shape: %s", rawDetail)
+	if len(ctoDetail.Nodes) != 1 || ctoDetail.Nodes[0].Name != "shop" {
+		t.Fatalf("CTO graph detail shape: %s", raw)
 	}
-	if ctoDetail.Items[0].Charter == nil || agentDetail.Nodes[0].Charter == nil ||
-		*ctoDetail.Items[0].Charter != *agentDetail.Nodes[0].Charter {
-		t.Fatalf("CTO charter differs from the agent read: %s vs %+v", rawDetail, agentDetail.Nodes)
+	if agentDetail.Nodes[0].Charter == nil || ctoDetail.Nodes[0].Charter["purpose"] != agentDetail.Nodes[0].Charter.Purpose {
+		t.Fatalf("CTO charter differs from the agent read: %s vs %+v", raw, agentDetail.Nodes)
 	}
-	if len(ctoDetail.Items[0].Rules) != len(agentDetail.Nodes[0].Rules) {
-		t.Fatalf("CTO rules differ from the agent read: %s vs %+v", rawDetail, agentDetail.Nodes[0].Rules)
+	if len(ctoDetail.Nodes[0].Rules) != len(agentDetail.Nodes[0].Rules) {
+		t.Fatalf("CTO rules differ from the agent read: %s vs %+v", raw, agentDetail.Nodes[0].Rules)
 	}
-	for i := range ctoDetail.Items[0].Rules {
-		if ctoDetail.Items[0].Rules[i] != agentDetail.Nodes[0].Rules[i] {
-			t.Fatalf("CTO rules differ from the agent read: %s vs %+v", rawDetail, agentDetail.Nodes[0].Rules)
+	for _, rule := range agentDetail.Nodes[0].Rules {
+		if ctoDetail.Nodes[0].Rules[rule.Name] != rule.Value {
+			t.Fatalf("CTO rules differ from the agent read: %s vs %+v", raw, agentDetail.Nodes[0].Rules)
 		}
 	}
 	if len(ctoDetail.Edges) != len(agentDetail.Edges) || len(ctoDetail.Edges) == 0 {
-		t.Fatalf("CTO edges differ from the agent read: %s vs %+v", rawDetail, agentDetail.Edges)
+		t.Fatalf("CTO edges differ from the agent read: %s vs %+v", raw, agentDetail.Edges)
 	}
 }
 
