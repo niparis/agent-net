@@ -391,7 +391,10 @@ A critical repository should also have branch protection on its default branch: 
 
 ### Delivery steps and evidence
 
-The delivery pipeline (decision [0056](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. Only the contract is built so far: the tools `agent_change_submit`, `agent_step_report` and `agent_changes_find` check their arguments and answer "not built yet", and nothing is stored, routed or refused.
+The delivery pipeline (decision [0056](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. The tools `agent_change_submit`, `agent_step_report` and `agent_changes_find` go through the daemon to the gateway. A worker's hand-back does not submit its change yet.
+
+- **The daemon fills in who and what.** The session that submits or reports, its project and its model come from the daemon, never from the arguments. A submit takes the head commit of the branch from git (a given commit must be on the branch) and says whether the worktree that has the branch checked out has changes that are not committed. A submit for another project than the session's is refused. Workers cannot submit or report; they can only read changes.
+- **`done_by` must be a worker you started.** The daemon asks the gateway for the session's record and refuses the report unless it is a worker whose caller is the reporting session, on any machine.
 
 - **Evidence names one exact commit.** A commit must be a full 40 or 64 character lowercase hash; a short hash or a ref name is refused. A report for a commit that is not the change's head (or, after merge, its merged commit), or for an older revision, is refused (`Pipeline.Accepts`). Evidence of an older revision does not count.
 - **The reporter cannot claim independence.** The `independent` field is set by agent-net from the reporter's session and model maker, compared with the change's author. A report that sets it is refused.
