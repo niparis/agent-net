@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -884,6 +885,13 @@ func (g *Gateway) handleToolRead(nc *nodeConn, typ string, raw []byte) (data any
 			return nil, true, reject("bad query.projects_find")
 		}
 		out, err := g.store.FindProjects(p)
+		return out, true, err
+	case "query.projects_layout":
+		p, err := decode[protocol.ProjectsLayoutRequest](raw)
+		if err != nil {
+			return nil, true, reject("bad query.projects_layout")
+		}
+		out, err := g.ProjectsLayout(context.Background(), p)
 		return out, true, err
 	}
 	return nil, false, nil
