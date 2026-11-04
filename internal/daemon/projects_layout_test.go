@@ -281,3 +281,67 @@ func TestProjectsLayoutNonNilRoots(t *testing.T) {
 		t.Fatalf("JSON marshaled roots as null for top-level repos machine: %s", string(data2))
 	}
 }
+
+func TestProjectsLayoutLoneAndHomeRepos(t *testing.T) {
+	// 1. Lone repos: ~/toprepo, ~/code/solo, ~/deep/x/y/z
+	tempHome := t.TempDir()
+	initTestGitRepo(t, filepath.Join(tempHome, "toprepo"), "git@github.com:test/toprepo.git")
+	initTestGitRepo(t, filepath.Join(tempHome, "code", "solo"), "git@github.com:test/solo.git")
+	initTestGitRepo(t, filepath.Join(tempHome, "deep", "x", "y", "z"), "git@github.com:test/z.git")
+
+	d := &Daemon{
+		cfg: Config{
+			HomeDir:  tempHome,
+			Hostname: "box-lone",
+		},
+	}
+	layout, err := d.ProjectsLayoutLocal(context.Background())
+	if err != nil {
+		t.Fatalf("ProjectsLayoutLocal: %v", err)
+	}
+
+	if len(layout.Roots) != 0 {
+		t.Errorf("got %d roots, want 0: %+v", len(layout.Roots), layout.Roots)
+	}
+	if len(layout.Loose) != 3 {
+		t.Fatalf("got %d loose repos, want 3: %+v", len(layout.Loose), layout.Loose)
+	}
+	wantPaths := []string{"~/code/solo", "~/deep/x/y/z", "~/toprepo"}
+	for i, want := range wantPaths {
+		if layout.Loose[i].Path != want {
+			t.Errorf("Loose[%d].Path = %q, want %q", i, layout.Loose[i].Path, want)
+		}
+	}
+
+	// 2. Direct home repos: ~/p1 and ~/p2 form a flat root at ~
+	tempHome2 := t.TempDir()
+	initTestGitRepo(t, filepath.Join(tempHome2, "p1"), "git@github.com:test/p1.git")
+	initTestGitRepo(t, filepath.Join(tempHome2, "p2"), "git@github.com:test/p2.git")
+
+	d2 := &Daemon{
+		cfg: Config{
+			HomeDir:  tempHome2,
+			Hostname: "box-flat-home",
+		},
+	}
+	layout2, err := d2.ProjectsLayoutLocal(context.Background())
+	if err != nil {
+		t.Fatalf("ProjectsLayoutLocal 2: %v", err)
+	}
+	if len(layout2.Roots) != 1 {
+		t.Fatalf("got %d roots, want 1: %+v", len(layout2.Roots), layout2.Roots)
+	}
+	homeRoot := layout2.Roots[0]
+	if homeRoot.Path != "~" || homeRoot.Kind != "flat" {
+		t.Errorf("homeRoot mismatch: Path=%q Kind=%q", homeRoot.Path, homeRoot.Kind)
+	}
+	if len(homeRoot.Projects) != 2 {
+		t.Fatalf("homeRoot.Projects count = %d, want 2: %+v", len(homeRoot.Projects), homeRoot.Projects)
+	}
+	if homeRoot.Projects[0].Name != "p1" || homeRoot.Projects[1].Name != "p2" {
+		t.Errorf("homeRoot projects mismatch: %+v", homeRoot.Projects)
+	}
+	if len(layout2.Loose) != 0 {
+		t.Errorf("layout2.Loose count = %d, want 0: %+v", len(layout2.Loose), layout2.Loose)
+	}
+}

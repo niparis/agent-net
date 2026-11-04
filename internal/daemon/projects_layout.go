@@ -173,15 +173,19 @@ func (d *Daemon) scanProjectsLayout(ctx context.Context, homeDir string) (protoc
 
 	walk(cleanHome, 0)
 
-	roots := computeLayoutRoots(cleanHome, repos)
+	roots, loose := computeLayoutRoots(cleanHome, repos)
 	if roots == nil {
 		roots = []protocol.LayoutRoot{}
+	}
+	if loose == nil {
+		loose = []protocol.LayoutProject{}
 	}
 
 	return protocol.MachineLayout{
 		Machine:   host,
 		Home:      cleanHome,
 		Roots:     roots,
+		Loose:     loose,
 		ScannedAt: time.Now().Unix(),
 		Truncated: truncated,
 	}, nil
@@ -295,9 +299,9 @@ func computeGroupOwners(projects []discoveredRepo) []string {
 	return out
 }
 
-func computeLayoutRoots(homeDir string, repos []discoveredRepo) []protocol.LayoutRoot {
+func computeLayoutRoots(homeDir string, repos []discoveredRepo) ([]protocol.LayoutRoot, []protocol.LayoutProject) {
 	if len(repos) == 0 {
-		return []protocol.LayoutRoot{}
+		return []protocol.LayoutRoot{}, []protocol.LayoutProject{}
 	}
 
 	cleanHome := filepath.Clean(homeDir)
@@ -465,9 +469,52 @@ func computeLayoutRoots(homeDir string, repos []discoveredRepo) []protocol.Layou
 		roots = append(roots, root)
 	}
 
+	// Home folder itself acts as a flat root when it directly holds 2 or more repos.
+	var directHome []repoWithSegments
+	for _, it := range list {
+		if !claimed[it.repo.path] && len(it.segments) == 1 {
+			directHome = append(directHome, it)
+		}
+	}
+	if len(directHome) >= 2 {
+		sort.Slice(directHome, func(i, j int) bool { return directHome[i].repo.path < directHome[j].repo.path })
+		homeRoot := protocol.LayoutRoot{
+			Path:     "~",
+			Kind:     "flat",
+			Groups:   []protocol.LayoutGroup{},
+			Projects: make([]protocol.LayoutProject, 0, len(directHome)),
+		}
+		for _, h := range directHome {
+			claimed[h.repo.path] = true
+			homeRoot.Projects = append(homeRoot.Projects, protocol.LayoutProject{
+				Name:       h.repo.name,
+				Path:       formatPathTilde(h.repo.path, cleanHome),
+				Remote:     h.repo.remote,
+				LastCommit: h.repo.lastCommit,
+			})
+		}
+		roots = append(roots, homeRoot)
+	}
+
+	// Repos not claimed by any root are listed in loose.
+	loose := []protocol.LayoutProject{}
+	for _, it := range list {
+		if !claimed[it.repo.path] {
+			loose = append(loose, protocol.LayoutProject{
+				Name:       it.repo.name,
+				Path:       formatPathTilde(it.repo.path, cleanHome),
+				Remote:     it.repo.remote,
+				LastCommit: it.repo.lastCommit,
+			})
+		}
+	}
+	sort.Slice(loose, func(i, j int) bool {
+		return loose[i].Path < loose[j].Path
+	})
+
 	sort.Slice(roots, func(i, j int) bool {
 		return roots[i].Path < roots[j].Path
 	})
 
-	return roots
+	return roots, loose
 }

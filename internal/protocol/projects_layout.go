@@ -33,11 +33,12 @@ type LayoutRoot struct {
 
 // MachineLayout is the project layout of one online machine.
 type MachineLayout struct {
-	Machine   string       `json:"machine"`
-	Home      string       `json:"home"`
-	Roots     []LayoutRoot `json:"roots"`
-	ScannedAt int64        `json:"scanned_at"`
-	Truncated bool         `json:"truncated"`
+	Machine   string          `json:"machine"`
+	Home      string          `json:"home"`
+	Roots     []LayoutRoot    `json:"roots"`
+	Loose     []LayoutProject `json:"loose"`
+	ScannedAt int64           `json:"scanned_at"`
+	Truncated bool            `json:"truncated"`
 }
 
 // ProjectsLayoutResult is the result returned by projects_layout.

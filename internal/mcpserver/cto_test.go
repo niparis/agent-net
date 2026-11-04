@@ -446,6 +446,7 @@ func TestProjectsLayoutOutputSchemaValidation(t *testing.T) {
 				Machine:   "box-solo",
 				Home:      "/home/test",
 				Roots:     []protocol.LayoutRoot{},
+				Loose:     []protocol.LayoutProject{},
 				ScannedAt: 123456,
 				Truncated: false,
 			},
