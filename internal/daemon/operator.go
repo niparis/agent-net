@@ -325,7 +325,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		// An older gateway still reads Difficulty; give it the judge's label.
 		frame.Difficulty = frame.Level
 	}
-	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
+	cctx := withCallWait(ctx, d.workerSettings("").StartTimeout+40e9)
 	var data json.RawMessage
 	if cto {
 		data, err = d.ctoAttributedCall(cctx, "worker.start", frame)

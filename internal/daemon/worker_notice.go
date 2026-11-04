@@ -533,7 +533,7 @@ func (d *Daemon) sendWorkerNoticeBody(ctx context.Context, w *worker, body, to, 
 // noticeFor maps why a worker ended to the status and note of its notice. An
 // empty status means no notice (the owner is gone, or there was never a session).
 func (d *Daemon) noticeFor(reason string) (status, note string) {
-	set := d.cfg.Workers.filled()
+	set := d.workerSettings("")
 	switch reason {
 	case protocol.StopIdle:
 		return protocol.StatusTimedOut, "no message to or from the worker for " + set.Idle.String()

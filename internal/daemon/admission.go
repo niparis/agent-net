@@ -268,7 +268,7 @@ func (d *Daemon) admission(harness, model string) Decision {
 	for _, r := range recent {
 		pending = append(pending, d.expectedCostWith(r.harness, r.model, load.Total))
 	}
-	return admit(d.cfg.Workers.filled(), load, d.expectedCostWith(harness, model, load.Total), pending,
+	return admit(d.workerSettings(""), load, d.expectedCostWith(harness, model, load.Total), pending,
 		running, d.lastWorkerStart(), now)
 }
 

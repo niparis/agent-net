@@ -279,6 +279,79 @@ settings:
     levels: [network]
     default: Agent-Net-Caller
     live: true
+  - key: workers.max_age
+    rows: [53]
+    description: Maximum worker run age.
+    kind: rule
+    type: duration
+    min: 1ns
+    levels: [network]
+    default: 4h
+    live: true
+  - key: workers.idle_timeout
+    rows: [54]
+    description: Idle time before a worker is stopped.
+    kind: rule
+    type: duration
+    min: 1ns
+    levels: [network]
+    default: 60m
+    live: true
+  - key: workers.caller_gone_grace
+    rows: [55]
+    description: Grace period after the worker caller goes offline.
+    kind: rule
+    type: duration
+    min: 1ns
+    levels: [network]
+    default: 10m
+    live: true
+  - key: workers.queue_timeout
+    rows: [56]
+    description: Maximum worker admission queue wait.
+    kind: rule
+    type: duration
+    min: 1ns
+    levels: [network]
+    default: 2h
+    live: true
+  - key: workers.max_per_machine
+    rows: [57]
+    description: Maximum concurrent workers on one machine.
+    kind: rule
+    type: int
+    min: 1
+    levels: [network]
+    default: 12
+    live: true
+  - key: workers.cpu_target
+    rows: [58]
+    description: Five-minute CPU target for worker admission, as a percent.
+    kind: rule
+    type: float
+    min: 0.01
+    max: 100
+    levels: [network]
+    default: 75.0
+    live: true
+  - key: workers.memory_reserve
+    rows: [59]
+    description: Bytes kept free when admitting a worker.
+    kind: rule
+    type: int
+    min: 1
+    levels: [network]
+    default_go: memory_reserve
+    live: true
+  - key: workers.start_gap
+    rows: [61]
+    description: Minimum time between worker starts on one machine.
+    kind: rule
+    type: duration
+    min: 0s
+    levels: [network]
+    default: 6s
+    live: true
   - key: workers.auto_continue
     rows: [64]
     description: Whether an early worker stop is continued automatically.
@@ -484,7 +557,7 @@ ledger:
   - {row: 55, keys: [workers.caller_gone_grace], step: 7}
   - {row: 56, keys: [workers.queue_timeout], step: 7}
   - {row: 57, keys: [workers.max_per_machine], step: 7}
-  - {row: 58, keys: [workers.cpu_admission_limits], step: 7}
+  - {row: 58, keys: [workers.cpu_target, workers.cpu_hot], step: 7}
   - {row: 59, keys: [workers.memory_reserve], step: 7}
   - {row: 60, keys: [workers.cost_model_defaults], step: 7}
   - {row: 61, keys: [workers.start_gap], step: 7}

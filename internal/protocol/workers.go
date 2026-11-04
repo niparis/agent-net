@@ -11,21 +11,9 @@ import (
 
 // Workers (decision 0002): agent sessions that a daemon starts for a caller.
 
-// Worker limits and timeouts. They are the start values: a machine changes
-// them in the "workers" part of node.json.
-const (
-	DefaultWorkerMax        = 12 // the hard cap, a safety net behind the load check (decision 0018)
-	DefaultWorkerIdle       = 60 * time.Minute
-	DefaultWorkerMaxAge     = 4 * time.Hour
-	DefaultWorkerOwnerGrace = 10 * time.Minute
-)
-
 // Admission by machine load (decision 0018). A worker starts only when the
 // machine has room for it; otherwise the start waits in a queue.
 const (
-	// DefaultWorkerCPUTarget is the 5-minute whole-machine CPU busy percent
-	// above which no worker starts.
-	DefaultWorkerCPUTarget = 75.0
 	// WorkerCPUHot is the 1-minute CPU busy percent above which no worker
 	// starts, whatever the target is.
 	WorkerCPUHot = 95.0
@@ -37,15 +25,8 @@ const (
 	// reserve: the larger of the two (10 percent of RAM).
 	DefaultMemReserveBytes = 1536 << 20
 	DefaultMemReserveShare = 0.10
-	// WorkerStartGap is the least time between two worker starts on a
-	// machine. The default is short because admission also adds the expected
-	// cost of the workers that started in the last few minutes (decision
-	// 0018). node.json sets it with workers.start_gap.
-	WorkerStartGap = 6 * time.Second
 	// WorkerQueueTick is how often a daemon looks at its queue.
 	WorkerQueueTick = 15 * time.Second
-	// DefaultWorkerQueueTimeout is how long a start may wait in the queue.
-	DefaultWorkerQueueTimeout = 2 * time.Hour
 	// WorkerCostKeep is how many ended workers per harness and model the
 	// daemon keeps to learn the cost of the next one.
 	WorkerCostKeep = 20

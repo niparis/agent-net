@@ -54,7 +54,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 
 // queueLoop checks the queue on a timer.
 func (d *Daemon) queueLoop(ctx context.Context) {
-	t := time.NewTicker(d.cfg.Workers.filled().QueueTick)
+	t := time.NewTicker(d.workerSettings("").QueueTick)
 	defer t.Stop()
 	for {
 		select {
@@ -69,7 +69,7 @@ func (d *Daemon) queueLoop(ctx context.Context) {
 // processQueue ends the starts that waited too long or lost their owner, then
 // starts the head of the queue if it fits.
 func (d *Daemon) processQueue(ctx context.Context) {
-	set := d.cfg.Workers.filled()
+	set := d.workerSettings("")
 	entries, err := d.st.queue()
 	if err != nil || len(entries) == 0 {
 		return

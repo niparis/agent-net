@@ -9,13 +9,19 @@ import (
 
 // Views resolves settings and attaches their complete history for a reader.
 func Views(snapshot settings.Snapshot, history []protocol.SettingsHistory, q protocol.SettingsReadRequest, owner bool) ([]protocol.SettingView, error) {
+	return ViewsWithWhere(snapshot, history, q, owner, settings.Where{})
+}
+
+// ViewsWithWhere also resolves host-dependent defaults for the local machine.
+func ViewsWithWhere(snapshot settings.Snapshot, history []protocol.SettingsHistory, q protocol.SettingsReadRequest, owner bool, where settings.Where) ([]protocol.SettingView, error) {
 	snap := snapshot
+	where.Repo = q.Repo
 	out := []protocol.SettingView{}
 	for _, def := range settings.Standard().Definitions {
 		if (q.Key != "" && q.Key != def.Key) || (!owner && def.Visibility == "owner") {
 			continue
 		}
-		e, err := snap.Resolve(def.Key, settings.Where{Repo: q.Repo})
+		e, err := snap.Resolve(def.Key, where)
 		if err != nil {
 			return nil, err
 		}

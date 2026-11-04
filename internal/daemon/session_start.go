@@ -274,7 +274,7 @@ func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) 
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		ctx, cancel := context.WithTimeout(context.WithValue(d.ctoCtx, proposalHerdrLocationKey{}, loc), d.cfg.Workers.filled().StartTimeout)
+		ctx, cancel := context.WithTimeout(context.WithValue(d.ctoCtx, proposalHerdrLocationKey{}, loc), d.workerSettings("").StartTimeout)
 		defer cancel()
 		ticker := time.NewTicker(150 * time.Millisecond)
 		defer ticker.Stop()
@@ -426,7 +426,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 	d.wg.Add(1)
 	go func(r protocol.StartedSession) {
 		defer d.wg.Done()
-		cctx, cancel := context.WithTimeout(d.ctoCtx, d.cfg.Workers.filled().StartTimeout)
+		cctx, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
 		defer cancel()
 		d.claudeStartMu.Lock()
 		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", resume, nil, nil)

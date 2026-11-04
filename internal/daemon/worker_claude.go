@@ -202,7 +202,7 @@ func (d *Daemon) claudeMCPReady(w *worker) bool {
 	d.mu.Lock()
 	at, ok := d.mcpHello[native]
 	d.mu.Unlock()
-	return ok && time.Since(at) >= d.cfg.Workers.filled().MCPSettle
+	return ok && time.Since(at) >= d.workerSettings("").MCPSettle
 }
 
 // noteMCPHello records the first hello of the MCP server of a Claude session:
