@@ -59,6 +59,14 @@ func (d *Daemon) onMCPFrame(ctx context.Context, l *link, h protocol.Header, raw
 				data = res
 			}
 		}
+	case "mcp.feature":
+		var p protocol.MCPFeatureInvoke
+		if err = json.Unmarshal(raw, &p); err == nil {
+			var res json.RawMessage
+			if res, err = d.mcp.feature(ctx, p); err == nil {
+				data = res
+			}
+		}
 	}
 	if h.Type == "mcp.sync" || h.Type == "mcp.changed" {
 		// The gateway does not wait for these.
@@ -171,6 +179,33 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 			return nil, true, err
 		}
 		res, err = d.call(withCallWait(ctx, protocol.MCPMaxTimeout+30*time.Second), "mcp.call", p)
+
+	case "mcp_feature":
+		// Resources and prompts: the caller is decided as for mcp_call. The
+		// one connection of a Codex process that has no thread is not bound;
+		// like its mcp_tools, it gets the global servers only.
+		var p protocol.MCPFeature
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad mcp_feature params")
+		}
+		if err = p.Check(); err != nil {
+			return nil, true, err
+		}
+		p.SessionID, p.Owner = "", ""
+		lc.mu.Lock()
+		unboundCodex := lc.ls == nil && lc.client == "mcp"
+		lc.mu.Unlock()
+		switch {
+		case client == "cli":
+			if lc.operatorGate(method) == nil {
+				p.Owner = d.ownerSessionID()
+			}
+		case !unboundCodex:
+			if p.SessionID, err = lc.boundID(); err != nil {
+				return nil, true, err
+			}
+		}
+		res, err = d.call(withCallWait(ctx, protocol.MCPMaxTimeout+30*time.Second), "mcp.feature", p)
 
 	default:
 		return nil, true, errors.New("unknown method " + method)

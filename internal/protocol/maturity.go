@@ -164,7 +164,9 @@ func nodeDefaults(maturity string, overrides map[string]string, snap settings.Sn
 	if level == MaturityCritical {
 		d.WorkerSandbox = WorkersNoNetwork
 	}
-	if v := overrides[SettingWorkerSandbox]; v != "" && ValidateNodeSetting(SettingWorkerSandbox, v) == nil {
+	if carry && snap.WorkerSandboxCutover {
+		d.WorkerSandbox = snap.String("workers.sandbox_level", where)
+	} else if v := overrides[SettingWorkerSandbox]; v != "" && ValidateNodeSetting(SettingWorkerSandbox, v) == nil {
 		d.WorkerSandbox = v
 	}
 	if carry {

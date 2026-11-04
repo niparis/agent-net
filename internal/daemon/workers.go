@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Workers (decision 0002, 0008). This daemon starts the harness as its own
@@ -74,32 +75,39 @@ type WorkerSettings struct {
 }
 
 func (s WorkerSettings) filled() WorkerSettings {
+	defaults := settings.Snapshot{}
+	where := settings.Where{}
+	number := func(key string, out any) {
+		if e, err := defaults.Resolve(key, where); err == nil {
+			_ = json.Unmarshal(e.Value, out)
+		}
+	}
 	if s.Max <= 0 {
-		s.Max = protocol.DefaultWorkerMax
+		number("workers.max_per_machine", &s.Max)
 	}
 	if s.CPUTarget <= 0 {
-		s.CPUTarget = protocol.DefaultWorkerCPUTarget
+		number("workers.cpu_target", &s.CPUTarget)
 	}
 	if s.QueueTimeout <= 0 {
-		s.QueueTimeout = protocol.DefaultWorkerQueueTimeout
+		s.QueueTimeout = defaults.Duration("workers.queue_timeout", where)
 	}
 	if s.QueueTick <= 0 {
 		s.QueueTick = protocol.WorkerQueueTick
 	}
 	if s.StartGap == 0 {
-		s.StartGap = protocol.WorkerStartGap
+		s.StartGap = defaults.Duration("workers.start_gap", where)
 	}
 	if s.Idle <= 0 {
-		s.Idle = protocol.DefaultWorkerIdle
+		s.Idle = defaults.Duration("workers.idle_timeout", where)
 	}
 	if s.IdleNotice <= 0 {
 		s.IdleNotice = 2 * time.Minute
 	}
 	if s.MaxAge <= 0 {
-		s.MaxAge = protocol.DefaultWorkerMaxAge
+		s.MaxAge = defaults.Duration("workers.max_age", where)
 	}
 	if s.OwnerGrace <= 0 {
-		s.OwnerGrace = protocol.DefaultWorkerOwnerGrace
+		s.OwnerGrace = defaults.Duration("workers.caller_gone_grace", where)
 	}
 	if s.Tick <= 0 {
 		s.Tick = 5 * time.Second
@@ -521,7 +529,8 @@ func projectWorkerRules(path string) string {
 
 // startWorker handles "worker.launch" from the gateway.
 func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out protocol.WorkerLaunched, err error) {
-	set := d.cfg.Workers.filled()
+	snap := d.SettingsSnapshot()
+	set := d.workerSettingsWith(snap, l.Project)
 	refuse := func(format string, a ...any) (protocol.WorkerLaunched, error) {
 		err := fmt.Errorf(format, a...)
 		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
@@ -547,6 +556,9 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
 		l.Isolation = protocol.IsolationWorktree
 	}
+	if e := validateWorkerIsolation(snap, l.Project, l.Isolation); e != nil {
+		return refuse("%v", e)
+	}
 	if l.Base != "" && l.Isolation != protocol.IsolationWorktree {
 		return refuse("a base branch needs worktree isolation")
 	}
@@ -563,27 +575,39 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		}
 		return *q, nil
 	}
-	out, err = d.runWorkerStartChecked(ctx, l, set, true)
+	out, err = d.runWorkerStartChecked(ctx, l, set, true, snap)
 	if err != nil {
 		d.clearStartReservation()
 	}
 	return out, err
 }
 
+func validateWorkerIsolation(snap settings.Snapshot, repo, isolation string) error {
+	if snap.String("workers.isolation_minimum", settings.Where{Repo: repo}) == "worktree-required" && isolation != protocol.IsolationWorktree {
+		return fmt.Errorf("workers.isolation_minimum requires worktree isolation for %s", repo)
+	}
+	return nil
+}
+
 // runWorkerStart starts a worker that admission has let through. The checks
 // of startWorker are done; l has its isolation filled in.
 func (d *Daemon) runWorkerStart(ctx context.Context, l protocol.WorkerLaunch) (protocol.WorkerLaunched, error) {
-	set := d.cfg.Workers.filled()
+	snap := d.SettingsSnapshot()
+	set := d.workerSettingsWith(snap, l.Project)
 	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
 		l.Isolation = protocol.IsolationWorktree
+	}
+	if err := validateWorkerIsolation(snap, l.Project, l.Isolation); err != nil {
+		d.releaseWorkerBase(l.Base)
+		return protocol.WorkerLaunched{}, err
 	}
 	if l.Isolation == protocol.IsolationWorktree {
 		set.StartTimeout = set.BackgroundStartTimeout
 	}
-	return d.runWorkerStartChecked(ctx, l, set, false)
+	return d.runWorkerStartChecked(ctx, l, set, false, snap)
 }
 
-func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, async bool) (out protocol.WorkerLaunched, err error) {
+func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, async bool, snap settings.Snapshot) (out protocol.WorkerLaunched, err error) {
 	selection := protocol.ParseModelSelection(l.Harness, l.Provider, l.Model, l.Effort)
 	l.Model = selection.LegacyModel()
 	transferredBase := false
@@ -617,11 +641,10 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		}
 	}
 	worktree, branch := "", ""
-	snap := d.SettingsSnapshot()
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranchWithSettings(w.id, snap)
 	}
-	if len(protocol.WorkerTaskBodyWithSettings(l.Harness, l.Task, worktree, branch, rules, "", "", snap)) > protocol.MaxBodyBytes {
+	if len(protocol.WorkerTaskBodyWithSettingsForRepo(l.Harness, l.Task, worktree, branch, rules, "", "", snap, l.Project)) > protocol.MaxBodyBytes {
 		return refuse("the task and project rules exceed the message limit")
 	}
 	w.lastActive = w.startedAt
@@ -859,7 +882,7 @@ func (d *Daemon) killGroup(w *worker) {
 		return
 	}
 	syscall.Kill(-pgid, syscall.SIGTERM)
-	deadline := time.Now().Add(d.cfg.Workers.filled().KillGrace)
+	deadline := time.Now().Add(d.workerSettings("").KillGrace)
 	for time.Now().Before(deadline) && !d.gone(w) {
 		time.Sleep(25 * time.Millisecond)
 	}
@@ -1100,7 +1123,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	if requester != row.Owner {
 		return fmt.Errorf("only the session that started worker %s can start it again", sessionID)
 	}
-	set := d.cfg.Workers.filled()
+	set := d.workerSettings("")
 	if row.StartedAt.Add(set.MaxAge).Before(time.Now()) {
 		d.dropWorkerRow(row)
 		return fmt.Errorf("worker %s started more than %s ago (the longest run time), so it cannot be started again", sessionID, set.MaxAge)
@@ -1199,7 +1222,7 @@ func (d *Daemon) dropWorkerRow(r workerRow) {
 // time, here and in the gateway (W7). It runs at daemon start and
 // periodically.
 func (d *Daemon) cleanupWorkers(ctx context.Context) {
-	set := d.cfg.Workers.filled()
+	set := d.workerSettings("")
 	// Retry reports that failed while the gateway was away, then drop the
 	// records that are past the longest run time.
 	d.reportWorkerEnds(ctx)
@@ -1238,7 +1261,7 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 // ---- keeping an eye on workers ----
 
 func (d *Daemon) workerLoop(ctx context.Context) {
-	set := d.cfg.Workers.filled()
+	set := d.workerSettings("")
 	t := time.NewTicker(set.Tick)
 	defer t.Stop()
 	c := time.NewTicker(set.Cleanup)
@@ -1258,7 +1281,7 @@ func (d *Daemon) workerLoop(ctx context.Context) {
 }
 
 func (d *Daemon) checkWorkers(ctx context.Context) {
-	set := d.cfg.Workers.filled()
+	snap := d.SettingsSnapshot()
 	d.wmu.Lock()
 	list := make([]*worker, 0, len(d.workers))
 	for _, w := range d.workers {
@@ -1277,6 +1300,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 	d.wmu.Unlock()
 	now := time.Now()
 	for _, w := range list {
+		set := d.workerSettingsWith(snap, w.project)
 		if ctx.Err() != nil {
 			return
 		}

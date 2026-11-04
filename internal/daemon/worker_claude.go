@@ -202,7 +202,7 @@ func (d *Daemon) claudeMCPReady(w *worker) bool {
 	d.mu.Lock()
 	at, ok := d.mcpHello[native]
 	d.mu.Unlock()
-	return ok && time.Since(at) >= d.cfg.Workers.filled().MCPSettle
+	return ok && time.Since(at) >= d.workerSettings("").MCPSettle
 }
 
 // noteMCPHello records the first hello of the MCP server of a Claude session:
@@ -488,6 +488,7 @@ func claudeTranscriptFailureAt(path string, fromOff int64) (msg string, provider
 			Subtype     string `json:"subtype"`
 			IsSidechain bool   `json:"isSidechain"`
 			IsError     bool   `json:"isError"`
+			IsAPIError  *bool  `json:"isApiErrorMessage"`
 			Error       any    `json:"error"`
 			Message     struct {
 				Role       string          `json:"role"`
@@ -502,7 +503,15 @@ func claudeTranscriptFailureAt(path string, fromOff int64) (msg string, provider
 		}
 
 		isSynthetic := strings.EqualFold(e.Message.Model, "<synthetic>") || (strings.HasPrefix(e.Message.Model, "<") && strings.Contains(e.Message.Model, "synthetic"))
-		isError := isSynthetic || e.IsError || e.Subtype == "api_error" || e.Subtype == "error" || e.Message.StopReason == "error" || e.Error != nil || e.Message.Error != nil
+		// Claude Code writes its API errors as synthetic entries with
+		// isApiErrorMessage true. It also writes synthetic entries that are no
+		// error, with isApiErrorMessage false: "No response requested." closes
+		// a turn that was cut short, as when a worker stopped after its
+		// hand-back is resumed by a follow-up.
+		if isSynthetic && ((e.IsAPIError != nil && !*e.IsAPIError) || claudeSyntheticPlaceholder(e.Message.Content)) {
+			isSynthetic = false
+		}
+		isError := isSynthetic || (e.IsAPIError != nil && *e.IsAPIError) || e.IsError || e.Subtype == "api_error" || e.Subtype == "error" || e.Message.StopReason == "error" || e.Error != nil || e.Message.Error != nil
 
 		var text string
 		if json.Unmarshal(e.Message.Content, &text) != nil {
@@ -543,6 +552,24 @@ func claudeTranscriptFailureAt(path string, fromOff int64) (msg string, provider
 	}
 
 	return "", false, newOff
+}
+
+// claudeSyntheticPlaceholder tells whether the content of a synthetic entry is
+// Claude Code's placeholder for a turn with no answer (Claude Code 2.1.318).
+func claudeSyntheticPlaceholder(content json.RawMessage) bool {
+	const placeholder = "No response requested."
+	var text string
+	if json.Unmarshal(content, &text) == nil {
+		return strings.TrimSpace(text) == placeholder
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(content, &blocks) != nil || len(blocks) != 1 {
+		return false
+	}
+	return blocks[0].Type == "text" && strings.TrimSpace(blocks[0].Text) == placeholder
 }
 
 func claudeExtractError(v any) string {

@@ -275,3 +275,116 @@ type (
 		TimeoutSec int             `json:"timeout_sec"`
 	}
 )
+
+// Resources and prompts of registered servers. A session lists and reads them
+// through its daemon, the gateway checks access as for a tool call, and the
+// hosting daemon asks the server. Lists go to every server the caller may see;
+// a read or a prompt goes to one.
+const (
+	MCPOpResources = "resources/list"
+	MCPOpTemplates = "resources/templates/list"
+	MCPOpRead      = "resources/read"
+	MCPOpPrompts   = "prompts/list"
+	MCPOpPrompt    = "prompts/get"
+
+	// MCPMaxListItems caps the resources, templates or prompts of one server.
+	// The host stops reading pages at the cap.
+	MCPMaxListItems = 1000
+	// MCPListTimeout is how long the gateway waits for one host to list.
+	MCPListTimeout = 15 * time.Second
+	// MCPListCacheTTL is how long a host reuses a server's list. A
+	// list_changed notification from the server ends it at once.
+	MCPListCacheTTL = 10 * time.Second
+	// MCPMaxURILen caps a resource URI and a prompt name in a request.
+	MCPMaxURILen = 8 * 1024
+	// MCPMaxListAnswerBytes caps the items of all servers in one list answer,
+	// well under the 4 MiB frame limit of the links and the local socket.
+	MCPMaxListAnswerBytes = 2 << 20
+)
+
+// ValidMCPOp reports whether op is one of the MCPOp values.
+func ValidMCPOp(op string) bool {
+	switch op {
+	case MCPOpResources, MCPOpTemplates, MCPOpRead, MCPOpPrompts, MCPOpPrompt:
+		return true
+	}
+	return false
+}
+
+// MCPListOp reports whether op is a list.
+func MCPListOp(op string) bool {
+	return op == MCPOpResources || op == MCPOpTemplates || op == MCPOpPrompts
+}
+
+type (
+	// MCPFeature asks for the resources or prompts of registered servers.
+	// Server names one server; for a list it may be empty, which means every
+	// server the caller may see. URI is the server's own resource URI (read),
+	// Name and Arguments the server's own prompt (get). SessionID and Owner
+	// are set by the daemon, as for MCPCall.
+	MCPFeature struct {
+		Op        string            `json:"op"`
+		Server    string            `json:"server,omitempty"`
+		URI       string            `json:"uri,omitempty"`
+		Name      string            `json:"name,omitempty"`
+		Arguments map[string]string `json:"arguments,omitempty"`
+		SessionID string            `json:"session_id,omitempty"`
+		Owner     string            `json:"owner,omitempty"`
+	}
+	// MCPFeatureInvoke is an MCPFeature for one server, forwarded to its host.
+	MCPFeatureInvoke struct {
+		Op         string            `json:"op"`
+		Server     string            `json:"server"`
+		URI        string            `json:"uri,omitempty"`
+		Name       string            `json:"name,omitempty"`
+		Arguments  map[string]string `json:"arguments,omitempty"`
+		TimeoutSec int               `json:"timeout_sec"`
+	}
+	// MCPServerItems is one server's part of a list answer: the items as the
+	// server gave them (a JSON array of resources, templates or prompts), or
+	// why there are none.
+	MCPServerItems struct {
+		Server string          `json:"server"`
+		Host   string          `json:"host,omitempty"`
+		Items  json.RawMessage `json:"items,omitempty"`
+		Error  string          `json:"error,omitempty"`
+	}
+	// MCPItemsChanged is a host saying a server changed its resources or
+	// prompts (a list_changed notification).
+	MCPItemsChanged struct {
+		Name string `json:"name"`
+	}
+)
+
+// Check validates the parts a caller supplies.
+func (f MCPFeature) Check() error {
+	if !ValidMCPOp(f.Op) {
+		return fmt.Errorf("unknown op %q", f.Op)
+	}
+	if f.Server != "" {
+		if err := ValidMCPName(f.Server); err != nil {
+			return err
+		}
+	}
+	switch f.Op {
+	case MCPOpRead:
+		if f.Server == "" || f.URI == "" {
+			return fmt.Errorf("a read needs a server and a uri")
+		}
+	case MCPOpPrompt:
+		if f.Server == "" || f.Name == "" {
+			return fmt.Errorf("a prompt needs a server and a name")
+		}
+	}
+	if len(f.URI) > MCPMaxURILen || len(f.Name) > MCPMaxURILen {
+		return fmt.Errorf("the uri or name is longer than %d bytes", MCPMaxURILen)
+	}
+	n := 0
+	for k, v := range f.Arguments {
+		n += len(k) + len(v)
+	}
+	if n > MCPMaxArgsBytes {
+		return fmt.Errorf("arguments are larger than %d bytes", MCPMaxArgsBytes)
+	}
+	return nil
+}

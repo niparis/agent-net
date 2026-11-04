@@ -234,6 +234,13 @@ type frameMessage struct {
 
 // BuildFrame returns the exact line (without the newline) written to the inbox.
 func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
+	return BuildFrameFor(m, replySock, false)
+}
+
+// BuildFrameFor is BuildFrame for a session that may be a worker. A worker
+// answers a request with its hand-back, so the frame names agent_handback
+// instead of SendMessage.
+func BuildFrameFor(m protocol.Message, replySock string, toWorker bool) ([]byte, error) {
 	from := ""
 	if replySock != "" {
 		from = "uds:" + replySock
@@ -281,6 +288,9 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		if !m.OwnerApproved {
 			details += " " + protocol.AuthorityNoteWithRule(m.RecipientTrust, m.FromWorker, m.RecipientMergeAuthority, protocol.MessageMergeText(m))
 		}
+	}
+	if toWorker && m.Type != protocol.TypeReply {
+		details = strings.ReplaceAll(details, "with your SendMessage tool to this sender", "with your agent_handback tool when the work is done (you are a worker)")
 	}
 	if m.Overruled {
 		details += " [agent-net] " + protocol.OverruleNote
@@ -386,7 +396,7 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 	if err != nil {
 		a.host.Logf("claude: no reply socket for %s, sending without a reply address: %v", m.From, err)
 	}
-	line, err := BuildFrame(m, replySock)
+	line, err := BuildFrameFor(m, replySock, target.Worker != nil)
 	if err != nil {
 		return daemon.Result{Detail: err.Error()}
 	}

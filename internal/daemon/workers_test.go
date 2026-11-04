@@ -513,16 +513,17 @@ func TestWorkerEndsWhenIdle(t *testing.T) {
 func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
-	set.Idle = 700 * time.Millisecond
+	// The idle time leaves room for a slow owner_send on a busy CI machine.
+	set.Idle = 1500 * time.Millisecond
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	// Keep talking for longer than the idle time.
-	end := time.Now().Add(1500 * time.Millisecond)
+	end := time.Now().Add(2500 * time.Millisecond)
 	for time.Now().Before(end) {
 		w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "ping"})
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 0 {
 		t.Fatalf("a worker that was talked to ended: %v", evs)

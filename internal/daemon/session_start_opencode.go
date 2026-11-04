@@ -100,7 +100,7 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 	d.wg.Add(1)
 	go func(r protocol.StartedSession) {
 		defer d.wg.Done()
-		cctx, cancel := context.WithTimeout(d.ctoCtx, d.cfg.Workers.filled().StartTimeout)
+		cctx, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
 		defer cancel()
 		var startErr error
 		if message != "" {

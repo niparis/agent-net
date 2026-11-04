@@ -44,6 +44,7 @@ type mcpHost struct {
 	d          *Daemon
 	backMin    time.Duration
 	backMax    time.Duration
+	listTTL    time.Duration
 	mu         sync.Mutex
 	runners    map[string]*mcpRunner
 	ctx        context.Context
@@ -57,6 +58,10 @@ func newMCPHost(d *Daemon) *mcpHost {
 	}
 	if h.backMax == 0 {
 		h.backMax = defaultBackMax
+	}
+	h.listTTL = d.cfg.MCPListTTL
+	if h.listTTL == 0 {
+		h.listTTL = protocol.MCPListCacheTTL
 	}
 	return h
 }
@@ -165,6 +170,10 @@ type mcpRunner struct {
 	detail  string
 	tools   []protocol.MCPTool
 	timeout int
+	// items caches resource and prompt lists by op; itemsGen changes when
+	// they are dropped, so a list that was read meanwhile is not kept.
+	items    map[string]cachedItems
+	itemsGen int
 }
 
 func (r *mcpRunner) stop() {
@@ -245,6 +254,7 @@ func (r *mcpRunner) run(ctx context.Context) {
 			r.sess, r.red, r.tools = c.sess, c.red, tools
 			r.health, r.detail = protocol.HealthOK, ""
 			r.mu.Unlock()
+			r.dropItems()
 			r.report()
 			r.triedOnce.Do(func() { close(r.tried) })
 			r.logf("up with %d tools", len(tools))
@@ -276,10 +286,27 @@ func (r *mcpRunner) watch(ctx context.Context, c *mcpConn) {
 	go func() { c.sess.Wait(); close(ended) }()
 	t := time.NewTicker(pingEvery)
 	defer t.Stop()
+	// A server's list_changed is passed on at most once a second.
+	var lastItems time.Time
+	var itemsLater <-chan time.Time
 	for {
 		select {
 		case <-ended:
 			return
+		case <-c.itemsChanged:
+			r.dropItems()
+			if wait := time.Second - time.Since(lastItems); wait > 0 {
+				if itemsLater == nil {
+					itemsLater = time.After(wait)
+				}
+				continue
+			}
+			lastItems = time.Now()
+			r.reportItemsChanged()
+		case <-itemsLater:
+			itemsLater = nil
+			lastItems = time.Now()
+			r.reportItemsChanged()
 		case <-ctx.Done():
 			c.sess.Close()
 			return
@@ -309,26 +336,9 @@ func (r *mcpRunner) watch(ctx context.Context, c *mcpConn) {
 // call forwards one tool call, with the server's timeout, and returns the
 // capped, redacted result.
 func (r *mcpRunner) call(ctx context.Context, p protocol.MCPInvoke) (json.RawMessage, error) {
-	// A server added a moment ago may still be starting.
-	select {
-	case <-r.tried:
-	case <-time.After(probeTimeout):
-	case <-ctx.Done():
-	}
-	r.mu.Lock()
-	sess, red, detail := r.sess, r.red, r.detail
-	sec := r.timeout
-	r.mu.Unlock()
-	if sess == nil {
-		if detail == "" {
-			detail = "not connected yet"
-		}
-		return nil, fmt.Errorf("server %q is not running on this node: %s", p.Server, detail)
-	}
-	d := r.spec
-	d.TimeoutSec = sec
-	if p.TimeoutSec > 0 {
-		d.TimeoutSec = p.TimeoutSec
+	sess, red, d, err := r.ready(ctx, p.TimeoutSec)
+	if err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, d.Timeout())
 	defer cancel()
@@ -348,6 +358,32 @@ func (r *mcpRunner) call(ctx context.Context, p protocol.MCPInvoke) (json.RawMes
 		return nil, err
 	}
 	return json.RawMessage(red.applyBytes(capResult(raw, protocol.MCPMaxResultBytes))), nil
+}
+
+// ready waits for a server that is still starting and returns its session,
+// its redactor and its spec with the call timeout (sec when set).
+func (r *mcpRunner) ready(ctx context.Context, sec int) (*mcp.ClientSession, redactor, protocol.MCPServer, error) {
+	// A server added a moment ago may still be starting.
+	select {
+	case <-r.tried:
+	case <-time.After(probeTimeout):
+	case <-ctx.Done():
+	}
+	r.mu.Lock()
+	sess, red, detail := r.sess, r.red, r.detail
+	d := r.spec
+	d.TimeoutSec = r.timeout
+	r.mu.Unlock()
+	if sess == nil {
+		if detail == "" {
+			detail = "not connected yet"
+		}
+		return nil, red, d, fmt.Errorf("server %q is not running on this node: %s", r.spec.Name, detail)
+	}
+	if sec > 0 {
+		d.TimeoutSec = sec
+	}
+	return sess, red, d, nil
 }
 
 func (r *mcpRunner) stderrWriter() io.Writer { return &lineLog{r: r} }
@@ -385,19 +421,24 @@ type mcpConn struct {
 	sess        *mcp.ClientSession
 	red         redactor
 	listChanged chan struct{}
+	// itemsChanged gets a signal when the server's resources or prompts change.
+	itemsChanged chan struct{}
 }
 
 // connectMCP opens a client session to the server described by spec. stderr
 // receives a stdio child's error output.
 func connectMCP(ctx context.Context, d *Daemon, spec protocol.MCPServer, stderr io.Writer) (*mcpConn, error) {
-	c := &mcpConn{listChanged: make(chan struct{}, 1)}
+	c := &mcpConn{listChanged: make(chan struct{}, 1), itemsChanged: make(chan struct{}, 1)}
+	signal := func(ch chan struct{}) {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "agent-net", Version: "0.3.0"}, &mcp.ClientOptions{
-		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
-			select {
-			case c.listChanged <- struct{}{}:
-			default:
-			}
-		},
+		ToolListChangedHandler:     func(context.Context, *mcp.ToolListChangedRequest) { signal(c.listChanged) },
+		ResourceListChangedHandler: func(context.Context, *mcp.ResourceListChangedRequest) { signal(c.itemsChanged) },
+		PromptListChangedHandler:   func(context.Context, *mcp.PromptListChangedRequest) { signal(c.itemsChanged) },
 	})
 	var tr mcp.Transport
 	switch spec.Transport {

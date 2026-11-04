@@ -241,7 +241,7 @@ func (lc *localConn) run(ctx context.Context) {
 				timeout = 100 * time.Second
 			}
 			if req.Method == protocol.OpWorkerStart {
-				timeout = lc.d.cfg.Workers.filled().StartTimeout + 60*time.Second // the machine starts a harness
+				timeout = lc.d.workerSettings("").StartTimeout + 60*time.Second // the machine starts a harness
 			}
 			cctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()

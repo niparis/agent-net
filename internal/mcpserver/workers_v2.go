@@ -82,6 +82,10 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if line, ok := m["owner_line"].(string); ok && line != "" {
 			out["owner_line"] = line
 		}
+		// Set only when the caller named the model instead of the picker.
+		if r, ok := m["reminder"].(string); ok && r != "" {
+			out["reminder"] = r
+		}
 		if q, ok := m["queue_id"].(string); ok {
 			out["queued"] = map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}
 			return out, nil

@@ -50,3 +50,16 @@ It retries an allowlist of known temporary failures at 30 seconds, 2 minutes,
 saying the message may have arrived are not retried. Success and expiry clear
 the schedule. Held requests keep their existing path. W4.3 remains responsible
 for final failure and expiry notices.
+
+## W4.3 update (2026-11-04)
+
+A message that fails for good gets one notice to its sender from agent-net
+itself: a failure that is not retried, or an expiry with no confirmed delivery.
+The notice is a normal stored notification with the idempotency key
+`undelivered:<message id>`. The unique sender and key pair makes it exactly
+once, also across restarts, with no new table. It is written in the same
+transaction as the final state. A detail saying the message may have arrived,
+or an expiry while still dispatched, gives "may not have arrived" instead of
+"was not delivered". There is no notice about agent-net's own messages (no
+loops), and none to the owner or a connected app, which already see the state.
+Held requests keep their own expiry reply.

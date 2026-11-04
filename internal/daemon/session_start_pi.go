@@ -62,7 +62,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		r.NativeID = resume
 		piArgs = []string{bin, "--session", resume}
 	}
-	timeout := d.cfg.Workers.filled().StartTimeout
+	timeout := d.workerSettings("").StartTimeout
 	plan := protocol.EnterPlan{Argv: piArgs, Dir: r.Path, Host: r.Hostname}
 	opened := d.openForCaller("pi:"+r.NativeID, r.Project, socket, pane, plan)
 	if opened.OpenedHerdr {

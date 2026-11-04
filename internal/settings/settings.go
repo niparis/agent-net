@@ -152,6 +152,10 @@ func Load(data []byte) (*Recipe, error) {
 				if d.Stricter != "fewer" && d.Stricter != "more" {
 					return nil, fmt.Errorf("%s: stricter required", d.Key)
 				}
+			case "text":
+				if !d.OwnerScopedText() || seen["session"] || seen["run"] {
+					return nil, fmt.Errorf("%s: unordered rule", d.Key)
+				}
 			default:
 				return nil, fmt.Errorf("%s: unordered rule", d.Key)
 			}
@@ -252,6 +256,13 @@ func contains(a []string, s string) bool {
 	}
 	return false
 }
+
+// OwnerScopedText is protected wording whose network and repo values are
+// individually owner-controlled. Text has no automatic strictness ordering.
+func (d Definition) OwnerScopedText() bool {
+	return d.Kind == "rule" && d.Type == "text" && d.Stricter == "owner"
+}
+
 func (d Definition) yamlValue(n *yaml.Node) (json.RawMessage, error) {
 	var v any
 	switch d.Type {
@@ -399,7 +410,7 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 				return nil, fmt.Errorf("text contains an agent-net marker")
 			}
 		}
-		if !expected && d.Type == "text" && strings.HasPrefix(d.Key, "delivery.worker_") && strings.Contains(s, "\n\nTask:\n") {
+		if !expected && d.Type == "text" && (strings.HasPrefix(d.Key, "delivery.worker_") || strings.HasPrefix(d.Key, "workers.brief_") || strings.HasPrefix(d.Key, "workers.continue_")) && strings.Contains(s, "\n\nTask:\n") {
 			return nil, fmt.Errorf("worker text contains a task boundary")
 		}
 		if d.Type == "text" {
@@ -411,6 +422,11 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 				found[m[1]] = true
 			}
 			for _, slot := range d.Slots {
+				// Existing custom guidance may omit the worker reference;
+				// worker brief text slots themselves remain mandatory.
+				if d.Key == "guidance.worker_brief_precedence" && slot == "handback" {
+					continue
+				}
 				if !found[slot] {
 					return nil, fmt.Errorf("missing slot %s", slot)
 				}
@@ -577,11 +593,12 @@ type Value struct {
 	Value json.RawMessage `json:"value"`
 }
 type Snapshot struct {
-	DeliveryCutover bool              `json:"delivery_cutover,omitempty"`
-	Revision        int64             `json:"revision"`
-	Recipe          string            `json:"recipe"`
-	Values          []Value           `json:"values"`
-	Maturity        map[string]string `json:"maturity"`
+	DeliveryCutover      bool              `json:"delivery_cutover,omitempty"`
+	WorkerSandboxCutover bool              `json:"worker_sandbox_cutover,omitempty"`
+	Revision             int64             `json:"revision"`
+	Recipe               string            `json:"recipe"`
+	Values               []Value           `json:"values"`
+	Maturity             map[string]string `json:"maturity"`
 }
 type Host struct{ RAMBytes int64 }
 type Where struct {
@@ -612,9 +629,17 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 	if d.Default.Kind != 0 {
 		v, err = d.yamlValue(&d.Default)
 	} else if d.DefaultGo == "memory_reserve" {
-		n := w.Host.RAMBytes / 10
-		if n < 1536*1024*1024 {
-			n = 1536 * 1024 * 1024
+		var minimum int64
+		var share float64
+		if e, eerr := s.Resolve("workers.memory_reserve_min", Where{}); eerr == nil {
+			_ = json.Unmarshal(e.Value, &minimum)
+		}
+		if e, eerr := s.Resolve("workers.memory_reserve_share", Where{}); eerr == nil {
+			_ = json.Unmarshal(e.Value, &share)
+		}
+		n := int64(float64(w.Host.RAMBytes) * share)
+		if n < minimum {
+			n = minimum
 		}
 		v, _ = json.Marshal(n)
 	} else {
@@ -631,7 +656,7 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 			log.Printf("settings: ignoring invalid %s at %s: %v", key, source, err)
 			return
 		}
-		if d.Kind == "rule" && (networkSet || source == "session" || source == "run") {
+		if d.Kind == "rule" && !d.OwnerScopedText() && (networkSet || source == "session" || source == "run") {
 			bound, err := d.StricterValue(e.Value, candidate)
 			if err == nil {
 				if !bytes.Equal(bound, candidate) {
