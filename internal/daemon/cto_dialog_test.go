@@ -210,6 +210,8 @@ func TestCTOProjectOwnerChatApproval(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
 	c := startClaudeNode(t, g, shortSet)
+	c.d.cfg.HarnessPaths["opencode"] = os.Args[0]
+	c.cli.mustCall("cto_send", map[string]string{"text": "start"})
 	path := filepath.Join(home, "code", "company-rag")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
@@ -223,11 +225,25 @@ func TestCTOProjectOwnerChatApproval(t *testing.T) {
 	if err != nil || len(items) != 1 || items[0].Status != "open" {
 		t.Fatalf("proposal before owner: %v %v", items, err)
 	}
-	c.d.cfg.HarnessPaths["opencode"] = os.Args[0]
-	c.cli.mustCall("cto_send", map[string]string{"text": "yes"})
-
-	items, err = c.d.proposalRunner().list()
-	if err != nil || items[0].Status != "applied" {
-		t.Fatalf("proposal after owner: %v %v", items, err)
+	c.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: c.d.ctoSessionID(), Body: "yes"})
+	eventually(t, "owner chat approves project", func() bool {
+		items, err = c.d.proposalRunner().list()
+		return err == nil && items[0].Status == "applied"
+	})
+	var started protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &started); err != nil {
+		t.Fatal(err)
 	}
+	started = waitSessionStartPath(t, c.workerNode, started)
+	if started.Status != "started" || started.SessionID == "" {
+		t.Fatalf("start: %+v", started)
+	}
+	eventually(t, "ready outcome reaches CTO", func() bool {
+		raw, err := os.ReadFile(filepath.Join(c.d.cfg.StateDir, "cto", "fake-opencode.json"))
+		if err != nil {
+			return false
+		}
+		var rec fakeOCRecord
+		return json.Unmarshal(raw, &rec) == nil && strings.Contains(strings.Join(rec.Turns, "\n"), "company-rag is ready: session company-rag is waiting in tab 1 (Sessions). Press Enter on it to dive in.")
+	})
 }
