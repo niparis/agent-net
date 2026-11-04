@@ -15,6 +15,7 @@ import (
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/guidance"
 	"github.com/niparis/agent-net/internal/quotaaxi"
+	"github.com/niparis/agent-net/internal/tsnode"
 )
 
 // stopWorkers is a variable so a test can look at the call.
@@ -56,6 +57,25 @@ func Uninstall(o Options) error {
 		r.step("Funnel route", "ok (removed)", nil)
 	default:
 		r.step("Funnel route", "skipped (no owned route)", nil)
+	}
+	// agent-net's own Tailscale node, only when its folder has our marker.
+	open := r.TailscaleNode
+	if open == nil {
+		open = tsnode.Open
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	nodeRemoved, nodeErr := tsnode.Cleanup(ctx, data, open)
+	cancel()
+	switch {
+	case nodeErr != nil:
+		r.step("Tailscale node", "", fmt.Errorf("%w; run uninstall again, or remove the machine in the Tailscale admin console and delete %s", nodeErr, displayPath(tsnode.StateDir(data))))
+	case nodeRemoved:
+		r.step("Tailscale node", "ok (logged out and removed)", nil)
+	default:
+		r.step("Tailscale node", "skipped (no owned node)", nil)
+	}
+	if err := tsnode.RemoveChoice(data); err != nil {
+		r.step("Tailscale name", "", err)
 	}
 	// Workers outlive the daemon on purpose (a restart keeps them), so with
 	// the service gone nobody else would stop them.

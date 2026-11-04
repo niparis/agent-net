@@ -15,6 +15,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tsnode"
 )
 
 // Public access is serialized separately from node connections and HTTP reads.
@@ -46,6 +47,7 @@ func (g *Gateway) savePublic() error {
 	return err
 }
 func (g *Gateway) restorePublic() error {
+	g.loadTailscaleChoice()
 	var raw string
 	err := g.store.db.QueryRow(`SELECT value FROM owner_settings WHERE key='public'`).Scan(&raw)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -55,6 +57,11 @@ func (g *Gateway) restorePublic() error {
 		if err := json.Unmarshal([]byte(raw), &g.public); err != nil {
 			return err
 		}
+	}
+	if g.public.Node != "" && (g.tsChoice == nil || g.tsChoice.Name != g.public.Node) {
+		// The owner changed the setup choice: the old node URL is gone and
+		// must not pass for a pasted tunnel URL.
+		g.public.URL, g.public.Node = "", ""
 	}
 	g.setPublicBase(g.public.URL)
 	if g.public.On {
@@ -97,6 +104,18 @@ func (g *Gateway) stopPublicListener() {
 		_ = g.publicServer.Close()
 		g.publicServer = nil
 	}
+	if g.tsServer != nil {
+		// Closing the Funnel listener also removes its Funnel entry.
+		_ = g.tsServer.Close()
+		g.tsServer = nil
+	}
+}
+
+// nodeMode reports whether "on" means a Funnel on agent-net's own node. A
+// saved pasted tunnel URL (no port, no node) still wins, as it does over the
+// machine's Funnel.
+func (g *Gateway) nodeMode() bool {
+	return g.tsChoice != nil && !(g.public.Port == 0 && g.public.Node == "" && g.public.URL != "")
 }
 func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool) error {
 	if g.public.On && g.publicServer != nil && pasted == "" && !restore && g.public.Error == "" {
@@ -113,6 +132,9 @@ func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool)
 			return reject("public URL must be an HTTPS origin")
 		}
 		pasted = strings.TrimRight(u.String(), "/")
+	}
+	if pasted == "" && g.nodeMode() {
+		return g.enableNodePublic(ctx)
 	}
 	port := 0
 	base := pasted
@@ -161,6 +183,7 @@ func (g *Gateway) enablePublic(ctx context.Context, pasted string, restore bool)
 func (g *Gateway) disablePublic(ctx context.Context) error {
 	// Make off durable and close the listener even if Funnel is unavailable.
 	g.stopPublicListener()
+	g.closeTailscaleNode()
 	g.public.On = false
 	g.public.Error = ""
 	saveErr := g.savePublic()
@@ -183,9 +206,13 @@ func (g *Gateway) publicStatus(ctx context.Context) publicStatus {
 			_ = g.savePublic()
 		}
 	}
+	routes := []funnel.Route{}
+	if g.tsChoice != nil {
+		// Routes on the machine's name do not share agent-net's own name.
+		return publicStatus{AppsPublicStatus: g.public, OtherRoutes: routes}
+	}
 	info, _ := funnel.Status(ctx, g.publicRunner())
 	record, err := funnel.ReadRecord(g.opts.DataDir)
-	routes := []funnel.Route{}
 	for _, route := range info.Routes {
 		if err == nil && route.Port == record.Port && route.Path == "/" && route.Target == record.Target {
 			continue
@@ -214,7 +241,7 @@ func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (a
 		if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 			return nil, reject("public URL must be an HTTPS origin")
 		}
-		if g.public.On && g.public.Port != 0 {
+		if g.public.On && (g.public.Port != 0 || g.public.Node != "") {
 			if err = g.disablePublic(ctx); err != nil {
 				break
 			}
@@ -248,7 +275,10 @@ func (g *Gateway) ownerFunnelError(err error) error {
 		return nil
 	}
 	machine := g.gatewayMachineName()
+	var login *tsnode.NeedsLoginError
 	switch {
+	case errors.As(err, &login):
+		return ownerFacingError{message: "Add agent-net's own Tailscale node to your tailnet: open " + login.URL + " and log in, then press p again.", cause: err}
 	case errors.Is(err, funnel.ErrNeedsOperator):
 		return ownerFacingError{message: fmt.Sprintf("On %s (the gateway machine, where internet access runs), run once in a terminal: sudo tailscale set --operator=$USER. Then press p again.", machine), cause: err}
 	case errors.Is(err, funnel.ErrNotInstalled):
@@ -264,6 +294,84 @@ func (g *Gateway) ownerFunnelError(err error) error {
 		return ownerFacingError{message: "Allow Funnel for your tailnet: open " + link + ", then press p again.", cause: err}
 	}
 	return err
+}
+
+// loadTailscaleChoice reads the owner's setup choice. Without one, it removes
+// a node that agent-net created earlier, by its ownership marker.
+func (g *Gateway) loadTailscaleChoice() {
+	choice, err := tsnode.ReadChoice(g.opts.DataDir)
+	switch {
+	case err == nil:
+		g.tsChoice = &choice
+		g.logLine("apps.tailscale_node", "name", choice.Name)
+	case errors.Is(err, os.ErrNotExist):
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		removed, err := tsnode.Cleanup(ctx, g.opts.DataDir, g.tailscaleOpener())
+		if err != nil {
+			g.logLine("apps.tailscale_node", "cleanup", "failed", "error", err.Error())
+		} else if removed {
+			g.logLine("apps.tailscale_node", "cleanup", "removed")
+		}
+	default:
+		g.logLine("apps.tailscale_node", "choice", "unreadable", "error", err.Error())
+	}
+}
+
+func (g *Gateway) tailscaleOpener() tsnode.Opener {
+	if g.opts.TailscaleNode != nil {
+		return g.opts.TailscaleNode
+	}
+	return tsnode.Open
+}
+
+// enableNodePublic turns on a Funnel on agent-net's own node. The node stays
+// open after a login error, so the login the owner finishes is the one used.
+func (g *Gateway) enableNodePublic(ctx context.Context) error {
+	if g.tsNode == nil {
+		node, err := tsnode.Start(g.opts.DataDir, *g.tsChoice, g.tailscaleOpener())
+		if err != nil {
+			return err
+		}
+		g.tsNode = node
+	}
+	upCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	dns, err := g.tsNode.Up(upCtx)
+	if err != nil {
+		return err
+	}
+	if g.tsServer != nil {
+		_ = g.tsServer.Close()
+		g.tsServer = nil
+	}
+	ln, err := g.tsNode.ListenFunnel(443)
+	if err != nil {
+		return err
+	}
+	base := "https://" + strings.TrimSuffix(dns, ".")
+	old := g.publicBase()
+	g.setPublicBase(base)
+	// The loopback listener stays the target for a pasted tunnel URL.
+	if err := g.startPublicListener(); err != nil {
+		_ = ln.Close()
+		g.setPublicBase(old)
+		return err
+	}
+	// Wrapping the loopback server's handler shares its cap on requests in
+	// flight between both listeners.
+	srv := newAppsServer(g.publicServer.Handler, appsReadTimeout)
+	g.tsServer = srv
+	go func() { _ = srv.Serve(ln) }()
+	g.public = protocol.AppsPublicStatus{On: true, URL: base, Node: g.tsChoice.Name}
+	return g.savePublic()
+}
+
+func (g *Gateway) closeTailscaleNode() {
+	if g.tsNode != nil {
+		_ = g.tsNode.Close()
+		g.tsNode = nil
+	}
 }
 
 func (g *Gateway) gatewayMachineName() string {

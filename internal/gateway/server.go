@@ -24,6 +24,7 @@ import (
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/ratelimit"
+	"github.com/niparis/agent-net/internal/tsnode"
 )
 
 type Options struct {
@@ -37,6 +38,9 @@ type Options struct {
 	PhoneApp http.Handler
 	// FunnelRunner is injectable so tests never execute tailscale.
 	FunnelRunner funnel.Runner
+	// TailscaleNode opens agent-net's own Tailscale node when the owner chose
+	// one in setup. Nil uses the real node; tests supply a fake.
+	TailscaleNode tsnode.Opener
 	// DistDir holds the agent-net-{os}-{arch} binaries that /install serves.
 	DistDir string
 	// SANs are extra host names or IPs for the server certificate.
@@ -66,12 +70,18 @@ type Options struct {
 }
 
 type Gateway struct {
-	publicMu        sync.Mutex
-	publicURLMu     sync.RWMutex
-	publicURL       string
-	public          protocol.AppsPublicStatus
-	publicServer    *http.Server
-	publicAddr      string
+	publicMu     sync.Mutex
+	publicURLMu  sync.RWMutex
+	publicURL    string
+	public       protocol.AppsPublicStatus
+	publicServer *http.Server
+	publicAddr   string
+	// tsChoice is the owner's own-node choice (decision 0058); nil keeps the
+	// machine's Tailscale node. tsNode and tsServer are that node and the
+	// server on its Funnel listener. All three are guarded by publicMu.
+	tsChoice        *tsnode.Choice
+	tsNode          tsnode.Node
+	tsServer        *http.Server
 	limiter         *ratelimit.Limiter
 	opts            Options
 	store           *Store
@@ -283,6 +293,7 @@ func (g *Gateway) TLSConfig() *tls.Config {
 func (g *Gateway) Close() error {
 	g.publicMu.Lock()
 	g.stopPublicListener()
+	g.closeTailscaleNode()
 	g.publicMu.Unlock()
 	g.mu.Lock()
 	if !g.closed && g.appsDone != nil {

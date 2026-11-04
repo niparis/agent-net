@@ -118,7 +118,7 @@ Everything that waits for you is in one place (tab 7): CTO proposals, sessions t
 
 ### Connected apps
 
-Cloud agents (for example Grok Bot) and your phone can use agent-net through MCP over OAuth. The app shows a code; you approve it in the TUI (Settings, tab 6), as a **bot** that acts under its own name with a small set of tools, or as an **owner app** that acts as you. Internet access is off until you turn it on; with Tailscale, agent-net sets up the Funnel route for you.
+Cloud agents (for example Grok Bot) and your phone can use agent-net through MCP over OAuth. The app shows a code; you approve it in the TUI (Settings, tab 6), as a **bot** that acts under its own name with a small set of tools, or as an **owner app** that acts as you. Internet access is off until you turn it on; with Tailscale, agent-net sets up the Funnel route for you, and `agent-net setup --gateway --apps-tailscale-name agent-net` gives it a Tailscale name of its own.
 
 <p align="center">
   <img alt="Connected apps: approve this app? Client Cursor, return host www.cursor.com, kind bot or owner app, name" src="docs/img/tui/connected-apps.png" width="900">
@@ -205,13 +205,13 @@ agent-net uses MCP to give agents their tools. It is not an implementation of A2
 - **An optional sandbox for every worker.** Today only Codex workers and Antigravity workers with its own `--sandbox` flag are sandboxed. An OS-level wrapper (bubblewrap or Landlock on Linux, sandbox-exec on macOS) for every worker launcher, switched on per project. Plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
 - **A modular agent-net:** agent-net keeps the mechanisms, and a way of working (who does what, how work is tested and merged, what agents are told) becomes data at network, team, repo or agent level, which the CTO can propose to change. Plan: [docs/design/modularity.md](docs/design/modularity.md).
 - **A named model is the exception.** When a session asks for a worker by model name instead of letting the picker choose, agent-net replies with a reminder that naming a model should be exceptional, and why the picker is the default.
-- **Its own Tailscale name for agent-net**, so connected apps do not share a host name with other services.
+- **Its own Tailscale name for agent-net as the default.** It is built and off by default: `agent-net setup --gateway --apps-tailscale-name agent-net` gives connected apps their own Tailscale node, so they do not share a host name with other services ([decision 0058](docs/decisions/0058-own-tailscale-name.md)). Next: make it the default once it is tested.
 - **The phone app.**
 - MCP resources, prompts and OAuth logins in the registry.
 
 ## Development
 
-Go 1.27 or newer. Build, test and conventions are in [AGENTS.md](AGENTS.md), for people and coding agents alike. Releasing: [RELEASING.md](RELEASING.md). All docs are indexed in [docs/README.md](docs/README.md).
+Go 1.27.3 or newer. Build, test and conventions are in [AGENTS.md](AGENTS.md), for people and coding agents alike. Releasing: [RELEASING.md](RELEASING.md). All docs are indexed in [docs/README.md](docs/README.md).
 
 ## License
 

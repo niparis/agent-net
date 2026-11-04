@@ -37,7 +37,13 @@ func cmdSetup(ctx context.Context, args []string) error {
 	quotaOnly := fs.Bool("quota", false, "check quota provider logins")
 	quotaAXI := fs.Bool("quota-axi", false, "read your subscription quotas with quota-axi (agent-net installs it when needed)")
 	noQuotaAXI := fs.Bool("no-quota-axi", false, "do not read subscription quotas and do not ask")
+	tsName := fs.String("apps-tailscale-name", "", "give connected apps agent-net's own Tailscale node with this name, for example agent-net (with --gateway; kept by later setups)")
+	tsKeyFile := fs.String("apps-tailscale-authkey-file", "", "absolute path of a file with a Tailscale auth key for that node's first login (with --apps-tailscale-name); without it the TUI shows a login link")
+	tsMachine := fs.Bool("apps-tailscale-machine", false, "go back to the machine's own Tailscale node for connected apps (with --gateway)")
 	fs.Parse(args)
+	if err := checkTailscaleFlags(*gw, *tsName, *tsKeyFile, *tsMachine); err != nil {
+		return err
+	}
 	if *all && *none {
 		return errors.New("--all and --none cannot be used together")
 	}
@@ -110,7 +116,21 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{QuotaOnly: *quotaOnly, All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{QuotaOnly: *quotaOnly, All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port,
+		TailscaleName: *tsName, TailscaleAuthKeyFile: *tsKeyFile, TailscaleMachine: *tsMachine})
+}
+
+// checkTailscaleFlags rejects flag mixes that would save half a choice.
+func checkTailscaleFlags(gateway bool, name, keyFile string, machine bool) error {
+	switch {
+	case (name != "" || machine) && !gateway:
+		return errors.New("--apps-tailscale-name and --apps-tailscale-machine need --gateway")
+	case name != "" && machine:
+		return errors.New("--apps-tailscale-name and --apps-tailscale-machine cannot be used together")
+	case keyFile != "" && name == "":
+		return errors.New("--apps-tailscale-authkey-file needs --apps-tailscale-name")
+	}
+	return nil
 }
 
 func cmdUninstall(args []string) error {
