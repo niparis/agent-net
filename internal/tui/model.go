@@ -299,10 +299,11 @@ type bodyMsg struct {
 // Init starts the first refresh and the clock that asks for the next ones.
 // New marks a fetch as running, so the first tick does not start a second.
 func (m Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, m.fetchCmd(), tick()}
 	if m.cto != nil && m.cto.polling {
-		return tea.Batch(m.fetchCmd(), tick(), m.ctoPollCmd())
+		cmds = append(cmds, m.ctoPollCmd())
 	}
-	return tea.Batch(m.fetchCmd(), tick())
+	return tea.Batch(cmds...)
 }
 
 // tickDelay is RefreshEvery; tests shorten it.
@@ -457,6 +458,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.graphMouse(msg), nil
 	case tea.PasteMsg:
 		return m.paste(msg)
+	case tea.BackgroundColorMsg:
+		// The reply arrives after the first frame, so the screen starts dark
+		// and switches to the light palette here without a restart.
+		palette.SetDark(msg.IsDark())
+		m.smoothCamera()
+		return m, nil
 	case tea.ColorProfileMsg:
 		palette.SetProfile(msg.Profile)
 		if g := m.graphPixel; g != nil && g.profile != msg.Profile {

@@ -177,13 +177,7 @@ func (m Model) qualityDetailsView(w, h int) []string {
 		}
 	}
 	body := []string{qualitySelector(q, m.qualityAgent, w)}
-	for _, name := range protocol.DifficultyLevels {
-		// Trivial is rare: its box shows only when it has tasks.
-		if name == "trivial" && len(byLevel[name].Families) == 0 {
-			continue
-		}
-		body = append(body, qualityDetailsLevel(byLevel[name], name, picks[name], reasons[name], familyWidth, w)...)
-	}
+	body = append(body, qualityDetailsTable(byLevel, picks, reasons, familyWidth, w)...)
 	legend := wrap("NEEDED HELP: share of tasks with at least one nudge or fix. LATE BUGS: bugs found after the hand-back, with the worst severity (1 to 4).", w)
 	room := max(0, h-1-len(legend))
 	offset := min(m.quotaScroll, max(0, len(body)-room))
@@ -208,28 +202,7 @@ type qualityDetailsColumn struct {
 	drop  int
 }
 
-// qualityDetailsLevel is one level's box: the ranked models in the cards'
-// order, each with its bar, and one dim line for models with too few tasks to
-// rank, which get no bar.
-func qualityDetailsLevel(l protocol.QualityLevel, name, pick, reason string, familyWidth, w int) []string {
-	title := fmt.Sprintf("%s · %s", strings.ReplaceAll(name, "_", " "), plural(l.Tasks, "task"))
-	if pick != "" {
-		title += " · picker: ▸ " + sanitize(pick)
-		if reason != "" {
-			title += " (" + sanitize(reason) + ")"
-		}
-	}
-	ranked, _ := qualityRankedFamilies(l.Families)
-	var few []protocol.QualityFamily
-	for _, f := range l.Families {
-		if f.Tasks < protocol.CalibrationMinTasks {
-			few = append(few, f)
-		}
-	}
-	largest := 0.0
-	for _, f := range ranked {
-		largest = max(largest, math.Round(f.Headache))
-	}
+func qualityDetailsColumns(familyWidth, w int) []qualityDetailsColumn {
 	cols := []qualityDetailsColumn{
 		{head: "MODEL", width: 2 + familyWidth},
 		{head: "MY TIME / TASK", width: 14, right: true},
@@ -239,7 +212,7 @@ func qualityDetailsLevel(l protocol.QualityLevel, name, pick, reason string, fam
 		{head: "LATE BUGS", width: 12, right: true},
 		{head: "RATING", width: 6, right: true, drop: 1},
 	}
-	inner := w - 4
+	inner := max(w-2, 20)
 	for total := 0; ; total = 0 {
 		for _, c := range cols {
 			total += c.width + 2
@@ -258,6 +231,13 @@ func qualityDetailsLevel(l protocol.QualityLevel, name, pick, reason string, fam
 		}
 		cols = append(cols[:worst], cols[worst+1:]...)
 	}
+	return cols
+}
+
+// qualityDetailsTable is one table for every difficulty level. A section rule
+// replaces the repeated boxes and header, so all four levels fit at 24 rows.
+func qualityDetailsTable(byLevel map[string]protocol.QualityLevel, picks, reasons map[string]string, familyWidth, w int) []string {
+	cols := qualityDetailsColumns(familyWidth, w)
 	row := func(values map[string]string) string {
 		parts := make([]string, 0, len(cols))
 		for _, c := range cols {
@@ -275,49 +255,81 @@ func qualityDetailsLevel(l protocol.QualityLevel, name, pick, reason string, fam
 	for _, c := range cols {
 		heads[c.head] = c.head
 	}
-	var lines []string
-	if len(ranked) == 0 {
-		lines = append(lines, sDim.Render("no model has enough tasks to rank yet"))
-	} else {
-		lines = append(lines, sBold.Render(row(heads)))
+	out := []string{sBold.Render(row(heads))}
+	for _, name := range protocol.DifficultyLevels {
+		// Trivial is rare: its section shows only when it has tasks.
+		l := byLevel[name]
+		if name == "trivial" && len(l.Families) == 0 {
+			continue
+		}
+		pick, reason := picks[name], reasons[name]
+		title := fmt.Sprintf("%s · %s", strings.ReplaceAll(name, "_", " "), plural(l.Tasks, "task"))
+		if pick != "" {
+			title += " · picker: ▸ " + sanitize(pick)
+			if reason != "" {
+				title += " (" + sanitize(reason) + ")"
+			}
+		}
+		out = append(out, qualitySection(title, w))
+		ranked, _ := qualityRankedFamilies(l.Families)
+		var few []protocol.QualityFamily
+		for _, f := range l.Families {
+			if f.Tasks < protocol.CalibrationMinTasks {
+				few = append(few, f)
+			}
+		}
+		largest := 0.0
+		for _, f := range ranked {
+			largest = max(largest, math.Round(f.Headache))
+		}
+		if len(ranked) == 0 {
+			out = append(out, sDim.Render("no model has enough tasks to rank yet"))
+		}
+		for _, f := range ranked {
+			marker := "  "
+			if pick == f.Family {
+				marker = "▸ "
+			}
+			frac := 0.0
+			if largest > 0 {
+				frac = math.Round(f.Headache) / largest
+			}
+			late := "-"
+			if f.LateDefects > 0 {
+				late = fmt.Sprintf("%d, worst %d", f.LateDefects, f.WorstSeverity)
+			}
+			rating := "-"
+			if f.AvgRating != nil {
+				rating = fmt.Sprintf("%.1f", *f.AvgRating)
+			}
+			out = append(out, row(map[string]string{
+				"MODEL":          marker + sanitize(f.Family),
+				"MY TIME / TASK": fmt.Sprintf("%.0f min ", f.Headache) + progressBar(frac, 5, roleAccent),
+				"THIS WEEK":      fmt.Sprint(f.TasksWeek),
+				"TASKS":          fmt.Sprint(f.Tasks),
+				"NEEDED HELP":    fmt.Sprintf("%.0f%%", f.NeededHelp*100),
+				"LATE BUGS":      late,
+				"RATING":         rating,
+			}))
+		}
+		if len(few) > 0 {
+			names := make([]string, 0, len(few))
+			for _, f := range few {
+				names = append(names, fmt.Sprintf("%s %.0f min (%s)", sanitize(f.Family), f.Headache, plural(f.Tasks, "task")))
+			}
+			for _, line := range wrap("too few tasks to rank: "+strings.Join(names, " · "), max(w-2, 1)) {
+				out = append(out, sDim.Render(line))
+			}
+		}
 	}
-	for _, f := range ranked {
-		marker := "  "
-		if pick == f.Family {
-			marker = "▸ "
-		}
-		frac := 0.0
-		if largest > 0 {
-			frac = math.Round(f.Headache) / largest
-		}
-		late := "-"
-		if f.LateDefects > 0 {
-			late = fmt.Sprintf("%d, worst %d", f.LateDefects, f.WorstSeverity)
-		}
-		rating := "-"
-		if f.AvgRating != nil {
-			rating = fmt.Sprintf("%.1f", *f.AvgRating)
-		}
-		lines = append(lines, row(map[string]string{
-			"MODEL":          marker + sanitize(f.Family),
-			"MY TIME / TASK": fmt.Sprintf("%.0f min ", f.Headache) + progressBar(frac, 5, roleAccent),
-			"THIS WEEK":      fmt.Sprint(f.TasksWeek),
-			"TASKS":          fmt.Sprint(f.Tasks),
-			"NEEDED HELP":    fmt.Sprintf("%.0f%%", f.NeededHelp*100),
-			"LATE BUGS":      late,
-			"RATING":         rating,
-		}))
-	}
-	if len(few) > 0 {
-		names := make([]string, 0, len(few))
-		for _, f := range few {
-			names = append(names, fmt.Sprintf("%s %.0f min (%s)", sanitize(f.Family), f.Headache, plural(f.Tasks, "task")))
-		}
-		for _, line := range wrap("too few tasks to rank: "+strings.Join(names, " · "), inner) {
-			lines = append(lines, sDim.Render(line))
-		}
-	}
-	return panel(title, lines, w, roleAccent)
+	return out
+}
+
+// qualitySection is the rule that names one difficulty level in the table.
+func qualitySection(title string, w int) string {
+	label := "─── " + title + " "
+	line := strings.Repeat("─", max(w-ansi.StringWidth(label), 0))
+	return sAccent.Render(label) + sDim.Render(line)
 }
 
 // qualityTaskCount is a card's count column, "·  9 this week", right-aligned

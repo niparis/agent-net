@@ -1,19 +1,19 @@
-1 Sessions 2 Graph 3 Quotas 4 Msgs 5 Tools 6 Settings 7 Inbox (2) │ 12 online
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (2) │ 12 online
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free │
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 2 waiting in Inbox (7)
-  NAME           TYPE   STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
+  NAME        AGENT  PROJECT    STATUS   CPU   RAM TASK                view: all
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
-▸ tenebrae-53    agent  busy   -     normal -          38%  1.2G
-  Atlas          cto    idle   -     normal -            ?     ?
-  strategies     agent  idle   -     normal -         240%  4.6G
-  web            agent  idle   -     normal -            ?     ?
+▸ tenebrae-53 claude tenebrae   busy     38%  1.2G
+  Atlas       cto    -          idle       ?     ?
+  strategies  claude strategies idle    240%  4.6G backtest v2
+  web         openc… shop       idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner      agent  idle   -     normal -           5%  300M
-  scratch        agent  shell  -     normal -          <1%   80M
+  ci-runner   pi     agent-net  idle      5%  300M
+  scratch     pi     -          shell    <1%   80M
 
 
 

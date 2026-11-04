@@ -215,7 +215,13 @@ func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [3
 func (m Model) graphSize() (int, int) {
 	w, h := max(m.width, 40), max(m.height, 10)
 	box := m.ctoBoxHeight(graphTab)
-	return max(w-4, 1), max(h-1-box-7, 1)
+	// The footer holds the feed, legend, status, two delivery owner lines and hints.
+	footer := 6
+	if m.height <= 24 {
+		footer = 5
+	}
+	content := max(h-1-box, 1)
+	return max(w-4, 1), max(content-1-footer, 1)
 }
 
 // startGraph opens the network and refreshes its data without losing the selection.
@@ -349,7 +355,13 @@ func (m Model) graphView(w, h int) []string {
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
-	gw, gh := max(w-4, 1), max(h-7, 1)
+	footer := 6
+	if m.height <= 24 {
+		// A short terminal gives the canvas the feed line back. The legend
+		// keeps the status key in one compact row.
+		footer = 5
+	}
+	gw, gh := max(w-4, 1), max(h-1-footer, 1)
 	smooth := m.graphPixel.enabled() && m.graphPixel.motion
 	m.graphState.Smooth = smooth
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
@@ -366,19 +378,23 @@ func (m Model) graphView(w, h int) []string {
 			out = append(out, "  "+line)
 		}
 	}
-	feed := []string{}
-	for _, msg := range scene.Feed {
-		from := m.projectName(msg.From)
-		if msg.FromOwner {
-			from = "you"
+	if m.height > 24 {
+		feed := []string{}
+		for _, msg := range scene.Feed {
+			from := m.projectName(msg.From)
+			if msg.FromOwner {
+				from = "you"
+			}
+			feed = append(feed, fmt.Sprintf("%s → %s %s", from, m.projectName(msg.To), sanitize(msg.Kind)))
 		}
-		feed = append(feed, fmt.Sprintf("%s → %s %s", from, m.projectName(msg.To), sanitize(msg.Kind)))
+		if len(feed) == 0 {
+			feed = append(feed, "no messages yet")
+		}
+		out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
+		out = append(out, sDim.Render(graphLegend(w)))
+	} else {
+		out = append(out, sDim.Render(graphLegendCompact(w)))
 	}
-	if len(feed) == 0 {
-		feed = append(feed, "no messages yet")
-	}
-	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
-	out = append(out, sDim.Render(graphLegend(w)))
 	out = append(out, graphStatusLine(w, scene))
 	owners := m.graphDeliveryOwners(m.graphState.Graph.Selected())
 	for i := 0; i < 2; i++ {
@@ -506,7 +522,20 @@ func graphHintLine(w int) string {
 func graphLegend(w int) string {
 	items := []string{"● charter", "○ no charter", "gold: your words", "pink: talked, no rule set"}
 	for len(items) > 0 {
-		line := "  " + strings.Join(items, "  ·  ")
+		line := "  " + strings.Join(items, " · ")
+		if ansi.StringWidth(line) <= w {
+			return line
+		}
+		items = items[:len(items)-1]
+	}
+	return ""
+}
+
+// graphLegendCompact is the one row legend on a 24 row terminal.
+func graphLegendCompact(w int) string {
+	items := []string{"● charter", "○ open", "gold: approved", "pink: unverified"}
+	for len(items) > 0 {
+		line := "  " + strings.Join(items, " · ")
 		if ansi.StringWidth(line) <= w {
 			return line
 		}

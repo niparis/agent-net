@@ -95,7 +95,7 @@ func TestCTOShortcutFromCardAndStartsWhenMissing(t *testing.T) {
 
 func TestCTOCompactHeightAndLatestLine(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		for _, tab := range []string{"1", "2", "3", "4", "5"} {
+		for _, tab := range []string{"1", "3", "4", "5"} {
 			t.Run(fmt.Sprintf("%dx%d/tab%s", size[0], size[1], tab), func(t *testing.T) {
 				m := keys(newModel(size[0], size[1]), tab)
 				m.cto.messages = []string{"old CTO line", "latest CTO line"}

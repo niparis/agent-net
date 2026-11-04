@@ -4,9 +4,9 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   STATUS TRUST RULE   DLG        CPU   RAM  view: all  (v)
+  NAME       AGENT  PROJECT  STATUS   CPU   RAM TASK                   view: all
  Mac (here) 1 session ──────────────────────────────────────────────────────────
-▸ Atlas          cto    idle   -     normal -            ?     ?
+▸ Atlas      cto    -        idle       ?     ?
 
 
 

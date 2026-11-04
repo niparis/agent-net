@@ -470,3 +470,35 @@ func TestMessageWorkerTaskFieldSeparatesQuotedBrief(t *testing.T) {
 		t.Fatalf("marked worker absent: %v", workers)
 	}
 }
+
+func TestConversationRowCompactsNamesAndCountsAt80(t *testing.T) {
+	m := newModel(80, 24)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m.tab, m.focus = messagesTab, focusFeed
+	m.feed = newFeed()
+	m.snap.Agents[0].Profile.Name = "tenebrae-53-longer"
+	m.snap.Agents[1].Profile.Name = "strategies-longer"
+	from, to := m.snap.Agents[0].SessionID, m.snap.Agents[1].SessionID
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0.Add(-time.Minute)}, From: from, To: to, Type: protocol.TypeRequest}})
+	m.feed.byMsg["one"].Snippet = "Which environment should we target before the release?"
+	rows := m.messageConversations()
+	line := ansi.Strip(m.messageConversationLine(rows[0], 80, false))
+	for _, want := range []string{"tenebrae-53-l…", "strategies-lo…", "1m · 1 msg", "Which environment should we"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("80 column thread row is missing %q: %q", want, line)
+		}
+	}
+	for _, gone := range []string{"1 message", "1m ago"} {
+		if strings.Contains(line, gone) {
+			t.Errorf("80 column thread row still says %q: %q", gone, line)
+		}
+	}
+	if ansi.StringWidth(line) > 80 {
+		t.Errorf("thread row is %d columns wide: %q", ansi.StringWidth(line), line)
+	}
+	m.width = 120
+	wide := ansi.Strip(m.messageConversationLine(rows[0], 120, false))
+	if !strings.Contains(wide, "tenebrae-53-longer") || !strings.Contains(wide, "1 message · 1m ago") {
+		t.Errorf("120 column thread row changed: %q", wide)
+	}
+}

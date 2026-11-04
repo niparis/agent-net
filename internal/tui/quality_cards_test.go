@@ -95,7 +95,7 @@ func TestQualityDetailsAlignedSections(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.Calibration.Quality = protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, Headache: 1}}}}, Areas: []protocol.QualityFamily{{Family: "ui", Tasks: 18}}}
 	view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n"))
-	for _, want := range []string{"MODEL", "  MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING", "╭─simple · 9 tasks", "╭─normal · ", "╭─hard · ", "╭─very complex · "} {
+	for _, want := range []string{"MODEL", "MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING", "─── simple · 9 tasks", "─── normal · ", "─── hard · ", "─── very complex · "} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q in %s", want, view)
 		}
@@ -175,11 +175,37 @@ func TestQualityCardBarsScaleToTheShownRows(t *testing.T) {
 func TestQualityDetailsShowTrivialWhenItHasTasks(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.Calibration.Quality = protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{{Difficulty: "trivial", Tasks: 1, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 1}}}}}
-	if view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n")); !strings.Contains(view, "╭─trivial · 1 task") {
+	if view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n")); !strings.Contains(view, "─── trivial · 1 task") {
 		t.Fatal(view)
 	}
 	m.snap.Calibration.Quality.Levels = nil
 	if view := ansi.Strip(strings.Join(m.qualityDetailsView(120, 60), "\n")); strings.Contains(view, "trivial") {
 		t.Fatalf("an empty trivial level is shown:\n%s", view)
+	}
+}
+
+func TestQualityDetailsRendersOneTable(t *testing.T) {
+	q := protocol.QualityAnalysis{Status: "ready", Levels: []protocol.QualityLevel{
+		{Difficulty: "simple", Tasks: 9, Families: []protocol.QualityFamily{{Family: "luna", Tasks: 9, TasksWeek: 3, Headache: 1}}},
+		{Difficulty: "normal", Tasks: 196, Families: []protocol.QualityFamily{{Family: "deepseek", Tasks: 90, TasksWeek: 25, Headache: 8}}},
+		{Difficulty: "hard", Tasks: 42, Families: []protocol.QualityFamily{{Family: "terra", Tasks: 32, TasksWeek: 9, Headache: 8}}},
+		{Difficulty: "very_complex", Tasks: 5, Families: []protocol.QualityFamily{{Family: "terra", Tasks: 5, TasksWeek: 2, Headache: 7}}},
+	}}
+	m := newModel(80, 24)
+	m.tab = quotasTab
+	m.snap.Calibration.Quality = q
+	view := ansi.Strip(strings.Join(m.qualityDetailsView(80, 60), "\n"))
+	if got := strings.Count(view, "MODEL"); got != 1 {
+		t.Errorf("the table repeats its header %d times:\n%s", got, view)
+	}
+	for _, gone := range []string{"╭─simple", "╭─normal", "╭─hard", "╭─very complex"} {
+		if strings.Contains(view, gone) {
+			t.Errorf("the table still has a box %q:\n%s", gone, view)
+		}
+	}
+	for _, want := range []string{"─── simple · 9 tasks", "─── normal · 196 tasks", "─── hard · 42 tasks", "─── very complex · 5 tasks", "  luna", "  deepseek", "  terra"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the unified table is missing %q:\n%s", want, view)
+		}
 	}
 }

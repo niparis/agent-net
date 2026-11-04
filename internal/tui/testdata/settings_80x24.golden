@@ -3,7 +3,9 @@ Connected apps
   Control internet access and the apps connected to your network.
   Other services are served on this machine's Tailscale name (port 10000). They
   receive the phone's sign-in cookie. Remove them or accept the risk.
-▸ Internet access: on   phone https://example.test:8443/   bots https://example…
+▸ Internet access: on
+    phone  https://example.test:8443/
+    bots   https://example.test:8443/mcp
   Add an app
   NAME           KIND       CLIENT        RETURN HOST    CONNECTED     LAST USED
   phone          owner app  Safari        -              Jan 01        never
@@ -15,8 +17,6 @@ Integrations
 
 Machines
   The name every machine in your network shows for each machine.
-  NAME                  HOST NAME             VERSION       ONLINE
-  Mac                   Mac                   v0.4.0        yes
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

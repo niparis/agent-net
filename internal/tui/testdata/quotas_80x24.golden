@@ -2,9 +2,9 @@
 [ Quotas ]    Workers log      Delivery
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
-│ PROVIDER PLAN MAC     OTHER   WINDOW LEFT                 PACE      RESETS   │
-│ > claude max  live    -       5h     █████─────  50%      on pace   -        │
-│   codex  pro  live    -       week   █─────────   8%      ahead     in 2h00  │
+│ PROVIDER       PLAN WINDOW USAGE              PACE      RESETS               │
+│ > claude (Mac) max  5h     ████────  50%      on pace   -                    │
+│   codex (Mac)  pro  week   █───────   8%      ahead     in 2h00              │
 │ 1 other subscriptions · s to show                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────╮
