@@ -123,10 +123,13 @@ for m in b c d e f; do
   printf '# my notes\n' > "$T/$m/home/.claude/CLAUDE.md"
 done
 echo "// dev checkout" > "$T/f/devpi.ts"
-ln -s "$T/f/devpi.ts" "$T/f/home/.pi/agent/extensions/agent-net.ts"
+mkdir -p "$T/f/home/.pi/agent/extensions/agent-net"
+ln -s "$T/f/devpi.ts" "$T/f/home/.pi/agent/extensions/agent-net/index.ts"
 
 # Agent file helpers. The new content is what the repo embeds.
-PI_FILE() { echo "$T/$1/home/.pi/agent/extensions/agent-net.ts"; }
+PI_FILE() { echo "$T/$1/home/.pi/agent/extensions/agent-net/index.ts"; }
+PI_DIR() { echo "$T/$1/home/.pi/agent/extensions/agent-net"; }
+LEGACY_PI_FILE() { echo "$T/$1/home/.pi/agent/extensions/agent-net.ts"; }
 OC_FILE() { echo "$T/$1/home/.config/opencode/plugins/agent-net.ts"; }
 NEW_GUIDE_LINE="$(grep -v '{{' internal/guidance/guidance.md | sed -n 3p)"
 agent_files_old() { # agent_files_old NAME: Pi, OpenCode and guidance hold the $V1 content
@@ -225,6 +228,7 @@ check "B has the old Pi, OpenCode and guidance content" agent_files_old b
 check "C has the old Pi, OpenCode and guidance content" agent_files_old c
 check "D has the old Pi, OpenCode and guidance content" agent_files_old d
 check "B keeps its own notes in CLAUDE.md" notes_kept b
+printf '// agent-net extension for Pi. old\n' > "$(LEGACY_PI_FILE b)"
 
 say "agent-net nodes (from B)"
 machine b nodes
@@ -295,6 +299,7 @@ say "agent files on B after the pushed upgrade"
 wait_for "B agent files are refreshed" 10 agent_files_new b
 echo "--- B daemon log"; grep -F 'agent files' "$T/b/daemon.log"
 check "(push) B has the new Pi, OpenCode and guidance content" agent_files_new b
+check "(push) B removed the legacy flat Pi extension" test ! -e "$(LEGACY_PI_FILE b)"
 check "(push) B keeps its own notes in CLAUDE.md" notes_kept b
 check "(push) B logged the Pi extension update" grep -qF 'agent files: pi extension updated' "$T/b/daemon.log"
 check "(gateway host) no harness folder was created" bash -c "[ ! -e '$T/gw/home/.pi' ] && [ ! -e '$T/gw/home/.config/opencode' ] && [ ! -e '$T/gw/home/.claude' ]"
@@ -478,6 +483,10 @@ DEV_OUT="$(cd "$T" && env -i HOME="$T/gw/home" PATH=/usr/bin:/bin AGENT_NET_NO_S
 echo "$DEV_OUT"
 check "dev build refused" test "$DEV_RC" -ne 0
 check "dev refusal mentions --force" contains "$DEV_OUT" "--force"
+
+say "uninstall removes the Pi extension directory"
+machine e uninstall --no-service --data "$T/e/no-gateway" >/dev/null
+check "uninstall removed the Pi extension directory" test ! -e "$(PI_DIR e)"
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED"; exit 1; fi
