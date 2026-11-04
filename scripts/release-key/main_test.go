@@ -3,14 +3,19 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/upgrade"
 )
 
 func TestKeyAndReleaseSignatures(t *testing.T) {
@@ -98,5 +103,66 @@ func TestSigningRejectsMissingOrMismatchedKey(t *testing.T) {
 		if _, err := os.Stat(sums + ".sig"); !os.IsNotExist(err) {
 			t.Fatal("signature written on failure")
 		}
+	}
+}
+
+// checkPublicKeys checks the committed Go key and the one declaration in the
+// installer. A placeholder, malformed key, or mismatch must fail CI.
+func checkPublicKeys(goKey string, installer []byte) error {
+	pub, err := base64.StdEncoding.Strict().DecodeString(goKey)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return errors.New("Go release public key is invalid or still a placeholder")
+	}
+	keyLine := regexp.MustCompile(`(?m)^[ \t]*RELEASE_SSH_PUBLIC_KEY="([^"\n]*)"[ \t]*$`)
+	matches := keyLine.FindAllSubmatch(installer, -1)
+	if len(matches) != 1 {
+		return errors.New("installer must have exactly one release public key declaration")
+	}
+	if string(matches[0][1]) != sshPublicKey(ed25519.PublicKey(pub)) {
+		return errors.New("installer release public key is invalid, a placeholder, or differs from the Go key")
+	}
+	return nil
+}
+
+func TestReleasePublicKeysMatch(t *testing.T) {
+	installer, err := os.ReadFile("../../install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkPublicKeys(upgrade.ReleasePublicKeyBase64, installer); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReleasePublicKeyChecksRejectPlaceholdersAndMismatches(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goKey := base64.StdEncoding.EncodeToString(pub)
+	line := func(sshKey string) []byte { return []byte("  RELEASE_SSH_PUBLIC_KEY=\"" + sshKey + "\"\n") }
+	valid := line(sshPublicKey(pub))
+	if err := checkPublicKeys(goKey, valid); err != nil {
+		t.Fatalf("valid test key: %v", err)
+	}
+	for _, tc := range []struct {
+		name, goKey string
+		installer   []byte
+	}{
+		{"Go placeholder", "REPLACE_WITH_RELEASE_PUBLIC_KEY", valid},
+		{"SSH placeholder", goKey, line("ssh-ed25519 REPLACE_WITH_RELEASE_SSH_PUBLIC_KEY")},
+		{"wrong key", goKey, line(sshPublicKey(other))},
+		{"missing SSH declaration", goKey, nil},
+		{"duplicate SSH declaration", goKey, append(append([]byte(nil), valid...), valid...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := checkPublicKeys(tc.goKey, tc.installer); err == nil {
+				t.Fatal("accepted invalid release public keys")
+			}
+		})
 	}
 }

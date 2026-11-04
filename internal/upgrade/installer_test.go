@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -46,17 +47,27 @@ func sshSign(t *testing.T, key string, sums []byte) []byte {
 	return sig
 }
 
+// testInstaller replaces the key declaration in a private copy of install.sh.
+func testInstaller(t *testing.T, pub string) []byte {
+	t.Helper()
+	installer, err := os.ReadFile("../../install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyLine := regexp.MustCompile(`(?m)^[ \t]*RELEASE_SSH_PUBLIC_KEY="[^"\n]*"[ \t]*$`)
+	if len(keyLine.FindAllIndex(installer, -1)) != 1 {
+		t.Fatal("install.sh must contain exactly one release public key declaration")
+	}
+	return keyLine.ReplaceAll(installer, []byte(`  RELEASE_SSH_PUBLIC_KEY="ssh-ed25519 `+pub+`"`))
+}
+
 func TestInstallerSignedRelease(t *testing.T) {
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
 		t.Skip("ssh-keygen not installed")
 	}
 	key, pub := sshTestKey(t)
 	other, _ := sshTestKey(t)
-	installer, err := os.ReadFile("../../install.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	installer = []byte(strings.ReplaceAll(string(installer), "REPLACE_WITH_RELEASE_SSH_PUBLIC_KEY", pub))
+	installer := testInstaller(t, pub)
 	script := filepath.Join(t.TempDir(), "install.sh")
 	if err := os.WriteFile(script, installer, 0o755); err != nil {
 		t.Fatal(err)
@@ -137,12 +148,8 @@ func TestInstallerGatewayCarriesSignedManifest(t *testing.T) {
 		t.Skip("ssh-keygen not installed")
 	}
 	key, pub := sshTestKey(t)
-	installer, err := os.ReadFile("../../install.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
 	script := filepath.Join(t.TempDir(), "install.sh")
-	if err := os.WriteFile(script, []byte(strings.ReplaceAll(string(installer), "REPLACE_WITH_RELEASE_SSH_PUBLIC_KEY", pub)), 0o755); err != nil {
+	if err := os.WriteFile(script, testInstaller(t, pub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	bin := fakeBinary("v1.2.3")

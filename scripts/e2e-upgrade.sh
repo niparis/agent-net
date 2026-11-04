@@ -67,8 +67,16 @@ mkdir -p "$T/old"
 "$GO" run ./scripts/release-key generate "$T/release-key.pem" > "$T/public-keys"
 TEST_GO_PUBLIC="$(awk '/^Go public key/ {print $NF}' "$T/public-keys")"
 TEST_SSH_PUBLIC="$(awk '/^SSH public key/ {print $NF}' "$T/public-keys")"
-sed "s@REPLACE_WITH_RELEASE_PUBLIC_KEY@$TEST_GO_PUBLIC@" internal/upgrade/release.go > "$T/release.go"
-sed "s@REPLACE_WITH_RELEASE_SSH_PUBLIC_KEY@$TEST_SSH_PUBLIC@" install.sh > "$T/install.sh"
+# Match the declarations, so this keeps working after real keys or rotations.
+GO_KEY_PATTERN='^[[:space:]]*const[[:space:]]+ReleasePublicKeyBase64[[:space:]]*=[[:space:]]*"[^"]*"[[:space:]]*$'
+SSH_KEY_PATTERN='^[[:space:]]*RELEASE_SSH_PUBLIC_KEY="[^"]*"[[:space:]]*$'
+if [ "$(grep -Ec "$GO_KEY_PATTERN" internal/upgrade/release.go)" != 1 ] ||
+   [ "$(grep -Ec "$SSH_KEY_PATTERN" install.sh)" != 1 ]; then
+  echo "expected one release public key declaration in each file" >&2
+  exit 1
+fi
+sed -E "s@^([[:space:]]*const[[:space:]]+ReleasePublicKeyBase64[[:space:]]*=[[:space:]]*)\"[^\"]*\"[[:space:]]*\$@\\1\"$TEST_GO_PUBLIC\"@" internal/upgrade/release.go > "$T/release.go"
+sed -E "s@^([[:space:]]*RELEASE_SSH_PUBLIC_KEY=)\"[^\"]*\"[[:space:]]*\$@\\1\"ssh-ed25519 $TEST_SSH_PUBLIC\"@" install.sh > "$T/install.sh"
 cat > "$T/overlay.json" <<EOF2
 {"Replace": {"$ROOT/internal/upgrade/release.go": "$T/release.go"}}
 EOF2
