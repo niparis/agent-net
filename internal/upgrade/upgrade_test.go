@@ -374,3 +374,46 @@ func TestFromGatewaySignatureRefusals(t *testing.T) {
 		})
 	}
 }
+
+func TestFromGatewayRejectsDowngrade(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	writeBin(t, exe, "v2.0.0")
+	bin := fakeBinary("v1.9.0")
+	sums := fmt.Sprintf("%s  install.sh\n%s  %s\n", sum([]byte("installer")), sum(bin), ThisAsset())
+	gw := fakeGateway(t, bin, []byte(sums))
+	_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, "v2.0.0", "")
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("downgrade was not refused: %v", err)
+	}
+	if v, _ := BinaryVersion(context.Background(), exe); v != "v2.0.0" {
+		t.Fatalf("binary changed to %s", v)
+	}
+	if _, err := os.Stat(PrevPath(exe)); !os.IsNotExist(err) {
+		t.Fatal("previous binary written")
+	}
+}
+
+func TestDownloadIgnoresInstallerChecksum(t *testing.T) {
+	f := newFakeGitHub(t)
+	f.addRelease("v0.2.0")
+	files := f.releases["v0.2.0"]
+	files["checksums.txt"] = append(files["checksums.txt"], []byte(sum([]byte("installer"))+"  install.sh\n")...)
+	files["checksums.txt.sig"] = ed25519.Sign(f.key, files["checksums.txt"])
+	if err := Download(context.Background(), http.DefaultClient, TagURL(f.URL, "v0.2.0"), AllAssets(), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFromGatewayForceAllowsDowngrade(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	writeBin(t, exe, "v2.0.0")
+	bin := fakeBinary("v1.9.0")
+	gw := fakeGateway(t, bin, []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset())))
+	res, err := FromGatewayWithForce(context.Background(), http.DefaultClient, gw.URL, exe, "v2.0.0", "", true)
+	if err != nil || !res.Replaced || res.To != "v1.9.0" {
+		t.Fatalf("forced downgrade: %+v, %v", res, err)
+	}
+	if v, _ := BinaryVersion(context.Background(), PrevPath(exe)); v != "v2.0.0" {
+		t.Fatalf("previous version = %s", v)
+	}
+}

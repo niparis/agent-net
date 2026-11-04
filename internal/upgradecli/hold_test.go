@@ -150,3 +150,84 @@ func TestGatewayRollbackInvalidatesManifestBeforeOldSetup(t *testing.T) {
 		t.Fatalf("old setup observed a stale manifest: %v\n%s", err, out.String())
 	}
 }
+
+func TestUpgradeInvalidatesIncompleteDist(t *testing.T) {
+	otherAsset := "agent-net-linux-amd64"
+	if otherAsset == upgrade.ThisAsset() {
+		otherAsset = "agent-net-darwin-arm64"
+	}
+	for _, missing := range []string{otherAsset, "checksums.txt", "checksums.txt.sig"} {
+		t.Run(missing, func(t *testing.T) {
+			isolate(t)
+			dist := filepath.Join(os.Getenv("HOME"), ".local/share/agent-net/dist")
+			if err := os.MkdirAll(dist, 0755); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"checksums.txt", "checksums.txt.sig"} {
+				if err := os.WriteFile(filepath.Join(dist, name), []byte("old"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			exe := filepath.Join(t.TempDir(), "agent-net")
+			if err := os.WriteFile(exe, script("v0.0.1"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			r := &run{Options: Options{Current: "v0.0.1", Exe: exe, GatewayData: gatewayDataDir(t), Out: &bytes.Buffer{}, download: func(_ context.Context, _ *http.Client, _ string, _ []string, dir string) error {
+				for _, name := range append(upgrade.AllAssets(), upgrade.ReleaseMetadata...) {
+					if name == missing {
+						continue
+					}
+					data := []byte("metadata")
+					if strings.HasPrefix(name, "agent-net-") {
+						data = script("v0.0.2")
+					}
+					if err := os.WriteFile(filepath.Join(dir, name), data, 0755); err != nil {
+						return err
+					}
+				}
+				return nil
+			}}}
+			if err := r.installRelease(context.Background(), "v0.0.2"); err == nil {
+				t.Fatal("expected copy failure")
+			}
+			for _, name := range []string{"checksums.txt", "checksums.txt.sig"} {
+				if _, err := os.Stat(filepath.Join(dist, name)); !os.IsNotExist(err) {
+					t.Errorf("%s remains: %v", name, err)
+				}
+			}
+		})
+	}
+}
+
+func TestGatewayManualDowngradeRequiresForce(t *testing.T) {
+	isolate(t)
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	if err := os.WriteFile(exe, script("v0.0.3"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	opts := Options{Current: "v0.0.3", Exe: exe, GatewayData: gatewayDataDir(t), Version: "v0.0.2", Base: "http://127.0.0.1:1", Out: &bytes.Buffer{}, download: func(_ context.Context, _ *http.Client, _ string, _ []string, dir string) error {
+		calls++
+		return fmt.Errorf("reached download")
+	}}
+	err := Run(context.Background(), opts)
+	if err == nil || !strings.Contains(err.Error(), "--force") || calls != 0 {
+		t.Fatalf("downgrade: %v, downloads %d", err, calls)
+	}
+	opts.Force = true
+	err = Run(context.Background(), opts)
+	if err == nil || !strings.Contains(err.Error(), "reached download") || calls != 1 {
+		t.Fatalf("forced downgrade did not reach download: %v, calls %d", err, calls)
+	}
+}
+
+func TestDistFromArgs(t *testing.T) {
+	for _, args := range [][]string{nil, {"--gateway"}, {"--dist"}, {"--dist", "--port"}, {"--dist", ""}} {
+		if _, err := distFromArgs(args); err == nil {
+			t.Errorf("accepted invalid args %q", args)
+		}
+	}
+	if got, err := distFromArgs([]string{"--gateway", "--dist", "/tmp/dist"}); err != nil || got != "/tmp/dist" {
+		t.Fatalf("dist = %q, %v", got, err)
+	}
+}

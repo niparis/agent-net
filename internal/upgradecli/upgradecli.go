@@ -174,7 +174,7 @@ func (r *run) joinedMachine(ctx context.Context) error {
 	if gwErr != nil {
 		return fmt.Errorf("cannot reach the gateway %s: %w", nc.GatewayURL, gwErr)
 	}
-	res, err := upgrade.FromGateway(ctx, hc, nc.GatewayURL, r.Exe, r.Current, "")
+	res, err := upgrade.FromGatewayWithForce(ctx, hc, nc.GatewayURL, r.Exe, r.Current, "", r.Force)
 	if err != nil {
 		return fmt.Errorf("nothing changed: %w", err)
 	}
@@ -278,7 +278,10 @@ func (r *run) rollback(ctx context.Context, gatewayHost bool) error {
 		args = r.gatewaySetupArgs(nil)
 		// The previous binary runs setup and may predate signed releases. Clear
 		// the manifest before that older setup can change the dist binary.
-		dist := args[indexOf(args, "--dist")+1]
+		dist, err := distFromArgs(args)
+		if err != nil {
+			return fmt.Errorf("the binary was rolled back but gateway setup was not run: %w", err)
+		}
 		if err := setup.InvalidateSignedDist(dist); err != nil {
 			return fmt.Errorf("the binary was rolled back but gateway setup was not run: %w", err)
 		}
@@ -406,6 +409,10 @@ func (r *run) gatewayHost(ctx context.Context) error {
 		tag = latest
 	}
 
+	if err := upgrade.CheckDowngrade(r.Current, tag, r.Force); err != nil {
+		return err
+	}
+
 	// Remember who is online, to wait for them after the gateway restarts.
 	var wasOnline []string
 	before := map[string]string{}
@@ -456,7 +463,10 @@ func (r *run) installRelease(ctx context.Context, tag string) error {
 	}
 	a, _ := r.admin()
 	args := r.gatewaySetupArgs(a)
-	dist := args[indexOf(args, "--dist")+1]
+	dist, err := distFromArgs(args)
+	if err != nil {
+		return fmt.Errorf("nothing changed: %w", err)
+	}
 
 	if err := upgrade.Replace(r.Exe, mine); err != nil {
 		return fmt.Errorf("nothing changed: %w", err)
@@ -464,9 +474,14 @@ func (r *run) installRelease(ctx context.Context, tag string) error {
 	// The binary is replaced: the person chose to move on. Clear the hold now,
 	// so a later failure (setup, restarts, a cancelled context) cannot leave it.
 	r.clearHold()
+	// Remove old metadata before any dist files change, including on interruption.
+	if err := setup.InvalidateSignedDist(dist); err != nil {
+		return fmt.Errorf("the binary is replaced but signed dist metadata could not be invalidated: %w", err)
+	}
 	for _, name := range append(upgrade.AllAssets(), upgrade.ReleaseMetadata...) {
 		if err := upgrade.PlaceFile(filepath.Join(tmp, name), filepath.Join(dist, name)); err != nil {
-			return fmt.Errorf("the binary is replaced but the dist dir is not refreshed: %w", err)
+			invalidationErr := setup.InvalidateSignedDist(dist)
+			return fmt.Errorf("the binary is replaced but the dist dir is not refreshed: %w", errors.Join(err, invalidationErr))
 		}
 	}
 	r.say("agent-net           %s -> %s (previous binary kept as %s)", r.Current, tag, upgrade.PrevPath(r.Exe))
@@ -487,6 +502,14 @@ func indexOf(s []string, v string) int {
 	return -1
 }
 
+func distFromArgs(args []string) (string, error) {
+	i := indexOf(args, "--dist")
+	if i < 0 || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "--") {
+		return "", errors.New("gateway setup arguments have no --dist value")
+	}
+	return args[i+1], nil
+}
+
 // upgradeNodes is step 4: wait for the gateway (and the nodes that were
 // online) to be back, tell every connected node to upgrade, print the result.
 func (r *run) upgradeNodes(ctx context.Context, tag string, wasOnline []string, before map[string]string) error {
@@ -501,7 +524,7 @@ func (r *run) upgradeNodes(ctx context.Context, tag string, wasOnline []string, 
 	}
 	// The gateway waits for the nodes that were online to reconnect (they are
 	// not offline, only reconnecting after the restart) before it asks them.
-	req := map[string]any{"version": tag, "timeout_seconds": int(r.Timeout / time.Second), "expect_online": wasOnline}
+	req := map[string]any{"version": tag, "timeout_seconds": int(r.Timeout / time.Second), "expect_online": wasOnline, "force": r.Force}
 	if err := a.do(ctx, "POST", "/v1/admin/upgrade", req, &out); err != nil {
 		return fmt.Errorf("cannot ask the nodes to upgrade: %w", err)
 	}

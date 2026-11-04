@@ -21,7 +21,7 @@
 #   --no-accept-peer-messages  passed to setup: do not set it and do not ask
 #   --version vX.Y.Z   install this release (default: latest)
 #
-# AGENT_NET_BASE_URL overrides the download base URL (used by tests).
+# AGENT_NET_BASE_URL overrides the release root URL (used by tests).
 # AGENT_NET_NO_SERVICE=1 is passed on to setup: no service files, nothing started.
 
 # Everything is inside main, called on the last line, so a truncated download
@@ -51,6 +51,7 @@ main() {
       --version)
         [ $# -ge 2 ] || die "--version needs a value, like v0.1.0"
         VERSION="$2"
+        [ -n "$VERSION" ] || die "invalid release tag: $VERSION"
         shift
         ;;
       -h|--help)
@@ -108,20 +109,48 @@ main() {
     *) die "unsupported CPU: $(uname -m)" ;;
   esac
 
-  if [ -n "${AGENT_NET_BASE_URL:-}" ]; then
-    BASE="${AGENT_NET_BASE_URL%/}"
-  elif [ -n "$VERSION" ]; then
-    BASE="https://github.com/$REPO/releases/download/$VERSION"
-  else
-    BASE="https://github.com/$REPO/releases/latest/download"
+  RELEASES="${AGENT_NET_BASE_URL:-https://github.com/$REPO/releases}"
+  RELEASES="${RELEASES%/}"
+  if [ -z "$VERSION" ]; then
+    # Read GitHub's one redirect without following it. Every asset then comes
+    # from that tag, even if a new latest release appears during the install.
+    headers="$(curl -fsSI "$RELEASES/latest/download/checksums.txt")" || die "cannot find the latest release"
+    location="$(printf '%s\n' "$headers" | awk '
+      tolower($0) ~ /^location:[[:space:]]*/ {
+        sub(/^[^:]*:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        location = $0
+      }
+      END { print location }
+    ')"
+    case "$location" in
+      */download/*/checksums.txt)
+        VERSION="${location%/checksums.txt}"
+        VERSION="${VERSION##*/download/}"
+        # A Location URL may encode the plus in build metadata.
+        VERSION="$(printf '%s' "$VERSION" | sed 's/%2[Bb]/+/g')"
+        ;;
+      *) die "cannot read the latest release tag from $location" ;;
+    esac
   fi
+  case "$VERSION" in
+    ''|*[!A-Za-z0-9.+-]*) die "invalid release tag: $VERSION" ;;
+  esac
+  printf '%s\n' "$VERSION" | LC_ALL=C grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' || die "invalid release tag: $VERSION"
+  BASE="$RELEASES/download/$VERSION"
 
   BIN_DIR="$HOME/.local/bin"
   DIST_DIR="$HOME/.local/share/agent-net/dist"
   mkdir -p "$BIN_DIR" || die "cannot create $BIN_DIR"
 
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/agent-net-install.XXXXXX")" || die "cannot create a temporary directory"
-  trap 'rm -rf "$WORK"' EXIT HUP INT TERM
+  BIN_TMP=""
+  cleanup() {
+    [ -z "$BIN_TMP" ] || rm -f "$BIN_TMP"
+    rm -rf "$WORK"
+  }
+  trap cleanup EXIT
+  trap 'exit 1' HUP INT TERM
 
   echo "downloading checksums ($BASE)"
   curl -fsSL -o "$WORK/checksums.txt" "$BASE/checksums.txt" || die "cannot download $BASE/checksums.txt (is the version right?)"
@@ -153,23 +182,39 @@ main() {
   }
 
   if [ "$MODE" = gateway ]; then
-    mkdir -p "$DIST_DIR" || die "cannot create $DIST_DIR"
     for o in linux darwin; do
       for a in amd64 arm64; do
         echo "downloading agent-net-$o-$a"
         fetch "agent-net-$o-$a"
+      done
+    done
+  else
+    echo "downloading agent-net-$OS-$ARCH"
+    fetch "agent-net-$OS-$ARCH"
+  fi
+  # The work directory may be on a noexec filesystem. Stage the local binary
+  # beside its destination, where it can run and can be renamed atomically.
+  BIN_TMP="$(mktemp "$BIN_DIR/.agent-net.XXXXXX")" || die "cannot write in $BIN_DIR"
+  cp "$WORK/agent-net-$OS-$ARCH" "$BIN_TMP" && chmod 755 "$BIN_TMP" || die "cannot stage downloaded binary"
+  got_version="$("$BIN_TMP" version)" || die "downloaded binary cannot report its version"
+  [ "$got_version" = "$VERSION" ] || die "release $VERSION binary reports version $got_version"
+
+  if [ "$MODE" = gateway ]; then
+    mkdir -p "$DIST_DIR" || die "cannot create $DIST_DIR"
+    # Invalidate the previous signed dist before changing any binary, so an
+    # interrupted refresh cannot leave a trusted manifest for mixed files.
+    rm -f "$DIST_DIR/checksums.txt.sig" "$DIST_DIR/checksums.txt" || die "cannot invalidate signed dist"
+    for o in linux darwin; do
+      for a in amd64 arm64; do
         place "$WORK/agent-net-$o-$a" "$DIST_DIR" "agent-net-$o-$a"
       done
     done
     place "$WORK/checksums.txt" "$DIST_DIR" checksums.txt
     place "$WORK/checksums.txt.sig" "$DIST_DIR" checksums.txt.sig
-    place "$WORK/agent-net-$OS-$ARCH" "$BIN_DIR" agent-net
-  else
-    echo "downloading agent-net-$OS-$ARCH"
-    fetch "agent-net-$OS-$ARCH"
-    place "$WORK/agent-net-$OS-$ARCH" "$BIN_DIR" agent-net
   fi
-  echo "installed $BIN_DIR/agent-net ($("$BIN_DIR/agent-net" version))"
+  mv -f "$BIN_TMP" "$BIN_DIR/agent-net" || die "cannot install $BIN_DIR/agent-net"
+  BIN_TMP=""
+  echo "installed $BIN_DIR/agent-net ($got_version)"
 
   case ":${PATH:-}:" in
     *":$BIN_DIR:"*) ;;

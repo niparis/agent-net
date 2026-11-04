@@ -65,6 +65,11 @@ type Installed struct {
 // version the new binary must report. current is the version that runs now.
 // Nothing changes unless every check passes.
 func FromGateway(ctx context.Context, c *http.Client, gatewayURL, exe, current, want string) (Installed, error) {
+	return FromGatewayWithForce(ctx, c, gatewayURL, exe, current, want, false)
+}
+
+// FromGatewayWithForce permits an explicit downgrade when force is true.
+func FromGatewayWithForce(ctx context.Context, c *http.Client, gatewayURL, exe, current, want string, force bool) (Installed, error) {
 	res := Installed{From: current}
 	dir, err := os.MkdirTemp("", "agent-net-upgrade.")
 	if err != nil {
@@ -86,6 +91,9 @@ func FromGateway(ctx context.Context, c *http.Client, gatewayURL, exe, current, 
 	res.To = to
 	if want != "" && to != want {
 		return res, fmt.Errorf("the gateway serves %s but %s was asked for", to, want)
+	}
+	if err := CheckDowngrade(current, to, force); err != nil {
+		return res, err
 	}
 	if disk, err := BinaryVersion(ctx, exe); err == nil && disk == to {
 		return res, nil

@@ -914,7 +914,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `CODEX_HOME` | daemon, setup | Codex's home folder (default `~/.codex`). The daemon looks for the shared Codex app server's control socket in it, and setup writes `config.toml` and `AGENTS.md` in it. Codex reads the same variable. |
 | `AGENT_NET_GATEWAY_DATA` | gateway, `invite`, `enroll`, `setup`, `install.sh` | Gateway data directory, including the `transfers` folder of in-flight parts. |
 | `AGENT_NET_NO_SERVICE` | setup, `install.sh` | `1` means: write no service files and start nothing. Same as `--no-service`. |
-| `AGENT_NET_BASE_URL` | `install.sh` | Replaces the release download URL. For tests. |
+| `AGENT_NET_BASE_URL` | `install.sh` | Replaces the release root URL, before `/latest` or `/download/<tag>`. For tests. |
 | `AGENT_NET_DIST` | `scripts/dist.sh` | Output directory for the built binaries. |
 | `AGENT_NET_NO_INSTALL` | `scripts/dist.sh` | Set it to skip copying the binary to `~/.local/bin`. |
 | `RELEASE_SIGNING_KEY` | `scripts/release-key sign` | PKCS#8 Ed25519 private key PEM supplied by the release workflow secret. Never print it. |

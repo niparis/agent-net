@@ -3,10 +3,17 @@ package upgradecli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"github.com/niparis/agent-net/internal/gateway"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -108,5 +115,48 @@ func TestNotSetUp(t *testing.T) {
 	err := Run(context.Background(), Options{Current: "v1", Exe: "/nonexistent", GatewayData: t.TempDir(), Out: &bytes.Buffer{}})
 	if err == nil || !strings.Contains(err.Error(), "not set up") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestUpgradeNodesPassesForce(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprint(force), func(t *testing.T) {
+			received := make(chan bool, 1)
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				switch req.URL.Path {
+				case "/v1/admin/nodes":
+					w.Write([]byte(`{"gateway_version":"v1.0.0"}`))
+				case "/v1/admin/upgrade":
+					var body struct {
+						Force bool `json:"force"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+						http.Error(w, err.Error(), 400)
+						return
+					}
+					received <- body.Force
+					w.Write([]byte(`{"results":[]}`))
+				default:
+					http.NotFound(w, req)
+				}
+			}))
+			defer srv.Close()
+			dir := t.TempDir()
+			cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+			if err := os.WriteFile(filepath.Join(dir, "ca.pem"), cert, 0600); err != nil {
+				t.Fatal(err)
+			}
+			info, _ := json.Marshal(gateway.AdminInfo{URL: srv.URL, Token: "test"})
+			if err := os.WriteFile(gateway.AdminFile(dir), info, 0600); err != nil {
+				t.Fatal(err)
+			}
+			r := &run{Options: Options{GatewayData: dir, Force: force, Timeout: time.Second, Out: &bytes.Buffer{}}}
+			if err := r.upgradeNodes(context.Background(), "v1.0.0", nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := <-received; got != force {
+				t.Fatalf("sent force %v, want %v", got, force)
+			}
+		})
 	}
 }

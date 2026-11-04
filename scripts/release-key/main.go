@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
@@ -183,6 +184,17 @@ func verifyFile(path, expectedGoPublic string, installer []byte) error {
 	cmd.Stdin = bytes.NewReader(data)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("SSH release signature is missing or invalid, or ssh-keygen cannot verify it: %w", err)
+	}
+	sums, err := upgrade.ParseChecksums(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("cannot parse checksums: %w", err)
+	}
+	want, ok := sums["install.sh"]
+	if !ok {
+		return errors.New("install.sh is not listed in checksums.txt")
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(installer)); got != want {
+		return errors.New("install.sh checksum mismatch")
 	}
 	return nil
 }

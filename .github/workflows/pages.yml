@@ -24,16 +24,27 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Download the latest release installer
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-go@v5.5.0
+        with:
+          go-version-file: go.mod
+      - name: Download the latest release installer and signatures
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download --repo "${{ github.repository }}" --pattern install.sh --dir .
+        run: |
+          mkdir -p release
+          gh release download --repo "${{ github.repository }}" --dir release \
+            --pattern install.sh --pattern checksums.txt \
+            --pattern checksums.txt.sig --pattern checksums.txt.sshsig
+      - name: Verify release installer
+        run: |
+          go run ./scripts/release-key verify release/checksums.txt release/install.sh
+          sh -n release/install.sh
       - name: Build site
         run: |
-          sh -n install.sh
           mkdir -p site
-          cp install.sh site/install
-          cp install.sh site/install.sh
+          cp release/install.sh site/install
+          cp release/install.sh site/install.sh
           touch site/.nojekyll
           cat > site/index.html <<'EOF'
           <!doctype html>
