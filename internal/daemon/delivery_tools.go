@@ -237,13 +237,17 @@ func (d *Daemon) checkStartedWorker(ctx context.Context, caller, session string)
 }
 
 // changesFind reads one change with change.get, or a page of changes with
-// change.list.
+// change.list. An empty sid is the owner's read (changes_owner_find): it has no
+// session, so it has no "me".
 func (d *Daemon) changesFind(ctx context.Context, sid string, a protocol.ChangesFindArgs) (protocol.ChangesFindResult, error) {
 	out := protocol.ChangesFindResult{Items: []protocol.ChangeView{}}
 	caller := ""
 	switch a.Caller {
 	case "", protocol.ChangesCallerAnyone:
 	case protocol.ChangesCallerMe:
+		if sid == "" {
+			return out, errors.New("caller \"me\" needs an agent session: the owner reads every change, so leave caller out")
+		}
 		caller = sid
 	default:
 		return out, fmt.Errorf("caller must be %q or %q", protocol.ChangesCallerMe, protocol.ChangesCallerAnyone)

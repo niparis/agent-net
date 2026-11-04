@@ -53,7 +53,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
-	"settings_write": true, "settings_undo": true, "settings_owner_read": true,
+	"settings_write": true, "settings_undo": true, "settings_owner_read": true, protocol.OpChangesOwnerFind: true,
 	protocol.OpPlaybookGet: true, protocol.OpPlaybookSet: true,
 }
 
@@ -675,6 +675,12 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("bad settings read")
 		}
 		res, err = d.readSettings(ctx, q, true)
+	case protocol.OpChangesOwnerFind:
+		var q protocol.ChangesFindArgs
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
+			return nil, true, errors.New("bad changes_owner_find params")
+		}
+		res, err = d.changesFind(ctx, "", q)
 	case "settings_write":
 		var q protocol.SettingsWrite
 		if json.Unmarshal(raw, &q) != nil {
