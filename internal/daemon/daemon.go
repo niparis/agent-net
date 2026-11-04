@@ -148,6 +148,9 @@ type Config struct {
 	IntegrationsInterval time.Duration
 	// MCPBackoffMin and MCPBackoffMax bound the restart delay of hosted MCP servers.
 	MCPBackoffMin, MCPBackoffMax time.Duration
+	// MCPListTTL is how long a hosted server's resource and prompt lists are
+	// reused. Default: protocol.MCPListCacheTTL.
+	MCPListTTL time.Duration
 	// Repo finds the project of a session's folder. Default: repoinfo.New().
 	Repo *repoinfo.Resolver
 	// TempFolders lists the folders whose sessions belong to no project.

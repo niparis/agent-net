@@ -1165,6 +1165,20 @@ the call fails with `host NAME offline` and the tools stay listed, marked
 changed. `agent_mcp_servers_find` and `mcp list` are the registry view of the owner and
 of agents: they show every server and its `scope`.
 
+Resources, resource templates and prompts of the registered servers follow the
+same rules (see [the registry](mcp-registry.md#how-agents-see-resources-and-prompts)).
+A session's `agent-net mcp` lists them with the daemon method `mcp_feature`
+(`op` is `resources/list`, `resources/templates/list`, `resources/read`,
+`prompts/list` or `prompts/get`). Lists hold only the servers the session may
+see now; a server whose host is offline is left out of what the agent sees. A
+resource is `agent-net://SERVER/URI` and a prompt `SERVER__NAME`. A read or
+prompt of a server the session may not use fails with `MCP server "NAME" is not
+assigned to this project`, of a disabled one with `MCP server "NAME" is
+disabled`, and of an offline host with `host NAME offline`. A read or prompt
+over 512 KiB is refused with its size and the limit. When the registry changes,
+or a server reports a changed list, Claude Code gets
+`notifications/resources/list_changed` and `notifications/prompts/list_changed`.
+
 ### Project MCP coverage
 
 A project MCP server lives in the project files, not in the registry. The
