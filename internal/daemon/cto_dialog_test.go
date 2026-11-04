@@ -187,7 +187,7 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 	path := filepath.Join(home, "code", "company-rag")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
-	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "harness": "claude"}})
+	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "harness": "claude", "model": "claude-opus-5-5", "reason": "matching group"}})
 	v, err := cto.dispatch(context.Background(), "cto_tool", args)
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +196,10 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 	if p["kind"] != "proposal" {
 		t.Fatalf("response: %v", p)
 	}
+	message, _ := p["message"].(string)
+	if strings.Contains(message, "\n") || !strings.Contains(message, "company-rag -> ") || !strings.Contains(message, path+", Claude Opus, background. OK?") || !strings.Contains(message, "matching group") {
+		t.Fatalf("confirmation: %q", message)
+	}
 	answer, _ := json.Marshal(map[string]any{"id": p["proposal_id"], "approve": true})
 	out, err := cto.dispatch(context.Background(), "cto_dialog_answer", answer)
 	if err != nil {
@@ -203,6 +207,9 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 	}
 	if !strings.Contains(fmt.Sprint(out), "company-rag is ready: session company-rag is waiting in tab 1 (Sessions). Press Enter on it to dive in.") {
 		t.Fatalf("outcome: %v", out)
+	}
+	if _, handled, err := c.d.ctoOwnerProjectAnswer(context.Background(), "yes", true); err != nil || handled {
+		t.Fatalf("dialog left stale chat approval: handled=%v err=%v", handled, err)
 	}
 }
 

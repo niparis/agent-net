@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 
@@ -51,10 +52,23 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 				return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
 			}
 			text := ProposalToolResult(id)
+			message := fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)
 			if item.Call.Tool == "project_change" && item.Call.Action == "create" {
 				text = "Project proposal " + id + " is waiting for the owner's yes in the CTO chat. Show the one-line placement now."
+				var start protocol.SessionStartRequest
+				if json.Unmarshal(item.Call.Args, &start) == nil {
+					model := firstNonEmpty(start.Model, start.Harness)
+					if start.Harness == "claude" && start.Model == "claude-opus-5-5" {
+						model = "Claude Opus"
+					}
+					name := filepath.Base(filepath.Clean(start.Path))
+					message = fmt.Sprintf("%s -> %s, %s, %s, background. OK?", name, start.NodeID, start.Path, model)
+					if reason := ctoCut(cleanLine(item.Reason), 120); reason != "" {
+						message += " " + reason
+					}
+				}
 			}
-			return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)}, nil
+			return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": message}, nil
 		}
 	}
 	return nil, errors.New("proposal not found")
@@ -101,6 +115,11 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 		return nil, errors.New("bad CTO dialog answer")
 	}
 	err := lc.d.proposalRunner().decide(ctx, q.ID, *q.Approve)
+	lc.d.mu.Lock()
+	if lc.d.ctoPendingProject == q.ID {
+		lc.d.ctoPendingProject = ""
+	}
+	lc.d.mu.Unlock()
 	if err != nil && err.Error() == "proposal is not open" {
 		return nil, err
 	}
@@ -135,6 +154,9 @@ func (d *Daemon) ctoOwnerProjectAnswer(ctx context.Context, text string, owner b
 		return "", false, nil
 	}
 	if err := d.proposalRunner().decide(ctx, id, true); err != nil {
+		if err.Error() == "proposal is not open" {
+			return "", false, nil
+		}
 		return "", true, err
 	}
 	items, err := d.proposalRunner().list()
