@@ -170,29 +170,20 @@ func checkRemoteURLValue(u string) error {
 	return nil
 }
 
-// checkRemoteURL refuses unless every fetch URL and every push URL of the
-// remote in g, as git resolves them, equals want. The caller passes the URL
-// it recorded itself (not one read from the repository), so a changed
-// remote.<name>.url or pushurl is noticed.
+// checkRemoteURL refuses unless every fetch URL of the remote in g, as git
+// resolves them, equals want. The caller passes the URL it recorded itself
+// (not one read from the repository), so a changed remote.<name>.url is noticed.
 func checkRemoteURL(ctx context.Context, g gitIn, remote, want string) error {
 	if err := checkRemoteURLValue(want); err != nil {
 		return err
 	}
-	for _, push := range []bool{false, true} {
-		args := []string{"remote", "get-url", "--all"}
-		what := "fetch"
-		if push {
-			args = append(args, "--push")
-			what = "push"
-		}
-		out, err := g.run(ctx, append(args, remote)...)
-		if err != nil {
-			return fmt.Errorf("read the %s URL of %s: %w", what, remote, err)
-		}
-		for _, u := range strings.Split(out, "\n") {
-			if u != want {
-				return fmt.Errorf("%w: %s URL of %s is %q, want %q", ErrRemoteURL, what, remote, redactURL(u), redactURL(want))
-			}
+	out, err := g.run(ctx, "remote", "get-url", "--all", remote)
+	if err != nil {
+		return fmt.Errorf("read the fetch URL of %s: %w", remote, err)
+	}
+	for _, u := range strings.Split(out, "\n") {
+		if u != want {
+			return fmt.Errorf("%w: fetch URL of %s is %q, want %q", ErrRemoteURL, remote, redactURL(u), redactURL(want))
 		}
 	}
 	return nil

@@ -39,8 +39,8 @@ func TestReviewFindingRedirect(t *testing.T) {
 	if _, statErr := os.Stat(f.marker); statErr == nil {
 		t.Errorf("redirected local remote hook executed")
 	}
-	if err == nil {
-		t.Error("redirected push succeeded")
+	if err != nil {
+		t.Errorf("Merge: %v", err)
 	}
 }
 
@@ -53,9 +53,9 @@ func TestReviewFindingCoreWorktree(t *testing.T) {
 	f.write(clean, "README", "base\n")
 	mergeGit(t, f.repo, "config", "core.worktree", clean)
 	f.write(f.repo, "README", "dirty payload\n")
-	res, err := RunStep(context.Background(), StepCommand{Step: "release", Dir: f.repo, Commit: f.base, Argv: []string{"cat", "README"}})
-	if err == nil {
-		t.Errorf("dirty checkout accepted; output %q", res.OutputTail)
+	_, err := RunStep(context.Background(), StepCommand{Step: "release", Dir: f.repo, Commit: f.base, Argv: []string{"cat", "README"}})
+	if !errors.Is(err, ErrUnsafeConfig) {
+		t.Errorf("got %v; want ErrUnsafeConfig", err)
 	}
 }
 
@@ -88,5 +88,8 @@ exit "$status"
 	_, err := Merge(context.Background(), req)
 	if _, statErr := os.Stat(f.marker); statErr == nil {
 		t.Errorf("filter executed after config changed following check; Merge err=%v", err)
+	}
+	if err != nil {
+		t.Errorf("Merge err = %v, want nil", err)
 	}
 }

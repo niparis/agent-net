@@ -116,7 +116,7 @@ type MergeRequest struct {
 	// RemoteURL is required: the URL of Remote, from the caller's own record
 	// (the project registry, or the first URL it saw), never read from the
 	// repository. Merge fetches the target branch from it and pushes to it.
-	// It refuses (ErrRemoteURL) when RepoDir's own fetch or push URL for
+	// It refuses (ErrRemoteURL) when RepoDir's own fetch URL for
 	// Remote is not exactly this string, which is a sign that someone
 	// changed the config.
 	RemoteURL string
@@ -756,9 +756,16 @@ func prepareMirror(ctx context.Context, req MergeRequest, mirror gitIn) error {
 			return refuse("is marked for another path")
 		}
 	}
+	src := gitIn{gitPath: req.GitPath, dir: req.RepoDir}
+	repoFormat, err := src.run(ctx, "rev-parse", "--show-object-format")
+	if err != nil {
+		return fmt.Errorf("read object format of %s: %w", req.RepoDir, err)
+	}
+	repoFormat = strings.TrimSpace(repoFormat)
+
 	// A mirror whose creation stopped after the mark has no HEAD yet.
 	if _, err := os.Lstat(filepath.Join(dir, "HEAD")); errors.Is(err, os.ErrNotExist) {
-		if _, err := mirror.run(ctx, "init", "--bare", "--quiet", "--template="); err != nil {
+		if _, err := mirror.run(ctx, "init", "--bare", "--quiet", "--template=", "--object-format="+repoFormat); err != nil {
 			return fmt.Errorf("create merge mirror: %w", err)
 		}
 		// Each worktree gets its own config.worktree, which checkConfig
@@ -784,6 +791,13 @@ func prepareMirror(ctx context.Context, req MergeRequest, mirror gitIn) error {
 	}
 	if same, _ := mergeSamePath(gitDir, dir); !same {
 		return refuse("is not the top of a git repository")
+	}
+	mirrorFormat, err := mirror.run(ctx, "rev-parse", "--show-object-format")
+	if err != nil {
+		return refuse("is not a git repository (%v)", err)
+	}
+	if strings.TrimSpace(mirrorFormat) != repoFormat {
+		return refuse("object format %s does not match repository %s", strings.TrimSpace(mirrorFormat), repoFormat)
 	}
 	return checkRepo(ctx, mirror)
 }

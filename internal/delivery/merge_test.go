@@ -743,3 +743,48 @@ func TestMergeRecreatesDeletedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func newMergeFxSHA256(t *testing.T) *mergeFx {
+	t.Helper()
+	root := t.TempDir()
+	f := &mergeFx{t: t, root: root,
+		origin: filepath.Join(root, "origin.git"),
+		repo:   filepath.Join(root, "repo"),
+		wt:     filepath.Join(root, "merge-wt"),
+		mirror: filepath.Join(root, "merge-mirror"),
+	}
+	mergeGit(t, root, "init", "--bare", "-b", "main", "--object-format=sha256", f.origin)
+	mergeGit(t, root, "clone", "-q", f.origin, f.repo)
+	mergeGit(t, f.repo, "checkout", "-q", "-B", "main")
+	f.write(f.repo, "README", "base\n")
+	mergeGit(t, f.repo, "add", ".")
+	mergeGit(t, f.repo, "commit", "-q", "-m", "base")
+	mergeGit(t, f.repo, "push", "-q", "-u", "origin", "main")
+	f.base = mergeGit(t, f.repo, "rev-parse", "HEAD")
+	return f
+}
+
+func TestMergeSHA256Repository(t *testing.T) {
+	f := newMergeFxSHA256(t)
+	head := f.branch("feat", f.base, "feat.txt", "feature\n")
+	res, err := Merge(context.Background(), f.req("feat", head, MergeModeCommit))
+	if err != nil {
+		t.Fatalf("Merge SHA256: %v", err)
+	}
+	if !res.Pushed {
+		t.Fatal("expected push")
+	}
+
+	// Refuse when mirror's object format differs from RepoDir's.
+	mismatchedRoot := t.TempDir()
+	badMirror := filepath.Join(mismatchedRoot, "bad-mirror")
+	mergeGit(t, mismatchedRoot, "init", "--bare", "--object-format=sha1", badMirror)
+	if err := os.WriteFile(filepath.Join(badMirror, mergeMirrorMarker), []byte(badMirror+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	req := f.req("feat", head, MergeModeCommit)
+	req.MirrorDir = badMirror
+	if _, err := Merge(context.Background(), req); !errors.Is(err, ErrNotOwnedMirror) {
+		t.Fatalf("expected ErrNotOwnedMirror for mismatched object-format, got %v", err)
+	}
+}
