@@ -910,7 +910,7 @@ func TestSessionResumeHerdrUsesIDWhenNameMissing(t *testing.T) {
 	requireHerdrOpened(t, log, native, "attach")
 }
 
-func TestCTOProposalApprovalSplitsBesideOwnerTUI(t *testing.T) {
+func TestCTOProposalApprovalLeavesOwnerTUIViewUnchanged(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -927,13 +927,12 @@ func TestCTOProposalApprovalSplitsBesideOwnerTUI(t *testing.T) {
 		t.Fatalf("proposal %v %v", items, err)
 	}
 	c.cli.mustCall("proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a", "herdr_socket": "/tmp/herdr-test.sock", "herdr_pane_id": "w1:p0"})
-	eventually(t, "approved session opened beside TUI", func() bool { raw, _ := os.ReadFile(log); return strings.Contains(string(raw), "pane run w1:p1") })
-	raw, _ := os.ReadFile(log)
-	if !strings.Contains(string(raw), "pane split --pane w1:p0") || strings.Contains(string(raw), "tab create") {
-		t.Fatalf("calls %s", raw)
-	}
-	if q := waitHerdrNotice(t, notices); q["text"] != "opened garden in herdr" || q["herdr_opened"] != true {
+	q := waitHerdrNotice(t, notices)
+	if q["text"] != "Enter opens it." || q["daemon_notice"] != true {
 		t.Fatalf("notice %v", q)
+	}
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "pane split") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("proposal opened a view: %s", raw)
 	}
 }
 
@@ -985,7 +984,7 @@ func testRemoteCTOProposalApproval(t *testing.T, all bool) {
 	}
 }
 
-func TestCTOProposalWithoutHerdrShowsInstallNotice(t *testing.T) {
+func TestCTOProposalWithoutHerdrShowsEnterNotice(t *testing.T) {
 	withoutLocalHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -1004,7 +1003,7 @@ func TestCTOProposalWithoutHerdrShowsInstallNotice(t *testing.T) {
 	c.cli.mustCall("proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a"})
 	q := waitHerdrNotice(t, notices)
 	text, _ := q["text"].(string)
-	if q["daemon_notice"] != true || !strings.Contains(text, "Herdr was not found") || !strings.Contains(text, "install") {
+	if q["daemon_notice"] != true || text != "Enter opens it." {
 		t.Fatalf("notice %v", q)
 	}
 }
