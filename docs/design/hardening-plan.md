@@ -42,6 +42,8 @@ One worker. The owner's decision: messages are kept as long as possible; nothing
 
 The most important workstream. Five steps, run in order 1, 2, 3, then 4 and 5 in parallel.
 
+**Status (2026-11-04):** steps 1 to 3 are built (decision 0053, with its W4.2 and W4.3 updates). Steps 4 and 5 are next.
+
 1. **No silent loss, no blind duplicate.**
    - The receiving daemon writes the delivery as `injecting` before it writes to the harness, and as `delivered` only after the harness confirms.
    - A write error is `failed`, not "delivered (unconfirmed)".
