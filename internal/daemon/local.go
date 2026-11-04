@@ -240,6 +240,9 @@ func (lc *localConn) run(ctx context.Context) {
 			if req.Method == "send" || req.Method == "owner_send" {
 				timeout = 100 * time.Second
 			}
+			if req.Method == "file_send" {
+				timeout = 90*time.Second + protocol.MaxFilesPerMessage*fileTaildropTimeout
+			}
 			if req.Method == protocol.OpWorkerStart {
 				timeout = lc.d.workerSettings("").StartTimeout + 60*time.Second // the machine starts a harness
 			}
@@ -933,6 +936,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		result.Agent.Waiting = nil
 		return result, nil
+
+	case "file_send":
+		return d.localFileSend(ctx, lc, raw)
 
 	case "send":
 		return d.localSend(ctx, lc, raw)

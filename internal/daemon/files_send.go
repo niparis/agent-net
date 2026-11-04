@@ -24,13 +24,14 @@ const (
 // machine. AllowSecrets sends a text file the secret scanner flagged; only
 // the owner may set it.
 type FileSend struct {
-	From, To       string
-	Body           string
-	Type           string
-	ParentID       string
-	IdempotencyKey string
-	Paths          []string
-	AllowSecrets   bool
+	From, To        string
+	Body            string
+	Type            string
+	ParentID        string
+	IdempotencyKey  string
+	Paths           []string
+	AllowSecrets    bool
+	ConfineSymlinks bool
 }
 
 // FileSent says how one file left this machine. Note explains a change of
@@ -62,6 +63,7 @@ func (d *Daemon) SendFiles(ctx context.Context, req FileSend) (FileSendResult, e
 	if err != nil {
 		return res, err
 	}
+	rules.ConfineSymlinks = req.ConfineSymlinks
 	out, err := PrepareFiles(req.Paths, rules, filepath.Join(d.cfg.StateDir, fileOutgoingFolder))
 	if err != nil {
 		return res, err
