@@ -685,6 +685,15 @@ CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_update BEFORE UPDATE ON delive
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS delivery_evidence_no_delete BEFORE DELETE ON delivery_evidence
 BEGIN SELECT RAISE(ABORT, 'delivery evidence is append-only'); END;
+`, `
+-- worker starts the gateway tracks: a not-started report must name one
+CREATE TABLE IF NOT EXISTS worker_starts (
+ ref TEXT PRIMARY KEY, node_id TEXT NOT NULL, owner TEXT NOT NULL,
+ project TEXT NOT NULL DEFAULT '', harness TEXT NOT NULL DEFAULT '',
+ permissions TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
+ state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'not_started')),
+ created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS worker_starts_session ON worker_starts(session_id) WHERE session_id <> '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

@@ -37,6 +37,51 @@ func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Head
 	nc.write(ctx, reply)
 }
 
+// workerNotStarted handles a machine's report that a start never became a
+// worker. The report records an event for the TUI feed. It makes a notice to
+// the owner only when it names a start the gateway handed to this machine
+// (Ref), and then the owner, project and harness come from the gateway's
+// record, never from the report. A report without a Ref comes from an older
+// machine, which tells its owner itself.
+func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol.WorkerNotStarted) error {
+	full := p
+	if len(p.Reason) > 300 {
+		p.Reason = p.Reason[:300]
+	}
+	if p.Ref == "" {
+		g.store.Event("worker.not_started", nc.id, p.Owner, "",
+			strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "reason", p.Reason), " "))
+		g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", p.Owner,
+			"project", p.Project, "harness", p.Harness, "reason", p.Reason)
+		return nil
+	}
+	rec, first, err := g.store.declareNotStarted(nc.id, p.Ref)
+	if err != nil {
+		return err
+	}
+	if rec.Ref == "" {
+		g.logLine("msg.refused", "node", nc.id, "where", "worker.not_started", "ref", p.Ref, "reason", "no such start on this node")
+		return reject("no start of this machine has the reference %q", p.Ref)
+	}
+	if !first {
+		return nil
+	}
+	g.store.Event("worker.not_started", nc.id, rec.Owner, "",
+		strings.TrimPrefix(pairs("project", rec.Project, "harness", rec.Harness, "reason", p.Reason), " "))
+	g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", rec.Owner,
+		"project", rec.Project, "harness", rec.Harness, "reason", p.Reason)
+	g.cancelRelay(rec.SessionID)
+	n, ok, err := g.store.notStartedNotice(rec, g.store.hostname(nc.id), full.Reason)
+	if err != nil {
+		g.logLine("error", "where", "not_started_notice", "err", err)
+		return nil
+	}
+	if ok {
+		g.dispatch(ctx, n)
+	}
+	return nil
+}
+
 func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	switch typ {
 	case "worker.profile.list", "worker.profile.add", "worker.profile.remove":
@@ -166,6 +211,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			return nil, err
 		}
 		detail := strings.TrimPrefix(pairs("reason", p.Reason, "harness", p.Harness, "project", p.Project, "model", p.Model), " ")
+		g.cancelRelay(p.SessionID)
 		g.store.Event("worker.stopped", nc.id, p.SessionID, "", detail)
 		g.logLine("worker.stopped", "node", nc.id, "host", g.store.hostname(nc.id), "session", p.SessionID,
 			"worker", p.WorkerID, "reason", p.Reason, "harness", p.Harness, "project", p.Project)
@@ -176,21 +222,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil {
 			return nil, reject("bad worker.not_started")
 		}
-		full := p
-		if len(p.Reason) > 300 {
-			p.Reason = p.Reason[:300]
-		}
-		g.store.Event("worker.not_started", nc.id, p.Owner, "",
-			strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "reason", p.Reason), " "))
-		g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", p.Owner,
-			"project", p.Project, "harness", p.Harness, "reason", p.Reason)
-		n, ok, err := g.store.notStartedNotice(full)
-		if err != nil {
-			g.logLine("error", "where", "not_started_notice", "err", err)
-		} else if ok {
-			g.dispatch(ctx, n)
-		}
-		return nil, nil
+		return nil, g.workerNotStarted(ctx, nc, p)
 
 	case "worker.queued_start":
 		p, err := decode[protocol.WorkerQueuedStart](raw)
@@ -685,7 +717,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
-	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
+	// The gateway tracks the start before the machine begins it, so a report
+	// that arrives at once finds it.
+	startRef := protocol.NewID("q")
+	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms, ""); err != nil {
+		return none, err
+	}
+	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue})
 	if err != nil {
@@ -696,6 +734,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("machine %s refused the worker: %v", pick.Hostname, err)
 	}
 	launched, err := decode[protocol.WorkerLaunched](raw)
+	if err == nil && launched.SessionID != "" {
+		if berr := g.store.bindStartSession(pick.NodeID, startRef, launched.SessionID); berr != nil {
+			g.logLine("error", "where", "bind start session", "err", berr)
+		}
+	}
 	if err == nil && launched.Queued && launched.QueueID != "" {
 		g.store.Event("worker.queued", pick.NodeID, p.Owner, "",
 			strings.TrimPrefix(pairs("project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner,
@@ -1067,7 +1110,11 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil {
 		return none, err
 	}
-	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
+	startRef := protocol.NewID("q")
+	if err := g.store.trackWorkerStart(startRef, old.NodeID, p.Owner, old.Worker.Project, p.Harness, old.Worker.Permissions, ""); err != nil {
+		return none, err
+	}
+	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{StartRef: startRef, Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
 		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Title: p.Title, Touches: p.Touches,
 		Assessment: old.Worker.Assessment})
 	if err != nil {
@@ -1077,6 +1124,11 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, reject("machine %s refused the worker: %v", old.Hostname, err)
 	}
 	c, err := decode[protocol.WorkerContinued](raw)
+	if err == nil && c.SessionID != "" {
+		if berr := g.store.bindStartSession(old.NodeID, startRef, c.SessionID); berr != nil {
+			g.logLine("error", "where", "bind start session", "err", berr)
+		}
+	}
 	var modelNote string
 	if err == nil {
 		if track, books, nerr := g.choiceNotes(old.NodeID, old.Hostname, c.Project, c.Harness, c.Model); nerr == nil {
@@ -1182,9 +1234,21 @@ func roomWord(l protocol.WorkerLoad) string {
 	return "room: " + l.Room
 }
 
+// defaultRelayWait is how long the gateway waits for the owner's machine to
+// send a task.
+const defaultRelayWait = 30 * time.Second
+
 // relayQueuedTask passes a queued start that has become a worker to the
 // machine of its owner, which sends the task. The sending machine must hold
 // the worker, and the worker must name that owner.
+//
+// The machine repeats this call while the gateway answers slowly, so it is
+// safe to repeat: the relays of one worker run one at a time, and a task that
+// the owner already sent is not sent again, whatever version the owner's
+// machine runs. A worker that ended, or whose start was declared not started,
+// gets no task, also when the relay is already waiting for the owner's machine.
+// A relay that failed because the owner's machine did not answer, or is not
+// connected, is a transient error: the same call may work a moment later.
 func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.WorkerQueuedStart) error {
 	w, ok, err := g.store.Agent(p.SessionID)
 	if err != nil {
@@ -1193,22 +1257,119 @@ func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.
 	if !ok || w.NodeID != nc.id || w.Worker == nil || w.Worker.Owner != p.Owner {
 		return reject("session %q is not a worker of this node with that owner", p.SessionID)
 	}
+	if err := g.store.bindStartSession(nc.id, p.Ref, p.SessionID); err != nil {
+		return err
+	}
+	gone := func() error {
+		cur, ok, err := g.store.Agent(p.SessionID)
+		if err != nil {
+			return err
+		}
+		declared, err := g.store.startDeclaredNotStarted(p.SessionID)
+		if err != nil {
+			return err
+		}
+		if !ok || !cur.Online || declared {
+			return reject("worker %s ended or was declared not started, so it gets no task", p.SessionID)
+		}
+		return nil
+	}
+	if err := gone(); err != nil {
+		return err
+	}
 	ownerNode, err := g.store.SessionNode(p.Owner)
 	if err != nil {
 		return err
+	}
+	// One relay per worker at a time. The in-flight one is cancelled when the
+	// worker ends (cancelRelay).
+	rctx, release, err := g.beginRelay(ctx, p.SessionID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := gone(); err != nil {
+		return err
+	}
+	sent, err := g.store.taskSent(p.Owner, p.SessionID)
+	if err != nil {
+		return err
+	}
+	if sent {
+		return nil
 	}
 	g.mu.Lock()
 	target := g.conns[ownerNode]
 	g.mu.Unlock()
 	if target == nil {
-		return reject("the machine of the owner is offline")
+		return protocol.TransientError{Msg: "the machine of the owner is offline"}
 	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	wait := g.relayWait
+	if wait <= 0 {
+		wait = defaultRelayWait
+	}
+	cctx, cancel := context.WithTimeout(rctx, wait)
 	defer cancel()
 	if _, err := target.call(cctx, "worker.task", p); err != nil {
+		switch {
+		case rctx.Err() != nil && ctx.Err() == nil:
+			return reject("worker %s ended or was declared not started, so it gets no task", p.SessionID)
+		case errors.Is(err, errNodeGone), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+			return protocol.TransientError{Msg: fmt.Sprintf("the owner's machine did not send the task in time: %v", err)}
+		}
 		return reject("the owner's machine did not send the task: %v", err)
 	}
 	return nil
+}
+
+// relayState is the relay of one worker: a slot that serializes relays and the
+// cancel function of the one that waits for the owner's machine.
+type relayState struct {
+	slot   chan struct{}
+	cancel context.CancelFunc
+}
+
+// beginRelay takes the relay slot of a worker, waiting for a relay in flight,
+// and returns a context that cancelRelay ends.
+func (g *Gateway) beginRelay(ctx context.Context, session string) (context.Context, func(), error) {
+	g.relayMu.Lock()
+	if g.relays == nil {
+		g.relays = map[string]*relayState{}
+	}
+	st := g.relays[session]
+	if st == nil {
+		st = &relayState{slot: make(chan struct{}, 1)}
+		g.relays[session] = st
+	}
+	g.relayMu.Unlock()
+	select {
+	case st.slot <- struct{}{}:
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+	rctx, cancel := context.WithCancel(ctx)
+	g.relayMu.Lock()
+	st.cancel = cancel
+	g.relayMu.Unlock()
+	return rctx, func() {
+		g.relayMu.Lock()
+		st.cancel = nil
+		g.relayMu.Unlock()
+		cancel()
+		<-st.slot
+	}, nil
+}
+
+// cancelRelay ends the relay of a worker that waits for the owner's machine.
+func (g *Gateway) cancelRelay(session string) {
+	if session == "" {
+		return
+	}
+	g.relayMu.Lock()
+	defer g.relayMu.Unlock()
+	if st := g.relays[session]; st != nil && st.cancel != nil {
+		st.cancel()
+	}
 }
 
 func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame, validate ...bool) (map[string]any, error) {

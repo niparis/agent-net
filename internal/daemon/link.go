@@ -61,6 +61,9 @@ func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessag
 	select {
 	case h := <-ch:
 		if !h.OK {
+			if h.Transient {
+				return nil, transientRemote{RemoteError(h.Error)}
+			}
 			return nil, RemoteError(h.Error)
 		}
 		return h.Data, nil

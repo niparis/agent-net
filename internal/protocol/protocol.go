@@ -318,12 +318,21 @@ type AgentView struct {
 
 // Header is shared by every gateway <-> daemon frame.
 type Header struct {
-	Type  string          `json:"type"`
-	ID    string          `json:"id,omitempty"`
-	OK    bool            `json:"ok,omitempty"`
-	Error string          `json:"error,omitempty"`
-	Data  json.RawMessage `json:"data,omitempty"`
+	Type  string `json:"type"`
+	ID    string `json:"id,omitempty"`
+	OK    bool   `json:"ok,omitempty"`
+	Error string `json:"error,omitempty"`
+	// Transient marks an error that may go away: the call can be tried again.
+	// A refusal is not transient.
+	Transient bool            `json:"transient,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
 }
+
+// TransientError is an error that may go away if the call is tried again, for
+// example a machine that did not answer in time.
+type TransientError struct{ Msg string }
+
+func (e TransientError) Error() string { return e.Msg }
 
 // EncodeRequest builds a flat frame: the params' fields sit next to type and id.
 func EncodeRequest(typ, id string, params any) ([]byte, error) {
@@ -353,6 +362,10 @@ func EncodeResult(id string, data any, err error) ([]byte, error) {
 	h := map[string]any{"type": "result", "id": id, "ok": err == nil}
 	if err != nil {
 		h["error"] = err.Error()
+		var te TransientError
+		if errors.As(err, &te) {
+			h["transient"] = true
+		}
 	} else if data != nil {
 		h["data"] = data
 	}

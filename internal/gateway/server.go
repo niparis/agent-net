@@ -70,6 +70,12 @@ type Options struct {
 }
 
 type Gateway struct {
+	// relays holds the task relay of each worker (relayQueuedTask).
+	relayMu sync.Mutex
+	relays  map[string]*relayState
+	// relayWait is how long a relay waits for the owner's machine. Zero means
+	// defaultRelayWait.
+	relayWait    time.Duration
 	publicMu     sync.Mutex
 	publicURLMu  sync.RWMutex
 	publicURL    string
