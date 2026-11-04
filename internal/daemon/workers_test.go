@@ -522,11 +522,13 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
-	// Keep talking for longer than the idle time.
+	// Keep talking for longer than the idle time. One send every 250ms or more
+	// stays under the owner rate limit (protocol.RatePerMinute per session)
+	// and leaves gaps far below the idle time.
 	end := time.Now().Add(set.Idle + time.Second)
 	for time.Now().Before(end) {
 		w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "ping"})
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 	}
 	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 0 {
 		t.Fatalf("a worker that was talked to ended: %v", evs)

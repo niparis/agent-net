@@ -247,7 +247,6 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 		name := entry.Name
 		addTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args := req.Params.Arguments
-			method := name
 			if name == "graph_change" || name == "session_change" || name == "worker_change" || name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" {
 				if err := ValidateCTOActionSchema(name, args); err != nil {
 					return v2Error(err), nil
@@ -269,16 +268,6 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(err), nil
 				}
-				var q map[string]any
-				if json.Unmarshal(args, &q) != nil {
-					return v2Error(fmt.Errorf("arguments must be an object")), nil
-				}
-				if notice := stringValue(q["notice"]); notice != "" {
-					method = "ui_notice"
-					args, _ = json.Marshal(map[string]any{"text": notice})
-				} else {
-					method = "ui_show"
-				}
 			} else if name == "cto_proposals_find" {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(err), nil
@@ -287,6 +276,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				if json.Unmarshal(args, &q) != nil {
 					return v2Error(fmt.Errorf("arguments must be an object")), nil
 				}
+				// The daemon pages proposals by offset; the cursor is that offset.
 				legacy := map[string]any{"id": q["id"], "limit": q["limit"]}
 				if cursor := stringValue(q["cursor"]); cursor != "" {
 					off, err := strconv.Atoi(cursor)
@@ -296,9 +286,8 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 					legacy["offset"] = off
 				}
 				args, _ = json.Marshal(legacy)
-				method = "proposals"
 			}
-			raw, err := call(ctx, method, args)
+			raw, err := call(ctx, name, args)
 			if err != nil {
 				return v2Error(err), nil
 			}

@@ -195,7 +195,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			} else if d.log != nil {
 				d.log.Printf("settings sync: %v", err)
 			}
-		case "mcp.sync", "mcp.probe", "mcp.invoke", "mcp.changed":
+		case "mcp.sync", "mcp.probe", "mcp.invoke", "mcp.feature", "mcp.changed":
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

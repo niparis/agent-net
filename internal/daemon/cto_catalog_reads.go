@@ -496,14 +496,28 @@ func (d *Daemon) ctoCatalogMessageGet(ctx context.Context, raw json.RawMessage) 
 	return out, nil
 }
 
+// ctoCharterGuide is the CTO's guide to writing charters and edges. The CTO
+// reads it with agent_graph_read view guide; it is kept out of the schemas.
+func ctoCharterGuide() string {
+	return protocol.CharterGuideText() + "\n\nEdges: depends goes from consumer to provider; governs from architect to component; deploys from deployer to app. Governance modes are advisor (advises), arbiter (arbitrates), and owner (decides). Request rules: normal delivers with ordinary peer guidance; auto delivers with peer trust; ask holds for the owner; never refuses."
+}
+
 func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (any, error) {
 	var q struct {
+		View   string `json:"view"`
 		Node   string `json:"node"`
 		Limit  int    `json:"limit"`
 		Cursor string `json:"cursor"`
 	}
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 		return nil, errors.New("bad agent_graph_read arguments")
+	}
+	switch q.View {
+	case "":
+	case "guide":
+		return map[string]any{"nodes": []any{}, "edges": []any{}, "note": ctoCharterGuide()}, nil
+	default:
+		return nil, errors.New(`unknown agent_graph_read view; the only view is guide, for example {"view":"guide"}`)
 	}
 	limit := ctoCatalogLimit(q.Limit)
 	if strings.TrimSpace(q.Node) != "" {
@@ -579,7 +593,40 @@ func ctoCatalogGraphNodes(nodes []protocol.PublicGraphNode) []map[string]any {
 		for _, rule := range node.Rules {
 			rules[rule.Name] = rule.Value
 		}
-		out = append(out, map[string]any{"name": node.Name, "kind": node.Kind, "maturity": maturity, "purpose": purpose, "rules": rules})
+		row := map[string]any{"name": node.Name, "kind": node.Kind, "maturity": maturity, "purpose": purpose, "rules": rules}
+		if charter := ctoCatalogCharter(node.Charter); charter != nil {
+			row["charter"] = charter
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// ctoCatalogCharter is the whole public charter: the CTO reads it before it
+// proposes a charter change. Empty attributes are left out.
+func ctoCatalogCharter(c *protocol.Charter) map[string]any {
+	if c == nil {
+		return nil
+	}
+	out := map[string]any{}
+	for key, value := range map[string]string{"purpose": c.Purpose, "feature_requests": c.FeatureRequests, "consumers": c.Consumers, "escalate": c.Escalate, "needs": c.Needs, "notes": c.Notes} {
+		if strings.TrimSpace(value) != "" {
+			out[key] = value
+		}
+	}
+	for key, value := range map[string]string{"accepts": c.Accepts, "refuses": c.Refuses} {
+		var items []string
+		for _, item := range strings.Split(value, ";") {
+			if item = strings.TrimSpace(item); item != "" {
+				items = append(items, item)
+			}
+		}
+		if len(items) > 0 {
+			out[key] = items
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

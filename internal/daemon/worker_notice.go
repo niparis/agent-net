@@ -435,6 +435,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
 		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty}
 	n.DiffStat, _ = d.worktreeFacts(w)
+	n.Head = d.worktreeHead(w)
 	d.wmu.Lock()
 	n.Saved = w.unfinished
 	leftAsIs := w.leftAsIs
@@ -595,16 +596,7 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		d.Logf("worker.handback worker=%s session=%s status=%s complete=false auto_continue=1", w.id, sessionID, req.Status)
 		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: false, AutoContinued: true}, nil
 	}
-	if w.harness == "agy" {
-		d.wmu.Lock()
-		subject := strings.TrimSpace(w.title)
-		d.wmu.Unlock()
-		if subject == "" {
-			subject = strings.TrimSpace(strings.SplitN(req.Report, "\n", 2)[0])
-		}
-		complete := req.Status == protocol.StatusDone && req.IsComplete()
-		d.saveWorkerChanges(w, subject, "handback", !complete)
-	}
+	committed := d.commitAtHandback(w, req)
 	st := d.workerStats(w)
 	d.wmu.Lock()
 	pending, cc := len(w.turnQueue) > 0, w.codex
@@ -624,6 +616,7 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		note = sandboxNote + "; " + note
 	}
 	n := d.notice(w, req.Status, note, st)
+	n.Committed = committed
 	noticeKey := ""
 	if w.harness == "agy" {
 		d.wmu.Lock()
@@ -671,6 +664,51 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		out.Sent, out.Queued = sent.Message, sent.Queued
 	}
 	return out, nil
+}
+
+// commitAtHandback commits the worker's leftover changes at a hand-back, so
+// the hand-back names a real commit (delivery pipeline, decision 8). It is the
+// one path for every harness: a complete hand-back (status done, complete
+// yes) is committed with the worker's title as the subject and the usual
+// trailers. A partial one is left as it is, except for Antigravity, whose
+// worker never commits: its changes are kept as unfinished work, as before.
+// Files matched by .gitignore are not added, and nothing is forced. A merge or
+// rebase in progress leaves the worktree as it is (saveWorkerChanges says so
+// in the notice). It returns the short hash of the commit it made, or "".
+func (d *Daemon) commitAtHandback(w *worker, req protocol.WorkerHandbackRequest) string {
+	complete := req.Status == protocol.StatusDone && req.IsComplete()
+	// The merge line is about this hand-back, not an earlier one.
+	d.wmu.Lock()
+	w.leftAsIs = false
+	d.wmu.Unlock()
+	if !complete && w.harness != "agy" {
+		return ""
+	}
+	d.wmu.Lock()
+	subject := strings.TrimSpace(strings.SplitN(w.title, "\n", 2)[0])
+	d.wmu.Unlock()
+	if subject == "" {
+		subject = strings.TrimSpace(strings.SplitN(req.Report, "\n", 2)[0])
+	}
+	if !d.saveWorkerChanges(w, subject, "handback", !complete) || !complete {
+		return ""
+	}
+	return d.worktreeHead(w)
+}
+
+// worktreeHead is the short hash of the worker's worktree HEAD, or "".
+func (d *Daemon) worktreeHead(w *worker) string {
+	d.wmu.Lock()
+	dir := w.worktree
+	d.wmu.Unlock()
+	if dir == "" {
+		return ""
+	}
+	head, err := gitOut(context.Background(), dir, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return head
 }
 
 // noteAsk records a message from a worker's owner and counts a follow-up after

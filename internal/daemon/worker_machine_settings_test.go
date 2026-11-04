@@ -69,13 +69,15 @@ func TestWorkerMachineSettingsReadPaths(t *testing.T) {
 			t.Fatalf("%s: %s", item.method, raw)
 		}
 	}
-	out, err := n.d.readCTOTool(context.Background(), "settings", json.RawMessage(`{"area":"values","key":"workers.max_per_machine"}`))
+	out, err := n.d.readCTOTool(context.Background(), "agent_settings_read", json.RawMessage(`{"key":"workers.max_per_machine"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(out)
-	var rows []protocol.SettingView
-	if err := json.Unmarshal(raw, &rows); err != nil || len(rows) != 1 || rows[0].Source != "node.json on test-machine" {
+	var read struct {
+		Settings []protocol.SettingView `json:"settings"`
+	}
+	if err := json.Unmarshal(raw, &read); err != nil || len(read.Settings) != 1 || read.Settings[0].Source != "node.json on test-machine" {
 		t.Fatalf("CTO: %s %v", raw, err)
 	}
 }

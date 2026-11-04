@@ -16,7 +16,6 @@ func ctoClassFixture(name string) json.RawMessage {
 	}
 	action := map[string]map[string]string{
 		"message":         {"action": "send"},
-		"ui":              {"action": "show"},
 		"graph_change":    {"action": "charter_set"},
 		"session_change":  {"action": "rename"},
 		"worker_change":   {"action": "start"},
@@ -106,7 +105,7 @@ func TestCTOProposalRouting(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"message", "ask_owner", "learn", "ui"} {
+	for _, name := range []string{"message", "cto_ui_show", "proposal_ask", "agent_message_send", "agent_message_reply", "agent_owner_ask", "agent_learn"} {
 		ran := 0
 		args := ctoClassFixture(name)
 		_, err := routeCTOTool(context.Background(), name, args, func(context.Context, string, string, json.RawMessage, string) (string, error) {

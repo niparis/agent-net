@@ -411,12 +411,19 @@ type (
 		// OwnerApproved says the owner approved this exact text as their own
 		// words. Only the CTO proposal runner sets it, and only together with
 		// FromCTO. The gateway refuses it from any other sender.
-		OwnerApproved  bool   `json:"owner_approved,omitempty"`
-		Sender         string `json:"sender_session_id"`
-		Recipient      string `json:"recipient_session_id"`
-		Type           string `json:"message_type"`
-		Body           string `json:"body"`
-		ParentID       string `json:"parent_message_id,omitempty"`
+		OwnerApproved bool   `json:"owner_approved,omitempty"`
+		Sender        string `json:"sender_session_id"`
+		Recipient     string `json:"recipient_session_id"`
+		Type          string `json:"message_type"`
+		Body          string `json:"body"`
+		ParentID      string `json:"parent_message_id,omitempty"`
+		// ConversationID, without ParentID, threads the message into an
+		// existing conversation without naming a message it answers. The
+		// recipient must have written to the sender in that conversation. A
+		// Claude reply uses it when its daemon cannot tell which open request
+		// it answers (W4.4). An older gateway ignores it and starts a new
+		// conversation.
+		ConversationID string `json:"conversation_id,omitempty"`
 		IdempotencyKey string `json:"idempotency_key"`
 		// Files is the manifest of the files that come with the message. Only
 		// the daemon sets it, after its path checks and secret scan.

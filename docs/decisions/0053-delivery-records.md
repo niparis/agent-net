@@ -50,3 +50,36 @@ It retries an allowlist of known temporary failures at 30 seconds, 2 minutes,
 saying the message may have arrived are not retried. Success and expiry clear
 the schedule. Held requests keep their existing path. W4.3 remains responsible
 for final failure and expiry notices.
+
+## W4.3 update (2026-11-04)
+
+A message that fails for good gets one notice to its sender from agent-net
+itself: a failure that is not retried, or an expiry with no confirmed delivery.
+The notice is a normal stored notification with the idempotency key
+`undelivered:<message id>`. The unique sender and key pair makes it exactly
+once, also across restarts, with no new table. It is written in the same
+transaction as the final state. A detail saying the message may have arrived,
+or an expiry while still dispatched, gives "may not have arrived" instead of
+"was not delivered". There is no notice about agent-net's own messages (no
+loops), and none to the owner or a connected app, which already see the state.
+Held requests keep their own expiry reply.
+
+## W4.4 update (2026-11-04)
+
+A Claude session's SendMessage answer names a reply address, not a message.
+The old in-memory map from sender and recipient to the last message
+delivered was lost on restart and sent two open requests' answers to the
+same one. Now each frame names a reply socket per sender and conversation,
+and daemon.db keeps a `claude_deliveries` row per message delivered to a
+Claude session. A separate table, not more columns on `delivered`, because
+the rows are needed for every Claude delivery, with fields (sender,
+conversation, answered) that other harnesses do not use.
+
+An answer with one open request from that sender in that conversation is
+the reply to it. With several, a body naming exactly one of their IDs
+chooses it; otherwise the answer is stored in the conversation with no
+parent, and closes all of them. Guessing would mark the wrong request
+answered and tell the sender something false. This needs a
+`conversation_id` on `msg.send`; the gateway accepts it only when the
+recipient wrote to the sender in that conversation. Rows are kept until 24
+hours after their message expired, so a late answer still has its socket.

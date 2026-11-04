@@ -1777,7 +1777,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if owner != nc.id {
 			return nil, reject("message %q is not addressed to this node", p.MessageID)
 		}
-		return nil, st.ApplyDelivery(p.MessageID, p.State, p.Detail)
+		notice, noticed, err := st.ApplyDeliveryReport(p.MessageID, p.State, p.Detail)
+		if err != nil {
+			return nil, err
+		}
+		if noticed {
+			g.dispatch(ctx, notice)
+		}
+		return nil, nil
 
 	case "outcome.resolve":
 		p, err := decode[protocol.OutcomeResolution](raw)
@@ -1908,7 +1915,7 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 }
 
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {
-	if m.From == "agent-net" && !isWakeMessage(m) {
+	if needsReminderCheck(m) {
 		ok, err := g.store.reminderEligible(m.ParentID)
 		if err != nil || !ok {
 			return
