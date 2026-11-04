@@ -189,6 +189,10 @@ func TestCTOReadParity(t *testing.T) {
 	want, we := w.d.ctoReadConn().dispatch(context.Background(), "session_get", args)
 	gb, _ := json.Marshal(got)
 	wb, _ := json.Marshal(want)
+	// last_seen_ago is derived from the wall clock at each read, so two reads
+	// a second apart differ only there. The field must be present in both, and
+	// every other field is still compared exactly.
+	gb, wb = withoutLastSeenAgo(t, gb), withoutLastSeenAgo(t, wb)
 	if string(gb) != string(wb) || fmt.Sprint(ge) != fmt.Sprint(we) {
 		t.Fatalf("session %s %v; agent %s %v", gb, ge, wb, we)
 	}
@@ -201,6 +205,29 @@ func TestCTOReadParity(t *testing.T) {
 	if err != nil || id == "" || id == w.ownerID() || caller.client == "cli" {
 		t.Fatalf("CTO borrowed owner authority: %q %v", id, err)
 	}
+}
+
+// withoutLastSeenAgo blanks the one field a read derives from the wall clock,
+// so two reads taken at different moments still compare on every other field.
+func withoutLastSeenAgo(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode read: %v", err)
+	}
+	session, ok := out["session"].(map[string]any)
+	if !ok {
+		t.Fatalf("read has no session object: %s", raw)
+	}
+	if ago, ok := session["last_seen_ago"].(string); !ok || ago == "" {
+		t.Fatalf("read has no last_seen_ago: %s", raw)
+	}
+	session["last_seen_ago"] = "derived"
+	norm, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("encode read: %v", err)
+	}
+	return norm
 }
 
 func TestCTOOutcomeCanary(t *testing.T) {

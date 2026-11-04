@@ -100,7 +100,9 @@ func TestClaudeWorkerSyntheticModelFailureSendsNotice(t *testing.T) {
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
 
-	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "claude-opus-5-5:xhigh", Project: "shop", Harness: "claude", Task: "test task"})
+	// FAKE:ignore keeps the fake session from handing back, so the model
+	// failure is the only way the worker ends and its notice is the failure.
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "claude-opus-5-5:xhigh", Project: "shop", Harness: "claude", Task: "FAKE:ignore test task"})
 	rec := readClaude(t, repo)
 
 	projectsDir := filepath.Join(filepath.Dir(c.sessions), "projects")
@@ -143,7 +145,9 @@ func TestClaudeWorkerProcessExitedFailureNoteWins(t *testing.T) {
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
 
-	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "claude-opus-5-5:xhigh", Project: "shop", Harness: "claude", Task: "test task"})
+	// FAKE:ignore keeps the fake session from handing back, so the killed
+	// process is the only end and the failure note must win over it.
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "claude-opus-5-5:xhigh", Project: "shop", Harness: "claude", Task: "FAKE:ignore test task"})
 	rec := readClaude(t, repo)
 
 	projectsDir := filepath.Join(filepath.Dir(c.sessions), "projects")
@@ -184,7 +188,9 @@ func TestClaudeWorkerCapacityFailureIsInfra(t *testing.T) {
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
 
-	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "claude-opus-5-5", Project: "shop", Harness: "claude", Task: "test task"})
+	// FAKE:ignore keeps the fake session from handing back, so the model
+	// failure is the only way the worker ends and its notice is the failure.
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "claude-opus-5-5", Project: "shop", Harness: "claude", Task: "FAKE:ignore test task"})
 	rec := readClaude(t, repo)
 
 	projectsDir := filepath.Join(filepath.Dir(c.sessions), "projects")
