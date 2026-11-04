@@ -347,9 +347,10 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 			return nil, err
 		}
 		if name == "merger_stop" {
-			return d.call(ctx, "merger.set", map[string]any{"project": project.Name, "node_id": node, "session_id": "", "configure": true, "by": proposalActor(ctx)})
+			return d.call(ctx, "merger.set", map[string]any{"project": project.Name, "node_id": node, "session_id": "", "configure": true, "by": proposalActor(ctx), "owner_session": d.ownerSessionID()})
 		}
 		p.Project, p.NodeID, p.Harness, p.Merger, p.CTOProposal = project.Name, node, "claude", true, true
+		p.Folder, p.Branch, p.Create = "", "", false
 		p.FirstMessage = MergerFirstMessage
 		if p.Model == "" {
 			p.Model = "claude-opus-5-5"

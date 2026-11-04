@@ -763,7 +763,7 @@ CREATE TABLE IF NOT EXISTS project_mergers (
 CREATE TRIGGER IF NOT EXISTS remove_project_merger AFTER DELETE ON sessions BEGIN
  DELETE FROM project_mergers WHERE session_id=OLD.id;
 END;
-`}
+`, mergerLifecycleMigration()}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {

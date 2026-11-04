@@ -706,6 +706,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if p == nil {
 			p = map[string]any{}
 		}
+		if method == protocol.OpMergerSet {
+			p["owner_session"] = d.ownerSessionID()
+		}
 		delete(p, "by")
 		if actor := proposalActor(ctx); actor != "" {
 			p["by"] = actor

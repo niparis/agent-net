@@ -27,7 +27,7 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 	method := ""
 	var params any = struct{}{}
 	usage := func() error {
-		return fmt.Errorf("usage: agent-net charter show|set|history ...; graph [undo [id]]; node add-architect|remove <name>|settings <name> [setting value...]; edge set|remove <from> <kind> <to> [mode] [rule]")
+		return fmt.Errorf("usage: agent-net charter show|set|history ...; graph [undo [id]]; node add-architect|remove <name>|settings <name> [setting value...]; edge set|remove <from> <kind> <to> [mode] [rule]; merger set <project> <node-id> <session-id> | merger clear <project> <node-id>")
 	}
 	switch cmd {
 	case "merger":
