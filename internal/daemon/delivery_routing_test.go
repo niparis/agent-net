@@ -178,6 +178,7 @@ func TestDeliveryOwnerApprovalRoutesNextNodeStep(t *testing.T) {
 	a := startNode(t, g, nodeOpts{cmdline: "pi"})
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
 	repo := newRepo(t, "demo")
+	gitIn(t, repo, "checkout", "-q", "-b", "feat/routing")
 	merger := newRepo(t, "merger")
 	caller, callerID := helloDelivery(t, a, "caller", repo, "claude-opus-4")
 	owner, ownerID := helloDelivery(t, b, "merger", merger, "gpt-6")
@@ -194,7 +195,7 @@ func TestDeliveryOwnerApprovalRoutesNextNodeStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	var submitted protocol.ChangeSubmitResult
-	if err := json.Unmarshal(caller.mustCall(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{}), &submitted); err != nil {
+	if err := json.Unmarshal(caller.mustCall(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{TargetBranch: "main"}), &submitted); err != nil {
 		t.Fatal(err)
 	}
 	id, commit := submitted.Change.Change.ID, submitted.Change.Change.HeadCommit

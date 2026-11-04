@@ -162,7 +162,7 @@ func TestWorkerTaskMigrationKeepsOldBriefs(t *testing.T) {
 	if _, err := s.db.Exec(`ALTER TABLE sessions DROP COLUMN worker_run_active`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version=?`, len(migrations)); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker task marker and run state columns")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.migrate(); err != nil {

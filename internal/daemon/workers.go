@@ -726,6 +726,10 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 }
 
 func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, w *worker, rules string) (protocol.WorkerLaunched, error) {
+	if err := d.recordDeliveryRisk(w.id, l.Assessment); err != nil {
+		d.endWorker(w, protocol.StopStartFails)
+		return protocol.WorkerLaunched{}, fmt.Errorf("record delivery risk: %w", err)
+	}
 	ln := d.launchers[l.Harness]
 	cctx, cancel := context.WithTimeout(ctx, set.StartTimeout)
 	defer cancel()

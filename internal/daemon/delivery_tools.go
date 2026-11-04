@@ -11,9 +11,11 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -75,7 +77,7 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
 			return nil, true, err
 		}
-		res, err := d.stepReport(ctx, sid, a)
+		res, err := d.stepReport(ctx, sid, info, a)
 		return res, true, err
 	default:
 		var a protocol.ChangesFindArgs
@@ -183,6 +185,7 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 			}
 		}
 	}
+	q.SensitivePath = deliverySensitivePath(ctx, folder, q.BaseCommit, commit)
 	if err := d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out); err != nil {
 		return out, err
 	}
@@ -224,7 +227,7 @@ func branchUncommitted(ctx context.Context, dir, branch string) (bool, error) {
 
 // stepReport sends step.report for the calling session, after checking that
 // done_by is a worker it started.
-func (d *Daemon) stepReport(ctx context.Context, sid string, a protocol.StepReportArgs) (protocol.StepReportResult, error) {
+func (d *Daemon) stepReport(ctx context.Context, sid string, info protocol.SessionInfo, a protocol.StepReportArgs) (protocol.StepReportResult, error) {
 	var out protocol.StepReportResult
 	doneBy := a.DoneBy
 	if doneBy == sid {
@@ -243,6 +246,23 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, a protocol.StepRepo
 		if err := d.checkStartedWorker(ctx, sid, doneBy); err != nil {
 			return out, err
 		}
+	}
+	if q.Step == protocol.StepMerge && q.Result == protocol.StepResultPass && q.Fields[protocol.FieldMergedCommit] != "" {
+		var view protocol.ChangeView
+		if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: q.ChangeID}, &view); err != nil {
+			return out, err
+		}
+		// The gateway checks this again in its write transaction. If a new
+		// revision arrives during the git check, this report cannot count.
+		if q.Commit != view.Change.HeadCommit {
+			return out, fmt.Errorf("commit %s is not the head of change %s (now at %s)", q.Commit, q.ChangeID, view.Change.HeadCommit)
+		}
+		folder, err := d.deliveryMergeRepo(ctx, info, view.Change.Project)
+		if err != nil {
+			return out, err
+		}
+		contains := deliveryMergeContainsHead(ctx, folder, q.Commit, q.Fields[protocol.FieldMergedCommit])
+		q.MergeContainsHead = &contains
 	}
 	if err := d.deliveryCall(ctx, protocol.FrameStepReport, q, &out); err != nil {
 		return out, err
@@ -391,8 +411,12 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	if !protocol.ValidCommit(base) {
 		base = ""
 	}
+	var risk int
+	if err := d.st.db.QueryRow(`SELECT risk FROM worker_delivery_risk WHERE worker_id=?`, w.id).Scan(&risk); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fail(fmt.Errorf("read delivery risk: %w", err))
+	}
 	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
-		HeadCommit: head, Uncommitted: uncommitted, Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
+		HeadCommit: head, Uncommitted: uncommitted, Risk: risk, SensitivePath: deliverySensitivePath(ctx, dir, base, head), Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
 		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model}}
 	if base != "" {
 		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
@@ -443,4 +467,94 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	d.wmu.Unlock()
 	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s", w.id, sid, id, out.Change.Change.Revision, head)
 	return id, pushProblem
+}
+
+// Keep the start's risk across daemon restarts. Risk is the judge's Risk
+// field (K in its six-score note), not Reasoning (R). A later assessment
+// cannot erase a higher risk already known for this worker.
+func (d *Daemon) recordDeliveryRisk(workerID string, a *protocol.WorkerAssessment) error {
+	if a == nil {
+		return nil
+	}
+	if a.Risk < 0 || a.Risk > 5 {
+		return errors.New("judge risk must be 0 to 5")
+	}
+	_, err := d.st.db.Exec(`INSERT INTO worker_delivery_risk(worker_id,risk) VALUES(?,?)
+ ON CONFLICT(worker_id) DO UPDATE SET risk=MAX(risk,excluded.risk)`, workerID, a.Risk)
+	return err
+}
+
+// Diff names, not the printed stat: -z preserves spaces and unusual names,
+// and --no-renames checks both the removed and added path of a rename.
+// Missing git evidence requires review rather than silently skipping it.
+func deliverySensitivePath(ctx context.Context, dir, base, head string) string {
+	if !protocol.ValidCommit(base) || !protocol.ValidCommit(head) {
+		return "diff unavailable"
+	}
+	names, err := gitOut(ctx, dir, "diff", "--no-renames", "--name-only", "-z", base, head, "--")
+	if err != nil {
+		return "diff unavailable"
+	}
+	paths := strings.Split(names, "\x00")
+	for _, name := range paths {
+		if name == "testdata/migrations.lock" || strings.HasSuffix(name, "/testdata/migrations.lock") {
+			return "migrations"
+		}
+	}
+	for _, name := range paths {
+		lowerPath := strings.ToLower(name)
+		file := path.Base(lowerPath)
+		sensitive := name == "internal/gateway/store.go" || name == "install.sh" || strings.HasPrefix(name, ".github/workflows/") ||
+			(path.Dir(name) == "internal/daemon" && strings.HasPrefix(file, "files") && strings.HasSuffix(file, ".go")) ||
+			strings.Contains(lowerPath, "auth") || strings.Contains(lowerPath, "token") || strings.Contains(lowerPath, "security")
+		if sensitive {
+			if len(name) > 1024 || strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+				return "sensitive file"
+			}
+			return name
+		}
+	}
+	return ""
+}
+
+// A step owner may work in its own project. Use the target project's local
+// registration in that case, never a path from another machine's change.
+func (d *Daemon) deliveryMergeRepo(ctx context.Context, info protocol.SessionInfo, project string) (string, error) {
+	if info.Repo.Project == project && info.Repo.Root != "" {
+		return first(info.Repo.Worktree, info.Repo.Root), nil
+	}
+	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
+	if err != nil {
+		return "", fmt.Errorf("cannot find merge repository: %w", err)
+	}
+	var projects protocol.ProjectsResult
+	if err := json.Unmarshal(raw, &projects); err != nil {
+		return "", fmt.Errorf("cannot read merge repositories: %w", err)
+	}
+	folder := ""
+	for _, p := range projects.Projects {
+		if p.NodeID != d.cfg.NodeID || p.Name != project {
+			continue
+		}
+		if folder != "" && folder != p.Path {
+			return "", fmt.Errorf("more than one local repository for project %q: report the merge from a session in the target repository", project)
+		}
+		folder = p.Path
+	}
+	if folder == "" {
+		return "", fmt.Errorf("no local repository for project %q: report the merge from a session in that repository or register its local path", project)
+	}
+	return folder, nil
+}
+
+// Object existence alone is not proof: merged must be a commit object, and
+// the exact reported change head must be reachable from it. Git failures,
+// missing objects and incomplete clones all give negative proof.
+func deliveryMergeContainsHead(ctx context.Context, folder, head, merged string) bool {
+	kind, err := gitOut(ctx, folder, "cat-file", "-t", merged)
+	if err != nil || kind != "commit" {
+		return false
+	}
+	_, err = gitOut(ctx, folder, "merge-base", "--is-ancestor", head, merged)
+	return err == nil
 }

@@ -658,3 +658,75 @@ func TestDeliveryEvidenceIsAppendOnly(t *testing.T) {
 		t.Fatalf("evidence %+v", v.Evidence)
 	}
 }
+
+func TestChangeReviewRiskPersistsAndCannotBeDropped(t *testing.T) {
+	r := newDeliveryRig(t)
+	q := r.workerSubmit("feat/risk", commitA)
+	q.Risk, q.SensitivePath = 4, "migrations"
+	c := r.submit(r.a, q).Change.Change
+	view, err := r.s.GetChange(c.ID)
+	if err != nil || view.Change.Risk != 4 || view.Change.SensitivePath != "migrations" {
+		t.Fatalf("stored change=%+v err=%v", view.Change, err)
+	}
+	// An older daemon or a plain submit must not drop an existing review trigger.
+	q.Risk, q.SensitivePath = 0, ""
+	q.HeadCommit = commitB
+	c = r.submit(r.a, q).Change.Change
+	if c.Risk != 4 || c.SensitivePath != "migrations" {
+		t.Fatalf("resubmit dropped review triggers: %+v", c)
+	}
+	for _, step := range []string{protocol.StepAccept, protocol.StepTest} {
+		fields := map[string]string{}
+		if step == protocol.StepTest {
+			fields[protocol.FieldSuite] = protocol.SuiteFull
+		}
+		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: step}, Result: protocol.StepResultPass, Commit: commitB, Fields: fields})
+	}
+	_, err = r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitB, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}})
+	if err == nil || !strings.Contains(err.Error(), "review") {
+		t.Fatalf("merge without review: %v", err)
+	}
+}
+
+func TestChangeReviewRiskMigrationUpgrade(t *testing.T) {
+	r := newDeliveryRig(t)
+	id := r.submit(r.a, r.workerSubmit("feat/old", commitA)).Change.Change.ID
+	// Simulate the schema of the previous release while retaining its change.
+	for _, column := range []string{"risk", "sensitive_path"} {
+		if _, err := r.s.db.Exec(`ALTER TABLE delivery_changes DROP COLUMN ` + column); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery review risk columns")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	view := r.get(id)
+	if view.Change.Risk != 0 || view.Change.SensitivePath != "" || view.Change.HeadCommit != commitA {
+		t.Fatalf("upgrade changed existing work: %+v", view.Change)
+	}
+}
+
+func TestChangeReviewReasonSurvivesOfflineOwner(t *testing.T) {
+	r := newDeliveryRig(t)
+	q := r.workerSubmit("feat/reason", commitA)
+	q.Risk = 4
+	c := r.submit(r.a, q).Change.Change
+	p := protocol.PipelineToday()
+	for i := range p.Steps {
+		if p.Steps[i].Step == protocol.StepReview {
+			p.Steps[i].Owner = protocol.StepOwner{Kind: protocol.OwnerNode, Node: "offline-reviewer"}
+		}
+	}
+	view, err := r.s.changeView(c, p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range view.Steps {
+		if st.Step == protocol.StepReview && !strings.Contains(st.Note, "required: risk 4") {
+			t.Fatalf("offline owner hid review reason: %+v", st)
+		}
+	}
+}

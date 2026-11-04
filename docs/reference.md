@@ -1894,12 +1894,45 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 ### Delivery changes
 
-The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records changes and the evidence of each step in the gateway. Node-owned ready steps have an initial queue; pipeline settings and owner controls are available, and a merge pass is refused until its required steps pass. Git itself is not blocked. A **change** is one unit of delivery: a project, the machine that holds the branch, the branch, its head commit, where it came from (`worker`, `session` or `person`), its caller, and its state (`open`, `merged`, `done` or `stopped`). A **revision** is the head at one complete hand-back or one submit. **Evidence** is one step report on one revision and one exact commit. Evidence of an older revision no longer counts: after a fix, the steps run again on the new head. The pipeline uses `delivery.pipeline.review.required_from`, `delivery.pipeline.review.independent`, `delivery.pipeline.review.requires`, `delivery.pipeline.merge.requires`, `delivery.pipeline.merge.approver` and `delivery.pipeline.deploy.approver`. Legacy delivery settings are shorthand for these rules. Settings also offers owner rows for delivery steps. Four tools, for agent sessions, go through the daemon to the gateway:
+The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records changes and the evidence of each step in the gateway. Node-owned ready steps have an initial queue; pipeline settings and owner controls are available, and a merge pass is refused until its required steps pass. Git itself is not blocked. A **change** is one unit of delivery: a project, the machine that holds the branch, the branch, its head commit, where it came from (`worker`, `session` or `person`), its caller, and its state (`open`, `merged`, `done` or `stopped`). A **revision** is the head at one complete hand-back or one submit. **Evidence** is one step report on one revision and one exact commit. Evidence of an older revision no longer counts: after a fix, the steps run again on the new head. The pipeline uses `delivery.pipeline.review.required_from`, `delivery.pipeline.review.required_risk`, `delivery.pipeline.review.independent`, `delivery.pipeline.review.requires`, `delivery.pipeline.merge.requires`, `delivery.pipeline.merge.approver` and `delivery.pipeline.deploy.approver`. Legacy delivery settings are shorthand for these rules. Settings also offers owner rows for delivery steps. Four tools, for agent sessions, go through the daemon to the gateway:
 
 - `agent_change_submit {branch, commit, target_branch, project, change, title}` submits work done outside a worker. Workers cannot call it: their complete hand-back submits for them (see **Delivery record at hand-back** under [workers](#workers)). The daemon fills in the calling session, its project and model, and reads the branch from git. `branch` defaults to the session folder's current branch, and `commit` to its head; a `commit` must be the full hash of a commit on that branch. `project` must be the session's own project. When a local `target_branch` is given, the daemon records its merge base and a diff stat for the task. `change` names the change this work continues, so it follows the work to another branch. Without it, an open change on the same project and branch takes the new head, or a new change starts. A new head commit makes a new revision.
 - `agent_step_claim {change, step, for, after_merge, commit}` reserves a ready node-owned task before work starts. The first eligible session of the owner node to claim or report the step takes it. A repeat claim by that session is safe; another session, a worker, or a claim for a different commit is refused.
 - `agent_step_report {change, step, for, after_merge, result, commit, fields, done_by, note}` reports one step. `step` is one of `accept`, `test`, `review`, `approve`, `merge`, `release`, `deploy` and `verify`. `result` is `pass`, `fail`, `needs_owner` or `close` (close without merge: the change stops). `commit` is the full hash the step checked: the change's head, or the merged commit for a step after merge; a report for another commit or an older revision is refused. `fields` are evidence fields such as `suite`, `tests_added`, `findings_open`, `run` and `merged_commit`. `done_by` names a worker you started that did the work, such as a review worker; it defaults to you. For a delegated approval, the caller or an allowed delegate may report an owner who approved directly in the session with `done_by: "owner"`. An `ask` approval requires the owner's Inbox answer. Workers cannot call this tool: their caller reports. The gateway fills in who did the work and that session's model, and sets `independent` itself: `none` for the author's own session, `session` for another session of the same model maker, `family` for another model maker, the owner or GitHub. The model maker is Anthropic, OpenAI, Google, DeepSeek and so on, so a Sonnet review of an Opus change is `session`, not `family`. A `merge` pass marks the change merged; it is done when every step after merge has passed.
 - `agent_changes_find {change, project, state, caller, limit, cursor}` reads changes, for agents and workers. `change` returns one change in full, with its revisions and the evidence of every revision. Otherwise it lists changes newest first: `state` is `active` (the default: open and merged), `open`, `merged`, `done`, `stopped` or `any`; `caller: "me"` keeps the changes whose caller you are. Each item has the change, where each step stands (`ready`, `running`, `waiting` with what is missing, `passed`, `failed`, `needs_owner`, `closed` or `skipped`), and `next`, the steps that may start now.
+
+Review is required from difficulty `hard` up, or when the judge's risk score
+is 4 or 5, or the diff touches a sensitive path. The optional `risk` field on
+a change is 0 when unknown. It comes from `WorkerAssessment.Risk` (shown as
+`K` in the judge's six-score note; `R` in that note is reasoning). The ordered
+rule `delivery.pipeline.review.required_risk` defaults to 4. Network and repo
+values may lower it to 1, 2 or 3; a repo cannot raise its network threshold.
+Sensitive paths always require review: `internal/gateway/store.go`, a
+`testdata/migrations.lock`, path components containing `auth`, `token` or `security`
+(case insensitive), `internal/daemon/files*.go`, `install.sh`, and files under
+`.github/workflows/`. The daemon checks both sides of a rename at hand-back.
+If the diff cannot be read, review is required. A session submission with a
+local `target_branch` also checks its diff. Without a target branch, or when it
+cannot be resolved, the trigger is `diff unavailable` and review is required.
+The step note says, for example,
+`required: risk 4` or `required: touches migrations`. A later submit cannot
+erase a risk or sensitive-path trigger already recorded on the change.
+Older daemons omit these fields, so unknown risk keeps the difficulty rule.
+Worker risk is kept in the daemon's `worker_delivery_risk` table across restarts.
+
+For a merge pass with `merged_commit`, the daemon checks that the object is a
+commit in the target repository and runs `git merge-base --is-ancestor` to
+check that it contains the change's exact head. It uses the reporting session's
+repository when it is the target project, or that project's local registration
+when the reporter works elsewhere. Missing objects and failed git checks send
+`merge_contains_head: false`; the gateway refuses the report without recording
+merge evidence or changing the change's state. A positive proof still needs
+all required steps. The optional proof belongs to the reported head and merged
+commit. The gateway checks the head again when saving, so a concurrent revision
+cannot reuse the proof. A daemon at version 0.4.131 or newer must send proof;
+the gateway refuses a merge pass without it. Older daemons that omit the field keep the existing
+behavior. Dev builds must also send proof. An older gateway ignores the new
+field. This does not block git itself.
 
 The daemon methods behind them are `change_submit`, `step_claim`, `step_report` and `changes_find`. They need an agent session; the command line is refused.
 

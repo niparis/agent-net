@@ -68,6 +68,9 @@ func PipelineFromSettings(snap settings.Snapshot, repo string) (Pipeline, error)
 			if p.Steps[i].Step != StepReview {
 				continue
 			}
+			if risk := snap.Int("delivery.pipeline.review.required_risk", where); risk != 4 {
+				p.Steps[i].RequiredRisk = risk
+			}
 			p.Steps[i].Independent = snap.String("delivery.pipeline.review.independent", where)
 			if p.Steps[i].RequiredFrom != "" {
 				p.Steps[i].RequiredFrom = snap.String("delivery.pipeline.review.required_from", where)

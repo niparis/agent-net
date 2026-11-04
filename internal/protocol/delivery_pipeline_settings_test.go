@@ -167,3 +167,25 @@ func TestMergeSuiteAndTestsAddedBothRequired(t *testing.T) {
 		}
 	}
 }
+
+func TestPipelineReviewRiskSetting(t *testing.T) {
+	snap := settings.Snapshot{DeliveryPipelineCutover: true, Values: []settings.Value{
+		{Key: "delivery.pipeline.review.required_risk", Level: "network", Scope: "network", Value: json.RawMessage(`3`)},
+		{Key: "delivery.pipeline.review.required_risk", Level: "repo", Scope: "demo", Value: json.RawMessage(`4`)},
+	}}
+	p, err := PipelineFromSettings(snap, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, _ := p.Find(StepRef{Step: StepReview})
+	if review.RequiredRisk != 3 {
+		t.Fatalf("repo loosened risk threshold: %+v", review)
+	}
+	c := testChange()
+	c.Risk = 3
+	for _, st := range p.Status(c, nil) {
+		if st.Step == StepReview && st.State == StepStateSkipped {
+			t.Fatal("risk 3 review skipped")
+		}
+	}
+}
