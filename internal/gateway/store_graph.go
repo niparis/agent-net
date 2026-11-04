@@ -696,6 +696,21 @@ func (s *Store) SetDeliveryOwner(q protocol.DeliveryOwnerSetRequest, actor strin
 	} else if err := bumpSettingsRevision(tx); err != nil {
 		return err
 	}
+	_, err = tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN
+        (SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge
+        JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.claimed_by='' AND t.completed=0)`, q.Project, q.Step, q.For, boolInt(q.AfterMerge))
+	if err != nil {
+		return err
+	}
+	owner := protocol.DeliveryOwnerFromSource(node)
+	if owner.Kind == protocol.OwnerNode && node != "" {
+		_, err = tx.Exec(`UPDATE delivery_step_tasks SET owner_node=? WHERE claimed_by='' AND completed=0 AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, node, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
+	} else {
+		_, err = tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE claimed_by='' AND completed=0 AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
+	}
+	if err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}

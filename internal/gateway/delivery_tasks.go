@@ -92,7 +92,7 @@ func retireStepMessages(tx *sql.Tx, change string) error {
 }
 
 func dismissStepInbox(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, at int64) error {
-	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='',answered_at=? WHERE status='open' AND id IN (
+	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='rule_disabled',answered_at=? WHERE status='open' AND id IN (
 		SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
 		at, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
 	return err
@@ -321,8 +321,15 @@ func (s *Store) storeStepTaskMessage(t nodeTaskTarget) (protocol.Message, error)
 	if stat == "" {
 		stat = "not available"
 	}
+	displayOwner := t.owner
+	if displayOwner == callerTaskOwner {
+		displayOwner = "caller"
+	}
+	if displayOwner == delegateTaskOwner {
+		displayOwner = "delegate"
+	}
 	body := fmt.Sprintf("[agent-net step task]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
-		c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(t.owner),
+		c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
 		protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(p.ReportFields(t.ref), ", "))
 	now := s.now().UTC()
 	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: "agent-net", FromName: "agent-net", FromHarness: "agent-net",
@@ -525,7 +532,7 @@ func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.S
 		}
 		// A rule can be re-enabled for this same revision after it was
 		// relaxed. Restore an unanswered item rather than creating a duplicate.
-		_, err = tx.Exec(`UPDATE inbox_items SET status='open',answered_at=0 WHERE status='dismissed' AND id IN
+		_, err = tx.Exec(`UPDATE inbox_items SET status='open',answered_at=0 WHERE status='dismissed' AND answer='rule_disabled' AND id IN
 			(SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
 			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
 		return err
@@ -535,7 +542,7 @@ func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.S
 		commit = c.MergedCommit
 	}
 	item, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "approval", SessionID: c.Caller, Node: c.Project,
-		Text: fmt.Sprintf("Approve %s for change %s, project %s, branch %s, commit %s", ref.String(), c.ID, c.Project, c.Branch, commit)})
+		Text: fmt.Sprintf("Approve %s for change %s, project %s, branch %s, commit %s", strings.TrimPrefix(ref.String(), "approve for "), c.ID, c.Project, c.Branch, commit)})
 	if err != nil {
 		return err
 	}
@@ -557,6 +564,13 @@ func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	}
 	if err != nil {
 		return false, err
+	}
+	if completed != 0 {
+		var result string
+		err := tx.QueryRow(`SELECT result FROM delivery_evidence WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? ORDER BY seq DESC LIMIT 1`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&result)
+		if err == nil && result == string(protocol.StepResultNeedsOwner) && claimed == session {
+			completed = 0
+		}
 	}
 	if completed != 0 {
 		return true, reject("%s was already reported by %s", ref, claimed)

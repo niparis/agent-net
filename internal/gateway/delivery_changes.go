@@ -97,6 +97,13 @@ func (s *Store) DeliveryNeedsPush(project, machine string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	var remoteCaller int
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_changes c JOIN sessions s ON s.id=c.caller WHERE c.project=? AND s.node_id<>?)`, project, machine).Scan(&remoteCaller); err != nil {
+		return false, err
+	}
+	if remoteCaller != 0 {
+		return true, nil
+	}
 	seen := map[string]bool{}
 	for _, step := range p.Steps {
 		if step.Owner.Kind != protocol.OwnerNode || seen[step.Owner.Node] {
@@ -335,6 +342,9 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 			return protocol.ChangeSubmitResult{}, err
 		}
 	}
+	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision<>?)`, s.now().UnixNano(), c.ID, c.Revision); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
 	if err := s.queueSteps(tx, c, p, now); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
@@ -413,6 +423,10 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 			return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step")
 		}
 		switch step.Owner.Kind {
+		case protocol.OwnerCaller:
+			if q.SessionID != c.Caller {
+				return protocol.StepReportResult{}, reject("%s is owned by the caller", q.StepRef)
+			}
 		case protocol.OwnerPerson:
 			return protocol.StepReportResult{}, reject("%s is owned by the person: answer its Inbox approval", q.StepRef)
 		case protocol.OwnerGitHub:
@@ -475,6 +489,11 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if next != c {
 		next.UpdatedAt = now
 		if err := writeChange(tx, next, false); err != nil {
+			return protocol.StepReportResult{}, err
+		}
+	}
+	if next.State == protocol.ChangeStopped {
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=?)`, s.now().UnixNano(), c.ID); err != nil {
 			return protocol.StepReportResult{}, err
 		}
 	}
