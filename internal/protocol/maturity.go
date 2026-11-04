@@ -64,17 +64,17 @@ const (
 
 // MaturityDefaults is the set of controls a maturity level selects.
 type MaturityDefaults struct {
-	recipe           *settings.Snapshot
-	pipelineTestText string
-	pipelineMergeText string
+	recipe             *settings.Snapshot
+	pipelineTestText   string
+	pipelineMergeText  string
 	pipelineDeployText string
 	pipelineReviewText string
-	Level            string `json:"level,omitempty"`
-	TestsBeforeMerge string `json:"tests_before_merge"`
-	MergeAuthority   string `json:"merge_authority"`
-	WorkerSandbox    string `json:"worker_sandbox"`
-	JudgeConsumers   string `json:"judge_consumers"`
-	DeployRule       string `json:"deploy_rule"`
+	Level              string `json:"level,omitempty"`
+	TestsBeforeMerge   string `json:"tests_before_merge"`
+	MergeAuthority     string `json:"merge_authority"`
+	WorkerSandbox      string `json:"worker_sandbox"`
+	JudgeConsumers     string `json:"judge_consumers"`
+	DeployRule         string `json:"deploy_rule"`
 }
 
 // NodeSettingsResult answers node_settings_get and node_settings_set: the

@@ -9,12 +9,12 @@ import (
 
 // DeliveryAssignment is the graph edge that assigns a step to a node.
 type DeliveryAssignment struct {
-	Project string `json:"project"`
-	Step    string `json:"step"`
-	For     string `json:"for,omitempty"`
-	AfterMerge bool `json:"after_merge,omitempty"`
-	Node    string `json:"node"`
-	Kind    string `json:"kind"`
+	Project    string `json:"project"`
+	Step       string `json:"step"`
+	For        string `json:"for,omitempty"`
+	AfterMerge bool   `json:"after_merge,omitempty"`
+	Node       string `json:"node"`
+	Kind       string `json:"kind"`
 }
 
 func deliveryApproverShorthand(key string, raw json.RawMessage, repo string, assignments []DeliveryAssignment) json.RawMessage {

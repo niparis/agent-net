@@ -599,14 +599,14 @@ type Value struct {
 	Value json.RawMessage `json:"value"`
 }
 type Snapshot struct {
-	DeliveryCutover      bool              `json:"delivery_cutover,omitempty"`
-	DeliveryPipelineCutover bool            `json:"delivery_pipeline_cutover,omitempty"`
+	DeliveryCutover         bool                 `json:"delivery_cutover,omitempty"`
+	DeliveryPipelineCutover bool                 `json:"delivery_pipeline_cutover,omitempty"`
 	DeliveryAssignments     []DeliveryAssignment `json:"delivery_assignments,omitempty"`
-	WorkerSandboxCutover bool              `json:"worker_sandbox_cutover,omitempty"`
-	Revision             int64             `json:"revision"`
-	Recipe               string            `json:"recipe"`
-	Values               []Value           `json:"values"`
-	Maturity             map[string]string `json:"maturity"`
+	WorkerSandboxCutover    bool                 `json:"worker_sandbox_cutover,omitempty"`
+	Revision                int64                `json:"revision"`
+	Recipe                  string               `json:"recipe"`
+	Values                  []Value              `json:"values"`
+	Maturity                map[string]string    `json:"maturity"`
 }
 type Host struct{ RAMBytes int64 }
 type Where struct {

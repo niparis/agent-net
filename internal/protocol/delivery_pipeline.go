@@ -122,12 +122,12 @@ func DeliveryStepEdge(step string) string {
 // DeliveryOwnerSetRequest changes one graph assignment. Node is empty to
 // clear it; Expect is the assignment the owner saw when opening the editor.
 type DeliveryOwnerSetRequest struct {
-	Project string `json:"project"`
-	Step    string `json:"step"`
-	For     string `json:"for,omitempty"`
-	AfterMerge bool `json:"after_merge,omitempty"`
-	Node    string `json:"node"`
-	Expect  string `json:"expect"`
+	Project    string `json:"project"`
+	Step       string `json:"step"`
+	For        string `json:"for,omitempty"`
+	AfterMerge bool   `json:"after_merge,omitempty"`
+	Node       string `json:"node"`
+	Expect     string `json:"expect"`
 }
 
 // The result a step owner reports. close closes the change without merge (its
@@ -1394,12 +1394,12 @@ func sortedKeys(m map[string]string) []string {
 // sends step tasks, as for the idle check, so edge request rules do not hold
 // them.
 const (
-	FrameChangeSubmit = "change.submit"
-	FrameChangeGet    = "change.get"
-	FrameChangeList   = "change.list"
-	FrameStepClaim    = "step.claim"
-	FrameStepReport   = "step.report"
-	FrameStepTask     = "step.task"
+	FrameChangeSubmit      = "change.submit"
+	FrameChangeGet         = "change.get"
+	FrameChangeList        = "change.list"
+	FrameStepClaim         = "step.claim"
+	FrameStepReport        = "step.report"
+	FrameStepTask          = "step.task"
 	FrameDeliveryNeedsPush = "delivery.needs_push"
 )
 

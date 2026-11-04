@@ -41,14 +41,14 @@ func (d *Daemon) loadSettingsSnapshot() error {
 }
 func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 	var wire struct {
-		Revision             *int64            `json:"revision"`
-		Recipe               string            `json:"recipe"`
-		DeliveryCutover      bool              `json:"delivery_cutover"`
-		DeliveryPipelineCutover bool           `json:"delivery_pipeline_cutover"`
+		Revision                *int64                        `json:"revision"`
+		Recipe                  string                        `json:"recipe"`
+		DeliveryCutover         bool                          `json:"delivery_cutover"`
+		DeliveryPipelineCutover bool                          `json:"delivery_pipeline_cutover"`
 		DeliveryAssignments     []settings.DeliveryAssignment `json:"delivery_assignments"`
-		WorkerSandboxCutover bool              `json:"worker_sandbox_cutover"`
-		Values               []settings.Value  `json:"values"`
-		Maturity             map[string]string `json:"maturity"`
+		WorkerSandboxCutover    bool                          `json:"worker_sandbox_cutover"`
+		Values                  []settings.Value              `json:"values"`
+		Maturity                map[string]string             `json:"maturity"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return settings.Snapshot{}, err
