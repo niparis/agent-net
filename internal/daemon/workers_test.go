@@ -513,13 +513,17 @@ func TestWorkerEndsWhenIdle(t *testing.T) {
 func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
-	set.Idle = 700 * time.Millisecond
+	// One send to the worker can take about a second under the race detector
+	// on a busy machine, and the worker counts as idle while it is in flight.
+	// The limit stays well above that; the talk below lasts longer than it,
+	// so a worker that ignored the messages would still end during the talk.
+	set.Idle = 2 * time.Second
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	// Keep talking for longer than the idle time.
-	end := time.Now().Add(1500 * time.Millisecond)
+	end := time.Now().Add(set.Idle + time.Second)
 	for time.Now().Before(end) {
 		w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "ping"})
 		time.Sleep(150 * time.Millisecond)
