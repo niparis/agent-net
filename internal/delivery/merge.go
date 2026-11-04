@@ -15,6 +15,16 @@ import (
 // whose evidence was checked, in a worktree it owns, and refuses when
 // anything moved. It does not decide whether a merge is allowed: the caller
 // checks the evidence first.
+//
+// Checkout, merge and push never run in a repository a worker can write. The
+// config of such a repository is one file shared by all its worktrees, so no
+// check of it can close the gap between the check and the git call that
+// reads it. Merge works in a bare mirror it owns (MirrorDir). It fetches the
+// target branch from the remote URL the caller pinned (RemoteURL) and the
+// change branch from RepoDir by name, merges in a worktree of the mirror, and
+// pushes to the pinned URL. The only git call that touches RepoDir is the
+// fetch, which runs git upload-pack there; it runs no filter, merge driver or
+// hook, and RepoDir's config is checked first anyway.
 
 // Merge modes.
 const (
@@ -26,6 +36,11 @@ const (
 const DefaultMergeTimeout = 5 * time.Minute
 
 const (
+	// mergeMirrorMarker, in a mirror Merge created, marks it as Merge's own.
+	mergeMirrorMarker = "agent-net-merge-mirror"
+	// mergeSourceRef is where the change branch of RepoDir is fetched to
+	// inside the mirror, one ref per branch name.
+	mergeSourceRef = "refs/agent-net/source/"
 	// mergeCleanupTimeout bounds the cleanup after a failed merge. The
 	// cleanup runs even when the caller's context has ended.
 	mergeCleanupTimeout = 30 * time.Second
@@ -58,6 +73,9 @@ var (
 	ErrNotFastForward = errors.New("head is not a fast-forward of the target branch")
 	// ErrConflict: merge-commit mode, and the merge conflicts. The worktree is left clean.
 	ErrConflict = errors.New("merge conflict")
+	// ErrNotOwnedMirror: MirrorDir exists but is not a bare repository that
+	// Merge created. Nothing in it was changed.
+	ErrNotOwnedMirror = errors.New("merge mirror is not one that Merge created")
 	// ErrRemoteMoved: the remote target branch moved during the call (or was
 	// created by someone else). Nothing was forced.
 	ErrRemoteMoved = errors.New("remote target branch moved during the merge")
@@ -71,12 +89,19 @@ type MergeIdentity struct {
 
 // MergeRequest says what to merge and where.
 type MergeRequest struct {
-	// RepoDir is a checkout of the repository. Its branches and files are
-	// never changed: the merge runs in WorktreeDir. Only remote-tracking refs
-	// in RepoDir are updated by the fetch.
+	// RepoDir is a checkout of the repository, where the change branch may
+	// live. Nothing in it is changed: not its branches, files, refs or
+	// config. It is only read, by fetching the change branch from it.
 	RepoDir string
+	// MirrorDir is a bare repository owned by Merge, written only by the
+	// daemon. When it is missing or an empty directory, Merge creates it and
+	// marks it as its own. An existing directory must be such a marked bare
+	// repository (ErrNotOwnedMirror). The merge worktree is a worktree of it.
+	// The file MirrorDir+".lock" is locked for the whole call, after the
+	// worktree lock.
+	MirrorDir string
 	// WorktreeDir is the merge worktree, owned by Merge. When it is missing
-	// or an empty directory, Merge creates it as a worktree of RepoDir on a
+	// or an empty directory, Merge creates it as a worktree of MirrorDir on a
 	// detached HEAD and marks it as its own. An existing directory must be
 	// such a marked worktree, still on a detached HEAD, and not a symlink;
 	// Merge refuses anything else (ErrNotOwnedWorktree). At the start of
@@ -84,12 +109,21 @@ type MergeRequest struct {
 	// (reset --hard, clean -ffdx). The file WorktreeDir+".lock" is locked for
 	// the whole call.
 	WorktreeDir string
-	// Remote is the name of the remote, for example "origin".
+	// Remote is the name of the remote, for example "origin". It names the
+	// remote-tracking refs inside the mirror and the remote RepoDir must
+	// have, with URL RemoteURL.
 	Remote string
+	// RemoteURL is required: the URL of Remote, from the caller's own record
+	// (the project registry, or the first URL it saw), never read from the
+	// repository. Merge fetches the target branch from it and pushes to it.
+	// It refuses (ErrRemoteURL) when RepoDir's own fetch or push URL for
+	// Remote is not exactly this string, which is a sign that someone
+	// changed the config.
+	RemoteURL string
 	// TargetBranch is the branch to merge into, for example "main".
 	TargetBranch string
 	// ChangeBranch is the branch that holds the change. It must still point
-	// at HeadSHA, locally or on the remote.
+	// at HeadSHA, in RepoDir or on the remote.
 	ChangeBranch string
 	// BaseSHA is the full commit ID the change started from, as recorded.
 	// A change whose HeadSHA is BaseSHA is empty and is refused.
@@ -170,7 +204,8 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 	if err != nil {
 		return res, err
 	}
-	repo := gitIn{gitPath: req.GitPath, dir: req.RepoDir}
+	src := gitIn{gitPath: req.GitPath, dir: req.RepoDir}
+	repo := gitIn{gitPath: req.GitPath, dir: req.MirrorDir} // the mirror
 	wt := gitIn{gitPath: req.GitPath, dir: req.WorktreeDir}
 
 	unlock, err := lockMergeWorktree(ctx, req.WorktreeDir)
@@ -178,13 +213,23 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 		return res, err
 	}
 	defer unlock()
-
-	// 1. Refuse a repository whose history was altered. Ask the remote
-	// itself where the target is, then fetch, then check that nothing moved.
-	if err := checkHistory(ctx, repo); err != nil {
+	unlockMirror, err := lockMergeWorktree(ctx, req.MirrorDir)
+	if err != nil {
 		return res, err
 	}
-	tip, exists, err := remoteBranchTip(ctx, repo, req.Remote, req.TargetBranch)
+	defer unlockMirror()
+
+	// 1. Refuse a source repository that disagrees with the pinned URL or
+	// names programs in its config (git upload-pack runs inside it). Then
+	// get the mirror. Ask the remote itself where the target is, then fetch,
+	// then check that nothing moved.
+	if err := checkSource(ctx, src, req); err != nil {
+		return res, err
+	}
+	if err := prepareMirror(ctx, req, repo); err != nil {
+		return res, err
+	}
+	tip, exists, err := remoteBranchTip(ctx, repo, req.RemoteURL, req.TargetBranch)
 	if err != nil {
 		return res, err
 	}
@@ -195,7 +240,10 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 		tip = req.CreateFrom
 		res.Created = true
 	}
-	if err := fetchRefspec(ctx, repo, req.Remote, "+refs/heads/*:refs/remotes/"+req.Remote+"/*"); err != nil {
+	if err := fetchRefspec(ctx, repo, req.RemoteURL, "+refs/heads/*:refs/remotes/"+req.Remote+"/*"); err != nil {
+		return res, err
+	}
+	if err := fetchSourceBranch(ctx, src, repo, req); err != nil {
 		return res, err
 	}
 	if m.afterFetch != nil {
@@ -251,6 +299,9 @@ func (m *mergeRunner) merge(ctx context.Context, req MergeRequest) (MergeResult,
 	if req.Push {
 		if m.beforePush != nil {
 			m.beforePush()
+		}
+		if err := checkConfig(ctx, wt); err != nil {
+			return res, err
 		}
 		if err := pushWithLease(ctx, wt, req, tip, res.Created, after); err != nil {
 			return res, err
@@ -326,7 +377,7 @@ func abortMerge(ctx context.Context, wt gitIn) (bool, error) {
 	return true, nil
 }
 
-// pushWithLease pushes after to the target branch. The lease makes it a
+// pushWithLease pushes after to the target branch of the pinned remote URL. The lease makes it a
 // compare-and-swap: the remote takes it only while the branch is at tip, or
 // does not exist when created is true.
 func pushWithLease(ctx context.Context, wt gitIn, req MergeRequest, tip string, created bool, after string) error {
@@ -336,11 +387,11 @@ func pushWithLease(ctx context.Context, wt gitIn, req MergeRequest, tip string, 
 		expect = ""
 	}
 	_, perr := wt.run(ctx, "push", "--quiet", "--no-verify", "--force-with-lease="+ref+":"+expect,
-		req.Remote, after+":"+ref)
+		req.RemoteURL, after+":"+ref)
 	if perr == nil {
 		return nil
 	}
-	now, exists, lerr := remoteBranchTip(ctx, wt, req.Remote, req.TargetBranch)
+	now, exists, lerr := remoteBranchTip(ctx, wt, req.RemoteURL, req.TargetBranch)
 	if lerr == nil {
 		switch {
 		case created && exists:
@@ -362,7 +413,7 @@ func remoteBranchTip(ctx context.Context, g gitIn, remote, branch string) (sha s
 	ref := "refs/heads/" + branch
 	out, err := g.run(ctx, "ls-remote", "--refs", remote, ref)
 	if err != nil {
-		return "", false, fmt.Errorf("ls-remote %s: %w", remote, err)
+		return "", false, fmt.Errorf("ls-remote %s: %w", redactURL(remote), err)
 	}
 	for _, line := range strings.Split(out, "\n") {
 		id, name, ok := strings.Cut(line, "\t")
@@ -370,7 +421,7 @@ func remoteBranchTip(ctx context.Context, g gitIn, remote, branch string) (sha s
 			continue // ls-remote also matches refs that only end with ref
 		}
 		if !IsCommitID(id) {
-			return "", false, fmt.Errorf("ls-remote %s: bad commit ID %q for %s", remote, id, ref)
+			return "", false, fmt.Errorf("ls-remote %s: bad commit ID %q for %s", redactURL(remote), id, ref)
 		}
 		return id, true, nil
 	}
@@ -412,11 +463,17 @@ func lockMergeWorktree(ctx context.Context, dir string) (func(), error) {
 
 // checkMergeRequest validates req and makes the paths absolute.
 func checkMergeRequest(ctx context.Context, req MergeRequest) (MergeRequest, error) {
-	if req.RepoDir == "" || req.WorktreeDir == "" {
-		return req, errors.New("merge: RepoDir and WorktreeDir are required")
+	if req.RepoDir == "" || req.WorktreeDir == "" || req.MirrorDir == "" {
+		return req, errors.New("merge: RepoDir, MirrorDir and WorktreeDir are required")
+	}
+	if err := checkRemoteURLValue(req.RemoteURL); err != nil {
+		return req, fmt.Errorf("merge: %w", err)
 	}
 	var err error
 	if req.RepoDir, err = filepath.Abs(req.RepoDir); err != nil {
+		return req, err
+	}
+	if req.MirrorDir, err = filepath.Abs(req.MirrorDir); err != nil {
 		return req, err
 	}
 	if req.WorktreeDir, err = filepath.Abs(req.WorktreeDir); err != nil {
@@ -442,7 +499,11 @@ func checkMergeRequest(ctx context.Context, req MergeRequest) (MergeRequest, err
 	if req.Mode == MergeModeCommit && (strings.TrimSpace(req.Identity.Name) == "" || strings.TrimSpace(req.Identity.Email) == "") {
 		return req, errors.New("merge: merge-commit mode needs an identity name and email")
 	}
-	repo := gitIn{gitPath: req.GitPath, dir: req.RepoDir}
+	// check-ref-format reads no repository, so it runs next to the mirror.
+	if err := os.MkdirAll(filepath.Dir(req.MirrorDir), 0o755); err != nil {
+		return req, err
+	}
+	repo := gitIn{gitPath: req.GitPath, dir: filepath.Dir(req.MirrorDir)}
 	for _, f := range []struct{ what, name string }{
 		{"remote", req.Remote}, {"target branch", req.TargetBranch}, {"change branch", req.ChangeBranch},
 	} {
@@ -450,18 +511,22 @@ func checkMergeRequest(ctx context.Context, req MergeRequest) (MergeRequest, err
 			return req, fmt.Errorf("merge: %w", err)
 		}
 	}
-	if same, _ := mergeSamePath(req.RepoDir, req.WorktreeDir); same {
-		return req, errors.New("merge: WorktreeDir must not be RepoDir")
+	for _, pair := range [][2]string{
+		{req.RepoDir, req.WorktreeDir}, {req.RepoDir, req.MirrorDir}, {req.MirrorDir, req.WorktreeDir},
+	} {
+		if same, _ := mergeSamePath(pair[0], pair[1]); same || pair[0] == pair[1] {
+			return req, fmt.Errorf("merge: %s must not be the same directory as %s", pair[1], pair[0])
+		}
 	}
 	return req, nil
 }
 
-// mergeCheckChangeHead refuses unless the change branch, locally or on the remote,
-// still points at HeadSHA. A branch that exists in both places and differs in
+// mergeCheckChangeHead refuses unless the change branch, in RepoDir (fetched
+// to mergeSourceRef) or on the remote, still points at HeadSHA. A branch that exists in both places and differs in
 // one is fine as long as the other one still holds HeadSHA.
 func mergeCheckChangeHead(ctx context.Context, repo gitIn, req MergeRequest) error {
 	refs := []string{
-		"refs/heads/" + req.ChangeBranch,
+		mergeSourceRef + req.ChangeBranch,
 		"refs/remotes/" + req.Remote + "/" + req.ChangeBranch,
 	}
 	var found []string
@@ -509,6 +574,10 @@ func prepareMergeWorktree(ctx context.Context, req MergeRequest, repo, wt gitIn,
 		return createMergeWorktree(ctx, repo, wt, dir, tip)
 	}
 	if err := checkOwnedWorktree(ctx, repo, wt, dir); err != nil {
+		return err
+	}
+	// reset and merge run the drivers of this worktree's own config too.
+	if err := checkConfig(ctx, wt); err != nil {
 		return err
 	}
 	// Abort first: reset alone would leave a half-done merge's state files.
@@ -617,4 +686,104 @@ func mergeSamePath(a, b string) (bool, error) {
 		return false, err
 	}
 	return filepath.Clean(ra) == filepath.Clean(rb), nil
+}
+
+// checkSource refuses RepoDir when it has replace refs or a grafts file, names programs in its config (git
+// upload-pack runs inside it for the fetch of the change branch) or when its
+// own URL for the remote is not the pinned one.
+func checkSource(ctx context.Context, src gitIn, req MergeRequest) error {
+	if err := checkRepo(ctx, src); err != nil {
+		return err
+	}
+	return checkRemoteURL(ctx, src, req.Remote, req.RemoteURL)
+}
+
+// fetchSourceBranch fetches the change branch of RepoDir into the mirror,
+// under mergeSourceRef. A stale copy from an earlier call is removed first,
+// so a branch deleted in RepoDir does not stay visible. A branch RepoDir does
+// not have is not an error: the change may live on the remote only.
+func fetchSourceBranch(ctx context.Context, src, mirror gitIn, req MergeRequest) error {
+	ref := mergeSourceRef + req.ChangeBranch
+	if _, err := mirror.run(ctx, "update-ref", "-d", ref); err != nil {
+		return fmt.Errorf("remove stale %s: %w", ref, err)
+	}
+	_, exists, err := remoteBranchTip(ctx, mirror, req.RepoDir, req.ChangeBranch)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	return fetchRefspec(ctx, mirror, req.RepoDir, "+refs/heads/"+req.ChangeBranch+":"+ref)
+}
+
+// prepareMirror makes MirrorDir a bare repository that Merge owns. It creates
+// it when the directory is missing or empty. Otherwise the directory must
+// carry Merge's mark for this path and be a bare repository.
+func prepareMirror(ctx context.Context, req MergeRequest, mirror gitIn) error {
+	dir := req.MirrorDir
+	refuse := func(why string, args ...any) error {
+		return fmt.Errorf("%w: %s %s", ErrNotOwnedMirror, dir, fmt.Sprintf(why, args...))
+	}
+	marker := filepath.Join(dir, mergeMirrorMarker)
+	fi, err := os.Lstat(dir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+	case err != nil:
+		return err
+	case fi.Mode()&os.ModeSymlink != 0:
+		return refuse("is a symlink")
+	case !fi.IsDir():
+		return refuse("is not a directory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		if err := os.WriteFile(marker, []byte(dir+"\n"), 0o600); err != nil {
+			return fmt.Errorf("mark merge mirror: %w", err)
+		}
+	} else {
+		marked, err := os.ReadFile(marker)
+		if err != nil {
+			return refuse("has no merge mirror mark")
+		}
+		if same, _ := mergeSamePath(strings.TrimSpace(string(marked)), dir); !same {
+			return refuse("is marked for another path")
+		}
+	}
+	// A mirror whose creation stopped after the mark has no HEAD yet.
+	if _, err := os.Lstat(filepath.Join(dir, "HEAD")); errors.Is(err, os.ErrNotExist) {
+		if _, err := mirror.run(ctx, "init", "--bare", "--quiet", "--template="); err != nil {
+			return fmt.Errorf("create merge mirror: %w", err)
+		}
+		// Each worktree gets its own config.worktree, which checkConfig
+		// reads with the worktree's scope. core.bare moves to the mirror's
+		// own config.worktree, as git documents, so the worktrees are not
+		// bare.
+		for _, args := range [][]string{
+			{"config", "extensions.worktreeConfig", "true"},
+			{"config", "--worktree", "core.bare", "true"},
+			{"config", "--unset", "core.bare"},
+		} {
+			if _, err := mirror.run(ctx, args...); err != nil {
+				return fmt.Errorf("create merge mirror: %w", err)
+			}
+		}
+	}
+	if bare, err := mirror.run(ctx, "rev-parse", "--is-bare-repository"); err != nil || bare != "true" {
+		return refuse("is not a bare repository")
+	}
+	gitDir, err := mirror.run(ctx, "rev-parse", "--path-format=absolute", "--git-dir")
+	if err != nil {
+		return refuse("is not a git repository (%v)", err)
+	}
+	if same, _ := mergeSamePath(gitDir, dir); !same {
+		return refuse("is not the top of a git repository")
+	}
+	return checkRepo(ctx, mirror)
 }

@@ -71,10 +71,19 @@ func MergedHeads(c Commit) []string {
 
 // WatchRequest says which branch to watch.
 type WatchRequest struct {
-	// RepoDir is a repository that has Remote.
+	// RepoDir is a repository that has Remote. It should be a clone the
+	// daemon owns for watching, not a checkout a worker writes: the fetch
+	// reads its config, and the check of that config cannot close a race
+	// with a writer.
 	RepoDir string
-	// Remote is the name of the remote, for example "origin".
+	// Remote is the name of the remote, for example "origin". It names the
+	// remote-tracking ref.
 	Remote string
+	// RemoteURL is required: the URL of Remote from the caller's own record.
+	// The fetch uses it and not the URL in the repository's config, and
+	// NewCommits refuses (ErrRemoteURL) when the repository's fetch or push
+	// URL for Remote differs.
+	RemoteURL string
 	// Branch is the default branch, as the gateway gives it (the same one
 	// cleanup uses). The watcher does not guess it.
 	Branch string
@@ -127,12 +136,15 @@ func NewCommits(ctx context.Context, req WatchRequest) (WatchResult, error) {
 	if err := checkRefName(ctx, g, "branch", req.Branch); err != nil {
 		return WatchResult{}, fmt.Errorf("new commits: %w", err)
 	}
-	if err := checkHistory(ctx, g); err != nil {
+	if err := checkRepo(ctx, g); err != nil {
 		return WatchResult{}, err
+	}
+	if err := checkRemoteURL(ctx, g, req.Remote, req.RemoteURL); err != nil {
+		return WatchResult{}, fmt.Errorf("new commits: %w", err)
 	}
 
 	ref := "refs/remotes/" + req.Remote + "/" + req.Branch
-	if err := fetchRefspec(ctx, g, req.Remote, "+refs/heads/"+req.Branch+":"+ref); err != nil {
+	if err := fetchRefspec(ctx, g, req.RemoteURL, "+refs/heads/"+req.Branch+":"+ref); err != nil {
 		return WatchResult{}, fmt.Errorf("new commits: %w", err)
 	}
 	tip, err := revCommit(ctx, g, ref)

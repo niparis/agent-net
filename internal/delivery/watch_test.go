@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,7 +85,7 @@ func (r *testRepo) watchReq(since string) WatchRequest {
 		r.gitIn(r.watcher, "init", "-q", "-b", "trunk")
 		r.gitIn(r.watcher, "remote", "add", "origin", r.dir)
 	}
-	return WatchRequest{RepoDir: r.watcher, Remote: "origin", Branch: "main", Since: since}
+	return WatchRequest{RepoDir: r.watcher, Remote: "origin", RemoteURL: r.dir, Branch: "main", Since: since}
 }
 
 // rawCommit writes a commit object exactly as given, even a malformed one.
@@ -619,5 +620,21 @@ func TestCancelledContextStopsGit(t *testing.T) {
 	cancel()
 	if _, err := NewCommits(ctx, r.watchReq("")); err == nil {
 		t.Fatal("want an error from a cancelled context")
+	}
+}
+
+func TestNewCommitsRequiresAndPinsRemoteURL(t *testing.T) {
+	r := newTestRepo(t, "main")
+	r.commit("a")
+	req := r.watchReq("")
+	req.RemoteURL = ""
+	if _, err := NewCommits(context.Background(), req); err == nil {
+		t.Fatal("want an error without RemoteURL")
+	}
+	// The watcher's own pushurl is redirected: refused, nothing fetched.
+	req = r.watchReq("")
+	r.gitIn(r.watcher, "config", "remote.origin.pushurl", t.TempDir())
+	if _, err := NewCommits(context.Background(), req); !errors.Is(err, ErrRemoteURL) {
+		t.Fatalf("err = %v, want ErrRemoteURL", err)
 	}
 }

@@ -20,6 +20,7 @@ type mergeFx struct {
 	origin string
 	repo   string
 	wt     string
+	mirror string
 	base   string // first commit on main
 }
 
@@ -45,6 +46,7 @@ func newMergeFx(t *testing.T) *mergeFx {
 		origin: filepath.Join(root, "origin.git"),
 		repo:   filepath.Join(root, "repo"),
 		wt:     filepath.Join(root, "merge-wt"),
+		mirror: filepath.Join(root, "merge-mirror"),
 	}
 	mergeGit(t, root, "init", "--bare", "-b", "main", f.origin)
 	mergeGit(t, root, "clone", "-q", f.origin, f.repo)
@@ -96,7 +98,7 @@ func (f *mergeFx) originMain() string {
 
 func (f *mergeFx) req(branch, head, mode string) MergeRequest {
 	return MergeRequest{
-		RepoDir: f.repo, WorktreeDir: f.wt, Remote: "origin",
+		RepoDir: f.repo, MirrorDir: f.mirror, WorktreeDir: f.wt, Remote: "origin", RemoteURL: f.origin,
 		TargetBranch: "main", ChangeBranch: branch, BaseSHA: f.base, HeadSHA: head, Mode: mode,
 		Message:  "Merge " + branch,
 		Identity: MergeIdentity{Name: "Merger", Email: "merger@example.com"},
@@ -351,6 +353,8 @@ func TestMergeRecoversInterruptedMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := f.branch("other", f.base, "README", "other\n")
+	// The merge worktree belongs to the mirror, which has not seen "other".
+	mergeGit(t, f.mirror, "fetch", "-q", f.repo, "+refs/heads/other:refs/heads/other")
 	cmd := exec.Command("git", "-c", "user.name=T", "-c", "user.email=t@example.com", "merge", "--no-ff", "-q", "-m", "x", other)
 	cmd.Dir = f.wt
 	if out, err := cmd.CombinedOutput(); err == nil {

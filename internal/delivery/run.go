@@ -137,7 +137,7 @@ func RunStep(ctx context.Context, cmd StepCommand) (StepRun, error) {
 		return StepRun{}, err
 	}
 	g := gitIn{gitPath: cmd.GitPath, dir: cmd.Dir}
-	if err := checkHistory(ctx, g); err != nil {
+	if err := checkRepo(ctx, g); err != nil {
 		return StepRun{}, err
 	}
 	head, err := revCommit(ctx, g, "HEAD")
