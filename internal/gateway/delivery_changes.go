@@ -3,13 +3,13 @@ package gateway
 // The delivery pipeline, build step 1 (decision 0057,
 // docs/design/delivery-pipeline.md): the gateway stores changes, their
 // revisions and the evidence of each step, and answers the change frames.
-// Nothing is routed or refused yet: no step task goes out, and nothing checks
-// the evidence before a merge.
+// Merge passes are checked against the required evidence before storage.
 
 import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -355,6 +355,15 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		By: by, ReportedBy: reportedBy, ByModel: doer.model, ByModelFamily: family, Note: q.Note, At: now}
 	if err := p.Accepts(c, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
+	}
+	if e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass {
+		evidence, err := changeEvidence(tx, c.ID)
+		if err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		if ready, missing := p.Ready(e.StepRef, c, evidence); !ready {
+			return protocol.StepReportResult{}, reject("merge is not ready: %s", strings.Join(missing, "; "))
+		}
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
