@@ -35,7 +35,11 @@ func TestWorkerStartWorktreeOutlivesRequest(t *testing.T) {
 	t.Cleanup(func() { workerGitCommandTimeout.Store(oldTimeout) })
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	out, err := w.d.startWorker(ctx, protocol.WorkerLaunch{Project: "shop", Path: repo, Harness: "opencode", Model: "fake/m1", Owner: owner, Task: "do work", Isolation: protocol.IsolationWorktree})
+	ref := protocol.NewID("q")
+	if err := g.gw.Store().TrackWorkerStart(ref, w.cfg.NodeID, owner, "shop", "opencode", ""); err != nil {
+		t.Fatal(err)
+	}
+	out, err := w.d.startWorker(ctx, protocol.WorkerLaunch{StartRef: ref, Project: "shop", Path: repo, Harness: "opencode", Model: "fake/m1", Owner: owner, Task: "do work", Isolation: protocol.IsolationWorktree})
 	if err != nil || !out.Starting || out.SessionID == "" || out.Worktree == "" || out.Branch == "" {
 		t.Fatalf("start should return immediately with worker metadata: %+v, %v", out, err)
 	}
@@ -174,7 +178,11 @@ func TestWorkerContinuedStartRetainsCTOAttribution(t *testing.T) {
 	first := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "first", Isolation: protocol.IsolationWorktree})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: first.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
-	out, err := w.d.continueWorker(context.Background(), protocol.WorkerContinue{Session: first.SessionID, Requester: w.ownerID(), FromCTO: true})
+	ref := protocol.NewID("q")
+	if err := g.gw.Store().TrackWorkerStart(ref, w.cfg.NodeID, w.ownerID(), "shop", "opencode", ""); err != nil {
+		t.Fatal(err)
+	}
+	out, err := w.d.continueWorker(context.Background(), protocol.WorkerContinue{StartRef: ref, Session: first.SessionID, Requester: w.ownerID(), FromCTO: true})
 	if err != nil || !out.Starting {
 		t.Fatalf("continue: %+v, %v", out, err)
 	}

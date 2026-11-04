@@ -160,7 +160,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 // startQueued starts the worker for a queue entry that has room. The owner's
 // machine sends the task; this machine tells the owner it started.
 func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
-	l := protocol.WorkerLaunch{Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner, OwnerName: e.OwnerName,
+	l := protocol.WorkerLaunch{StartRef: e.ID, Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner, OwnerName: e.OwnerName,
 		Task: e.Task, Title: e.Title, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask, Permissions: e.Permissions,
 		DifficultyAsked: e.DifficultyAsked, DifficultyUsed: e.DifficultyUsed, Touches: splitTouches(e.Touches), Assessment: e.Assessment,
 		AutoContinue: &e.AutoContinue, TaskID: e.TaskID, ContinuationPartial: e.ContinuationPartial, ChangeID: e.ChangeID}
