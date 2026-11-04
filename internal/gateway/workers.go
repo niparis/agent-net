@@ -53,6 +53,7 @@ func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol
 			strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "reason", p.Reason), " "))
 		g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", p.Owner,
 			"project", p.Project, "harness", p.Harness, "reason", p.Reason)
+		_ = g.store.abandonLegacyStart(nc.id, p.Owner, p.Project)
 		return nil
 	}
 	rec, n, noticed, first, err := g.store.declareNotStarted(nc.id, p.Ref, g.store.hostname(nc.id), full.Reason)
@@ -237,8 +238,14 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			return nil, err
 		}
 		// The task was sent: the start is closed, and no one can say it never began.
-		if err := g.store.closeStart(nc.id, p.Ref, p.SessionID); err != nil {
-			g.logLine("error", "where", "close start", "err", err)
+		if p.Ref != "" {
+			if err := g.store.closeStart(nc.id, p.Ref, p.SessionID); err != nil {
+				g.logLine("error", "where", "close start", "err", err)
+			}
+		} else {
+			if _, err := g.store.closeLegacyStart(nc.id, p.Owner, p.Project, p.SessionID); err != nil {
+				g.logLine("error", "where", "close legacy start", "err", err)
+			}
 		}
 		g.store.Event("worker.started", nc.id, p.SessionID, "", strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "owner", p.Owner, "branch", p.Branch), " "))
 		return nil, nil
@@ -750,11 +757,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue})
 	if err != nil {
-		g.abandon(pick.NodeID, startRef)
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
+			_ = g.store.markStartUnknown(pick.NodeID, startRef)
 			return none, reject("machine %s did not start the worker: %v", pick.Hostname, err)
 		}
+		g.abandon(pick.NodeID, startRef)
 		return none, reject("machine %s refused the worker: %v", pick.Hostname, err)
 	}
 	launched, err := decode[protocol.WorkerLaunched](raw)
@@ -774,6 +782,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		g.abandon(pick.NodeID, startRef)
 	}
 	if err == nil && launched.Queued && launched.QueueID != "" {
+		if launched.QueueID != startRef {
+			_ = g.store.recordLegacyQueueID(pick.NodeID, startRef, launched.QueueID)
+		}
 		g.store.Event("worker.queued", pick.NodeID, p.Owner, "",
 			strings.TrimPrefix(pairs("project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner,
 				"queue", launched.QueueID, "position", fmt.Sprint(launched.Position)), " "))
@@ -1157,10 +1168,11 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Title: p.Title, Touches: p.Touches,
 		Assessment: old.Worker.Assessment})
 	if err != nil {
-		g.abandon(old.NodeID, startRef)
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
+			_ = g.store.markStartUnknown(old.NodeID, startRef)
 			return none, reject("machine %s did not start the worker: %v", old.Hostname, err)
 		}
+		g.abandon(old.NodeID, startRef)
 		return none, reject("machine %s refused the worker: %v", old.Hostname, err)
 	}
 	c, err := decode[protocol.WorkerContinued](raw)

@@ -693,6 +693,9 @@ CREATE TABLE IF NOT EXISTS worker_starts (
  permissions TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed', 'not_started')),
  created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0);
+`, `
+SELECT 1 /* worker start tracking: legacy daemon references and launch timeout tracking */;
+CREATE INDEX IF NOT EXISTS worker_starts_legacy_ref ON worker_starts(legacy_ref) WHERE legacy_ref <> '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -818,6 +821,24 @@ func (s *Store) migrate() error {
 				}
 				if has == 0 {
 					if _, err := tx.Exec(`ALTER TABLE nodes ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker start tracking") {
+			for _, col := range []struct{ name, spec string }{
+				{"legacy_ref", `TEXT NOT NULL DEFAULT ''`},
+				{"launch_state", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_starts') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_starts ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
 						tx.Rollback()
 						return err
 					}
@@ -1397,6 +1418,10 @@ func (s *Store) upsertSession(q interface {
 	fresh := !known && !protocol.IsOwner(in.Harness)
 	if fresh {
 		s.event(q, "session.new", nodeID, id, "", sessionDetail(in, name))
+	}
+	if in.Worker != nil && in.Worker.StartRef != "" {
+		_, _ = q.Exec(`UPDATE worker_starts SET session_id=? WHERE (ref=? OR (legacy_ref=? AND legacy_ref<>'')) AND node_id=? AND owner=? AND session_id=''`,
+			id, in.Worker.StartRef, in.Worker.StartRef, nodeID, in.Worker.Owner)
 	}
 	return id, fresh, nil
 }

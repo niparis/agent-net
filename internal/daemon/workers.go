@@ -135,7 +135,7 @@ func (s WorkerSettings) filled() WorkerSettings {
 
 // worker is one running worker. Fields are guarded by Daemon.wmu.
 type worker struct {
-	id, harness, project, path, model, owner string
+	id, startRef, harness, project, path, model, owner string
 	// ownerName is the caller's name when the gateway knows it, for the
 	// commit trailers.
 	ownerName             string
@@ -292,7 +292,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	if w.info == nil {
-		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title,
+		w.info = &protocol.WorkerInfo{ID: w.id, StartRef: w.startRef, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title,
 			Permissions: protocol.WorkerPermissionsOrDefault(w.permissions)}
 	}
 	// The figures follow the info value, so every reader sees one version.
@@ -330,7 +330,7 @@ func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) (grew bool) {
 	grew = st.TotalTokens > w.totalTokens
 	w.contextTokens, w.contextLimit, w.totalTokens = st.ContextTokens, st.ContextLimit, st.TotalTokens
 	if w.info == nil {
-		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title}
+		w.info = &protocol.WorkerInfo{ID: w.id, StartRef: w.startRef, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title}
 	}
 	cp := *w.info
 	cp.ContextTokens, cp.ContextLimit, cp.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
@@ -648,7 +648,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		return refuse("%v", err)
 	}
 	rules := projectWorkerRules(l.Path)
-	w := &worker{id: protocol.NewID("w"), harness: l.Harness, osSandbox: sandbox, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
+	w := &worker{id: protocol.NewID("w"), startRef: l.StartRef, harness: l.Harness, osSandbox: sandbox, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
 		title:       l.Title,
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),

@@ -370,6 +370,13 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			for _, m := range checks {
 				g.dispatch(ctx, m)
 			}
+			startNotices, err := g.store.ExpireStarts(0, 0)
+			if err != nil {
+				g.logLine("error", "where", "expire starts", "err", err)
+			}
+			for _, m := range startNotices {
+				g.dispatch(ctx, m)
+			}
 			// Expire writes one log line per message.
 			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)

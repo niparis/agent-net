@@ -318,6 +318,9 @@ func TestNotStartedAfterTheTaskWasSentIsRefused(t *testing.T) {
 	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.b, "shop", "codex", ""); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.s.startSession(f.nodeA, "q_1", worker); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_1")); err != nil {
 		t.Fatal(err)
 	}
@@ -345,6 +348,9 @@ func TestRefusedTaskRelayLeavesTheStartOpen(t *testing.T) {
 		}
 	})
 	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.startSession(f.nodeA, "q_1", worker); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_1")); err == nil {
@@ -445,7 +451,10 @@ func TestQueuedStartRefMustBelongToTheWorkerOwnerAndNode(t *testing.T) {
 	if err := f.s.startSession(f.nodeA, "q_session", "s_other_worker"); err != nil {
 		t.Fatal(err)
 	}
-	for _, ref := range []string{"q_owner", "q_node", "q_session"} {
+	if err := f.s.trackWorkerStart("q_unbound", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"q_owner", "q_node", "q_session", "q_unbound"} {
 		err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, ref))
 		if err == nil || !errors.As(err, new(Rejection)) {
 			t.Errorf("%s: a mismatched reference was accepted: %v", ref, err)
@@ -460,6 +469,9 @@ func TestQueuedStartRefMustBelongToTheWorkerOwnerAndNode(t *testing.T) {
 	// The right reference, and a reference the gateway does not track (a start
 	// from before it tracked them), both go through.
 	if err := f.s.trackWorkerStart("q_ok", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.startSession(f.nodeA, "q_ok", worker); err != nil {
 		t.Fatal(err)
 	}
 	for _, ref := range []string{"q_ok", "q_untracked"} {
