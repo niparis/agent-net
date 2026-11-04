@@ -36,6 +36,8 @@ func (m Model) paste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 		case m.focus == focusCTO && m.cto != nil:
 			if f := m.cto.settingsForm; f != nil {
 				switch f.field {
+				case 0:
+					// The harness is a switch, not a text field.
 				case 1:
 					f.titleInput, cmd = f.titleInput.Update(msg)
 				case 2:

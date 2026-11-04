@@ -459,6 +459,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.paste(msg)
 	case tea.ColorProfileMsg:
 		palette.SetProfile(msg.Profile)
+		if g := m.graphPixel; g != nil && g.profile != msg.Profile {
+			g.profile = msg.Profile
+			// Reject frames started under the old profile, including when a
+			// terminal changes profile more than once while one is in flight.
+			g.key = [32]byte{}
+		}
+		m.smoothCamera()
 		return m, nil
 	case protocol.UIRequest:
 		return m.applyCTOUI(msg)

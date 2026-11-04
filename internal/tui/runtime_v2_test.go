@@ -213,18 +213,3 @@ func TestV2PasteIntoToolsEditors(t *testing.T) {
 		t.Errorf("form: %+v", m.tl.modal.form.values)
 	}
 }
-
-func TestV2ProfileChangeRebuildsPixelGraphLabels(t *testing.T) {
-	palette.SetProfile(colorprofile.TrueColor)
-	defer palette.SetProfile(colorprofile.TrueColor)
-	m := idleGraphModel(80, 24)
-	m = renderGraphFrame(t, m)
-	if m.graphPixel.rendering {
-		t.Fatal("frame still rendering")
-	}
-	next, _ := m.Update(tea.ColorProfileMsg{Profile: colorprofile.ANSI256})
-	m = next.(Model)
-	if !m.graphPixel.rendering {
-		t.Fatal("profile change did not rebuild cached pixel labels")
-	}
-}

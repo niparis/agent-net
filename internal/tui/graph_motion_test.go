@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -22,6 +23,7 @@ func idleGraphModel(w, h int) Model {
 	gw, gh := m.graphSize()
 	m.graphState.Camera = m.graphState.Graph.Fit(gw, gh)
 	m.graphPixel.graphics = true
+	m.graphPixel.profile = colorprofile.TrueColor
 	m.graphPixel.cellW, m.graphPixel.cellH = 8, 16
 	return m
 }

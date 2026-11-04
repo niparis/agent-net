@@ -9,9 +9,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/tui/graphview"
-	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 var graphSelectionStyle = lipgloss.NewStyle().Bold(true).Foreground(graphview.AccentColor)
@@ -31,6 +31,7 @@ const (
 // Rendering happens in a tea.Cmd, never in View or Update.
 type graphPixelState struct {
 	graphics     bool
+	profile      colorprofile.Profile
 	cellW, cellH int
 	imageID      uint32
 	hash         [32]byte
@@ -69,6 +70,12 @@ type graphFrameMsg struct {
 	transmit string
 }
 
+// The kitty placeholder names its image with a 24-bit foreground color.
+// Lower output profiles rewrite or remove that color and make the image blank.
+func (g *graphPixelState) enabled() bool {
+	return g != nil && g.graphics && g.profile == colorprofile.TrueColor
+}
+
 func (g *graphPixelState) set(gr graphview.Graphics) {
 	if g == nil {
 		return
@@ -98,7 +105,7 @@ func graphTickAfter(generation int, interval time.Duration) tea.Cmd {
 // graphFrameInterval chooses the next frame delay: fast only while pixel mode
 // has something to animate.
 func (m Model) graphFrameInterval() time.Duration {
-	if m.graphPixel == nil || !m.graphPixel.graphics {
+	if !m.graphPixel.enabled() {
 		return graphIdleInterval
 	}
 	if m.graphPixel.motion && m.graphState.Moving() {
@@ -109,7 +116,7 @@ func (m Model) graphFrameInterval() time.Duration {
 
 // smoothCamera turns on the eased camera only for the pixel renderer.
 func (m *Model) smoothCamera() {
-	m.graphState.Smooth = m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.motion
+	m.graphState.Smooth = m.graphPixel.enabled() && m.graphPixel.motion
 }
 
 // graphScene builds the renderer-independent scene with display names. It is
@@ -137,7 +144,7 @@ func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.
 // after it finishes starts another if the scene moved on.
 func (m *Model) scheduleGraphRender() tea.Cmd {
 	g := m.graphPixel
-	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
+	if !g.enabled() || g.cellW <= 0 || g.cellH <= 0 {
 		return nil
 	}
 	if m.tab != graphTab || m.mode != modeNormal || m.mapOn || m.help || m.graphState.Graph == nil {
@@ -160,7 +167,7 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 	key := graphview.HashScene(scene, size)
 	// Pixel labels are cached with their terminal colors. Rebuild them if the
 	// runtime upgrades or changes its output profile.
-	key[0] ^= byte(palette.Profile())
+	key[0] ^= byte(g.profile)
 	if g.ready && g.lines != nil && g.key == key && g.size == size {
 		return nil
 	}
@@ -341,7 +348,7 @@ func (m Model) graphView(w, h int) []string {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
 	gw, gh := max(w-4, 1), max(h-5, 1)
-	smooth := m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.motion
+	smooth := m.graphPixel.enabled() && m.graphPixel.motion
 	m.graphState.Smooth = smooth
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 	state.Smooth = smooth
@@ -380,7 +387,7 @@ func (m Model) graphView(w, h int) []string {
 // for this size the caller falls back to Braille.
 func (m Model) pixelLines(gw, gh int) ([]string, bool) {
 	g := m.graphPixel
-	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
+	if !g.enabled() || g.cellW <= 0 || g.cellH <= 0 {
 		return nil, false
 	}
 	size := graphview.Size{Width: gw, Height: gh}
@@ -547,7 +554,7 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 	size := graphview.Size{Width: w, Height: h}
 	scene := m.graphScene(m.graphState, size)
 	hit := ""
-	pixelReady := m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.ready && m.graphPixel.size == size
+	pixelReady := m.graphPixel.enabled() && m.graphPixel.ready && m.graphPixel.size == size
 	if pixelReady {
 		hit = graphview.PixelHit(scene, size, graphview.PixelMetrics{CellWidth: m.graphPixel.cellW, CellHeight: m.graphPixel.cellH}, graphview.Cell{X: x, Y: y})
 		if hit == "" {

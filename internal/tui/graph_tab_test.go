@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
@@ -35,6 +36,7 @@ func graphFixture() protocol.GraphView {
 }
 func graphModel(w, h int) Model {
 	m := mapModel(w, h, graphFixture())
+	m.graphPixel.profile = colorprofile.TrueColor
 	m.applyMap(mapMsg{view: graphFixture(), at: t0})
 	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 7, HasEdge: true, Voice: true}, {From: "project-07", To: "project-11", Count: 23}}})
@@ -356,7 +358,7 @@ func TestGraphMockupMouseZoomAndPan(t *testing.T) {
 
 func TestGraphMockupDoubleClickAndTrafficKey(t *testing.T) {
 	m := graphModel(120, 34)
-	m.graphPixel = &graphPixelState{graphics: true, cellW: 8, cellH: 16}
+	m.graphPixel = &graphPixelState{graphics: true, cellW: 8, cellH: 16, profile: colorprofile.TrueColor}
 	m = renderGraphFrame(t, m)
 	w, h := m.graphSize()
 	scene := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
