@@ -33,17 +33,19 @@ func noFlagThatSkipsPermissions(t *testing.T, args []string) {
 type claudeNode struct {
 	*workerNode
 	sessions, stopLog string
+	adapter           *fsClaudeAdapter
 }
 
 func startClaudeNode(t *testing.T, g *testGateway, set WorkerSettings) *claudeNode {
 	t.Helper()
 	sessions, stopLog := useFakeClaude(t)
+	adapter := &fsClaudeAdapter{dir: sessions}
 	w := startWorkerNode(t, g, set, func(c *Config) {
 		c.ClaudeSessionsDir = sessions
-		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
+		c.Adapters = append(c.Adapters, adapter)
 		c.HarnessPaths = map[string]string{"claude": os.Args[0]}
 	})
-	return &claudeNode{workerNode: w, sessions: sessions, stopLog: stopLog}
+	return &claudeNode{workerNode: w, sessions: sessions, stopLog: stopLog, adapter: adapter}
 }
 
 func (c *claudeNode) stops() []string {

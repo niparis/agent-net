@@ -380,3 +380,34 @@ func TestCTOOwnerFrameRequestsConversationReply(t *testing.T) {
 		t.Fatalf("frame: %s", raw)
 	}
 }
+
+// A caller's follow-up to a worker that handed back is a request, sent with
+// agent_message_send and often in the conversation of the hand-back. Its frame
+// must ask for the work, never say that no answer is needed: that text is only
+// for replies.
+func TestBuildFrameFollowUpRequestAsksForAnAnswer(t *testing.T) {
+	m := msg
+	m.Type = protocol.TypeRequest
+	m.FromHarness = "claude"
+	m.ConversationID = "c_1"
+	m.ParentID = "m_notice"
+	m.Body = "Yes, add the clean-tree check. Test first, commit on your branch, short report."
+	line, err := BuildFrame(m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(f.Message.Content, "No answer is needed") || strings.Contains(strings.ToLower(f.Message.Content), "no response") {
+		t.Fatalf("the follow-up request says no answer is needed: %q", f.Message.Content)
+	}
+	if !strings.Contains(f.Message.Content, m.Body) || !strings.Contains(f.Message.Content, "Answer it directly") {
+		t.Fatalf("the follow-up request frame: %q", f.Message.Content)
+	}
+}
