@@ -85,7 +85,10 @@ func MergeReports(previous, fresh protocol.InventoryReport) protocol.InventoryRe
 	// Some sources are fresh and some are not: say so, but keep the fresh
 	// observations rather than replacing the whole report.
 	out.State = protocol.InventoryStale
-	out.Reason = "one or more sources could not be scanned"
+	out.Reason = fresh.Reason
+	if out.Reason == "" {
+		out.Reason = "one or more sources could not be scanned"
+	}
 	return out
 }
 

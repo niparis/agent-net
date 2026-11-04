@@ -349,7 +349,7 @@ func TestToolPlanReportsIncompleteScan(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(plan)
-	if !strings.Contains(string(b), "inventory scan incomplete") {
+	if !strings.Contains(string(b), "latest scan failed") {
 		t.Fatalf("incomplete scan not reported: %s", b)
 	}
 }
@@ -798,7 +798,7 @@ func TestToolPlanSkipsCheckoutAndAppliesOthers(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := append(reports[0].Items, protocol.InventoryItem{Kind: "skill", Name: "other", Hash: "def", State: "ok", Source: protocol.InventoryPlugin, Unsupported: []string{"opaque"}})
-	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: items}); err != nil {
 		t.Fatal(err)
 	}
 	toggleFakeNodeProbe(t, g, n, bundle, nil, func(p protocol.ToolPlanProbe) protocol.ToolPlanProbeResult {

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 )
@@ -49,7 +50,13 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	}
 	targets := []protocol.ToolPlanTarget{}
 	for _, node := range nodes {
-		if failed[node.NodeID] {
+		hasReport := false
+		for _, report := range reports {
+			if report.NodeID == node.NodeID {
+				hasReport = true
+			}
+		}
+		if failed[node.NodeID] || !hasReport {
 			targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "inspect", State: "conflict", Conflict: "fresh inventory scan unavailable"})
 		}
 	}
@@ -264,8 +271,19 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		if !a.OnMachine(report.NodeID) {
 			continue
 		}
-		if report.State != protocol.InventoryOK {
-			targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Action: "inspect", State: "conflict", Conflict: "inventory scan incomplete"})
+		sources := []string{}
+		for _, obs := range report.Items {
+			if obs.Kind == kind && obs.Name == name {
+				sources = append(sources, obs.Location)
+				sources = append(sources, obs.Aliases...)
+			}
+		}
+		problem := inventory.PlanReportProblem(report)
+		if problem == "" {
+			problem = inventory.PlanItemProblem(report, kind, name, sources...)
+		}
+		if problem != "" {
+			targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Action: "inspect", State: "conflict", Conflict: problem})
 		}
 		for _, obs := range report.Items {
 			if obs.Kind == kind && obs.Name == name && len(obs.Unsupported) > 0 && (obs.Source == protocol.InventoryPlugin || obs.Source == protocol.InventoryPackage || obs.Source == protocol.InventorySystem) {

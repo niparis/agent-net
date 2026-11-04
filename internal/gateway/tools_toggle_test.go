@@ -32,7 +32,7 @@ func toggleFixture(t *testing.T) (*Gateway, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: "abc", State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
+	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: "abc", State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{"one", "two"} {
@@ -208,7 +208,7 @@ func toggleBundle(t *testing.T, g *Gateway, n, body string) (string, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
+	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
 		t.Fatal(err)
 	}
 	return `["skill","demo","` + hash + `"]`, bundle
@@ -607,7 +607,7 @@ func TestToolToggleOnlyTouchesSelectedProjectWithUserCopies(t *testing.T) {
 			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "one", ProjectRoot: "/repo/one", Location: "/repo/one/.claude/skills/demo"},
 			{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "project", Project: "two", ProjectRoot: "/repo/two", Location: "/repo/two/.claude/skills/demo"},
 		}
-		if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: items}); err != nil {
+		if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: items}); err != nil {
 			t.Fatal(err)
 		}
 		toggleFakeNode(t, g, node, bundle, nil)
