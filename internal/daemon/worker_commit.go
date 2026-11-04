@@ -124,6 +124,14 @@ func installWorkerCommitHooks(hooks string) error {
 	return nil
 }
 
+// workerCommitHookPath refuses incomplete daemon or worker identity before any write.
+func workerCommitHookPath(stateDir, id string) (string, error) {
+	if strings.TrimSpace(stateDir) == "" || strings.TrimSpace(id) == "" {
+		return "", fmt.Errorf("worker commit hooks require a state directory and worker id")
+	}
+	return filepath.Join(stateDir, "workers", id, "git-hooks"), nil
+}
+
 // workerCommitEnv returns the environment for a worker's own processes: it
 // points git at the daemon's prepare-commit-msg hook through the command scope
 // (GIT_CONFIG_*) and carries the trailer values. It is empty for a worker
@@ -140,7 +148,11 @@ func (d *Daemon) workerCommitEnv(w *worker) map[string]string {
 	if dir == "" {
 		return nil
 	}
-	hooks := filepath.Join(d.cfg.StateDir, "workers", id, "git-hooks")
+	hooks, err := workerCommitHookPath(d.cfg.StateDir, id)
+	if err != nil {
+		d.Logf("worker %s: commit hook folder: %v", id, err)
+		return nil
+	}
 	if err := os.MkdirAll(hooks, 0o700); err != nil {
 		d.Logf("worker %s: commit hook folder: %v", id, err)
 		return nil
@@ -187,7 +199,11 @@ func (d *Daemon) writeWorkerCommitSession(w *worker) {
 	if w.worktree == "" {
 		return
 	}
-	hooks := filepath.Join(d.cfg.StateDir, "workers", w.id, "git-hooks")
+	hooks, err := workerCommitHookPath(d.cfg.StateDir, w.id)
+	if err != nil {
+		d.Logf("worker %s: commit hook folder: %v", w.id, err)
+		return
+	}
 	if err := os.MkdirAll(hooks, 0o700); err != nil {
 		d.Logf("worker %s: commit hook folder: %v", w.id, err)
 		return

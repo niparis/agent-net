@@ -318,3 +318,15 @@ func TestWorkerResumeKeepsBranchAfterPrefixChange(t *testing.T) {
 		t.Fatalf("lost saved work: %q %v", data, err)
 	}
 }
+
+func TestWorkerCommitHookPathRequiresStateAndID(t *testing.T) {
+	for _, tc := range []struct{ state, id string }{{"", "w_test"}, {t.TempDir(), ""}, {"", ""}} {
+		if path, err := workerCommitHookPath(tc.state, tc.id); err == nil || path != "" {
+			t.Fatalf("workerCommitHookPath(%q, %q) = %q, %v", tc.state, tc.id, path, err)
+		}
+	}
+	state := t.TempDir()
+	if path, err := workerCommitHookPath(state, "w_test"); err != nil || path != filepath.Join(state, "workers", "w_test", "git-hooks") {
+		t.Fatalf("valid hook path = %q, %v", path, err)
+	}
+}

@@ -1328,3 +1328,5 @@ a task from its owner. When the owner is on another machine, the gateway accepts
 the marker only for a start it tracked for that host, owner and worker. Other
 markers are stripped. Daemons before 0.4.130 use the worker brief prefix for
 compatibility; that older format cannot distinguish a quoted prefix.
+
+Daemon leftover commits exclude files larger than 5 MB, binary executables and build outputs (root agent-net, *.test and *.exe); excluded files remain in the worktree and are listed in the notice.

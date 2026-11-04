@@ -296,8 +296,15 @@ func (d *Daemon) saveWorkerChanges(w *worker, subject, reason string, unfinished
 		d.Logf("worker.unfinished_left worker=%s reason=%s path=%s (a git merge, rebase, cherry-pick or revert is in progress)", id, reason, dir)
 		return false
 	}
-	if _, err := gitOut(ctx, dir, "add", "-A"); err != nil {
+	excluded, err := stageWorkerLeftovers(ctx, dir)
+	d.wmu.Lock()
+	w.excludedLeftovers = excluded
+	d.wmu.Unlock()
+	if err != nil {
 		d.Logf("worker %s: keep unfinished work: %v", id, err)
+		return false
+	}
+	if diff, err := gitOut(ctx, dir, "diff", "--cached", "--name-only"); err != nil || diff == "" {
 		return false
 	}
 	args := []string{"-c", "commit.gpgsign=false"}
@@ -439,7 +446,11 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	d.wmu.Lock()
 	n.Saved = w.unfinished
 	leftAsIs := w.leftAsIs
+	excluded := w.excludedLeftovers
 	d.wmu.Unlock()
+	if excluded != "" {
+		n.Note += "\nnot committed (build output or large file): " + excluded
+	}
 	if auto := protocol.WorkerAutoContinueNote(n.AutoContinue); auto != "" {
 		n.Note = strings.TrimSpace(n.Note + " " + auto)
 	}
@@ -1084,4 +1095,74 @@ func (d *Daemon) openCodeTurnIdle(session string) bool {
 		d.goBackground(func() { d.deliverQueuedWorkerTurn(*next) })
 	}
 	return pending
+}
+
+// stageWorkerLeftovers filters both staged and unstaged paths before adding them.
+func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
+	paths, err := gitOut(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return "", err
+	}
+	var excluded []string
+	seen := map[string]bool{}
+	for _, path := range strings.Split(paths, "\x00") {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		info, err := os.Lstat(filepath.Join(dir, path))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		skip := path == "agent-net" || strings.HasSuffix(path, ".test") || strings.HasSuffix(path, ".exe") || info.Size() > 5_000_000
+		if info.Mode().IsRegular() && !skip {
+			f, err := os.Open(filepath.Join(dir, path))
+			if err != nil {
+				return "", err
+			}
+			buf := make([]byte, 8192)
+			n, _ := f.Read(buf)
+			f.Close()
+			buf = buf[:n]
+			magic := string(buf)
+			skip = strings.HasPrefix(magic, "\x7fELF") || strings.HasPrefix(magic, "MZ")
+			if len(buf) >= 4 {
+				switch string(buf[:4]) {
+				case "\xfe\xed\xfa\xce", "\xce\xfa\xed\xfe", "\xfe\xed\xfa\xcf", "\xcf\xfa\xed\xfe", "\xca\xfe\xba\xbe", "\xbe\xba\xfe\xca":
+					skip = true
+				}
+			}
+			skip = skip || (info.Mode()&0111 != 0 && bytes.IndexByte(buf, 0) >= 0)
+		}
+		if skip {
+			// Reset also removes a file the worker had already staged.
+			if _, err := gitOut(ctx, dir, "reset", "-q", "HEAD", "--", path); err != nil {
+				return "", err
+			}
+			excluded = append(excluded, fmt.Sprintf("%s %.0f MB", path, float64(info.Size())/1_000_000))
+			continue
+		}
+		if _, err := gitOut(ctx, dir, "add", "-A", "--", path); err != nil {
+			return "", err
+		}
+	}
+	// Include deletions without staging excluded files again.
+	if _, err := gitOut(ctx, dir, "add", "-u", "--"); err != nil {
+		return "", err
+	}
+	// add -u can restage tracked excluded paths, so reset them again.
+	for path := range seen {
+		for _, entry := range excluded {
+			if strings.HasPrefix(entry, path+" ") {
+				if _, err := gitOut(ctx, dir, "reset", "-q", "HEAD", "--", path); err != nil {
+					return "", err
+				}
+				break
+			}
+		}
+	}
+	return strings.Join(excluded, ", "), nil
 }

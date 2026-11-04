@@ -203,7 +203,8 @@ type worker struct {
 	unfinished bool
 	// leftAsIs is true when the worktree had a merge, rebase, cherry-pick or
 	// revert in progress, so the daemon did not commit it.
-	leftAsIs bool
+	leftAsIs          bool
+	excludedLeftovers string
 	// changeID is the delivery change of the worker's work: the one its last
 	// complete hand-back recorded, or the one a continue carried over.
 	changeID string
