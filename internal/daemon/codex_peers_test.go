@@ -220,7 +220,6 @@ func codexAgents(t *testing.T, lc *localClient) map[string]protocol.AgentView {
 }
 
 func TestCodexDiscovery(t *testing.T) {
-	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	f.set(fakeThread{ID: "t-open", Cwd: "/work/api", Name: "api work", Model: "gpt-x", Status: "idle", Source: "cli"})

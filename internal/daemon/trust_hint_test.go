@@ -94,7 +94,6 @@ func TestPeerTrustSurvivesAReconnectOfTheSession(t *testing.T) {
 }
 
 func TestHintNamesTheSessionThatOwnsTheService(t *testing.T) {
-	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	client, _ := helloPi(t, n, "p1", "/w/client-app", true)
@@ -128,7 +127,6 @@ func TestHintNamesTheSessionThatOwnsTheService(t *testing.T) {
 }
 
 func TestHintRateLimitsAndSkipsSelfAndPlainOutput(t *testing.T) {
-	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
