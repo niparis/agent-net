@@ -164,11 +164,9 @@ func TestWaitingSessionAnswersItsSenderOnceEndToEnd(t *testing.T) {
 	first := sendAndDeliver("first")
 	eventually(t, "alice's harness gets the notice", func() bool { return len(noticesTo(fa)) == 1 })
 	n := noticesTo(fa)[0]
-	// The notice says bob waits and since when; the question is for the
-	// owner only.
-	if !strings.HasPrefix(n.Body, "[agent-net] bob is waiting for its user's answer (since ") ||
+	// The notice includes bob's question and when the wait started.
+	if !strings.HasPrefix(n.Body, "[agent-net] bob is waiting for its user's answer to: Merge branch w_1 into main? (since ") ||
 		!strings.HasSuffix(n.Body, " UTC). Your message was delivered and will be read when the user answers. No reply is needed.") ||
-		strings.Contains(n.Body, "Merge branch") ||
 		n.Type != protocol.TypeNotification || n.FromHarness != "agent-net" || n.ParentID != first.ID {
 		t.Fatalf("notice: %+v", n)
 	}

@@ -129,7 +129,10 @@ from the CTO too. Caller-scoped reads use the registered CTO session ID, never
 the owner's ID. Before registration they fail closed.
 
 Ordinary agent list/detail reads omit waiting-question contents. Owner CLI/TUI
-reads retain them. Agent message lists force the bound caller's session ID;
+reads retain them. Senders of requests to a waiting session and bots receive
+the cleaned question or tool summary in the waiting notice or send receipt.
+It is limited to one line and 200 characters, with secrets redacted. Agent
+message lists force the bound caller's session ID;
 message status requires that caller to be a sender or recipient and never
 uses the owner-only body relay. The CTO uses those same checks. Public model
 playbook notes in `agent_machines_find` remain public; the owner-only full playbook

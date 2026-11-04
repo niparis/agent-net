@@ -795,10 +795,12 @@ instead (see [Peer trust and hints](#peer-trust-and-hints)).
 When a request is delivered to a session that waits for its user (see
 [the Inbox](#inbox-tab-7)), the sender gets one notice from agent-net, once
 per waiting period (decision [0060](decisions/0060-waiting-for-user-auto-answer.md)):
-`[agent-net] <name> is waiting for its user's answer (since <time> UTC). Your
-message was delivered and will be read when the user answers. No reply is
-needed.` A permission wait says `approval` instead of `answer`. The notice
-never quotes the question: that is for the owner only. The request itself is
+`[agent-net] <name> is waiting for its user's answer to: <question> (since
+<time> UTC). Your message was delivered and will be read when the user
+answers. No reply is needed.` A permission wait says `approval of: <tool
+summary>`. The question or tool summary is cleaned to one line, limited to
+200 characters and has secrets redacted. When there is no text, the notice
+says `answer` or `approval` without a question or summary. The request itself is
 delivered as usual. The key is `waiting:<recipient>:<since>:<sender>`, so a
 second request from the same sender in the same wait gets no notice, also after
 a gateway restart; another sender gets its own, and a new wait starts a new
