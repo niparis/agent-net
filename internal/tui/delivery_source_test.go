@@ -50,7 +50,7 @@ func TestDeliveryMarksMapEveryStepState(t *testing.T) {
 	got := deliveryMarks(steps)
 	want := map[string]stripState{
 		"accept": stripPassed, "review": stripFailed, "test": stripWaiting, "approve": stripNotNeeded,
-		"merge": stripWaiting, "release": stripRunning, "deploy": stripFailed, "verify": stripWaiting,
+		"merge": stripWaiting, "release": stripWaiting, "deploy": stripFailed, "verify": stripWaiting,
 	}
 	if len(got) != len(deliverySteps) {
 		t.Fatalf("%d marks", len(got))
@@ -75,7 +75,7 @@ func TestDeliveryMarksJoinStepsWithTheSameName(t *testing.T) {
 		status(ref(protocol.StepReview), ownNode, protocol.StepStateSkipped, nil),
 	}
 	got := deliveryMarks(steps)
-	if got[2] != stripRunning || got[3] != stripPassed || got[0] != stripPassed || got[1] != stripNotNeeded {
+	if got[2] != stripWaiting || got[3] != stripPassed || got[0] != stripPassed || got[1] != stripNotNeeded {
 		t.Errorf("marks %v", got)
 	}
 }
@@ -119,7 +119,8 @@ func TestDeliveryOwnerLabels(t *testing.T) {
 func listView(now time.Time) protocol.ChangeView {
 	head := hash('a')
 	c := protocol.Change{ID: "ch_5", Project: "agent-net", Branch: "agent-net/w_0123456789abcdef", HeadCommit: head, Revision: 2,
-		State: protocol.ChangeOpen, CreatedAt: now.Add(-5 * time.Hour).Unix(), UpdatedAt: now.Add(-3 * time.Hour).Unix()}
+		Title: "Show the provider in each quota row", State: protocol.ChangeOpen, Caller: "s_caller",
+		CreatedAt: now.Add(-5 * time.Hour).Unix(), UpdatedAt: now.Add(-3 * time.Hour).Unix()}
 	acc := pev("ch_5", 2, ref(protocol.StepAccept), protocol.StepResultPass, head, "s_caller", "", now.Add(-2*time.Hour), nil)
 	return protocol.ChangeView{Change: c,
 		Steps: []protocol.StepStatus{
@@ -137,8 +138,11 @@ func TestDeliveryChangeFromAListView(t *testing.T) {
 		t.Errorf("identity %+v", got)
 	}
 	// The current step is the first of next, owned by that step's owner.
-	if got.Step != "review" || got.StepOwner != "merger" {
-		t.Errorf("step %q owner %q", got.Step, got.StepOwner)
+	if got.Step != "review" || got.StepOwner != "merger" || got.OwnerKind != protocol.OwnerNode || got.StepState != protocol.StepStateReady {
+		t.Errorf("step %q owner %q kind %q state %q", got.Step, got.StepOwner, got.OwnerKind, got.StepState)
+	}
+	if got.Title != "Show the provider in each quota row" || got.State != protocol.ChangeOpen || got.Caller != "s_caller" {
+		t.Errorf("identity for the list: title %q state %q caller %q", got.Title, got.State, got.Caller)
 	}
 	// Waiting counts from the last evidence (2 h ago), which is newer than updated_at.
 	if got.Waiting != 2*time.Hour {
@@ -147,7 +151,7 @@ func TestDeliveryChangeFromAListView(t *testing.T) {
 	if got.Full {
 		t.Error("a list view is not the full change")
 	}
-	if len(got.Evidence) != 1 || got.Evidence[0].Step != "accept" || got.Evidence[0].Result != "passed" || got.Evidence[0].By != "s_caller" {
+	if len(got.Evidence) != 1 || got.Evidence[0].Step != "accept" || got.Evidence[0].Result != "passed" || got.Evidence[0].By != "caller" {
 		t.Errorf("evidence %+v", got.Evidence)
 	}
 	if st := deliveryStripStates(got); st[0] != stripPassed || st[1] != stripWaiting {
@@ -374,20 +378,29 @@ func (f *deliveryCaller) Call(_ context.Context, method string, params any) (jso
 	return json.Marshal(page)
 }
 
-func TestGatewayDeliveryPagesThroughEveryOpenChange(t *testing.T) {
+func TestGatewayDeliveryPagesThroughEveryState(t *testing.T) {
 	a, b := listView(t0), listView(t0)
 	b.Change.ID, b.Change.Project = "ch_4", "voicemechs"
+	done := listView(t0)
+	done.Change.ID, done.Change.State = "ch_3", protocol.ChangeDone
+	stopped := listView(t0)
+	stopped.Change.ID, stopped.Change.State = "ch_2", protocol.ChangeStopped
 	f := &deliveryCaller{pages: []protocol.ChangesFindResult{
 		{Items: []protocol.ChangeView{a}, Total: 1, NextCursor: "ch_5"},
 		{Items: []protocol.ChangeView{b}, Total: 1},
+		{Items: []protocol.ChangeView{done}, Total: 1},
+		{Items: []protocol.ChangeView{stopped}, Total: 1},
 	}}
 	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
 	got, err := src.Changes(context.Background(), "")
-	if err != nil || len(got) != 2 || got[0].ID != "ch_5" || got[1].ID != "ch_4" || got[1].Repo != "voicemechs" {
+	if err != nil || len(got) != 4 {
 		t.Fatalf("changes %+v: %v", got, err)
 	}
-	if len(f.calls) != 2 || f.ops[0] != protocol.OpChangesOwnerFind {
-		t.Fatalf("ops %v", f.ops)
+	if got[0].ID != "ch_5" || got[1].ID != "ch_4" || got[1].Repo != "voicemechs" || got[2].State != protocol.ChangeDone || got[3].State != protocol.ChangeStopped {
+		t.Fatalf("changes %+v", got)
+	}
+	if len(f.calls) != 4 || f.ops[0] != protocol.OpChangesOwnerFind {
+		t.Fatalf("calls %+v ops %v", f.calls, f.ops)
 	}
 	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize}); f.calls[0] != want {
 		t.Errorf("first call %+v, want %+v", f.calls[0], want)
@@ -395,10 +408,16 @@ func TestGatewayDeliveryPagesThroughEveryOpenChange(t *testing.T) {
 	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: "ch_5"}); f.calls[1] != want {
 		t.Errorf("second call %+v, want %+v", f.calls[1], want)
 	}
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeDone, Limit: deliveryPageSize}); f.calls[2] != want {
+		t.Errorf("done call %+v, want %+v", f.calls[2], want)
+	}
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeStopped, Limit: deliveryPageSize}); f.calls[3] != want {
+		t.Errorf("stopped call %+v, want %+v", f.calls[3], want)
+	}
 	// A repo filter is the project filter.
-	f.calls, f.pages = nil, f.pages[1:]
-	if _, err := src.Changes(context.Background(), "voicemechs"); err != nil || f.calls[0].Project != "voicemechs" {
-		t.Errorf("repo filter %+v: %v", f.calls, err)
+	repo := &deliveryCaller{pages: []protocol.ChangesFindResult{{Items: []protocol.ChangeView{b}, Total: 1}}}
+	if _, err := newGatewayDelivery(repo.Call, func() time.Time { return t0 }).Changes(context.Background(), "voicemechs"); err != nil || repo.calls[0].Project != "voicemechs" {
+		t.Errorf("repo filter %+v: %v", repo.calls, err)
 	}
 }
 
@@ -470,7 +489,9 @@ func fullScenes() (*detailSource, []deliveryChange) {
 		_ = c
 	}
 	for i := range src.changes {
-		src.changes[i].Evidence = src.changes[i].Evidence[:1]
+		if len(src.changes[i].Evidence) > 1 {
+			src.changes[i].Evidence = src.changes[i].Evidence[:1]
+		}
 	}
 	return src, src.changes
 }
@@ -483,7 +504,7 @@ func dpress(m Model, k tea.KeyPressMsg) (Model, tea.Cmd) {
 func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	m, _ = dpress(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m.delivery.row = visibleRow(m, "c_2")
 	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.delivery.detail || cmd == nil {
 		t.Fatal("enter should open the detail and fetch the change")
@@ -517,21 +538,24 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 func TestDeliveryReloadKeepsTheSelectionAndTheFullDetail(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	m, _ = dpress(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m.delivery.row = visibleRow(m, "c_2")
 	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	next, _ := m.Update(cmd())
 	m = next.(Model)
-	// A newer change arrives on top: the selected change moves down one row, and stays selected.
+	// A newer change arrives: the selected change keeps its place in the list
+	// (grouped), and stays selected.
 	fresh := deliveryChange{ID: "c_9", Repo: "new", Branch: "b", Head: "f00", Revision: 1, Step: "accept", StepOwner: "caller"}
 	list := append([]deliveryChange{fresh}, deliveryScenes()...)
 	for i := range list[1:] {
-		list[i+1].Evidence = list[i+1].Evidence[:1]
+		if len(list[i+1].Evidence) > 1 {
+			list[i+1].Evidence = list[i+1].Evidence[:1]
+		}
 	}
 	src.changes = list
 	next, cmd = m.Update(m.deliveryLoad()())
 	m = next.(Model)
-	if m.delivery.row != 2 || m.delivery.changes[m.delivery.row].ID != "c_2" || !m.delivery.detail {
-		t.Fatalf("row %d detail %v", m.delivery.row, m.delivery.detail)
+	if sel, ok := m.selectedChange(); !ok || sel.ID != "c_2" || !m.delivery.detail {
+		t.Fatalf("row %d detail %v selected %+v", m.delivery.row, m.delivery.detail, sel)
 	}
 	if got := m.delivery.changes[2]; !got.Full || len(got.Evidence) != 5 {
 		t.Errorf("the full evidence flickered away: %+v", got)
@@ -661,7 +685,7 @@ func TestDeliveryGoldenFromGatewayData(t *testing.T) {
 	a := fullView(now)
 	b := listView(now)
 	b.Change.ID, b.Change.Project, b.Change.Branch, b.Change.Revision = "ch_6", "voicemechs", "feature/deploy-gate", 1
-	b.Change.HeadCommit = hash('c')
+	b.Change.HeadCommit, b.Change.Title = hash('c'), "Fix the deploy gate"
 	b.Steps = []protocol.StepStatus{
 		status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, nil),
 		status(ref(protocol.StepReview), ownNode, protocol.StepStateFailed, nil),
@@ -674,7 +698,7 @@ func TestDeliveryGoldenFromGatewayData(t *testing.T) {
 	b.Steps[0].Evidence = nil
 	c := listView(now)
 	c.Change.ID, c.Change.Project, c.Change.Branch, c.Change.Revision = "ch_7", "agent-net", "delivery-pipeline", 1
-	c.Change.HeadCommit = hash('d')
+	c.Change.HeadCommit, c.Change.Title = hash('d'), "Say what a delivery row waits for"
 	c.Steps = []protocol.StepStatus{
 		status(ref(protocol.StepAccept), ownCaller, protocol.StepStatePassed, nil),
 		status(ref(protocol.StepReview), ownNode, protocol.StepStatePassed, nil),

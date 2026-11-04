@@ -1,15 +1,15 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 sessions, 5 online · 1 busy     updated 00:00:00
   Quotas      Workers log    [ Delivery ]
-╭─Delivery──────────────────────────────────────────────────────────────────────────────────────────────3 open changes─╮
-│   REPO        BRANCH               HEAD     REV  STEP     OWNER   WAIT   EVIDENCE                                    │
-│ ▸ agent-net   delivery-pipeline    ddddddd  r1   approve  owner   6m     a✓ r✓ t✓ p* m· l· d· v·                     │
-│   voicemechs  feature/deploy-gate  ccccccc  r1   review   merger  5h0m   a✓ r✗ t✓ p– m· l· d· v·                     │
-│   agent-net   w_0123456789abcdef   aaaaaaa  r2   review   merger  2h0m   a✓ r· t· p· m· l· d· v·                     │
-│ a accept  r review  t test  p approve  m merge  l release  d deploy  v verify                                        │
-│ ✓ passed  ✗ failed  * running  – not needed  · waiting                                                               │
+╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────3 shown─╮
+│   TITLE                                REPO        STEP      STATUS                  AGE     EVIDENCE                │
+│ Needs you · 1                                                                                                        │
+│ ▸ Say what a delivery row waits for    agent-net   approve   waiting for you         6m      a✓ r✓ t✓ p· m· l· d· v· │
+│ Waiting on agents · 2                                                                                                │
+│   Fix the deploy gate                  voicemechs  review    failed                  5h0m    a✓ r✗ t✓ p- m· l· d· v· │
+│   Show the provider in each quota row  agent-net   review    waiting for merger      2h0m    a✓ r· t· p· m· l· d· v· │
+│ a accept · r review · t test · p approve · m merge · l release · d deploy · v verify.                                │
+│ ✓ passed ✗ failed · waiting - not needed                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
 
 
 
@@ -21,4 +21,4 @@
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab Quotas  up/down select  enter evidence  R refresh  ? help  q quit
+tab Quotas  up/down select  enter evidence  a show all  R refresh  ? help  q quit

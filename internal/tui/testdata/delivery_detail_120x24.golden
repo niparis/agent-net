@@ -1,18 +1,18 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 sessions, 5 online · 1 busy     updated 00:00:00
   Quotas      Workers log    [ Delivery ]
 ╭─Change───────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Show which provider each quota row belongs to                                                                        │
 │ agent-net  w_1bcfc4c4a93b2687                                                                                        │
-│ head: 9f3a1c2e7b4d  revision: r2  step: review  owner: merger  waiting: 2h14m                                        │
-│ a✓ r* t✓ p· m· l· d· v·                                                                                              │
+│ head: 9f3a1c2e7b4d  revision: r2  state: open  step: review  owner: merger  status: waiting for merger  waiting:     │
+│ 2h14m                                                                                                                │
+│ a✓ r· t✓ p- m· l· d· v·                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Evidence─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ STEP     RESULT      COMMIT       BY            MODEL                   TIME         FIELDS                          │
 │ accept   passed      9f3a1c2      caller        -                       10-29 11:05  -                               │
 │ test     passed      9f3a1c2      caller        -                       10-29 11:35  suite=changed tests_added=yes   │
-│ review   running     9f3a1c2      merger        claude-opus-5-5         10-29 11:51  -                               │
+│ review   waiting     9f3a1c2      merger        -                       10-29 11:51  -                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
 
 
 

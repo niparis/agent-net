@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
+  Quotas      Workers log    [ Delivery ]
+╭─Delivery─────────────────────────────────────────────────────────────5 shown─╮
+│   TITLE              STEP     STATUS                 AGE    EVIDENCE         │
+│ Needs you · 1                                                                │
+│ ▸ Fix the deploy ga… review   failed                 2h5m   a✓r✗t·p-m·l·d·v· │
+│ Waiting on agents · 3                                                        │
+│   Show which provid… review   waiting for merger     2h14m  a✓r·t✓p-m·l·d·v· │
+│   Say what a delive… test     waiting for ci-runner  6m     a✓r✓t·p-m✓l·d·v· │
+│   Import suppliers … accept   waiting for s_unknown  1d6h!  a·r·t·p-m·l·d·v· │
+│ Done · 1                                                                     │
+│   Drop the old pars… -        done                   3d0h   a✓r✓t✓p✓m✓l✓d✓v✓ │
+│ a accept · r review · t test · p approve · m merge · l release · d deploy    │
+│ v verify. ✓ passed ✗ failed · waiting - not needed                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+tab Quotas  up/down select  enter evidence  a show all  R refresh  ? help
