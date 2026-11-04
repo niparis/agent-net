@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	ga "github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -129,8 +130,10 @@ func (m Model) ctoView(w, h int) []string {
 	if c.enterNotice != "" {
 		lines = append(lines, clip(sanitize(c.enterNotice), w))
 	}
+	var errLines []string
 	if c.err != "" {
-		lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
+		errLines = wrapCTOLine("error: "+c.err, w)
+		lines = append(lines, errLines...)
 	}
 	if c.confirming {
 		lines = append(lines, "Start a new conversation?"+confirmSuffix)
@@ -142,13 +145,20 @@ func (m Model) ctoView(w, h int) []string {
 	c.pageRows = max(rows-1, 1)
 	c.scrollMax = max(len(lines)-rows, 0)
 	c.scroll = min(c.scroll, c.scrollMax)
-	end := len(lines) - c.scroll
-	start := max(end-rows, 0)
-	if start > 0 && rows > 1 {
-		start++
-		lines = append([]string{sDim.Render("↑ more")}, lines[start:end]...)
+	if len(errLines) >= rows && rows > 0 {
+		// An error that fills the box is more useful from its start: its
+		// tail alone reads like the end of a sentence with no beginning.
+		lines = append([]string(nil), errLines[:min(len(errLines), rows)]...)
+		lines[len(lines)-1] = ctoClipped(lines[len(lines)-1], w)
 	} else {
-		lines = lines[start:end]
+		end := len(lines) - c.scroll
+		start := max(end-rows, 0)
+		if start > 0 && rows > 1 {
+			start++
+			lines = append([]string{sDim.Render("↑ more")}, lines[start:end]...)
+		} else {
+			lines = lines[start:end]
+		}
 	}
 	for len(out) < rows-len(lines) {
 		out = append(out, "")
@@ -168,6 +178,18 @@ func (m Model) ctoView(w, h int) []string {
 		box[len(box)-1] = border.Render("╰─") + hint + border.Render(strings.Repeat("─", max(w+1-lipgloss.Width(hint), 0))+"╯")
 	}
 	return box
+}
+
+// ctoClipped marks a line that continues below even when the whole wrapped
+// line fits: the box shows the start of the message, not its tail.
+func ctoClipped(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(text) >= width {
+		return ansi.Truncate(text, max(width-1, 0), "") + "…"
+	}
+	return text + "…"
 }
 
 // wrapCTOLine indents continuation rows while keeping their text in the box.
