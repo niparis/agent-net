@@ -94,7 +94,7 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		}
 	}
 	record := r.TaskFull
-	task := protocol.ContinueIntro(r.EndedReason, where) + "\n\n" + r.TaskFull
+	task := protocol.ContinueIntroWithSettings(r.EndedReason, where, d.SettingsSnapshot(), r.Project) + "\n\n" + r.TaskFull
 	if p.Task != "" {
 		record += "\n\nAlso: " + p.Task
 		task += "\n\nAlso: " + p.Task

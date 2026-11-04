@@ -112,14 +112,18 @@ type workerCost struct {
 
 // addCost stores the cost of an ended worker and keeps the newest
 // protocol.WorkerCostKeep of its harness and model.
-func (s *state) addCost(c workerCost) error {
+func (s *state) addCost(c workerCost, limits ...int) error {
+	keep := protocol.WorkerCostKeep
+	if len(limits) > 0 && limits[0] > 0 {
+		keep = limits[0]
+	}
 	if _, err := s.db.Exec(`INSERT INTO worker_costs (harness, model, ended_at, avg_cpu, peak_cpu, avg_rss, peak_rss)
 		VALUES (?,?,?,?,?,?,?)`, c.Harness, c.Model, c.EndedAt.UnixNano(), c.AvgCPU, c.PeakCPU, c.AvgRSS, c.PeakRSS); err != nil {
 		return err
 	}
 	_, err := s.db.Exec(`DELETE FROM worker_costs WHERE harness = ? AND model = ? AND id NOT IN
 		(SELECT id FROM worker_costs WHERE harness = ? AND model = ? ORDER BY id DESC LIMIT ?)`,
-		c.Harness, c.Model, c.Harness, c.Model, protocol.WorkerCostKeep)
+		c.Harness, c.Model, c.Harness, c.Model, keep)
 	return err
 }
 

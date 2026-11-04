@@ -3,6 +3,7 @@ package daemon
 import (
 	"time"
 
+	"github.com/niparis/agent-net/internal/settings"
 	"github.com/niparis/agent-net/internal/usage"
 )
 
@@ -34,19 +35,26 @@ func (d *Daemon) expectedCost(harness, model string) WorkerCost {
 // expectedCostWith is expectedCost when the caller already read the machine's
 // total RAM, so a start with several pending workers reads the load once.
 func (d *Daemon) expectedCostWith(harness, model string, total uint64) WorkerCost {
+	return d.expectedCostWithSnapshot(harness, model, total, d.SettingsSnapshot())
+}
+
+func (d *Daemon) expectedCostWithSnapshot(harness, model string, total uint64, snap settings.Snapshot) WorkerCost {
 	cs, err := d.st.costs(harness, model)
 	if err != nil {
-		return defaultWorkerCost()
+		return defaultWorkerCostWith(snap)
 	}
-	return learnedCost(cs, total)
+	return learnedCostWith(cs, total, defaultWorkerCostWith(snap))
 }
 
 // learnedCost is the median of the average RSS and of the average CPU of the
 // ended workers. The RAM is capped at maxCostShare of total (when known). With
 // fewer than minCostSamples workers it is the default.
 func learnedCost(cs []workerCost, total uint64) WorkerCost {
+	return learnedCostWith(cs, total, defaultWorkerCost())
+}
+func learnedCostWith(cs []workerCost, total uint64, fallback WorkerCost) WorkerCost {
 	if len(cs) < minCostSamples {
-		return defaultWorkerCost()
+		return fallback
 	}
 	var rss, cpu []float64
 	for _, c := range cs {
@@ -67,7 +75,7 @@ func (d *Daemon) recordWorkerCost(harness, model string, life usage.Life, ran ti
 		return
 	}
 	err := d.st.addCost(workerCost{Harness: harness, Model: model, AvgCPU: life.CPUAvg, PeakCPU: life.CPUPeak,
-		AvgRSS: life.RSSAvg, PeakRSS: life.RSSPeak, EndedAt: time.Now()})
+		AvgRSS: life.RSSAvg, PeakRSS: life.RSSPeak, EndedAt: time.Now()}, d.SettingsSnapshot().Int("workers.cost_history_limit", settings.Where{}))
 	if err != nil {
 		d.Logf("worker cost: %v", err)
 	}

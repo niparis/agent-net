@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 	"github.com/niparis/agent-net/internal/usage"
 )
 
@@ -80,7 +82,11 @@ type WorkerCost struct {
 
 // defaultWorkerCost is the cost of a worker with no history.
 func defaultWorkerCost() WorkerCost {
-	return WorkerCost{RAM: protocol.DefaultWorkerRAM, Cores: protocol.DefaultWorkerCores}
+	return defaultWorkerCostWith(settings.Snapshot{})
+}
+
+func defaultWorkerCostWith(snap settings.Snapshot) WorkerCost {
+	return WorkerCost{RAM: uint64(snap.Int("workers.cost_default_ram", settings.Where{})), Cores: snap.Float("workers.cost_default_cores", settings.Where{})}
 }
 
 // memReserve is the memory that stays free: the setting, or the larger of
@@ -112,6 +118,9 @@ type Decision struct {
 // CPU is added to the machine's averages: the averages lag, so without them a
 // burst of starts would all see the same room and overfill the machine.
 func admit(set WorkerSettings, load MachineLoad, cost WorkerCost, pending []WorkerCost, running int, lastStart, now time.Time) Decision {
+	return admitWithHot(set, load, cost, pending, running, lastStart, now, protocol.WorkerCPUHot)
+}
+func admitWithHot(set WorkerSettings, load MachineLoad, cost WorkerCost, pending []WorkerCost, running int, lastStart, now time.Time, hot float64) Decision {
 	d := Decision{OK: true, Room: protocol.RoomOK, Headroom: -1}
 	var pendingRAM uint64
 	var pendingCores float64
@@ -163,8 +172,8 @@ func admit(set WorkerSettings, load MachineLoad, cost WorkerCost, pending []Work
 		}
 		return no(protocol.RoomCPU, "%s", why)
 	}
-	if cpu1 >= protocol.WorkerCPUHot {
-		return no(protocol.RoomCPU, "CPU 1-min average %.0f%% (limit %.0f%%)", cpu1, protocol.WorkerCPUHot)
+	if cpu1 >= hot {
+		return no(protocol.RoomCPU, "CPU 1-min average %.0f%% (limit %.0f%%)", cpu1, hot)
 	}
 	if gap := set.StartGap; gap > 0 && !lastStart.IsZero() && now.Sub(lastStart) < gap {
 		return no(protocol.RoomGap, "a worker started %s ago; the next may start after %s so the averages can show it",
@@ -253,6 +262,7 @@ func (d *Daemon) clearGapAfterShortWorker(w *worker) {
 // now. The caller holds d.qmu.
 func (d *Daemon) admission(harness, model string) Decision {
 	now := time.Now()
+	snap := d.SettingsSnapshot()
 	load := d.load()
 	d.wmu.Lock()
 	running := len(d.workers)
@@ -266,10 +276,17 @@ func (d *Daemon) admission(harness, model string) Decision {
 	d.wmu.Unlock()
 	pending := make([]WorkerCost, 0, len(recent))
 	for _, r := range recent {
-		pending = append(pending, d.expectedCostWith(r.harness, r.model, load.Total))
+		pending = append(pending, d.expectedCostWithSnapshot(r.harness, r.model, load.Total, snap))
 	}
-	return admit(d.cfg.Workers.filled(), load, d.expectedCostWith(harness, model, load.Total), pending,
-		running, d.lastWorkerStart(), now)
+	set := d.workerSettingsWith(snap, "")
+	if d.cfg.Workers.MemReserve == 0 {
+		e, err := snap.Resolve("workers.memory_reserve", settings.Where{Host: settings.Host{RAMBytes: int64(load.Total)}})
+		if err == nil {
+			_ = json.Unmarshal(e.Value, &set.MemReserve)
+		}
+	}
+	return admitWithHot(set, load, d.expectedCostWithSnapshot(harness, model, load.Total, snap), pending,
+		running, d.lastWorkerStart(), now, snap.Float("workers.cpu_hot", settings.Where{}))
 }
 
 // workerLoad is the worker count and room of this machine, for the report to
