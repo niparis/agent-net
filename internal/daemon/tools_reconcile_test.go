@@ -539,7 +539,7 @@ func TestRemoveSkillUnmanagedCodexHome(t *testing.T) {
 
 func TestVerifySkillAbsencePartialInventory(t *testing.T) {
 	d := &Daemon{}
-	d.toolsReport = protocol.InventoryReport{State: "stale", Reason: "one or more sources could not be scanned", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
+	d.toolsReport = protocol.InventoryReport{State: "stale", Reason: inventory.PartialScanReason, ScannedAt: time.Now(), Items: []protocol.InventoryItem{
 		{Kind: "skill", Name: "other", State: "ok"},
 		{Kind: "skill", Name: "bad", State: "error", Reason: "unreadable file"},
 	}}

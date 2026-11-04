@@ -42,7 +42,10 @@ func MergeReports(previous, fresh protocol.InventoryReport) protocol.InventoryRe
 				}
 			}
 			if !found {
-				old.State, old.Reason = protocol.InventoryStale, out.Reason
+				old.State = protocol.InventoryStale
+				if old.Reason == "" {
+					old.Reason = out.Reason
+				}
 				out.Items = append(out.Items, old)
 			}
 		}
@@ -96,7 +99,7 @@ func MergeReports(previous, fresh protocol.InventoryReport) protocol.InventoryRe
 	out.State = protocol.InventoryStale
 	out.Reason = fresh.Reason
 	if out.Reason == "" {
-		out.Reason = "one or more sources could not be scanned"
+		out.Reason = PartialScanReason
 	}
 	return out
 }

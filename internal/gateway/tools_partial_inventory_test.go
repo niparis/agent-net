@@ -25,7 +25,7 @@ func TestToolPlanPartialInventoryIsolation(t *testing.T) {
 	now := time.Now().UTC()
 	good := protocol.InventoryItem{Kind: "skill", Name: "good", Hash: "abc", State: "ok", ScannedAt: now}
 	bad := protocol.InventoryItem{Kind: "skill", Name: "bad", Location: "/repo/.agents/skills/bad", Project: "demo", State: "error", Reason: "cannot hash skill safely", ScannedAt: now}
-	report := protocol.InventoryReport{State: "error", Reason: "one or more sources could not be scanned", ScannedAt: now, Items: []protocol.InventoryItem{good, bad}}
+	report := protocol.InventoryReport{State: "error", Reason: inventory.PartialScanReason, ScannedAt: now, Items: []protocol.InventoryItem{good, bad}}
 	if err = g.store.SetInventory(node, report); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestToolTogglePartialInventoryPlanAndApply(t *testing.T) {
 	report := reports[0]
 	report.ScannedAt = time.Now().UTC()
 	report.State = "error"
-	report.Reason = "one or more sources could not be scanned"
+	report.Reason = inventory.PartialScanReason
 	report.Items = append(report.Items, protocol.InventoryItem{Kind: "skill", Name: "bad", State: "error", Location: "/repo/.agents/skills/bad", Reason: "cannot hash skill safely"})
 	if err = g.store.SetInventory(node, report); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestSkillImportSecretReasonNamesFile(t *testing.T) {
 
 func TestSkillImportFailedObservationNamesCause(t *testing.T) {
 	g, node, _ := toggleFixture(t)
-	report := protocol.InventoryReport{State: "error", Reason: "one or more sources could not be scanned", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
+	report := protocol.InventoryReport{State: "error", Reason: inventory.PartialScanReason, ScannedAt: time.Now(), Items: []protocol.InventoryItem{
 		{Kind: "skill", Name: "good", Hash: "abc", State: "ok"},
 		{Kind: "skill", Name: "bad", State: "error", Project: "demo", Location: "/repo/.agents/skills/bad", Reason: "absolute symlink (link)"},
 	}}

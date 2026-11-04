@@ -87,7 +87,7 @@ func (m Model) agentInfoView(w int) []string {
 		}
 		add("Machines: " + orStr(strings.Join(names, ", "), "none observed"))
 		add("New projects: " + onOff(newProjects))
-		if why := m.skillLockReason(r); why != "" {
+		if why := m.skillLockReason(r, project); why != "" {
 			add(why)
 		} else if r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal {
 			add(m.outsideToolStatus(r))

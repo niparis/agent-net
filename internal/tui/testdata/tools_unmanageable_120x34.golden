@@ -20,10 +20,10 @@
 ╰──────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Skill information────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ voice-builder · ~0 tokens per session                                                                                │
-│ on in 0 of 13 projects                                                                                               │
+│ on in 1 of 13 projects                                                                                               │
 │ Machines: research                                                                                                   │
 │ New projects: off                                                                                                    │
-│ cannot manage: a file is larger than the 64 MiB scan limit (voices/model.onnx, 114 MB) [research/housing]            │
+│ cannot manage: a file is larger than the 64 MiB scan limit (voices/model.onnx, 114 MB) [research/homelab]            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

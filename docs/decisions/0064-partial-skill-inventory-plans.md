@@ -1,4 +1,4 @@
-# 0062 - Partial skill inventory and tool plans
+# 0064 - Partial skill inventory and tool plans
 
 **Date:** 2026-11-04
 **Context:** [0027](0027-skills-and-mcp-management.md),

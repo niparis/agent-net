@@ -9,11 +9,14 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// PartialScanReason marks a bounded scan with individual source failures.
+const PartialScanReason = "one or more sources could not be scanned"
+
 // PlanReportProblem distinguishes a fresh, bounded partial scan from a machine
 // whose inventory cannot be trusted at all. A partial scan retains every failed
 // source, so callers must also check PlanItemProblem for the item they touch.
 func PlanReportProblem(r protocol.InventoryReport) string {
-	if r.State != protocol.InventoryOK && r.Reason != "one or more sources could not be scanned" {
+	if r.State != protocol.InventoryOK && r.Reason != PartialScanReason {
 		if r.Reason != "" {
 			return "inventory scan incomplete: " + r.Reason
 		}
@@ -25,7 +28,7 @@ func PlanReportProblem(r protocol.InventoryReport) string {
 	if r.State == protocol.InventoryOK {
 		return ""
 	}
-	if r.Reason == "one or more sources could not be scanned" {
+	if r.Reason == PartialScanReason {
 		for _, item := range r.Items {
 			if item.State == protocol.InventoryOK {
 				return ""

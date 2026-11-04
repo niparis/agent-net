@@ -44,9 +44,9 @@ func Scan(o Options) protocol.InventoryReport {
 			return
 		}
 		totalFields += total
-		if state == protocol.InventoryError && (report.Reason == "" || report.Reason == "one or more sources could not be scanned") {
+		if state == protocol.InventoryError && (report.Reason == "" || report.Reason == PartialScanReason) {
 			report.State = protocol.InventoryError
-			report.Reason = "one or more sources could not be scanned"
+			report.Reason = PartialScanReason
 		}
 		report.Items = append(report.Items, protocol.InventoryItem{Harness: h, Kind: k, Scope: scope, Project: project, ProjectRoot: root, Location: path, Name: name, Source: protocol.InventoryNative, Hash: hash, ScannedAt: now, State: state, Reason: reason, Unsupported: unsupported})
 	}

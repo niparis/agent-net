@@ -12,7 +12,7 @@ func TestToolPlanInventorySafety(t *testing.T) {
 	now := time.Now().UTC()
 	good := protocol.InventoryItem{Kind: "skill", Name: "good", State: "ok"}
 	bad := protocol.InventoryItem{Kind: "skill", Name: "bad", State: "error", Location: "/skills/bad", Reason: "unreadable file"}
-	partial := protocol.InventoryReport{State: "error", Reason: "one or more sources could not be scanned", ScannedAt: now, Items: []protocol.InventoryItem{good, bad}}
+	partial := protocol.InventoryReport{State: "error", Reason: PartialScanReason, ScannedAt: now, Items: []protocol.InventoryItem{good, bad}}
 	if reason := PlanReportProblem(partial); reason != "" {
 		t.Fatal(reason)
 	}

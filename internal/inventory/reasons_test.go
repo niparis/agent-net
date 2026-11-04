@@ -93,7 +93,7 @@ func TestSkillInventoryMergeRetainsFailureReason(t *testing.T) {
 	old := protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{{Kind: "skill", Name: "bad", Location: "/skills/bad", Hash: "old", State: "ok"}}}
 	failed := protocol.InventoryItem{Kind: "skill", Name: "bad", Location: "/skills/bad", State: "error", Reason: "absolute symlink (link)"}
 	for _, partial := range []bool{false, true} {
-		fresh := protocol.InventoryReport{State: "error", Reason: "one or more sources could not be scanned", Items: []protocol.InventoryItem{failed}}
+		fresh := protocol.InventoryReport{State: "error", Reason: PartialScanReason, Items: []protocol.InventoryItem{failed}}
 		if partial {
 			fresh.Items = append(fresh.Items, protocol.InventoryItem{Kind: "skill", Name: "good", State: "ok"})
 		}

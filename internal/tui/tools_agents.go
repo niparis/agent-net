@@ -82,7 +82,7 @@ func (m Model) agentJobs(project string) ([]assignJob, string) {
 		if !ok {
 			continue
 		}
-		if why := m.skillLockReason(r); why != "" {
+		if why := m.skillLockReason(r, project); why != "" {
 			return nil, r.Name + ": " + why
 		}
 		job := assignJob{name: r.Name, item: m.agentItemID(r), agentProject: project, agentOn: on}
@@ -189,7 +189,7 @@ func (m Model) agentToolsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		r := rows[min(m.tl.skillRow, len(rows)-1)]
-		if why := m.skillLockReason(r); why != "" {
+		if why := m.skillLockReason(r, project); why != "" {
 			m.toolsToast(why)
 			break
 		}
@@ -271,7 +271,7 @@ func (m Model) agentToolsView(w, h int) []string {
 	used := 0
 	for i := start; i >= 0 && i < len(rows); i-- {
 		cost := 1
-		if m.skillScanLockReason(rows[i]) != "" {
+		if m.skillScanLockReason(rows[i], project) != "" {
 			cost++
 		}
 		if used+cost > room {
@@ -282,7 +282,7 @@ func (m Model) agentToolsView(w, h int) []string {
 	}
 	for i := start; i < len(rows) && len(b) < room; i++ {
 		r := rows[i]
-		scanProblem := m.skillScanLockReason(r)
+		scanProblem := m.skillScanLockReason(r, project)
 		on, repo := m.agentSkillState(r.Name, project)
 		check := "[ ] "
 		if on {
@@ -302,7 +302,7 @@ func (m Model) agentToolsView(w, h int) []string {
 		if repo != "" {
 			state = "repo (always on)"
 		}
-		if why := m.skillLockReason(r); why != "" {
+		if why := m.skillLockReason(r, project); why != "" {
 			check = "×   "
 			state = why
 		}
