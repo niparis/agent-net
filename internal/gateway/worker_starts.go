@@ -30,8 +30,10 @@ const closedStartKeep = 30 * 24 * time.Hour
 // workerStartMinVersion is the first release that tracks worker starts.
 const workerStartMinVersion = "0.4.127"
 
-// daemonTracksStarts tells whether a daemon version tracks start references.
-func daemonTracksStarts(version string) bool {
+// workerStartBindingMinVersion is the first release that binds worker starts to sessions via StartRef.
+const workerStartBindingMinVersion = "0.4.129"
+
+func daemonVersionGTE(version, minVersion string) bool {
 	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
 	if version == "" {
 		return false
@@ -43,13 +45,23 @@ func daemonTracksStarts(version string) bool {
 	if !ok {
 		return false
 	}
-	want, _ := parseReleaseVersion(workerStartMinVersion)
+	want, _ := parseReleaseVersion(minVersion)
 	for i := range want {
 		if have[i] != want[i] {
 			return have[i] > want[i]
 		}
 	}
 	return true
+}
+
+// daemonTracksStarts tells whether a daemon version tracks start references.
+func daemonTracksStarts(version string) bool {
+	return daemonVersionGTE(version, workerStartMinVersion)
+}
+
+// daemonTracksBinding tells whether a daemon version binds worker starts to sessions via StartRef.
+func daemonTracksBinding(version string) bool {
+	return daemonVersionGTE(version, workerStartBindingMinVersion)
 }
 
 // trackWorkerStart records a start that the gateway handed to a machine.
@@ -97,21 +109,23 @@ func (s *Store) markStartUnknown(nodeID, ref string) error {
 // verifyStart refuses a reference that belongs to another machine, another
 // owner or another worker than the one the call names. A reference from an
 // older daemon (before start tracking) falls back to untracked if not found.
-// A node whose daemon tracks starts must provide a valid tracked reference
-// that is bound to this worker session.
+// A node whose daemon tracks starts must provide a valid tracked reference.
+// A node whose daemon tracks session binding (>= 0.4.129) must provide a reference
+// that is bound to this worker session. A start whose state is not open is refused.
 func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) error {
 	v, _ := s.NodeVersion(nodeID)
-	tracks := daemonTracksStarts(v)
+	tracksStarts := daemonTracksStarts(v)
+	tracksBinding := daemonTracksBinding(v)
 	if ref == "" {
-		if tracks {
+		if tracksStarts {
 			return reject("start reference required")
 		}
 		return nil
 	}
-	var rn, ro, rs string
-	err := s.db.QueryRow(`SELECT node_id, owner, session_id FROM worker_starts WHERE ref=? OR (legacy_ref=? AND legacy_ref<>'')`, ref, ref).Scan(&rn, &ro, &rs)
+	var rn, ro, rs, rstate string
+	err := s.db.QueryRow(`SELECT node_id, owner, session_id, state FROM worker_starts WHERE ref=? OR (legacy_ref=? AND legacy_ref<>'')`, ref, ref).Scan(&rn, &ro, &rs, &rstate)
 	if errors.Is(err, sql.ErrNoRows) {
-		if tracks {
+		if tracksStarts {
 			return reject("start %s is not tracked", ref)
 		}
 		return nil
@@ -119,7 +133,10 @@ func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	if rn != nodeID || ro != owner || rs == "" || rs != sessionID {
+	if rstate != "open" {
+		return reject("start %s is not open", ref)
+	}
+	if rn != nodeID || ro != owner || (rs != "" && rs != sessionID) || (tracksBinding && rs == "") {
 		return reject("start %s does not belong to that machine, owner and worker", ref)
 	}
 	return nil
@@ -136,12 +153,24 @@ func (s *Store) closeStart(nodeID, ref, sessionID string) error {
 	return err
 }
 
-// closeLegacyStart reconciles and closes the oldest open start for a legacy daemon
-// that sent worker.queued_start without a Ref.
-func (s *Store) closeLegacyStart(nodeID, owner, project, sessionID string) (string, error) {
+// closeLegacyStart reconciles and closes the open start for a legacy daemon
+// that sent worker.queued_start without a tracked Ref. It prefers a record matching
+// the legacy queue ID when provided; otherwise it falls back to the oldest open start.
+func (s *Store) closeLegacyStart(nodeID, owner, project, sessionID string, legacyRef ...string) (string, error) {
+	var lref string
+	if len(legacyRef) > 0 {
+		lref = legacyRef[0]
+	}
 	var ref string
-	err := s.db.QueryRow(`SELECT ref FROM worker_starts WHERE node_id=? AND owner=? AND project=? AND state='open' ORDER BY created_at ASC LIMIT 1`,
-		nodeID, owner, project).Scan(&ref)
+	var err error
+	if lref != "" {
+		err = s.db.QueryRow(`SELECT ref FROM worker_starts WHERE node_id=? AND owner=? AND project=? AND legacy_ref=? AND state='open'`,
+			nodeID, owner, project, lref).Scan(&ref)
+	}
+	if lref == "" || errors.Is(err, sql.ErrNoRows) {
+		err = s.db.QueryRow(`SELECT ref FROM worker_starts WHERE node_id=? AND owner=? AND project=? AND state='open' ORDER BY created_at ASC LIMIT 1`,
+			nodeID, owner, project).Scan(&ref)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -162,12 +191,24 @@ func (s *Store) abandonStart(nodeID, ref string) error {
 	return err
 }
 
-// abandonLegacyStart reconciles and abandons the oldest open start for a legacy daemon
-// report that arrived without a Ref.
-func (s *Store) abandonLegacyStart(nodeID, owner, project string) error {
+// abandonLegacyStart reconciles and abandons the open start for a legacy daemon
+// report that arrived without a tracked Ref. It prefers a record matching the
+// legacy queue ID when provided; otherwise it falls back to the oldest open start.
+func (s *Store) abandonLegacyStart(nodeID, owner, project string, legacyRef ...string) error {
+	var lref string
+	if len(legacyRef) > 0 {
+		lref = legacyRef[0]
+	}
 	var ref string
-	err := s.db.QueryRow(`SELECT ref FROM worker_starts WHERE node_id=? AND owner=? AND project=? AND state='open' ORDER BY created_at ASC LIMIT 1`,
-		nodeID, owner, project).Scan(&ref)
+	var err error
+	if lref != "" {
+		err = s.db.QueryRow(`SELECT ref FROM worker_starts WHERE node_id=? AND owner=? AND project=? AND legacy_ref=? AND state='open'`,
+			nodeID, owner, project, lref).Scan(&ref)
+	}
+	if lref == "" || errors.Is(err, sql.ErrNoRows) {
+		err = s.db.QueryRow(`SELECT ref FROM worker_starts WHERE node_id=? AND owner=? AND project=? AND state='open' ORDER BY created_at ASC LIMIT 1`,
+			nodeID, owner, project).Scan(&ref)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

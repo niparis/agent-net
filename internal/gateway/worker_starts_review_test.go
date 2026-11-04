@@ -9,12 +9,12 @@ import (
 )
 
 // Finding 1: Unbound queued start.
-// verifyStart with an unbound tracked Ref must not accept an arbitrary session.
+// verifyStart with an unbound tracked Ref must not accept an arbitrary session for daemons that track binding (>= v0.4.129).
 func TestUnboundQueuedStartRefused(t *testing.T) {
 	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
 		return func(h protocol.Header, raw []byte) error { return nil }
 	})
-	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.127"); err != nil {
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,6 +35,43 @@ func TestUnboundQueuedStartRefused(t *testing.T) {
 	}
 	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_unbound")); err != nil {
 		t.Fatalf("bound queued start was refused: %v", err)
+	}
+}
+
+// A v0.4.127 daemon has no StartRef on WorkerInfo and queued launch answers have an empty SessionID.
+// verifyStart must accept the start on v0.4.127 when rs=="" and close it.
+func TestQueuedStartAcceptedForV04127DaemonWithoutStartRef(t *testing.T) {
+	relayed := false
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			relayed = true
+			return nil
+		}
+	})
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.127"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Gateway tracks a queued start (session_id is empty).
+	if err := f.s.trackWorkerStart("q_127", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// v0.4.127 daemon sends worker.queued_start with tracked Ref and worker session ID.
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_127")); err != nil {
+		t.Fatalf("v0.4.127 queued_start refused: %v", err)
+	}
+	if !relayed {
+		t.Fatalf("task was not relayed")
+	}
+
+	var state, sessID string
+	f.s.db.QueryRow(`SELECT state, session_id FROM worker_starts WHERE ref='q_127'`).Scan(&state, &sessID)
+	if state != "closed" {
+		t.Errorf("start q_127 state = %q, want closed", state)
+	}
+	if sessID != worker {
+		t.Errorf("start q_127 session_id = %q, want %q", sessID, worker)
 	}
 }
 
@@ -280,5 +317,164 @@ func TestLaunchCallTimeoutLeavesStartUnknownUntilReport(t *testing.T) {
 	}
 	if ns := f.notices(t, f.a); len(ns) != 2 { // 1 from 4b, 1 from 4c
 		t.Fatalf("expected 2 total notices for f.a, got %d", len(ns))
+	}
+}
+
+// Finding 2 review fix: an unknown start that ExpireStarts declared not_started (with a notice)
+// must be refused on a late worker.queued_start, relaying no task and generating no second notice.
+func TestExpiredUnknownStartRefusesQueuedStart(t *testing.T) {
+	relayed := false
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error {
+			relayed = true
+			return nil
+		}
+	})
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.129"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Start begins as unknown launch.
+	if err := f.s.trackWorkerStart("q_exp", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.markStartUnknown(f.nodeA, "q_exp"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Expire the unknown start: it sends one not_started notice.
+	f.clock.t = f.clock.t.Add(15 * time.Minute)
+	notices, err := f.s.ExpireStarts(10*time.Minute, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notices) != 1 {
+		t.Fatalf("expected 1 notice from ExpireStarts, got %d", len(notices))
+	}
+	if ns := f.notices(t, f.b); len(ns) != 1 {
+		t.Fatalf("expected 1 notice stored for owner, got %d", len(ns))
+	}
+
+	// Bind session to simulate late worker start attempt.
+	if err := f.s.startSession(f.nodeA, "q_exp", worker); err != nil {
+		t.Fatal(err)
+	}
+
+	// Late worker.queued_start arrives: must be refused.
+	err = f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_exp"))
+	if err == nil || !errors.As(err, new(Rejection)) {
+		t.Fatalf("late queued_start on expired start was accepted: %v", err)
+	}
+	if relayed {
+		t.Fatalf("task was unexpectedly relayed for expired start")
+	}
+
+	// Daemon reports not_started on refusal.
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{Ref: "q_exp", Reason: "refused"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify exactly one notice in total.
+	if ns := f.notices(t, f.b); len(ns) != 1 {
+		t.Fatalf("expected exactly 1 notice in total, got %d", len(ns))
+	}
+}
+
+// Finding 3 review fix: closeLegacyStart / abandonLegacyStart prefer the record with a matching
+// legacy_ref when the report carries the queue ID; falling back to oldest only when none.
+func TestLegacyStartPreferMatchingLegacyRefOverOldest(t *testing.T) {
+	f, worker := newRelayFixture(t, func(f *startsFixture, w string) func(protocol.Header, []byte) error {
+		return func(h protocol.Header, raw []byte) error { return nil }
+	})
+	if err := f.s.SetNodeHello(f.nodeA, "nodeA", "v0.4.126"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two open starts for same node, owner and project.
+	// Start 1 is older.
+	if err := f.s.trackWorkerStart("q_gw_old", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_old", "q_legacy_old"); err != nil {
+		t.Fatal(err)
+	}
+
+	f.clock.t = f.clock.t.Add(2 * time.Second)
+
+	// Start 2 is newer.
+	if err := f.s.trackWorkerStart("q_gw_new", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_new", "q_legacy_new"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Report carrying the newer queue ID "q_legacy_new" must close the newer start, leaving the older start open.
+	ref, err := f.s.closeLegacyStart(f.nodeA, f.b, "shop", worker, "q_legacy_new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != "q_gw_new" {
+		t.Errorf("closeLegacyStart closed %q, want q_gw_new", ref)
+	}
+	var stateOld, stateNew string
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_old'`).Scan(&stateOld)
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_new'`).Scan(&stateNew)
+	if stateNew != "closed" {
+		t.Errorf("newer start state = %q, want closed", stateNew)
+	}
+	if stateOld != "open" {
+		t.Errorf("older start state = %q, want open", stateOld)
+	}
+
+	// 2. Report without queue ID falls back to oldest open start.
+	ref, err = f.s.closeLegacyStart(f.nodeA, f.b, "shop", worker, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != "q_gw_old" {
+		t.Errorf("closeLegacyStart closed %q, want q_gw_old", ref)
+	}
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_old'`).Scan(&stateOld)
+	if stateOld != "closed" {
+		t.Errorf("older start state = %q, want closed", stateOld)
+	}
+
+	// 3. Test abandonLegacyStart preferring matching legacy_ref over oldest.
+	f.clock.t = f.clock.t.Add(2 * time.Second)
+	if err := f.s.trackWorkerStart("q_gw_ab_old", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_ab_old", "q_legacy_ab_old"); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.t = f.clock.t.Add(2 * time.Second)
+	if err := f.s.trackWorkerStart("q_gw_ab_new", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_ab_new", "q_legacy_ab_new"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Abandon with matching legacy queue ID abandons the newer start.
+	if err := f.s.abandonLegacyStart(f.nodeA, f.b, "shop", "q_legacy_ab_new"); err != nil {
+		t.Fatal(err)
+	}
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_ab_new'`).Scan(&stateNew)
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_ab_old'`).Scan(&stateOld)
+	if stateNew != "not_started" {
+		t.Errorf("newer start state = %q, want not_started", stateNew)
+	}
+	if stateOld != "open" {
+		t.Errorf("older start state = %q, want open", stateOld)
+	}
+
+	// Abandon without queue ID falls back to oldest.
+	if err := f.s.abandonLegacyStart(f.nodeA, f.b, "shop"); err != nil {
+		t.Fatal(err)
+	}
+	f.s.db.QueryRow(`SELECT state FROM worker_starts WHERE ref='q_gw_ab_old'`).Scan(&stateOld)
+	if stateOld != "not_started" {
+		t.Errorf("older start state = %q, want not_started", stateOld)
 	}
 }

@@ -451,10 +451,7 @@ func TestQueuedStartRefMustBelongToTheWorkerOwnerAndNode(t *testing.T) {
 	if err := f.s.startSession(f.nodeA, "q_session", "s_other_worker"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.trackWorkerStart("q_unbound", f.nodeA, f.b, "shop", "codex", ""); err != nil {
-		t.Fatal(err)
-	}
-	for _, ref := range []string{"q_owner", "q_node", "q_session", "q_unbound"} {
+	for _, ref := range []string{"q_owner", "q_node", "q_session"} {
 		err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, ref))
 		if err == nil || !errors.As(err, new(Rejection)) {
 			t.Errorf("%s: a mismatched reference was accepted: %v", ref, err)
