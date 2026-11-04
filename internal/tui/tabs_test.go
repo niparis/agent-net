@@ -414,8 +414,12 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 func TestCTOFrameOnEveryTab(t *testing.T) {
 	for _, key := range []string{"1", "2", "3", "4", "5"} {
 		m := keys(newModel(80, 24), key)
-		if !strings.Contains(m.testView(), "c: open the CTO") {
+		hasBox := strings.Contains(m.testView(), "c: open the CTO")
+		if key != "2" && !hasBox {
 			t.Errorf("%s missing CTO", key)
+		}
+		if key == "2" && hasBox {
+			t.Errorf("Graph shows an empty CTO box")
 		}
 		m = keys(m, "C")
 		if m.focus != focusCTO {

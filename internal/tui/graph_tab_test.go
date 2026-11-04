@@ -397,3 +397,29 @@ func TestGraphMouseOffForSessionForm(t *testing.T) {
 		t.Fatal("mouse capture stayed on while the session form replaced the graph")
 	}
 }
+
+func TestGraphHidesTheCTOBoxWithoutAGraphProposalAt80(t *testing.T) {
+	m := graphModel(80, 24)
+	view := ansi.Strip(m.testView())
+	if strings.Contains(view, "╭─CTO") {
+		t.Errorf("the graph kept an empty CTO box:\n%s", view)
+	}
+	if strings.Contains(view, "no messages yet") {
+		t.Errorf("the 80x24 graph kept its feed line:\n%s", view)
+	}
+	if !strings.Contains(view, "● charter · ○ open · gold: approved · pink: unverified") {
+		t.Errorf("the compact legend is missing:\n%s", view)
+	}
+	m.proposals = []protocol.CTOProposal{{ID: "p1", NodeID: "n_mac", Tool: "graph_change", Action: "charter_set", Status: "open"}}
+	if view = ansi.Strip(m.testView()); !strings.Contains(view, "╭─CTO") {
+		t.Errorf("the graph proposal did not bring the CTO box back:\n%s", view)
+	}
+}
+
+func TestGraphCTOBoxStaysOnOtherTabs(t *testing.T) {
+	m := graphModel(80, 24)
+	m.tab = sessionsTab
+	if !strings.Contains(ansi.Strip(m.testView()), "╭─CTO") {
+		t.Error("Sessions lost the CTO box")
+	}
+}

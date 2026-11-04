@@ -36,12 +36,32 @@ const maxMachineRows = 5
 // ctoBoxHeight keeps half the rows previously reserved for the CTO. Round up
 // when the old height is odd so that its latest output still has room.
 func (m Model) ctoBoxHeight(tab int) int {
+	if !m.showCTOBox(tab) {
+		return 0
+	}
 	h := max(m.height, 10)
 	box := min(max((h-1)/3, 6), max(h-4, 1))
 	if tab == quotasTab && h <= 24 && box > 6 {
 		box = 6
 	}
 	return (box + 1) / 2
+}
+
+// showCTOBox hides the box on the Graph tab unless the CTO proposes a change
+// to a node or an edge. The canvas needs those rows more than an empty box.
+func (m Model) showCTOBox(tab int) bool {
+	if tab != graphTab || m.focus == focusCTO || m.mapOn {
+		return true
+	}
+	for _, p := range m.proposals {
+		if p.Status != "open" {
+			continue
+		}
+		if p.Tool == "charter_set" || p.Action == "charter_set" || p.Tool == "edge_set" || p.Action == "edge_set" {
+			return true
+		}
+	}
+	return false
 }
 
 // layout divides the height between the parts. The sessions table gets what
@@ -189,7 +209,7 @@ func (m Model) renderView() string {
 		for len(out) < contentHeight {
 			out = append(out, "")
 		}
-		if m.cto != nil {
+		if m.cto != nil && box > 0 {
 			out = append(out, m.ctoView(w, box)...)
 		}
 
