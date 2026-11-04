@@ -243,21 +243,23 @@ type ToolPlanSkip struct {
 }
 
 type ToolPlan struct {
-	Members      []ToolPlan       `json:"members,omitempty"`
-	Previous     *ToolAssignment  `json:"previous,omitempty"`
-	Skipped      []ToolPlanSkip   `json:"skipped,omitempty"`
-	ID           string           `json:"id"`
-	Item         string           `json:"item"`
-	Version      string           `json:"version"`
-	BaseRevision int64            `json:"base_revision"`
-	Assignment   ToolAssignment   `json:"assignment"`
-	Targets      []ToolPlanTarget `json:"targets"`
-	Operation    string           `json:"operation,omitempty"`
-	RepoTargets  []ToolRepoTarget `json:"repo_targets,omitempty"`
-	Conflicts    []string         `json:"conflicts"`
-	State        string           `json:"state"`
-	Actor        string           `json:"actor"`
-	At           int64            `json:"at"`
+	ToggleProject string           `json:"toggle_project,omitempty"`
+	ToggleOn      bool             `json:"toggle_on,omitempty"`
+	Members       []ToolPlan       `json:"members,omitempty"`
+	Previous      *ToolAssignment  `json:"previous,omitempty"`
+	Skipped       []ToolPlanSkip   `json:"skipped,omitempty"`
+	ID            string           `json:"id"`
+	Item          string           `json:"item"`
+	Version       string           `json:"version"`
+	BaseRevision  int64            `json:"base_revision"`
+	Assignment    ToolAssignment   `json:"assignment"`
+	Targets       []ToolPlanTarget `json:"targets"`
+	Operation     string           `json:"operation,omitempty"`
+	RepoTargets   []ToolRepoTarget `json:"repo_targets,omitempty"`
+	Conflicts     []string         `json:"conflicts"`
+	State         string           `json:"state"`
+	Actor         string           `json:"actor"`
+	At            int64            `json:"at"`
 	// UndoOf is the revision that this plan reverses. It is zero for a plan
 	// that the owner proposed.
 	UndoOf int64 `json:"undo_of,omitempty"`

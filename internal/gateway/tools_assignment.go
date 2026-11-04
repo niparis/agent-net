@@ -279,9 +279,9 @@ func (s *Store) ToolSnapshot(item string) (string, error) {
 	return v, tx.Commit()
 }
 func (s *Store) SaveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor string) (protocol.ToolPlan, error) {
-	return s.saveToolPlan(item, a, targets, actor, "", "", nil)
+	return s.saveToolPlan(item, a, targets, actor, "", "", nil, nil)
 }
-func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected, operation string, repoTargets []protocol.ToolRepoTarget, validate ...bool) (protocol.ToolPlan, error) {
+func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected, operation string, repoTargets []protocol.ToolRepoTarget, toggle *protocol.ToolToggleRequest, validate ...bool) (protocol.ToolPlan, error) {
 	var p protocol.ToolPlan
 	if !validToolChangeActor(actor) {
 		return p, errors.New("owner authority required")
@@ -336,6 +336,10 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 		if target.Conflict != "" {
 			p.Conflicts = append(p.Conflicts, target.Conflict)
 		}
+	}
+	if toggle != nil {
+		p.ToggleProject = toggle.Project
+		p.ToggleOn = toggle.On
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {

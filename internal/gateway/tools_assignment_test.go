@@ -755,7 +755,7 @@ func TestToolPlanUnmanagedRemovalIsPending(t *testing.T) {
 	g, n, _ := toggleFixture(t)
 	id, bundle := toggleBundle(t, g, n, "# Demo\nFixture.\n")
 	toggleFakeNode(t, g, n, bundle, nil)
-	plan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+	plan, err := g.planSkillAssignment(t.Context(), id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"two"}, Machines: []string{n}}, "owner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -808,7 +808,7 @@ func TestToolPlanSkipsCheckoutAndAppliesOthers(t *testing.T) {
 		}
 		return protocol.ToolPlanProbeResult{Destination: filepath.Join(p.Checkout, p.Root, p.Name)}
 	})
-	plan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+	plan, err := g.planSkillAssignment(t.Context(), id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"two", "good", "home", "symlink"}, Machines: []string{n}}, "owner")
 	if err != nil {
 		t.Fatal(err)
 	}

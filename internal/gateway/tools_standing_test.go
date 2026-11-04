@@ -77,3 +77,32 @@ func TestSessionUpsertDoesNotWaitForStandingChoice(t *testing.T) {
 	upsert("/repo/four", "four")
 	relOnce.Do(func() { close(release) })
 }
+
+func TestStandingChoiceSkipsStaleAssignmentProject(t *testing.T) {
+	g, n, id := toggleFixture(t)
+	if _, err := g.store.AssignTool(id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"one"}, Machines: []string{n}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.store.SetToolNewProjects(protocol.ToolNewProjectsRequest{Item: id, On: true}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	states, err := g.store.ToolProjectStates()
+	if err != nil || len(states) != 1 || !states[0].Projects["one"] {
+		t.Fatalf("missing observed project: %+v, %v", states, err)
+	}
+	if _, err := g.store.db.Exec(`DELETE FROM projects WHERE name='one'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.store.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, n, "/repo/three", "three"); err != nil {
+		t.Fatal(err)
+	}
+	var planned []string
+	g.onStandingPlan = func(_ string, projects []string) { planned = append(planned, projects...) }
+	err = g.addNewSkillProjects(t.Context())
+	if err == nil || err.Error() == "project is not known" {
+		t.Fatalf("expected import failure after skipping stale project, got %v", err)
+	}
+	if len(planned) != 1 || planned[0] != "three" {
+		t.Fatalf("planned %v", planned)
+	}
+}

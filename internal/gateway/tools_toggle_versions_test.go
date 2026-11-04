@@ -14,6 +14,24 @@ func TestToolToggleVersionsAcrossMachines(t *testing.T) {
 		t.Fatal(err)
 	}
 	bid, bb := toggleBundle(t, g, b, "# Demo\nVersion B.\n")
+	for _, node := range []string{a, b} {
+		reports, e := g.store.Inventories()
+		if e != nil {
+			t.Fatal(e)
+		}
+		for _, report := range reports {
+			if report.NodeID != node {
+				continue
+			}
+			items := append([]protocol.InventoryItem(nil), report.Items...)
+			copy := items[0]
+			copy.Scope, copy.Project, copy.ProjectRoot, copy.Location = "project", "one", "/repo/one", "/repo/one/.claude/skills/demo"
+			items = append(items, copy)
+			if e = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: items}); e != nil {
+				t.Fatal(e)
+			}
+		}
+	}
 	toggleFakeNode(t, g, a, ab, nil)
 	toggleFakeNode(t, g, b, bb, nil)
 	p, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: bid, Project: "one", On: false}, "owner")
