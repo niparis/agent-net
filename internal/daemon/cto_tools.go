@@ -121,26 +121,45 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 	if json.Unmarshal(raw, &q) != nil || q.ID == "" || q.Approve == nil {
 		return nil, errors.New("bad CTO dialog answer")
 	}
-	err := lc.d.proposalRunner().decide(ctx, q.ID, *q.Approve)
-	if err != nil && err.Error() == "proposal is not open" {
+	item, decided, err := lc.d.proposalRunner().decideForDialog(ctx, q.ID, *q.Approve)
+	if err != nil {
 		return nil, err
 	}
-	items, listErr := lc.d.proposalRunner().list()
-	if listErr != nil {
-		return nil, listErr
+	if !decided {
+		return nil, nil
 	}
-	for _, item := range items {
-		if item.ID == q.ID && (err == nil || item.Status == "failed") && item.Status != "open" {
-			if *q.Approve && item.Status == "applied" && item.Call.Tool == "project_change" && item.Call.Action == "create" {
-				var start protocol.StartedSession
-				if json.Unmarshal(item.Result, &start) == nil && start.ID != "" {
-					return lc.d.ctoProjectStartOutcome(ctx, start), nil
-				}
-			}
-			return item.Note, nil
+	if *q.Approve && item.Status == "applied" && item.Call.Tool == "project_change" && item.Call.Action == "create" {
+		var start protocol.StartedSession
+		if json.Unmarshal(item.Result, &start) == nil && start.ID != "" {
+			return lc.d.ctoProjectStartOutcome(ctx, start), nil
 		}
 	}
-	return nil, err
+	return item.Note, nil
+}
+
+// decideForDialog decides a proposal and marks its note delivered under the
+// note delivery lock. The dialog returns the outcome to the CTO as its tool
+// result, so the notes loop must not send the same outcome as a second turn.
+func (p proposalRunner) decideForDialog(ctx context.Context, id string, approve bool) (proposal, bool, error) {
+	p.state.proposalDeliveryMu.Lock()
+	defer p.state.proposalDeliveryMu.Unlock()
+	decideErr := p.decide(ctx, id, approve)
+	if decideErr != nil && decideErr.Error() == "proposal is not open" {
+		return proposal{}, false, decideErr
+	}
+	items, err := p.list()
+	if err != nil {
+		return proposal{}, false, err
+	}
+	for _, item := range items {
+		if item.ID == id && (decideErr == nil || item.Status == "failed") && item.Status != "open" {
+			if err := p.markNoteDelivered(ctx, id); err != nil {
+				return proposal{}, false, err
+			}
+			return item, true, nil
+		}
+	}
+	return proposal{}, false, decideErr
 }
 
 // ctoProjectStartOutcome waits for the registered session before reporting it ready.
