@@ -120,7 +120,7 @@ func migrateProjectName(tx *sql.Tx, old, name string) (bool, error) {
 		}
 	}
 	// Move edges in one pass so self-edges and collisions are handled together.
-	if _, err := tx.Exec(`INSERT OR IGNORE INTO graph_edges SELECT CASE WHEN source=? THEN ? ELSE source END,CASE WHEN target=? THEN ? ELSE target END,kind,mode,rule FROM graph_edges WHERE source=? OR target=?`, old, name, old, name, old, old); err != nil {
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule) SELECT CASE WHEN source=? THEN ? ELSE source END,CASE WHEN target=? THEN ? ELSE target END,kind,mode,rule FROM graph_edges WHERE source=? OR target=?`, old, name, old, name, old, old); err != nil {
 		return false, err
 	}
 	if _, err := tx.Exec(`DELETE FROM graph_edges WHERE source=? OR target=?`, old, old); err != nil {

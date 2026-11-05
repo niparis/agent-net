@@ -78,7 +78,7 @@ func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol
 			e.Rule = "never"
 		}
 		b, _ := json.Marshal(e)
-		if _, err = tx.Exec(`INSERT INTO graph_edges VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
+		if _, err = tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
 			return empty, err
 		}
 		if err = graphRecord(tx, "edge", from, e.Kind, previous, string(b), actor, s.now().UnixNano()); err != nil {
