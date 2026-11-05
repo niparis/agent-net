@@ -151,6 +151,17 @@ func (g *Gateway) toggleSkillGroup(ctx context.Context, p protocol.ToolToggleReq
 		group.Skipped = append(group.Skipped, member.Skipped...)
 		group.Conflicts = append(group.Conflicts, member.Conflicts...)
 	}
+	// The group names one desired assignment for the name the owner toggled.
+	// Without it the review can only say "no project".
+	if len(group.Members) > 0 {
+		group.Assignment = group.Members[0].Assignment
+		for _, member := range group.Members {
+			if member.Item == p.Item {
+				group.Assignment = member.Assignment
+				break
+			}
+		}
+	}
 	if !validatingProposal(ctx) {
 		raw, e := json.Marshal(group)
 		if e != nil {

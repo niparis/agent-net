@@ -590,7 +590,7 @@ func TestToolPlanBatchFortyDestinations(t *testing.T) {
 	}
 }
 
-func TestToolToggleOnlyTouchesSelectedProjectWithUserCopies(t *testing.T) {
+func TestToolToggleWithUserAndProjectCopiesKeepsOtherProjects(t *testing.T) {
 	g, n, _ := toggleFixture(t)
 	id, bundle := toggleBundle(t, g, n, "# Demo\nFixture.\n")
 	var hash string
@@ -619,8 +619,14 @@ func TestToolToggleOnlyTouchesSelectedProjectWithUserCopies(t *testing.T) {
 	if len(plan.Targets) == 0 {
 		t.Fatal("missing project removal")
 	}
+	// The other project keeps its own copy, so the plan must not copy it
+	// again. The user-level copy is removed because it still serves project
+	// one, which the owner switched off.
 	for _, target := range plan.Targets {
-		if target.Project != "one" || target.Action != "remove" {
+		if target.Action != "remove" {
+			t.Fatalf("unexpected target: %+v", target)
+		}
+		if target.Project != "one" && target.Project != "" {
 			t.Fatalf("unexpected target: %+v", target)
 		}
 	}
@@ -631,7 +637,10 @@ func TestToolToggleOnlyTouchesSelectedProjectWithUserCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, target := range applied.Targets {
-		if target.Project != "one" || target.Action != "remove" {
+		if target.Action != "remove" {
+			t.Fatalf("unexpected applied target: %+v", target)
+		}
+		if target.Project != "one" && target.Project != "" {
 			t.Fatalf("unexpected applied target: %+v", target)
 		}
 	}

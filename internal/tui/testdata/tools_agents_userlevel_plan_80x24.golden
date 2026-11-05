@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│6
+[ Skills per project ]    All tools
+╭─Review 1 change for homelab──────────────────────────────────────────────────╮
+│ archify: Switch off archify in homelab.                                      │
+│ archify: archify is installed for every project on research                  │
+│   (~/.claude/skills).                                                        │
+│ archify: To switch it off in homelab only, agent-net copies it into the      │
+│   other 12 projects and removes the user-level copy.                         │
+│ archify: It applies on one machine only; the other machines keep what they   │
+│   have.                                                                      │
+│ archify: Copies to 12 projects on research.                                  │
+│ archify: Moves ~/.claude/skills/archify on research to agent-net's backup.   │
+│                                                                              │
+│ enter apply  d exact folders  esc cancel                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter apply  esc cancel  ? help  ↑↓ scroll  d exact folders
