@@ -203,3 +203,31 @@ func TestDeliveryTestWaitsForAcceptAndKeepsExistingTask(t *testing.T) {
 	}
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Result: protocol.StepResultPass, Commit: commitB, Fields: map[string]string{"suite": "changed"}})
 }
+
+func TestMergerReleaseRouting(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "release", AfterMerge: true, Node: "@merger"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	c := r.submit(r.a, r.workerSubmit("feature/release", commitA)).Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: "pass", Commit: commitA})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Result: "pass", Commit: commitA, Fields: map[string]string{"suite": "changed"}})
+	yes := true
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "merge"}, Result: "pass", Commit: commitA, Fields: map[string]string{"merged_commit": commitMerged}, MergeContainsHead: &yes})
+	ref := protocol.StepRef{Step: "release", AfterMerge: true}
+	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: ref, Commit: commitMerged}); err == nil {
+		t.Fatal("release claimed before full CI")
+	}
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test", AfterMerge: true}, Result: "pass", Commit: commitMerged, Fields: map[string]string{"suite": "full"}})
+	r.g.dispatchStepTasks(context.Background())
+	var n int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND step='release' AND session_id=?`, c.ID, r.sonnet).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("release notices=%d err=%v", n, err)
+	}
+	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: ref, Commit: commitMerged}); err != nil {
+		t.Fatal(err)
+	}
+}

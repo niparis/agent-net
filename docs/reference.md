@@ -2709,7 +2709,10 @@ time, it reports fail and pushes nothing to the default branch. Once CI passes,
 it fast-forwards and pushes the default branch. If CI fails, it
 reports the merge step fail with the CI link and pushes nothing to the default
 branch. Without CI, it runs the project's tests on the merged commit, then
-pushes the default branch. It never force-pushes, pushes tags, or releases.
+pushes the default branch. It never force-pushes, retags or deletes tags.
+The merger may own release after merge. It follows RELEASING.md only when
+assigned that step, after full CI passes on the exact merged commit, and reports
+the release tag. GitHub may own only test and merge.
 It retries a failed push a few times, then reports fail.
 
 It reports each step with commit hashes read from git and reports failures
