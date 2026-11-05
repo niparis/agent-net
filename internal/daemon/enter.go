@@ -257,7 +257,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		return remotePane(opened.HerdrPane), nil
 	}
 	if private {
-		return protocol.EnterPlan{Host: base.Host, Name: name, Note: "Herdr could not open this private worker on its own machine. " + herdrInstallNote}, nil
+		return protocol.EnterPlan{Host: base.Host, Name: name, Note: "Herdr could not open this private worker on its own machine. " + opened.Note}, nil
 	}
 	return opened, nil
 }
