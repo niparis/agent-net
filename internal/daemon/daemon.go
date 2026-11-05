@@ -1027,6 +1027,10 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 		p.IdempotencyKey = protocol.NewID("k")
 	}
 	d.touchWorker(p.Sender, p.Recipient) // a message to or from a worker keeps it alive
+	// Until the gateway answers, the message counts as in flight: the idle
+	// limit must not end the worker before the message it carries lands.
+	marked := d.beginWorkerMessage(p.Sender, p.Recipient)
+	defer d.endWorkerMessage(marked)
 	if ls := d.activitySession(p.Sender); ls != nil {
 		d.touchSession(ls, time.Now())
 	}
