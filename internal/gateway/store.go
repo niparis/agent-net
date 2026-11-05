@@ -879,6 +879,13 @@ UPDATE delivery_step_tasks SET owner_node='/merger',claimed_by='',urgent=1
 WHERE owner_node='/merger' AND completed=0 AND change_id IN
 (SELECT c.id FROM delivery_changes c WHERE c.project=OLD.project AND c.machine=OLD.node_id);
 END;
+`, `
+-- One-time repair: older versions left a finished worker's session offline
+-- with the busy status of its last turn. worker_run_active is 0 once a run's
+-- end was recorded, and a resumed worker sets it back to 1. This migration
+-- marks those finished worker sessions ended.
+UPDATE sessions SET status = 'ended'
+WHERE online = 0 AND worker <> '' AND worker_run_active = 0 AND status <> 'ended';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1663,8 +1670,18 @@ func (s *Store) upsertSession(q interface {
 		tools_version, tools_old, created_at, waiting, graph_excluded, no_project)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
-		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
-		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
+		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
+		-- A worker whose run is over stays ended. A late session sync from its
+		-- machine still lists the harness session for a moment; registering
+		-- that as online and busy would undo the end report. Only an explicit
+		-- resume (SetWorkerRunActive) lets the registration bring it back.
+		status=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
+			THEN 'ended' ELSE excluded.status END,
+		delivery=excluded.delivery,
+		last_seen=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
+			THEN sessions.last_seen ELSE excluded.last_seen END,
+		online=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
+			THEN 0 ELSE 1 END,
 		last_active=MAX(sessions.last_active, excluded.last_active),
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
@@ -1673,7 +1690,8 @@ func (s *Store) upsertSession(q interface {
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded,
 		no_project=excluded.no_project,
-		worker_run_active=CASE WHEN sessions.online=0 THEN 1 ELSE sessions.worker_run_active END`,
+		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
+			THEN 0 WHEN sessions.online=0 THEN 1 ELSE sessions.worker_run_active END`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, workerTitle,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
@@ -1919,7 +1937,9 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 	}
 	rows.Close()
 	for _, id := range stale {
-		if _, err := tx.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE id = ?`, s.now().UnixNano(), id); err != nil {
+		if _, err := tx.Exec(`UPDATE sessions SET online = 0,
+			status = CASE WHEN worker<>'' AND worker_run_active=0 THEN 'ended' ELSE status END,
+			last_seen = ? WHERE id = ?`, s.now().UnixNano(), id); err != nil {
 			return nil, err
 		}
 	}
@@ -1968,16 +1988,32 @@ func (s *Store) SessionNode(sessionID string) (string, error) {
 	return n, err
 }
 
+// SetSessionOffline takes a session offline. A worker whose run is over is
+// also ended: its last status, often busy, is not the state of an ended
+// worker. A worker that only lost its connection keeps its status, because it
+// may still be busy.
 func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
+	_, err := s.db.Exec(`UPDATE sessions SET online = 0,
+		status = CASE WHEN worker<>'' AND worker_run_active=0 THEN 'ended' ELSE status END,
+		last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
 	return err
 }
 
 // SetWorkerSessionEnded records a worker's final state. Merely losing a
 // connection uses SetSessionOffline: a disconnected worker may still be busy.
-// A later registration when the worker resumes supplies its new live status.
+// A later registration after an explicit resume supplies its new live status.
 func (s *Store) SetWorkerSessionEnded(nodeID, sessionID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET online = 0, status = 'ended', last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
+	_, err := s.db.Exec(`UPDATE sessions SET online = 0, status = 'ended', worker_run_active = 0,
+		last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
+	return err
+}
+
+// SetWorkerRunActive marks a worker's run as started again. The gateway calls
+// it before it asks the machine to resume an ended worker, so that the new
+// session registration is not mistaken for the stale sync of a finished run.
+func (s *Store) SetWorkerRunActive(nodeID, sessionID string) error {
+	_, err := s.db.Exec(`UPDATE sessions SET worker_run_active = 1 WHERE id = ? AND node_id = ? AND worker<>''`,
+		sessionID, nodeID)
 	return err
 }
 
@@ -2124,7 +2160,9 @@ func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
 }
 
 func (s *Store) SetNodeOffline(nodeID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE node_id = ? AND online = 1`, s.now().UnixNano(), nodeID)
+	_, err := s.db.Exec(`UPDATE sessions SET online = 0,
+		status = CASE WHEN worker<>'' AND worker_run_active=0 THEN 'ended' ELSE status END,
+		last_seen = ? WHERE node_id = ? AND online = 1`, s.now().UnixNano(), nodeID)
 	return err
 }
 
