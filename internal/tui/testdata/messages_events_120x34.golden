@@ -1,7 +1,7 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 6 online · 2 busy · 1 worker
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages───────────────────────filter: with system events  (l)─╮╭─Conversation───────────────────────────────────────╮
-│ ▸ tenebrae-53 ↔ strategies · The deploy is… 1 message · 6m ago ││ ▸ 13:59 tenebrae-53                                │
+│ ▸ tenebrae-53 ↔ strategies · The deploy is rea… 6m ago · 1 msg ││ ▸ 13:59 tenebrae-53                                │
 │   tenebrae-53 → worker: Polish the sessions… 4 messages · done ││ The deploy is ready.                               │
 │   14:00 build disconnected                                     ││                                                    │
 │   13:55 build connected                                        ││                                                    │

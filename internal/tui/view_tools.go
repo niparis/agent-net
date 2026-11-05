@@ -254,16 +254,30 @@ func pickerLines(p *projPicker, width, rows int) []string {
 			noun = "target"
 		}
 	}
-	head := tsDim.Render(fmt.Sprintf("%d of %d %s shown · %d ticked", len(shown), len(p.all), noun, picked))
+	extra := 1
+	if p.filter != "" || p.filtering {
+		extra++
+	}
+	room := max(rows-extra-1, 2)
+	start := max(0, min(p.cur-room/2, len(shown)-room))
+	visible := min(len(shown)-start, room)
+
+	countStr := fmt.Sprintf("%d of %d %s shown", len(shown), len(p.all), noun)
+	if visible < len(shown) {
+		countStr = fmt.Sprintf("%d-%d of %d %s shown", start+1, start+visible, len(p.all), noun)
+	}
+	head := tsDim.Render(fmt.Sprintf("%s · %d ticked", countStr, picked))
 	if p.remove {
-		head = tsDim.Render(fmt.Sprintf("tick the projects to remove it from · %d of %d shown · %d ticked", len(shown), len(p.all), picked))
+		if visible < len(shown) {
+			head = tsDim.Render(fmt.Sprintf("tick the projects to remove it from · %d-%d of %d shown · %d ticked", start+1, start+visible, len(p.all), picked))
+		} else {
+			head = tsDim.Render(fmt.Sprintf("tick the projects to remove it from · %d of %d shown · %d ticked", len(shown), len(p.all), picked))
+		}
 	}
 	out := []string{head}
 	if p.filter != "" || p.filtering {
 		out = append(out, tsAcc.Render("/"+sanitize(p.filter)+searchCursor(p.filtering)))
 	}
-	room := max(rows-len(out)-1, 2)
-	start := max(0, min(p.cur-room/2, len(shown)-room))
 	for i := start; i < len(shown) && i < start+room; i++ {
 		box := "[ ] "
 		if p.sel[shown[i]] {

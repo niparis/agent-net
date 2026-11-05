@@ -1469,6 +1469,9 @@ func renderChoose(md *toolsModal) {
 			}
 			name := c.Harness
 			if name == "" {
+				name = copyHarness(c)
+			}
+			if name == "" {
 				name = c.Machine
 			}
 			model, cmd := m.openAssign("Keep "+act.Name+" from "+c.Machine+" ("+name+")", "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, choice: choice, target: target, where: where}}, notes)
@@ -1508,11 +1511,30 @@ func compareMachines(copies []toolsdiff.Copy) string {
 	return strings.Join(out, " and ")
 }
 
+func copyHarness(c toolsdiff.Copy) string {
+	if c.Harness != "" {
+		return c.Harness
+	}
+	loc := strings.ReplaceAll(c.Location, "\\", "/")
+	switch {
+	case strings.Contains(loc, "/.claude/") || strings.HasSuffix(loc, "/.claude"):
+		return "claude"
+	case strings.Contains(loc, "/.pi/") || strings.HasSuffix(loc, "/.pi"):
+		return "pi"
+	case strings.Contains(loc, "/.codex/") || strings.Contains(loc, "/.agents/"):
+		return "codex"
+	case strings.Contains(loc, "/opencode/") || strings.Contains(loc, "/.config/opencode/"):
+		return "opencode"
+	}
+	return ""
+}
+
 // compareCopyName is the column heading for one copy.
 func compareCopyName(c toolsdiff.Copy, i int) string {
+	h := copyHarness(c)
 	switch {
-	case c.Harness != "":
-		return c.Harness + "'s copy"
+	case h != "":
+		return h + "'s copy"
 	case c.Machine != "":
 		return c.Machine + "'s copy"
 	}
@@ -1621,6 +1643,9 @@ func compareBoxLines(st *chooseState, copies []toolsdiff.Copy, inner int) []stri
 		rows = append(rows, row{label: "path", left: []string{comparePath(a.Location, colW)}, right: []string{comparePath(b.Location, colW)}})
 	}
 
+	if a.Location != "" || b.Location != "" {
+		rows = append(rows, row{label: "path", left: wrap(a.Location, colW), right: wrap(b.Location, colW)})
+	}
 	changed := row{label: "changed", left: wrap(st.changedText(0, a), colW), right: wrap(st.changedText(1, b), colW)}
 	rows = append(rows, changed)
 	rows = append(rows, row{label: "used by", left: wrap(st.usedBy(a), colW), right: wrap(st.usedBy(b), colW)})
@@ -1650,8 +1675,19 @@ func compareBoxLines(st *chooseState, copies []toolsdiff.Copy, inner int) []stri
 	}
 
 	var out []string
-	headA := wrap("a  "+compareCopyName(a, 0), colW)
-	headB := wrap("b  "+compareCopyName(b, 1), colW)
+	labelA := compareCopyName(a, 0)
+	labelB := compareCopyName(b, 1)
+	ha := copyHarness(a)
+	hb := copyHarness(b)
+	if ha != "" && hb != "" && ha != hb {
+		labelA = ha + "'s copy"
+		labelB = hb + "'s copy"
+	} else if a.Machine != "" && b.Machine != "" && a.Machine != b.Machine {
+		labelA = a.Machine + "'s copy"
+		labelB = b.Machine + "'s copy"
+	}
+	headA := wrap("a  "+labelA, colW)
+	headB := wrap("b  "+labelB, colW)
 	for i := 0; i < max(len(headA), len(headB)); i++ {
 		l, r := "", ""
 		if i < len(headA) {

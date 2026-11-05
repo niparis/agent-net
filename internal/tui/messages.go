@@ -258,7 +258,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		fromName = m.ctoTitle()
 	}
 	toName = m.partyName(to, toName)
-	if m.width <= 80 {
+	if w <= 80 {
 		// Two long peer names leave no room for the preview at 80 columns.
 		fromName = ansi.Truncate(fromName, 14, "…")
 		toName = ansi.Truncate(toName, 14, "…")
@@ -289,7 +289,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		messageWord = "message"
 	}
 	suffix := fmt.Sprintf("%d %s · %s", count, messageWord, ageText)
-	if m.width <= 80 {
+	if w <= 80 {
 		messageWord = "msgs"
 		if count == 1 {
 			messageWord = "msg"
