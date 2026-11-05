@@ -581,7 +581,7 @@ esac
 			if start && (!p.OpenedHerdr || !strings.Contains(string(calls), "pane run w1:p1")) {
 				t.Fatalf("plan %+v calls %s", p, calls)
 			}
-			if !start && (p.OpenedHerdr || len(p.Argv) != 3 || !strings.Contains(p.Note, "install")) {
+			if !start && (p.OpenedHerdr || len(p.Argv) != 3 || !strings.Contains(p.Note, "herdr at "+dir+"/herdr failed:")) {
 				t.Fatalf("fallback %+v", p)
 			}
 		})
@@ -1059,7 +1059,7 @@ func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
 		t.Fatalf("approving TUI did not receive the start: %v", q)
 	}
 	argv, ok := plan["argv"].([]any)
-	if !ok || len(argv) != 2 || argv[0] != bins["codex"] || argv[1] != "hello" || plan["dir"] != repo || !strings.Contains(plan["note"].(string), "Herdr was not found") {
+	if !ok || len(argv) != 2 || argv[0] != bins["codex"] || argv[1] != "hello" || plan["dir"] != repo || !strings.Contains(plan["note"].(string), "herdr not found (looked in:") {
 		t.Fatalf("incorrect fallback plan: %v", plan)
 	}
 	select {
