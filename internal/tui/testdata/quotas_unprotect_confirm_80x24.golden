@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│12
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 [ Quotas ]    Workers log
 ╭─Subscriptions · read on Mac · read 0s ago────────────────────────────────────╮
 │ protected: anthropic · saved for your orchestrator                           │
@@ -9,9 +9,9 @@
 ╭─Workers · 🔒 protected · 1 registered · 0 running · scores: Artificial Anal…─╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
 │ 🔒 sonnet       claude   sonnet-4          x     x     x     x     x         │
+│ T:trivial S:simple N:normal H:hard V:very complex                            │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
@@ -21,4 +21,4 @@
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────╯
-Unprotect anthropic?  enter/y: yes · esc/n: no
+Unprotect claude (Mac) (anthropic)?  enter/y: yes · esc/n: no

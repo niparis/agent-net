@@ -516,7 +516,16 @@ func (m Model) mapFocusView(w, h int) []string {
 		}
 		out = append(out, section(title, w))
 		for i := scroll; i < min(scroll+body, len(all)); i++ {
-			out = append(out, all[i])
+			line := all[i]
+			if i == min(scroll+body, len(all))-1 && i+1 < len(all) {
+				if strings.HasPrefix(ansi.Strip(all[i+1]), " ") {
+					hint := " ... (ctrl+d)"
+					clean := strings.TrimRight(line, " ")
+					trimmed := strings.TrimRight(ansi.Truncate(clean, max(w-len(hint), 0), ""), " ")
+					line = trimmed + sDim.Render(hint)
+				}
+			}
+			out = append(out, line)
 		}
 	}
 	for len(out) < h-1 {

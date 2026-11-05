@@ -1,7 +1,9 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│6
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
   Skills per project    [ All tools ]
 ╭─design-taste-frontend: 2 different copies on research────────────────────────╮
 │            a  pi's copy                     b  claude's copy                 │
+│   path     /home/n/.agents/skills/design-t  /home/n/.claude/skills/design-t  │
+│            aste-frontend                    aste-frontend                    │
 │   changed  25 Oct                           28 Oct                           │
 │   used by  pi only                          claude only                      │
 │   files    SKILL.md, notes.md               SKILL.md, notes.md,              │
@@ -10,8 +12,6 @@
 │   The copy you keep goes to every harness on research. The other is backed   │
 │   up for 30 days.                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
-
 
 
 

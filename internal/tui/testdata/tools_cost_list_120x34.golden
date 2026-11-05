@@ -4,10 +4,10 @@
 │   NAME                    STATUS                      COST     ││ Description for code-review                        │
 │ ! code-review             v1 on Nicolas-MBP, v3 on…   ~130     ││ ~130 tokens in every session                       │
 │ ! design-taste-frontend   2 different copies on…      ~130     ││ +~3.4k when the skill is used                      │
-│ ! imnplementing-clean-ar… outside agent-net           ~235     ││ on: v1 on Nicolas-MBP, v3 on research              │
-│ ! web-design-guidelines   on for wbg-housing,…        ~270     ││ ! v1 on Nicolas-MBP, v3 on research                │
-│   clean-architecture-pyt… on everywhere               ~200     ││ enter: make every machine use v3                   │
-│   deploy-test-server      in the sovl-clone repo      ~270     ││ from: agent-net v3                                 │
+│ ! imnplementing-clean-ar… outside agent-net           ~235     ││ ! on: v1 on Nicolas-MBP, v3 on research            │
+│ ! web-design-guidelines   on for wbg-housing,…        ~270     ││ enter: make every machine use v3                   │
+│   clean-architecture-pyt… on everywhere               ~200     ││ from: agent-net v3                                 │
+│   deploy-test-server      in the sovl-clone repo      ~270     ││                                                    │
 │   diagnosing-bugs         on everywhere; limited on…  ~200     ││                                                    │
 │   estate-runbook          in the homelab repo         ~60      ││                                                    │
 │   found-skill-00          outside agent-net           ~130     ││                                                    │

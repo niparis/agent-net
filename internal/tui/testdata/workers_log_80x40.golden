@@ -1,12 +1,12 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│5
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
   Quotas    [ Workers log ]
 ╭─Workers log──────────────────────────────────────────────────────────────────╮
-│   22:13  test-model  norm  owner      Review worker history and dif… running │
-│ ▸ 22:11  test-model  norm  Agent One  Review worker history and diffic… done │
-│   22:10  test-model  norm  CTO        Review worker history and dif… blocked │
-│   22:08  test-model  norm  Agent One  Review worker history and diff… failed │
-│   22:06  test-model  norm  CTO        Review worker history and d… timed out │
-│   22:05  test-model  norm  -          Review worker history and dif… stopped │
+│   22:13 test-model norm owner     Review worker history and difficu… running │
+│ ▸ 22:11 test-model norm Agent One Review worker history and difficulty… done │
+│   22:10 test-model norm CTO       Review worker history and difficu… blocked │
+│   22:08 test-model norm Agent One Review worker history and difficul… failed │
+│   22:06 test-model norm CTO       Review worker history and diffi… timed out │
+│   22:05 test-model norm -         Review worker history and difficu… stopped │
 │                                                                              │
 │                                                                              │
 │                                                                              │

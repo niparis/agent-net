@@ -53,7 +53,9 @@ func (m Model) detailLines(w, n int) []string {
 	}
 	two := w >= 76
 	rightW := 36
-	if w >= 100 {
+	if w <= 80 {
+		rightW = 25
+	} else if w >= 100 {
 		rightW = min(w*45/100, 64)
 	}
 	leftW := w - rightW - 3

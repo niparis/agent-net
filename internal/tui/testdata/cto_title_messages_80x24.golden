@@ -1,22 +1,22 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│5
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 you→: your prompt · orange: waiting for a reply · red: failed · purple: Atlas
 ╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
 │ ▸ Atlas ↔ tenebrae-53 · Please check the deployment.              1m · 1 msg │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │ 0 system events                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ ▸ 14:04 Atlas                                                                │
 │ Please check the deployment.                                                 │
 │ It is on staging.                                                            │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
 ╭─Atlas · opencode · fake/m1───────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the Atlas                                                            │

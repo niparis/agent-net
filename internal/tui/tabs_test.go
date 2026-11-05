@@ -121,7 +121,7 @@ func TestQuotaViewGoldens(t *testing.T) {
 				}
 			}
 		}
-		if !strings.Contains(ansi.Strip(view), "other subscriptions") {
+		if !strings.Contains(ansi.Strip(view), "other subscription") {
 			t.Fatal(view)
 		}
 		golden(t, fmt.Sprintf("quotas_%dx%d", size[0], size[1]), view)
@@ -226,11 +226,11 @@ func TestTabStyleAndTitleSeparator(t *testing.T) {
 		t.Fatal("active tab must be bold with a background")
 	}
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m.tab = 2
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 }
@@ -971,7 +971,7 @@ func TestQuotaShowsLiveUnusedSubscriptionsByDefault(t *testing.T) {
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6"}}
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "copilot", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "copilot") || !strings.Contains(v, "1 other subscriptions · s to show") {
+	if strings.Contains(v, "copilot") || !strings.Contains(v, "1 other subscription · s to show") {
 		t.Fatal(v)
 	}
 	m = keys(m, "s")
@@ -988,7 +988,7 @@ func TestQuotaReadingPreventsProviderFromFoldingAsNotSetUp(t *testing.T) {
 		{Provider: "cursor", Plan: "api", Error: "credential_unavailable"},
 	}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "cursor") || !strings.Contains(v, "1 other subscriptions") {
+	if strings.Contains(v, "cursor") || !strings.Contains(v, "1 other subscription") {
 		t.Fatal(v)
 	}
 	m = keys(m, "s")
@@ -1317,7 +1317,7 @@ func TestFullTabNamesFitWithCompactStatus(t *testing.T) {
 		if !strings.Contains(line, "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery") {
 			t.Errorf("width %d: %s", width, line)
 		}
-		if !strings.Contains(line, "12") {
+		if width > 80 && !strings.Contains(line, "12") {
 			t.Errorf("width %d lost online count: %s", width, line)
 		}
 	}

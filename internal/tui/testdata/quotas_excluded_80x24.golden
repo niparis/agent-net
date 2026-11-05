@@ -1,11 +1,11 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│12
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 [ Quotas ]    Workers log
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
 │ PROVIDER       PLAN WINDOW USAGE              PACE      RESETS               │
 │ > claude (Mac) max  5h     ████────  50%      on pace   -                    │
 │   codex (Mac)  pro  week   █───────   8%      ahead     in 2h00              │
-│ 1 other subscriptions · s to show                                            │
+│ 1 other subscription · s to show                                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 6 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
