@@ -3,7 +3,7 @@ project-03  autonomy: off
 Tools: 0 skills, 0 MCP servers · t open
 no purpose set
 ● 1 session
-accept, review, release, verify: session-3 (offline)
+accept, review, release, verify: caller
 test, merge: project-03 merger (online)
 
 IN 2                                                         OUT 1

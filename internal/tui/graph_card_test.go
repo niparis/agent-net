@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -131,5 +132,54 @@ func TestGraphOpensDeliveryForProject(t *testing.T) {
 	m = keys(m, "esc")
 	if m.delivery.project != "" {
 		t.Fatal("escape did not clear project")
+	}
+}
+
+func TestGraphFooterHeightAndCaller(t *testing.T) {
+	m := graphModel(80, 24)
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
+	_, h1 := m.graphSize()
+	owners := strings.Join(m.graphDeliveryOwners("project-02"), " ")
+	if !strings.Contains(owners, ": caller") {
+		t.Fatalf("caller missing: %s", owners)
+	}
+	m.mp.edges = append(m.mp.edges, protocol.Edge{From: "/delivery/merger", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepTest)})
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
+	_, h2 := m.graphSize()
+	if h1 != h2 {
+		t.Fatalf("canvas heights changed: %d and %d", h1, h2)
+	}
+	if lines := m.graphOwnerLines(80); len(lines) != 2 {
+		t.Fatalf("owner lines: %v", lines)
+	}
+}
+
+func TestGraphOwnerLinesPackOverflow(t *testing.T) {
+	m := graphModel(80, 24)
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
+	m.mp.edges = append(m.mp.edges,
+		protocol.Edge{From: "/delivery/merger", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepTest)},
+		protocol.Edge{From: "project-02", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepReview)})
+	owners := m.graphDeliveryOwners("project-03")
+	if len(owners) < 3 {
+		t.Fatalf("need three owners: %v", owners)
+	}
+	lines := m.graphOwnerLines(80)
+	if len(lines) != 2 || !strings.Contains(lines[1], "; ") {
+		t.Fatalf("overflow not packed: %v", lines)
+	}
+	if ansi.StringWidth(lines[1]) > 78 {
+		t.Fatalf("overflow too wide: %s", lines[1])
+	}
+}
+
+func TestGraphDeliveryFooterGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		for _, project := range []string{"project-02", "project-03"} {
+			m := graphModel(size[0], size[1])
+			m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: project})
+			m.mp.edges = append(m.mp.edges, protocol.Edge{From: "/delivery/merger", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepTest)})
+			golden(t, fmt.Sprintf("graph_footer_%s_%dx%d", project, size[0], size[1]), m.testView())
+		}
 	}
 }

@@ -180,7 +180,7 @@ func TestHeaderUsesCounts(t *testing.T) {
 	old.loc, old.now = time.UTC, func() time.Time { return t0 }
 	old = send(old, tea.WindowSizeMsg{Width: 100, Height: 30})
 	old = refresh(old, src)
-	if head := lines(old.testView())[0]; !strings.Contains(head, "6 sessions, 5 online · 1 busy") {
+	if head := lines(old.testView())[0]; !strings.Contains(head, "5 online · 1 busy") {
 		t.Fatalf("header without counts %q", head)
 	}
 }

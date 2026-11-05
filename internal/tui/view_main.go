@@ -339,15 +339,33 @@ func (m Model) titleLine(w int) string {
 	var tabs []string
 	count := m.waitingCount()
 	names := tabNames
-	if w < 120 || len(m.snap.GatewayWarnings) > 0 {
-		// The pending count makes the full names run into the online
-		// counter. Short names keep the separator between them.
+	fullWidth := ansi.StringWidth(strings.Join(tabNames, " ")) + len("1 2 3 4 5 6 7 8 ")
+	if count > 0 {
+		fullWidth += len(fmt.Sprintf(" (%d)", count))
+	}
+	onlineCount := 0
+	for _, a := range m.snap.Agents {
+		if !protocol.IsOwner(a.Harness) && a.Online {
+			onlineCount++
+		}
+	}
+	if m.usage.counts != nil {
+		onlineCount = m.usage.counts.Online
+	}
+	required := fmt.Sprint(onlineCount)
+	if !m.haveData {
+		required = "loading…"
+	}
+	if m.filter != "" {
+		required = "filter: /" + sanitize(m.filter)
+	}
+	if len(m.snap.GatewayWarnings) > 0 {
+		required = strings.Join(m.snap.GatewayWarnings, "  ")
+	}
+	if fullWidth+1+ansi.StringWidth(required) > w {
 		names = shortTabNames
 	}
-	fullTabs := len(strings.Join(names, " ")) + len("1 2 3 4 5 6 7 8 ")
-	if count > 0 {
-		fullTabs += len(fmt.Sprintf(" (%d)", count))
-	}
+
 	for i, name := range names {
 		label := fmt.Sprintf("%d %s", i+1, name)
 		if i == inboxTab && count > 0 {
@@ -472,6 +490,10 @@ func (m Model) titleLine(w int) string {
 		mid = compact
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
 	}
+	if used > w && len(filters) > 0 {
+		mid = "filter: " + strings.Join(filters, ", ")
+		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
+	}
 	// Last, drop whole parts from the end: a part is never cut in the middle.
 	if used > w {
 		room := w - ansi.StringWidth(left) - 3
@@ -489,6 +511,13 @@ func (m Model) titleLine(w int) string {
 		}
 		mid = plain
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
+	}
+	if mid == "" && m.haveData && !m.mapOn {
+		for _, candidate := range []string{fmt.Sprintf("%d on", onlineCount), fmt.Sprint(onlineCount)} {
+			if ansi.StringWidth(left)+1+ansi.StringWidth(candidate) <= w {
+				return left + "│" + candidate
+			}
+		}
 	}
 	if mid == "" {
 		return clip(left, w)

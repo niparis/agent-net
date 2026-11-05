@@ -168,7 +168,7 @@ func TestGraphViewAndUpdateNeverRasterize(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("View took %v with a 200x45 scene", elapsed)
 	}
-	if !strings.Contains(out, "\u2800") && !strings.ContainsAny(out, "⠁⠂⠄⡀⢀⠈⠐⠠") {
+	if !strings.ContainsFunc(out, func(r rune) bool { return r >= 0x2800 && r <= 0x28ff }) {
 		t.Fatal("View did not fall back to Braille before the first frame")
 	}
 

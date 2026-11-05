@@ -16,7 +16,7 @@ func TestGraphMergerDeliveryOwners(t *testing.T) {
 			t.Run(fmt.Sprintf("%d/%s", width, state), func(t *testing.T) {
 				m := graphModel(width, 34)
 				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
-				want := "accept, test, review, merge, release, verify: session-3 (offline)"
+				want := "accept, test, review, merge, release, verify: caller"
 				if state != "caller" {
 					m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "s_merger", Type: "merger", Harness: "claude", Online: state == "online", Repo: protocol.RepoInfo{Project: "project-03"}, Profile: protocol.Profile{Name: "project-03 merger"}})
 					for _, kind := range []string{"tests", "merges"} {

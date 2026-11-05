@@ -300,7 +300,10 @@ type bodyMsg struct {
 // Init starts the first refresh and the clock that asks for the next ones.
 // New marks a fetch as running, so the first tick does not start a second.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, m.fetchCmd(), tick(), m.deliveryLoad()}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, m.fetchCmd(), tick()}
+	if m.deliverySrc != nil {
+		cmds = append(cmds, func() tea.Msg { return deliveryStartMsg{} })
+	}
 	if m.cto != nil && m.cto.polling {
 		cmds = append(cmds, m.ctoPollCmd())
 	}
@@ -550,6 +553,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, deliveryCmd)
 		return m, tea.Batch(cmds...)
 
+	case deliveryStartMsg:
+		return m.startDeliveryLoad()
 	case deliveryLoadedMsg:
 		return m.deliveryLoaded(msg)
 	case deliveryDetailMsg:

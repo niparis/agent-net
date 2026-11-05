@@ -215,16 +215,42 @@ func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [3
 func (m Model) graphSize() (int, int) {
 	w, h := max(m.width, 40), max(m.height, 10)
 	box := m.ctoBoxHeight(graphTab)
-	// The footer holds the feed, legend, status, two delivery owner lines and hints.
-	footer := 4
-	if m.graphState.Graph != nil {
-		footer += len(m.graphDeliveryOwners(m.graphState.Graph.Selected()))
-	}
-	if m.height <= 24 {
-		footer--
-	}
+	footer := m.graphFooterHeight()
+
 	content := max(h-1-box, 1)
 	return max(w-4, 1), max(content-1-footer, 1)
+}
+
+// Reserve the same space for every selection to keep the canvas stable.
+func (m Model) graphOwnerCount() int {
+	if m.height <= 24 {
+		return 2
+	}
+	return 3
+}
+func (m Model) graphFooterHeight() int {
+	if m.height <= 24 {
+		return 3 + m.graphOwnerCount()
+	}
+	return 4 + m.graphOwnerCount()
+}
+func (m Model) graphOwnerLines(w int) []string {
+	n := m.graphOwnerCount()
+	lines := make([]string, n)
+	if m.graphState.Graph == nil {
+		return lines
+	}
+	for i, line := range m.graphDeliveryOwners(m.graphState.Graph.Selected()) {
+		if i < n {
+			lines[i] = line
+		} else {
+			lines[n-1] += "; " + line
+		}
+	}
+	for i := range lines {
+		lines[i] = clip(lines[i], max(w-2, 0))
+	}
+	return lines
 }
 
 // startGraph opens the network and refreshes its data without losing the selection.
@@ -364,10 +390,8 @@ func (m Model) graphView(w, h int) []string {
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
-	footer := 4 + len(m.graphDeliveryOwners(m.graphState.Graph.Selected()))
-	if m.height <= 24 {
-		footer--
-	}
+	footer := m.graphFooterHeight()
+
 	gw, gh := max(w-4, 1), max(h-1-footer, 1)
 	smooth := m.graphPixel.enabled() && m.graphPixel.motion
 	m.graphState.Smooth = smooth
@@ -403,10 +427,10 @@ func (m Model) graphView(w, h int) []string {
 		out = append(out, sDim.Render(graphLegendCompact(w)))
 	}
 	out = append(out, graphStatusLine(w, scene))
-	owners := m.graphDeliveryOwners(m.graphState.Graph.Selected())
-	for _, line := range owners {
+	for _, line := range m.graphOwnerLines(w) {
 		out = append(out, sDim.Render(clip("  "+line, w)))
 	}
+
 	out = append(out, sDim.Render(graphHintLine(w)))
 	return out
 }
@@ -646,7 +670,7 @@ func (m Model) graphDeliveryOwners(project string) []string {
 		if assignment.Kind != protocol.OwnerMerger {
 			name := assignment.Node
 			if assignment.Kind == protocol.OwnerCaller {
-				name = project
+				return "caller"
 			}
 			if name != "" {
 				var sessions []string

@@ -100,6 +100,9 @@ type deliveryState struct {
 	detailErr     string
 }
 
+// deliveryStartMsg starts the first load through the normal in-flight guard.
+type deliveryStartMsg struct{}
+
 // deliveryLoadedMsg is the answer of one load.
 type deliveryLoadedMsg struct {
 	changes []deliveryChange
@@ -385,8 +388,7 @@ func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		d.detail, d.detailErr, d.detailLoading = false, "", false
 	case "refresh":
-		// R is the owner asking: it loads even when an earlier load is out.
-		d.loading = false
+		// Do not overlap a load that is already in flight.
 		m.delivery = d
 		return m.startDeliveryLoad()
 	case "help":

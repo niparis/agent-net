@@ -1,24 +1,24 @@
-1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ 12 online
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│12
+
 
                        ⠶○⠶ project-07           ○ project-14
 
                                                                 ⠶○⠶ project-11
-
        ○ project-13             all projects depend
                                  ○ project-05
-                                  •⠉⠢○ project-04               project-10 ○
-                                     ⠈↖⢄
+                                  • ⠑○ project-04               project-10 ○
+                                      ⠈⠢⢄
     ○ project-12                        (○) project-03
-                                          ⠑⠢⡀
-                                            ⠈○ project-02
+                                           ⠈⠑○ project-02
                                               ⠈•⢄                project-08 ○
            ○ project-09                          ○ project-01
-                                                   ⠑○ architect
+                                                   ⠈○ architect
 
                            ○ project-06
 
   ● charter · ○ open · gold: approved · pink: unverified
   selected: project-03 · component · 3 edges
-  accept, test, review, merge, release, verify: session-3 (offline)
+  accept, test, review, merge, release, verify: caller
+
   left/right select  +/- zoom  d delivery  m traffic  enter card  ? help
 1-8 tabs  c CTO  ? help  q quit

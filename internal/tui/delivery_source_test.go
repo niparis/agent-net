@@ -645,9 +645,9 @@ func TestDeliveryRefreshKeyAndOpenStartALoad(t *testing.T) {
 	if cmd == nil || !m.delivery.loading {
 		t.Fatal("R did not reload")
 	}
-	// R asks again even when a load is out; the timer does not (see the tick test).
-	if _, again := dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]}); again == nil {
-		t.Fatal("R did nothing while a load was out")
+	// R cannot overlap a load already in flight.
+	if _, again := dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]}); again != nil {
+		t.Fatal("R overlapped a load")
 	}
 }
 
@@ -742,5 +742,67 @@ func TestDeliveryOutcomeFromEvidence(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in %q", want, got)
 		}
+	}
+}
+
+func TestDeliveryRefreshUpdatesSessionsAndDoesNotOverlap(t *testing.T) {
+	src := &fakeDelivery{}
+	clock := t0
+	m := treeModel(80, 24, mergerFixture())
+	m.deliverySrc, m.now, m.tab = src, func() time.Time { return clock }, sessionsTab
+	m, cmd := m.startDeliveryLoad()
+	if cmd == nil {
+		t.Fatal("initial load missing")
+	}
+	m, again := m.deliveryTick()
+	if again != nil {
+		t.Fatal("overlapping load")
+	}
+	m, _ = m.deliveryLoaded(cmd().(deliveryLoadedMsg))
+	a, _ := m.agentByID(mainID)
+	if m.sessionTaskText(a) != "" {
+		t.Fatal("unexpected task")
+	}
+	src.changes = []deliveryChange{{ID: "ch_ed5f0000", Steps: []deliveryStep{{Name: "test", State: protocol.StepStateRunning, Note: "claimed by " + mainID}}}}
+	clock = clock.Add(30 * time.Second)
+	m, cmd = m.deliveryTick()
+	if cmd == nil {
+		t.Fatal("refresh missing on Sessions")
+	}
+	m, _ = m.deliveryLoaded(cmd().(deliveryLoadedMsg))
+	if got := m.sessionTaskText(a); got != "test ch_ed5f" {
+		t.Fatalf("task %q", got)
+	}
+	src.changes = nil
+	clock = clock.Add(30 * time.Second)
+	m, cmd = m.deliveryTick()
+	if cmd == nil {
+		t.Fatal("second refresh missing")
+	}
+	m, _ = m.deliveryLoaded(cmd().(deliveryLoadedMsg))
+	if got := m.sessionTaskText(a); got != "" {
+		t.Fatalf("stale task %q", got)
+	}
+	m.tab = deliveryTab
+	m, cmd = m.startDeliveryLoad()
+	if cmd == nil {
+		t.Fatal("load missing")
+	}
+	_, again = m.deliveryKey(tea.KeyPressMsg{Text: "R", Code: 'R'})
+	if again != nil {
+		t.Fatal("refresh key started overlapping load")
+	}
+}
+
+func TestDeliveryStartupUsesInflightGuard(t *testing.T) {
+	m := deliveryModel(&fakeDelivery{}, 80, 24)
+	next, cmd := m.Update(deliveryStartMsg{})
+	m = next.(Model)
+	if cmd == nil || !m.delivery.loading {
+		t.Fatal("startup did not mark load in flight")
+	}
+	next, again := m.Update(deliveryStartMsg{})
+	if again != nil || !next.(Model).delivery.loading {
+		t.Fatal("startup overlapped its load")
 	}
 }

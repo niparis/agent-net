@@ -17,7 +17,7 @@ import (
 
 func TestTabSwitching(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m = keys(m, "3")
@@ -226,11 +226,11 @@ func TestTabStyleAndTitleSeparator(t *testing.T) {
 		t.Fatal("active tab must be bold with a background")
 	}
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ ") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m.tab = 2
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ ") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 }
@@ -241,7 +241,7 @@ func TestTabsMoveFeedToMessages(t *testing.T) {
 		t.Fatal("sessions tab missing")
 	}
 	m = keys(m, "4")
-	if !strings.Contains(m.testView(), "4 Msg") || !strings.Contains(m.testView(), "Messages") {
+	if !strings.Contains(m.testView(), "4 Messages") || !strings.Contains(m.testView(), "Messages") {
 		t.Fatal("messages tab missing")
 	}
 	m = keys(m, "3")
@@ -1306,5 +1306,19 @@ func TestQuotaSubscriptionsAt80UseAProviderBadge(t *testing.T) {
 	}
 	if wide := ansi.Strip(strings.Join(m.quotasView(120, 40), "\n")); strings.Contains(wide, "claude (Mac)") || !strings.Contains(wide, "LEFT") {
 		t.Errorf("120 column subscriptions changed:\n%s", wide)
+	}
+}
+
+func TestFullTabNamesFitWithCompactStatus(t *testing.T) {
+	m := newModel(80, 24)
+	for _, width := range []int{80, 100} {
+		line := ansi.Strip(m.titleLine(width))
+		t.Logf("title %d: %s", width, line)
+		if !strings.Contains(line, "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery") {
+			t.Errorf("width %d: %s", width, line)
+		}
+		if !strings.Contains(line, "12") {
+			t.Errorf("width %d lost online count: %s", width, line)
+		}
 	}
 }
