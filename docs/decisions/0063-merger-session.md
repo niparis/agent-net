@@ -72,3 +72,9 @@ its own merge commit. The merger verifies ancestry before reporting. Existing
 evidence rules trust the reporter's test result and check merge ancestry; they
 do not independently verify the CI link or batch tip. After-merge evidence still
 uses the individual merged commit.
+
+
+## Update 2026-11-05
+
+The merger may own release after merge. It follows the repository release
+instructions only after full CI passes on the exact merged commit.
