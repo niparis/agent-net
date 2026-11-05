@@ -216,14 +216,9 @@ type Config struct {
 	DifficultyModel   string
 	// DifficultyAnalyzer enables the repository-reading analyzer before judging.
 	// It is off by default; the judge scores the task brief directly.
-	DifficultyAnalyzer bool
-	// DifficultyJudgeHarness and DifficultyJudgeModel override the independent
-	// evidence judge. Defaults are opencode and opencode-go/deepseek-v4.1-flash.
-	DifficultyJudgeHarness      string
-	DifficultyJudgeModel        string
-	DifficultyRetryJudgeHarness string
-	DifficultyRetryJudgeModel   string
-	testJudgeHedgeAfter         time.Duration
+	DifficultyAnalyzer  bool
+	testJudgeHedgeAfter time.Duration
+	testJudgePick       func(context.Context, string) (protocol.DifficultyJudgeChoice, error)
 	// DifficultyTimeout bounds each one-shot difficulty run. Default 3 minutes.
 	DifficultyTimeout time.Duration
 	// ModelProviders is model_providers of node.json. It goes to the gateway

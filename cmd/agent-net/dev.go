@@ -24,7 +24,7 @@ import (
 
 // assessmentForDev is replaced in tests, so they never start a model.
 var assessmentForDev = func(ctx context.Context, cfg daemon.Config, project, task string) (difficulty.Assessment, error) {
-	return daemon.NewDifficultyAssessor(cfg, daemon.DifficultySources{Profiles: localWorkerProfiles}).Assess(ctx, project, task)
+	return daemon.NewDifficultyAssessor(cfg, daemon.DifficultySources{Profiles: localWorkerProfiles, PickJudge: localDifficultyJudgePick}).Assess(ctx, project, task)
 }
 
 // loadDevConfig is replaced in tests, so they never read the real node.json.
@@ -38,7 +38,7 @@ var loadDevConfig = func() (daemon.Config, error) {
 
 func cmdDev(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--analyzer] [--json]")
+		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--analyzer] [--json]")
 	}
 	switch args[0] {
 	case "assess":
@@ -53,15 +53,13 @@ func runDevAssess(ctx context.Context, out io.Writer, args []string) error {
 	project := fs.String("project", "", "repository folder the analyzer may read")
 	taskFile := fs.String("task-file", "", "file with the task text (- for stdin)")
 	model := fs.String("model", "", "Codex model for the analyzer (default: the cheapest Codex profile of the worker roster)")
-	judgeModel := fs.String("judge-model", "", "model for the independent judge (default: opencode-go/deepseek-v4.1-flash)")
-	judgeHarness := fs.String("judge-harness", "", "harness for the independent judge (default: opencode)")
 	asJSON := fs.Bool("json", false, "print the whole assessment as JSON")
 	analyzer := fs.Bool("analyzer", false, "run the repository analyzer before judging")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *project == "" || *taskFile == "" {
-		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--judge-model M] [--judge-harness H] [--analyzer] [--json]")
+		return errors.New("usage: agent-net dev assess --project DIR --task-file FILE [--model M] [--analyzer] [--json]")
 	}
 	task, err := readDevTaskFile(*taskFile)
 	if err != nil {
@@ -75,12 +73,6 @@ func runDevAssess(ctx context.Context, out io.Writer, args []string) error {
 	if strings.TrimSpace(*model) != "" {
 		cfg.DifficultyHarness = "codex"
 		cfg.DifficultyModel = strings.TrimSpace(*model)
-	}
-	if strings.TrimSpace(*judgeModel) != "" {
-		cfg.DifficultyJudgeModel = strings.TrimSpace(*judgeModel)
-	}
-	if strings.TrimSpace(*judgeHarness) != "" {
-		cfg.DifficultyJudgeHarness = strings.TrimSpace(*judgeHarness)
 	}
 	a, err := assessmentForDev(ctx, cfg, *project, task)
 	if err != nil {
@@ -171,4 +163,20 @@ func localWorkerProfiles(ctx context.Context) ([]protocol.WorkerProfile, error) 
 		return nil, fmt.Errorf("the worker roster is not readable: %w", err)
 	}
 	return profiles, nil
+}
+
+// localDifficultyJudgePick shares the daemon's gateway rotation.
+func localDifficultyJudgePick(ctx context.Context, exclude string) (protocol.DifficultyJudgeChoice, error) {
+	var out protocol.DifficultyJudgeChoice
+	cl, err := dialCLI(ctx)
+	if err != nil {
+		return out, fmt.Errorf("the judge picker needs a running daemon: %w", err)
+	}
+	defer cl.Close()
+	raw, err := cl.Call(ctx, protocol.OpDifficultyJudgePick, protocol.DifficultyJudgePick{ExcludeProvider: exclude})
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(raw, &out)
+	return out, err
 }
