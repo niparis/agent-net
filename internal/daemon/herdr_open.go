@@ -22,18 +22,17 @@ type herdrOpenedPane struct {
 	started                time.Time
 }
 
-const herdrInstallNote = "Herdr was not found or failed; install: https://herdr.dev/tui/docs/install/."
+const herdrInstallNote = "Herdr was not found; install: https://herdr.dev/tui/docs/install/."
 
 var shellEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // herdrServer selects the requested server, or starts the default headless
 // server. An explicitly requested socket must never be silently replaced.
-func herdrServer(bin, socket string) bool {
+func herdrServer(bin, socket string) error {
 	if _, err := herdrPanes(bin, socket); err == nil {
-		return true
-	}
-	if socket != "" {
-		return false
+		return nil
+	} else if socket != "" {
+		return err
 	}
 	cmd := exec.Command(bin, "server")
 	for _, kv := range os.Environ() {
@@ -42,7 +41,7 @@ func herdrServer(bin, socket string) bool {
 		}
 	}
 	if err := cmd.Start(); err != nil {
-		return false
+		return err
 	}
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
@@ -54,24 +53,15 @@ func herdrServer(bin, socket string) bool {
 		select {
 		case <-done:
 			_, err := herdrPanes(bin, "")
-			return err == nil
+			return err
 		case <-deadline.C:
-			return false
+			return fmt.Errorf("server did not become ready within 3 seconds")
 		case <-ticker.C:
 			if _, err := herdrPanes(bin, ""); err == nil {
-				return true
+				return nil
 			}
 		}
 	}
-}
-
-func herdrFallback(plan protocol.EnterPlan) protocol.EnterPlan {
-	if plan.Note == "" {
-		plan.Note = herdrInstallNote
-	} else {
-		plan.Note += " " + herdrInstallNote
-	}
-	return plan
 }
 
 // herdrEnvironment writes a one-use shell fragment instead of putting private
@@ -130,9 +120,10 @@ func (d *Daemon) openForCaller(key, name, socket, pane string, plan protocol.Ent
 // creation so concurrent Enter calls cannot create duplicate clients. When the
 // server is unavailable the original plan remains the fallback.
 func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol.EnterPlan) protocol.EnterPlan {
-	bin := d.herdrBinary("")
-	if bin == "" {
-		return herdrFallback(plan)
+	bin, lookupErr := d.terminalBinary("herdr")
+	if lookupErr != nil {
+		plan.Note = strings.TrimSpace(plan.Note + " " + lookupErr.Error())
+		return plan
 	}
 	if len(plan.Argv) == 0 {
 		return plan
@@ -163,8 +154,9 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 		}
 		delete(d.herdrOpened, key)
 	}
-	if !herdrServer(bin, socket) {
-		return herdrFallback(plan)
+	if err := herdrServer(bin, socket); err != nil {
+		plan.Note = strings.TrimSpace(plan.Note + " " + fmt.Sprintf("herdr at %s failed: %v", bin, err))
+		return plan
 	}
 	file, err := herdrEnvironment(plan.Env)
 	if err != nil {
@@ -185,7 +177,7 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	out, err := herdrRun(bin, socket, args...)
 	if err != nil {
 		_ = os.Remove(file)
-		return protocol.EnterPlan{Host: plan.Host, Note: "Herdr could not create a pane; check its server before retrying."}
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not create a pane: %v", bin, err)}
 	}
 	var created struct {
 		Result struct {
@@ -212,7 +204,7 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	if callerPane != "" {
 		if _, err := herdrRun(bin, socket, "pane", "rename", created.Result.Pane.ID, cleanLine(name)); err != nil {
 			_ = os.Remove(file)
-			return protocol.EnterPlan{Host: plan.Host, Note: "Herdr created a pane but could not name it; check herdr before retrying."}
+			return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not name the pane: %v", bin, err)}
 		}
 	}
 	quoted := make([]string, len(plan.Argv))
@@ -225,7 +217,7 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	command = "sh -c " + shellQuote(command)
 	if _, err := herdrRun(bin, socket, "pane", "run", created.Result.Pane.ID, command); err != nil {
 		_ = os.Remove(file)
-		return protocol.EnterPlan{Host: plan.Host, Note: "Herdr created a tab but could not run the command; check herdr before retrying."}
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not run the command: %v", bin, err)}
 	}
 	if key != "" {
 		if d.herdrOpened == nil {
@@ -302,7 +294,7 @@ func (d *Daemon) notifySessionStart(r protocol.StartedSession) {
 	} else if r.EnterPlan != nil && r.EnterPlan.Note != "" {
 		text := r.EnterPlan.Note
 		if len(r.EnterPlan.Argv) != 0 {
-			text = "The session needs a terminal to start. " + herdrInstallNote
+			text = "The session needs a terminal to start. " + r.EnterPlan.Note
 		}
 		d.broadcastCTOUI(protocol.UIRequest{Text: text, DaemonNotice: true})
 	}

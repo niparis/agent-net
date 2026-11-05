@@ -257,7 +257,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		return remotePane(opened.HerdrPane), nil
 	}
 	if private {
-		return protocol.EnterPlan{Host: base.Host, Name: name, Note: "Herdr could not open this private worker on its own machine. " + herdrInstallNote}, nil
+		return protocol.EnterPlan{Host: base.Host, Name: name, Note: "Herdr could not open this private worker on its own machine. " + opened.Note}, nil
 	}
 	return opened, nil
 }
@@ -433,7 +433,7 @@ func (d *Daemon) terminalPlan(info protocol.SessionInfo, q protocol.EnterRequest
 // tmuxPlan takes the owner to the tmux pane of a session that has no attach
 // command of its own, or says that it cannot.
 func (d *Daemon) tmuxPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string) (protocol.EnterPlan, error) {
-	pane, ok := findTmuxPane(info.PID)
+	pane, ok := d.findTmuxPane(info.PID)
 	if !ok {
 		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a herdr or tmux pane agent-net can reach (no herdr variables and no herdr server above the process): open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil
 	}
@@ -453,10 +453,14 @@ func (d *Daemon) tmuxPlan(info protocol.SessionInfo, q protocol.EnterRequest, pl
 // findTmuxPane finds the pane that holds pid or one of its parents. It asks the
 // tmux server named in the process's own $TMUX, else the default server.
 func findTmuxPane(pid int) (tmuxPane, bool) {
+	return (&Daemon{}).findTmuxPane(pid)
+}
+
+func (d *Daemon) findTmuxPane(pid int) (tmuxPane, bool) {
 	if pid <= 1 {
 		return tmuxPane{}, false
 	}
-	bin, err := exec.LookPath("tmux")
+	bin, err := d.terminalBinary("tmux")
 	if err != nil {
 		return tmuxPane{}, false
 	}

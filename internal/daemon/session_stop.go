@@ -109,7 +109,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		}
 		result.Note = name + ": turn aborted; the conversation stays in the service. An idle service session costs nothing."
 	case "pi":
-		bin, err := exec.LookPath("tmux")
+		bin, err := d.terminalBinary("tmux")
 		if err != nil {
 			return no(terminal)
 		}

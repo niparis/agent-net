@@ -162,23 +162,13 @@ func herdrPanesFromServer(bin string, h herdrPane) ([]herdrPaneInfo, string, boo
 	return nil, "", false
 }
 
-// herdrBinary finds the herdr program: the pane's own HERDR_BIN_PATH, the
-// configured path, PATH, then ~/.local/bin (a service may not have it in PATH).
+// herdrBinary honors an explicit pane hint, then uses the harness search.
 func (d *Daemon) herdrBinary(hint string) string {
-	for _, c := range []string{hint, d.cfg.HarnessPaths["herdr"]} {
-		if c != "" && filepath.IsAbs(c) && isExecutable(c) {
-			return c
-		}
+	if filepath.IsAbs(hint) && isExecutable(hint) {
+		return hint
 	}
-	if p, err := exec.LookPath("herdr"); err == nil {
-		return p
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if c := filepath.Join(home, ".local", "bin", "herdr"); isExecutable(c) {
-			return c
-		}
-	}
-	return ""
+	bin, _ := d.terminalBinary("herdr")
+	return bin
 }
 
 func isExecutable(p string) bool {

@@ -2,6 +2,7 @@ package setup
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,31 +78,28 @@ func (r *runner) installLaunchd(s Service) (string, error) {
 	return "", fmt.Errorf("launchctl bootstrap: %s", firstLine(out, err))
 }
 
-// RefreshDaemonUnit is called when the daemon starts under systemd. A daemon
-// that an older version upgraded without running setup (an automatic or remote
-// upgrade) still has the old unit, without KillMode=process. This adds the line
-// and reloads systemd, without a restart, so the next restart keeps the
-// workers. It does nothing outside a systemd service. Failures are ignored: the
-// next `agent-net setup` writes the whole unit.
+// RefreshDaemonUnit repairs old service files at daemon startup. A changed
+// environment also reloads the job, since restarting a loaded launchd job
+// keeps the old environment. The reload runs outside the daemon's group.
 func RefreshDaemonUnit() {
 	if os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
 		return
 	}
-	if runtime.GOOS == "darwin" {
-		path := filepath.Join(launchAgentsDir(), Service{Name: "daemon"}.PlistName())
-		EnsureDaemonServiceEnvironment(path, true, daemonEnvironment(home()))
-		return
-	}
-	if runtime.GOOS != "linux" || os.Getenv("INVOCATION_ID") == "" {
-		return
-	}
-	path := filepath.Join(systemdDir(), Service{Name: "daemon"}.UnitName())
-	changed, _ := EnsureWorkersSurviveUnit(path)
-	pathChanged, _ := EnsureDaemonServiceEnvironment(path, false, daemonEnvironment(home()))
-	if changed || pathChanged {
-		if _, err := exec.LookPath("systemctl"); err == nil {
-			runCmd("", "systemctl", "--user", "daemon-reload")
+	platform := runtime.GOOS
+	var path string
+	switch platform {
+	case "darwin":
+		path = filepath.Join(launchAgentsDir(), Service{Name: "daemon"}.PlistName())
+	case "linux":
+		if os.Getenv("INVOCATION_ID") == "" {
+			return
 		}
+		path = filepath.Join(systemdDir(), Service{Name: "daemon"}.UnitName())
+	default:
+		return
+	}
+	if err := refreshDaemonService(platform, path, daemonEnvironment(home())); err != nil {
+		log.Printf("refresh daemon service: %v", err)
 	}
 }
 
