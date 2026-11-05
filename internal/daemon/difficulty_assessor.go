@@ -530,10 +530,20 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 			i += int(dec.InputOffset())
 			continue
 		}
+		// A JSON-looking outer object owns its nested objects even when it
+		// is incomplete. Never reinterpret its reasons as numeric scores.
+		if strings.HasPrefix(strings.TrimSpace(text[i+1:]), "\"") {
+			return difficulty.Scores{}, nil, fmt.Errorf("no complete JSON object in the %d-byte reply (it may be cut off)", len(clean))
+		}
 		i++
 	}
 	var lastErr error
 	for k := len(objects) - 1; k >= 0; k-- {
+		var keys map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(objects[k]), &keys)
+		if _, ok := keys["reasoning"]; !ok {
+			continue
+		}
 		scores, insufficient, err := difficulty.ParseScores([]byte(objects[k]))
 		if err == nil {
 			return scores, insufficient, nil
@@ -781,7 +791,7 @@ func (a *DifficultyAssessor) logf(format string, args ...any) {
 }
 
 // judgeReplyLogLimit caps the reply that a parse failure writes to the log.
-const judgeReplyLogLimit = 800
+const judgeReplyLogLimit = 16 << 10
 
 // logReply writes a reply that did not parse, without secrets and capped, so
 // the next failure shows what the judge said.

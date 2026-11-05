@@ -396,3 +396,11 @@ func TestCheapestDifficultyProfileChoosesLowestMaxCodexProfile(t *testing.T) {
 		t.Fatal("a harness with no supported one-shot was chosen")
 	}
 }
+
+func TestParseJudgeReplyTruncatedOuterReasons(t *testing.T) {
+	raw := `{"reasoning":3,"scope":2,"coupling":2,"uncertainty":2,"verification":2,"risk":1,"reasons":{"reasoning":"text","scope":"text","coupling":"text","uncertainty":"text","verification":"text","risk":"text"}`
+	_, _, err := parseJudgeReply(raw)
+	if err == nil || !strings.Contains(err.Error(), "cut off") {
+		t.Fatalf("got %v", err)
+	}
+}
