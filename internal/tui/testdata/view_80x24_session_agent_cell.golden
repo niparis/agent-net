@@ -8,10 +8,10 @@
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
   ↳ tenebrae     worker -          opencode · haik… busy       ?     ?
 ▸ tenebrae-53    agent  Home       claude · opus-5… busy       ?     ?
-  strategies     agent  -          claude · sonnet… idle       ?     ? backtest…
+  ◐ strategies   agent  -          claude · sonnet… idle       ?     ? backtest…
   web            agent  -          opencode · sonn… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner      agent  -          pi · gpt-6       idle       ?     ?
+  ◐ ci-runner    agent  -          pi · gpt-6       idle       ?     ?
   scratch        agent  -          pi               shell      ?     ?
 
 
