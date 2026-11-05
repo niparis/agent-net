@@ -598,6 +598,8 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 	return err
 }
 
+var errProposalNotAwaitingTUIStart = errors.New("proposal is not awaiting a TUI start")
+
 func (p proposalRunner) ackTUI(ctx context.Context, id string, started bool, message string) error {
 	status, note, startStatus := "applied", id+" approved and applied", "started"
 	if !started {
@@ -617,7 +619,7 @@ func (p proposalRunner) ackTUI(ctx context.Context, id string, started bool, mes
 		return err
 	}
 	if n != 1 {
-		return errors.New("proposal is not awaiting a TUI start")
+		return errProposalNotAwaitingTUIStart
 	}
 	return nil
 }

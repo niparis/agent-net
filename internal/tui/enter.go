@@ -189,9 +189,11 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 				if err != nil {
 					ack.Error = err.Error()
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-				defer cancel()
-				_, _ = caller.Call(ctx, protocol.OpProposalStartAck, ack)
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+					defer cancel()
+					_, _ = caller.Call(ctx, protocol.OpProposalStartAck, ack)
+				}()
 			}
 		}
 	}

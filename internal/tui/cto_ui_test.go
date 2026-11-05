@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	tea "charm.land/bubbletea/v2"
+	"context"
 	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/ptyproxy"
@@ -134,7 +135,7 @@ func TestDaemonFallbackNoticeHasNoCTOPrefix(t *testing.T) {
 }
 
 func TestCTOStartAcknowledgesAfterProxyStarts(t *testing.T) {
-	s := &proposalSource{}
+	s := &proposalSource{ackCh: make(chan protocol.CTOStartAck, 1)}
 	m := New(s)
 	var proxy *ptyproxy.Proxy
 	m.execProcess = func(c tea.ExecCommand, _ tea.ExecCallback) tea.Cmd {
@@ -145,8 +146,10 @@ func TestCTOStartAcknowledgesAfterProxyStarts(t *testing.T) {
 	if proxy == nil || proxy.OnStart == nil {
 		t.Fatal("missing start callback")
 	}
-	if len(s.startAcks) != 0 {
+	select {
+	case <-s.ackCh:
 		t.Fatal("ack before process start")
+	default:
 	}
 	proxy.SetStdin(strings.NewReader(""))
 	var output bytes.Buffer
@@ -155,7 +158,52 @@ func TestCTOStartAcknowledgesAfterProxyStarts(t *testing.T) {
 	if proxy.Cmd.Process == nil {
 		t.Fatal("process was not started")
 	}
-	if len(s.startAcks) != 1 || !s.startAcks[0].Started || s.startAcks[0].ID != "p_1" {
-		t.Fatalf("acks: %+v", s.startAcks)
+	select {
+	case ack := <-s.ackCh:
+		if !ack.Started || ack.ID != "p_1" {
+			t.Fatalf("ack: %+v", ack)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ack did not arrive")
+	}
+}
+
+type blockingCTOAckSource struct {
+	fakeSource
+	entered chan protocol.CTOStartAck
+	release chan struct{}
+}
+
+func (s *blockingCTOAckSource) Call(_ context.Context, method string, arg any) (json.RawMessage, error) {
+	if method == protocol.OpProposalStartAck {
+		s.entered <- arg.(protocol.CTOStartAck)
+		<-s.release
+	}
+	return json.RawMessage(`{}`), nil
+}
+func TestCTOAckDoesNotBlockTerminal(t *testing.T) {
+	s := &blockingCTOAckSource{entered: make(chan protocol.CTOStartAck, 1), release: make(chan struct{})}
+	defer close(s.release)
+	m := New(s)
+	var proxy *ptyproxy.Proxy
+	m.execProcess = func(c tea.ExecCommand, _ tea.ExecCallback) tea.Cmd {
+		proxy = c.(*ptyproxy.Proxy)
+		return func() tea.Msg { return nil }
+	}
+	m.applyCTOUI(protocol.UIRequest{StartName: "garden", StartPlan: &protocol.EnterPlan{Argv: []string{"true"}}, StartProposalID: "p_1"})
+	returned := make(chan struct{})
+	go func() { proxy.OnStart(nil); close(returned) }()
+	select {
+	case ack := <-s.entered:
+		if !ack.Started || ack.ID != "p_1" {
+			t.Fatalf("ack %+v", ack)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ack did not arrive")
+	}
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("ack blocked the terminal")
 	}
 }

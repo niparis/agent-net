@@ -218,7 +218,11 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &ack) != nil || ack.ID == "" {
 			return nil, true, errors.New("bad proposal start acknowledgment")
 		}
-		return nil, true, d.proposalRunner().ackTUI(ctx, ack.ID, ack.Started, ack.Error)
+		err := d.proposalRunner().ackTUI(ctx, ack.ID, ack.Started, ack.Error)
+		if errors.Is(err, errProposalNotAwaitingTUIStart) {
+			d.Logf("late TUI start acknowledgment for proposal %s started=%t", cleanLine(ack.ID), ack.Started)
+		}
+		return nil, true, err
 	case protocol.OpProposalList, protocol.OpProposalAnswer:
 		var q protocol.CTOProposalAnswer
 		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
