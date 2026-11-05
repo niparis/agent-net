@@ -1582,6 +1582,22 @@ func compareFiles(files []string) string {
 	return out
 }
 
+// comparePath drops leading path components until the remainder fits.
+func comparePath(path string, width int) string {
+	path = sanitize(path)
+	if lipgloss.Width(path) <= width {
+		return path
+	}
+	parts := strings.Split(path, "/")
+	for i := 1; i < len(parts); i++ {
+		candidate := "…/" + strings.Join(parts[i:], "/")
+		if lipgloss.Width(candidate) <= width {
+			return candidate
+		}
+	}
+	return "…"
+}
+
 // compareBoxLines lays the two copies side by side. Long values wrap inside
 // their column, so nothing overflows the box at 80 columns.
 func compareBoxLines(st *chooseState, copies []toolsdiff.Copy, inner int) []string {
@@ -1601,6 +1617,9 @@ func compareBoxLines(st *chooseState, copies []toolsdiff.Copy, inner int) []stri
 		right []string
 	}
 	var rows []row
+	if a.Location != "" || b.Location != "" {
+		rows = append(rows, row{label: "path", left: []string{comparePath(a.Location, colW)}, right: []string{comparePath(b.Location, colW)}})
+	}
 
 	changed := row{label: "changed", left: wrap(st.changedText(0, a), colW), right: wrap(st.changedText(1, b), colW)}
 	rows = append(rows, changed)

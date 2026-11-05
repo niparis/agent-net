@@ -300,9 +300,7 @@ func (m Model) applyAgentPlans(plans []protocol.ToolPlan) (Model, tea.Cmd) {
 				lines = append(lines, name+": Nothing changed: "+orStr(strings.Join(reasons, "; "), "no target was changed"))
 				continue
 			}
-			for _, line := range outcomeLines(name, res) {
-				lines = append(lines, name+": "+line)
-			}
+			lines = append(lines, projectOutcomeLines(name, res)...)
 		}
 		return toolsModalMsg{id: id, reload: applied > 0, update: func(md *toolsModal) {
 			md.loading = false
@@ -328,4 +326,8 @@ func onOff(on bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+func projectOutcomeLines(name string, res protocol.ToolApplyResult) []string {
+	return outcomeLines(name, res)
 }
