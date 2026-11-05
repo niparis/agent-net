@@ -1497,10 +1497,16 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
+	// The machine starts the harness session again and registers it. Mark the
+	// run active first, or that registration would look like the stale sync of
+	// a finished worker and the row would stay ended.
+	if err := g.store.SetWorkerRunActive(a.NodeID, p.Recipient); err != nil {
+		return err
+	}
 	if _, err := target.call(cctx, "worker.resume", protocol.WorkerResume{Session: p.Recipient, Requester: p.Sender}); err != nil {
 		// The machine does not have a record it can resume. Do not keep showing
 		// it as a worker that could start again.
-		g.store.SetSessionOffline(a.NodeID, p.Recipient)
+		g.store.SetWorkerSessionEnded(a.NodeID, p.Recipient)
 		g.logLine("worker.resume_failed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "reason", err)
 		return reject("worker %s cannot be started again: %v", p.Recipient, err)
 	}

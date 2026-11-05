@@ -42,6 +42,9 @@ func TestWorkerTaskFieldAndLateRuns(t *testing.T) {
 				}
 			}
 			if tc.state == "resumed" {
+				if err := s.SetWorkerRunActive(node, id); err != nil {
+					t.Fatal(err)
+				}
 				if _, err := s.UpsertSession(node, info); err != nil {
 					t.Fatal(err)
 				}

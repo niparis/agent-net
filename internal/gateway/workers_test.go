@@ -265,6 +265,11 @@ func TestWorkerStoppedClearsBusySessionStatus(t *testing.T) {
 			if a.Status != "ended" {
 				t.Errorf("after removal: %q", a.Status)
 			}
+			// The gateway marks the run active before it asks the machine to
+			// resume the worker, then the new registration brings it live.
+			if err := g.store.SetWorkerRunActive(node, id); err != nil {
+				t.Fatal(err)
+			}
 			in.Status = "idle"
 			if _, err := g.store.UpsertSession(node, in); err != nil {
 				t.Fatal(err)
