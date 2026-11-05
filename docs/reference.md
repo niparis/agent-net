@@ -1531,9 +1531,12 @@ or the selected item and reverses every member. The daemon feed stays per
 identity. Placement uses the checkout's own version first, then its machine's
 user copy, and otherwise the newest library version.
 Turning a global skill off in one project moves it to
-copies in every other known project in one plan. Turning the last project off
-makes it uninstalled. Turning every known project on uses global placement
-when its new-projects choice is on. The owner chooses projects only.
+copies in every other known project in one plan. The review names the
+user-level folder and says how many projects receive copies before the owner
+confirms, and the plan removes the user-level copy. Turning the last project
+off makes it uninstalled. Switching a skill on in a project where a user-level
+copy already serves every project changes nothing and says so. The owner
+chooses projects only.
 The Skills row checks all versions across the project's known checkouts.
 The information box lists machines whose copies differ.
 
