@@ -737,3 +737,58 @@ func TestInboxAlreadyAnsweredIsNotGone(t *testing.T) {
 		t.Fatal("already answered is not not-found")
 	}
 }
+
+func TestInboxNumberedOptions(t *testing.T) {
+	for i, key := range []string{"1", "2", "3", "4"} {
+		m, src := inboxAllKindsModel(120, 34)
+		m.inboxItems[1].Options = []string{"one", "two", "three", "four"}
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "question")
+		next, cmd := m.key(tea.KeyPressMsg{Text: key, Code: rune(key[0])})
+		if cmd == nil {
+			t.Fatalf("%s no answer", key)
+		}
+		msg := cmd()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range batch {
+				if c != nil {
+					c()
+				}
+			}
+		}
+		c := src.method("inbox_answer")
+		if c == nil || c.params.(map[string]string)["answer"] != m.inboxItems[1].Options[i] {
+			t.Fatalf("%s: %+v msg=%T next=%+v detail=%v edit=%v focus=%v open=%v", key, c, msg, next.(Model).tab, m.inboxDetail, m.inboxEditing, m.focus, m.open != nil)
+		}
+	}
+}
+func TestInboxDetailFields(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	m.inboxItems[1].Options = []string{"main", "next"}
+	m.inboxItems[1].Recommendation = "main is stable"
+	m.inboxItems[1].AskerName = "Build agent"
+	m.inboxItems[1].ChangeTitle = "Fix build"
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	view := ansi.Strip(m.testView())
+	for _, want := range []string{"which branch?", "main", "next", "main is stable", "Build agent", "Fix build"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("missing %q in %s", want, view)
+		}
+	}
+}
+
+func TestInboxDetailGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := inboxAllKindsModel(size[0], size[1])
+		m.inboxItems[1].Options = []string{"main", "next"}
+		m.inboxItems[1].Recommendation = "Use main"
+		m.inboxItems[1].AskerName = "Build agent"
+		m.inboxItems[1].ChangeTitle = "Fix build"
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "question")
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		golden(t, fmt.Sprintf("inbox_detail_%dx%d", size[0], size[1]), m.testView())
+	}
+}

@@ -809,7 +809,11 @@ END;
 CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr));
 CREATE TABLE IF NOT EXISTS agent_charter_history (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS agent_charter_history_agent ON agent_charter_history(agent_id, id);
-`, edgeKindsMigration()}
+`, edgeKindsMigration(), `
+ALTER TABLE inbox_items ADD COLUMN options TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE inbox_items ADD COLUMN asker_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox_items ADD COLUMN change_title TEXT NOT NULL DEFAULT '';
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {

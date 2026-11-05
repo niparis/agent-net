@@ -1222,6 +1222,14 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.tab == inboxTab && !m.inboxEditing && !m.inboxDetail && len(k.Text) == 1 && k.Text[0] >= '1' && k.Text[0] <= '4' {
+		if row, ok := m.inboxSelected(m.inboxRows()); ok && (row.kind == "question" || row.kind == "approval") {
+			i := int(k.Text[0] - '1')
+			if i < len(row.item.Options) {
+				return m, m.inboxAnswer(row.item.ID, row.item.Options[i])
+			}
+		}
+	}
 	if !m.filtering && m.open == nil {
 		switch keyAction(contextGlobal, k.String()) {
 		case "graph tab":
@@ -1286,6 +1294,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+
 	for i := range tabNames {
 		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab", "delivery tab"}[i] {
 			m.tab = i

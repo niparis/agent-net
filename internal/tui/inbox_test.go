@@ -53,3 +53,14 @@ func TestInboxDetailWrapsTextAndHidesIDs(t *testing.T) {
 		t.Fatalf("detail: %s", view)
 	}
 }
+
+func TestInboxNoDetailWhenQuestionFitsRow(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	m.inboxItems[1].Text = "one two three four five"
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.inboxDetail {
+		t.Fatal("opened detail with no extra content")
+	}
+}

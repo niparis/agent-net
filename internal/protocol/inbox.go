@@ -10,6 +10,9 @@ type InboxItem struct {
 	SessionID      string         `json:"session_id"`
 	Node           string         `json:"node"`
 	Text           string         `json:"text"`
+	Options        []string       `json:"options,omitempty"`
+	AskerName      string         `json:"asker_name,omitempty"`
+	ChangeTitle    string         `json:"change_title,omitempty"`
 	Recommendation string         `json:"recommendation"`
 	MessageID      string         `json:"message_id,omitempty"`
 	ConversationID string         `json:"conversation_id,omitempty"`

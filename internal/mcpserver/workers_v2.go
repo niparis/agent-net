@@ -179,6 +179,9 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		// A question only marks the session as waiting; it has no inbox item.
 		// Never return null: the result must match the catalog schema, and an
 		// error here would make agents ask again.
+		if nested, ok := m["item"].(map[string]any); ok {
+			m = nested
+		}
 		item, _ := m["item_id"].(string)
 		if item == "" {
 			item, _ = m["id"].(string)

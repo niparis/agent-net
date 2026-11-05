@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +31,10 @@ func TestInboxStore(t *testing.T) {
 		t.Fatalf("item: %+v", item)
 	}
 	rows, err := s.ListInbox()
-	if err != nil || len(rows) != 1 || rows[0] != item {
+	if err == nil && len(rows) == 1 {
+		item.AskerName = rows[0].AskerName
+	}
+	if err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], item) {
 		t.Fatalf("rows: %+v, %v", rows, err)
 	}
 	answered, err := s.AnswerInbox(item.ID, "approve")
@@ -211,5 +215,22 @@ func TestInboxConnectedNoticeExpiresAfterDay(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Kind != "approval" {
 		t.Fatalf("items: %+v", items)
+	}
+}
+
+func TestInboxFieldsRoundTrip(t *testing.T) {
+	s, _ := newTestStore(t)
+	want := protocol.InboxItem{Kind: "question", SessionID: "s_test", Text: "Which branch?", Recommendation: "Use main", Options: []string{"main", "next"}, AskerName: "Build agent", ChangeTitle: "Fix build"}
+	_, err := s.CreateInboxItem(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items: %+v %v", items, err)
+	}
+	got := items[0]
+	if got.Text != want.Text || got.Recommendation != want.Recommendation || !reflect.DeepEqual(got.Options, want.Options) || got.AskerName != want.AskerName || got.ChangeTitle != want.ChangeTitle {
+		t.Fatalf("got %+v", got)
 	}
 }

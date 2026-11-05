@@ -650,7 +650,7 @@ func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.S
 	if ref.AfterMerge {
 		commit = c.MergedCommit
 	}
-	item, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "approval", SessionID: c.Caller, Node: c.Project,
+	item, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "approval", SessionID: c.Caller, Node: c.Project, ChangeTitle: c.Title,
 		Text: fmt.Sprintf("Approve %s for change %s, project %s, branch %s, commit %s", strings.TrimPrefix(ref.String(), "approve for "), c.ID, c.Project, c.Branch, commit)})
 	if err != nil {
 		return err

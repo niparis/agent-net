@@ -260,16 +260,19 @@ func TestAnnounceHasNoNameParameter(t *testing.T) {
 }
 
 func TestAskOwnerPassesQuestion(t *testing.T) {
-	var got protocol.WaitingRequest
+	var got struct {
+		Kind, Text, Recommendation string
+		Options                    []string
+	}
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		if method == protocol.MethodWaiting {
+		if method == "ask_question" {
 			b, _ := json.Marshal(params)
 			_ = json.Unmarshal(b, &got)
 		}
 		return json.RawMessage(`{"ok":true}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "Merge?", "recommendation": "yes", "options": []string{"Yes", "No"}, "urgency": "high"}})
-	if err != nil || res.IsError || got.Kind != protocol.WaitingQuestion || got.Text != "Merge?" || len(got.Options) != 2 || got.Urgency != "high" || !got.Explicit {
+	if err != nil || res.IsError || got.Kind != "question" || got.Text != "Merge?" || got.Recommendation != "yes" || len(got.Options) != 2 {
 		t.Fatalf("ask: %v %+v %+v", err, res, got)
 	}
 }

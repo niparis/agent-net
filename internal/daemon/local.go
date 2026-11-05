@@ -822,15 +822,16 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		d.pushSession(ls)
 		return nil, nil
 
-	case "request_approval", "propose_idea":
+	case "request_approval", "propose_idea", "ask_question":
 		sid, err := lc.boundID()
 		if err != nil {
 			return nil, err
 		}
 		var p struct {
-			Action         string `json:"action"`
-			Text           string `json:"text"`
-			Recommendation string `json:"recommendation"`
+			Action         string   `json:"action"`
+			Text           string   `json:"text"`
+			Recommendation string   `json:"recommendation"`
+			Options        []string `json:"options"`
 		}
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, errors.New("bad inbox request")
@@ -838,8 +839,10 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		kind, text := "approval", p.Action
 		if method == "propose_idea" {
 			kind, text = "feature_idea", p.Text
+		} else if method == "ask_question" {
+			kind, text = "question", p.Text
 		}
-		return d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": text, "recommendation": p.Recommendation})
+		return d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": text, "recommendation": p.Recommendation, "options": p.Options})
 
 	case "announce":
 		sid, err := lc.boundID()

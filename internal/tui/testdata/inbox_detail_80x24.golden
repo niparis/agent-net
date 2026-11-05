@@ -1,0 +1,24 @@
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (7) 8 Delivery │ 12 online
+Inbox detail ───────────────────────────────────────────────────────────────────
+  From: Build agent
+  which branch?
+  1. main
+  2. next
+  Recommendation: Use main
+  Related change: Fix build
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO · 1 open proposal────────────────────────────────────────────────────────╮
+│                                                                              │
+│ 1/7 See  All your agents, live. Enter opens tenebrae-53.                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+esc back  ? help  q quit

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -40,7 +41,14 @@ func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protoc
 	item.Status = "open"
 	item.Answer = ""
 	item.AnsweredAt = time.Time{}
-	_, err := db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status) VALUES (?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status)
+	if len(item.Options) > 4 {
+		return item, reject("too many options")
+	}
+	options, err := json.Marshal(item.Options)
+	if err != nil {
+		return item, err
+	}
+	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status, string(options), item.AskerName, item.ChangeTitle)
 	return item, err
 }
 
@@ -49,8 +57,12 @@ type inboxScanner interface{ Scan(...any) error }
 func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 	var item protocol.InboxItem
 	var created, answered int64
-	err := row.Scan(&item.ID, &item.Kind, &item.SessionID, &item.Node, &item.Text, &item.Recommendation, &item.MessageID, &item.ConversationID, &created, &item.Status, &item.Answer, &answered)
+	var options string
+	err := row.Scan(&item.ID, &item.Kind, &item.SessionID, &item.Node, &item.Text, &item.Recommendation, &item.MessageID, &item.ConversationID, &created, &item.Status, &item.Answer, &answered, &options, &item.AskerName, &item.ChangeTitle)
 	if err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(options), &item.Options); err != nil {
 		return item, err
 	}
 	item.CreatedAt = time.Unix(0, created).UTC()
@@ -60,7 +72,7 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 	return item, nil
 }
 
-const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at`
+const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title`
 
 func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items ORDER BY created_at,id`)
@@ -84,24 +96,38 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	for i := range items {
+		if items[i].AskerName != "" {
+			continue
+		}
+		if agent, ok, err := s.Agent(items[i].SessionID); err == nil && ok {
+			items[i].AskerName = agent.Profile.Name
+			if items[i].AskerName == "" {
+				items[i].AskerName = agent.Title
+			}
+		}
+		if items[i].AskerName == "" || strings.HasPrefix(items[i].AskerName, "s_") {
+			items[i].AskerName = "an agent"
+		}
+	}
 	byID := map[string]int{}
 	for i := range items {
 		byID[items[i].ID] = i
 	}
-	rows, err = s.db.Query(`SELECT d.item_id,d.change_id,d.step,d.for_step,d.after_merge,d.commit_hash,c.project
+	rows, err = s.db.Query(`SELECT d.item_id,d.change_id,d.step,d.for_step,d.after_merge,d.commit_hash,c.project,c.title
 		FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id`)
 	if err != nil {
 		return nil, err
 	}
 	type deliveryItem struct {
-		id, project string
-		delivery    protocol.InboxDelivery
+		id, project, title string
+		delivery           protocol.InboxDelivery
 	}
 	var deliveries []deliveryItem
 	for rows.Next() {
 		var d deliveryItem
 		var after int
-		if err := rows.Scan(&d.id, &d.delivery.ChangeID, &d.delivery.Step, &d.delivery.For, &after, &d.delivery.Commit, &d.project); err != nil {
+		if err := rows.Scan(&d.id, &d.delivery.ChangeID, &d.delivery.Step, &d.delivery.For, &after, &d.delivery.Commit, &d.project, &d.title); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -129,6 +155,9 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 		}
 		d.delivery.ReportFields = p.ReportFields(d.delivery.StepRef)
 		items[i].Delivery = &d.delivery
+		if items[i].ChangeTitle == "" {
+			items[i].ChangeTitle = d.title
+		}
 	}
 	return items, nil
 }

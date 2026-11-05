@@ -150,7 +150,7 @@ func (m Model) inboxRows() []inboxRow {
 		case "approval", "question":
 			rows = append(rows, inboxRow{
 				group: inboxApproval, key: "inbox:" + item.ID, kind: item.Kind,
-				name: m.inboxSessionName(item.SessionID), text: inboxItemSummary(item),
+				name: m.inboxAskerName(item), text: inboxItemSummary(item),
 				since: item.CreatedAt.Unix(), session: item.SessionID, item: item,
 			})
 		}
@@ -456,6 +456,19 @@ func inboxWaitingSummary(w *protocol.Waiting) string {
 	return lead + ": " + text
 }
 
+func (m Model) inboxAskerName(item protocol.InboxItem) string {
+	if item.AskerName != "" && item.AskerName != item.SessionID && !strings.HasPrefix(item.AskerName, "s_") {
+		return item.AskerName
+	}
+	if a, ok := m.agentByID(item.SessionID); ok {
+		name := firstNonEmpty(a.Profile.Name, a.Title)
+		if name != "" && name != item.SessionID && !strings.HasPrefix(name, "s_") {
+			return name
+		}
+	}
+	return "an agent"
+}
+
 // inboxSessionName is the name the Inbox shows for a session.
 func (m Model) inboxSessionName(id string) string {
 	if a, ok := m.agentByID(id); ok {
@@ -484,6 +497,24 @@ func (m Model) inboxSelected(rows []inboxRow) (inboxRow, bool) {
 		return inboxRow{}, false
 	}
 	return rows[min(max(m.inboxIndex, 0), len(rows)-1)], true
+}
+
+func (m Model) inboxQuestionHasExtra(row inboxRow, rows []inboxRow) bool {
+	if len(row.item.Options) > 0 || row.item.Recommendation != "" || row.item.ChangeTitle != "" || strings.Contains(row.item.Text, "\n") {
+		return true
+	}
+	width := m.width
+	if width >= 100 {
+		width -= min(max(width*2/5, 30), 48) + 1
+	}
+	nameW := 12
+	for _, r := range rows {
+		nameW = max(nameW, ansi.StringWidth(sanitize(r.name)))
+	}
+	nameW = min(nameW, 20)
+	room := max(max(width-4, 4)-2-nameW-1-4-1, 4)
+	room = max(room-ansi.StringWidth("["+row.kind+"] "), 0)
+	return cutWords(sanitize(row.text), room) != sanitize(row.text)
 }
 
 // inboxTabView draws the tab: a title, the three boxes, and a panel for the
@@ -822,7 +853,14 @@ func (m Model) inboxPanelOrigin(row inboxRow, withAge bool) string {
 	case "held":
 		add("from " + m.inboxFromName(row.held))
 		add(m.inboxSessionOrigin(row.held.To))
-	case "approval", "question", "waiting":
+	case "approval", "question":
+		origin := m.inboxSessionOrigin(row.session)
+		name := m.inboxSessionName(row.session)
+		if name == row.session || strings.HasPrefix(name, "s_") {
+			origin = "session " + m.inboxAskerName(row.item)
+		}
+		add(origin)
+	case "waiting":
 		add(m.inboxSessionOrigin(row.session))
 	case "outcome":
 		add("edge " + sanitize(row.outcome.From) + " → " + sanitize(row.outcome.To))
@@ -963,16 +1001,16 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 	case "proposal":
 		out = append(out, sanitize(row.text))
 	case "notice", "approval", "question":
-		name := m.inboxSessionName(row.item.SessionID)
-		if name == row.item.SessionID || name == "" {
-			name = "an agent"
-		}
+		name := m.inboxAskerName(row.item)
 		out = append(out, "From: "+sanitize(name), "", sanitizeBody(row.item.Text))
+		for i, option := range row.item.Options {
+			out = append(out, fmt.Sprintf("%d. %s", i+1, sanitize(option)))
+		}
 		if row.item.Recommendation != "" {
 			out = append(out, "", "Recommendation: "+sanitizeBody(row.item.Recommendation))
 		}
-		if row.item.Delivery != nil && row.item.Delivery.Commit != "" {
-			out = append(out, "", "Related commit: "+sanitize(row.item.Delivery.Commit))
+		if row.item.ChangeTitle != "" {
+			out = append(out, "", "Related change: "+sanitize(row.item.ChangeTitle))
 		}
 
 	case "waiting":
@@ -1114,6 +1152,10 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "held", "waiting":
 			m.selected = row.session
 			return m.startEnterID(row.session)
+		case "approval", "question":
+			if m.inboxQuestionHasExtra(row, rows) {
+				m.inboxDetail = true
+			}
 		case "proposal":
 			m.proposalDetail = &proposalDetail{proposal: row.proposal, loading: true}
 			return m, m.proposalDetailCmd(row.proposal)
