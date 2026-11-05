@@ -81,7 +81,7 @@ func (m Model) hints() []hint {
 		return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, actLast), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 	case m.tab == quotasTab && m.qualityDetail:
 		return []hint{bindingPairHint(contextQualityDetails, actUp, actDown), bindingPairHint(contextQualityDetails, actPageUp, actPageDown), bindingHint(contextQualityDetails, actClose)}
-	case m.tab == quotasTab && m.delivery.on:
+	case m.tab == deliveryTab:
 		return m.deliveryHints()
 	case m.tab == quotasTab && m.workersLog:
 		return []hint{{key: "tab", label: "Quotas"}, {key: "↑↓", label: "select run"}, {key: "←→", label: "details"}, sessionHelp, sessionQuit}
@@ -97,7 +97,7 @@ func (m Model) hints() []hint {
 		}
 		return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "toggle"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 	case m.tab == graphTab:
-		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "inbox tab").key, label: "tabs", prio: 1}
+		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "delivery tab").key, label: "tabs", prio: 1}
 		return []hint{tabs, cto, bindingHint(contextGraph, "help"), bindingHint(contextGraph, actQuit)}
 	case m.tab == toolsTab:
 		return m.toolsHints()
@@ -337,7 +337,7 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextCTO)
 	case m.open != nil:
 		return m.helpContextSection(contextBody)
-	case m.tab == quotasTab && m.delivery.on:
+	case m.tab == deliveryTab:
 		return m.helpContextSection(contextDelivery)
 	case m.tab == quotasTab && m.workersLog:
 		return m.helpContextSection(contextWorkersLog)
@@ -376,11 +376,12 @@ func helpSections() []helpSection {
 	return []helpSection{
 		{"Sessions", []keyContext{contextSessions}},
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
-		{"Quotas", []keyContext{contextQuotas, contextWorkersLog, contextDelivery}},
+		{"Quotas", []keyContext{contextQuotas, contextWorkersLog}},
 		{"Messages", []keyContext{contextMessages}},
 		{"Tools", []keyContext{contextToolsAgents, contextToolsSkills, contextTools}},
 		{"Settings", []keyContext{contextSettings}},
 		{"Inbox", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
+		{"Delivery", []keyContext{contextDelivery}},
 	}
 }
 

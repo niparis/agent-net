@@ -1,6 +1,7 @@
 Keys · Graph ───────────────────────────────────────────────────────────────────
 
  Graph
+  d                      delivery
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
@@ -19,6 +20,5 @@ Keys · Graph ──────────────────────
   n                      start a new session in this project (the same form,
                          filled from here)
   t                      open Tools filtered to this node
-  a                      toggle autonomy off or wake
   more below
 up/down scroll  ? all screens  esc close

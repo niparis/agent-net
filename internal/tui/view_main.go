@@ -200,6 +200,8 @@ func (m Model) renderView() string {
 			out = append(out, m.settingsView(w, contentHeight)...)
 		case m.tab == inboxTab:
 			out = append(out, m.inboxTabView(w, contentHeight)...)
+		case m.tab == deliveryTab:
+			out = append(out, m.deliveryView(w, contentHeight)...)
 		default:
 			out = append(out, m.mainView(w, contentHeight)...)
 		}
@@ -312,10 +314,11 @@ const (
 	toolsTab    = 4
 	settingsTab = 5
 	inboxTab    = 6
+	deliveryTab = 7
 )
 
-var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Inbox"}
-var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Inbox"}
+var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Inbox", "Delivery"}
+var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Inbox", "Delivery"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 // sessionViewName is the view the v key selected.
@@ -336,12 +339,12 @@ func (m Model) titleLine(w int) string {
 	var tabs []string
 	count := m.waitingCount()
 	names := tabNames
-	if w <= 80 && count > 0 {
+	if w < 120 || len(m.snap.GatewayWarnings) > 0 {
 		// The pending count makes the full names run into the online
 		// counter. Short names keep the separator between them.
 		names = shortTabNames
 	}
-	fullTabs := len(strings.Join(names, " ")) + len("1 2 3 4 5 6 7 ")
+	fullTabs := len(strings.Join(names, " ")) + len("1 2 3 4 5 6 7 8 ")
 	if count > 0 {
 		fullTabs += len(fmt.Sprintf(" (%d)", count))
 	}
@@ -1068,6 +1071,24 @@ func (m Model) sessionsTable(w, n int) []string {
 	} else {
 		cols = columnsForProject(avail, nameWant, projectWant, false)
 	}
+	if w <= 80 {
+		hasDelivery := false
+		for _, a := range m.snap.Agents {
+			if m.sessionTaskText(a) != "" {
+				hasDelivery = true
+				break
+			}
+		}
+		if hasDelivery {
+			need := max(0, 12-cols[7].width)
+			for _, i := range []int{3, 0, 2} {
+				cut := min(need, max(0, cols[i].width-5))
+				cols[i].width -= cut
+				cols[7].width += cut
+				need -= cut
+			}
+		}
+	}
 	for i := range cols {
 		if cols[i].name == "STATUS" {
 			cols[i].width = statusWidth
@@ -1323,6 +1344,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			if pending := m.pendingTask(a, c.width); pending != "" {
 				v = pending
 			}
+			if delivery := m.sessionTaskText(a); delivery != "" {
+				v = delivery
+			}
 		}
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
@@ -1566,4 +1590,21 @@ func messageFit(lines []string, height, selected int) []string {
 		lines = append(lines, "")
 	}
 	return lines
+}
+
+// sessionTaskText uses the claimant named by the gateway for running steps.
+func (m Model) sessionTaskText(a protocol.AgentView) string {
+	for _, ch := range m.delivery.changes {
+		for _, step := range ch.Steps {
+			if step.State != protocol.StepStateRunning {
+				continue
+			}
+			for _, note := range strings.Split(step.Note, "; ") {
+				if strings.TrimPrefix(note, "claimed by ") == a.SessionID && strings.HasPrefix(note, "claimed by ") {
+					return step.Name + " " + ch.ID[:min(len(ch.ID), 7)]
+				}
+			}
+		}
+	}
+	return ""
 }

@@ -79,7 +79,7 @@ func withLocal(b keyBinding) keyBinding {
 // globalHelpRows is the fixed Global keys list. It is written once here and
 // never built by joining other contexts' labels.
 var globalHelpRows = []struct{ keys, help string }{
-	{"1-7", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox"},
+	{"1-8", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox, Delivery"},
 	{"enter", "go into the selected thing"},
 	{"arrows, j/k", "move"},
 	{"esc", "back; first clears a filter you typed"},
@@ -123,7 +123,6 @@ var keyBindings = []keyBinding{
 	bind(contextWorkersLog, "right|l", "scroll details down", "scroll details down", 3),
 	bind(contextWorkersLog, "?", "help", "help", 4),
 	bind(contextWorkersLog, "q|ctrl+c", "quit", "quit", 5),
-	bind(contextDelivery, "tab", "workers log", "Quotas", 0),
 	bind(contextDelivery, "up|k", "up", "select change", 1),
 	bind(contextDelivery, "down|j", "down", "select change", 1),
 	bind(contextDelivery, "pgup", "page up", "ten changes up", 2),
@@ -134,7 +133,7 @@ var keyBindings = []keyBinding{
 	bind(contextDelivery, "R", "refresh", "refresh", 2),
 	bind(contextDelivery, "?", "help", "help", 4),
 	bind(contextDelivery, "q|ctrl+c", "quit", "quit", 5),
-	bind(contextQuotas, "tab", "workers log", "Quotas / Workers log / Delivery", 0),
+	bind(contextQuotas, "tab", "workers log", "Quotas / Workers log", 0),
 	bind(contextGlobal, "1", "sessions tab", "Sessions", -1),
 	bind(contextGlobal, "2", "graph tab", "Graph", -1),
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),
@@ -142,6 +141,7 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "5", "tools tab", "Tools", -1),
 	bind(contextGlobal, "6", "settings tab", "Settings", -1),
 	bind(contextGlobal, "7", "inbox tab", "Inbox", -1),
+	bind(contextGlobal, "8", "delivery tab", "Delivery", -1),
 	withHelp(bind(contextGlobal, "c", "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
 	bind(contextGlobal, "ctrl+c", actQuit, "quit", -1),
@@ -272,6 +272,7 @@ var keyBindings = []keyBinding{
 	bind(contextQualityDetails, "left", "previous agent", "agent", 1),
 	bind(contextQualityDetails, "right", "next agent", "agent", 1),
 	bind(contextQuotas, "?", "help", "help", 2),
+	bind(contextGraph, "d", "delivery", "delivery", 1),
 	bind(contextGraph, "q", actQuit, "quit", 0),
 	bind(contextGraph, "?", "help", "help", 0),
 	withLocal(withHelp(bind(contextGraph, "/", "find", "find", -1), "find a node; enter selects the first match")),

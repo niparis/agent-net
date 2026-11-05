@@ -1,20 +1,20 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 8 online
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ 8 online
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
+  NAME           TYPE   PROJECT    MODEL         STATUS   CPU   RAM TASK
  Mac (here) 6 sessions ─────────────────────────────────────────────────────────
-  tenebrae-53    agent  tenebrae   claude · opus-5… busy       ?     ?
-  strategies     agent  strategies claude · sonnet… idle       ?     ? backtest…
-  agent-net      agent  agent-net  claude           idle       ?     ?
-  ├─ fix-login   worker agent-net  opencode · haik… idle       ?     ?
-▸ └─ agent-net … merger agent-net  claude           idle       ?     ?
-  web            agent  shop       opencode · sonn… idle       ?     ?
+  tenebrae-53    agent  tenebrae   claude · opu… busy       ?     ?
+  strategies     agent  strategies claude · son… idle       ?     ? backtest v2
+  agent-net      agent  agent-net  claude        idle       ?     ? test ch_ed5f
+  ├─ fix-login   worker agent-net  opencode · h… idle       ?     ?
+▸ └─ agent-net … merger agent-net  claude        idle       ?     ?
+  web            agent  shop       opencode · s… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner      agent  agent-net  pi · gpt-6       idle       ?     ?
-  scratch        agent  -          pi               shell      ?     ?
+  ci-runner      agent  agent-net  pi · gpt-6    idle       ?     ?
+  scratch        agent  -          pi            shell      ?     ?
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

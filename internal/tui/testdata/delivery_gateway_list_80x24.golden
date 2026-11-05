@@ -1,14 +1,13 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
-  Quotas      Workers log    [ Delivery ]
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ 5 online
 ╭─Delivery─────────────────────────────────────────────────────────────3 shown─╮
-│   TITLE              STEP     STATUS                 AGE    EVIDENCE         │
+│   TITLE            STEP     STATUS                 AGE    EVIDENCE           │
 │ Needs you · 1                                                                │
-│ ▸ Say what a delive… approve  waiting for you        6m     a✓r✓t✓p·m·l·d·v· │
+│ ▸ Say what a deli… approve  waiting for you        6m     a✓r✓t✓p·m·T·l·d·v· │
 │ Waiting on agents · 2                                                        │
-│   Fix the deploy ga… review   failed                 5h0m   a✓r✗t✓p-m·l·d·v· │
-│   Show the provider… review   waiting for merger     2h0m   a✓r·t·p·m·l·d·v· │
-│ a accept · r review · t test · p approve · m merge · l release · d deploy    │
-│ v verify. ✓ passed ✗ failed · waiting - not needed                           │
+│   Fix the deploy … review   failed                 5h0m   a✓r✗t✓p-m·T·l·d·v· │
+│   Show the provid… review   waiting for merger     2h0m   a✓r·t·p·m·T·l·d·v· │
+│ a accept · r review · t test · p approve · m merge · T test after merge      │
+│ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -20,5 +19,6 @@
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-╰─c: open the CTO──────────────────────────────────────────────────────────────╯
-tab Quotas  up/down select  enter evidence  a show all  R refresh  ? help
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter evidence  a show all  R refresh  ? help  q quit

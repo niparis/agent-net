@@ -1,21 +1,21 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 nodes
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ 7 nodes, 7 edges
 tenebrae  mature  autonomy: wake
 Tools: 0 skills, 0 MCP servers · t open
 Research platform that turns papers, figures and strategies into a searchable
 library for the trading desk, with citations kept for every claim.
 ● 1 session, 1 busy
-accept: caller
-test, merge: caller
+accept, test, review, merge, release, verify: tenebrae (offline)
 governed by: wbg-architect (advisor)
 
 IN 2                                     OUT 2
 all projects ──▶ depends                 ──▶ cogforge depends ask
 homelab ──▶ deploys auto                 ──▶ homelab depends ask
-Card 1-4/19  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-5/19  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          New document sources, retrieval fixes, and schema changes that
                  keep old ids working.
 refuses          Anything that writes to the trading accounts; one-off client
+                 reports.
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

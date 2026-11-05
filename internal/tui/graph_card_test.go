@@ -27,7 +27,7 @@ func TestGraphCardReturnKeepsSelection(t *testing.T) {
 }
 func TestNetworkTabUsesDigitOnly(t *testing.T) {
 	m := mapModel(120, 34, fakeGraph())
-	if len(tabNames) != 7 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || !strings.Contains(ansi.Strip(m.titleLine(120)), "7 Inbox") {
+	if len(tabNames) != 8 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || !strings.Contains(ansi.Strip(m.titleLine(120)), "7 Inbox") {
 		t.Fatalf("wrong tabs: %v", tabNames)
 	}
 	for _, key := range []string{"2"} {
@@ -107,5 +107,29 @@ func TestGraphSearchCancelAndDisplayName(t *testing.T) {
 	m = keys(m, "/", "Evidence", "enter")
 	if m.graphState.Graph.Selected() != "project-12" {
 		t.Fatal("display name did not match")
+	}
+}
+
+func TestGraphDeliveryListsAllConfiguredSteps(t *testing.T) {
+	m := graphModel(80, 24)
+	lines := strings.Join(m.graphDeliveryOwners("project-02"), " ")
+	for _, step := range []string{"accept", "test", "review", "merge", "release", "verify"} {
+		if !strings.Contains(lines, step) {
+			t.Errorf("missing %s in %q", step, lines)
+		}
+	}
+}
+
+func TestGraphOpensDeliveryForProject(t *testing.T) {
+	m := graphModel(80, 24)
+	m.tab = graphTab
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
+	m = keys(m, "d")
+	if m.tab != deliveryTab || m.delivery.project != "project-02" {
+		t.Fatalf("tab %d project %q", m.tab, m.delivery.project)
+	}
+	m = keys(m, "esc")
+	if m.delivery.project != "" {
+		t.Fatal("escape did not clear project")
 	}
 }

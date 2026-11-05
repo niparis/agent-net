@@ -216,9 +216,12 @@ func (m Model) graphSize() (int, int) {
 	w, h := max(m.width, 40), max(m.height, 10)
 	box := m.ctoBoxHeight(graphTab)
 	// The footer holds the feed, legend, status, two delivery owner lines and hints.
-	footer := 6
+	footer := 4
+	if m.graphState.Graph != nil {
+		footer += len(m.graphDeliveryOwners(m.graphState.Graph.Selected()))
+	}
 	if m.height <= 24 {
-		footer = 5
+		footer--
 	}
 	content := max(h-1-box, 1)
 	return max(w-4, 1), max(content-1-footer, 1)
@@ -325,6 +328,12 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "next link":
 		w, h := m.graphSize()
 		action = graphview.SelectNext{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
+	case "delivery":
+		name := m.graphState.Graph.Selected()
+		if node, ok := m.mapNode(name); ok && node.Kind == "component" {
+			m.tab, m.delivery.project, m.delivery.row, m.delivery.detail = deliveryTab, name, 0, false
+			return m.startDeliveryLoad()
+		}
 	case "new session":
 		name := m.graphState.Graph.Selected()
 		if node, ok := m.mapNode(name); ok && node.Kind == "component" {
@@ -355,11 +364,9 @@ func (m Model) graphView(w, h int) []string {
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
-	footer := 6
+	footer := 4 + len(m.graphDeliveryOwners(m.graphState.Graph.Selected()))
 	if m.height <= 24 {
-		// A short terminal gives the canvas the feed line back. The legend
-		// keeps the status key in one compact row.
-		footer = 5
+		footer--
 	}
 	gw, gh := max(w-4, 1), max(h-1-footer, 1)
 	smooth := m.graphPixel.enabled() && m.graphPixel.motion
@@ -397,12 +404,8 @@ func (m Model) graphView(w, h int) []string {
 	}
 	out = append(out, graphStatusLine(w, scene))
 	owners := m.graphDeliveryOwners(m.graphState.Graph.Selected())
-	for i := 0; i < 2; i++ {
-		line := ""
-		if i < len(owners) {
-			line = "  " + owners[i]
-		}
-		out = append(out, sDim.Render(clip(line, w)))
+	for _, line := range owners {
+		out = append(out, sDim.Render(clip("  "+line, w)))
 	}
 	out = append(out, sDim.Render(graphHintLine(w)))
 	return out
@@ -495,7 +498,9 @@ func graphHintLine(w int) string {
 	card.prio = 2
 	traffic := bindingHint(contextGraph, "show all traffic")
 	traffic.prio = 2
-	hs := []hint{direction, zoom, traffic, card, bindingHint(contextGraph, "help")}
+	delivery := bindingHint(contextGraph, "delivery")
+	delivery.prio = 3
+	hs := []hint{direction, zoom, delivery, traffic, card, bindingHint(contextGraph, "help")}
 	text := func() string {
 		parts := make([]string, 0, len(hs))
 		for _, h := range hs {
@@ -635,12 +640,30 @@ func (m Model) graphDeliveryOwners(project string) []string {
 			}
 		}
 		if source == "" {
-			return "caller"
+			source = "/delivery/caller"
 		}
 		assignment := protocol.DeliveryOwnerFromSource(source)
 		if assignment.Kind != protocol.OwnerMerger {
-			if assignment.Kind == protocol.OwnerNode {
-				return sanitize(assignment.Node)
+			name := assignment.Node
+			if assignment.Kind == protocol.OwnerCaller {
+				name = project
+			}
+			if name != "" {
+				var sessions []string
+				if n, ok := m.mapNode(name); ok {
+					for _, session := range n.Sessions {
+						status := "offline"
+						if a, ok := m.agentByID(session.ID); ok && a.Online {
+							status = "online"
+						}
+						sessions = append(sessions, sanitize(firstNonEmpty(session.Name, session.ID))+" ("+status+")")
+					}
+				}
+				sort.Strings(sessions)
+				if len(sessions) > 0 {
+					return strings.Join(sessions, ", ")
+				}
+				return sanitize(name) + " (offline)"
 			}
 			return assignment.Kind
 		}
@@ -662,10 +685,26 @@ func (m Model) graphDeliveryOwners(project string) []string {
 		}
 		return strings.Join(mergers, ", ")
 	}
-	test, merge := owner(protocol.StepTest), owner(protocol.StepMerge)
-	steps := "test, merge: " + test
-	if test != merge {
-		steps = "test: " + test + "; merge: " + merge
+	steps := []string{protocol.StepAccept, protocol.StepTest, protocol.StepReview, protocol.StepMerge, protocol.StepRelease, protocol.StepVerify}
+	var owners, labels []string
+	for _, step := range steps {
+		o := owner(step)
+		found := -1
+		for i := range owners {
+			if owners[i] == o {
+				found = i
+				break
+			}
+		}
+		if found < 0 {
+			owners = append(owners, o)
+			labels = append(labels, step)
+		} else {
+			labels[found] += ", " + step
+		}
 	}
-	return []string{"accept: " + owner(protocol.StepAccept), steps}
+	for i := range labels {
+		labels[i] += ": " + owners[i]
+	}
+	return labels
 }
