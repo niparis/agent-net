@@ -93,7 +93,7 @@ func TestMessageWakeBackoff(t *testing.T) {
 }
 
 func TestWakeRejectsUnsafeClaudeRecords(t *testing.T) {
-	for _, kind := range []string{"removed", "invalid", "ambiguous", "conflicting-id", "foreground", "foreground-no-kind", "wrong-folder", "missing-folder", "worker"} {
+	for _, kind := range []string{"removed", "invalid", "ambiguous", "conflicting-id", "foreground", "foreground-no-kind", "live-done", "wrong-folder", "missing-folder", "worker"} {
 		t.Run(kind, func(t *testing.T) {
 			r := newWakeRig(t, "done")
 			switch kind {
@@ -118,6 +118,9 @@ func TestWakeRejectsUnsafeClaudeRecords(t *testing.T) {
 				if err := r.g.gw.Store().SetSessionOffline(r.c.d.NodeID(), r.id); err != nil {
 					t.Fatal(err)
 				}
+			case "live-done":
+				b, _ := json.Marshal(map[string]any{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "done", "pid": 12345})
+				os.WriteFile(r.listing, append(append([]byte("["), b...), ']'), 0600)
 			case "wrong-folder":
 				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": "/different", "state": "done"}})
 				os.WriteFile(r.listing, b, 0600)
@@ -161,4 +164,14 @@ func TestMessageWakesRetiredClaudeFullSessionID(t *testing.T) {
 	}
 	r.send(t, "wake by full session id")
 	eventually(t, "full session ID is resumed", func() bool { return len(r.c.adapter.deliveredTo(r.id)) == 1 })
+}
+
+func TestMessageWakesRetiredClaudeBackgroundKind(t *testing.T) {
+	r := newWakeRig(t, "done")
+	b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "done"}})
+	if err := os.WriteFile(r.listing, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r.send(t, "wake background")
+	eventually(t, "background kind receives message", func() bool { return len(r.c.adapter.deliveredTo(r.id)) == 1 })
 }

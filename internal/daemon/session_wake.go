@@ -67,6 +67,7 @@ func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error 
 		ID        string `json:"id"`
 		SessionID string `json:"sessionId"`
 		Kind      string `json:"kind"`
+		PID       int    `json:"pid"`
 		Cwd       string `json:"cwd"`
 		State     string `json:"state"`
 	}
@@ -86,8 +87,8 @@ func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error 
 		}
 		matches++
 		identity := full || (prefix && record.SessionID == "")
-		background := record.Kind == "bg" || (record.Kind == "" && a.Mode == protocol.ModeBackground)
-		retired = identity && background && record.State == "done" && record.Cwd != "" && filepath.Clean(record.Cwd) == filepath.Clean(a.Cwd)
+		background := record.Kind == "background" || record.Kind == "bg" || (record.Kind == "" && a.Mode == protocol.ModeBackground)
+		retired = identity && background && record.PID == 0 && record.State == "done" && record.Cwd != "" && filepath.Clean(record.Cwd) == filepath.Clean(a.Cwd)
 	}
 	if matches != 1 || !retired {
 		return errors.New("Claude background record is missing, ambiguous, or not retired")

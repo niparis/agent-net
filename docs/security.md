@@ -1069,8 +1069,8 @@ agent must never be able to start an arbitrary one to escape worker limits.
 A stored message can cause the gateway to ask the owning machine to wake an
 offline Claude background session. The receiving daemon checks that the known
 session is local and is not a worker, its folder exists, and exactly one
-matching Claude background record has state `done`. If the record omits its
-kind, the session's saved mode must say background. It refuses stopped,
+matching Claude background record has state `done` and reports no live process.
+If the record omits its kind, the session's saved mode must say background. It refuses stopped,
 removed, ambiguous or unreadable records. The gateway limits attempts to one
 per session per 10 minutes, even across gateway restarts, and a wake opens no
 view. If Claude creates a copy, the gateway moves the original session ID to

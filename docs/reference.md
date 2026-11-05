@@ -2502,8 +2502,8 @@ row is on another machine. Other offline harnesses are refused.
 
 A message or delivery step for an offline Claude background session also asks
 its machine to resume it. The machine checks `claude agents --json --all`:
-the matching background record must be `done`, its folder must exist, and the
-session must not be a worker. When the record omits its kind, agent-net must
+the matching background record must be `done` with no running process, its
+folder must exist, and the session must not be a worker. When the record omits its kind, agent-net must
 have recorded the session as a background session. Stopped, removed or unreadable records are not
 resumed. The gateway makes at most one attempt per session per 10 minutes,
 including across gateway restarts, and logs a failure once. Queued messages
