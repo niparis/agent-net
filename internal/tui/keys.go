@@ -1,6 +1,10 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
+)
 
 type keyContext string
 type actionID string
@@ -407,9 +411,21 @@ var keyBindings = []keyBinding{
 	bind(contextForm, "space", "toggle", "toggle", 1),
 }
 
+// normalizeKey normalizes terminal key messages across legacy, modifyOtherKeys,
+// and kitty encodings so that equivalent keys behave identically.
+func normalizeKey(k tea.KeyPressMsg) tea.KeyPressMsg {
+	if (k.Code == 10 || k.Code == 13) && (k.Mod == tea.ModCtrl || k.Mod == 0) {
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	}
+	return k
+}
+
 func keyAction(context keyContext, key string) actionID {
 	if key == " " {
 		key = "space"
+	}
+	if key == "ctrl+j" || key == "ctrl+m" {
+		key = "enter"
 	}
 	for _, binding := range keyBindings {
 		if binding.context == context {

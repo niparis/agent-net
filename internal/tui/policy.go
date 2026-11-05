@@ -185,6 +185,7 @@ func (m Model) onPolicySaved(r policySavedMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) policyKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	k = normalizeKey(k)
 	f := &m.pol
 	changed := false
 	key := keyAction(contextForm, k.String())
