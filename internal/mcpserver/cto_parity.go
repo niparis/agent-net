@@ -99,7 +99,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("playbook_set", "Set playbook.", map[string]ctoField{"model": model, "harness": harness, "note": s("Empty clears."), "pin": b("Pin.")})
 
 	add("project_add", "Register or scan projects.", map[string]ctoField{"paths": arr("Paths."), "dir": s("Directory."), "scan": b("Directory."), "depth": n("3; max 8."), "dry_run": b("Preview.")})
-	add("project_remove", "Remove a project.", map[string]ctoField{"name": s("Project."), "path": s("Path.")})
+	add("project_remove", "Remove a project.", map[string]ctoField{"name": s("Project."), "path": s("Path."), "node_id": s("Machine; omit for this machine.")})
 	add("project_display_set", "Set project name.", map[string]ctoField{"project": s("Project."), "name": s("Empty clears.")})
 
 	add("invite", "New machine install line.", nil)

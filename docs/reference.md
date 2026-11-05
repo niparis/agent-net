@@ -366,7 +366,7 @@ are proposals. The CTO has one action tool per area:
 | `mcp_change` | `action: add`, `remove`, `test` or `enable` |
 | `mcp_call` | one call on a shared MCP server |
 | `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite` or `onboarding` |
-| `project_change` | `action: add`, `remove` or `display` |
+| `project_change` | `action: add`, `remove`, `display` or `create`; `remove` takes `name` or `path` and optional `node_id` |
 | `cto_new` | a new conversation for the active harness |
 
 Minor graph changes apply at once. Major graph changes become proposals unless
@@ -2408,6 +2408,8 @@ current PATH. A daemon upgrade adds PATH to older service files.
 The CTO can propose `session_change` with action `session_start`, using `project` or `path`, `node_id`, `harness`, `model`, `folder`, `branch`, `first_message` and optional `create`. It can propose `project_change` with action `create` and a `path` plus the same start options. The owner approves a pending project creation in the CTO approval dialog. Plain text in chat does not approve a proposal. The Inbox remains available for proposal decisions. Creating a project authorizes the missing folder and a git repository when the owner approves. A session start creates a missing folder only when `create` is true.
 
 The CTO recipe uses the separately supplied `projects_layout` scan to choose a machine, root and group. It reads owner placement answers from `cto_placement_memory` and saves corrections or group answers there for later. Without an owner choice or learned default, the recipe chooses Claude and `claude-opus-5-5`. The CTO confirms the proposed placement in one line before the owner answers. Once the session is registered, the CTO can report that it is ready in Sessions, tab 1.
+
+The CTO can propose `project_change` with action `remove`, a project `name` or `path`, and optional `node_id` (machine host name or node ID). Use `node_id`, as with create, to remove a registration on another machine. Omit it to remove from the CTO's machine. The owner must approve the proposal. Only the registration is removed; the project folder stays in place.
 
 An optional `remote` on `project_change` create clones a repository instead of running `git init`. It accepts only `git@host:owner/repo.git` and `https://host/owner/repo.git`; local paths, `file://`, HTTP and credentials in HTTPS URLs are refused. The destination must not exist. The confirmation names the remote. The clone has a 45 second timeout and disables Git terminal credential prompts. A failed clone can leave its destination folder behind; remove it before retrying. The cloned repository is registered, trusted for Claude and started after approval. As with other registered repositories, its project identity follows the origin repository name.
 

@@ -197,7 +197,7 @@ var ctoTools = map[string]ctoToolDef{
 		fields: map[string]ctoField{
 			"action":  {typ: "string", enum: []string{"add", "remove", "display", "create"}},
 			"paths":   {typ: "array", desc: "Paths."},
-			"node_id": {typ: "string"}, "harness": {typ: "string"}, "model": {typ: "string"},
+			"node_id": {typ: "string", desc: "Machine for create or remove; omit for this machine."}, "harness": {typ: "string"}, "model": {typ: "string"},
 			"folder": {typ: "string"}, "branch": {typ: "string"}, "first_message": {typ: "string"},
 			"dir":     {typ: "string", desc: "Directory."},
 			"scan":    {typ: "boolean", desc: "Scan the directory."},

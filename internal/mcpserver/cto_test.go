@@ -457,3 +457,15 @@ func TestProjectsLayoutOutputSchemaValidation(t *testing.T) {
 		t.Fatalf("catalogResult failed for non-nil empty roots: %v (res=%+v)", err, res)
 	}
 }
+
+func TestCTOProjectRemoveMachineSchema(t *testing.T) {
+	raw := json.RawMessage(`{"action":"remove","name":"garden","node_id":"n_remote"}`)
+	if err := ValidateCTOActionSchema("project_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	cs := ctoTestSession(t)
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "project_change", Arguments: map[string]any{"action": "remove", "name": "garden", "node_id": "n_remote"}})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
