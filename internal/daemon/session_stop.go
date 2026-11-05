@@ -66,6 +66,9 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 	defer cancel()
 	switch info.Harness {
 	case "claude":
+		// Serialize an explicit stop with automatic wake validation and launch.
+		d.claudeStartMu.Lock()
+		defer d.claudeStartMu.Unlock()
 		p, ok := d.adapters["claude"].(EnterRefProvider)
 		if !ok {
 			return no(terminal)

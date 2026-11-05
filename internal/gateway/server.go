@@ -116,6 +116,8 @@ type Gateway struct {
 
 	mu                sync.Mutex
 	conns             map[string]*nodeConn
+	wakeMu            sync.Mutex
+	wakeClaims        map[string]wakeClaim
 	timers            map[string]*offlineTimer
 	closed            bool
 	appsDone          chan struct{}
@@ -710,6 +712,7 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 		g.sendMCPSync(ctx, nc)
 		g.sendSettingsSync(ctx, nc)
 		g.dispatchPending(ctx, nc.id, true)
+		g.wakePending(ctx, nc.id)
 	}
 	if h.Type == "session.upsert" && err == nil {
 		g.dispatchPending(ctx, nc.id, false)
@@ -1947,6 +1950,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"agents": agents}, nil
 
+	case protocol.FrameSessionWakeRebind:
+		var p wakeRebind
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad wake rebind")
+		}
+		return nil, g.rebindWake(nc.id, p)
+
 	case "query.agent":
 		p, err := decode[protocol.QueryAgent](raw)
 		if err != nil {
@@ -2036,7 +2046,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 // connected and the session is online.
 func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 	a, ok, err := g.store.Agent(m.To)
-	if err != nil || !ok || !a.Online || a.Harness == "bot" {
+	if err != nil || !ok || a.Harness == "bot" {
+		return
+	}
+	if !a.Online {
+		g.wakeForMessage(ctx, a, m)
 		return
 	}
 	g.sendDeliver(ctx, a.NodeID, m)

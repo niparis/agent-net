@@ -69,7 +69,7 @@ func runFakeHarness() bool {
 		fakeCodexShim()
 	case os.Getenv(envFakeClaudeMCP) != "":
 		fakeClaudeMCP()
-	case os.Getenv(envFakeClaude) != "" && len(os.Args) > 1 && (os.Args[1] == "--bg" || os.Args[1] == "stop" || os.Args[1] == "--help" || os.Args[1] == "--version"):
+	case os.Getenv(envFakeClaude) != "" && len(os.Args) > 1 && (os.Args[1] == "--bg" || os.Args[1] == "agents" || os.Args[1] == "stop" || os.Args[1] == "--help" || os.Args[1] == "--version"):
 		fakeClaudeCLI()
 	case os.Getenv(envFakePi) != "" && len(os.Args) > 1 && os.Args[1] == "--mode":
 		fakePi()
@@ -211,6 +211,18 @@ type fakeClaudeInit struct {
 // fakeClaudeCLI is `claude --bg ...` and `claude stop <id>`.
 func fakeClaudeCLI() {
 	dir := os.Getenv(envFakeClaudeSessions)
+	if os.Args[1] == "agents" {
+		if f, err := os.OpenFile(os.Getenv("FAKE_CLAUDE_AGENTS_LOG"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600); err == nil {
+			fmt.Fprintln(f, strings.Join(os.Args[1:], " "))
+			f.Close()
+		}
+		raw, err := os.ReadFile(os.Getenv("FAKE_CLAUDE_AGENTS_FILE"))
+		if err != nil {
+			os.Exit(1)
+		}
+		fmt.Print(string(raw))
+		return
+	}
 	if os.Args[1] == "--help" {
 		if os.Getenv("FAKE_CLAUDE_NO_TOOLS_FLAG") != "" {
 			fmt.Println("--bg --strict-mcp-config")

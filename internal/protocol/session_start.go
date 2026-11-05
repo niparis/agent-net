@@ -21,6 +21,8 @@ const (
 	FrameSessionProposalStart      = "session.proposal_start"
 	FrameSessionProposalClone      = "session.proposal_clone"
 	FrameSessionResume             = "session.resume"
+	FrameSessionWake               = "session.wake"
+	FrameSessionWakeRebind         = "session.wake_rebind"
 	FrameSessionStop               = "session.stop"
 	FrameSessionGet                = "session.get"
 	FrameSessionOwnerStart         = "session.owner_start"
