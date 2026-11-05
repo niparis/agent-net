@@ -1,6 +1,7 @@
 Keys · Graph ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  Graph
+  d                      delivery
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
@@ -35,6 +36,5 @@ Legend ────────────────────────�
   normal  delivered; B judges it
   auto    delivered with a trust note; B can act without asking you, still inside B's merge authority and refusals
   ask     held in the Inbox
-  never   refused
   more below
 up/down scroll  ? all screens  esc close

@@ -70,16 +70,16 @@ func TestV2TerminalHandoverReturnsOnCtrlBracket(t *testing.T) {
 		}
 		t.Fatalf("timed out waiting for %s; terminal output %q", label, snapshot())
 	}
-	waitFor("TUI", func(s string) bool { return strings.Contains(s, "Sessions") })
+	waitFor("TUI", func(s string) bool { return strings.Contains(s, "1 Sess") })
 	if _, err := io.WriteString(terminal, "\r"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor("session", func(s string) bool { return strings.Contains(s, "HANDOVER_READY") })
-	before := strings.Count(snapshot(), "Sessions")
+	before := strings.Count(snapshot(), "1 Sess")
 	if _, err := terminal.Write([]byte{0x1d}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor("restored TUI", func(s string) bool { return strings.Count(s, "Sessions") > before })
+	waitFor("restored TUI", func(s string) bool { return strings.Count(s, "1 Sess") > before })
 	if _, err := io.WriteString(terminal, "q"); err != nil {
 		t.Fatal(err)
 	}

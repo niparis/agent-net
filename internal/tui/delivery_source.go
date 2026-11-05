@@ -124,7 +124,11 @@ func deliveryMarks(steps []protocol.StepStatus) []stripState {
 		var active, passed int
 		failed, running := false, false
 		for _, st := range steps {
-			if st.Step != name {
+			want := name
+			if name == "test after merge" {
+				want = "test"
+			}
+			if st.Step != want || (st.AfterMerge && st.Step == "test") != (name == "test after merge") {
 				continue
 			}
 			switch st.State {
@@ -146,13 +150,25 @@ func deliveryMarks(steps []protocol.StepStatus) []stripState {
 			// Only a claimed step task shows as running. A ready step waits
 			// for its owner; it is not work in progress.
 			marks[i] = stripRunning
-		case active == 0 && hasStep(steps, name):
+		case active == 0 && hasDeliveryStep(steps, name):
 			marks[i] = stripNotNeeded
 		case active > 0 && passed == active:
 			marks[i] = stripPassed
 		}
 	}
 	return marks
+}
+
+func hasDeliveryStep(steps []protocol.StepStatus, name string) bool {
+	for _, st := range steps {
+		if name == "test after merge" && st.Step == "test" && st.AfterMerge {
+			return true
+		}
+		if st.Step == name && !(name == "test" && st.AfterMerge) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasStep(steps []protocol.StepStatus, name string) bool {
@@ -197,7 +213,7 @@ func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, s
 func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange {
 	c := v.Change
 	out := deliveryChange{ID: c.ID, Title: c.Title, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
-		State: c.State, Caller: c.Caller, Marks: deliveryMarks(v.Steps), Full: v.Pipeline != nil}
+		State: c.State, Caller: c.Caller, MergedCommit: c.MergedCommit, Marks: deliveryMarks(v.Steps), Full: v.Pipeline != nil}
 	for _, st := range v.Steps {
 		out.Steps = append(out.Steps, deliveryStep{Name: st.StepRef.String(), Owner: deliveryOwnerLabel(st.Owner), State: st.State, Note: st.Note})
 	}

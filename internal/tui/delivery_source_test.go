@@ -75,7 +75,7 @@ func TestDeliveryMarksJoinStepsWithTheSameName(t *testing.T) {
 		status(ref(protocol.StepReview), ownNode, protocol.StepStateSkipped, nil),
 	}
 	got := deliveryMarks(steps)
-	if got[2] != stripWaiting || got[3] != stripPassed || got[0] != stripPassed || got[1] != stripNotNeeded {
+	if got[2] != stripPassed || got[5] != stripWaiting || got[3] != stripPassed || got[0] != stripPassed || got[1] != stripNotNeeded {
 		t.Errorf("marks %v", got)
 	}
 }
@@ -611,19 +611,7 @@ func TestDeliveryRefreshesEvery30SecondsWhileOpen(t *testing.T) {
 	if src.calls != 2 {
 		t.Fatalf("%d loads", src.calls)
 	}
-	// Away from the sub-tab or the Quotas tab, nothing refreshes.
-	clock = t0.Add(5 * time.Minute)
-	m.delivery.on = false
-	if tick() != nil {
-		t.Fatal("refreshed with the sub-tab closed")
-	}
-	m.delivery.on, m.tab = true, 2
-	if m.tab == quotasTab {
-		t.Skip("tab numbering changed")
-	}
-	if tick() != nil {
-		t.Fatal("refreshed on another tab")
-	}
+
 }
 
 func TestDeliveryTickMessageRefreshes(t *testing.T) {
@@ -644,9 +632,8 @@ func TestDeliveryTickMessageRefreshes(t *testing.T) {
 func TestDeliveryRefreshKeyAndOpenStartALoad(t *testing.T) {
 	src := &fakeDelivery{changes: deliveryScenes()}
 	m := deliveryModel(src, 120, 30)
-	m, cmd := m.nextQuotasSubtab() // Quotas -> Workers log
-	m, cmd = m.nextQuotasSubtab()  // -> Delivery
-	if !m.delivery.on || cmd == nil || !m.delivery.loading {
+	m, cmd := m.startDeliveryLoad()
+	if cmd == nil || !m.delivery.loading {
 		t.Fatalf("opening the sub-tab: on %v loading %v cmd %v", m.delivery.on, m.delivery.loading, cmd != nil)
 	}
 	next, _ := m.Update(cmd())
@@ -658,9 +645,9 @@ func TestDeliveryRefreshKeyAndOpenStartALoad(t *testing.T) {
 	if cmd == nil || !m.delivery.loading {
 		t.Fatal("R did not reload")
 	}
-	// R asks again even when a load is out; the timer does not (see the tick test).
-	if _, again := dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]}); again == nil {
-		t.Fatal("R did nothing while a load was out")
+	// R cannot overlap a load already in flight.
+	if _, again := dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]}); again != nil {
+		t.Fatal("R overlapped a load")
 	}
 }
 
@@ -722,5 +709,100 @@ func TestDeliveryGoldenFromGatewayData(t *testing.T) {
 		m = openDelivery(t, deliveryModel(&fakeDelivery{changes: list2}, size[0], size[1]))
 		m.delivery.row, m.delivery.detail = 2, true
 		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), m.testView())
+	}
+}
+
+func TestDeliveryMarksSeparateAfterMerge(t *testing.T) {
+	steps := []protocol.StepStatus{
+		{StepRef: protocol.StepRef{Step: protocol.StepTest}, State: protocol.StepStatePassed},
+		{StepRef: protocol.StepRef{Step: protocol.StepTest, AfterMerge: true}, State: protocol.StepStateWaiting},
+	}
+	marks := deliveryMarks(steps)
+	pre, post := -1, -1
+	for i, name := range deliverySteps {
+		if name == "test" {
+			pre = i
+		}
+		if name == "test after merge" {
+			post = i
+		}
+	}
+	if pre < 0 || post < 0 || marks[pre] != stripPassed || marks[post] != stripWaiting {
+		t.Fatalf("marks: %v steps: %v", marks, deliverySteps)
+	}
+}
+
+func TestDeliveryOutcomeFromEvidence(t *testing.T) {
+	v := protocol.ChangeView{Change: protocol.Change{MergedCommit: "abcdef1234567890"}, Steps: []protocol.StepStatus{
+		{StepRef: protocol.StepRef{Step: protocol.StepTest}, Evidence: &protocol.Evidence{Step: protocol.StepTest, Fields: map[string]string{protocol.FieldRun: "https://ci.example/run/1"}}},
+		{StepRef: protocol.StepRef{Step: protocol.StepRelease}, Evidence: &protocol.Evidence{Step: protocol.StepRelease, Fields: map[string]string{protocol.FieldTag: "v1.2.3"}}},
+	}}
+	got := deliveryOutcome(deliveryChangeFromView(v, t0))
+	for _, want := range []string{"abcdef", "https://ci.example/run/1", "v1.2.3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestDeliveryRefreshUpdatesSessionsAndDoesNotOverlap(t *testing.T) {
+	src := &fakeDelivery{}
+	clock := t0
+	m := treeModel(80, 24, mergerFixture())
+	m.deliverySrc, m.now, m.tab = src, func() time.Time { return clock }, sessionsTab
+	m, cmd := m.startDeliveryLoad()
+	if cmd == nil {
+		t.Fatal("initial load missing")
+	}
+	m, again := m.deliveryTick()
+	if again != nil {
+		t.Fatal("overlapping load")
+	}
+	m, _ = m.deliveryLoaded(cmd().(deliveryLoadedMsg))
+	a, _ := m.agentByID(mainID)
+	if m.sessionTaskText(a) != "" {
+		t.Fatal("unexpected task")
+	}
+	src.changes = []deliveryChange{{ID: "ch_ed5f0000", Steps: []deliveryStep{{Name: "test", State: protocol.StepStateRunning, Note: "claimed by " + mainID}}}}
+	clock = clock.Add(30 * time.Second)
+	m, cmd = m.deliveryTick()
+	if cmd == nil {
+		t.Fatal("refresh missing on Sessions")
+	}
+	m, _ = m.deliveryLoaded(cmd().(deliveryLoadedMsg))
+	if got := m.sessionTaskText(a); got != "test ch_ed5f" {
+		t.Fatalf("task %q", got)
+	}
+	src.changes = nil
+	clock = clock.Add(30 * time.Second)
+	m, cmd = m.deliveryTick()
+	if cmd == nil {
+		t.Fatal("second refresh missing")
+	}
+	m, _ = m.deliveryLoaded(cmd().(deliveryLoadedMsg))
+	if got := m.sessionTaskText(a); got != "" {
+		t.Fatalf("stale task %q", got)
+	}
+	m.tab = deliveryTab
+	m, cmd = m.startDeliveryLoad()
+	if cmd == nil {
+		t.Fatal("load missing")
+	}
+	_, again = m.deliveryKey(tea.KeyPressMsg{Text: "R", Code: 'R'})
+	if again != nil {
+		t.Fatal("refresh key started overlapping load")
+	}
+}
+
+func TestDeliveryStartupUsesInflightGuard(t *testing.T) {
+	m := deliveryModel(&fakeDelivery{}, 80, 24)
+	next, cmd := m.Update(deliveryStartMsg{})
+	m = next.(Model)
+	if cmd == nil || !m.delivery.loading {
+		t.Fatal("startup did not mark load in flight")
+	}
+	next, again := m.Update(deliveryStartMsg{})
+	if again != nil || !next.(Model).delivery.loading {
+		t.Fatal("startup overlapped its load")
 	}
 }

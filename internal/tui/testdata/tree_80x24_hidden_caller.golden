@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 10 sessions
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ filter: /probe
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │

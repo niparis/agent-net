@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestGraphCardReturnKeepsSelection(t *testing.T) {
 }
 func TestNetworkTabUsesDigitOnly(t *testing.T) {
 	m := mapModel(120, 34, fakeGraph())
-	if len(tabNames) != 7 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || !strings.Contains(ansi.Strip(m.titleLine(120)), "7 Inbox") {
+	if len(tabNames) != 8 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || !strings.Contains(ansi.Strip(m.titleLine(120)), "7 Inbox") {
 		t.Fatalf("wrong tabs: %v", tabNames)
 	}
 	for _, key := range []string{"2"} {
@@ -107,5 +108,78 @@ func TestGraphSearchCancelAndDisplayName(t *testing.T) {
 	m = keys(m, "/", "Evidence", "enter")
 	if m.graphState.Graph.Selected() != "project-12" {
 		t.Fatal("display name did not match")
+	}
+}
+
+func TestGraphDeliveryListsAllConfiguredSteps(t *testing.T) {
+	m := graphModel(80, 24)
+	lines := strings.Join(m.graphDeliveryOwners("project-02"), " ")
+	for _, step := range []string{"accept", "test", "review", "merge", "release", "verify"} {
+		if !strings.Contains(lines, step) {
+			t.Errorf("missing %s in %q", step, lines)
+		}
+	}
+}
+
+func TestGraphOpensDeliveryForProject(t *testing.T) {
+	m := graphModel(80, 24)
+	m.tab = graphTab
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
+	m = keys(m, "d")
+	if m.tab != deliveryTab || m.delivery.project != "project-02" {
+		t.Fatalf("tab %d project %q", m.tab, m.delivery.project)
+	}
+	m = keys(m, "esc")
+	if m.delivery.project != "" {
+		t.Fatal("escape did not clear project")
+	}
+}
+
+func TestGraphFooterHeightAndCaller(t *testing.T) {
+	m := graphModel(80, 24)
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
+	_, h1 := m.graphSize()
+	owners := strings.Join(m.graphDeliveryOwners("project-02"), " ")
+	if !strings.Contains(owners, ": caller") {
+		t.Fatalf("caller missing: %s", owners)
+	}
+	m.mp.edges = append(m.mp.edges, protocol.Edge{From: "/delivery/merger", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepTest)})
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
+	_, h2 := m.graphSize()
+	if h1 != h2 {
+		t.Fatalf("canvas heights changed: %d and %d", h1, h2)
+	}
+	if lines := m.graphOwnerLines(80); len(lines) != 2 {
+		t.Fatalf("owner lines: %v", lines)
+	}
+}
+
+func TestGraphOwnerLinesPackOverflow(t *testing.T) {
+	m := graphModel(80, 24)
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
+	m.mp.edges = append(m.mp.edges,
+		protocol.Edge{From: "/delivery/merger", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepTest)},
+		protocol.Edge{From: "project-02", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepReview)})
+	owners := m.graphDeliveryOwners("project-03")
+	if len(owners) < 3 {
+		t.Fatalf("need three owners: %v", owners)
+	}
+	lines := m.graphOwnerLines(80)
+	if len(lines) != 2 || !strings.Contains(lines[1], "; ") {
+		t.Fatalf("overflow not packed: %v", lines)
+	}
+	if ansi.StringWidth(lines[1]) > 78 {
+		t.Fatalf("overflow too wide: %s", lines[1])
+	}
+}
+
+func TestGraphDeliveryFooterGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		for _, project := range []string{"project-02", "project-03"} {
+			m := graphModel(size[0], size[1])
+			m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: project})
+			m.mp.edges = append(m.mp.edges, protocol.Edge{From: "/delivery/merger", To: "project-03", Kind: protocol.DeliveryStepEdge(protocol.StepTest)})
+			golden(t, fmt.Sprintf("graph_footer_%s_%dx%d", project, size[0], size[1]), m.testView())
+		}
 	}
 }

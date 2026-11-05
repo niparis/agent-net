@@ -1,10 +1,9 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 nodes, 7 edges                                                                                           updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 nodes, 7 edges                                                                                updated 14:05
 tenebrae  mature  autonomy: wake
 Tools: 0 skills, 0 MCP servers · t open
 Research platform that turns papers, figures and strategies into a searchable library for the trading desk, with citations kept for every claim.
 ● 1 session, 1 busy
-accept: caller
-test, merge: caller
+accept, test, review, merge, release, verify: caller
 governed by: wbg-architect (advisor)
 
 IN 2                                                          OUT 2
@@ -26,6 +25,7 @@ worker_sandbox     sandboxed              maturity default
 judge_consumers    strict                 maturity default
 deploy_rule        owner                  owner override
 autonomy           wake                   owner override
+
 
 
 

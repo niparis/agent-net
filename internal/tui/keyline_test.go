@@ -38,7 +38,7 @@ func TestKeyLineContentPerTab(t *testing.T) {
 		{"Sessions", "1", "up/down select  enter open (ctrl+] back)  m msg  n new  left/right cell  ? help  q quit"},
 		{"Messages", "4", "up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  d quality details  c CTO  ? help  q quit"},
-		{"Graph", "2", "1-7 tabs  c CTO  ? help  q quit"},
+		{"Graph", "2", "1-8 tabs  c CTO  ? help  q quit"},
 	} {
 		m := keys(newModel(120, 34), tc.key)
 		if got := ansi.Strip(m.helpLine(120)); got != tc.want {

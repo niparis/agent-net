@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 6 sessions, 5 online · 1 busy  00:00:00
+╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────5 shown─╮
+│   TITLE                        REPO             STEP      STATUS                  AGE     EVIDENCE                   │
+│ Needs you · 1                                                                                                        │
+│ ▸ Fix the deploy gate          voicemechs       review    failed                  2h5m    a✓ r✗ t· p- m· T· l· d· v· │
+│ Waiting on agents · 3                                                                                                │
+│   Show which provider each q…  agent-net        review    waiting for merger      2h14m   a✓ r· t✓ p- m· T· l· d· v· │
+│   Say what a delivery row wa…  agent-net        test      waiting for ci-runner   6m      a✓ r✓ t· p- m✓ T· l· d· v· │
+│   merged: abcdef1                                                                                                    │
+│   Import suppliers from the …  wbg-procurement  accept    waiting for s_unknown   1d6h!   a· r· t· p- m· T· l· d· v· │
+│ Done · 1                                                                                                             │
+│   Drop the old parser          agent-net        -         done                    3d0h    a✓ r✓ t✓ p✓ m✓ T· l✓ d✓ v✓ │
+│ a accept · r review · t test · p approve · m merge · T test after merge · l release · d deploy · v verify.           │
+│ ✓ passed ✗ failed · waiting - not needed                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter evidence  a show all  R refresh  ? help  q quit

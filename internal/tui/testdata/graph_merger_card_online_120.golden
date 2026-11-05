@@ -1,9 +1,9 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 15 nodes, 8 edges                    updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 15 nodes, 8 edges         updated 14:05
 project-03  autonomy: off
 Tools: 0 skills, 0 MCP servers · t open
 no purpose set
 ● 1 session
-accept: caller
+accept, review, release, verify: caller
 test, merge: project-03 merger (online)
 
 IN 2                                                         OUT 1

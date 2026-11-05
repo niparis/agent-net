@@ -599,7 +599,7 @@ func TestViewFitsEverySize(t *testing.T) {
 func TestViewHasEverythingAt80Columns(t *testing.T) {
 	out := keys(newModel(80, 24), "down").testView() // tenebrae-53
 	for _, want := range []string{
-		"Mac (here)", "old-box", "12 online", "cpu", "mem", "disk 180G free", "disk 31G free",
+		"Mac (here)", "old-box", "│12", "cpu", "mem", "disk 180G free", "disk 31G free",
 		"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
 		"tenebrae-53", "busy", "shell", "CTO",
 		"up/down select", "q quit",
