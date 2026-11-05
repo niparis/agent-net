@@ -1671,6 +1671,28 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return map[string]bool{"ok": true}, st.MarkLearnedViewed(p.Node, p.ID)
 		}
 
+	case "context.get":
+		p, err := decode[protocol.PolicyGet](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad context.get")
+		}
+		a, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || a.NodeID != nc.id {
+			return nil, reject("session %q does not belong to this node", p.SessionID)
+		}
+		c, err := st.resolveSessionContext(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		graph, err := st.GraphFor(projectOfSession(a))
+		if err != nil {
+			return nil, err
+		}
+		return protocol.PolicyGot{Charter: protocol.NodeContextWithSettings(graph, projectOfSession(a), c.Settings)}, nil
+
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)
 		if err != nil || p.SessionID == "" {
@@ -1684,7 +1706,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || a.NodeID != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a)}, nil
+		c, err := st.resolveSessionContext(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a), Charter: c.agentText()}, nil
 
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)

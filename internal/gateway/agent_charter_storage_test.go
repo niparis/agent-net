@@ -30,3 +30,19 @@ func TestAgentCharterMigrationReopen(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentCharterHistory(t *testing.T) {
+	r := newDeliveryRig(t)
+	for _, value := range []string{"first", "second", ""} {
+		if err := r.s.SetAgentCharter("demo", "purpose", value, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter_history WHERE agent_id='demo'`).Scan(&count); err != nil || count != 3 {
+		t.Fatalf("history %d: %v", count, err)
+	}
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter WHERE agent_id='demo'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("current %d: %v", count, err)
+	}
+}

@@ -241,3 +241,24 @@ func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
 		t.Errorf("a node without a charter got one: %+v", r)
 	}
 }
+
+func TestPolicyAgentCharterSeparate(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	repo := newRepo(t, "demo")
+	client, id := helloDelivery(t, n, "caller", repo, "claude-opus-4")
+	eventually(t, "session and repo registered", func() bool {
+		a, ok, err := g.gw.Store().Agent(id)
+		return err == nil && ok && a.Repo.Project == "demo"
+	})
+	if err := g.gw.Store().SetCharter("demo", "accepts", "repo boundary", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.gw.Store().SetAgentCharter("demo", "purpose", "agent goal", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	got := askPolicy(t, client, protocol.PolicyRequest{})
+	if !strings.Contains(got.Charter, "repo boundary") || !strings.Contains(got.Charter, "Your agent charter") || !strings.Contains(got.Charter, "agent goal") {
+		t.Fatalf("charter: %q", got.Charter)
+	}
+}

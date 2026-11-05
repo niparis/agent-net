@@ -137,16 +137,11 @@ func (s *Store) DeliveryNeedsPush(project, machine, caller string) (bool, error)
 // deliveryPipeline resolves the ordered delivery settings and overlays graph
 // assignments. A project with no graph node gets the network values.
 func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
-	graph, err := s.Graph()
+	c, err := s.resolveRepoContext(project)
 	if err != nil {
 		return protocol.Pipeline{}, err
 	}
-	repo := chartedProject(graph, project)
-	snap, err := s.SettingsSnapshot()
-	if err != nil {
-		return protocol.Pipeline{}, err
-	}
-	p, err := protocol.PipelineFromSettings(snap, repo)
+	p, err := protocol.PipelineFromSettings(c.Settings, c.Repo)
 	if err != nil {
 		return protocol.Pipeline{}, err
 	}

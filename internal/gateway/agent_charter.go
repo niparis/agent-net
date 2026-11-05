@@ -61,13 +61,13 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 				settingsByNode[v.Scope][old] = value
 			}
 		}
-		graph, err := s.Graph()
-		if err != nil {
-			return err
-		}
 		for _, a := range agents {
 			project := projectOfSession(a)
-			charted := chartedProject(graph, project)
+			ctx, err := s.resolveRepoContext(project)
+			if err != nil {
+				return err
+			}
+			charted := ctx.Repo
 			if charted == "" {
 				settingsByNode[project] = nodeEffectiveSettings(snap, "", "", nil)
 			} else {

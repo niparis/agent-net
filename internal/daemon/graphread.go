@@ -85,6 +85,17 @@ func (d *Daemon) charterContext(ctx context.Context, project string) string {
 	return protocol.NodeContextWithSettings(g, project, d.SettingsSnapshot())
 }
 
+func (d *Daemon) sessionCharterContext(ctx context.Context, sid, project string) string {
+	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	raw, err := d.call(cctx, "context.get", protocol.PolicyGet{SessionID: sid})
+	var got protocol.PolicyGot
+	if err == nil && json.Unmarshal(raw, &got) == nil {
+		return got.Charter
+	}
+	return d.charterContext(ctx, project)
+}
+
 // charterBrief is the charter section of a worker's brief. Empty when the
 // node has no charter.
 func (d *Daemon) charterBrief(ctx context.Context, project string) string {
