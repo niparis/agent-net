@@ -1070,18 +1070,18 @@ A stored message can cause the gateway to ask the owning machine to wake an
 offline Claude background session. The receiving daemon checks that the known
 session is local and is not a worker, its folder exists, and exactly one
 matching Claude background record has state `done` and reports no live process.
-If the record omits its kind, the session's saved mode must say background. It refuses stopped,
-removed, ambiguous or unreadable records. The gateway limits attempts to one
-per session per 10 minutes, even across gateway restarts, and a wake opens no
+If the record omits its kind, the session's saved mode must say background.
+It refuses stopped, removed, ambiguous or unreadable records. The gateway
+limits attempts to one per session per 10 minutes, even across gateway restarts, and a wake opens no
 view. If Claude creates a copy, the gateway moves the original session ID to
 it only for the owning machine during that wake, while the old session remains
 offline and the new native ID is not already registered. The resumed session
 keeps its normal permissions and treats peer content according to the existing
 message rules. A peer can cause work and model usage in a retired session by
 sending it a message. A record already marked stopped and workers are refused.
-An agent-net stop is serialized with the check and launch. A stop made directly
-in Claude can race the check, because Claude offers no atomic check and resume
-operation.
+An agent-net stop is serialized with the check and launch.
+The owner accepts that a stop made directly in Claude between the check and
+the resume may be undone by the wake; the owner can stop the session again.
 
 A project or session on another machine is reached through the gateway frames
 `session.start`, `session.resume`, `session.stop` and `session.get`, which carry

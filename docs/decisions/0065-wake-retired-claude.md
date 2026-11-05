@@ -9,8 +9,10 @@ step tasks, and when their machine reconnects. It records a per-session
 bounded attempt. The owning daemon checks the local Claude background list,
 requires one matching record in state `done` and the original folder, refuses
 workers and launches the existing background resume command. It opens no view.
-Stopped, removed, ambiguous or unreadable records stay offline. If Claude
-creates a copy, the gateway rebinds the original session ID to its native ID
+Records already stopped, removed, ambiguous or unreadable are not woken.
+The owner accepts that a stop made directly in Claude between the check and
+the resume may be undone by the wake; the owner can stop the session again.
+If Claude creates a copy, the gateway rebinds the original session ID to its native ID
 before discovery, only for the matching in-flight wake and owning machine.
 
 The gateway owns the queue, expiry and cross-machine connection. The daemon
