@@ -209,10 +209,13 @@ func sessionKind(a protocol.AgentView) string {
 }
 
 func sessionProject(a protocol.AgentView) string {
-	if a.Profile.Project != "" {
+	// Keep the legacy announced project in the read-tool display while the
+	// resolved repo agrees with the reported repo. If the context differs,
+	// the resolved context is the only current repo.
+	if a.Profile.Project != "" && (a.RepoContext == "" || a.RepoContext == a.Repo.Project) {
 		return a.Profile.Project
 	}
-	return a.Repo.Project
+	return projectOfSession(a)
 }
 
 func delegationText(v *protocol.DelegationView) string {

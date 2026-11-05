@@ -49,7 +49,7 @@ func TestResolverAgentCharterAndWorker(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := r.s.db.Exec(`UPDATE sessions SET harness=? WHERE id=?`, harness, id); err != nil {
+		if _, err := r.s.db.Exec(`UPDATE sessions SET harness=?,agent_id=CASE WHEN ?='cto' THEN 'cto' ELSE NULL END WHERE id=?`, harness, harness, id); err != nil {
 			t.Fatal(err)
 		}
 		c, err := r.s.resolveSessionContext(id)
@@ -139,7 +139,7 @@ func TestResolverWorkerRun(t *testing.T) {
 	if _, err := r.s.db.Exec(`INSERT INTO agent_charter VALUES('demo','purpose','caller goal',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
-	res, err := r.s.db.Exec(`INSERT INTO worker_runs(node_id,session_id,harness,outcome,ended_at,caller_session_id) VALUES(?,?,'claude','complete',1,?)`, r.a, r.worker, r.caller)
+	res, err := r.s.db.Exec(`INSERT INTO worker_runs(node_id,session_id,harness,outcome,ended_at,caller_session_id,caller_agent_id) VALUES(?,?,'claude','complete',1,?,'demo')`, r.a, r.worker, r.caller)
 	if err != nil {
 		t.Fatal(err)
 	}

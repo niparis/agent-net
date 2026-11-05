@@ -94,7 +94,7 @@ func TestCalibrationMigrationBackfillsCaller(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, calibration); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	cal, err := s.Calibration()

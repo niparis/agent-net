@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -45,6 +46,46 @@ func TestInboxCreateUsesAuthenticatedSession(t *testing.T) {
 	items, err := s.ListInbox()
 	if err != nil || len(items) != 1 || items[0].Node != "project" || items[0].SessionID != agent {
 		t.Fatalf("items: %+v %v", items, err)
+	}
+}
+
+func TestInboxCreateUsesResolvedRepoAndQuestionDetails(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other', name='Reviewer' WHERE id=?`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	request := map[string]any{"session_id": r.caller, "kind": "question", "text": "Which branch?", "recommendation": "main", "options": []string{"main", "next"}}
+	type result struct {
+		Item protocol.InboxItem `json:"item"`
+	}
+	first, err := deliveryCall[result](r, r.a, "inbox.create", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Item.Node != "other" {
+		t.Fatalf("inbox node %q, want resolved repo other", first.Item.Node)
+	}
+	if first.Item.AskerName != "Reviewer" || first.Item.Recommendation != "main" || !reflect.DeepEqual(first.Item.Options, []string{"main", "next"}) {
+		t.Fatalf("question details lost: %+v", first.Item)
+	}
+	request["text"] = "Which branch now?"
+	second, err := deliveryCall[result](r, r.a, "inbox.create", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := r.s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]string{}
+	for _, item := range items {
+		status[item.ID] = item.Status
+	}
+	if status[first.Item.ID] != "replaced" || status[second.Item.ID] != "open" {
+		t.Fatalf("question statuses: %v", status)
 	}
 }
 

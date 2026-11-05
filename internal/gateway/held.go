@@ -48,31 +48,33 @@ func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol
 		return empty, reject("request is not held")
 	}
 	if action == "A" || action == "R" {
-		var from, to string
-		err = tx.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),p.project,'') FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, m.From).Scan(&from)
+		from, _, err := graphIdentityQuery(tx, m.From)
 		if err != nil {
 			return empty, err
 		}
-		err = tx.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),p.project,'') FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, m.To).Scan(&to)
+		to, _, err := graphIdentityQuery(tx, m.To)
 		if err != nil {
 			return empty, err
-		}
-		if from == "" || to == "" || from == to {
-			return empty, reject("request has no distinct graph nodes")
 		}
 		var old protocol.Edge
-		old.From, old.To = from, to
-		err = tx.QueryRow(`SELECT kind,mode,rule FROM graph_edges WHERE source=? AND target=? AND kind IN ('depends','governs','deploys') ORDER BY kind LIMIT 1`, from, to).Scan(&old.Kind, &old.Mode, &old.Rule)
+		err = tx.QueryRow(`SELECT source,target,kind,mode,rule FROM graph_edges WHERE
+			(kind='governs' AND source=? AND target=? AND source<>'' AND target<>'' AND source<>target) OR
+			(kind IN ('depends','deploys') AND source=? AND target=? AND source<>'' AND target<>'' AND source<>target)
+			ORDER BY kind LIMIT 1`, from.agent, to.agent, from.repo, to.repo).Scan(&old.From, &old.To, &old.Kind, &old.Mode, &old.Rule)
 		previous := ""
 		e := old
 		if err == nil {
 			b, _ := json.Marshal(old)
 			previous = string(b)
 		} else if err == sql.ErrNoRows {
-			e.Kind = "depends"
+			if from.repo == "" || to.repo == "" || from.repo == to.repo {
+				return empty, reject("request has no distinct graph nodes")
+			}
+			e = protocol.Edge{From: from.repo, To: to.repo, Kind: "depends"}
 		} else {
 			return empty, err
 		}
+
 		e.Rule = "auto"
 		if action == "R" {
 			e.Rule = "never"
@@ -81,7 +83,7 @@ func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol
 		if _, err = tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
 			return empty, err
 		}
-		if err = graphRecord(tx, "edge", from, e.Kind, previous, string(b), actor, s.now().UnixNano()); err != nil {
+		if err = graphRecord(tx, "edge", e.From, e.Kind, previous, string(b), actor, s.now().UnixNano()); err != nil {
 			return empty, err
 		}
 	}

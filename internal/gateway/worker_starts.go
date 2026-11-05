@@ -77,8 +77,8 @@ func (s *Store) trackWorkerStart(ref, nodeID, owner, project, harness, permissio
 	if _, err := s.db.Exec(`DELETE FROM worker_starts WHERE state <> 'open' AND closed_at > 0 AND closed_at < ?`, s.now().Add(-closedStartKeep).UnixNano()); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO worker_starts(ref,node_id,owner,project,harness,permissions,created_at)
-		VALUES(?,?,?,?,?,?,?)`, ref, nodeID, owner, project, harness, permissions, s.now().UnixNano())
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO worker_starts(ref,node_id,owner,project,harness,permissions,created_at,caller_agent_id)
+		VALUES(?,?,?,?,?,?,?,(SELECT agent_id FROM sessions WHERE id=?))`, ref, nodeID, owner, project, harness, permissions, s.now().UnixNano(), owner)
 	return err
 }
 

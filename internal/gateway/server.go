@@ -1127,6 +1127,31 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "graph.read":
 		return g.handleGraphRead(raw)
 
+	case "group.authority":
+		p, err := decode[protocol.QueryAgent](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad group.authority")
+		}
+		a, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || a.NodeID != nc.id {
+			return nil, reject("session does not belong to this node")
+		}
+		allowed := false
+		if a.Repo.Project != "" {
+			identity, _, err := st.graphIdentity(p.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			err = st.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source=? AND kind='governs' AND mode='advisor')`, identity.agent).Scan(&allowed)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return map[string]bool{"allowed": allowed}, nil
+
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
 		if err != nil {
@@ -1191,6 +1216,25 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad session.archive")
 		}
 		return nil, st.CloseArchivedSessionInbox(nc.id, p.SessionID)
+
+	case "session.agent.list":
+		var p struct {
+			Owner string `json:"owner_session"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad session.agent.list")
+		}
+		return st.sessionAgentOptions(nc.id, p.Owner)
+
+	case "session.agent.set":
+		p, err := decode[protocol.SessionAgentSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad session.agent.set")
+		}
+		if err = st.setSessionAgent(nc.id, p); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
 
 	case "session.rename":
 		p, err := decode[protocol.SessionRenameRequest](raw)
@@ -1694,11 +1738,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		graph, err := st.GraphFor(projectOfSession(a))
+		graph, err := st.GraphFor(c.Project)
 		if err != nil {
 			return nil, err
 		}
-		return protocol.PolicyGot{Charter: protocol.NodeContextWithSettings(graph, projectOfSession(a), c.Settings)}, nil
+		return protocol.PolicyGot{Charter: protocol.NodeContextWithSettings(graph, c.Project, c.Settings)}, nil
 
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)
@@ -1717,7 +1761,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a), Charter: c.agentText()}, nil
+		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: c.Project, Charter: c.agentText()}, nil
 
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)
@@ -1754,6 +1798,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || agent.NodeID != nc.id || agent.Harness == protocol.OwnerHarness {
 			return nil, reject("session does not belong to this node")
 		}
+		identity, err := st.resolveSessionContext(agent.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		// Preserve the old Inbox node for sessions an old daemon reported
+		// without verified repository metadata.
+		if agent.Repo.Project == "" {
+			identity.Project = ""
+		}
 		name := agent.Profile.Name
 		if name == "" {
 			name = agent.Title
@@ -1761,7 +1814,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if name == "" || strings.HasPrefix(name, "s_") {
 			name = "an agent"
 		}
-		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: agent.Repo.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
+		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: identity.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
 		return map[string]any{"item": item}, err
 
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":

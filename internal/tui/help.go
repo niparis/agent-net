@@ -121,6 +121,9 @@ func (m Model) hints() []hint {
 
 	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
+			if m.sessionCell == 3 && canChangeSessionAgent(a) {
+				return []hint{{key: "left/right", label: "cell"}, {key: "space", label: "next agent"}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
+			}
 			if m.sessionCell == 1 {
 				rule := m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project))
 				next := "ask"

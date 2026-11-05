@@ -813,6 +813,31 @@ CREATE INDEX IF NOT EXISTS agent_charter_history_agent ON agent_charter_history(
 ALTER TABLE inbox_items ADD COLUMN options TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE inbox_items ADD COLUMN asker_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN change_title TEXT NOT NULL DEFAULT '';
+`, `
+-- Explicit session and run identity, retaining project strings as adapters.
+ALTER TABLE sessions ADD COLUMN agent_id TEXT REFERENCES agents(id);
+ALTER TABLE sessions ADD COLUMN repo_id TEXT REFERENCES repos(id);
+ALTER TABLE worker_runs ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);
+ALTER TABLE worker_starts ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);
+INSERT OR IGNORE INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('cto','CTO','cto',0,0,0);
+UPDATE sessions SET repo_id=(SELECT id FROM repos WHERE id=COALESCE(NULLIF(sessions.repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id))) WHERE harness NOT IN ('cto','owner');
+UPDATE sessions SET agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE (SELECT owner_agent_id FROM repos WHERE id=sessions.repo_id) END;
+UPDATE worker_runs SET caller_agent_id=(SELECT agent_id FROM sessions WHERE id=worker_runs.caller_session_id);
+UPDATE worker_starts SET caller_agent_id=(SELECT agent_id FROM sessions WHERE id=worker_starts.owner);
+CREATE TRIGGER IF NOT EXISTS session_identity_repo_update AFTER UPDATE OF repo_project ON sessions BEGIN
+ UPDATE sessions SET repo_id=(SELECT id FROM repos WHERE id=NEW.repo_project) WHERE id=NEW.id AND NEW.harness NOT IN ('cto','owner');
+END;
+`, `
+-- Owner changes to a registered session's agent.
+CREATE TABLE IF NOT EXISTS session_agent_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ session_id TEXT NOT NULL,
+ old_agent_id TEXT NOT NULL,
+ new_agent_id TEXT NOT NULL,
+ actor TEXT NOT NULL,
+ at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS session_agent_history_session ON session_agent_history(session_id,id);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1607,6 +1632,15 @@ func (s *Store) upsertSession(q interface {
 	if err != nil {
 		return "", false, err
 	}
+	// Triggers from the repo migration have now created any new repo records.
+	// A sync may update the repo context but must not replace a selected agent.
+	_, err = q.Exec(`UPDATE sessions SET
+		repo_id=CASE WHEN harness IN ('cto','owner') THEN NULL ELSE (SELECT id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id))) END,
+		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT owner_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id)))) END
+		WHERE id=?`, id)
+	if err != nil {
+		return "", false, err
+	}
 	// The owner session is the person, not a new agent: no session.new for it.
 	fresh := !known && !protocol.IsOwner(in.Harness)
 	if fresh {
@@ -2106,7 +2140,8 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  'label',wa.label,'bottleneck',wa.bottleneck,'confidence',wa.confidence,'rules_version',wa.rules_version,
  'judge_harness',wa.judge_harness,'judge_model',wa.judge_model,'reasons',json(wa.reasons),
  'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
- WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),'')
+ WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
+ COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),'')
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -2121,7 +2156,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName)
 	if err != nil {
 		return a, err
 	}
@@ -2469,15 +2504,8 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		return msg, false, reject("unknown message_type %q", m.Type)
 	}
 	if m.Type == protocol.TypeRequest && !m.FromCTO {
-		var rule string
-		err := tx.QueryRow(`SELECT e.rule FROM graph_edges e
-			JOIN sessions src ON src.id=? JOIN sessions dst ON dst.id=?
-			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
-			WHERE e.target=CASE WHEN dst.harness='cto' THEN ? ELSE COALESCE(NULLIF(dst.repo_project,''),dp.project,'') END
-			AND e.target<>'' AND (e.source=CASE WHEN src.harness='cto' THEN ? ELSE COALESCE(NULLIF(src.repo_project,''),sp.project,'') END OR e.source='*')
-			AND e.kind IN ('depends','governs','deploys')
-			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To, protocol.CTONodeName, protocol.CTONodeName).Scan(&rule)
-		if err != nil && err != sql.ErrNoRows {
+		rule, err := requestRuleTx(tx, m.From, m.To)
+		if err != nil {
 			return msg, false, err
 		}
 		if rule == "ask" {
@@ -2519,8 +2547,16 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		}
 	}
 	if p.Outcome != "" {
-		var from, to string
-		if err := tx.QueryRow(`SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,'') FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE q.id=? AND q.type=?`, p.ParentID, protocol.TypeRequest).Scan(&from, &to); err != nil {
+		var fromID, toID string
+		if err := tx.QueryRow(`SELECT sender,recipient FROM messages WHERE id=? AND type=?`, p.ParentID, protocol.TypeRequest).Scan(&fromID, &toID); err != nil {
+			return msg, false, reject("outcome requires a request parent")
+		}
+		from, _, _, _, err := sessionIdentityQuery(tx, fromID)
+		if err != nil {
+			return msg, false, reject("outcome requires a request parent")
+		}
+		to, _, _, _, err := sessionIdentityQuery(tx, toID)
+		if err != nil {
 			return msg, false, reject("outcome requires a request parent")
 		}
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {

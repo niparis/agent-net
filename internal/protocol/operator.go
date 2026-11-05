@@ -56,7 +56,9 @@ const (
 	OpSessionTrust = "session_trust" // takes SessionTrustRequest, answers SessionTrustResult
 	// OpSessionPolicy sets the delegation policy of a session or its project
 	// (decision 0014). Owner only, no agent tool.
-	OpSessionPolicy = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
+	OpSessionPolicy    = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
+	OpSessionAgentSet  = "session_agent_set"
+	OpSessionAgentList = "session_agent_list"
 
 	// OpSessionRename gives a session a name the owner chose, or with an empty
 	// name returns it to the automatic project name (decision 0033). Owner
@@ -138,7 +140,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpWorkerLog, OpProposalList, OpProposalAnswer, OpProposalStartAck, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
-	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
+	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect}
@@ -700,4 +702,21 @@ type CTOStartAck struct {
 	ID      string `json:"proposal_id"`
 	Started bool   `json:"started"`
 	Error   string `json:"error,omitempty"`
+}
+
+// SessionAgentOption is one active agent the owner can assign.
+type SessionAgentOption struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Role string `json:"role,omitempty"`
+}
+
+type SessionAgentSetRequest struct {
+	SessionID string `json:"session_id"`
+	Agent     string `json:"agent"`
+	Owner     string `json:"owner_session,omitempty"`
+}
+
+type SessionAgentOptions struct {
+	Agents []SessionAgentOption `json:"agents"`
 }

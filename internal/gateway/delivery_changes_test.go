@@ -632,7 +632,7 @@ func TestDeliveryChangesMigrationReplays(t *testing.T) {
 	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery changes, revisions and evidence")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.migrate(); err != nil {
+	if err := migrateOldFixture(t, r.s); err != nil {
 		t.Fatal(err)
 	}
 	if v := r.get(id); v.Change.HeadCommit != commitA {
@@ -700,7 +700,7 @@ func TestChangeReviewRiskMigrationUpgrade(t *testing.T) {
 	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery review risk columns")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.migrate(); err != nil {
+	if err := migrateOldFixture(t, r.s); err != nil {
 		t.Fatal(err)
 	}
 	view := r.get(id)

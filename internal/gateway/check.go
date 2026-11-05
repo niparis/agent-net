@@ -81,12 +81,7 @@ func (s *Store) checkMessageCount(id string) (int, error) {
 
 // agentNode is the graph node a session speaks for. It is the project the
 // machine worked out from its folder, then any project the agent announced.
-func agentNode(a protocol.AgentView) string {
-	if a.Repo.Project != "" {
-		return a.Repo.Project
-	}
-	return a.Profile.Project
-}
+func agentNode(a protocol.AgentView) string { return projectOfSession(a) }
 
 // agentAutonomy reads the node's effective autonomy rule. A missing or invalid
 // stored value is off.

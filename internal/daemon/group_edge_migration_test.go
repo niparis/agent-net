@@ -41,18 +41,12 @@ func TestAdvisorGroupSendEdgeMigration(t *testing.T) {
 		var sqliteErr *sqlite.Error
 		return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == 5
 	}
-	eventually(t, "rewrite gateway schema", func() bool {
+	rewriteSchema := func(statements string) bool {
 		db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = db.Exec(`BEGIN IMMEDIATE;
- DROP TRIGGER edge_kinds_insert; DROP TRIGGER edge_history_kinds_insert;
- DROP TRIGGER merger_removed; DROP TRIGGER merger_replaced;
- ALTER TABLE graph_edges DROP COLUMN source_kind; ALTER TABLE graph_edges DROP COLUMN target_kind;
- ALTER TABLE graph_history DROP COLUMN source_kind; ALTER TABLE graph_history DROP COLUMN target_kind;
- DELETE FROM schema_version WHERE version=(SELECT max(version) FROM schema_version);
- COMMIT;`)
+		_, err = db.Exec("BEGIN IMMEDIATE;" + statements + "COMMIT;")
 		if err != nil {
 			_, _ = db.Exec(`ROLLBACK`)
 		}
@@ -63,6 +57,14 @@ func TestAdvisorGroupSendEdgeMigration(t *testing.T) {
 			t.Fatal(err)
 		}
 		return err == nil
+	}
+	eventually(t, "rewrite gateway schema", func() bool {
+		return rewriteSchema(`
+ DROP TRIGGER edge_kinds_insert; DROP TRIGGER edge_history_kinds_insert;
+ DROP TRIGGER merger_removed; DROP TRIGGER merger_replaced;
+ ALTER TABLE graph_edges DROP COLUMN source_kind; ALTER TABLE graph_edges DROP COLUMN target_kind;
+ ALTER TABLE graph_history DROP COLUMN source_kind; ALTER TABLE graph_history DROP COLUMN target_kind;
+ DELETE FROM schema_version WHERE version>=113;`)
 	})
 	send := func(body string) []string {
 		t.Helper()
@@ -85,6 +87,18 @@ func TestAdvisorGroupSendEdgeMigration(t *testing.T) {
 	if len(before) != 2 || before[0] == before[1] {
 		t.Fatalf("before recipients: %v", before)
 	}
+	// The current gateway needs the identity columns for the before-send.
+	// Remove them only afterwards, so replay starts from the real pre-115
+	// schema and applies the frozen migration without rewriting it.
+	eventually(t, "rewind session identity schema", func() bool {
+		return rewriteSchema(`
+ DROP TRIGGER session_identity_repo_update;
+ ALTER TABLE sessions DROP COLUMN agent_id;
+ ALTER TABLE sessions DROP COLUMN repo_id;
+ ALTER TABLE worker_runs DROP COLUMN caller_agent_id;
+ ALTER TABLE worker_starts DROP COLUMN caller_agent_id;
+ DROP TABLE session_agent_history;`)
+	})
 	// OpenStore's migration also uses a transaction that can lose a
 	// snapshot to a live gateway write. A failed OpenStore closes its DB.
 	eventually(t, "migrate gateway schema", func() bool {

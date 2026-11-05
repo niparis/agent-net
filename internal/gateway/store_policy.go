@@ -17,11 +17,7 @@ import (
 
 // projectKey is the project a session belongs to, as the policy table names it.
 func projectKey(a protocol.AgentView) string {
-	p := a.Repo.Project
-	if p == "" {
-		p = a.Profile.Project
-	}
-	return strings.ToLower(strings.TrimSpace(p))
+	return strings.ToLower(projectOfSession(a))
 }
 
 func encodePolicy(p protocol.DelegationPolicy) string {
