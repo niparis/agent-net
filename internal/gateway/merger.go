@@ -251,21 +251,35 @@ func resetStoppedMergerTasks(tx *sql.Tx, project string) error {
 	return err
 }
 
-// Starting routing also moves ready pre-merge test and merge tasks that were
-// captured under their previous owner. Completed evidence stays untouched.
+// Starting routing moves unfinished tasks whose configured pipeline owner is merger.
+// Existing pre-merge claims are released as before; after-merge claims stay put.
 func resetConfiguredMergerTasks(tx *sql.Tx, project, node string) error {
-	for _, query := range []string{
-		`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched','failed') AND id IN
- (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
- JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND c.machine=? AND t.completed=0 AND t.step IN ('test','merge') AND t.after_merge=0)`,
-		`DELETE FROM delivery_step_messages WHERE message_id IN
- (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
- JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND c.machine=? AND t.completed=0 AND t.step IN ('test','merge') AND t.after_merge=0)`,
-		`UPDATE delivery_step_tasks SET owner_node='/merger',claimed_by='' WHERE completed=0 AND step IN ('test','merge') AND after_merge=0
- AND change_id IN (SELECT id FROM delivery_changes WHERE project=? AND machine=?)`,
-	} {
-		if _, err := tx.Exec(query, project, node); err != nil {
-			return err
+	snap, err := settingsSnapshotTx(tx)
+	if err != nil {
+		return err
+	}
+	p, err := protocol.PipelineFromSettings(snap, project)
+	if err != nil {
+		return err
+	}
+	for _, step := range p.Steps {
+		if step.Owner.Kind != protocol.OwnerMerger {
+			continue
+		}
+		args := []any{project, node, step.Step, step.For, boolInt(step.AfterMerge)}
+		for _, query := range []string{
+			`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched','failed') AND id IN
+    (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
+    JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND c.machine=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.completed=0 AND (t.after_merge=0 OR t.claimed_by=''))`,
+			`DELETE FROM delivery_step_messages WHERE message_id IN
+    (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
+    JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND c.machine=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.completed=0 AND (t.after_merge=0 OR t.claimed_by=''))`,
+			`UPDATE delivery_step_tasks SET owner_node='/merger',claimed_by='' WHERE change_id IN
+    (SELECT id FROM delivery_changes WHERE project=? AND machine=?) AND step=? AND for_step=? AND after_merge=? AND completed=0 AND (after_merge=0 OR claimed_by='')`,
+		} {
+			if _, err := tx.Exec(query, args...); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

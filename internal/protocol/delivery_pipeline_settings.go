@@ -116,6 +116,15 @@ func PipelineFromSettings(snap settings.Snapshot, repo string) (Pipeline, error)
 		if chosen == "" {
 			chosen = fallback
 		}
+		// Tests use the same owner in both phases unless the project assigns
+		// an after-merge test owner explicitly.
+		if chosen == "" && p.Steps[i].Step == StepTest && p.Steps[i].AfterMerge {
+			for _, a := range snap.DeliveryAssignments {
+				if a.Project == repo && a.Step == StepTest && !a.AfterMerge {
+					chosen = a.Node
+				}
+			}
+		}
 		if chosen != "" {
 			candidate := DeliveryOwnerFromSource(chosen)
 			if p.Steps[i].Step == StepApprove && p.Steps[i].Owner.Kind != OwnerNone &&

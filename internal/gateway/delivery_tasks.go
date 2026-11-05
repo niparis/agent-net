@@ -280,8 +280,12 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		g.logLine("error", "where", "step task targets", "err", err)
 		return
 	}
+	groups := map[string][]nodeTaskTarget{}
 	for _, target := range targets {
-		m, err := g.store.storeStepTaskMessage(target)
+		groups[target.session] = append(groups[target.session], target)
+	}
+	for _, group := range groups {
+		m, err := g.store.storeStepTaskMessages(group)
 		if err != nil {
 			g.logLine("error", "where", "step task message", "err", err)
 			continue
@@ -293,74 +297,110 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 }
 
 func (s *Store) storeStepTaskMessage(t nodeTaskTarget) (protocol.Message, error) {
-	c, ok, err := queryChange(s.db, `id=?`, t.id)
-	if err != nil || !ok {
-		return protocol.Message{}, err
+	return s.storeStepTaskMessages([]nodeTaskTarget{t})
+}
+
+func (s *Store) storeStepTaskMessages(targets []nodeTaskTarget) (protocol.Message, error) {
+	type notice struct {
+		target     nodeTaskTarget
+		body, line string
 	}
-	if c.Revision != t.revision || (t.ref.AfterMerge && c.State != protocol.ChangeMerged) || (!t.ref.AfterMerge && c.State != protocol.ChangeOpen) {
+	var notices []notice
+	for _, t := range targets {
+		c, ok, err := queryChange(s.db, `id=?`, t.id)
+		if err != nil || !ok {
+			return protocol.Message{}, err
+		}
+		if c.Revision != t.revision || (t.ref.AfterMerge && c.State != protocol.ChangeMerged) || (!t.ref.AfterMerge && c.State != protocol.ChangeOpen) {
+			continue
+		}
+		p, err := s.deliveryPipeline(c.Project)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		evidence, err := changeEvidence(s.db, c.ID)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		encoded, err := json.Marshal(evidence)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		commit := c.HeadCommit
+		if t.ref.AfterMerge {
+			commit = c.MergedCommit
+		}
+		var stat string
+		err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return protocol.Message{}, err
+		}
+		if stat == "" {
+			stat = "not available"
+		}
+		displayOwner := t.owner
+		if displayOwner == callerTaskOwner {
+			displayOwner = "caller"
+		}
+		if displayOwner == delegateTaskOwner {
+			displayOwner = "delegate"
+		}
+		body := fmt.Sprintf("[agent-net step task]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
+			c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
+			protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(p.ReportFields(t.ref), ", "))
+		notices = append(notices, notice{t, body, fmt.Sprintf("change: %s | step: %s | after_merge: %t | commit: %s | title: %s", c.ID, t.ref.String(), t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))})
+	}
+	if len(notices) == 0 {
 		return protocol.Message{}, nil
 	}
-	p, err := s.deliveryPipeline(c.Project)
-	if err != nil {
-		return protocol.Message{}, err
-	}
-	evidence, err := changeEvidence(s.db, c.ID)
-	if err != nil {
-		return protocol.Message{}, err
-	}
-	encoded, err := json.Marshal(evidence)
-	if err != nil {
-		return protocol.Message{}, err
-	}
-	commit := c.HeadCommit
-	if t.ref.AfterMerge {
-		commit = c.MergedCommit
-	}
-	var stat string
-	err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return protocol.Message{}, err
-	}
-	if stat == "" {
-		stat = "not available"
-	}
-	displayOwner := t.owner
-	if displayOwner == callerTaskOwner {
-		displayOwner = "caller"
-	}
-	if displayOwner == delegateTaskOwner {
-		displayOwner = "delegate"
-	}
-	body := fmt.Sprintf("[agent-net step task]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
-		c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
-		protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(p.ReportFields(t.ref), ", "))
+	t := notices[0].target
 	now := s.now().UTC()
 	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: "agent-net", FromName: "agent-net", FromHarness: "agent-net",
-		To: t.session, Type: protocol.TypeNotification, Body: body, IdempotencyKey: protocol.NewID("step"),
+		To: t.session, Type: protocol.TypeNotification, IdempotencyKey: protocol.NewID("step"),
 		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.Message{}, err
 	}
 	defer tx.Rollback()
-	// A notice can expire while its task remains unclaimed. Its association
-	// must not prevent a fresh notice when the same session comes back.
-	if _, err := tx.Exec(`DELETE FROM delivery_step_messages WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND session_id=?
+	var included []notice
+	for _, item := range notices {
+		t := item.target
+		// A notice can expire while its task remains unclaimed. Its association
+		// must not prevent a fresh notice when the same session comes back.
+		if _, err := tx.Exec(`DELETE FROM delivery_step_messages WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND session_id=?
 		AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id=delivery_step_messages.message_id AND m.state<>'expired')`,
-		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session); err != nil {
-		return protocol.Message{}, err
-	}
-	res, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
+			t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session); err != nil {
+			return protocol.Message{}, err
+		}
+		res, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
 		SELECT change_id,revision,step,for_step,after_merge,?,? FROM delivery_step_tasks
 		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0 AND claimed_by='' AND owner_node=?
 		AND EXISTS(SELECT 1 FROM delivery_changes c WHERE c.id=delivery_step_tasks.change_id AND c.revision=delivery_step_tasks.revision
 		AND ((delivery_step_tasks.after_merge=0 AND c.state='open') OR (delivery_step_tasks.after_merge=1 AND c.state='merged')))`,
-		t.session, m.ID, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner)
-	if err != nil {
-		return protocol.Message{}, err
+			t.session, m.ID, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return protocol.Message{}, err
+		} else if n == 0 {
+			continue
+		}
+		included = append(included, item)
 	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
-		return protocol.Message{}, err
+	if len(included) == 0 {
+		return protocol.Message{}, nil
+	}
+	if len(included) == 1 {
+		m.Body = included[0].body
+	} else {
+		lines := []string{"[agent-net step tasks]"}
+		for _, item := range included {
+			lines = append(lines, item.line)
+		}
+		lines = append(lines, "Claim each task with agent_step_claim before starting, then report the result with agent_step_report from your session. Use agent_changes_find for change details.")
+		m.Body = strings.Join(lines, "\n")
 	}
 	if _, err = tx.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
 		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
