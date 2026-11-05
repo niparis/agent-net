@@ -1067,7 +1067,9 @@ or an OpenCode serve process tree is refused too. No agent tool exposes these
 methods. An owner session has the owner's normal harness permissions, so an
 agent must never be able to start an arbitrary one to escape worker limits.
 A stored message can cause the gateway to ask the owning machine to wake an
-offline Claude background session. The receiving daemon checks that the known
+offline Claude background session. A ready unclaimed step can wake only its
+recorded merger or caller; node-owned steps wait for an online session. The
+receiving daemon checks that the known
 session is local and is not a worker, its folder exists, and exactly one
 matching Claude background record has state `done` and reports no live process.
 If the record omits its kind, the session's saved mode must say background.

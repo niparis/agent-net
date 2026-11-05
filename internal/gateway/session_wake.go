@@ -57,6 +57,15 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 			return
 		}
 	}
+	g.wakeSession(ctx, a)
+}
+
+// wakeSession is shared by queued messages and explicitly assigned ready step
+// tasks. The receiving daemon makes the final retired-session safety checks.
+func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
+	if a.Harness != "claude" || a.Worker != nil || a.Online {
+		return
+	}
 	g.mu.Lock()
 	target := g.conns[a.NodeID]
 	g.mu.Unlock()
