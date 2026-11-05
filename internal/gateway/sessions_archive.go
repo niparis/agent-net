@@ -95,7 +95,7 @@ func (s *Store) ArchiveSessions(q protocol.SessionsArchiveRequest) (protocol.Ses
 			continue
 		}
 		ids = append(ids, a.SessionID)
-		out.Sessions = append(out.Sessions, protocol.SessionArchiveEntry{SessionID: a.SessionID, Name: a.Profile.Name, Folder: a.Cwd, Harness: a.Harness})
+		out.Sessions = append(out.Sessions, protocol.SessionArchiveEntry{SessionID: a.SessionID, Name: a.Profile.Name, Folder: a.Cwd, Harness: a.Harness, Machine: a.Hostname, LastSeen: a.LastSeen})
 	}
 	rows.Close()
 	if err = rows.Err(); err != nil {
@@ -116,6 +116,12 @@ func (s *Store) ArchiveSessions(q protocol.SessionsArchiveRequest) (protocol.Ses
 			}
 		}
 		out.Sessions = kept
+	}
+	for i := range out.Sessions {
+		a := &out.Sessions[i]
+		if err := tx.QueryRow(`SELECT CASE WHEN s.no_project<>0 THEN '' ELSE COALESCE(NULLIF(s.repo_project,''),p.project,'') END FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, a.SessionID).Scan(&a.Project); err != nil {
+			return out, err
+		}
 	}
 	out.Count = len(out.Sessions)
 	if q.Expected != nil {

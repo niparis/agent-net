@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/charmbracelet/x/ansi"
+	"path"
+	"sort"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -77,6 +81,16 @@ func (m Model) sessionsArchiveResult(r sessionsArchiveMsg) (Model, tea.Cmd) {
 		return m, m.fetchCmd()
 	}
 	f.entries = r.result.Sessions
+	sort.Slice(f.entries, func(i, j int) bool {
+		a, b := f.entries[i], f.entries[j]
+		if path.Dir(a.Folder) != path.Dir(b.Folder) {
+			return path.Dir(a.Folder) < path.Dir(b.Folder)
+		}
+		if a.LastSeen != b.LastSeen {
+			return a.LastSeen < b.LastSeen
+		}
+		return a.SessionID < b.SessionID
+	})
 	f.stage = "preview"
 	f.index = 0
 	f.checked = map[string]bool{}
@@ -181,28 +195,61 @@ func (m Model) sessionsArchiveKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+func (m Model) sessionsArchiveHints() string {
+	switch m.archive.stage {
+	case "menu":
+		return keyHints("enter", "preview all", "f", "filters", "r", "show archived", "esc", "cancel")
+	case "filters":
+		return keyHints("tab", "next field", "enter", "preview", "esc", "cancel")
+	case "confirm":
+		return keyHints("y", "confirm", "n", "back", "↑↓", "review", "esc", "cancel")
+	default:
+		return keyHints("↑↓", "review", "space", "select", "enter", "confirm", "esc", "cancel")
+	}
+}
+
+// archiveColumns keeps every decision field visible even at 80 columns.
+func archiveColumns(w int) []int {
+	if w >= 110 {
+		return []int{18, 14, 9, 12, 10, max(1, w-73)}
+	}
+	return []int{12, 10, 8, 8, 9, max(1, w-57)}
+}
+func archiveRow(values []string, widths []int) string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = cell(v, widths[i])
+	}
+	return strings.Join(out, " ")
+}
 func (m Model) sessionsArchiveView(w, h int) []string {
 	f := m.archive
-	lines := []string{"  Offline sessions", ""}
-	footer := "  esc cancel"
+	title := "Archive offline sessions"
+	body := []string{}
 	switch f.stage {
 	case "menu":
-		lines = append(lines, "  Archive offline...", "  You can restore archived sessions here.", "", "  enter  Preview all offline sessions", "  f      Select by name, folder, project, harness, date or IDs", "  r      Show archived, restore")
+		body = append(body, "Choose offline sessions to archive, or restore archived sessions.", "", "Enter  Preview all offline sessions", "f      Filter by name, folder, project, harness, date or IDs", "r      Show archived sessions and restore")
 	case "filters":
-		lines = append(lines, "  Archive offline... Select sessions", "  Filters combine with AND. Name and folder use globs.", "  Project: * means any; empty means no project.", "")
+		title += " · select"
+		body = append(body, "Filters combine with AND. Name and folder use globs.", "Project: * means any; empty means no project.", "")
 		labels := []string{"Name glob", "Folder glob", "Project", "Harness", "Created before", "IDs (comma-separated)", "Ended workers"}
 		for i, label := range labels {
 			mark := "  "
 			if i == f.field {
 				mark = "> "
 			}
-			lines = append(lines, "  "+mark+fmt.Sprintf("%-22s", label)+f.fields[i].View())
+			body = append(body, mark+fmt.Sprintf("%-22s", label)+f.fields[i].View())
 		}
-		footer = "  tab next field  enter preview  esc cancel"
 	default:
 		verb, kind := "Archive", "offline"
 		if f.query.Restore {
 			verb, kind = "Restore", "archived"
+			title = "Restore archived sessions"
+		}
+		if f.stage == "confirm" {
+			title += " · confirm"
+		} else {
+			title += " · dry run"
 		}
 		count := 0
 		for _, a := range f.entries {
@@ -210,14 +257,17 @@ func (m Model) sessionsArchiveView(w, h int) []string {
 				count++
 			}
 		}
-		title := fmt.Sprintf("  %s %d %s session(s) - dry run", verb, count, kind)
+		summary := fmt.Sprintf("%s %s", verb, plural(count, kind+" session"))
 		if f.stage == "confirm" {
-			title = fmt.Sprintf("  Confirm %s: %d session(s)", strings.ToLower(verb), count)
+			summary = "Confirm " + strings.ToLower(verb) + ": " + plural(count, kind+" session")
 		}
-		lines = append(lines, title, "  Names, IDs and folders below. History keeps its names.", "")
-		room := max(1, h-11)
+		body = append(body, summary+" · "+fmt.Sprintf("%d matched", len(f.entries)))
+		widths := archiveColumns(w - 4)
+		body = append(body, "     "+archiveRow([]string{"NAME", "PROJECT", "HARNESS", "MACHINE", "LAST SEEN", "FOLDER"}, widths))
+		room := max(1, h-6)
 		start := max(0, f.index-room+1)
-		for i := start; i < min(len(f.entries), start+room); i++ {
+		end := min(len(f.entries), start+room)
+		for i := start; i < end; i++ {
 			a := f.entries[i]
 			mark := " "
 			if i == f.index {
@@ -227,27 +277,35 @@ func (m Model) sessionsArchiveView(w, h int) []string {
 			if f.checked[a.SessionID] {
 				check = "x"
 			}
-			lines = append(lines, clip(fmt.Sprintf(" %s [%s] %s  %s  %s", mark, check, sanitize(a.Name), sanitize(a.SessionID), sanitize(a.Folder)), w))
+			seen := "unknown"
+			if a.LastSeen > 0 {
+				age := m.now().Sub(time.Unix(a.LastSeen, 0))
+				if age >= 24*time.Hour {
+					seen = fmt.Sprintf("%dd ago", int(age.Hours()/24))
+				} else {
+					seen = ago(age) + " ago"
+				}
+			}
+			folder := sanitize(a.Folder)
+			if size := ansi.StringWidth(folder); size > widths[5] {
+				folder = ansi.TruncateLeft(folder, size-widths[5]+1, "…")
+			}
+			line := mark + "[" + check + "] " + archiveRow([]string{a.Name, orStr(a.Project, "no project"), a.Harness, orStr(a.Machine, "unknown"), seen, folder}, widths)
+			if i == f.index {
+				line = selectedRow(line)
+			}
+			body = append(body, line)
 		}
-		lines = append(lines, "", fmt.Sprintf("  %d matched; %d selected. Use arrows to review every record.", len(f.entries), count))
-		if f.stage == "confirm" {
-			footer = "  y confirm  n back  esc cancel"
-		} else {
-			footer = "  space select  enter confirm  esc cancel"
-		}
+		body = append(body, fmt.Sprintf("Rows %d-%d of %d · folder group, oldest first", min(start+1, len(f.entries)), end, len(f.entries)))
 	}
 	if f.loading {
-		lines = append(lines, "  Loading...")
+		body = append(body, "Loading...")
 	}
 	if f.err != "" {
-		lines = append(lines, clip("  ! "+sanitize(f.err), w))
+		body = append(body, "! "+sanitize(f.err))
 	}
-	for len(lines) < h {
-		lines = append(lines, "")
+	for len(body) < h-2 {
+		body = append(body, "")
 	}
-	lines[h-1] = footer
-	for i := range lines {
-		lines[i] = cell(lines[i], w)
-	}
-	return lines[:min(len(lines), h)]
+	return panel(title, body[:min(len(body), max(0, h-2))], w, roleAccent)
 }

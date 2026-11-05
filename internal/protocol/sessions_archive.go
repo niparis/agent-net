@@ -21,6 +21,9 @@ type SessionsArchiveResult struct {
 }
 
 type SessionArchiveEntry struct {
+	Project   string `json:"project"`
+	Machine   string `json:"machine"`
+	LastSeen  int64  `json:"last_seen"`
 	SessionID string `json:"session_id"`
 	Name      string `json:"name"`
 	Folder    string `json:"folder"`

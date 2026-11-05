@@ -156,7 +156,7 @@ func (m Model) hints() []hint {
 			hs[3].prio = 1
 		}
 	}
-	if m.showOffline {
+	if a, selected := m.selectedAgent(); m.showOffline && (!selected || !a.Online) {
 		hs = append([]hint{{key: "a", label: "archive offline...", prio: 1}}, hs...)
 	}
 	return hs
@@ -166,6 +166,9 @@ func (m Model) hints() []hint {
 // An action result takes the whole line while it is shown, so the screen keeps
 // its height and nothing above moves.
 func (m Model) helpLine(w int) string {
+	if m.archive != nil {
+		return clip(m.sessionsArchiveHints(), w)
+	}
 	if m.tab == toolsTab && !m.mapOn && !m.help {
 		if line, ok := m.toolsHelpLine(w); ok {
 			return line

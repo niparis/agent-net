@@ -165,8 +165,6 @@ func (m Model) renderView() string {
 	add := func(s string) { out = append(out, s) }
 
 	switch {
-	case m.archive != nil:
-		return strings.Join(m.sessionsArchiveView(w, h), "\n")
 	case m.proposalConfirm:
 		out = append(out, m.proposalConfirmView(w)...)
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:
@@ -183,6 +181,9 @@ func (m Model) renderView() string {
 		box := m.ctoBoxHeight(m.tab)
 		contentHeight := h - keyRows - box
 		switch {
+		case m.archive != nil:
+			out = append(out, m.titleLine(w))
+			out = append(out, m.sessionsArchiveView(w, contentHeight-1)...)
 		case m.mode == modeSessionForm:
 			// The New session form replaces the Graph card too, so n on the
 			// card keeps the Graph tab and Esc returns to the card.

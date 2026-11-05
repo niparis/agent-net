@@ -29,6 +29,9 @@ func TestSessionsArchivePatternRestore(t *testing.T) {
 	if err != nil || len(preview.Sessions) != 1 || preview.Sessions[0].SessionID != id {
 		t.Fatalf("preview: %+v %v", preview, err)
 	}
+	if a := preview.Sessions[0]; a.Project != "shop" || a.Machine != "box" || a.LastSeen == 0 {
+		t.Fatalf("missing owner row context: %+v", a)
+	}
 	if _, ok, _ := s.Agent(id); !ok {
 		t.Fatal("dry run changed session")
 	}

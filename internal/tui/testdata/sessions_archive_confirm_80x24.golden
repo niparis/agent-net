@@ -1,24 +1,24 @@
-  Offline sessions
-
-  Confirm archive: 1 session(s)
-  Names, IDs and folders below. History keeps its names.
-
- > [x] judge-junk  s_junk  /tmp/judge-junk
-
-  1 matched; 1 selected. Use arrows to review every record.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  y confirm  n back  esc cancel
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+╭─Archive offline sessions · confirm───────────────────────────────────────────╮
+│ Confirm archive: 10 offline sessions · 10 matched                            │
+│      NAME         PROJECT    HARNESS  MACHINE  LAST SEEN FOLDER              │
+│ >[x] shop-worker  shop       claude   build    9d ago    …trees/ended-worker │
+│  [x] scratch      no project codex    laptop   10d ago   /tmp/scratch        │
+│  [x] codex-test   no project codex    laptop   4d ago    …p/harness/codex-02 │
+│  [x] pi-test      no project claude   build    3d ago    /tmp/harness/pi-01  │
+│  [x] judge-alpha  no project pi       laptop   2d ago    /tmp/judges/run-01  │
+│  [x] judge-beta   no project codex    build    1d ago    /tmp/judges/run-02  │
+│  [x] test-three   no project pi       laptop   8d ago    …r/tmp/tests/run-03 │
+│  [x] test-four    no project codex    build    7d ago    …r/tmp/tests/run-04 │
+│  [x] docs-agent   docs       claude   laptop   6d ago    /work/docs          │
+│  [x] shop-review  shop       pi       build    5d ago    /work/shop          │
+│ Rows 1-10 of 10 · folder group, oldest first                                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+y confirm  n back  ↑↓ review  esc cancel
