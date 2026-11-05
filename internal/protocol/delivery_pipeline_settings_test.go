@@ -189,3 +189,30 @@ func TestPipelineReviewRiskSetting(t *testing.T) {
 		}
 	}
 }
+
+func TestPipelineSettingsAfterMergeTestOwner(t *testing.T) {
+	merger := settings.DeliveryAssignment{Project: "demo", Step: StepTest, Node: "/delivery/merger", Kind: "tests"}
+	explicit := settings.DeliveryAssignment{Project: "demo", Step: StepTest, AfterMerge: true, Node: "/delivery/caller", Kind: "tests_after_merge"}
+	for _, tc := range []struct {
+		name        string
+		assignments []settings.DeliveryAssignment
+		want        StepOwner
+	}{
+		{"inherits merger", []settings.DeliveryAssignment{merger}, StepOwner{Kind: OwnerMerger}},
+		{"explicit after merger", []settings.DeliveryAssignment{merger, explicit}, StepOwner{Kind: OwnerCaller}},
+		{"explicit before merger", []settings.DeliveryAssignment{explicit, merger}, StepOwner{Kind: OwnerCaller}},
+		{"default", nil, StepOwner{Kind: OwnerCaller}},
+		{"other project", []settings.DeliveryAssignment{{Project: "other", Step: StepTest, Node: "/delivery/merger", Kind: "tests"}}, StepOwner{Kind: OwnerCaller}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := PipelineFromSettings(settings.Snapshot{DeliveryPipelineCutover: true, DeliveryAssignments: tc.assignments}, "demo")
+			if err != nil {
+				t.Fatal(err)
+			}
+			step, ok := p.Find(StepRef{Step: StepTest, AfterMerge: true})
+			if !ok || step.Owner != tc.want {
+				t.Fatalf("after-merge test owner=%+v found=%t want=%+v", step.Owner, ok, tc.want)
+			}
+		})
+	}
+}

@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Page sizes of change.list.
@@ -147,31 +146,11 @@ func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
 	if err != nil {
 		return protocol.Pipeline{}, err
 	}
-	p, err := deliveryPipelineFromSettings(snap, repo)
+	p, err := protocol.PipelineFromSettings(snap, repo)
 	if err != nil {
 		return protocol.Pipeline{}, err
 	}
 	return p, p.Validate()
-}
-
-// A test assignment covers both phases unless an after-merge owner is explicit.
-func deliveryPipelineFromSettings(snap settings.Snapshot, project string) (protocol.Pipeline, error) {
-	explicit := false
-	for _, a := range snap.DeliveryAssignments {
-		if a.Project == project && a.Step == protocol.StepTest && a.AfterMerge {
-			explicit = true
-		}
-	}
-	if !explicit {
-		for _, a := range snap.DeliveryAssignments {
-			if a.Project == project && a.Step == protocol.StepTest && !a.AfterMerge {
-				a.AfterMerge, a.Kind = true, "tests_after_merge"
-				snap.DeliveryAssignments = append(append([]settings.DeliveryAssignment(nil), snap.DeliveryAssignments...), a)
-				break
-			}
-		}
-	}
-	return protocol.PipelineFromSettings(snap, project)
 }
 
 // deliveryEdgeStep maps an assignment edge to the step it owns. deploys is

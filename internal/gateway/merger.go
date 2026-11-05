@@ -258,7 +258,7 @@ func resetConfiguredMergerTasks(tx *sql.Tx, project, node string) error {
 	if err != nil {
 		return err
 	}
-	p, err := deliveryPipelineFromSettings(snap, project)
+	p, err := protocol.PipelineFromSettings(snap, project)
 	if err != nil {
 		return err
 	}
