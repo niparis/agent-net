@@ -120,6 +120,20 @@ func (d *Daemon) deliveryCall(ctx context.Context, typ string, params, out any) 
 	return nil
 }
 
+// deliveryContextProject asks the gateway for the session's resolved repo.
+// Older gateways answer policy.get using the legacy project string.
+func (d *Daemon) deliveryContextProject(ctx context.Context, sid string) (string, error) {
+	raw, err := d.call(ctx, "policy.get", protocol.PolicyGet{SessionID: sid})
+	if err != nil {
+		return "", err
+	}
+	var got protocol.PolicyGot
+	if err := json.Unmarshal(raw, &got); err != nil {
+		return "", err
+	}
+	return got.Project, nil
+}
+
 // changeSubmit builds change.submit from the caller's session and git.
 func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.SessionInfo, a protocol.ChangeSubmitArgs) (protocol.ChangeSubmitResult, error) {
 	var out protocol.ChangeSubmitResult
@@ -130,7 +144,13 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 	if info.Repo.Root == "" || !isGitRepo(ctx, folder) {
 		return out, fmt.Errorf("your session folder %s is not in a git repository with a commit: submit from a session in the change's repository", folder)
 	}
-	project := info.Repo.Project
+	project, err := d.deliveryContextProject(ctx, sid)
+	if err != nil {
+		return out, fmt.Errorf("cannot resolve session's repo context: %w", err)
+	}
+	if project != info.Repo.Project {
+		return out, fmt.Errorf("session's repo context %q does not match its folder's project %q", project, info.Repo.Project)
+	}
 	if a.Project != "" && a.Project != project {
 		return out, fmt.Errorf("project %q is not your session's project %q: submit from a session in %q", a.Project, project, a.Project)
 	}
@@ -257,7 +277,7 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, info protocol.Sessi
 		if q.Commit != view.Change.HeadCommit {
 			return out, fmt.Errorf("commit %s is not the head of change %s (now at %s)", q.Commit, q.ChangeID, view.Change.HeadCommit)
 		}
-		folder, err := d.deliveryMergeRepo(ctx, info, view.Change.Project)
+		folder, err := d.deliveryMergeRepo(ctx, sid, info, view.Change.Project)
 		if err != nil {
 			return out, err
 		}
@@ -519,8 +539,12 @@ func deliverySensitivePath(ctx context.Context, dir, base, head string) string {
 
 // A step owner may work in its own project. Use the target project's local
 // registration in that case, never a path from another machine's change.
-func (d *Daemon) deliveryMergeRepo(ctx context.Context, info protocol.SessionInfo, project string) (string, error) {
-	if info.Repo.Project == project && info.Repo.Root != "" {
+func (d *Daemon) deliveryMergeRepo(ctx context.Context, sid string, info protocol.SessionInfo, project string) (string, error) {
+	contextProject, err := d.deliveryContextProject(ctx, sid)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve session's repo context: %w", err)
+	}
+	if contextProject == project && info.Repo.Project == project && info.Repo.Root != "" {
 		return first(info.Repo.Worktree, info.Repo.Root), nil
 	}
 	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})

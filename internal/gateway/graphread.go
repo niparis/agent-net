@@ -39,7 +39,10 @@ func (s *Store) GraphFor(project string) (protocol.Graph, error) {
 // projectOfSession is the node a session speaks for: its repository's project,
 // as the PROJECT column resolves it.
 func projectOfSession(a protocol.AgentView) string {
-	p := a.Repo.Project
+	p := a.RepoContext
+	if p == "" {
+		p = a.Repo.Project
+	}
 	if p == "" {
 		p = a.Profile.Project
 	}
@@ -196,16 +199,11 @@ func (s *Store) MergeRuleForSession(session string) (string, string, error) {
 	if err != nil || !ok {
 		return protocol.MergeAsk, "", err
 	}
-	project := projectOfSession(a)
-	graph, err := s.Graph()
+	c, err := s.resolveSessionContext(a.SessionID)
 	if err != nil {
 		return "", "", err
 	}
-	project = chartedProject(graph, project)
-	snap, err := s.SettingsSnapshot()
-	if err != nil {
-		return "", "", err
-	}
+	project, snap := c.Repo, c.Settings
 	authority, err := deliveryValue(snap, "delivery.merge_authority", project)
 	if err != nil {
 		return "", "", err

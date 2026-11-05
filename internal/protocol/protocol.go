@@ -279,6 +279,8 @@ type PendingRequest struct {
 }
 
 type AgentView struct {
+	// RepoContext is the gateway resolved repo key; it is not a wire field.
+	RepoContext        string           `json:"-"`
 	Type               string           `json:"type"`
 	NativeID           string           `json:"native_id,omitempty"`
 	Pending            []PendingRequest `json:"pending,omitempty"`

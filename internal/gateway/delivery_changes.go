@@ -120,7 +120,7 @@ func (s *Store) DeliveryNeedsPush(project, machine, caller string) (bool, error)
 		var found int
 		err := s.db.QueryRow(`SELECT EXISTS(
 			SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
-			WHERE COALESCE(NULLIF(s.repo_project,''),p.project,'')=? AND s.node_id<>? AND s.worker=''
+			WHERE `+sessionRepoSQL+`=? AND s.node_id<>? AND s.worker=''
 			AND s.harness NOT IN ('owner','bot','cto')
 			UNION ALL SELECT 1 FROM projects WHERE name=? AND node_id<>? AND graph_excluded<>1)`,
 			step.Owner.Node, machine, step.Owner.Node, machine).Scan(&found)
@@ -692,7 +692,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 			var online int
 			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates d JOIN sessions s ON s.online=1 AND s.worker=''
 				LEFT JOIN profiles p ON p.session_id=s.id WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=?
-				AND d.node=COALESCE(NULLIF(s.repo_project,''),p.project,'') AND s.harness NOT IN ('owner','bot','cto'))`,
+				AND d.node=`+sessionRepoSQL+` AND s.harness NOT IN ('owner','bot','cto'))`,
 				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&online)
 			if err != nil {
 				return protocol.ChangeView{}, err
@@ -755,7 +755,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		} else {
 			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
 				WHERE s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','bot','cto')
-				AND COALESCE(NULLIF(s.repo_project,''),p.project,'')=?)`, st.Owner.Node).Scan(&online)
+				AND `+sessionRepoSQL+`=?)`, st.Owner.Node).Scan(&online)
 		}
 		if err != nil {
 			return protocol.ChangeView{}, err

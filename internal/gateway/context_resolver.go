@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -61,10 +62,18 @@ func (s *Store) resolveRunContext(run int64) (resolvedContext, error) {
 
 // sessionIdentity is the durable identity and repo context. Project is the
 // legacy adapter for sessions reported by old daemons without repo metadata.
-func (s *Store) sessionIdentity(session string) (project, agent, harness string, worker bool, err error) {
+// sessionRepoSQL is shared with queries that run inside a transaction, where
+// calling the resolver on the store's single database connection would block.
+const sessionRepoSQL = `COALESCE(s.repo_id,NULLIF(s.repo_project,''),p.project,'')`
+
+func sessionIdentityQuery(q interface{ QueryRow(string, ...any) *sql.Row }, session string) (project, agent, harness string, worker bool, err error) {
 	var w string
-	err = s.db.QueryRow(`SELECT COALESCE(s.repo_id,NULLIF(s.repo_project,''),p.project,''),COALESCE(s.agent_id,''),s.harness,s.worker FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &agent, &harness, &w)
+	err = q.QueryRow(`SELECT `+sessionRepoSQL+`,COALESCE(s.agent_id,''),s.harness,s.worker FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &agent, &harness, &w)
 	return project, agent, harness, w != "", err
+}
+
+func (s *Store) sessionIdentity(session string) (project, agent, harness string, worker bool, err error) {
+	return sessionIdentityQuery(s.db, session)
 }
 
 func (s *Store) resolveContext(session, callerOverride string, isRun bool) (resolvedContext, error) {
@@ -84,7 +93,7 @@ func (s *Store) resolveContext(session, callerOverride string, isRun bool) (reso
 		c.CallerContext = true
 		agent = callerOverride
 		if !isRun {
-			err = s.db.QueryRow(`SELECT COALESCE(CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=s.id) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=s.id ORDER BY created_at DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.owner')) END,'') FROM sessions s WHERE id=?`, session).Scan(&agent)
+			err = s.db.QueryRow(`SELECT COALESCE(CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=s.id) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=s.id ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.owner')) END,'') FROM sessions s WHERE id=?`, session).Scan(&agent)
 			if err != nil {
 				return c, err
 			}

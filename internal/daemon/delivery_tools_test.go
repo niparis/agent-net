@@ -518,3 +518,17 @@ func TestChangesFindForTheOwnersTUI(t *testing.T) {
 		}
 	}
 }
+
+func TestDeliverySubmitRejectsRepoContextMismatch(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	lc, _ := helloDelivery(t, n, "repo-context", wt, "claude-opus-5-5")
+	f.answer("policy.get", func(json.RawMessage) (any, error) { return protocol.PolicyGot{Project: "different"}, nil })
+	_, err := lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Branch: "feat/x", TargetBranch: "main"})
+	if err == nil || !strings.Contains(err.Error(), "session's repo context") {
+		t.Fatalf("submit mismatch: %v", err)
+	}
+	if len(f.frames(protocol.FrameChangeSubmit)) != 0 {
+		t.Fatal("submitted from a different repo")
+	}
+}

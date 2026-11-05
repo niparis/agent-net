@@ -29,7 +29,7 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 		err = s.stopMergerTx(tx, q.Project, actor)
 	} else {
 		var valid int
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND COALESCE(NULLIF(s.repo_project,''),p.project,'')=? AND s.worker='' AND s.harness='claude')`, q.SessionID, q.NodeID, q.Project).Scan(&valid)
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='' AND s.harness='claude')`, q.SessionID, q.NodeID, q.Project).Scan(&valid)
 		if err != nil {
 			return err
 		}

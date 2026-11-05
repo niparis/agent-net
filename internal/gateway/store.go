@@ -2149,7 +2149,8 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  'label',wa.label,'bottleneck',wa.bottleneck,'confidence',wa.confidence,'rules_version',wa.rules_version,
  'judge_harness',wa.judge_harness,'judge_model',wa.judge_model,'reasons',json(wa.reasons),
  'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
- WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),'')
+ WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
+ COALESCE(s.repo_id,'')
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -2164,7 +2165,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext)
 	if err != nil {
 		return a, err
 	}

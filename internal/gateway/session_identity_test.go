@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -177,4 +178,142 @@ func TestWorkerRunKeepsEmptyCallerAgentAtStart(t *testing.T) {
 	if err != nil || c.Agent != "" {
 		t.Fatalf("run context %+v: %v", c, err)
 	}
+}
+
+func TestSessionIdentityRepoDrivesMergerAndPolicy(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetCharter("other", "accepts", "Other work", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "pi", NativeID: "other-context", Repo: protocol.RepoInfo{Project: "other", Root: "/code/other"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other' WHERE id=?`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "other", NodeID: r.a, SessionID: r.sonnet}, "owner"); err != nil {
+		t.Fatalf("context merger rejected: %v", err)
+	}
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet}, "owner"); err == nil {
+		t.Fatal("stale project accepted for merger")
+	}
+	got, err := deliveryCall[protocol.PolicyGot](r, r.a, "context.get", protocol.PolicyGet{SessionID: r.sonnet})
+	if err != nil || !strings.Contains(got.Charter, "Other work") {
+		t.Fatalf("context %q: %v", got.Charter, err)
+	}
+}
+
+func TestDeliveryClaimUsesSessionRepoIdentity(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other' WHERE id=?`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id,revision,step,owner_node,created_at) VALUES('change',1,'test','other',1)`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := r.s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	found, err := claimNodeTask(tx, protocol.Change{ID: "change", Revision: 1}, protocol.StepRef{Step: "test"}, r.sonnet, r.a, false)
+	if err != nil || !found {
+		t.Fatalf("claim found=%v err=%v", found, err)
+	}
+}
+
+func TestSessionIdentityRepoDrivesAgentCharter(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetCharter("other", "accepts", "Other work", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other' WHERE id=?`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	a, ok, err := r.s.Agent(r.sonnet)
+	if err != nil || !ok || a.Charter.Accepts != "Other work" {
+		t.Fatalf("charter %+v ok=%v err=%v", a.Charter, ok, err)
+	}
+}
+
+func TestWorkerRunUsesLatestStartWithSameTimestamp(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.AddArchitect("advisor", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='advisor' WHERE id=?`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.TrackWorkerStart("first", r.a, r.caller, "demo", "claude", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.startSession(r.a, "first", r.worker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='demo' WHERE id=?`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.TrackWorkerStart("second", r.a, r.caller, "demo", "claude", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.startSession(r.a, "second", r.worker); err != nil {
+		t.Fatal(err)
+	}
+	c, err := r.s.resolveSessionContext(r.worker)
+	if err != nil || c.Agent != "demo" {
+		t.Fatalf("latest worker context %+v: %v", c, err)
+	}
+	if err := r.s.RecordWorkerRun(protocol.WorkerRun{NodeID: r.a, SessionID: r.worker, Harness: "claude", Outcome: protocol.OutcomeComplete, CallerSessionID: r.caller}); err != nil {
+		t.Fatal(err)
+	}
+	var agent string
+	if err := r.s.db.QueryRow(`SELECT COALESCE(caller_agent_id,'') FROM worker_runs WHERE session_id=?`, r.worker).Scan(&agent); err != nil || agent != "demo" {
+		t.Fatalf("latest run agent %q: %v", agent, err)
+	}
+}
+
+func TestSessionIdentityRepoDrivesSessionFind(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other' WHERE id=?`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	page, err := r.s.FindSessions(protocol.SessionsFindRequest{Project: "other", Online: "any"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range page.Items {
+		if row.ID == r.sonnet && row.Project == "other" {
+			return
+		}
+	}
+	t.Fatalf("missing session in repo context: %+v", page.Items)
+}
+
+func TestSessionFindKeepsLegacyAnnouncedProjectDisplay(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.db.Exec(`INSERT INTO profiles(session_id,name,function,project,capabilities,task,updated_at,expertise) VALUES(?,'','','announced','[]','',1,'') ON CONFLICT(session_id) DO UPDATE SET project='announced'`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	page, err := r.s.FindSessions(protocol.SessionsFindRequest{Project: "announced", Online: "any"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range page.Items {
+		if row.ID == r.sonnet && row.Project == "announced" {
+			return
+		}
+	}
+	t.Fatalf("legacy announced project changed: %+v", page.Items)
 }
