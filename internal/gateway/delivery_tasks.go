@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -598,6 +599,96 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context) {
 	}
 }
 
+// stepRun returns the steps to hand out in one task: ref, which has just
+// become ready, and at most the next step that may follow it in the same task.
+// That step must have the same owner, run in the same phase, and wait only for
+// ref. Steps left out of this change's pipeline do not break the pairing, but
+// the pair never crosses the merge.
+func stepRun(p protocol.Pipeline, c protocol.Change, evidence []protocol.Evidence, ref protocol.StepRef) []protocol.StepRef {
+	status := p.Status(c, evidence)
+	start := -1
+	for i := range p.Steps {
+		if p.Steps[i].StepRef == ref {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return []protocol.StepRef{ref}
+	}
+	run := []protocol.StepRef{ref}
+	hypothetical := append([]protocol.Evidence(nil), evidence...)
+	previous := p.Steps[start]
+	for i := start + 1; i < len(p.Steps); i++ {
+		next := p.Steps[i]
+		if status[i].State == protocol.StepStateSkipped {
+			continue
+		}
+		if next.AfterMerge != p.Steps[start].AfterMerge || next.Owner != previous.Owner || status[i].State != protocol.StepStateWaiting {
+			break
+		}
+		var requires []protocol.Requirement
+		for _, r := range next.Requires {
+			if r.StepRef == previous.StepRef {
+				requires = append(requires, r)
+			}
+		}
+		if len(requires) == 0 {
+			break
+		}
+		hypothetical = append(hypothetical, hypotheticalPass(c, previous, requires))
+		if ok, _ := p.Ready(next.StepRef, c, hypothetical); !ok {
+			break
+		}
+		run = append(run, next.StepRef)
+		break
+	}
+	return run
+}
+
+// hypotheticalPass is the pass that previous would report, carrying every
+// field the next step requires of it. Ready then says whether previous is the
+// only thing still missing.
+func hypotheticalPass(c protocol.Change, previous protocol.PipelineStep, requires []protocol.Requirement) protocol.Evidence {
+	commit := c.HeadCommit
+	if previous.AfterMerge {
+		commit = c.MergedCommit
+	}
+	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, StepRef: previous.StepRef,
+		Result: protocol.StepResultPass, Commit: commit, Fields: map[string]string{}}
+	for _, r := range requires {
+		for k, v := range r.Fields {
+			if v == protocol.FieldAny {
+				v = "set"
+			}
+			e.Fields[k] = v
+		}
+	}
+	if previous.Independent != "" {
+		e.Fields[protocol.FieldIndependent] = previous.Independent
+	}
+	if len(e.Fields) == 0 {
+		e.Fields = nil
+	}
+	return e
+}
+
+func stepRefName(r protocol.StepRef) string {
+	name := r.Step
+	if r.For != "" {
+		name += " for " + r.For
+	}
+	return name
+}
+
+func stepRunNames(run []protocol.StepRef) []string {
+	names := make([]string, 0, len(run))
+	for _, r := range run {
+		names = append(names, stepRefName(r))
+	}
+	return names
+}
+
 func (s *Store) storeStepTaskMessage(t nodeTaskTarget) (protocol.Message, error) {
 	return s.storeStepTaskMessages([]nodeTaskTarget{t})
 }
@@ -608,16 +699,81 @@ func (s *Store) storeStepTaskMessages(targets []nodeTaskTarget) (protocol.Messag
 
 func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBatch bool) (protocol.Message, error) {
 	type notice struct {
-		target     nodeTaskTarget
+		targets    []nodeTaskTarget
 		body, line string
+		order      string
 	}
-	var notices []notice
-	isBatch := forceBatch || len(targets) > 1
-	for _, t := range targets {
-		c, ok, err := queryChange(s.db, `id=?`, t.id)
-		if err != nil || !ok {
+	type details struct {
+		change   protocol.Change
+		pipeline protocol.Pipeline
+		evidence []protocol.Evidence
+	}
+	targetID := func(t nodeTaskTarget) string {
+		return fmt.Sprintf("%s|%d|%s|%s|%t|%s", t.id, t.revision, t.ref.Step, t.ref.For, t.ref.AfterMerge, t.session)
+	}
+	loaded := map[string]*details{}
+	pipelines := map[string]protocol.Pipeline{}
+	stepIndex := func(p protocol.Pipeline, ref protocol.StepRef) int {
+		for i := range p.Steps {
+			if p.Steps[i].StepRef == ref {
+				return i
+			}
+		}
+		return len(p.Steps)
+	}
+	queue := append([]nodeTaskTarget(nil), targets...)
+	for _, t := range queue {
+		if _, ok := loaded[t.id]; ok {
+			continue
+		}
+		c, found, err := queryChange(s.db, `id=?`, t.id)
+		if err != nil {
 			return protocol.Message{}, err
 		}
+		if !found {
+			loaded[t.id] = nil
+			continue
+		}
+		p, ok := pipelines[c.Project]
+		if !ok {
+			p, err = s.deliveryPipeline(c.Project)
+			if err != nil {
+				return protocol.Message{}, err
+			}
+			pipelines[c.Project] = p
+		}
+		evidence, err := changeEvidence(s.db, c.ID)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		loaded[t.id] = &details{change: c, pipeline: p, evidence: evidence}
+	}
+	// Pipeline order keeps a pair together whatever order the dispatch query
+	// returned the tasks in.
+	sort.SliceStable(queue, func(a, b int) bool {
+		ta, tb := queue[a], queue[b]
+		if ta.id != tb.id {
+			return ta.id < tb.id
+		}
+		da, db := loaded[ta.id], loaded[tb.id]
+		if da == nil || db == nil {
+			return false
+		}
+		return stepIndex(da.pipeline, ta.ref) < stepIndex(db.pipeline, tb.ref)
+	})
+	var notices []notice
+	seen := map[string]bool{}
+	isBatch := forceBatch || len(targets) > 1
+	for i, t := range queue {
+		if seen[targetID(t)] {
+			continue
+		}
+		seen[targetID(t)] = true
+		d := loaded[t.id]
+		if d == nil {
+			continue
+		}
+		c := d.change
 		if c.Revision != t.revision || (t.ref.AfterMerge && c.State != protocol.ChangeMerged) || (!t.ref.AfterMerge && c.State != protocol.ChangeOpen) {
 			continue
 		}
@@ -625,46 +781,95 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		if t.ref.AfterMerge {
 			commit = c.MergedCommit
 		}
-		line := fmt.Sprintf("change: %s | step: %s | after_merge: %t | commit: %s | title: %s", c.ID, t.ref.String(), t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))
-		var body string
-		if !isBatch {
-			p, err := s.deliveryPipeline(c.Project)
-			if err != nil {
-				return protocol.Message{}, err
+		// Hand out the next step after this one in the same task when it waits
+		// only for this step and the same session owns it.
+		group := []nodeTaskTarget{t}
+		run := []protocol.StepRef{t.ref}
+		for _, ref := range stepRun(d.pipeline, c, d.evidence, t.ref)[1:] {
+			paired := -1
+			for j := i + 1; j < len(queue); j++ {
+				candidate := queue[j]
+				if seen[targetID(candidate)] || candidate.id != t.id || candidate.revision != t.revision ||
+					candidate.session != t.session || candidate.ref != ref {
+					continue
+				}
+				paired = j
+				break
 			}
-			evidence, err := changeEvidence(s.db, c.ID)
-			if err != nil {
-				return protocol.Message{}, err
+			if paired < 0 {
+				break
 			}
-			encoded, err := json.Marshal(evidence)
-			if err != nil {
-				return protocol.Message{}, err
-			}
-			var stat string
-			err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return protocol.Message{}, err
-			}
-			if stat == "" {
-				stat = "not available"
-			}
-			displayOwner := t.owner
-			if displayOwner == callerTaskOwner {
-				displayOwner = "caller"
-			}
-			if displayOwner == delegateTaskOwner {
-				displayOwner = "delegate"
-			}
-			body = fmt.Sprintf("[agent-net step task]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
-				c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
-				protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(p.ReportFields(t.ref), ", "))
+			seen[targetID(queue[paired])] = true
+			group = append(group, queue[paired])
+			run = append(run, ref)
 		}
-		notices = append(notices, notice{t, body, line})
+		displayOwner := t.owner
+		if displayOwner == callerTaskOwner {
+			displayOwner = "caller"
+		}
+		if displayOwner == delegateTaskOwner {
+			displayOwner = "delegate"
+		}
+		if len(group) == 1 {
+			line := fmt.Sprintf("change: %s | step: %s | after_merge: %t | commit: %s | title: %s", c.ID, t.ref.String(), t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))
+			var body string
+			if !isBatch {
+				encoded, err := json.Marshal(d.evidence)
+				if err != nil {
+					return protocol.Message{}, err
+				}
+				var stat string
+				err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
+				if err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return protocol.Message{}, err
+				}
+				if stat == "" {
+					stat = "not available"
+				}
+				body = fmt.Sprintf("[agent-net step task]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
+					c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
+					protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(d.pipeline.ReportFields(t.ref), ", "))
+			}
+			notices = append(notices, notice{targets: group, body: body, line: line})
+			continue
+		}
+		names := stepRunNames(run)
+		steps := strings.Join(names, ", ")
+		if t.ref.AfterMerge {
+			steps += " (after merge)"
+		}
+		encoded, err := json.Marshal(d.evidence)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		var stat string
+		err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return protocol.Message{}, err
+		}
+		if stat == "" {
+			stat = "not available"
+		}
+		var fields []string
+		for _, ref := range run {
+			want := d.pipeline.ReportFields(ref)
+			text := "(none)"
+			if len(want) > 0 {
+				text = strings.Join(want, ", ")
+			}
+			fields = append(fields, stepRefName(ref)+": "+text)
+		}
+		order := strings.Join(names, ", then ")
+		line := fmt.Sprintf("change: %s | steps: %s | after_merge: %t | commit: %s | title: %s", c.ID, steps, t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))
+		body := fmt.Sprintf("[agent-net step tasks]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nsteps: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields:\n%s\nClaim and report each step in order: %s.",
+			c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, steps, protocol.NeutralizeMarkers(displayOwner),
+			protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(fields, "\n"), order)
+		notices = append(notices, notice{targets: group, body: body, line: line, order: order})
 	}
 	if len(notices) == 0 {
 		return protocol.Message{}, nil
 	}
-	t := notices[0].target
+	t := notices[0].targets[0]
 	now := s.now().UTC()
 	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: "agent-net", FromName: "agent-net", FromHarness: "agent-net",
 		To: t.session, Type: protocol.TypeNotification, IdempotencyKey: protocol.NewID("step"),
@@ -676,39 +881,53 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 	defer tx.Rollback()
 	var included []notice
 	for _, item := range notices {
-		t := item.target
-		// A notice can expire while its task remains unclaimed. Its association
-		// must not prevent a fresh notice when the same session comes back.
-		if _, err := tx.Exec(`DELETE FROM delivery_step_messages WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND session_id=?
-		AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id=delivery_step_messages.message_id AND m.state<>'expired')`,
-			t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session); err != nil {
-			return protocol.Message{}, err
+		added := false
+		for _, t := range item.targets {
+			// A notice can expire while its task remains unclaimed. Its association
+			// must not prevent a fresh notice when the same session comes back.
+			if _, err := tx.Exec(`DELETE FROM delivery_step_messages WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND session_id=?
+			AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id=delivery_step_messages.message_id AND m.state<>'expired')`,
+				t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session); err != nil {
+				return protocol.Message{}, err
+			}
+			res, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
+			SELECT change_id,revision,step,for_step,after_merge,?,? FROM delivery_step_tasks
+			WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0 AND claimed_by='' AND owner_node=?
+			AND EXISTS(SELECT 1 FROM delivery_changes c WHERE c.id=delivery_step_tasks.change_id AND c.revision=delivery_step_tasks.revision
+			AND ((delivery_step_tasks.after_merge=0 AND c.state='open') OR (delivery_step_tasks.after_merge=1 AND c.state='merged')))`,
+				t.session, m.ID, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner)
+			if err != nil {
+				return protocol.Message{}, err
+			}
+			if n, err := res.RowsAffected(); err != nil {
+				return protocol.Message{}, err
+			} else if n > 0 {
+				added = true
+			}
 		}
-		res, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
-		SELECT change_id,revision,step,for_step,after_merge,?,? FROM delivery_step_tasks
-		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0 AND claimed_by='' AND owner_node=?
-		AND EXISTS(SELECT 1 FROM delivery_changes c WHERE c.id=delivery_step_tasks.change_id AND c.revision=delivery_step_tasks.revision
-		AND ((delivery_step_tasks.after_merge=0 AND c.state='open') OR (delivery_step_tasks.after_merge=1 AND c.state='merged')))`,
-			t.session, m.ID, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner)
-		if err != nil {
-			return protocol.Message{}, err
+		if added {
+			included = append(included, item)
 		}
-		if n, err := res.RowsAffected(); err != nil {
-			return protocol.Message{}, err
-		} else if n == 0 {
-			continue
-		}
-		included = append(included, item)
 	}
 	if len(included) == 0 {
 		return protocol.Message{}, nil
 	}
-	if !isBatch && len(included) == 1 {
+	if len(included) == 1 && included[0].body != "" {
 		m.Body = included[0].body
 	} else {
 		lines := []string{"[agent-net step tasks]"}
 		for _, item := range included {
 			lines = append(lines, item.line)
+		}
+		for _, item := range included {
+			if item.order == "" {
+				continue
+			}
+			prefix := ""
+			if len(included) > 1 {
+				prefix = "Change " + item.targets[0].id + ": "
+			}
+			lines = append(lines, prefix+"Claim and report each step in order: "+item.order+".")
 		}
 		lines = append(lines, "Claim each task with agent_step_claim before starting, then report the result with agent_step_report from your session. Use agent_changes_find for change details.")
 		m.Body = strings.Join(lines, "\n")
@@ -792,10 +1011,29 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 				return err
 			}
 		}
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks
+		result, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks
 			(change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,?,?,?,?,?,?)`,
-			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), ownerNode, now); err != nil {
+			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), ownerNode, now)
+		if err != nil {
 			return err
+		}
+		inserted, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if inserted == 0 {
+			// The step was already handed out; a later step that becomes ready
+			// now is its own task, not another partner for an old notice.
+			continue
+		}
+		// Hand the next step out with this one when it needs only this step.
+		// Each step keeps its own task row, evidence and order.
+		for _, next := range stepRun(p, c, evidence, ref)[1:] {
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks
+				(change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,?,?,?,?,?,?)`,
+				c.ID, c.Revision, next.Step, next.For, boolInt(next.AfterMerge), ownerNode, now); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -921,6 +1159,30 @@ func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.S
 	_, err = tx.Exec(`INSERT INTO delivery_step_inbox(change_id,revision,step,for_step,after_merge,commit_hash,item_id) VALUES(?,?,?,?,?,?,?)`,
 		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), commit, item.ID)
 	return err
+}
+
+// stepTaskQueued reports whether a task row already exists for ref on this
+// revision. A queued task can be claimed or reported even when the step is not
+// ready yet, for example the second step of a pair task.
+func stepTaskQueued(q deliveryQuerier, c protocol.Change, ref protocol.StepRef) (bool, error) {
+	var exists int
+	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks
+		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&exists)
+	return exists != 0, err
+}
+
+// checkStepReady refuses a queued step whose pipeline requirements have not
+// passed. The refusal names the requirement that is missing.
+func checkStepReady(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, ref protocol.StepRef) error {
+	evidence, err := changeEvidence(tx, c.ID)
+	if err != nil {
+		return err
+	}
+	if ready, missing := p.Ready(ref, c, evidence); !ready {
+		return reject("%s is not ready: %s", ref, strings.Join(missing, "; "))
+	}
+	return nil
 }
 
 // claimNodeTask awards a queued task to the first eligible claimant or
@@ -1069,6 +1331,15 @@ func (s *Store) ClaimStep(machine string, q protocol.StepClaimRequest) (protocol
 	}
 	if err := checkApprovalTaskPolicy(tx, c, p, q.StepRef); err != nil {
 		return protocol.StepClaimResult{}, err
+	}
+	queued, err := stepTaskQueued(tx, c, q.StepRef)
+	if err != nil {
+		return protocol.StepClaimResult{}, err
+	}
+	if queued {
+		if err := checkStepReady(tx, c, p, q.StepRef); err != nil {
+			return protocol.StepClaimResult{}, err
+		}
 	}
 	found, err := claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, false)
 	if err != nil {

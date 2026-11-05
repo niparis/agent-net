@@ -64,6 +64,17 @@ after a short quiet window (10 s with no new task for that recipient, capped at
 25 lines per message). A single isolated task keeps the full format with diff
 stat and evidence.
 
+**Two consecutive steps of one owner are one task.** When a step becomes ready
+and the step after it in the pipeline has the same owner and needs only that
+step, the gateway queues both and names them in one message,
+`steps: release, verify (after merge)`. Steps left out of the change's pipeline
+do not break the pair, and it never crosses the merge. This happens when the
+first step is first queued, so the pair is one notice; a step that was already
+handed out keeps its own task. The message tells the owner to claim and report
+each step in order. Each step keeps its own task, evidence and report on the
+exact commit, and reporting the first does not send another message for the
+second.
+
 ## Not decided here
 
 The design's open questions stay the owner's: where step owners are stored,
