@@ -528,9 +528,10 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	// One send to the worker can take about a second under the race detector
-	// on a busy machine, and the worker counts as idle while it is in flight.
-	// The limit stays well above that; the talk below lasts longer than it,
-	// so a worker that ignored the messages would still end during the talk.
+	// on a busy machine. It keeps the worker alive while it is in flight (see
+	// TestWorkerWithMessageInFlightIsNotIdle), and the limit stays well above
+	// that. The talk below lasts longer than the limit, so a worker that
+	// ignored the messages would still end during the talk.
 	set.Idle = 2 * time.Second
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
@@ -546,6 +547,61 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	}
 	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 0 {
 		t.Fatalf("a worker that was talked to ended: %v", evs)
+	}
+	w.workerStopped(t, g, protocol.StopIdle) // then it goes quiet and ends
+}
+
+// A message that is still on its way through the gateway keeps the worker
+// alive, even when the round trip takes longer than the idle limit. The send
+// restarts the idle clock when it is handed to the gateway, so a worker with a
+// message in flight must not be ended before that message lands.
+func TestWorkerWithMessageInFlightIsNotIdle(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.Idle = 400 * time.Millisecond
+	held := make(chan struct{}, 1)
+	release := make(chan struct{})
+	w := startWorkerNode(t, g, set, func(c *Config) {
+		c.testGatewayCall = func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
+			if p, ok := params.(protocol.MsgSend); typ == "msg.send" && ok && p.Body == "slow ping" {
+				held <- struct{}{}
+				<-release
+			}
+			return nil, false, nil
+		}
+	})
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
+	sent := make(chan error, 1)
+	go func() {
+		_, err := w.cli.call("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "slow ping"})
+		sent <- err
+	}()
+	select {
+	case <-held:
+	case <-time.After(scaled(10 * time.Second)):
+		close(release)
+		t.Fatal("the slow send did not start")
+	}
+	// Hold the send for longer than the idle limit. Before the message lands
+	// the worker must not be ended: the owner is talking to it.
+	time.Sleep(3 * set.Idle)
+	work := w.d.workerBySession(res.SessionID)
+	stopping := true
+	if work != nil {
+		w.d.wmu.Lock()
+		stopping = work.stopping
+		w.d.wmu.Unlock()
+	}
+	if work == nil || stopping {
+		close(release)
+		t.Fatalf("a worker with a message in flight was ended as idle (running=%v stopping=%v)", work != nil, stopping)
+	}
+	close(release)
+	if err := <-sent; err != nil {
+		t.Fatalf("owner_send with a message in flight: %v", err)
 	}
 	w.workerStopped(t, g, protocol.StopIdle) // then it goes quiet and ends
 }
