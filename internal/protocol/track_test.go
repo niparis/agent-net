@@ -172,6 +172,7 @@ func TestWorkerOutcomeInfrastructure(t *testing.T) {
 		{StopModelFails, "Individual quota reached", "infra"}, {StopModelFails, "rate limit exceeded", "infra"}, {StopModelFails, "rate_limit", "infra"}, {StopModelFails, "too many requests", "infra"}, {StopModelFails, "status 429", "infra"}, {StopModelFails, "not logged in", "infra"},
 		{StopModelFails, "The Codex turn failed: Selected model is at capacity. Please try a different model.", "infra"},
 		{StopModelFails, "Anthropic is overloaded", "infra"},
+		{StopModelFails, "Timed out waiting for response headers", "infra"}, {StopRunFailed, "provider timeout", "infra"}, {StopModelFails, "HTTP 503", "infra"},
 		{StopLost, "", "infra"}, {StopStartFails, "missing Go toolchain", "infra"},
 		{StopModelFails, "model crashed", OutcomeFailed}, {StopExited, "", OutcomeFailed},
 	} {
