@@ -117,13 +117,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	branch := dashIfEmpty(a.Repo.Branch)
 	model := a.Model
-	switch a.Mode {
-	case protocol.ModeForeground:
-		model += ", foreground"
-	case protocol.ModeBackground:
-		model += ", background"
-	}
-	model = dashIfEmpty(strings.TrimPrefix(model, ", "))
+	model = dashIfEmpty(model)
 	var out []string
 	for _, p := range a.Pending {
 		verb := "from"
@@ -158,6 +152,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		kv("branch", branch),
 		kv("model", model),
 	)
+	if runs := runText(a); runs != "" {
+		out = append(out, kv("runs", runs))
+	}
 	if t := toolsText(a); t != "" {
 		out = append(out, clip("  "+sDim.Render(cell("tools", lw))+" "+sBusy.Render(t), w))
 	}
