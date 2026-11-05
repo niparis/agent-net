@@ -67,6 +67,15 @@ type Options struct {
 	// TempFolders lists folders whose sessions belong to no project. Nil uses
 	// the system temporary folders; an empty list turns the rule off (tests).
 	TempFolders []string
+	// StepTaskQuietWindow is how long to wait with no new tasks before
+	// flushing a batched step task message. Default 10s.
+	StepTaskQuietWindow time.Duration
+	// StepTaskRecentWindow is how long after a step task message to coalesce
+	// new tasks into a pending batch. Default 30s.
+	StepTaskRecentWindow time.Duration
+	// StepTaskBatchCap is the maximum number of task lines in one batch message.
+	// Default 25.
+	StepTaskBatchCap int
 }
 
 type Gateway struct {
@@ -113,6 +122,15 @@ type Gateway struct {
 
 	// usage holds the newest CPU and memory report of each node (usage.go).
 	usage usageTable
+
+	// Step task batching and coalescing.
+	stepTaskQuietWindow  time.Duration
+	stepTaskRecentWindow time.Duration
+	stepTaskBatchCap     int
+	stepBatchesMu        sync.Mutex
+	stepBatches          map[string]*stepTaskBatch
+	lastReportMu         sync.Mutex
+	lastReportBySession  map[string]time.Time
 
 	mu                sync.Mutex
 	conns             map[string]*nodeConn
@@ -269,7 +287,9 @@ func New(opts Options) (*Gateway, error) {
 	}
 	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*offlineTimer{},
-		enrollLimit: newEnrollLimiter(opts.Now)}
+		enrollLimit: newEnrollLimiter(opts.Now),
+		stepBatches: make(map[string]*stepTaskBatch), lastReportBySession: make(map[string]time.Time),
+		stepTaskQuietWindow: opts.StepTaskQuietWindow, stepTaskRecentWindow: opts.StepTaskRecentWindow, stepTaskBatchCap: opts.StepTaskBatchCap}
 	store.settingsHook = func() { go g.settingsChanged() }
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
@@ -318,6 +338,14 @@ func (g *Gateway) Close() error {
 	for _, t := range g.timers {
 		t.timer.Stop()
 	}
+	g.stepBatchesMu.Lock()
+	for _, b := range g.stepBatches {
+		if b.timer != nil {
+			b.timer.Stop()
+		}
+	}
+	g.stepBatches = nil
+	g.stepBatchesMu.Unlock()
 	conns := make([]*nodeConn, 0, len(g.conns))
 	for _, c := range g.conns {
 		conns = append(conns, c)

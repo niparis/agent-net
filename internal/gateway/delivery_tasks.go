@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
@@ -88,7 +89,16 @@ func retireStepMessages(tx *sql.Tx, change string) error {
 		 AND t.for_step=d.for_step AND t.after_merge=d.after_merge
 		JOIN delivery_changes c ON c.id=t.change_id WHERE d.change_id=? AND
 		 (t.revision<>c.revision OR t.completed=1 OR (t.claimed_by<>'' AND t.claimed_by<>d.session_id)
-		 OR (t.after_merge=0 AND c.state<>'open') OR (t.after_merge=1 AND c.state<>'merged')))`, change)
+		 OR (t.after_merge=0 AND c.state<>'open') OR (t.after_merge=1 AND c.state<>'merged'))
+		 AND NOT EXISTS (
+			SELECT 1 FROM delivery_step_messages d2
+			JOIN delivery_step_tasks t2 ON t2.change_id=d2.change_id AND t2.revision=d2.revision AND t2.step=d2.step
+			 AND t2.for_step=d2.for_step AND t2.after_merge=d2.after_merge
+			JOIN delivery_changes c2 ON c2.id=t2.change_id
+			WHERE d2.message_id=d.message_id
+			 AND t2.revision=c2.revision AND t2.completed=0
+			 AND (t2.claimed_by='' OR t2.claimed_by=d2.session_id)
+			 AND ((t2.after_merge=0 AND c2.state='open') OR (t2.after_merge=1 AND c2.state='merged'))))`, change)
 	return err
 }
 
@@ -244,8 +254,177 @@ func checkApprovalTaskPolicy(tx *sql.Tx, c protocol.Change, p protocol.Pipeline,
 	return nil
 }
 
-// dispatchStepTasks writes one system notification per eligible session. The
-// task itself remains in the gateway until a session reports it.
+const defaultStepTaskQuietWindow = 10 * time.Second
+const defaultStepTaskRecentWindow = 30 * time.Second
+const defaultStepTaskBatchCap = 25
+
+type stepTaskBatch struct {
+	session string
+	targets []nodeTaskTarget
+	timer   *time.Timer
+}
+
+func (g *Gateway) quietWindow() time.Duration {
+	if g.stepTaskQuietWindow > 0 {
+		return g.stepTaskQuietWindow
+	}
+	if g.opts.StepTaskQuietWindow > 0 {
+		return g.opts.StepTaskQuietWindow
+	}
+	return defaultStepTaskQuietWindow
+}
+
+func (g *Gateway) recentWindow() time.Duration {
+	if g.stepTaskRecentWindow > 0 {
+		return g.stepTaskRecentWindow
+	}
+	if g.opts.StepTaskRecentWindow > 0 {
+		return g.opts.StepTaskRecentWindow
+	}
+	return defaultStepTaskRecentWindow
+}
+
+func (g *Gateway) batchCap() int {
+	if g.stepTaskBatchCap > 0 {
+		return g.stepTaskBatchCap
+	}
+	if g.opts.StepTaskBatchCap > 0 {
+		return g.opts.StepTaskBatchCap
+	}
+	return defaultStepTaskBatchCap
+}
+
+func (g *Gateway) recordSessionReport(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	g.lastReportMu.Lock()
+	if g.lastReportBySession == nil {
+		g.lastReportBySession = make(map[string]time.Time)
+	}
+	g.lastReportBySession[sessionID] = time.Now()
+	g.lastReportMu.Unlock()
+}
+
+func targetInBatch(list []nodeTaskTarget, t nodeTaskTarget) bool {
+	for _, x := range list {
+		if x.id == t.id && x.revision == t.revision && x.ref == t.ref && x.session == t.session {
+			return true
+		}
+	}
+	return false
+}
+
+// sessionHasRecentStepMessage checks if the session has an undelivered step-task message
+// or one created within recentWindow.
+func (s *Store) sessionHasRecentStepMessage(session string, recentWindow time.Duration) (bool, error) {
+	cutoff := s.now().Add(-recentWindow).UnixNano()
+	var exists int
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages m
+		JOIN delivery_step_messages d ON d.message_id=m.id
+		WHERE m.recipient=? AND m.sender='agent-net' AND m.state<>'expired'
+		AND (m.state IN ('stored','dispatched') OR m.created_at>=?))`, session, cutoff).Scan(&exists)
+	return exists != 0, err
+}
+
+// sessionReportedEarlierStep checks if the session reported earlier evidence on this change.
+func (s *Store) sessionReportedEarlierStep(target nodeTaskTarget) (bool, error) {
+	var exists int
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_evidence
+		WHERE change_id=? AND revision=? AND (by=? OR reported_by=?))`,
+		target.id, target.revision, target.session, target.session).Scan(&exists)
+	return exists != 0, err
+}
+
+func (g *Gateway) shouldCoalesceSession(session string, targets []nodeTaskTarget) bool {
+	if b, ok := g.stepBatches[session]; ok && len(b.targets) > 0 {
+		return true
+	}
+	g.lastReportMu.Lock()
+	lastReport, hasReported := g.lastReportBySession[session]
+	g.lastReportMu.Unlock()
+	if hasReported && time.Since(lastReport) <= g.recentWindow() {
+		return true
+	}
+	recent, err := g.store.sessionHasRecentStepMessage(session, g.recentWindow())
+	if err == nil && recent {
+		return true
+	}
+	for _, t := range targets {
+		earlier, err := g.store.sessionReportedEarlierStep(t)
+		if err == nil && earlier {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Gateway) flushStepTasks(session string) {
+	g.stepBatchesMu.Lock()
+	if g.stepBatches == nil {
+		g.stepBatchesMu.Unlock()
+		return
+	}
+	b, ok := g.stepBatches[session]
+	if !ok || len(b.targets) == 0 {
+		delete(g.stepBatches, session)
+		g.stepBatchesMu.Unlock()
+		return
+	}
+	if b.timer != nil {
+		b.timer.Stop()
+		b.timer = nil
+	}
+	toSend := b.targets
+	delete(g.stepBatches, session)
+	g.stepBatchesMu.Unlock()
+
+	g.sendStepTaskBatch(context.Background(), toSend)
+}
+
+func (g *Gateway) flushStepTaskBatches() {
+	g.stepBatchesMu.Lock()
+	if g.stepBatches == nil {
+		g.stepBatchesMu.Unlock()
+		return
+	}
+	var sessions []string
+	for s := range g.stepBatches {
+		sessions = append(sessions, s)
+	}
+	g.stepBatchesMu.Unlock()
+
+	for _, s := range sessions {
+		g.flushStepTasks(s)
+	}
+}
+
+func (g *Gateway) sendStepTaskBatch(ctx context.Context, targets []nodeTaskTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	cap := g.batchCap()
+	for len(targets) > 0 {
+		n := len(targets)
+		if n > cap {
+			n = cap
+		}
+		chunk := targets[:n]
+		targets = targets[n:]
+		m, err := g.store.storeStepTaskMessagesInternal(chunk, true)
+		if err != nil {
+			g.logLine("error", "where", "step task message", "err", err)
+			continue
+		}
+		if m.ID != "" {
+			g.dispatch(ctx, m)
+		}
+	}
+}
+
+// dispatchStepTasks writes system notifications per eligible session.
+// Tasks are coalesced into batches per recipient when the session has recent activity
+// or reported the step before it.
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	g.wakeOfflineStepOwners(ctx)
 	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id
@@ -285,15 +464,67 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	for _, target := range targets {
 		groups[target.session] = append(groups[target.session], target)
 	}
-	for _, group := range groups {
-		m, err := g.store.storeStepTaskMessages(group)
-		if err != nil {
-			g.logLine("error", "where", "step task message", "err", err)
-			continue
+
+	cap := g.batchCap()
+	quiet := g.quietWindow()
+
+	var flushBatches [][]nodeTaskTarget
+	g.stepBatchesMu.Lock()
+	if g.stepBatches == nil {
+		g.stepBatches = make(map[string]*stepTaskBatch)
+	}
+
+	for session, group := range groups {
+		if g.shouldCoalesceSession(session, group) {
+			b, ok := g.stepBatches[session]
+			if !ok {
+				b = &stepTaskBatch{session: session}
+				g.stepBatches[session] = b
+			}
+			for _, t := range group {
+				if !targetInBatch(b.targets, t) {
+					b.targets = append(b.targets, t)
+				}
+			}
+			for len(b.targets) >= cap {
+				chunk := b.targets[:cap]
+				b.targets = b.targets[cap:]
+				flushBatches = append(flushBatches, chunk)
+			}
+			if len(b.targets) == 0 {
+				if b.timer != nil {
+					b.timer.Stop()
+					b.timer = nil
+				}
+				delete(g.stepBatches, session)
+			} else {
+				sess := session
+				if b.timer != nil {
+					b.timer.Stop()
+				}
+				b.timer = time.AfterFunc(quiet, func() {
+					g.flushStepTasks(sess)
+				})
+			}
+		} else {
+			if len(group) == 1 {
+				m, err := g.store.storeStepTaskMessagesInternal(group, false)
+				if err != nil {
+					g.logLine("error", "where", "step task message", "err", err)
+					continue
+				}
+				if m.ID != "" {
+					g.dispatch(ctx, m)
+				}
+			} else {
+				flushBatches = append(flushBatches, group)
+			}
 		}
-		if m.ID != "" {
-			g.dispatch(ctx, m)
-		}
+	}
+	g.stepBatchesMu.Unlock()
+
+	for _, batch := range flushBatches {
+		g.sendStepTaskBatch(ctx, batch)
 	}
 }
 
@@ -349,11 +580,16 @@ func (s *Store) storeStepTaskMessage(t nodeTaskTarget) (protocol.Message, error)
 }
 
 func (s *Store) storeStepTaskMessages(targets []nodeTaskTarget) (protocol.Message, error) {
+	return s.storeStepTaskMessagesInternal(targets, false)
+}
+
+func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBatch bool) (protocol.Message, error) {
 	type notice struct {
 		target     nodeTaskTarget
 		body, line string
 	}
 	var notices []notice
+	isBatch := forceBatch || len(targets) > 1
 	for _, t := range targets {
 		c, ok, err := queryChange(s.db, `id=?`, t.id)
 		if err != nil || !ok {
@@ -362,41 +598,45 @@ func (s *Store) storeStepTaskMessages(targets []nodeTaskTarget) (protocol.Messag
 		if c.Revision != t.revision || (t.ref.AfterMerge && c.State != protocol.ChangeMerged) || (!t.ref.AfterMerge && c.State != protocol.ChangeOpen) {
 			continue
 		}
-		p, err := s.deliveryPipeline(c.Project)
-		if err != nil {
-			return protocol.Message{}, err
-		}
-		evidence, err := changeEvidence(s.db, c.ID)
-		if err != nil {
-			return protocol.Message{}, err
-		}
-		encoded, err := json.Marshal(evidence)
-		if err != nil {
-			return protocol.Message{}, err
-		}
 		commit := c.HeadCommit
 		if t.ref.AfterMerge {
 			commit = c.MergedCommit
 		}
-		var stat string
-		err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return protocol.Message{}, err
+		line := fmt.Sprintf("change: %s | step: %s | after_merge: %t | commit: %s | title: %s", c.ID, t.ref.String(), t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))
+		var body string
+		if !isBatch {
+			p, err := s.deliveryPipeline(c.Project)
+			if err != nil {
+				return protocol.Message{}, err
+			}
+			evidence, err := changeEvidence(s.db, c.ID)
+			if err != nil {
+				return protocol.Message{}, err
+			}
+			encoded, err := json.Marshal(evidence)
+			if err != nil {
+				return protocol.Message{}, err
+			}
+			var stat string
+			err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return protocol.Message{}, err
+			}
+			if stat == "" {
+				stat = "not available"
+			}
+			displayOwner := t.owner
+			if displayOwner == callerTaskOwner {
+				displayOwner = "caller"
+			}
+			if displayOwner == delegateTaskOwner {
+				displayOwner = "delegate"
+			}
+			body = fmt.Sprintf("[agent-net step task]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
+				c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
+				protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(p.ReportFields(t.ref), ", "))
 		}
-		if stat == "" {
-			stat = "not available"
-		}
-		displayOwner := t.owner
-		if displayOwner == callerTaskOwner {
-			displayOwner = "caller"
-		}
-		if displayOwner == delegateTaskOwner {
-			displayOwner = "delegate"
-		}
-		body := fmt.Sprintf("[agent-net step task]\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
-			c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
-			protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(p.ReportFields(t.ref), ", "))
-		notices = append(notices, notice{t, body, fmt.Sprintf("change: %s | step: %s | after_merge: %t | commit: %s | title: %s", c.ID, t.ref.String(), t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))})
+		notices = append(notices, notice{t, body, line})
 	}
 	if len(notices) == 0 {
 		return protocol.Message{}, nil
@@ -440,7 +680,7 @@ func (s *Store) storeStepTaskMessages(targets []nodeTaskTarget) (protocol.Messag
 	if len(included) == 0 {
 		return protocol.Message{}, nil
 	}
-	if len(included) == 1 {
+	if !isBatch && len(included) == 1 {
 		m.Body = included[0].body
 	} else {
 		lines := []string{"[agent-net step tasks]"}

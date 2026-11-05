@@ -46,5 +46,8 @@ func quoteValue(v string) string {
 // logLine writes one structured line to the gateway log. It is also the hook
 // the store uses for the events it records.
 func (g *Gateway) logLine(event string, kv ...any) {
+	if g.logger == nil {
+		return
+	}
 	g.logger.Print(formatLine(g.store.now(), event, kv...))
 }
