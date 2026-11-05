@@ -57,6 +57,23 @@ and the frames `change.submit`, `change.get`, `change.list`, `step.report` and
 `agent_changes_find`. Until the daemon part lands they check their arguments
 and answer "not built yet".
 
+**Step tasks coalesce per recipient session.** When a step becomes ready for an
+owner who already has an undelivered or recent (last 30 s) step-task notice or
+who just reported the step before it, tasks coalesce into a pending batch sent
+after a short quiet window (10 s with no new task for that recipient, capped at
+25 lines per message). A single isolated task keeps the full format with diff
+stat and evidence.
+
+**A serial run of one owner's steps is one task.** When a step becomes ready
+and the step after it in the pipeline has the same owner and needs only that
+step, the gateway queues both and names them in one message,
+`steps: release, verify (after merge)`. The run continues while the owner stays
+the same and each step waits only for the one before it. Steps left out of the
+change's pipeline do not break the run, and it never crosses the merge. The
+message tells the owner to claim and report each step in order. Each step keeps
+its own task, evidence and report on the exact commit, and reporting the first
+does not send another message for the rest of the run.
+
 ## Not decided here
 
 The design's open questions stay the owner's: where step owners are stored,
