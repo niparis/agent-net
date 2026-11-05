@@ -55,7 +55,7 @@ func TestHeldAndInboxApprovalBothAppearInInbox(t *testing.T) {
 	m.inboxItems = []protocol.InboxItem{{ID: "i_1", Kind: "approval", SessionID: "s_1", Text: "deploy abc", Status: "open"}}
 	m = keys(m, "7")
 	view := m.testView()
-	if !strings.Contains(view, "held request →") || !strings.Contains(view, "wants approval: deploy abc") || !strings.Contains(view, "Needs your answer") {
+	if !strings.Contains(view, "held request →") || !strings.Contains(view, "deploy abc") || !strings.Contains(view, "Needs you") {
 		t.Fatalf("inbox: %s", view)
 	}
 }

@@ -1,7 +1,7 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (7) 8 Delivery │ 12 online · 1 busy · 7 needs you
-╭─Needs your answer · 3───────────────────────────────────────────────╮ ╭─ci-runner asks───────────────────────────────╮
-│ ▸ ci-runner     asks: which branch?                             10m │ │ which branch?                                │
-│   ci-runner     wants approval: deploy abc                       9m │ │                                              │
+╭─Needs you · 3───────────────────────────────────────────────────────╮ ╭─ci-runner asks───────────────────────────────╮
+│ ▸ ci-runner     [question] which branch?                        10m │ │ which branch?                                │
+│   ci-runner     [approval] deploy abc                            9m │ │                                              │
 │   alice         held request → strategies                        5m │ │ session ci-runner · agent-net on build-vm    │
 ╰─────────────────────────────────────────────────────────────────────╯ │ 10 minutes ago                               │
 ╭─Proposals · 2───────────────────────────────────────────────────────╮ │                                              │

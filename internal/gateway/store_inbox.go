@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -11,7 +13,25 @@ import (
 // CreateInboxItem stores an item for the owner. Callers must derive the session
 // and node from authenticated state rather than trusting agent-supplied values.
 func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, error) {
-	return s.createInboxItem(s.db, item)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return item, err
+	}
+	defer tx.Rollback()
+	item, err = s.createInboxItem(tx, item)
+	if err != nil {
+		return item, err
+	}
+	if item.Kind == "question" || item.Kind == "approval" {
+		_, err = tx.Exec(`UPDATE inbox_items SET status='replaced',answered_at=? WHERE session_id=? AND kind=? AND status='open' AND id<>?`, item.CreatedAt.UnixNano(), item.SessionID, item.Kind, item.ID)
+		if err != nil {
+			return item, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return item, err
+	}
+	return item, nil
 }
 
 // RequestWrittenApproval adds the exact action to the owner's inbox.
@@ -32,6 +52,9 @@ func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protoc
 	if strings.TrimSpace(item.SessionID) == "" || strings.TrimSpace(item.Text) == "" {
 		return item, reject("inbox session and text are required")
 	}
+	if (item.Kind == "question" || item.Kind == "approval" || item.Kind == "feature_idea") && utf8.RuneCountInString(item.Text) > protocol.MaxOwnerAskChars {
+		return item, reject("inbox text too long")
+	}
 	if len(item.Text) > protocol.MaxBodyBytes || len(item.Recommendation) > protocol.MaxBodyBytes {
 		return item, reject("inbox text too long")
 	}
@@ -40,7 +63,14 @@ func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protoc
 	item.Status = "open"
 	item.Answer = ""
 	item.AnsweredAt = time.Time{}
-	_, err := db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status) VALUES (?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status)
+	if len(item.Options) > 4 {
+		return item, reject("too many options")
+	}
+	options, err := json.Marshal(item.Options)
+	if err != nil {
+		return item, err
+	}
+	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status, string(options), item.AskerName, item.ChangeTitle)
 	return item, err
 }
 
@@ -49,8 +79,12 @@ type inboxScanner interface{ Scan(...any) error }
 func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 	var item protocol.InboxItem
 	var created, answered int64
-	err := row.Scan(&item.ID, &item.Kind, &item.SessionID, &item.Node, &item.Text, &item.Recommendation, &item.MessageID, &item.ConversationID, &created, &item.Status, &item.Answer, &answered)
+	var options string
+	err := row.Scan(&item.ID, &item.Kind, &item.SessionID, &item.Node, &item.Text, &item.Recommendation, &item.MessageID, &item.ConversationID, &created, &item.Status, &item.Answer, &answered, &options, &item.AskerName, &item.ChangeTitle)
 	if err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(options), &item.Options); err != nil {
 		return item, err
 	}
 	item.CreatedAt = time.Unix(0, created).UTC()
@@ -60,7 +94,7 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 	return item, nil
 }
 
-const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at`
+const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title`
 
 func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items ORDER BY created_at,id`)
@@ -74,6 +108,9 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 			rows.Close()
 			return nil, err
 		}
+		if item.Kind == "check" && item.Node == "apps" && strings.HasPrefix(item.Text, "Connected: ") && !item.CreatedAt.After(s.now().Add(-24*time.Hour)) {
+			continue
+		}
 		items = append(items, item)
 	}
 	err = rows.Err()
@@ -81,24 +118,38 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	for i := range items {
+		if items[i].AskerName != "" {
+			continue
+		}
+		if agent, ok, err := s.Agent(items[i].SessionID); err == nil && ok {
+			items[i].AskerName = agent.Profile.Name
+			if items[i].AskerName == "" {
+				items[i].AskerName = agent.Title
+			}
+		}
+		if items[i].AskerName == "" || strings.HasPrefix(items[i].AskerName, "s_") {
+			items[i].AskerName = "an agent"
+		}
+	}
 	byID := map[string]int{}
 	for i := range items {
 		byID[items[i].ID] = i
 	}
-	rows, err = s.db.Query(`SELECT d.item_id,d.change_id,d.step,d.for_step,d.after_merge,d.commit_hash,c.project
+	rows, err = s.db.Query(`SELECT d.item_id,d.change_id,d.step,d.for_step,d.after_merge,d.commit_hash,c.project,c.title
 		FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id`)
 	if err != nil {
 		return nil, err
 	}
 	type deliveryItem struct {
-		id, project string
-		delivery    protocol.InboxDelivery
+		id, project, title string
+		delivery           protocol.InboxDelivery
 	}
 	var deliveries []deliveryItem
 	for rows.Next() {
 		var d deliveryItem
 		var after int
-		if err := rows.Scan(&d.id, &d.delivery.ChangeID, &d.delivery.Step, &d.delivery.For, &after, &d.delivery.Commit, &d.project); err != nil {
+		if err := rows.Scan(&d.id, &d.delivery.ChangeID, &d.delivery.Step, &d.delivery.For, &after, &d.delivery.Commit, &d.project, &d.title); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -126,6 +177,9 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 		}
 		d.delivery.ReportFields = p.ReportFields(d.delivery.StepRef)
 		items[i].Delivery = &d.delivery
+		if items[i].ChangeTitle == "" {
+			items[i].ChangeTitle = d.title
+		}
 	}
 	return items, nil
 }
@@ -214,4 +268,10 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 		return item, err
 	}
 	return item, nil
+}
+
+// CloseArchivedSessionInbox closes only requests belonging to a session on the authenticated node.
+func (s *Store) CloseArchivedSessionInbox(node, session string) error {
+	_, err := s.db.Exec(`UPDATE inbox_items SET status='closed',answer='session_archived',answered_at=? WHERE session_id=? AND kind IN ('question','approval') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=?)`, s.now().UnixNano(), session, session, node)
+	return err
 }

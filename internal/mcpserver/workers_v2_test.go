@@ -34,7 +34,7 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model", "subject": "terra", "finding": "works"}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"/tmp/demo"}}},
 		{"agent_mcp_test", "mcp_test", map[string]any{"server": "demo"}},
-		{"agent_owner_ask", "waiting", map[string]any{"kind": "question", "text": "Merge?", "recommendation": "yes"}},
+		{"agent_owner_ask", "ask_question", map[string]any{"kind": "question", "text": "Merge?", "recommendation": "yes"}},
 		{"agent_owner_ask", "request_approval", map[string]any{"kind": "approval", "text": "deploy", "recommendation": "yes"}},
 		{"agent_owner_ask", "propose_idea", map[string]any{"kind": "idea", "text": "feature", "recommendation": "yes"}},
 	}

@@ -159,7 +159,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		}
 	}
 	view := ansi.Strip(m.testView())
-	for _, heading := range []string{"Needs your answer · 3", "Proposals · 2", "For your information · 2"} {
+	for _, heading := range []string{"Needs you · 3", "Proposals · 2", "For your information · 2"} {
 		if !strings.Contains(view, heading) {
 			t.Errorf("missing box heading %q:\n%s", heading, view)
 		}
@@ -371,7 +371,7 @@ func TestInboxEmptyState(t *testing.T) {
 	if !strings.Contains(view, "Nothing is waiting for you.") {
 		t.Fatalf("empty state missing:\n%s", view)
 	}
-	for _, heading := range []string{"Needs your answer", "Proposals", "For your information", "Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+	for _, heading := range []string{"Needs you", "Proposals", "For your information", "Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
 		if strings.Contains(view, heading) {
 			t.Fatalf("empty state shows box %q", heading)
 		}
@@ -480,8 +480,8 @@ func TestInboxRowsUsePlainWords(t *testing.T) {
 	rows := m.inboxRows()
 	cases := map[string][2]string{
 		"held":     {"alice", "held request → strategies"},
-		"question": {"ci-runner", "asks: which branch?"},
-		"approval": {"ci-runner", "wants approval: deploy abc"},
+		"question": {"ci-runner", "which branch?"},
+		"approval": {"ci-runner", "deploy abc"},
 		"proposal": {"CTO", "start a Pi session in shop, on Mac"},
 		"learned":  {"ops (learned)", `add "deploys" to what it refuses`},
 		"outcome":  {"ops → app", `deploy app refused: "not now"`},
@@ -674,7 +674,7 @@ func TestInboxPanelSitsOnTheRightOnAWideScreen(t *testing.T) {
 	m = openInbox(m)
 	lines := strings.Split(ansi.Strip(m.testView()), "\n")
 	first := lines[1]
-	box, panel := strings.Index(first, "Needs your answer"), strings.Index(first, "ci-runner asks")
+	box, panel := strings.Index(first, "Needs you"), strings.Index(first, "ci-runner asks")
 	if box < 0 || panel < 0 || panel <= box {
 		t.Fatalf("the panel is not to the right of the boxes: %q", first)
 	}
@@ -735,5 +735,103 @@ func TestInboxDismissOfAGoneItemDropsItAndSaysAlreadyGone(t *testing.T) {
 func TestInboxAlreadyAnsweredIsNotGone(t *testing.T) {
 	if inboxGone(fmt.Errorf("inbox item already answered")) {
 		t.Fatal("already answered is not not-found")
+	}
+}
+
+func TestInboxNumberedOptions(t *testing.T) {
+	for i, key := range []string{"1", "2", "3", "4"} {
+		m, src := inboxAllKindsModel(120, 34)
+		m.inboxItems[1].Options = []string{"one", "two", "three", "four"}
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "question")
+		next, cmd := m.key(tea.KeyPressMsg{Text: key, Code: rune(key[0])})
+		if cmd == nil {
+			t.Fatalf("%s no answer", key)
+		}
+		msg := cmd()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range batch {
+				if c != nil {
+					c()
+				}
+			}
+		}
+		c := src.method("inbox_answer")
+		if c == nil || c.params.(map[string]string)["answer"] != m.inboxItems[1].Options[i] {
+			t.Fatalf("%s: %+v msg=%T next=%+v detail=%v edit=%v focus=%v open=%v", key, c, msg, next.(Model).tab, m.inboxDetail, m.inboxEditing, m.focus, m.open != nil)
+		}
+	}
+}
+func TestInboxDetailFields(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	m.inboxItems[1].Options = []string{"main", "next"}
+	m.inboxItems[1].Recommendation = "main is stable"
+	m.inboxItems[1].AskerName = "Build agent"
+	m.inboxItems[1].ChangeTitle = "Fix build"
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	view := ansi.Strip(m.testView())
+	for _, want := range []string{"which branch?", "main", "next", "main is stable", "Build agent", "Fix build"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("missing %q in %s", want, view)
+		}
+	}
+}
+
+func TestInboxDetailGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := inboxAllKindsModel(size[0], size[1])
+		m.inboxItems[1].Options = []string{"main", "next"}
+		m.inboxItems[1].Recommendation = "Use main"
+		m.inboxItems[1].AskerName = "Build agent"
+		m.inboxItems[1].ChangeTitle = "Fix build"
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "question")
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		golden(t, fmt.Sprintf("inbox_detail_%dx%d", size[0], size[1]), m.testView())
+	}
+}
+
+func TestInboxLongDetailScrollAndHints(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	m.inboxItems[1].Text = strings.Repeat("long question line words ", 100)
+	m.inboxItems[1].Options = []string{"yes", "no"}
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	if !strings.Contains(ansi.Strip(m.testView()), "1-2") {
+		t.Fatal("list lacks option hints")
+	}
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	view := ansi.Strip(m.testView())
+	if !strings.Contains(view, "more below") || !strings.Contains(view, "1-2") {
+		t.Fatalf("detail: %s", view)
+	}
+	golden(t, "inbox_detail_long_80x24", m.testView())
+	for i := 0; i < 3; i++ {
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	if !strings.Contains(ansi.Strip(m.testView()), "2. no") {
+		t.Fatal("page down did not show options")
+	}
+}
+
+func TestInboxDetailScrollUpAfterEnd(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	var b strings.Builder
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, "line %02d\n", i)
+	}
+	m.inboxItems[1].Text = b.String()
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	for i := 0; i < 10; i++ {
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	before := m.testView()
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyUp})
+	if m.testView() == before {
+		t.Fatal("up does not scroll after reaching end")
 	}
 }

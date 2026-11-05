@@ -809,7 +809,11 @@ END;
 CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr));
 CREATE TABLE IF NOT EXISTS agent_charter_history (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS agent_charter_history_agent ON agent_charter_history(agent_id, id);
-`, edgeKindsMigration()}
+`, edgeKindsMigration(), `
+ALTER TABLE inbox_items ADD COLUMN options TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE inbox_items ADD COLUMN asker_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox_items ADD COLUMN change_title TEXT NOT NULL DEFAULT '';
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1001,7 +1005,27 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
-		result, err := tx.Exec(migrations[i])
+		var result sql.Result
+		if strings.Contains(migrations[i], "ALTER TABLE inbox_items ADD COLUMN options") {
+			for _, col := range []struct{ name, spec string }{
+				{"options", `TEXT NOT NULL DEFAULT '[]'`}, {"asker_name", `TEXT NOT NULL DEFAULT ''`}, {"change_title", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+					break
+				}
+				if has == 0 {
+					if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				result, err = tx.Exec(`SELECT 1`)
+			}
+		} else {
+			result, err = tx.Exec(migrations[i])
+		}
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)

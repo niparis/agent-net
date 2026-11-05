@@ -1,7 +1,7 @@
 1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (7) 8 Delivery │ 12 online
-╭─Needs your answer · 3────────────────────────────────────────────────────────╮
-│ ▸ ci-runner     asks: which branch?                                      10m │
-│   ci-runner     wants approval: deploy abc                                9m │
+╭─Needs you · 3────────────────────────────────────────────────────────────────╮
+│ ▸ ci-runner     [question] which branch?                                 10m │
+│   ci-runner     [approval] deploy abc                                     9m │
 │   alice         held request → strategies                                 5m │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Proposals · 2────────────────────────────────────────────────────────────────╮

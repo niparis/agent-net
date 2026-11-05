@@ -714,7 +714,7 @@ export const TOOL_CATALOG = [
         },
         "text": {
           "type": "string",
-          "maxLength": 200,
+          "maxLength": 4000,
           "description": "Text or substring to match."
         },
         "recommendation": {

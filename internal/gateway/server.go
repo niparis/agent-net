@@ -1185,6 +1185,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetSessionOffline(nc.id, p.SessionID)
 
+	case "session.archive":
+		p, err := decode[protocol.SessionRemove](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad session.archive")
+		}
+		return nil, st.CloseArchivedSessionInbox(nc.id, p.SessionID)
+
 	case "session.rename":
 		p, err := decode[protocol.SessionRenameRequest](raw)
 		if err != nil || p.SessionID == "" {
@@ -1728,15 +1735,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "inbox.create":
 		var p struct {
-			SessionID      string `json:"session_id"`
-			Kind           string `json:"kind"`
-			Text           string `json:"text"`
-			Recommendation string `json:"recommendation"`
+			SessionID      string   `json:"session_id"`
+			Kind           string   `json:"kind"`
+			Text           string   `json:"text"`
+			Recommendation string   `json:"recommendation"`
+			Options        []string `json:"options"`
 		}
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, reject("bad inbox.create")
 		}
-		if p.Kind != "approval" && p.Kind != "feature_idea" {
+		if p.Kind != "approval" && p.Kind != "feature_idea" && p.Kind != "question" {
 			return nil, reject("invalid inbox kind")
 		}
 		agent, ok, err := st.Agent(p.SessionID)
@@ -1746,12 +1754,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || agent.NodeID != nc.id || agent.Harness == protocol.OwnerHarness {
 			return nil, reject("session does not belong to this node")
 		}
-		var item protocol.InboxItem
-		if p.Kind == "approval" {
-			item, err = st.RequestWrittenApproval(agent.SessionID, agent.Repo.Project, protocol.ApprovalRequest{Action: p.Text, Recommendation: p.Recommendation})
-		} else {
-			item, err = st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: agent.Repo.Project, Text: p.Text, Recommendation: p.Recommendation})
+		name := agent.Profile.Name
+		if name == "" {
+			name = agent.Title
 		}
+		if name == "" || strings.HasPrefix(name, "s_") {
+			name = "an agent"
+		}
+		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: agent.Repo.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
 		return map[string]any{"item": item}, err
 
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":

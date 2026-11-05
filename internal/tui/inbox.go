@@ -45,7 +45,7 @@ var inboxBoxOrder = []inboxBox{inboxBoxAnswer, inboxBoxProposals, inboxBoxInfo}
 func (b inboxBox) title() string {
 	switch b {
 	case inboxBoxAnswer:
-		return "Needs your answer"
+		return "Needs you"
 	case inboxBoxProposals:
 		return "Proposals"
 	case inboxBoxInfo:
@@ -150,7 +150,7 @@ func (m Model) inboxRows() []inboxRow {
 		case "approval", "question":
 			rows = append(rows, inboxRow{
 				group: inboxApproval, key: "inbox:" + item.ID, kind: item.Kind,
-				name: m.inboxSessionName(item.SessionID), text: inboxItemSummary(item),
+				name: m.inboxAskerName(item), text: inboxItemSummary(item),
 				since: item.CreatedAt.Unix(), session: item.SessionID, item: item,
 			})
 		}
@@ -438,12 +438,6 @@ func inboxConnectedNotice(text string) (string, string, bool) {
 
 // inboxItemSummary says what an approval or a question asks.
 func inboxItemSummary(item protocol.InboxItem) string {
-	switch item.Kind {
-	case "question":
-		return "asks: " + inboxFirstLine(item.Text)
-	case "approval":
-		return "wants approval: " + inboxFirstLine(item.Text)
-	}
 	return inboxFirstLine(item.Text)
 }
 
@@ -460,6 +454,19 @@ func inboxWaitingSummary(w *protocol.Waiting) string {
 		return lead
 	}
 	return lead + ": " + text
+}
+
+func (m Model) inboxAskerName(item protocol.InboxItem) string {
+	if item.AskerName != "" && item.AskerName != item.SessionID && !strings.HasPrefix(item.AskerName, "s_") {
+		return item.AskerName
+	}
+	if a, ok := m.agentByID(item.SessionID); ok {
+		name := firstNonEmpty(a.Profile.Name, a.Title)
+		if name != "" && name != item.SessionID && !strings.HasPrefix(name, "s_") {
+			return name
+		}
+	}
+	return "an agent"
 }
 
 // inboxSessionName is the name the Inbox shows for a session.
@@ -492,6 +499,24 @@ func (m Model) inboxSelected(rows []inboxRow) (inboxRow, bool) {
 	return rows[min(max(m.inboxIndex, 0), len(rows)-1)], true
 }
 
+func (m Model) inboxQuestionHasExtra(row inboxRow, rows []inboxRow) bool {
+	if len(row.item.Options) > 0 || row.item.Recommendation != "" || row.item.ChangeTitle != "" || strings.Contains(row.item.Text, "\n") {
+		return true
+	}
+	width := m.width
+	if width >= 100 {
+		width -= min(max(width*2/5, 30), 48) + 1
+	}
+	nameW := 12
+	for _, r := range rows {
+		nameW = max(nameW, ansi.StringWidth(sanitize(r.name)))
+	}
+	nameW = min(nameW, 20)
+	room := max(max(width-4, 4)-2-nameW-1-4-1, 4)
+	room = max(room-ansi.StringWidth("["+row.kind+"] "), 0)
+	return cutWords(sanitize(row.text), room) != sanitize(row.text)
+}
+
 // inboxTabView draws the tab: a title, the three boxes, and a panel for the
 // selected item. On a wide screen the panel sits on the right; on a narrow one
 // it sits under the boxes.
@@ -516,8 +541,25 @@ func (m Model) inboxTabView(w, h int) []string {
 	if m.inboxDetail {
 		out = append(out, section("Inbox detail", w))
 		row, _ := m.inboxSelected(rows)
+		var lines []string
 		for _, line := range m.inboxDetailLines(row) {
-			out = append(out, clip("  "+line, w))
+			if line == "" {
+				lines = append(lines, "")
+				continue
+			}
+			for _, wrapped := range wrapText(line, max(w-2, 1)) {
+				lines = append(lines, "  "+wrapped)
+			}
+		}
+		room := max(h-len(out), 0)
+		start := min(max(m.inboxDetailScroll, 0), max(len(lines)-room, 0))
+		more := len(lines)-start > room
+		if more && room > 0 {
+			room--
+		}
+		out = append(out, lines[start:min(start+room, len(lines))]...)
+		if more && len(out) < h {
+			out = append(out, sDim.Render("  more below"))
 		}
 		for len(out) < h {
 			out = append(out, "")
@@ -633,6 +675,10 @@ func (m Model) inboxRowLine(row inboxRow, nameW, w int, selected bool) string {
 	age := sDim.Render(cellR(needsAge(m.now(), row.since), ageW))
 	room := max(w-ansi.StringWidth(marker)-nameW-1-ageW-1, 4)
 	text := cutWords(sanitize(row.text), room)
+	if row.kind == "approval" || row.kind == "question" {
+		tag := "[" + row.kind + "] "
+		text = tag + cutWords(sanitize(row.text), max(room-ansi.StringWidth(tag), 0))
+	}
 	line := marker + name + " " + padStyled(text, room) + " " + age
 	if selected {
 		return selectedRow(padStyled(line, w))
@@ -822,7 +868,14 @@ func (m Model) inboxPanelOrigin(row inboxRow, withAge bool) string {
 	case "held":
 		add("from " + m.inboxFromName(row.held))
 		add(m.inboxSessionOrigin(row.held.To))
-	case "approval", "question", "waiting":
+	case "approval", "question":
+		origin := m.inboxSessionOrigin(row.session)
+		name := m.inboxSessionName(row.session)
+		if name == row.session || strings.Contains(name, "s_") {
+			origin = "session " + m.inboxAskerName(row.item)
+		}
+		add(origin)
+	case "waiting":
 		add(m.inboxSessionOrigin(row.session))
 	case "outcome":
 		add("edge " + sanitize(row.outcome.From) + " → " + sanitize(row.outcome.To))
@@ -963,21 +1016,18 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 	case "proposal":
 		out = append(out, sanitize(row.text))
 	case "notice", "approval", "question":
-		out = append(out, "Kind: "+sanitize(row.item.Kind), "Status: "+sanitize(row.item.Status),
-			"Session: "+sanitize(row.item.SessionID), "Node: "+sanitize(row.item.Node),
-			"Text: "+sanitize(row.item.Text))
+		name := m.inboxAskerName(row.item)
+		out = append(out, "From: "+sanitize(name), "", sanitizeBody(row.item.Text))
+		for i, option := range row.item.Options {
+			out = append(out, fmt.Sprintf("%d. %s", i+1, sanitize(option)))
+		}
 		if row.item.Recommendation != "" {
-			out = append(out, "Recommendation: "+sanitize(row.item.Recommendation))
+			out = append(out, "", "Recommendation: "+sanitizeBody(row.item.Recommendation))
 		}
-		if row.item.MessageID != "" {
-			out = append(out, "Message: "+sanitize(row.item.MessageID))
+		if row.item.ChangeTitle != "" {
+			out = append(out, "", "Related change: "+sanitize(row.item.ChangeTitle))
 		}
-		if row.item.ConversationID != "" {
-			out = append(out, "Conversation: "+sanitize(row.item.ConversationID))
-		}
-		if row.item.Answer != "" {
-			out = append(out, "Answer: "+sanitize(row.item.Answer))
-		}
+
 	case "waiting":
 		out = append(out, "Session: "+sanitize(m.inboxSessionName(row.session)), sanitize(row.text))
 	}
@@ -1025,6 +1075,31 @@ func (m *Model) dropInboxItem(id string) {
 	}
 	m.inboxItems = kept
 	m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
+}
+
+func (m Model) inboxDetailScrollLimit(rows []inboxRow) int {
+	row, ok := m.inboxSelected(rows)
+	if !ok {
+		return 0
+	}
+	width := max(m.width, 40)
+	height := max(m.height, 10) - 1 - m.ctoBoxHeight(m.tab)
+	room := height - 2
+	if m.inboxError != "" {
+		room--
+	}
+	if m.inboxNote != "" {
+		room--
+	}
+	count := 0
+	for _, line := range m.inboxDetailLines(row) {
+		if line == "" {
+			count++
+		} else {
+			count += len(wrapText(line, max(width-2, 1)))
+		}
+	}
+	return max(count-max(room, 0), 0)
 }
 
 // inboxTabKey handles the Inbox tab and its detail view.
@@ -1082,11 +1157,31 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.inboxDetail {
-		if key == "back" || key == actClose {
+		limit := m.inboxDetailScrollLimit(rows)
+		m.inboxDetailScroll = min(m.inboxDetailScroll, limit)
+		switch key {
+		case "back", actClose:
 			m.inboxDetail = false
+			m.inboxDetailScroll = 0
+			return m, nil
+		case actUp:
+			m.inboxDetailScroll = max(m.inboxDetailScroll-1, 0)
+			return m, nil
+		case actDown:
+			m.inboxDetailScroll = min(m.inboxDetailScroll+1, limit)
+			return m, nil
+		case actPageUp:
+			m.inboxDetailScroll = max(m.inboxDetailScroll-max(m.height-8, 1), 0)
+			return m, nil
+		case actPageDown:
+			m.inboxDetailScroll = min(m.inboxDetailScroll+max(m.height-8, 1), limit)
+			return m, nil
+		case "answer", "approve", "refuse", "dismiss":
+		default:
+			return m, nil
 		}
-		return m, nil
 	}
+
 	switch key {
 	case actUp:
 		m.inboxIndex = max(0, m.inboxIndex-1)
@@ -1117,10 +1212,16 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "held", "waiting":
 			m.selected = row.session
 			return m.startEnterID(row.session)
+		case "approval", "question":
+			if m.inboxQuestionHasExtra(row, rows) {
+				m.inboxDetailScroll = 0
+				m.inboxDetail = true
+			}
 		case "proposal":
 			m.proposalDetail = &proposalDetail{proposal: row.proposal, loading: true}
 			return m, m.proposalDetailCmd(row.proposal)
 		default:
+			m.inboxDetailScroll = 0
 			m.inboxDetail = true
 		}
 	case "approve", "refuse":
@@ -1255,9 +1356,17 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 		open.label = "open session"
 		return []hint{open}
 	case "question":
-		return []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		h := []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		if len(row.item.Options) > 0 {
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+		}
+		return h
 	case "approval":
-		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		h := []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		if len(row.item.Options) > 0 {
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+		}
+		return h
 	case "proposal":
 		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse")}
 	case "outcome":
@@ -1275,7 +1384,18 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 func (m Model) inboxHints() []hint {
 	help := bindingHint(contextInbox, "help")
 	if m.inboxDetail {
-		return []hint{bindingHint(contextInbox, "back"), help, bindingHint(contextInbox, actQuit)}
+		row, ok := m.inboxSelected(m.inboxRows())
+		var h []hint
+		if ok && (row.kind == "question" || row.kind == "approval") {
+			if len(row.item.Options) > 0 {
+				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1})
+			}
+			h = append(h, bindingHint(contextInbox, "answer"))
+			if row.kind == "approval" {
+				h = append(h, bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"))
+			}
+		}
+		return append(h, bindingHint(contextInbox, "back"))
 	}
 	move := hint{key: "↑↓", label: "select", prio: 1}
 	rows := m.inboxRows()

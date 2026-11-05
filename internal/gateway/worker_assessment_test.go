@@ -32,7 +32,7 @@ func TestWorkerAssessmentStoreAndMigrationReplay(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_assessments`).Scan(&n); err != nil || n != 2 {
 		t.Fatalf("rows: %d, %v", n, err)
 	}
-	if _, err := s.db.Exec(migrations[len(migrations)-1]); err != nil {
+	if _, err := s.db.Exec(migrations[migrationVersion(t, "CREATE TABLE IF NOT EXISTS worker_assessments")-1]); err != nil {
 		t.Fatalf("migration replay: %v", err)
 	}
 	got, err = s.WorkerAssessment(a.SessionID)

@@ -1,8 +1,10 @@
 package gateway
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -29,7 +31,10 @@ func TestInboxStore(t *testing.T) {
 		t.Fatalf("item: %+v", item)
 	}
 	rows, err := s.ListInbox()
-	if err != nil || len(rows) != 1 || rows[0] != item {
+	if err == nil && len(rows) == 1 {
+		item.AskerName = rows[0].AskerName
+	}
+	if err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], item) {
 		t.Fatalf("rows: %+v, %v", rows, err)
 	}
 	answered, err := s.AnswerInbox(item.ID, "approve")
@@ -185,5 +190,123 @@ func TestInboxDismissDoesNotMessageTheSession(t *testing.T) {
 	pending, err := s.Pending(node, false)
 	if err != nil || len(pending) != 0 {
 		t.Fatalf("dismiss queued %d messages: %v", len(pending), err)
+	}
+}
+
+func TestInboxConnectedNoticeExpiresAfterDay(t *testing.T) {
+	s, c := newTestStore(t)
+	old, err := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: "s_test", Node: "apps", Text: "Connected: Test (bot)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_test", Text: "approve?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(25 * time.Hour)
+	items, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ID == old.ID {
+			t.Fatal("old connected notice still visible")
+		}
+	}
+	if len(items) != 1 || items[0].Kind != "approval" {
+		t.Fatalf("items: %+v", items)
+	}
+}
+
+func TestInboxFieldsRoundTrip(t *testing.T) {
+	s, _ := newTestStore(t)
+	want := protocol.InboxItem{Kind: "question", SessionID: "s_test", Text: "Which branch?", Recommendation: "Use main", Options: []string{"main", "next"}, AskerName: "Build agent", ChangeTitle: "Fix build"}
+	_, err := s.CreateInboxItem(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items: %+v %v", items, err)
+	}
+	got := items[0]
+	if got.Text != want.Text || got.Recommendation != want.Recommendation || !reflect.DeepEqual(got.Options, want.Options) || got.AskerName != want.AskerName || got.ChangeTitle != want.ChangeTitle {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestInboxReplacementAndTextLimit(t *testing.T) {
+	s, _ := newTestStore(t)
+	first, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_a", Text: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_a", Text: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ID == first.ID && item.Status != "replaced" {
+			t.Fatalf("not replaced: %+v", item)
+		}
+	}
+	_, err = s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: strings.Repeat("é", 4001)})
+	if err == nil {
+		t.Fatal("accepted question over 4000 characters")
+	}
+}
+
+func TestInboxWorkerEndClosesItems(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "worker"})
+	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: sid, Text: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: sid, Harness: "pi", Outcome: protocol.OutcomeComplete})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.ID == item.ID && r.Status == "open" {
+			t.Fatal("ended worker item remains open")
+		}
+	}
+}
+func TestInboxArchivedSessionClosesItems(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "archived"})
+	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: sid, Text: "approval"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseArchivedSessionInbox(node, sid); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.ID == item.ID && r.Status == "open" {
+			t.Fatal("archived session item remains open")
+		}
+	}
+}
+
+func TestInboxOwnerIdeaTextLimit(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "feature_idea", SessionID: "s_a", Text: strings.Repeat("x", 4001)}); err == nil {
+		t.Fatal("accepted idea beyond owner ask limit")
 	}
 }

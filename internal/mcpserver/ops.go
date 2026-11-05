@@ -64,9 +64,9 @@ func mcpTestCall(ctx context.Context, run func(context.Context, string, any) (an
 func ownerAskCall(ctx context.Context, run func(context.Context, string, any) (any, error), kind, text, recommendation string, options []string, urgency string) (map[string]any, error) {
 	switch kind {
 	case "question":
-		return opResult(run(ctx, protocol.MethodWaiting, protocol.WaitingRequest{Kind: protocol.WaitingQuestion, Text: text, Options: options, Urgency: urgency, Explicit: true}))
+		return opResult(run(ctx, "ask_question", map[string]any{"kind": "question", "text": text, "recommendation": recommendation, "options": options}))
 	case "approval":
-		return opResult(run(ctx, "request_approval", map[string]any{"action": text, "recommendation": recommendation}))
+		return opResult(run(ctx, "request_approval", map[string]any{"action": text, "recommendation": recommendation, "options": options}))
 	case "idea":
 		return opResult(run(ctx, "propose_idea", map[string]any{"text": text, "recommendation": recommendation}))
 	}
