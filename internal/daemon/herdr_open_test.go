@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1054,6 +1053,17 @@ func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	q := waitHerdrNotice(t, notices)
+	items, err = n.d.proposalRunner().list()
+	if err != nil || items[0].Status != "handed_to_tui" || items[0].Note != "sent to the approving TUI to run in its terminal" || q["start_proposal_id"] != items[0].ID {
+		t.Fatalf("handoff: %+v notice %v error %v", items, q, err)
+	}
+	if _, err = approver.Call(context.Background(), protocol.OpProposalStartAck, protocol.CTOStartAck{ID: items[0].ID, Started: true}); err != nil {
+		t.Fatal(err)
+	}
+	items, err = n.d.proposalRunner().list()
+	if err != nil || items[0].Status != "applied" {
+		t.Fatalf("acknowledgment: %+v error %v", items, err)
+	}
 	plan, ok := q["start_plan"].(map[string]any)
 	if !ok || q["start_name"] != "garden ("+n.d.hostName()+")" {
 		t.Fatalf("approving TUI did not receive the start: %v", q)
@@ -1071,52 +1081,31 @@ func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
 	}
 }
 
-func TestRemoteCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
-	for _, all := range []bool{false, true} {
-		t.Run(fmt.Sprint("approve-all=", all), func(t *testing.T) {
-			withoutLocalHerdr(t)
-			g := startGateway(t, t.TempDir(), "")
-			home := pathTestHome(t)
-			local := startWorkerNode(t, g, shortSet, nil)
-			bins := fakeBin(t, "codex")
-			remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
-			repo := newHomeRepo(t, home, "code/garden")
-			remote.register(t, repo)
-			other := herdrNoticeChannel(t, local.node)
-			approver, notices := herdrUIClient(t, local.node)
-			args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex", "first_message": "hello"})
-			if _, err := remote.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
-				t.Fatal(err)
-			}
-			items, err := remote.d.proposalRunner().list()
-			if err != nil || len(items) != 1 {
-				t.Fatalf("proposals %v %v", items, err)
-			}
-			socket := filepath.Join(t.TempDir(), "h.sock")
-			answer := inHerdrAnswer(protocol.CTOProposalAnswer{NodeID: remote.d.NodeID(), ID: items[0].ID, Action: "a"}, socket)
-			if all {
-				answer = inHerdrAnswer(protocol.CTOProposalAnswer{Action: "A"}, socket)
-			}
-			if _, err := approver.Call(context.Background(), "proposal_answer", answer); err != nil {
-				t.Fatal(err)
-			}
-			q := waitHerdrNotice(t, notices)
-			plan, ok := q["start_plan"].(map[string]any)
-			if !ok || q["start_name"] != "garden ("+remote.d.hostName()+")" {
-				t.Fatalf("approving TUI did not receive the remote start: %v", q)
-			}
-			argv, ok := plan["argv"].([]any)
-			if !ok || len(argv) == 0 || argv[0] != "ssh" || !strings.Contains(fmt.Sprint(argv), bins["codex"]) {
-				t.Fatalf("incorrect remote fallback plan: %v", plan)
-			}
-			select {
-			case q := <-other:
-				if q["start_plan"] != nil {
-					t.Fatalf("another TUI received the same start: %v", q)
-				}
-			default:
-			}
-		})
+func TestRemoteCTOApprovedCodexWithoutHerdrFails(t *testing.T) {
+	withoutLocalHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	local := startWorkerNode(t, g, shortSet, nil)
+	bins := fakeBin(t, "codex")
+	remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newHomeRepo(t, home, "code/garden")
+	remote.register(t, repo)
+	approver, _ := herdrUIClient(t, local.node)
+	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex"})
+	if _, err := remote.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := remote.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals %v %v", items, err)
+	}
+	_, _ = approver.Call(context.Background(), "proposal_answer", protocol.CTOProposalAnswer{NodeID: remote.d.NodeID(), ID: items[0].ID, Action: "a"})
+	items, err = remote.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items[0].Status != "failed" || !strings.Contains(items[0].Note, "remote fallback plan cannot be confirmed") {
+		t.Fatalf("proposal %+v", items[0])
 	}
 }
 
@@ -1143,5 +1132,35 @@ func TestHerdrEnvironmentFailureDoesNotUseTerminalFallback(t *testing.T) {
 	p := (&Daemon{}).openInHerdr("a", "garden", "", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Env: map[string]string{"BAD-KEY": "value"}})
 	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "could not prepare") {
 		t.Fatalf("plan %+v", p)
+	}
+}
+
+func TestCTOApprovedCodexWithoutHerdrOrTUIFails(t *testing.T) {
+	withoutLocalHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newHomeRepo(t, home, "code/garden")
+	n.register(t, repo)
+	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex"})
+	if _, err := n.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals %v %v", items, err)
+	}
+	_ = n.d.proposalRunner().decide(context.Background(), items[0].ID, true)
+	items, err = n.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var start protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &start); err != nil {
+		t.Fatal(err)
+	}
+	if items[0].Status != "failed" || start.Status != "failed" || start.Error == "" || !strings.Contains(items[0].Note, start.Error) {
+		t.Fatalf("proposal %#v start %#v", items[0], start)
 	}
 }

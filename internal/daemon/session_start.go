@@ -242,9 +242,24 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		}
 		plan := d.openForCaller("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, *r.EnterPlan)
 		r.EnterPlan = &plan
-		if notify {
+		if p.CTOProposal && !plan.OpenedHerdr {
+			loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
+			if remoteOwner || loc.approver == nil || len(plan.Argv) == 0 {
+				r.Status = "failed"
+				r.Error = "session could not start on " + d.hostName() + ": no herdr pane and no approving TUI available to confirm the start"
+				if remoteOwner {
+					r.Error = "remote fallback plan cannot be confirmed by the approving TUI"
+				}
+				if len(plan.Argv) == 0 && plan.Note != "" {
+					r.Error += ": " + plan.Note
+				}
+			} else {
+				r.Status = "handed_to_tui"
+			}
+		} else if notify {
 			d.notifyApprovedSessionStart(ctx, r)
 		}
+
 		return r, nil
 	}
 	if p.Harness == "opencode" {

@@ -480,6 +480,10 @@ func New(cfg Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := st.db.Exec(`UPDATE cto_proposals SET status='failed', note='p_' || id || ' approved, failed: the daemon restarted before the TUI confirmed the start', note_delivered=0, result=json_set(CASE WHEN json_valid(result) THEN result ELSE '{}' END, '$.status', 'failed', '$.error', 'the daemon restarted before the TUI confirmed the start') WHERE status='handed_to_tui'`); err != nil {
+		st.close()
+		return nil, err
+	}
 	activity, err := st.sessionActivity()
 	if err != nil {
 		st.close()

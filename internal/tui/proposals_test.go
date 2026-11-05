@@ -14,6 +14,8 @@ import (
 )
 
 type proposalSource struct {
+	startAcks []protocol.CTOStartAck
+	ackCh     chan protocol.CTOStartAck
 	fakeSource
 	answers   []protocol.CTOProposalAnswer
 	proposals []protocol.CTOProposal
@@ -22,6 +24,13 @@ type proposalSource struct {
 
 func (s *proposalSource) Call(_ context.Context, method string, arg any) (json.RawMessage, error) {
 	switch method {
+	case protocol.OpProposalStartAck:
+		if s.ackCh != nil {
+			s.ackCh <- arg.(protocol.CTOStartAck)
+		} else {
+			s.startAcks = append(s.startAcks, arg.(protocol.CTOStartAck))
+		}
+		return json.RawMessage(`{}`), nil
 	case protocol.OpProposalList:
 		return json.Marshal(s.proposals)
 	case protocol.OpProposalAnswer:

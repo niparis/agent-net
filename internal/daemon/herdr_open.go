@@ -269,7 +269,7 @@ func openedHerdrPlan(host, name, pane string) protocol.EnterPlan {
 
 // Only the approving TUI gets a command to run. Broadcasting it would start
 // the same session once per open TUI, and a CLI has no terminal push handler.
-func (d *Daemon) notifyApprovedSessionStart(ctx context.Context, r protocol.StartedSession) {
+func (d *Daemon) notifyApprovedSessionStart(ctx context.Context, r protocol.StartedSession) bool {
 	if r.Harness == "codex" && r.EnterPlan != nil && !r.EnterPlan.OpenedHerdr && len(r.EnterPlan.Argv) != 0 {
 		loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
 		if c := loc.approver; c != nil {
@@ -277,13 +277,14 @@ func (d *Daemon) notifyApprovedSessionStart(ctx context.Context, r protocol.Star
 			if host := cleanLine(r.Hostname); host != "" {
 				name += " (" + host + ")"
 			}
-			q := protocol.UIRequest{StartPlan: r.EnterPlan, StartName: name}
+			q := protocol.UIRequest{StartPlan: r.EnterPlan, StartName: name, StartProposalID: proposalIDFromContext(ctx)}
 			if c.writeJSON(map[string]any{"method": "cto_ui", "params": q}) == nil {
-				return
+				return true
 			}
 		}
 	}
 	d.notifySessionStart(r)
+	return false
 }
 
 func (d *Daemon) notifySessionStart(r protocol.StartedSession) {
