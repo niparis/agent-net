@@ -315,48 +315,55 @@ func targetInBatch(list []nodeTaskTarget, t nodeTaskTarget) bool {
 	return false
 }
 
-// sessionHasRecentStepMessage checks if the session has an undelivered step-task message
-// or one created within recentWindow.
+// sessionHasRecentStepMessage checks if the session has a step-task message created within recentWindow.
 func (s *Store) sessionHasRecentStepMessage(session string, recentWindow time.Duration) (bool, error) {
 	cutoff := s.now().Add(-recentWindow).UnixNano()
 	var exists int
 	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages m
 		JOIN delivery_step_messages d ON d.message_id=m.id
 		WHERE m.recipient=? AND m.sender='agent-net' AND m.state<>'expired'
-		AND (m.state IN ('stored','dispatched') OR m.created_at>=?))`, session, cutoff).Scan(&exists)
+		AND m.created_at>=?)`, session, cutoff).Scan(&exists)
 	return exists != 0, err
 }
 
-// sessionReportedEarlierStep checks if the session reported earlier evidence on this change.
-func (s *Store) sessionReportedEarlierStep(target nodeTaskTarget) (bool, error) {
-	var exists int
-	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_evidence
-		WHERE change_id=? AND revision=? AND (by=? OR reported_by=?))`,
-		target.id, target.revision, target.session, target.session).Scan(&exists)
-	return exists != 0, err
-}
-
-func (g *Gateway) shouldCoalesceSession(session string, targets []nodeTaskTarget) bool {
-	if b, ok := g.stepBatches[session]; ok && len(b.targets) > 0 {
-		return true
+// isTaskOwnerReassigned checks if a step task was re-sent because its owner changed
+// (merger stopped, deleted, replaced, pruned, reassigned).
+func (s *Store) isTaskOwnerReassigned(t nodeTaskTarget) bool {
+	c, ok, err := queryChange(s.db, `id=?`, t.id)
+	if !ok || err != nil {
+		return false
 	}
-	g.lastReportMu.Lock()
-	lastReport, hasReported := g.lastReportBySession[session]
-	g.lastReportMu.Unlock()
-	if hasReported && time.Since(lastReport) <= g.recentWindow() {
-		return true
-	}
-	recent, err := g.store.sessionHasRecentStepMessage(session, g.recentWindow())
-	if err == nil && recent {
-		return true
-	}
-	for _, t := range targets {
-		earlier, err := g.store.sessionReportedEarlierStep(t)
-		if err == nil && earlier {
+	// A step whose owner was /merger and is now /caller due to merger stop/delete/prune
+	if t.owner == callerTaskOwner && (t.ref.Step == protocol.StepTest || t.ref.Step == protocol.StepMerge || t.ref.Step == protocol.StepVerify) {
+		var hasMergerFallback int
+		_ = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source='/delivery/caller' AND target=? AND kind<>'accepts')`, c.Project).Scan(&hasMergerFallback)
+		if hasMergerFallback != 0 {
 			return true
 		}
 	}
-	return false
+	p, err := s.deliveryPipeline(c.Project)
+	if err == nil {
+		step, ok := p.Find(t.ref)
+		if ok {
+			if step.Owner.Kind == protocol.OwnerMerger && t.owner != mergerTaskOwner {
+				return true
+			}
+			if step.Owner.Kind == protocol.OwnerNode && step.Owner.Node != "" && t.owner != step.Owner.Node {
+				return true
+			}
+			if step.Owner.Kind == protocol.OwnerCaller && t.owner != callerTaskOwner {
+				return true
+			}
+		}
+	}
+	// Check if a previous notice for this change and step was expired for a different session (reassigned)
+	var hasExpired int
+	_ = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages m
+		WHERE m.state='expired' AND m.sender='agent-net'
+		AND m.recipient<>?
+		AND m.body LIKE '%change: ' || ? || '%'
+		AND m.body LIKE '%step: ' || ? || '%')`, t.session, t.id, t.ref.String()).Scan(&hasExpired)
+	return hasExpired != 0
 }
 
 func (g *Gateway) flushStepTasks(session string) {
@@ -468,62 +475,96 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	cap := g.batchCap()
 	quiet := g.quietWindow()
 
-	var flushBatches [][]nodeTaskTarget
+	var immediateSingle []nodeTaskTarget
+	var immediateBatches [][]nodeTaskTarget
+	var timerSchedules []string
+
 	g.stepBatchesMu.Lock()
 	if g.stepBatches == nil {
 		g.stepBatches = make(map[string]*stepTaskBatch)
 	}
 
 	for session, group := range groups {
-		if g.shouldCoalesceSession(session, group) {
-			b, ok := g.stepBatches[session]
-			if !ok {
-				b = &stepTaskBatch{session: session}
-				g.stepBatches[session] = b
-			}
-			for _, t := range group {
-				if !targetInBatch(b.targets, t) {
-					b.targets = append(b.targets, t)
-				}
-			}
-			for len(b.targets) >= cap {
-				chunk := b.targets[:cap]
-				b.targets = b.targets[cap:]
-				flushBatches = append(flushBatches, chunk)
-			}
-			if len(b.targets) == 0 {
-				if b.timer != nil {
-					b.timer.Stop()
-					b.timer = nil
-				}
-				delete(g.stepBatches, session)
+		var immediate []nodeTaskTarget
+		var batchable []nodeTaskTarget
+		for _, t := range group {
+			if g.store.isTaskOwnerReassigned(t) {
+				immediate = append(immediate, t)
 			} else {
-				sess := session
-				if b.timer != nil {
-					b.timer.Stop()
-				}
-				b.timer = time.AfterFunc(quiet, func() {
-					g.flushStepTasks(sess)
-				})
+				batchable = append(batchable, t)
 			}
+		}
+
+		for _, t := range immediate {
+			immediateSingle = append(immediateSingle, t)
+		}
+
+		if len(batchable) == 0 {
+			continue
+		}
+
+		recent, _ := g.store.sessionHasRecentStepMessage(session, g.recentWindow())
+		b, hasBatch := g.stepBatches[session]
+
+		if !recent && (!hasBatch || len(b.targets) == 0) {
+			if len(batchable) == 1 {
+				immediateSingle = append(immediateSingle, batchable[0])
+			} else {
+				immediateBatches = append(immediateBatches, batchable)
+			}
+			continue
+		}
+
+		if !hasBatch {
+			b = &stepTaskBatch{session: session}
+			g.stepBatches[session] = b
+		}
+		for _, t := range batchable {
+			if !targetInBatch(b.targets, t) {
+				b.targets = append(b.targets, t)
+			}
+		}
+		for len(b.targets) >= cap {
+			chunk := b.targets[:cap]
+			b.targets = b.targets[cap:]
+			immediateBatches = append(immediateBatches, chunk)
+		}
+		if len(b.targets) == 0 {
+			if b.timer != nil {
+				b.timer.Stop()
+				b.timer = nil
+			}
+			delete(g.stepBatches, session)
 		} else {
-			if len(group) == 1 {
-				m, err := g.store.storeStepTaskMessagesInternal(group, false)
-				if err != nil {
-					g.logLine("error", "where", "step task message", "err", err)
-					continue
-				}
-				if m.ID != "" {
-					g.dispatch(ctx, m)
-				}
-			} else {
-				flushBatches = append(flushBatches, group)
+			timerSchedules = append(timerSchedules, session)
+		}
+	}
+
+	for _, session := range timerSchedules {
+		b := g.stepBatches[session]
+		if b != nil {
+			sess := session
+			if b.timer != nil {
+				b.timer.Stop()
 			}
+			b.timer = time.AfterFunc(quiet, func() {
+				g.flushStepTasks(sess)
+			})
 		}
 	}
 	g.stepBatchesMu.Unlock()
 
-	for _, batch := range flushBatches {
+	for _, t := range immediateSingle {
+		m, err := g.store.storeStepTaskMessagesInternal([]nodeTaskTarget{t}, false)
+		if err != nil {
+			g.logLine("error", "where", "step task message", "err", err)
+			continue
+		}
+		if m.ID != "" {
+			g.dispatch(ctx, m)
+		}
+	}
+	for _, batch := range immediateBatches {
 		g.sendStepTaskBatch(ctx, batch)
 	}
 }
