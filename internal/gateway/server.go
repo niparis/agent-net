@@ -1798,6 +1798,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || agent.NodeID != nc.id || agent.Harness == protocol.OwnerHarness {
 			return nil, reject("session does not belong to this node")
 		}
+		identity, err := st.resolveSessionContext(agent.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		// Preserve the old Inbox node for sessions an old daemon reported
+		// without verified repository metadata.
+		if agent.Repo.Project == "" {
+			identity.Project = ""
+		}
 		name := agent.Profile.Name
 		if name == "" {
 			name = agent.Title
@@ -1805,7 +1814,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if name == "" || strings.HasPrefix(name, "s_") {
 			name = "an agent"
 		}
-		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: agent.Repo.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
+		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: identity.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
 		return map[string]any{"item": item}, err
 
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":

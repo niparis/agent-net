@@ -88,7 +88,7 @@ func TestAdvisorGroupSendEdgeMigration(t *testing.T) {
 		t.Fatalf("before recipients: %v", before)
 	}
 	// The current gateway needs the identity columns for the before-send.
-	// Remove them only afterwards, so replay starts from the real pre-114
+	// Remove them only afterwards, so replay starts from the real pre-115
 	// schema and applies the frozen migration without rewriting it.
 	eventually(t, "rewind session identity schema", func() bool {
 		return rewriteSchema(`
