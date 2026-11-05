@@ -209,7 +209,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		// The worker has ended: it leaves the worker list, and its record stays
 		// (offline) only for a follow-up that starts it again.
-		if err := g.store.SetSessionOffline(nc.id, p.SessionID); err != nil {
+		if err := g.store.SetWorkerSessionEnded(nc.id, p.SessionID); err != nil {
 			return nil, err
 		}
 		detail := strings.TrimPrefix(pairs("reason", p.Reason, "harness", p.Harness, "project", p.Project, "model", p.Model), " ")
@@ -1429,7 +1429,7 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 		// The machine says it does not run this worker. Drop it from the list;
 		// its record and the machine's own cleanup decide about a resume.
 		if strings.Contains(err.Error(), "no worker with session") {
-			g.store.SetSessionOffline(w.NodeID, p.Session)
+			g.store.SetWorkerSessionEnded(w.NodeID, p.Session)
 		}
 		return nil, reject("machine %s did not stop the worker: %v", w.Hostname, err)
 	}

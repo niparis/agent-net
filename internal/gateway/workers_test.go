@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -232,5 +234,45 @@ func TestWorkerSessionKeepsReworkCounters(t *testing.T) {
 	if a.Worker == nil || a.Worker.Continue != 3 || a.Worker.Fix != 1 ||
 		a.Worker.DifficultyAsked != "hard" || a.Worker.DifficultyUsed != "simple" {
 		t.Fatalf("updated counters: %+v", a.Worker)
+	}
+}
+
+func TestWorkerStoppedClearsBusySessionStatus(t *testing.T) {
+	for _, reason := range []string{protocol.StopHandback, protocol.StopRequested, protocol.StopRunFailed, protocol.StopMaxAge, protocol.StopLost, protocol.StopStartFails} {
+		t.Run(reason, func(t *testing.T) {
+			g, node := scopeGateway(t)
+			in := protocol.SessionInfo{Harness: "opencode", NativeID: "worker", Status: "busy", Worker: &protocol.WorkerInfo{ID: "w_test"}}
+			id, err := g.store.UpsertSession(node, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := json.Marshal(protocol.WorkerStopped{SessionID: id, WorkerID: "w_test", Reason: reason})
+			if _, err := g.handleWorker(context.Background(), &nodeConn{id: node}, "worker.stopped", raw); err != nil {
+				t.Fatal(err)
+			}
+			a, ok, err := g.store.Agent(id)
+			if err != nil || !ok {
+				t.Fatalf("session: %v %v", ok, err)
+			}
+			if a.Online || a.Status != "ended" {
+				t.Errorf("ended worker: online=%v status=%q", a.Online, a.Status)
+			}
+			// Disconnect/removal after the report must keep the end state.
+			if err := g.store.SetSessionOffline(node, id); err != nil {
+				t.Fatal(err)
+			}
+			a, _, _ = g.store.Agent(id)
+			if a.Status != "ended" {
+				t.Errorf("after removal: %q", a.Status)
+			}
+			in.Status = "idle"
+			if _, err := g.store.UpsertSession(node, in); err != nil {
+				t.Fatal(err)
+			}
+			a, _, _ = g.store.Agent(id)
+			if !a.Online || a.Status != "idle" {
+				t.Errorf("resumed worker: %+v", a)
+			}
+		})
 	}
 }
