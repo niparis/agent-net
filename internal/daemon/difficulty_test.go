@@ -53,14 +53,15 @@ func fakeDifficultyRun(t *testing.T, replies map[string][]string) string {
 func newDifficultyDaemon(t *testing.T, harness, model string, timeout time.Duration) *Daemon {
 	t.Helper()
 	d, err := New(Config{
-		StateDir:               t.TempDir(),
-		HarnessPaths:           map[string]string{harness: os.Args[0]},
-		DifficultyHarness:      harness,
-		DifficultyModel:        model,
-		DifficultyAnalyzer:     true,
-		DifficultyJudgeHarness: "codex",
-		DifficultyJudgeModel:   model,
-		DifficultyTimeout:      timeout,
+		StateDir:           t.TempDir(),
+		HarnessPaths:       map[string]string{harness: os.Args[0]},
+		DifficultyHarness:  harness,
+		DifficultyModel:    model,
+		DifficultyAnalyzer: true,
+		testJudgePick: func(_ context.Context, _ string) (protocol.DifficultyJudgeChoice, error) {
+			return protocol.DifficultyJudgeChoice{Harness: "codex", Model: model}, nil
+		},
+		DifficultyTimeout: timeout,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -151,13 +152,15 @@ func TestAssessDifficultyUsesOpenCodeJudgeAndExtractsNoisyJSON(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv(envFakeOpenCodeReply, judgeReply)
 	d, err := New(Config{
-		StateDir:             t.TempDir(),
-		HarnessPaths:         map[string]string{"codex": os.Args[0], "opencode": os.Args[0]},
-		DifficultyHarness:    "codex",
-		DifficultyModel:      "gpt-analyzer",
-		DifficultyAnalyzer:   true,
-		DifficultyJudgeModel: "opencode-go/deepseek-v4.1-flash",
-		DifficultyTimeout:    2 * time.Second,
+		StateDir:           t.TempDir(),
+		HarnessPaths:       map[string]string{"codex": os.Args[0], "opencode": os.Args[0]},
+		DifficultyHarness:  "codex",
+		DifficultyModel:    "gpt-analyzer",
+		DifficultyAnalyzer: true,
+		testJudgePick: func(_ context.Context, _ string) (protocol.DifficultyJudgeChoice, error) {
+			return protocol.DifficultyJudgeChoice{Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash"}, nil
+		},
+		DifficultyTimeout: 2 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +184,9 @@ func TestAssessDifficultyFallsBackToCodexJudgeWhenOpenCodeMissing(t *testing.T) 
 		"analyzer": {difficultyProfileJSON("high")},
 		"judge":    {difficultyScoresJSON},
 	})
-	sources := DifficultySources{Binary: func(name string) (string, error) {
+	sources := DifficultySources{PickJudge: func(context.Context, string) (protocol.DifficultyJudgeChoice, error) {
+		return protocol.DifficultyJudgeChoice{Harness: "codex", Model: "gpt-analyzer"}, nil
+	}, Binary: func(name string) (string, error) {
 		if name == "codex" {
 			return os.Args[0], nil
 		}
@@ -193,7 +198,7 @@ func TestAssessDifficultyFallsBackToCodexJudgeWhenOpenCodeMissing(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Label != "hard" || a.JudgeModel != "codex:gpt-analyzer" || !strings.Contains(strings.ToLower(a.Notes), "opencode") {
+	if a.Label != "hard" || a.JudgeModel != "codex:gpt-analyzer" {
 		t.Fatalf("assessment lacks fallback note: %+v", a)
 	}
 	if calls := difficultyCalls(t, dir); len(calls) != 2 || calls[1].Kind != "judge" {

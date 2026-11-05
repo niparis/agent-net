@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -29,15 +30,15 @@ type DifficultyAssessor struct {
 }
 
 // DifficultySources are the reads and lookups the assessor needs beyond its
-// config. A nil field uses the standalone default: no worker roster, the
-// bundled score table, the bundled cut points, and the harness on this
-// machine.
+// config. A nil picker means no judge is available. A nil analyzer source
+// uses the bundled score table and cut points or the local harness lookup.
 type DifficultySources struct {
-	Profiles func(context.Context) ([]protocol.WorkerProfile, error)
-	Scores   func(context.Context) ([]protocol.ModelScore, error)
-	Minimums func(context.Context) (map[string]float64, error)
-	Binary   func(string) (string, error)
-	Logf     func(string, ...any)
+	PickJudge func(context.Context, string) (protocol.DifficultyJudgeChoice, error)
+	Profiles  func(context.Context) ([]protocol.WorkerProfile, error)
+	Scores    func(context.Context) ([]protocol.ModelScore, error)
+	Minimums  func(context.Context) (map[string]float64, error)
+	Binary    func(string) (string, error)
+	Logf      func(string, ...any)
 }
 
 // NewDifficultyAssessor returns an assessor for cfg. The daemon passes its
@@ -78,29 +79,23 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	if strings.TrimSpace(task) == "" {
 		return fallback("difficulty: the task is empty; started at normal")
 	}
-	judgeHarness := strings.ToLower(strings.TrimSpace(a.cfg.DifficultyJudgeHarness))
-	judgeModel := strings.TrimSpace(a.cfg.DifficultyJudgeModel)
-	if judgeHarness == "" {
-		judgeHarness = "opencode"
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, difficultyLookupTimeout)
+	first, err := a.pickJudge(lookupCtx, "")
+	lookupCancel()
+	if err != nil {
+		return fallback("difficulty: could not choose a judge: " + err.Error() + "; started at normal")
 	}
-	if judgeModel == "" {
-		judgeModel = "opencode-go/deepseek-v4.1-flash"
-	}
-	a0.JudgeModel = judgeHarness + ":" + judgeModel
-	if judgeHarness == "opencode" {
-		if _, err := a.harnessBinary("opencode"); err != nil {
-			if a.cfg.DifficultyAnalyzer {
-				_, model, modelErr := a.difficultyModel(ctx)
-				if modelErr != nil {
-					return fallback("difficulty: " + modelErr.Error() + "; started at normal")
-				}
-				judgeHarness, judgeModel = "codex", model
-				judgeNote = "OpenCode is not installed; used the Codex judge instead"
-			} else {
-				return fallback("difficulty: OpenCode is not installed; started at normal")
-			}
+	if first.Harness == "" || first.Model == "" {
+		machine := first.Machine
+		if machine == "" {
+			machine = a.cfg.Hostname
 		}
+		if machine == "" {
+			machine = "this machine"
+		}
+		return fallback("difficulty: no judge: no registered normal-level model available on " + machine + "; started at normal")
 	}
+	judgeHarness, judgeModel := first.Harness, first.Model
 	a0.JudgeModel = judgeHarness + ":" + judgeModel
 	timeout := a.cfg.DifficultyTimeout
 	if timeout <= 0 {
@@ -112,16 +107,8 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 			return fallback("difficulty: cannot make a judge folder: " + err.Error() + "; started at normal")
 		}
 		defer os.RemoveAll(judgeDir)
-		retryHarness := strings.ToLower(strings.TrimSpace(a.cfg.DifficultyRetryJudgeHarness))
-		retryModel := strings.TrimSpace(a.cfg.DifficultyRetryJudgeModel)
-		if retryHarness == "" {
-			retryHarness = "codex"
-		}
-		if retryModel == "" {
-			retryModel = "gpt-6.1-sol"
-		}
 		res := a.judgeWithRetry(ctx, judgeDir, judgeBriefForTask(task), timeout,
-			judgeSpec{judgeHarness, judgeModel}, judgeSpec{retryHarness, retryModel})
+			judgeSpec{judgeHarness, judgeModel})
 		a0.JudgeModel = res.judge.harness + ":" + res.judge.model
 		judgeNote = res.note
 		if res.failure != "" {
@@ -176,10 +163,13 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	}
 	defer os.RemoveAll(judgeDir)
 
-	scores, insufficient, err := a.judgeDifficulty(ctx, judgeHarness, judgeModel, judgeDir, profile, timeout)
-	if err != nil {
-		return fallback("difficulty: the judge " + err.Error() + "; started at normal")
+	res := a.judgeWithRetry(ctx, judgeDir, judgeBrief(profile), timeout, judgeSpec{judgeHarness, judgeModel})
+	a0.JudgeModel = res.judge.harness + ":" + res.judge.model
+	judgeNote = res.note
+	if res.failure != "" {
+		return fallback("difficulty: " + res.failure + "; started at normal")
 	}
+	scores, insufficient := res.scores, res.insufficient
 	if len(insufficient) > 0 {
 		patch, err := a.runDifficultyOneShot(ctx, harness, model, dir, analysisBrief(task, insufficient), timeout)
 		if err != nil {
@@ -195,10 +185,13 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 		if profile.Confidence == "low" {
 			return fallback("difficulty: the analyzer confidence is low; started at normal")
 		}
-		scores, insufficient, err = a.judgeDifficulty(ctx, judgeHarness, judgeModel, judgeDir, profile, timeout)
-		if err != nil {
-			return fallback("difficulty: the judge " + err.Error() + "; started at normal")
+		res = a.judgeWithRetry(ctx, judgeDir, judgeBrief(profile), timeout, res.judge)
+		a0.JudgeModel = res.judge.harness + ":" + res.judge.model
+		judgeNote = res.note
+		if res.failure != "" {
+			return fallback("difficulty: " + res.failure + "; started at normal")
 		}
+		scores, insufficient = res.scores, res.insufficient
 		if len(insufficient) > 0 {
 			return fallback("difficulty: the judge still lacked evidence for " + strings.Join(insufficient, ", ") + "; started at normal")
 		}
@@ -213,19 +206,16 @@ func (a *DifficultyAssessor) Assess(ctx context.Context, project, task string) (
 	return a0, nil
 }
 
-// The judge-only path gives the retry judge this much of the budget: the first
-// judge answers in 8 to 35 s (median 17 s, 2026-11-03 and 04, 27 runs) and the
-// Codex retry needs about 20 s. The retry starts no later than the hedge point
-// and only when at least judgeRetryMinimum is left.
-const (
-	judgeRetryShare   = 35 * time.Second
-	judgeRetryMinimum = 20 * time.Second
-)
-
-// judgeHedge is when the retry judge starts if the first has not answered:
-// judgeRetryShare before the end, but never before a third of a short budget.
+// Start a backup after 30 seconds, leaving it time in the 90 second budget.
 func judgeHedge(budget time.Duration) time.Duration {
-	return max(budget-judgeRetryShare, budget/3)
+	return min(30*time.Second, budget/3)
+}
+
+func (a *DifficultyAssessor) pickJudge(ctx context.Context, exclude string) (protocol.DifficultyJudgeChoice, error) {
+	if a.sources.PickJudge == nil {
+		return protocol.DifficultyJudgeChoice{Machine: a.cfg.Hostname}, nil
+	}
+	return a.sources.PickJudge(ctx, exclude)
 }
 
 type judgeSpec struct{ harness, model string }
@@ -255,19 +245,15 @@ type judgeResult struct {
 	failure      string
 }
 
-// judgeWithRetry scores prompt with the first judge and, as a hedge, the retry
-// judge. The first judge may use the whole budget. The retry judge starts when
-// the first fails, or at the hedge point if the first has not answered yet,
-// and runs to the end of the budget. The first valid answer wins and the other
-// judge is stopped. Before, the first judge was cut off at 39 s and the retry
-// got only the remaining 21 s, so a slow first judge failed both.
-func (a *DifficultyAssessor) judgeWithRetry(ctx context.Context, dir, prompt string, budget time.Duration, first, retry judgeSpec) judgeResult {
+// judgeWithRetry picks a backup only when the first fails or reaches the hedge
+// point. The first valid answer wins and the other process is stopped.
+func (a *DifficultyAssessor) judgeWithRetry(ctx context.Context, dir, prompt string, budget time.Duration, first judgeSpec) judgeResult {
 	budgetCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	deadline, _ := budgetCtx.Deadline()
-	hedge, minRetry := judgeHedge(budget), judgeRetryMinimum
+	hedge := judgeHedge(budget)
 	if a.cfg.testJudgeHedgeAfter > 0 {
-		hedge, minRetry = a.cfg.testJudgeHedgeAfter, 50*time.Millisecond
+		hedge = a.cfg.testJudgeHedgeAfter
 	}
 	started := time.Now()
 	results := make(chan judgeOutcome, 2)
@@ -289,7 +275,13 @@ func (a *DifficultyAssessor) judgeWithRetry(ctx context.Context, dir, prompt str
 	hedgeTimer := time.NewTimer(hedge)
 	defer hedgeTimer.Stop()
 
-	retryTried, retryStarted := false, false
+	type pickResult struct {
+		choice protocol.DifficultyJudgeChoice
+		err    error
+	}
+	picks := make(chan pickResult, 1)
+	var retry judgeSpec
+	retryTried, retryStarted, picking := false, false, false
 	var retryAt, retryTime time.Duration
 	startRetry := func() {
 		if retryTried {
@@ -297,15 +289,16 @@ func (a *DifficultyAssessor) judgeWithRetry(ctx context.Context, dir, prompt str
 		}
 		retryTried = true
 		remaining := time.Until(deadline)
-		if remaining < minRetry || budgetCtx.Err() != nil {
+		if remaining <= 0 || budgetCtx.Err() != nil {
 			return
 		}
-		if _, err := a.harnessBinary(retry.harness); err != nil {
-			return
-		}
-		retryStarted, retryAt, retryTime = true, time.Since(started), remaining
-		pending++
-		go run(retryCtx, retry, true, remaining)
+		picking = true
+		go func() {
+			lookupCtx, cancel := context.WithTimeout(retryCtx, difficultyLookupTimeout)
+			defer cancel()
+			c, err := a.pickJudge(lookupCtx, protocol.ProfileProvider(first.harness, first.model))
+			picks <- pickResult{c, err}
+		}()
 	}
 	firstFailure := func(o judgeOutcome) string {
 		switch judgeAttemptResult(o.runErr, o.parseErr) {
@@ -339,8 +332,28 @@ func (a *DifficultyAssessor) judgeWithRetry(ctx context.Context, dir, prompt str
 	}
 
 	var firstOut, retryOut *judgeOutcome
-	for pending > 0 {
+	done := budgetCtx.Done()
+	for pending > 0 || picking {
 		select {
+		case pick := <-picks:
+			picking = false
+			if pick.err != nil || pick.choice.Harness == "" || pick.choice.Model == "" || budgetCtx.Err() != nil {
+				continue
+			}
+			retry = judgeSpec{pick.choice.Harness, pick.choice.Model}
+			if protocol.ProfileProvider(retry.harness, retry.model) == protocol.ProfileProvider(first.harness, first.model) {
+				continue
+			}
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				continue
+			}
+			retryStarted, retryAt, retryTime = true, time.Since(started), remaining
+			pending++
+			go run(retryCtx, retry, true, remaining)
+		case <-done:
+			picking = false
+			done = nil
 		case <-hedgeTimer.C:
 			startRetry()
 		case o := <-results:
@@ -456,30 +469,6 @@ func (a *DifficultyAssessor) difficultyMinimums(ctx context.Context) map[string]
 	return protocol.DifficultyMinimums
 }
 
-func (a *DifficultyAssessor) judgeDifficulty(ctx context.Context, harness, model, dir string, profile difficulty.Profile, timeout time.Duration) (difficulty.Scores, []string, error) {
-	start := time.Now()
-	raw, err := a.runDifficultyOneShot(ctx, harness, model, dir, judgeBrief(profile), timeout)
-	dur := time.Since(start)
-	var scores difficulty.Scores
-	var insufficient []string
-	var parseErr error
-	if err == nil {
-		scores, insufficient, parseErr = parseJudgeReply(raw)
-	}
-	res := judgeAttemptResult(err, parseErr)
-	a.logAttempt(harness, model, dur, res)
-	if parseErr != nil {
-		a.logReply(harness, model, raw)
-	}
-	if err != nil {
-		return difficulty.Scores{}, nil, err
-	}
-	if parseErr != nil {
-		return difficulty.Scores{}, nil, parseErr
-	}
-	return scores, insufficient, nil
-}
-
 // runDifficultyOneShot runs one prompt and returns its final text. It never
 // runs longer than timeout.
 func (a *DifficultyAssessor) runDifficultyOneShot(ctx context.Context, harness, model, dir, prompt string, timeout time.Duration) (string, error) {
@@ -490,6 +479,8 @@ func (a *DifficultyAssessor) runDifficultyOneShot(ctx context.Context, harness, 
 		return a.runCodexExec(runCtx, model, dir, prompt, timeout)
 	case "opencode":
 		return a.runOpenCode(runCtx, model, prompt, timeout)
+	case "claude", "pi", "agy":
+		return a.runJudgeCLI(runCtx, harness, model, dir, prompt, timeout)
 	default:
 		return "", fmt.Errorf("harness %q has no supported one-shot run", harness)
 	}
@@ -675,10 +666,72 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 	// A standalone server exits with the judge instead of leaving a session
 	// running in OpenCode's shared service. The nonexistent socket also prevents
 	// the agent-net plugin from registering that private session or exposing tools.
-	args := []string{"run", "--standalone", "-m", model, prompt}
+	selection := protocol.ParseModelSelection("opencode", "", model, "")
+	args := []string{"run", "--standalone", "-m", selection.ModelID()}
+	if selection.Effort != "" {
+		args = append(args, "--variant", selection.Effort)
+	}
+	args = append(args, prompt)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = env
+	stdout, stderr := &capWriter{limit: 1 << 20}, &capWriter{limit: 4096}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 2 * time.Second
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return "", fmt.Errorf("timed out after %s", timeout)
+			}
+			return "", errors.New("was canceled")
+		}
+		detail := redact.Cut(strings.Join(strings.Fields(stderr.String()), " "), 300)
+		if detail == "" {
+			return "", fmt.Errorf("failed: %v", err)
+		}
+		return "", fmt.Errorf("failed: %v: %s", err, detail)
+	}
+	text := strings.TrimSpace(stdout.String())
+	if text == "" {
+		return "", errors.New("returned no message")
+	}
+	return text, nil
+}
+
+// runJudgeCLI runs a prompt without tools or a persistent interactive session.
+func (a *DifficultyAssessor) runJudgeCLI(ctx context.Context, harness, model, dir, prompt string, timeout time.Duration) (string, error) {
+	bin, err := a.harnessBinary(harness)
+	if err != nil {
+		return "", fmt.Errorf("cannot run: %w", err)
+	}
+	selection := protocol.ParseModelSelection(harness, "", model, "")
+	models := []string{selection.ModelID()}
+	modelArgs, err := selection.Arguments(models)
+	if err != nil {
+		return "", err
+	}
+	var args []string
+	switch harness {
+	case "claude":
+		args = []string{"--print", "--output-format", "text", "--no-session-persistence", "--tools", "", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}
+		args = append(args, modelArgs...)
+	case "pi":
+		args = []string{"--print", "--no-session", "--no-tools", "--no-extensions"}
+		args = append(args, modelArgs...)
+	case "agy":
+		args = []string{"--mode", "plan", "--sandbox", "--settings", `{"permissions":{"deny":["*"]}}`}
+		args = append(args, modelArgs...)
+	}
+	if harness == "agy" {
+		args = append(args, "-p="+prompt)
+	} else {
+		args = append(args, prompt)
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = dir
+	cmd.Env = workerEnv(os.Environ(), map[string]string{IgnoreEnv: "1", "PWD": dir, "AGENT_NET_SOCKET": filepath.Join(dir, "no-agent-net", "daemon.sock")})
 	stdout, stderr := &capWriter{limit: 1 << 20}, &capWriter{limit: 4096}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -753,11 +806,12 @@ func (a *DifficultyAssessor) runCodexExec(ctx context.Context, model, dir, promp
 	defer os.RemoveAll(outDir)
 	last := filepath.Join(outDir, "last-message")
 	args := []string{"exec", "-C", dir, "-s", "read-only", "--skip-git-repo-check", "--ephemeral", "-o", last}
-	if strings.Contains(prompt, "AGENT_NET_DIFFICULTY_KIND=judge") {
-		args = append(args, "-c", `model_reasoning_effort="low"`)
+	selection := protocol.ParseModelSelection("codex", "", model, "")
+	if selection.Effort != "" {
+		args = append(args, "-c", "model_reasoning_effort="+strconv.Quote(selection.Effort))
 	}
-	if model != "" {
-		args = append(args, "-m", model)
+	if selection.ModelID() != "" {
+		args = append(args, "-m", selection.ModelID())
 	}
 	if codexConfigDefinesAgentNet() {
 		args = append(args, "-c", "mcp_servers.agent-net.enabled=false")

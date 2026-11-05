@@ -156,7 +156,9 @@ func TestWorkerAssessmentQueueFlush(t *testing.T) {
 func TestWorkerJudgeRetryStoresFirstFailure(t *testing.T) {
 	setupShadowJudge(t, "not json", false)
 	fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
-	d := &Daemon{cfg: Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}}}
+	cfg := Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}}
+	withDifficulty(nil)(&cfg)
+	d := &Daemon{cfg: cfg}
 	a := d.assessWorkerStart(context.Background(), t.TempDir(), "brief")
 	if a.Error != "" || a.JudgeHarness != "codex" || a.JudgeModel != "gpt-6.1-sol" || !strings.Contains(a.Reasons["judge_note"], "parse") || a.PickerLabel != "hard" {
 		t.Fatalf("assessment: %+v", a)
@@ -168,5 +170,81 @@ func TestWorkerJudgeRetryStoresFirstFailure(t *testing.T) {
 	var stored protocol.WorkerAssessment
 	if err := json.Unmarshal(raw, &stored); err != nil || stored.Reasons["judge_note"] != a.Reasons["judge_note"] {
 		t.Fatalf("stored: %+v, %v", stored, err)
+	}
+}
+
+// The gateway chooses from the registered roster on this daemon's machine.
+// The scripts stand in for Claude and Pi, so no real account is used.
+func TestWorkerJudgePickerRunsClaudeAndGeminiProfiles(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "judge")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' '"+shadowReply+"'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	detect := func(context.Context) []protocol.HarnessInfo {
+		return []protocol.HarnessInfo{
+			{Name: "claude", Path: script, SignedIn: "yes", Models: []string{"claude-test"}},
+			{Name: "pi", Path: script, SignedIn: "yes", Models: []string{"google/gemini-test"}},
+		}
+	}
+	w := startWorkerNodeWithDetect(t, g, shortSet, detect, func(c *Config) {
+		c.testNoDifficulty = false
+		c.HarnessPaths = map[string]string{"claude": script, "pi": script}
+	})
+	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"anthropic", "google"}})
+	for _, p := range []protocol.WorkerProfile{{Harness: "claude", Model: "claude-test"}, {Harness: "pi", Model: "google/gemini-test"}} {
+		score := 32.0
+		w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: p.Model, Score: &score})
+		w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: p.Harness, Model: p.Model})
+	}
+	a := w.d.assessWorkerStart(context.Background(), dir, "brief")
+	b := w.d.assessWorkerStart(context.Background(), dir, "brief")
+	if a.Error != "" || b.Error != "" || a.JudgeHarness == b.JudgeHarness || a.Label != "trivial" || b.Label != "trivial" {
+		t.Fatalf("assessments: %+v / %+v", a, b)
+	}
+}
+
+func TestWorkerJudgePickerNoCandidatesNote(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, func(c *Config) { c.testNoDifficulty = false })
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "brief"})
+	want := "no judge: no registered normal-level model available on " + w.cfg.Hostname
+	if !strings.Contains(res.ModelNote, want) || !strings.Contains(res.ModelNote, "started at normal") {
+		t.Fatalf("model note: %q", res.ModelNote)
+	}
+}
+
+func TestWorkerJudgePickerBackupDifferentProviderOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	bad, good := filepath.Join(dir, "bad"), filepath.Join(dir, "good")
+	if err := os.WriteFile(bad, []byte("#!/bin/sh\nprintf '%s\\n' 'not json'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(good, []byte("#!/bin/sh\nprintf '%s\\n' '"+shadowReply+"'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	detect := func(context.Context) []protocol.HarnessInfo {
+		return []protocol.HarnessInfo{
+			{Name: "claude", Path: bad, SignedIn: "yes", Models: []string{"claude-test"}},
+			{Name: "pi", Path: good, SignedIn: "yes", Models: []string{"google/gemini-test"}},
+		}
+	}
+	w := startWorkerNodeWithDetect(t, g, shortSet, detect, func(c *Config) {
+		c.testNoDifficulty = false
+		c.HarnessPaths = map[string]string{"claude": bad, "pi": good}
+	})
+	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"anthropic", "google"}})
+	for _, p := range []protocol.WorkerProfile{{Harness: "claude", Model: "claude-test"}, {Harness: "pi", Model: "google/gemini-test"}} {
+		score := 32.0
+		w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: p.Model, Score: &score})
+		w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: p.Harness, Model: p.Model})
+	}
+	a := w.d.assessWorkerStart(context.Background(), dir, "brief")
+	if a.Error != "" || a.JudgeHarness != "pi" || a.JudgeModel != "google/gemini-test" || !strings.Contains(a.Reasons["judge_note"], "parse") {
+		t.Fatalf("assessment: %+v", a)
 	}
 }
