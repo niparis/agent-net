@@ -54,6 +54,7 @@ func TestWakeOfflineMergerTaskBatched(t *testing.T) {
 	var changes []string
 	for i := 0; i < 3; i++ {
 		changes = append(changes, r.submit(r.a, r.workerSubmit(fmt.Sprintf("feature/wake-%d", i), commitA)).Change.Change.ID)
+		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: changes[len(changes)-1], StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	}
 	var n int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.sonnet).Scan(&n); err != nil || n != 0 {

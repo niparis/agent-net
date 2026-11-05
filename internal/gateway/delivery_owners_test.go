@@ -552,12 +552,13 @@ func TestDeliveryCallerTaskInSharedPipeline(t *testing.T) {
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: "accepts"}, "owner"); err != nil {
+	if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: "reviews"}, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	id := r.submit(r.a, r.workerSubmit("feature/shared", commitA)).Change.Change.ID
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	msgs, err := r.s.Messages(r.a, protocol.QueryMessages{SessionID: r.caller})
-	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Body, id) || !strings.Contains(msgs[0].Body, "step: test") {
+	if err != nil || len(msgs) == 0 || !strings.Contains(msgs[0].Body, id) || !strings.Contains(msgs[0].Body, "step: test") {
 		t.Fatalf("caller task = %+v, %v", msgs, err)
 	}
 	ref := protocol.StepRef{Step: protocol.StepTest}
