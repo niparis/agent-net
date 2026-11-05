@@ -57,3 +57,18 @@ Clarify the merger's first message: failed or rejected tool calls do not mean
 the owner paused the session. Retry once, then use another approach or report
 the blocked step and continue with ready work. Ask the owner once when a
 decision is needed, while continuing work that does not depend on it.
+
+## 2026-11-05 - Batch independent changes
+
+The merger may combine ready, independent changes with disjoint files on a
+batch branch. It makes a separate merge commit for each in queue order and
+runs CI on the final tip before fast-forwarding the default branch to that tip.
+Migrations, sensitive paths and dependent changes go one at a time. A failed
+batch is retried one change at a time to identify failures.
+
+Pre-merge test evidence still names each change head as its commit, with the
+CI link and tested batch tip recorded alongside it. Each merge report names
+its own merge commit. The merger verifies ancestry before reporting. Existing
+evidence rules trust the reporter's test result and check merge ancestry; they
+do not independently verify the CI link or batch tip. After-merge evidence still
+uses the individual merged commit.
