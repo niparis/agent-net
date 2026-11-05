@@ -319,6 +319,7 @@ func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, inboxVersion); err != nil {
 		t.Fatal(err)
 	}
+	prepareOldSessionIdentity(t, s)
 	s.Close()
 	s, err = OpenStore(path)
 	if err != nil {

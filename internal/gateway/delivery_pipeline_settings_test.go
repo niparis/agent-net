@@ -179,7 +179,7 @@ func TestDeliveryPipelineMigratesLegacyShorthand(t *testing.T) {
 	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery pipeline settings cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.migrate(); err != nil {
+	if err := migrateOldFixture(t, r.s); err != nil {
 		t.Fatal(err)
 	}
 	var value string

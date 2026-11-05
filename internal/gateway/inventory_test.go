@@ -259,7 +259,7 @@ func TestInventoryMigrationBackfillsReports(t *testing.T) {
 	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities; ALTER TABLE sessions DROP COLUMN last_active; ALTER TABLE messages DROP COLUMN reminded; DELETE FROM schema_version WHERE version >= (SELECT MAX(version)-` + strconv.Itoa(backfillMigrationsBack()) + ` FROM schema_version); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return false })

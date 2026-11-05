@@ -360,7 +360,7 @@ func TestAppTokenFamilyMigrationUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	var family string

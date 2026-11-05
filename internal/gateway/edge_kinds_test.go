@@ -103,6 +103,7 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 	if _, err := r.s.db.Exec(`DELETE FROM delivery_step_tasks`); err != nil {
 		t.Fatal(err)
 	}
+	prepareOldSessionIdentity(t, r.s)
 	path := r.s.path
 	if err := r.s.Close(); err != nil {
 		t.Fatal(err)

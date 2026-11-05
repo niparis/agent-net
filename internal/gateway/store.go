@@ -1030,26 +1030,6 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
-		migrationSQL := migrations[i]
-		// Earlier upgrade tests replay migrations on a newer schema. SQLite
-		// does not support ADD COLUMN IF NOT EXISTS.
-		if strings.Contains(migrationSQL, "Explicit session and run identity") {
-			for _, col := range []struct{ table, name, statement string }{
-				{"sessions", "agent_id", "ALTER TABLE sessions ADD COLUMN agent_id TEXT REFERENCES agents(id);"},
-				{"sessions", "repo_id", "ALTER TABLE sessions ADD COLUMN repo_id TEXT REFERENCES repos(id);"},
-				{"worker_runs", "caller_agent_id", "ALTER TABLE worker_runs ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);"},
-				{"worker_starts", "caller_agent_id", "ALTER TABLE worker_starts ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);"},
-			} {
-				var has int
-				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
-					tx.Rollback()
-					return err
-				}
-				if has != 0 {
-					migrationSQL = strings.Replace(migrationSQL, col.statement, "", 1)
-				}
-			}
-		}
 		var result sql.Result
 		if strings.Contains(migrations[i], "ALTER TABLE inbox_items ADD COLUMN options") {
 			for _, col := range []struct{ name, spec string }{
@@ -1069,7 +1049,7 @@ func (s *Store) migrate() error {
 				result, err = tx.Exec(`SELECT 1`)
 			}
 		} else {
-			result, err = tx.Exec(migrationSQL)
+			result, err = tx.Exec(migrations[i])
 		}
 		if err != nil {
 			tx.Rollback()

@@ -165,7 +165,7 @@ func TestWorkerTaskMigrationKeepsOldBriefs(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker task marker and run state columns")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := s.Message(old.ID)

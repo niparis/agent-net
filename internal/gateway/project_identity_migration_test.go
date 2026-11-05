@@ -34,6 +34,7 @@ func resetIdentityMigration(t *testing.T, s *Store) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
 		t.Fatal(err)
 	}
+	prepareOldSessionIdentity(t, s)
 }
 
 func identityFixture(t *testing.T, s *Store, folder, charter string) {

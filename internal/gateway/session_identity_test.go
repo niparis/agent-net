@@ -82,10 +82,10 @@ func TestSessionIdentityMigrationBackfill(t *testing.T) {
 		return []any{relation, rule, authority, policy, pipeline, group}
 	}
 	before := snapshot()
-	if _, err := r.s.db.Exec(`DROP TRIGGER session_identity_repo_update; ALTER TABLE sessions DROP COLUMN agent_id; ALTER TABLE sessions DROP COLUMN repo_id; ALTER TABLE worker_runs DROP COLUMN caller_agent_id; ALTER TABLE worker_starts DROP COLUMN caller_agent_id`); err != nil {
+	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Explicit session and run identity")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(migrations[migrationVersion(t, "Explicit session and run identity")-1]); err != nil {
+	if err := migrateOldFixture(t, r.s); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ id, agent, repo string }{{r.caller, "demo", "demo"}, {r.worker, "", "demo"}, {r.sonnet, "demo", "demo"}, {cto, "cto", ""}, {owner, "", ""}} {
@@ -384,5 +384,25 @@ func TestRequestRuleAndStorageUseResolvedFallbackAgent(t *testing.T) {
 	m, _, err := send(r.s, r.caller, r.sonnet, "request", "")
 	if err != nil || m.State != protocol.StateHeld {
 		t.Fatalf("message state %q: %v", m.State, err)
+	}
+}
+
+func TestSessionIdentityMigrationRejectsExistingColumns(t *testing.T) {
+	s, _ := newTestStore(t)
+	version := migrationVersion(t, "Explicit session and run identity")
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
+		t.Fatal(err)
+	}
+	path := s.path
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(path)
+	if err == nil {
+		reopened.Close()
+		t.Fatal("migration silently accepted an inconsistent schema")
+	}
+	if !strings.Contains(err.Error(), "duplicate column") {
+		t.Fatalf("unexpected migration error: %v", err)
 	}
 }

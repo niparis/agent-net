@@ -107,10 +107,10 @@ func TestMachineRemovedSessionsCannotReappear(t *testing.T) {
 
 func TestMachineTokenMigrationReplay(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version=?`, len(migrations)); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "machine token revocation columns")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 }

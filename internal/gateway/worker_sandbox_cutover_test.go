@@ -33,7 +33,7 @@ func TestWorkerSandboxCutover(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	snap, err := s.SettingsSnapshot()
@@ -68,7 +68,7 @@ func TestWorkerSandboxCutover(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := s.SettingsSnapshot()
@@ -180,7 +180,7 @@ func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 			if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.migrate(); err != nil {
+			if err := migrateOldFixture(t, s); err != nil {
 				t.Fatal(err)
 			}
 			snap, err := s.SettingsSnapshot()
@@ -218,7 +218,7 @@ func TestWorkerSandboxCutoverTightensUnsafeExistingValue(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions("host", "shop")
@@ -236,7 +236,7 @@ func TestWorkerSandboxCutoverTightensUnsafeExistingValue(t *testing.T) {
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	after, err := s.SettingsSnapshot()
@@ -273,7 +273,7 @@ func TestWorkerSandboxCutoverNoticesMachineWithoutPolicy(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{a, b} {
@@ -310,7 +310,7 @@ func TestWorkerSandboxCutoverPreservesExistingWhenNetworkEnforcesFloor(t *testin
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions("host", "shop")
@@ -377,7 +377,7 @@ func TestWorkerSandboxCutoverPreservesExactMachineProjectFallback(t *testing.T) 
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions(b, "SHOP")
@@ -405,7 +405,7 @@ func TestWorkerSandboxCutoverPreservesMultipleOldNamesOnMachine(t *testing.T) {
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	for _, project := range []string{"shop", "SHOP"} {
@@ -451,7 +451,7 @@ func TestWorkerSandboxCutoverNoticeListsAllAffectedMachines(t *testing.T) {
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	inbox, err := s.ListInbox()
@@ -485,7 +485,7 @@ func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions(id, "Shop")
@@ -527,7 +527,7 @@ func TestWorkerSandboxCutoverNoticesSessionInferredProject(t *testing.T) {
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions(b, "shop")
@@ -572,7 +572,7 @@ func TestWorkerSandboxCutoverNoticesSeenProjectWithDifferentRegistrationName(t *
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	inbox, err := s.ListInbox()
