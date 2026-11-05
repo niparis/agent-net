@@ -350,13 +350,27 @@ func TestStartIsQueuedWhenTheMachineIsBusyAndStartsInOrder(t *testing.T) {
 		t.Fatalf("start order: %v", lines)
 	}
 	// The caller gets a "worker started" notice for each, with the session and the wait.
-	var notices []protocol.Message
-	for len(notices) < 2 {
-		m := pi.nextPush()
-		if strings.Contains(m.Body, "status: started") {
-			notices = append(notices, m)
+	var notices, pushes []protocol.Message
+	deadline := time.Now().Add(10 * time.Second)
+	eventually(t, "both started notices", func() bool {
+		for {
+			select {
+			case m := <-pi.Pushes:
+				pushes = append(pushes, m)
+				if strings.Contains(m.Body, "status: started") {
+					notices = append(notices, m)
+				}
+			default:
+				if len(notices) >= 2 {
+					return true
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("timed out waiting for started notices: got %d; pushes: %+v; daemon log: %v", len(notices), pushes, w.logs.lines())
+				}
+				return false
+			}
 		}
-	}
+	})
 	titles := map[string]bool{}
 	for _, m := range notices {
 		if m.Type != protocol.TypeNotification || m.To != piID || !strings.Contains(m.Body, "queue wait: ") || !strings.Contains(m.Body, "worker: s_") {
