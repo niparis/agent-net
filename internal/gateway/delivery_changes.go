@@ -80,6 +80,12 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 	if err != nil {
 		return nil, true, err
 	}
+	if typ == protocol.FrameStepReport {
+		q, derr := decode[protocol.StepReportRequest](raw)
+		if derr == nil && q.SessionID != "" {
+			g.recordSessionReport(q.SessionID)
+		}
+	}
 	if typ == protocol.FrameChangeSubmit || typ == protocol.FrameStepReport {
 		g.dispatchStepTasks(ctx)
 	}
