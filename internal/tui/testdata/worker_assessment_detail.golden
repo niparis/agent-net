@@ -4,8 +4,7 @@ difficulty R2 S1 C1 U1 V1 K1 · D 1.20 · trivial (picker: normal)   │
   id       s_0000000000000002 w_test pid 4300                      │
   folder   /Users/n/code/strategies/.claude/worktrees/agent-a7     │
   branch   feature/risk-model                                      │
-  model    claude-sonnet-5-5                                       │
-  runs     in the background (worker)                              │
+  model    claude-sonnet-5-5 · background (worker)                 │
   function trading strategies                                      │
   task     backtest v2                                             │
   trust    -                                                       │
@@ -16,6 +15,7 @@ difficulty R2 S1 C1 U1 V1 K1 · D 1.20 · trivial (picker: normal)   │
   source   registered                                              │
   messages 13:57  -> tenebrae-53 (Mac)  reply  delivered           │
            13:56  <- tenebrae-53 (Mac)  request  replied           │
+                                                                   │
                                                                    │
                                                                    │
                                                                    │

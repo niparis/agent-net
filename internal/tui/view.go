@@ -141,27 +141,28 @@ func modeMark(a protocol.AgentView) string {
 	return "◐ "
 }
 
-// runText says how a session runs, for the detail pane. It is empty when the
-// harness does not report a mode, so the pane says nothing rather than guess.
+// runText says how a session runs, for the detail pane's model row. It is
+// empty when the harness does not report a mode, so the pane says nothing
+// rather than guess.
 func runText(a protocol.AgentView) string {
 	if a.Worker != nil {
 		// A worker is always started without a terminal, whatever an older
 		// daemon reports.
-		return "in the background (worker)"
+		return "background (worker)"
 	}
 	switch a.Mode {
 	case protocol.ModeForeground:
-		return "in a terminal"
+		return "terminal"
 	case protocol.ModeBackground:
 		switch a.Harness {
 		case "claude":
-			return "in the background (claude --bg)"
+			return "background (claude --bg)"
 		case "codex":
-			return "in the background (codex exec or app server)"
+			return "background (codex exec or app server)"
 		case "pi":
-			return "in the background (pi, no terminal)"
+			return "background (pi, no terminal)"
 		}
-		return "in the background"
+		return "background"
 	}
 	return ""
 }

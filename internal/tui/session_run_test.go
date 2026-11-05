@@ -64,9 +64,9 @@ func TestDetailSaysHowTheSessionRuns(t *testing.T) {
 	for _, tc := range []struct {
 		id, want string
 	}{
-		{"s_0000000000000001", "runs     in a terminal"},
-		{"s_0000000000000002", "runs     in the background (claude --bg)"},
-		{"s_0000000000000004", "runs     in the background (pi, no terminal)"},
+		{"s_0000000000000001", "model    claude-opus-5-5 · terminal"},
+		{"s_0000000000000002", "model    claude-sonnet-5-5 · background (claude --bg)"},
+		{"s_0000000000000004", "background (pi, no terminal)"},
 	} {
 		m.selected = tc.id
 		if v := detailText(m); !strings.Contains(v, tc.want) {
@@ -75,15 +75,34 @@ func TestDetailSaysHowTheSessionRuns(t *testing.T) {
 	}
 	// OpenCode never reports the mode: say nothing rather than guess.
 	m.selected = "s_0000000000000003"
-	if v := detailText(m); strings.Contains(v, "runs ") {
-		t.Errorf("an unknown mode got a runs line:\n%s", v)
+	if v := detailText(m); strings.Contains(v, " · background") || strings.Contains(v, " · terminal") {
+		t.Errorf("an unknown mode got a run suffix:\n%s", v)
+	}
+}
+
+func TestRunSuffixKeepsTheModelNameNarrow(t *testing.T) {
+	m := newModel(120, 34)
+	_, lines := m.detailLeft(fakeAgents()[1], 40, 20)
+	v := ansi.Strip(strings.Join(lines, "\n"))
+	if !strings.Contains(v, "claude-sonnet-5-5") {
+		t.Errorf("the clipped model row lost the model name:\n%s", v)
+	}
+	if strings.Contains(v, "(claude --bg)") {
+		t.Errorf("the run suffix was not clipped:\n%s", v)
+	}
+}
+
+func TestDetailAt80KeepsTheMessagesRow(t *testing.T) {
+	v := ansi.Strip(keys(newModel(80, 24), "d").testView())
+	if !strings.Contains(v, "messages 14:04") {
+		t.Fatalf("the 80x24 detail pane lost the messages row:\n%s", v)
 	}
 }
 
 func TestWorkerDetailSaysItRunsInTheBackground(t *testing.T) {
 	m, _ := workerModel(120, 34)
 	m = selectID(m, workerID)
-	if v := detailText(m); !strings.Contains(v, "runs     in the background (worker)") {
+	if v := detailText(m); !strings.Contains(v, "model    anthropic/claude-haiku-4-5 · background (worker)") {
 		t.Fatalf("the worker detail lacks its run mode:\n%s", v)
 	}
 }

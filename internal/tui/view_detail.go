@@ -117,6 +117,13 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	branch := dashIfEmpty(a.Repo.Branch)
 	model := a.Model
+	if runs := runText(a); runs != "" {
+		if model == "" {
+			model = runs
+		} else {
+			model += " · " + runs
+		}
+	}
 	model = dashIfEmpty(model)
 	var out []string
 	for _, p := range a.Pending {
@@ -152,9 +159,6 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		kv("branch", branch),
 		kv("model", model),
 	)
-	if runs := runText(a); runs != "" {
-		out = append(out, kv("runs", runs))
-	}
 	if t := toolsText(a); t != "" {
 		out = append(out, clip("  "+sDim.Render(cell("tools", lw))+" "+sBusy.Render(t), w))
 	}
