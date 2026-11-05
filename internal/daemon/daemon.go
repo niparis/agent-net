@@ -686,7 +686,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		// A session whose process asks to stay off the network is not
 		// registered at all. A worker started by this daemon is always
 		// registered: its caller waits for it.
-		if infos[i].Worker == nil && d.sessionIgnored(infos[i].PID) {
+		// Shared harness servers also discover saved sessions after their
+		// process has gone. Check the recorded folder independently of the PID.
+		if isJudgeDir(infos[i].Cwd) || (infos[i].Worker == nil && d.sessionIgnored(infos[i].PID)) {
 			continue
 		}
 		old, known := before[key(harness, infos[i].NativeID)]

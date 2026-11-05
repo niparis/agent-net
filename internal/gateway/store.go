@@ -1861,6 +1861,14 @@ func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 	return err
 }
 
+// SetWorkerSessionEnded records a worker's final state. Merely losing a
+// connection uses SetSessionOffline: a disconnected worker may still be busy.
+// A later registration when the worker resumes supplies its new live status.
+func (s *Store) SetWorkerSessionEnded(nodeID, sessionID string) error {
+	_, err := s.db.Exec(`UPDATE sessions SET online = 0, status = 'ended', last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
+	return err
+}
+
 // SetSessionWorkerRework keeps the rework counters, the automatic continues and
 // the difficulties on a worker's session record. The end report is the reliable
 // last word, so the gateway does not depend on the session sync that came before
