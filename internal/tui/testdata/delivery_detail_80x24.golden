@@ -5,6 +5,8 @@
 │ head: 9f3a1c2e7b4d  revision: r2  state: open  step: review  owner: merger   │
 │ status: waiting for merger  waiting: 2h14m                                   │
 │ a✓r·t✓p-m·T·l·d·v·                                                           │
+│ a accept · r review · t test · p approve · m merge · T test after merge      │
+│ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Evidence─────────────────────────────────────────────────────────────────────╮
 │ STEP     RESULT      COMMIT       BY            TIME                         │
@@ -12,8 +14,6 @@
 │ test     passed      9f3a1c2      caller        10-29 11:35                  │
 │   suite=changed tests_added=yes                                              │
 │ review   waiting     9f3a1c2      merger        10-29 11:51                  │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯

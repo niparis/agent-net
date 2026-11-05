@@ -35,6 +35,7 @@ type deliveryChange struct {
 	// StepState is the state of Step: ready, running, needs_owner, passed,
 	// failed, waiting, skipped or closed. Empty when no step is current.
 	StepState string
+	ClaimedBy string
 	Waiting   time.Duration
 	Evidence  []deliveryEvidence
 	Steps     []deliveryStep
@@ -44,7 +45,10 @@ type deliveryChange struct {
 	Marks []stripState
 	// Full says the evidence covers every revision, not only the latest
 	// counted result of each step.
-	Full bool
+	Full     bool
+	Group    deliveryGroup
+	Count    int
+	Children []deliveryChange
 }
 
 // deliveryStep is one pipeline step, including repeated test and approval steps.
@@ -98,6 +102,7 @@ type deliveryState struct {
 	loadedAt      time.Time // when the last load started
 	detailLoading bool      // the full change is out
 	detailErr     string
+	expanded      map[string]bool
 }
 
 // deliveryStartMsg starts the first load through the normal in-flight guard.
@@ -163,7 +168,8 @@ type deliveryGroup int
 
 const (
 	groupNeedsYou deliveryGroup = iota
-	groupWaiting
+	groupMoving
+	groupStuck
 	groupDone
 )
 
@@ -171,8 +177,10 @@ func (g deliveryGroup) title() string {
 	switch g {
 	case groupNeedsYou:
 		return "Needs you"
-	case groupWaiting:
-		return "Waiting on agents"
+	case groupMoving:
+		return "Moving"
+	case groupStuck:
+		return "Stuck"
 	}
 	return "Done"
 }
@@ -182,22 +190,43 @@ func deliveryGroupOf(ch deliveryChange, ownerSession string) deliveryGroup {
 	if ch.State == protocol.ChangeDone || ch.State == protocol.ChangeStopped || ch.StepState == protocol.StepStateClosed {
 		return groupDone
 	}
+	if ch.StepState == protocol.StepStateFailed {
+		return groupMoving
+	}
 	// A passed, skipped or blocked step has no action for anyone yet.
 	switch ch.StepState {
 	case "", protocol.StepStatePassed, protocol.StepStateSkipped, protocol.StepStateWaiting:
-		return groupWaiting
+		if ch.Waiting >= 12*time.Hour {
+			return groupStuck
+		}
+		return groupMoving
 	}
 	switch ch.OwnerKind {
-	case protocol.OwnerPerson, protocol.OwnerDelegate:
-		return groupNeedsYou
-	}
-	if ch.Step == protocol.StepApprove {
+	case protocol.OwnerPerson:
 		return groupNeedsYou
 	}
 	if ch.OwnerKind == protocol.OwnerCaller && ownerSession != "" && ch.Caller == ownerSession {
 		return groupNeedsYou
 	}
-	return groupWaiting
+	if ch.Waiting >= 12*time.Hour {
+		return groupStuck
+	}
+	return groupMoving
+}
+
+func (m Model) deliveryGroupFor(ch deliveryChange) deliveryGroup {
+	if ch.StepState == protocol.StepStateFailed {
+		return groupMoving
+	}
+	if group := deliveryGroupOf(ch, m.snap.OwnerSession); group == groupNeedsYou || group == groupDone {
+		return group
+	}
+	for _, item := range m.inboxItems {
+		if item.Status == "open" && item.Kind == "approval" && item.Delivery != nil && item.Delivery.ChangeID == ch.ID {
+			return groupNeedsYou
+		}
+	}
+	return deliveryGroupOf(ch, m.snap.OwnerSession)
 }
 
 // deliveryStale says nothing happened on a change for a day and it is not
@@ -217,10 +246,9 @@ func deliveryStale(ch deliveryChange) bool {
 // deliveryVisible is the list on screen: grouped by who has to act, with done
 // and stale rows left out until the owner asks for them.
 func (m Model) deliveryVisible() []deliveryChange {
-	owner := m.snap.OwnerSession
 	var out []deliveryChange
 	for _, ch := range m.delivery.changes {
-		group := deliveryGroupOf(ch, owner)
+		group := m.deliveryGroupFor(ch)
 		if m.delivery.project != "" && ch.Repo != m.delivery.project {
 			continue
 		}
@@ -229,10 +257,82 @@ func (m Model) deliveryVisible() []deliveryChange {
 		}
 		out = append(out, ch)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return deliveryGroupOf(out[i], owner) < deliveryGroupOf(out[j], owner)
+	sort.SliceStable(out, func(i, j int) bool { return m.deliveryGroupFor(out[i]) < m.deliveryGroupFor(out[j]) })
+	var rows []deliveryChange
+	stuck := map[string][]deliveryChange{}
+	for _, ch := range out {
+		g := m.deliveryGroupFor(ch)
+		if g != groupStuck {
+			ch.Group, ch.Count = g, 1
+			rows = append(rows, ch)
+			continue
+		}
+		key := ch.Repo + "\x00" + ch.Step + "\x00" + ch.StepOwner
+		stuck[key] = append(stuck[key], ch)
+	}
+	for _, group := range stuck {
+		if len(group) == 1 {
+			ch := group[0]
+			ch.Group, ch.Count = groupStuck, 1
+			rows = append(rows, ch)
+			continue
+		}
+		first := group[0]
+		minAge, maxAge := group[0].Waiting, group[0].Waiting
+		for _, ch := range group {
+			minAge = min(minAge, ch.Waiting)
+			maxAge = max(maxAge, ch.Waiting)
+		}
+		sort.SliceStable(group, func(i, j int) bool { return group[i].ID < group[j].ID })
+		first.Group, first.Count, first.Children = groupStuck, len(group), group
+		who := ""
+		if presence := m.deliveryOwnerPresence(first.StepOwner); presence != "" {
+			who = " (" + presence + ")"
+		}
+		first.Title = first.Repo + " · " + strconv.Itoa(len(group)) + " changes wait for " + first.Step + " by " + first.StepOwner + who + " · " + deliveryHourText(minAge) + "-" + deliveryHourText(maxAge)
+		rows = append(rows, first)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Group != rows[j].Group {
+			return rows[i].Group < rows[j].Group
+		}
+		if rows[i].Repo != rows[j].Repo {
+			return rows[i].Repo < rows[j].Repo
+		}
+		if rows[i].Step != rows[j].Step {
+			return rows[i].Step < rows[j].Step
+		}
+		return rows[i].StepOwner < rows[j].StepOwner
 	})
-	return out
+	var expanded []deliveryChange
+	for _, row := range rows {
+		if len(row.Children) > 1 && m.delivery.expanded[row.ID] {
+			expanded = append(expanded, row.Children...)
+		} else {
+			expanded = append(expanded, row)
+		}
+	}
+	return expanded
+}
+
+func (m Model) deliveryOwnerPresence(name string) string {
+	for _, a := range m.snap.Agents {
+		if strings.EqualFold(strings.TrimSpace(a.Profile.Name), strings.TrimSpace(name)) {
+			if a.Online {
+				return "online"
+			}
+			return "exited"
+		}
+	}
+	return ""
+}
+
+func deliveryHourText(d time.Duration) string {
+	h := int(d.Hours())
+	if h < 1 {
+		return "<1h"
+	}
+	return strconv.Itoa(h) + "h"
 }
 
 // selectedChange is the change under the cursor.
@@ -375,6 +475,14 @@ func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			d.row = min(d.row+10, last)
 		}
 	case "open":
+		if sel, ok := m.selectedChange(); ok && !d.detail && len(sel.Children) > 1 {
+			if d.expanded == nil {
+				d.expanded = map[string]bool{}
+			}
+			d.expanded[sel.ID] = !d.expanded[sel.ID]
+			m.delivery = d
+			return m, nil
+		}
 		if sel, ok := m.selectedChange(); ok && !d.detail {
 			d.detail, d.scroll, d.detailErr = true, 0, ""
 			cmd := m.deliveryDetailCmd(sel.ID)

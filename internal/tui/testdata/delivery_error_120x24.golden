@@ -1,5 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 6 sessions, 5 online · 1 busy     updated 00:00:00
-  Quotas      Workers log    [ Delivery ]
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
 ╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Could not load changes: the gateway did not answer in time                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -20,5 +19,6 @@
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
-╰─c: open the CTO──────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab Quotas  up/down select  enter evidence  a show all  R refresh  ? help  q quit
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter evidence  a show all  R refresh  ? help  q quit
