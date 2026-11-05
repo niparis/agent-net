@@ -117,13 +117,14 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	branch := dashIfEmpty(a.Repo.Branch)
 	model := a.Model
-	switch a.Mode {
-	case protocol.ModeForeground:
-		model += ", foreground"
-	case protocol.ModeBackground:
-		model += ", background"
+	if runs := runText(a); runs != "" {
+		if model == "" {
+			model = runs
+		} else {
+			model += " · " + runs
+		}
 	}
-	model = dashIfEmpty(strings.TrimPrefix(model, ", "))
+	model = dashIfEmpty(model)
 	var out []string
 	for _, p := range a.Pending {
 		verb := "from"

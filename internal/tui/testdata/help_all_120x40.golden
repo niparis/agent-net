@@ -24,6 +24,7 @@ Keys · all screens ────────────────────
   space                  cycle the request rule: normal, ask, auto
   v                      cycle the view: active only, all, all with offline, all with offline and hidden
   d                      show or hide the selected session details
+  ◐                      runs in the background: no terminal is attached
 
  Graph
   d                      delivery
@@ -35,6 +36,5 @@ Keys · all screens ────────────────────
   n                      start a session in this project
   enter                  open the selected agent card
   m                      toggle all message and owner lines
-
   more below
 up/down scroll  ? this screen  esc close

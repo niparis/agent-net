@@ -135,7 +135,7 @@ func TestTableShowsTheNewColumnsAndNotTheMovedOnes(t *testing.T) {
 	// They are in the detail pane instead.
 	m.selected = "s_0000000000000002"
 	v := detailText(m)
-	for _, want := range []string{"branch   feature/risk-model", "model    claude-sonnet-5-5, background"} {
+	for _, want := range []string{"branch   feature/risk-model", "model    claude-sonnet-5-5 · background (claude --bg)"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("the detail pane lacks %q:\n%s", want, v)
 		}

@@ -7,13 +7,13 @@
   NAME           TYPE   PROJECT    MODEL         STATUS   CPU   RAM TASK
  Mac (here) 6 sessions ─────────────────────────────────────────────────────────
   tenebrae-53    agent  tenebrae   claude · opu… busy       ?     ?
-  strategies     agent  strategies claude · son… idle       ?     ? backtest v2
+  ◐ strategies   agent  strategies claude · son… idle       ?     ? backtest v2
   agent-net      agent  agent-net  claude        idle       ?     ? test ch_ed5f
   ├─ fix-login   worker agent-net  opencode · h… idle       ?     ?
 ▸ └─ agent-net … merger agent-net  claude        idle       ?     ?
   web            agent  shop       opencode · s… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner      agent  agent-net  pi · gpt-6    idle       ?     ?
+  ◐ ci-runner    agent  agent-net  pi · gpt-6    idle       ?     ?
   scratch        agent  -          pi            shell      ?     ?
 
 
