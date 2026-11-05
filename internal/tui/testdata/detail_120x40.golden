@@ -9,19 +9,19 @@ Selected session ─────────────────────
   id       s_0000000000000001 pid 4242                          │     PID   CPU   RAM by CPU
   folder   /Users/n/code/tenebrae                               │    4301  180%  900M node /srv/app/dev-server.js --por…
   branch   main                                                 │    4300   40%  600M claude --resume
-  model    claude-opus-5-5, foreground                          │    4402   18%  1.2G python3 backtest.py --years 10
-  function research                                             │    4410    2%  300M cargo watch -x test
-  trust    -                                                    │    4500    0%    1M sleep 600
-  rule     normal                                               │     PID   CPU   RAM by RAM
-  delegate -                                                    │    4402   18%  1.2G python3 backtest.py --years 10
-  remote   https://git.example.com/team/tenebrae.git            │    4301  180%  900M node /srv/app/dev-server.js --por…
-  source   seen in a session and registered                     │    4300   40%  600M claude --resume
-  messages 14:04  -> s_00000000  request  dispatched            │    4410    2%  300M cargo watch -x test
-           14:02  -> ci-runner (build-vm)  notification  failed │    4501    0%    4M bash -l
+  model    claude-opus-5-5                                      │    4402   18%  1.2G python3 backtest.py --years 10
+  runs     in a terminal                                        │    4410    2%  300M cargo watch -x test
+  function research                                             │    4500    0%    1M sleep 600
+  trust    -                                                    │     PID   CPU   RAM by RAM
+  rule     normal                                               │    4402   18%  1.2G python3 backtest.py --years 10
+  delegate -                                                    │    4301  180%  900M node /srv/app/dev-server.js --por…
+  remote   https://git.example.com/team/tenebrae.git            │    4300   40%  600M claude --resume
+  source   seen in a session and registered                     │    4410    2%  300M cargo watch -x test
+  messages 14:04  -> s_00000000  request  dispatched            │    4501    0%    4M bash -l
+           14:02  -> ci-runner (build-vm)  notification  failed │
            14:01  <- ci-runner (build-vm)  request  delivered   │
            13:57  <- strategies (Mac)  reply  delivered         │
            13:56  -> strategies (Mac)  request  replied         │
-                                                                │
                                                                 │
                                                                 │
                                                                 │

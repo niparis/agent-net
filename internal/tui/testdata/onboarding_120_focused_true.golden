@@ -7,10 +7,10 @@
   NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                   view: all  (v)
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
   tenebrae-53        agent  tenebrae   claude · opus-5-5        busy       ?     ?
-  strategies         agent  strategies claude · sonnet-5-5      idle       ?     ? backtest v2
+  ◐ strategies       agent  strategies claude · sonnet-5-5      idle       ?     ? backtest v2
   web                agent  shop       opencode · sonnet-5      idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          agent  agent-net  pi · gpt-6               idle       ?     ?
+  ◐ ci-runner        agent  agent-net  pi · gpt-6               idle       ?     ?
   scratch            agent  -          pi                       shell      ?     ?
 
 

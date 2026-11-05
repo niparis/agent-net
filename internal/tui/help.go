@@ -303,6 +303,9 @@ func (m Model) helpSectionContent(section helpSection, w int) []string {
 	if section.title == "Messages" {
 		out = append(out, "  "+sTitle.Render(cell("states", 20))+" pending ... delivered ✓ replied ↩ failed ✗")
 	}
+	if section.title == "Sessions" {
+		out = append(out, m.helpRow("◐", "runs in the background: no terminal is attached", w)...)
+	}
 	if section.title == "Graph" {
 		out = append(out, "")
 		out = append(out, mapLegendLines(w)...)

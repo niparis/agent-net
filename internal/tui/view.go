@@ -130,6 +130,42 @@ func modeShort(mode string) string {
 	return "-" // an older daemon does not say
 }
 
+// modeMark is the one-cell mark before a session name in the Sessions table.
+// A background session gets "◐ "; a foreground session, or one whose harness
+// does not report its mode, gets nothing. A worker is always background and
+// its tree glyph already says so, so it is not marked twice.
+func modeMark(a protocol.AgentView) string {
+	if a.Worker != nil || a.Mode != protocol.ModeBackground {
+		return ""
+	}
+	return "◐ "
+}
+
+// runText says how a session runs, for the detail pane. It is empty when the
+// harness does not report a mode, so the pane says nothing rather than guess.
+func runText(a protocol.AgentView) string {
+	if a.Worker != nil {
+		// A worker is always started without a terminal, whatever an older
+		// daemon reports.
+		return "in the background (worker)"
+	}
+	switch a.Mode {
+	case protocol.ModeForeground:
+		return "in a terminal"
+	case protocol.ModeBackground:
+		switch a.Harness {
+		case "claude":
+			return "in the background (claude --bg)"
+		case "codex":
+			return "in the background (codex exec or app server)"
+		case "pi":
+			return "in the background (pi, no terminal)"
+		}
+		return "in the background"
+	}
+	return ""
+}
+
 func statusShort(s string) string {
 	switch s {
 	case "idle", "busy", "shell", "exited":

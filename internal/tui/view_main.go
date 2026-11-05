@@ -1468,15 +1468,16 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 	if a.Harness == "cto" {
 		name = m.ctoTitle()
 	}
+	mark := modeMark(a)
 	suffix := ""
 	if mk.host != "" {
 		suffix = " @" + sanitize(mk.host)
 	}
-	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(suffix)
+	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(mark) - utf8.RuneCountInString(suffix)
 	if room >= 4 && utf8.RuneCountInString(name) > room {
 		name = ansi.Truncate(name, room, "…")
 	}
-	return mk.prefix + name + suffix
+	return mk.prefix + mark + name + suffix
 }
 
 // plural writes a count and a noun: "1 session", "3 sessions".

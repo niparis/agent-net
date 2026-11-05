@@ -8,7 +8,7 @@
  Mac (here) 1 session ──────────────────────────────────────────────────────────────────────────────
   web                agent  shop      opencode · sonnet… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────
-▸ ci-runner          agent  agent-net pi · gpt-6         idle      5%  300M
+▸ ◐ ci-runner        agent  agent-net pi · gpt-6         idle      5%  300M
   scratch            agent  -         pi                 shell    <1%   80M
 
 
