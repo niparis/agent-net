@@ -14,6 +14,11 @@ import (
 // copy. Record the choice and any local fallback in the daemon log.
 func (d *Daemon) lookupHerdrBinary() (string, error) {
 	const name = "herdr"
+	d.binaryMu.Lock()
+	defer d.binaryMu.Unlock()
+	if bin := d.binaryPaths[name]; bin != "" && isExecutable(bin) {
+		return bin, nil
+	}
 	configured := d.cfg.HarnessPaths[name]
 	var opts harnesses.Options
 	if d.cfg.HarnessSearch != nil {
@@ -54,7 +59,16 @@ func (d *Daemon) lookupHerdrBinary() (string, error) {
 	if bin == "" {
 		return "", fmt.Errorf("%s not found (looked in: %s; login shell PATH)", name, strings.Join(looked, string(os.PathListSeparator)))
 	}
-	if d.log != nil {
+	if d.binaryPaths == nil {
+		d.binaryPaths = make(map[string]string)
+	}
+	d.binaryPaths[name] = bin
+	if d.binaryLogged == nil {
+		d.binaryLogged = make(map[string]string)
+	}
+	changed := d.binaryLogged[name] != bin
+	d.binaryLogged[name] = bin
+	if changed && d.log != nil {
 		d.Logf("%s binary: %s (harness search, login shell preferred)", name, bin)
 		if isExecutable(local) {
 			selected, _ := filepath.EvalSymlinks(bin)
@@ -65,4 +79,14 @@ func (d *Daemon) lookupHerdrBinary() (string, error) {
 		}
 	}
 	return bin, nil
+}
+
+// invalidateBinary makes the next lookup refresh a failed executable. Keep the
+// logged choice so rediscovering the same path does not repeat the log message.
+func (d *Daemon) invalidateBinary(name, path string) {
+	d.binaryMu.Lock()
+	defer d.binaryMu.Unlock()
+	if d.binaryPaths[name] == path {
+		delete(d.binaryPaths, name)
+	}
 }

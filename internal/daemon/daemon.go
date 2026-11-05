@@ -397,6 +397,11 @@ type Daemon struct {
 	mcpHello map[string]time.Time
 
 	repo *repoinfo.Resolver
+
+	// binaryMu serializes executable lookup and protects cached and logged choices.
+	binaryMu     sync.Mutex
+	binaryPaths  map[string]string
+	binaryLogged map[string]string
 	// hmu guards the inventory of installed harnesses. hgen grows with each
 	// new inventory, so the link can tell whether hello carried the latest.
 	hmu       sync.Mutex

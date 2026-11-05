@@ -271,10 +271,10 @@ func (a *agyAdapter) typeInHerdr(info protocol.SessionInfo, text string) (sent, 
 	var socket string
 	var ok bool
 	if found {
-		panes, socket, ok = herdrPanesFromServer(bin, h)
+		panes, socket, ok = a.d.herdrPanesFromServer(bin, h)
 	} else {
 		var err error
-		panes, err = herdrPanes(bin, "")
+		panes, err = a.d.herdrPanes(bin, "")
 		ok = err == nil
 	}
 	if !ok {
@@ -286,7 +286,7 @@ func (a *agyAdapter) typeInHerdr(info protocol.SessionInfo, text string) (sent, 
 			continue
 		}
 		reported := pane.Session != nil && pane.Session.Agent == "agy" && pane.Session.Kind == "id" && pane.Session.Value == info.NativeID
-		if !reported && !herdrHolds(bin, socket, pane.PaneID, chain) {
+		if !reported && !a.d.herdrHolds(bin, socket, pane.PaneID, chain) {
 			continue
 		}
 		a.d.mu.Lock()
@@ -295,10 +295,10 @@ func (a *agyAdapter) typeInHerdr(info protocol.SessionInfo, text string) (sent, 
 		if event.Event != "Stop" || !event.FullyIdle || event.PID != info.PID || agyProcessStart(info.PID) != event.ProcessStart {
 			return false, false
 		}
-		if _, err := herdrRun(bin, socket, "pane", "send-text", pane.PaneID, text); err != nil {
+		if _, err := a.d.herdrRun(bin, socket, "pane", "send-text", pane.PaneID, text); err != nil {
 			return false, true
 		}
-		if _, err := herdrRun(bin, socket, "pane", "send-keys", pane.PaneID, "enter"); err != nil {
+		if _, err := a.d.herdrRun(bin, socket, "pane", "send-keys", pane.PaneID, "enter"); err != nil {
 			return false, true
 		}
 		return true, false
