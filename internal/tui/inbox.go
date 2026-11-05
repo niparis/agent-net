@@ -511,7 +511,9 @@ func (m Model) inboxTabView(w, h int) []string {
 		out = append(out, section("Inbox detail", w))
 		row, _ := m.inboxSelected(rows)
 		for _, line := range m.inboxDetailLines(row) {
-			out = append(out, clip("  "+line, w))
+			for _, wrapped := range wrapText(line, max(w-2, 1)) {
+				out = append(out, "  "+wrapped)
+			}
 		}
 		for len(out) < h {
 			out = append(out, "")
@@ -961,21 +963,18 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 	case "proposal":
 		out = append(out, sanitize(row.text))
 	case "notice", "approval", "question":
-		out = append(out, "Kind: "+sanitize(row.item.Kind), "Status: "+sanitize(row.item.Status),
-			"Session: "+sanitize(row.item.SessionID), "Node: "+sanitize(row.item.Node),
-			"Text: "+sanitize(row.item.Text))
+		name := m.inboxSessionName(row.item.SessionID)
+		if name == row.item.SessionID || name == "" {
+			name = "an agent"
+		}
+		out = append(out, "From: "+sanitize(name), "", sanitizeBody(row.item.Text))
 		if row.item.Recommendation != "" {
-			out = append(out, "Recommendation: "+sanitize(row.item.Recommendation))
+			out = append(out, "", "Recommendation: "+sanitizeBody(row.item.Recommendation))
 		}
-		if row.item.MessageID != "" {
-			out = append(out, "Message: "+sanitize(row.item.MessageID))
+		if row.item.Delivery != nil && row.item.Delivery.Commit != "" {
+			out = append(out, "", "Related commit: "+sanitize(row.item.Delivery.Commit))
 		}
-		if row.item.ConversationID != "" {
-			out = append(out, "Conversation: "+sanitize(row.item.ConversationID))
-		}
-		if row.item.Answer != "" {
-			out = append(out, "Answer: "+sanitize(row.item.Answer))
-		}
+
 	case "waiting":
 		out = append(out, "Session: "+sanitize(m.inboxSessionName(row.session)), sanitize(row.text))
 	}

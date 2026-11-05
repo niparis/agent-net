@@ -42,3 +42,14 @@ func TestInboxSummaryDoesNotRepeatKind(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxDetailWrapsTextAndHidesIDs(t *testing.T) {
+	m := newModel(80, 24)
+	m.inboxItems = []protocol.InboxItem{{ID: "i_private", Kind: "approval", SessionID: "s_private", Text: strings.Repeat("question ", 12) + "lastword", Recommendation: "recommend yes", Status: "open"}}
+	m = keys(m, "7")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	view := m.testView()
+	if !strings.Contains(view, "lastword") || !strings.Contains(view, "recommend yes") || strings.Contains(view, "s_private") || strings.Contains(view, "i_private") {
+		t.Fatalf("detail: %s", view)
+	}
+}
