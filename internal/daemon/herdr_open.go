@@ -285,7 +285,7 @@ func (d *Daemon) notifyApprovedSessionStart(ctx context.Context, r protocol.Star
 			if host := cleanLine(r.Hostname); host != "" {
 				name += " (" + host + ")"
 			}
-			q := protocol.UIRequest{StartPlan: r.EnterPlan, StartName: name}
+			q := protocol.UIRequest{StartPlan: r.EnterPlan, StartName: name, StartProposalID: proposalIDFromContext(ctx)}
 			if c.writeJSON(map[string]any{"method": "cto_ui", "params": q}) == nil {
 				return true
 			}

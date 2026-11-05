@@ -242,3 +242,65 @@ func TestProposalWaitsForCTOIdle(t *testing.T) {
 		t.Fatalf("note: %q", got)
 	}
 }
+
+func TestProposalTUIAcknowledgment(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		started       bool
+		message, want string
+	}{{"applied", true, "", "applied"}, {"failed", false, "could not start", "failed"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := openState(seededStateDir(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.close()
+			p := proposalRunner{state: s, now: time.Now, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) {
+				return json.RawMessage(`{"id":"start_test","status":"handed_to_tui"}`), nil
+			}}
+			id, err := p.propose(context.Background(), proposalCall{Tool: "session_change", Action: "session_start", Args: json.RawMessage(`{}`)}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = p.decide(context.Background(), id, true); err != nil {
+				t.Fatal(err)
+			}
+			items, _ := p.list()
+			if items[0].Status != "handed_to_tui" {
+				t.Fatalf("status %s", items[0].Status)
+			}
+			if err = p.ackTUI(context.Background(), id, tc.started, tc.message); err != nil {
+				t.Fatal(err)
+			}
+			items, _ = p.list()
+			if items[0].Status != tc.want || (!tc.started && !strings.Contains(items[0].Note, tc.message)) {
+				t.Fatalf("proposal %+v", items[0])
+			}
+		})
+	}
+}
+
+func TestProposalTUITimeout(t *testing.T) {
+	s, err := openState(seededStateDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	p := proposalRunner{state: s, now: time.Now, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) {
+		return json.RawMessage(`{"id":"start_test","status":"handed_to_tui"}`), nil
+	}}
+	id, err := p.propose(context.Background(), proposalCall{Tool: "session_change", Action: "session_start", Args: json.RawMessage(`{}`)}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.decide(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = p.timeoutTUI(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := p.list()
+	if items[0].Status != "failed" || !strings.Contains(items[0].Note, "the approving TUI did not confirm the start") {
+		t.Fatalf("proposal %+v", items[0])
+	}
+}

@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"bytes"
+	tea "charm.land/bubbletea/v2"
 	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/ptyproxy"
 	"reflect"
 	"strings"
 	"testing"
@@ -127,5 +130,32 @@ func TestDaemonFallbackNoticeHasNoCTOPrefix(t *testing.T) {
 	m = send(m, q)
 	if m.notice.text != "Herdr was not found; install it" {
 		t.Fatalf("notice %q", m.notice.text)
+	}
+}
+
+func TestCTOStartAcknowledgesAfterProxyStarts(t *testing.T) {
+	s := &proposalSource{}
+	m := New(s)
+	var proxy *ptyproxy.Proxy
+	m.execProcess = func(c tea.ExecCommand, _ tea.ExecCallback) tea.Cmd {
+		proxy = c.(*ptyproxy.Proxy)
+		return func() tea.Msg { return nil }
+	}
+	m.applyCTOUI(protocol.UIRequest{StartName: "garden", StartPlan: &protocol.EnterPlan{Argv: []string{"true"}}, StartProposalID: "p_1"})
+	if proxy == nil || proxy.OnStart == nil {
+		t.Fatal("missing start callback")
+	}
+	if len(s.startAcks) != 0 {
+		t.Fatal("ack before process start")
+	}
+	proxy.SetStdin(strings.NewReader(""))
+	var output bytes.Buffer
+	proxy.SetStdout(&output)
+	_ = proxy.Run()
+	if proxy.Cmd.Process == nil {
+		t.Fatal("process was not started")
+	}
+	if len(s.startAcks) != 1 || !s.startAcks[0].Started || s.startAcks[0].ID != "p_1" {
+		t.Fatalf("acks: %+v", s.startAcks)
 	}
 }

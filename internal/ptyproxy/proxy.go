@@ -17,18 +17,25 @@ import (
 )
 
 type Proxy struct {
-	Cmd   *exec.Cmd
-	Title string
-	Name  string
-	in    io.Reader
-	out   io.Writer
+	OnStart func(error)
+	Cmd     *exec.Cmd
+	Title   string
+	Name    string
+	in      io.Reader
+	out     io.Writer
 }
 
 func New(cmd *exec.Cmd) *Proxy         { return &Proxy{Cmd: cmd} }
 func (p *Proxy) SetStdin(r io.Reader)  { p.in = r }
 func (p *Proxy) SetStdout(w io.Writer) { p.out = w }
 func (p *Proxy) SetStderr(w io.Writer) {}
-func (p *Proxy) Run() error {
+func (p *Proxy) Run() (runErr error) {
+	reported := false
+	defer func() {
+		if !reported && p.OnStart != nil {
+			p.OnStart(runErr)
+		}
+	}()
 	_, _ = io.WriteString(p.out, "\x1b[22;0t\x1b]0;"+p.Title+"\a")
 	defer io.WriteString(p.out, "\x1b[<u\x1b[>4;0m\x1b[23;0t")
 	_, _ = io.WriteString(p.out, "agent-net: entering "+p.Name+". Press ctrl+] to come back here.\r\n")
@@ -45,6 +52,10 @@ func (p *Proxy) Run() error {
 	}
 	defer input.Cancel()
 	pt, err := pty.Start(p.Cmd)
+	if p.OnStart != nil {
+		p.OnStart(err)
+		reported = true
+	}
 	if err != nil {
 		return err
 	}
