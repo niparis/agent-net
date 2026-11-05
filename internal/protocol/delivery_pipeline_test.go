@@ -260,13 +260,13 @@ func TestNewHeadBumpsRevisionAndDropsOldEvidence(t *testing.T) {
 	}
 }
 
-// Today's pipeline: accept and test start at once; review is left out below
+// Today's pipeline: test follows accept; review is left out below
 // difficulty hard; approve is none; merge waits for accept and test; after
 // merge CI tests the merged commit, then release, then verify.
 func TestTodayRunsInOrder(t *testing.T) {
 	p := PipelineToday()
 	c := testChange()
-	if got := p.NextSteps(c, nil); !reflect.DeepEqual(got, []StepRef{refAccept, refTest}) {
+	if got := p.NextSteps(c, nil); !reflect.DeepEqual(got, []StepRef{refAccept}) {
 		t.Fatalf("first steps = %v", got)
 	}
 	ev := []Evidence{pass(c, refAccept, 1, nil)}
@@ -336,14 +336,14 @@ func TestCloseStopsTheChange(t *testing.T) {
 	}
 }
 
-// From difficulty hard, review is required and runs beside accept and test;
+// From difficulty hard, review is required and runs beside accept;
 // below it, a review that did run still counts ("review when present"). No
 // label counts as normal.
 func TestReviewRequiredFromHard(t *testing.T) {
 	p := PipelineToday()
 	c := testChange()
 	c.Difficulty = "hard"
-	if got := p.NextSteps(c, nil); !reflect.DeepEqual(got, []StepRef{refAccept, refTest, refReview}) {
+	if got := p.NextSteps(c, nil); !reflect.DeepEqual(got, []StepRef{refAccept, refReview}) {
 		t.Fatalf("hard first steps = %v", got)
 	}
 	ev := []Evidence{pass(c, refAccept, 1, nil), pass(c, refTest, 2, map[string]string{FieldSuite: SuiteChanged})}
@@ -839,5 +839,20 @@ func TestDeliveryJSONNames(t *testing.T) {
 	for _, v := range types {
 		rt := reflect.TypeOf(v)
 		walk(rt, frames[rt])
+	}
+}
+
+func TestDeliveryPreMergeTestRequiresAccept(t *testing.T) {
+	for _, tests := range []string{TestsOptional, TestsSuite, TestsSuiteNewTests, TestsSuiteNewTestsReview} {
+		for _, merge := range []string{MergeFull, MergeDelegated, MergeAsk} {
+			p, err := PipelineFromShorthand(tests, merge, DeployBrief)
+			if err != nil {
+				t.Fatal(err)
+			}
+			step, ok := p.Find(StepRef{Step: StepTest})
+			if !ok || len(step.Requires) != 1 || step.Requires[0].Step != StepAccept {
+				t.Errorf("tests=%s merge=%s: test requirements=%+v", tests, merge, step.Requires)
+			}
+		}
 	}
 }

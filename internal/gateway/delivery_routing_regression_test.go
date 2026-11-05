@@ -214,3 +214,49 @@ func TestMergerReleaseRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDeliveryTestWaitsForAcceptAndKeepsExistingTask(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	c := r.submit(r.a, r.workerSubmit("feature/order", commitA)).Change.Change
+	count := func(rev int) int {
+		t.Helper()
+		var n int
+		if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step='test' AND after_merge=0`, c.ID, rev).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if count(1) != 0 {
+		t.Fatal("test queued before accept")
+	}
+	q := protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: protocol.StepResultFail, Commit: commitA}
+	r.mustReport(r.a, q)
+	if count(1) != 0 {
+		t.Fatal("test queued after failed accept")
+	}
+	c = r.submit(r.a, r.workerSubmit("feature/pass", commitA)).Change.Change
+	q.ChangeID = c.ID
+	q.Result = protocol.StepResultPass
+	r.mustReport(r.a, q)
+	if count(1) != 1 {
+		t.Fatal("test not queued after accept")
+	}
+	r.submit(r.a, r.workerSubmit("feature/pass", commitB))
+	if count(2) != 0 {
+		t.Fatal("test queued before accept on new revision")
+	}
+	// A task already claimed under the old rule survives gateway backfill.
+	if _, err := r.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id,revision,step,for_step,after_merge,owner_node,claimed_by,created_at) VALUES(?,2,'test','',0,'/merger',?,0)`, c.ID, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.backfillDeliveryTasks(); err != nil {
+		t.Fatal(err)
+	}
+	var claimed string
+	if err := r.s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=2 AND step='test' AND after_merge=0`, c.ID).Scan(&claimed); err != nil || claimed != r.sonnet || count(2) != 1 {
+		t.Fatalf("claimed=%q err=%v", claimed, err)
+	}
+}
