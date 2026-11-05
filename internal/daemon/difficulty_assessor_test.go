@@ -464,3 +464,16 @@ func TestJudgeWorkerBudget(t *testing.T) {
 		t.Fatalf("worker judge budget = %s, want 90s", workerJudgeTimeout)
 	}
 }
+
+func TestJudgeMissingClosingBraces(t *testing.T) {
+	base := `{"reasoning":3,"scope":2,"coupling":3,"uncertainty":2,"verification":2,"risk":3,"reasons":{"reasoning":"r","scope":"s","coupling":"c","uncertainty":"u","verification":"v","risk":"The evidence identifies delivery routing as the risk: losing a batched task would stall a change.","confidence":"high"}`
+	for _, raw := range []string{base, base + " \n", base + "} trailing text"} {
+		scores, _, err := parseJudgeReply(raw)
+		if err != nil || scores.Risk != 3 {
+			t.Fatalf("parseJudgeReply: scores=%+v err=%v", scores, err)
+		}
+	}
+	if _, _, err := parseJudgeReply(base[:len(base)-3]); err == nil {
+		t.Fatal("accepted a reply cut inside a string")
+	}
+}
