@@ -45,7 +45,7 @@ var inboxBoxOrder = []inboxBox{inboxBoxAnswer, inboxBoxProposals, inboxBoxInfo}
 func (b inboxBox) title() string {
 	switch b {
 	case inboxBoxAnswer:
-		return "Needs your answer"
+		return "Needs you"
 	case inboxBoxProposals:
 		return "Proposals"
 	case inboxBoxInfo:
@@ -438,12 +438,6 @@ func inboxConnectedNotice(text string) (string, string, bool) {
 
 // inboxItemSummary says what an approval or a question asks.
 func inboxItemSummary(item protocol.InboxItem) string {
-	switch item.Kind {
-	case "question":
-		return "asks: " + inboxFirstLine(item.Text)
-	case "approval":
-		return "wants approval: " + inboxFirstLine(item.Text)
-	}
 	return inboxFirstLine(item.Text)
 }
 
@@ -633,6 +627,10 @@ func (m Model) inboxRowLine(row inboxRow, nameW, w int, selected bool) string {
 	age := sDim.Render(cellR(needsAge(m.now(), row.since), ageW))
 	room := max(w-ansi.StringWidth(marker)-nameW-1-ageW-1, 4)
 	text := cutWords(sanitize(row.text), room)
+	if row.kind == "approval" || row.kind == "question" {
+		tag := "[" + row.kind + "] "
+		text = tag + cutWords(sanitize(row.text), max(room-ansi.StringWidth(tag), 0))
+	}
 	line := marker + name + " " + padStyled(text, room) + " " + age
 	if selected {
 		return selectedRow(padStyled(line, w))

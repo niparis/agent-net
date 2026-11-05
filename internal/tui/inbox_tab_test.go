@@ -159,7 +159,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		}
 	}
 	view := ansi.Strip(m.testView())
-	for _, heading := range []string{"Needs your answer · 3", "Proposals · 2", "For your information · 2"} {
+	for _, heading := range []string{"Needs you · 3", "Proposals · 2", "For your information · 2"} {
 		if !strings.Contains(view, heading) {
 			t.Errorf("missing box heading %q:\n%s", heading, view)
 		}
@@ -371,7 +371,7 @@ func TestInboxEmptyState(t *testing.T) {
 	if !strings.Contains(view, "Nothing is waiting for you.") {
 		t.Fatalf("empty state missing:\n%s", view)
 	}
-	for _, heading := range []string{"Needs your answer", "Proposals", "For your information", "Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+	for _, heading := range []string{"Needs you", "Proposals", "For your information", "Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
 		if strings.Contains(view, heading) {
 			t.Fatalf("empty state shows box %q", heading)
 		}
@@ -480,8 +480,8 @@ func TestInboxRowsUsePlainWords(t *testing.T) {
 	rows := m.inboxRows()
 	cases := map[string][2]string{
 		"held":     {"alice", "held request → strategies"},
-		"question": {"ci-runner", "asks: which branch?"},
-		"approval": {"ci-runner", "wants approval: deploy abc"},
+		"question": {"ci-runner", "which branch?"},
+		"approval": {"ci-runner", "deploy abc"},
 		"proposal": {"CTO", "start a Pi session in shop, on Mac"},
 		"learned":  {"ops (learned)", `add "deploys" to what it refuses`},
 		"outcome":  {"ops → app", `deploy app refused: "not now"`},
@@ -674,7 +674,7 @@ func TestInboxPanelSitsOnTheRightOnAWideScreen(t *testing.T) {
 	m = openInbox(m)
 	lines := strings.Split(ansi.Strip(m.testView()), "\n")
 	first := lines[1]
-	box, panel := strings.Index(first, "Needs your answer"), strings.Index(first, "ci-runner asks")
+	box, panel := strings.Index(first, "Needs you"), strings.Index(first, "ci-runner asks")
 	if box < 0 || panel < 0 || panel <= box {
 		t.Fatalf("the panel is not to the right of the boxes: %q", first)
 	}

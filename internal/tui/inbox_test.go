@@ -34,3 +34,11 @@ func TestApprovalAppearsInInbox(t *testing.T) {
 		t.Fatal(m.testView())
 	}
 }
+
+func TestInboxSummaryDoesNotRepeatKind(t *testing.T) {
+	for _, kind := range []string{"approval", "question"} {
+		if got := inboxItemSummary(protocol.InboxItem{Kind: kind, Text: "Deploy release?"}); got != "Deploy release?" {
+			t.Errorf("%s summary = %q", kind, got)
+		}
+	}
+}
