@@ -128,7 +128,27 @@ No owner setting is added.
    in parallel with step 1. Only the TUI details screen overlaps; I merge it.
 3. One release with both. Rerun the backtest after it.
 
-## 7. Risks and open points
+## 7. Proposed changes (2026-11-04 review)
+
+The data review in [model-capability-review.md](model-capability-review.md) ran
+the plan against 541 tasks and 39 changes. It confirms the scale and the fit
+weight, and changes four parameters. Section 3 above is the result as of
+2026-11-02 and is now stale.
+
+| Parameter | Stored | Proposed |
+|---|---|---|
+| Rework term | `-extra/16`, cap 0.75 | 0 for the first release. The split-half reliability of the rework residual is 0.18; ratings are 0.73. Turn it on only when the split-half test passes. |
+| Outcome term | none | A rating adjustment, shrunk `n/(n+20)`, cap 0.4, only for models with 20 or more rated tasks. |
+| Prior | Benchmark score only | Keep the score prior, but correct it with the observed gap. Terra high is over-rated by about 0.4; DeepSeek is under-rated. |
+| Fit window | 0.5, hard cliff | 0.75, straight line to zero. Beyond a gap of about +0.6 the data shows no further gain. |
+| Risk guard | none | When the judge's risk score is 4 or 5, prefer a model with a low defect rate or require an independent review. |
+| Review rule | not in the picker | Independent review for normal and above. 8 of 9 merged normal changes skipped review. |
+
+Keep: D, C on the D scale, the fit weight, the closest-model fallback, and the
+removal of the "max level or one level below" rule. The stored odds table in
+section 3 must be rebuilt after the rework term is removed.
+
+## 8. Risks and open points
 
 - **Thin roster around D 2.6 to 2.9.** Between DeepSeek (2.37) and Terra high
   (3.10) only one model is in range at a time, so quota pace cannot spread
