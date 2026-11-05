@@ -766,6 +766,44 @@ END;
 `, mergerLifecycleMigration(), `
 -- Auto-wake throttling survives gateway restarts.
 CREATE TABLE IF NOT EXISTS retired_session_wakes (session_id TEXT PRIMARY KEY, attempted_at INTEGER NOT NULL);
+`, `
+-- Repo and agent records, preserving legacy graph keys.
+CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, display_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, tombstone INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS repos (id TEXT PRIMARY KEY, display_name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, owner_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL);
+CREATE TEMP TABLE split_components (name TEXT PRIMARY KEY);
+INSERT OR IGNORE INTO split_components SELECT name FROM graph_nodes WHERE kind='component';
+INSERT OR IGNORE INTO split_components SELECT name FROM projects WHERE name<>'' AND name NOT IN (SELECT name FROM graph_nodes WHERE kind<>'component');
+INSERT OR IGNORE INTO split_components SELECT repo_project FROM sessions WHERE repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes WHERE kind<>'component');
+INSERT OR IGNORE INTO split_components SELECT source FROM graph_edges WHERE source<>'' AND source<>'*' AND source NOT LIKE '/delivery/%' AND source NOT IN (SELECT name FROM graph_nodes WHERE kind<>'component');
+INSERT OR IGNORE INTO split_components SELECT target FROM graph_edges WHERE target<>'' AND target NOT IN (SELECT name FROM graph_nodes WHERE kind<>'component');
+INSERT OR IGNORE INTO agents SELECT name,name,'',0,0,0 FROM split_components;
+INSERT OR IGNORE INTO agents SELECT name,name,'architect',created_at,created_at,0 FROM graph_nodes WHERE kind='architect';
+INSERT OR IGNORE INTO repos SELECT name,name,0,0,name FROM split_components;
+DROP TABLE split_components;
+CREATE TRIGGER IF NOT EXISTS repo_agent_project_insert AFTER INSERT ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.name,NEW.name,'',NEW.added_at,NEW.added_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.added_at,NEW.added_at,NEW.name) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS repo_agent_project_update AFTER UPDATE OF name ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.name,NEW.name,'',NEW.checked_at,NEW.checked_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.checked_at,NEW.checked_at,NEW.name) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS repo_agent_session_insert AFTER INSERT ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.repo_project,NEW.repo_project,'',NEW.created_at,NEW.created_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.created_at,NEW.created_at,NEW.repo_project) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS repo_agent_session_update AFTER UPDATE OF repo_project ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.repo_project,NEW.repo_project,'',NEW.last_seen,NEW.last_seen,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.last_seen,NEW.last_seen,NEW.repo_project) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS repo_agent_architect_insert AFTER INSERT ON graph_nodes WHEN NEW.kind='architect' BEGIN
+ INSERT INTO agents VALUES(NEW.name,NEW.name,'architect',NEW.created_at,NEW.created_at,0)
+ ON CONFLICT(id) DO UPDATE SET role='architect', tombstone=0, updated_at=NEW.created_at;
+END;
+CREATE TRIGGER IF NOT EXISTS repo_agent_architect_delete AFTER DELETE ON graph_nodes WHEN OLD.kind='architect' BEGIN
+ UPDATE repos SET owner_agent_id=NULL WHERE owner_agent_id=OLD.name;
+ UPDATE agents SET tombstone=1, updated_at=CAST(strftime('%s','now') AS INTEGER)*1000000000 WHERE id=OLD.name;
+END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
