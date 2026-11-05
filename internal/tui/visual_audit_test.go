@@ -66,8 +66,8 @@ func TestVisualAuditFixes(t *testing.T) {
 		if !strings.Contains(view, "claude's copy") || !strings.Contains(view, "pi's copy") {
 			t.Errorf("expected harness labels in view:\n%s", view)
 		}
-		if !strings.Contains(view, "path") || !strings.Contains(view, "/home/test/.claude/skills/demo") {
-			t.Errorf("expected path row in view:\n%s", view)
+		if strings.Count(view, "path") != 1 || !strings.Contains(view, ".claude/skills/demo") {
+			t.Errorf("expected one path row identifying the copy:\n%s", view)
 		}
 	})
 

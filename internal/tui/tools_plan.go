@@ -1643,9 +1643,6 @@ func compareBoxLines(st *chooseState, copies []toolsdiff.Copy, inner int) []stri
 		rows = append(rows, row{label: "path", left: []string{comparePath(a.Location, colW)}, right: []string{comparePath(b.Location, colW)}})
 	}
 
-	if a.Location != "" || b.Location != "" {
-		rows = append(rows, row{label: "path", left: wrap(a.Location, colW), right: wrap(b.Location, colW)})
-	}
 	changed := row{label: "changed", left: wrap(st.changedText(0, a), colW), right: wrap(st.changedText(1, b), colW)}
 	rows = append(rows, changed)
 	rows = append(rows, row{label: "used by", left: wrap(st.usedBy(a), colW), right: wrap(st.usedBy(b), colW)})

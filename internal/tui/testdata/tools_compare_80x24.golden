@@ -1,7 +1,7 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│6
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
   Skills per project    [ All tools ]
 ╭─demo: 2 different copies on research─────────────────────────────────────────╮
-│            a  research's copy               b  research's copy               │
+│            a  claude's copy                 b  pi's copy                     │
 │   path     /home/test/.claude/skills/demo   …/test/.pi/agent/skills/demo     │
 │   changed  unknown                          unknown                          │
 │   used by  one harness setup                one harness setup                │
