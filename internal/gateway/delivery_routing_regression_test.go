@@ -116,3 +116,35 @@ func TestDeliveryStepTaskBatch(t *testing.T) {
 		t.Fatalf("listed=%d want=5 err=%v", listed, err)
 	}
 }
+
+func TestMergerMergeReportQueuesAfterMergeTest(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit-caller=%t", explicit), func(t *testing.T) {
+			r := newDeliveryRig(t)
+			if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}, "owner"); err != nil {
+				t.Fatal(err)
+			}
+			owner, session := "/merger", r.sonnet
+			if explicit {
+				if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "test", AfterMerge: true, Node: "@caller"}, "owner"); err != nil {
+					t.Fatal(err)
+				}
+				owner, session = "/caller", r.caller
+			}
+			c := r.submit(r.a, r.workerSubmit("feature/merge-report", commitA)).Change.Change
+			r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: "pass", Commit: commitA})
+			r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Result: "pass", Commit: commitA, Fields: map[string]string{"suite": "changed"}})
+			yes := true
+			r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "merge"}, Result: "pass", Commit: commitA, Fields: map[string]string{"merged_commit": commitMerged}, MergeContainsHead: &yes})
+			var got string
+			if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='test' AND after_merge=1`, c.ID).Scan(&got); err != nil || got != owner {
+				t.Fatalf("new after-merge owner=%q want=%q err=%v", got, owner, err)
+			}
+			ref := protocol.StepRef{Step: "test", AfterMerge: true}
+			if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: session, ChangeID: c.ID, StepRef: ref, Commit: commitMerged}); err != nil {
+				t.Fatal(err)
+			}
+			r.mustReport(r.a, protocol.StepReportRequest{SessionID: session, ChangeID: c.ID, StepRef: ref, Result: "pass", Commit: commitMerged, Fields: map[string]string{"suite": "full"}})
+		})
+	}
+}
