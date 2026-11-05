@@ -153,6 +153,13 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 			out = append(out, kv("tokens", tokens))
 		}
 	}
+	if a.AgentName != "" {
+		line := kv("agent", a.AgentName)
+		if m.sessionCell == 3 && a.SessionID == m.selected {
+			line = sSel.Render(stripStyles(line))
+		}
+		out = append(out, line)
+	}
 	out = append(out,
 		kv("id", id),
 		kv("folder", tailCell(dashIfEmpty(a.Cwd), w-12)),

@@ -279,6 +279,10 @@ type PendingRequest struct {
 }
 
 type AgentView struct {
+	// AgentID and AgentName identify the lasting agent attached by the gateway.
+	// Old gateways omit both. Workers and owner sessions have no agent.
+	AgentID   string `json:"agent_id,omitempty"`
+	AgentName string `json:"agent_name,omitempty"`
 	// RepoContext is the gateway resolved repo key; it is not a wire field.
 	RepoContext        string           `json:"-"`
 	Type               string           `json:"type"`

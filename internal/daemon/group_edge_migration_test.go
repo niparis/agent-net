@@ -51,7 +51,7 @@ func TestAdvisorGroupSendEdgeMigration(t *testing.T) {
  DROP TRIGGER merger_removed; DROP TRIGGER merger_replaced;
  ALTER TABLE graph_edges DROP COLUMN source_kind; ALTER TABLE graph_edges DROP COLUMN target_kind;
  ALTER TABLE graph_history DROP COLUMN source_kind; ALTER TABLE graph_history DROP COLUMN target_kind;
- DELETE FROM schema_version WHERE version=(SELECT max(version) FROM schema_version);
+ DELETE FROM schema_version WHERE version>=113;
  COMMIT;`)
 		if err != nil {
 			_, _ = db.Exec(`ROLLBACK`)

@@ -1119,6 +1119,9 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 	}
 	for i := range cols {
+		if cols[i].name == "PROJECT" && m.sessionCell == 3 {
+			cols[i].name = "AGENT"
+		}
 		if cols[i].name == "STATUS" {
 			cols[i].width = statusWidth
 		}
@@ -1345,7 +1348,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		case "TYPE":
 			v = protocol.SessionType(a.Harness, a.Worker, a.Type)
 		case "AGENT":
-			v = a.Harness
+			v = a.AgentName
 		case "PROJECT":
 			v = m.agentProjectName(a)
 		case "MODEL":
@@ -1380,7 +1383,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
 		}
-		if c.name == "TASK" || c.name == "NAME" || c.name == "PROJECT" || c.name == "MODEL" {
+		if c.name == "TASK" || c.name == "NAME" || c.name == "PROJECT" || c.name == "AGENT" || c.name == "MODEL" {
 			v = cellDots(v, c.width)
 		} else {
 			v = cell(v, c.width)
@@ -1398,7 +1401,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				}
 			}
 		}
-		if selected && ((m.sessionCell == 0 && c.name == "NAME") || (m.sessionCell == 1 && c.name == "RULE") || (m.sessionCell == 2 && c.name == "DELEGATE")) {
+		if selected && ((m.sessionCell == 0 && c.name == "NAME") || (m.sessionCell == 1 && c.name == "RULE") || (m.sessionCell == 2 && c.name == "DELEGATE") || (m.sessionCell == 3 && c.name == "AGENT")) {
 			v = sSel.Render(stripStyles(v))
 		}
 		parts = append(parts, v)

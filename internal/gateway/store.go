@@ -827,6 +827,17 @@ UPDATE worker_starts SET caller_agent_id=(SELECT agent_id FROM sessions WHERE id
 CREATE TRIGGER IF NOT EXISTS session_identity_repo_update AFTER UPDATE OF repo_project ON sessions BEGIN
  UPDATE sessions SET repo_id=(SELECT id FROM repos WHERE id=NEW.repo_project) WHERE id=NEW.id AND NEW.harness NOT IN ('cto','owner');
 END;
+`, `
+-- Owner changes to a registered session's agent.
+CREATE TABLE IF NOT EXISTS session_agent_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ session_id TEXT NOT NULL,
+ old_agent_id TEXT NOT NULL,
+ new_agent_id TEXT NOT NULL,
+ actor TEXT NOT NULL,
+ at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS session_agent_history_session ON session_agent_history(session_id,id);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -2150,7 +2161,7 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  'judge_harness',wa.judge_harness,'judge_model',wa.judge_model,'reasons',json(wa.reasons),
  'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
- COALESCE(s.repo_id,'')
+ COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),'')
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -2165,7 +2176,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName)
 	if err != nil {
 		return a, err
 	}
@@ -2556,8 +2567,16 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		}
 	}
 	if p.Outcome != "" {
-		var from, to string
-		if err := tx.QueryRow(`SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,'') FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE q.id=? AND q.type=?`, p.ParentID, protocol.TypeRequest).Scan(&from, &to); err != nil {
+		var fromID, toID string
+		if err := tx.QueryRow(`SELECT sender,recipient FROM messages WHERE id=? AND type=?`, p.ParentID, protocol.TypeRequest).Scan(&fromID, &toID); err != nil {
+			return msg, false, reject("outcome requires a request parent")
+		}
+		from, _, _, _, err := sessionIdentityQuery(tx, fromID)
+		if err != nil {
+			return msg, false, reject("outcome requires a request parent")
+		}
+		to, _, _, _, err := sessionIdentityQuery(tx, toID)
+		if err != nil {
 			return msg, false, reject("outcome requires a request parent")
 		}
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {

@@ -1475,7 +1475,11 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.tab == sessionsTab {
 			if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
 				if k.String() == "right" {
-					m.sessionCell = min(m.sessionCell+1, 2)
+					last := 2
+					if canChangeSessionAgent(a) {
+						last = 3
+					}
+					m.sessionCell = min(m.sessionCell+1, last)
 				} else {
 					m.sessionCell = max(m.sessionCell-1, 0)
 				}
@@ -1489,11 +1493,17 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "change cell":
+		if m.tab == sessionsTab && m.sessionCell == 3 {
+			return m.cycleSessionAgent()
+		}
 		if m.tab == sessionsTab && m.sessionCell == 1 {
 			return m.startTrust()
 		}
 	case "message body", "open session":
 		if m.tab == sessionsTab {
+			if m.sessionCell == 3 {
+				return m.cycleSessionAgent()
+			}
 			if m.sessionCell == 2 {
 				return m.startPolicy()
 			}

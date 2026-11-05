@@ -64,10 +64,6 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 	}
 	// Recreate the state immediately before this migration, keeping the legacy data.
 	removeEdgeKindsForTest(t, r.s)
-	_, err := r.s.db.Exec(`DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER repo_agent_architect_insert; DROP TRIGGER repo_agent_architect_delete; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := r.s.db.Exec(`DELETE FROM delivery_step_tasks`); err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +79,10 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 		t.Fatalf("expected open and merged backfill tasks, got %+v", beforeTasks)
 	}
 	before := repoAgentLegacySnapshot(t, r.s, r.caller, r.sonnet, openChange, mergedChange)
+	_, err := r.s.db.Exec(`DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER repo_agent_architect_insert; DROP TRIGGER repo_agent_architect_delete; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := r.s.db.Exec(`DELETE FROM delivery_step_tasks`); err != nil {
 		t.Fatal(err)
 	}

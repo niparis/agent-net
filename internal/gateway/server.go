@@ -1217,6 +1217,25 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.CloseArchivedSessionInbox(nc.id, p.SessionID)
 
+	case "session.agent.list":
+		var p struct {
+			Owner string `json:"owner_session"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad session.agent.list")
+		}
+		return st.sessionAgentOptions(nc.id, p.Owner)
+
+	case "session.agent.set":
+		p, err := decode[protocol.SessionAgentSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad session.agent.set")
+		}
+		if err = st.setSessionAgent(nc.id, p); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
+
 	case "session.rename":
 		p, err := decode[protocol.SessionRenameRequest](raw)
 		if err != nil || p.SessionID == "" {

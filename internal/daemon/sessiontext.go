@@ -46,7 +46,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
-	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
+	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
@@ -617,6 +617,17 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if _, err = d.call(ctx, "session.trust", protocol.SessionTrust{SessionID: q.SessionID, On: q.On}); err == nil {
 			res = protocol.SessionTrustResult{SessionID: q.SessionID, On: q.On}
 			d.Logf("session.trust session=%s on=%t", q.SessionID, q.On)
+		}
+	case protocol.OpSessionAgentList:
+		res, err = d.call(ctx, "session.agent.list", map[string]string{"owner_session": d.ownerSessionID()})
+	case protocol.OpSessionAgentSet:
+		var q protocol.SessionAgentSetRequest
+		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" || q.Agent == "" {
+			return nil, true, errors.New("session_agent_set needs session_id and agent")
+		}
+		q.Owner = d.ownerSessionID()
+		if res, err = d.call(ctx, "session.agent.set", q); err == nil {
+			d.policy.forget(q.SessionID)
 		}
 	case protocol.OpSessionRename:
 		// Only the owner names a session (decision 0033). The gate above

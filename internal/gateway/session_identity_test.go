@@ -85,7 +85,7 @@ func TestSessionIdentityMigrationBackfill(t *testing.T) {
 	if _, err := r.s.db.Exec(`DROP TRIGGER session_identity_repo_update; ALTER TABLE sessions DROP COLUMN agent_id; ALTER TABLE sessions DROP COLUMN repo_id; ALTER TABLE worker_runs DROP COLUMN caller_agent_id; ALTER TABLE worker_starts DROP COLUMN caller_agent_id`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(migrations[len(migrations)-1]); err != nil {
+	if _, err := r.s.db.Exec(migrations[migrationVersion(t, "Explicit session and run identity")-1]); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ id, agent, repo string }{{r.caller, "demo", "demo"}, {r.worker, "", "demo"}, {r.sonnet, "demo", "demo"}, {cto, "cto", ""}, {owner, "", ""}} {
