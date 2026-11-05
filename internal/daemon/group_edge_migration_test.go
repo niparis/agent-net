@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
+	"modernc.org/sqlite"
 )
 
 // Exercise the daemon's actual group-send path across the gateway migration.
@@ -31,23 +33,37 @@ func TestAdvisorGroupSendEdgeMigration(t *testing.T) {
 	}
 	advisor, _ := helloPi(t, n, "advisor", "/w/architect", true)
 
-	// Recreate the pre-3c schema in the temporary gateway database. The
-	// gateway is idle while the schema transaction runs.
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
+	// Recreate the pre-3c schema while the test gateway is running. Acquire
+	// the write lock before reading schema state, and retry with a fresh
+	// connection if a concurrent gateway write wins the lock.
+	dbPath := filepath.Join(dir, "gateway.db")
+	isBusy := func(err error) bool {
+		var sqliteErr *sqlite.Error
+		return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == 5
 	}
-	defer db.Close()
-	_, err = db.Exec(`BEGIN;
+	eventually(t, "rewrite gateway schema", func() bool {
+		db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = db.Exec(`BEGIN IMMEDIATE;
  DROP TRIGGER edge_kinds_insert; DROP TRIGGER edge_history_kinds_insert;
  DROP TRIGGER merger_removed; DROP TRIGGER merger_replaced;
  ALTER TABLE graph_edges DROP COLUMN source_kind; ALTER TABLE graph_edges DROP COLUMN target_kind;
  ALTER TABLE graph_history DROP COLUMN source_kind; ALTER TABLE graph_history DROP COLUMN target_kind;
  DELETE FROM schema_version WHERE version=(SELECT max(version) FROM schema_version);
  COMMIT;`)
-	if err != nil {
-		t.Fatal(err)
-	}
+		if err != nil {
+			_, _ = db.Exec(`ROLLBACK`)
+		}
+		if closeErr := db.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if err != nil && !isBusy(err) {
+			t.Fatal(err)
+		}
+		return err == nil
+	})
 	send := func(body string) []string {
 		t.Helper()
 		raw, err := advisor.call("send", map[string]any{"to_set": map[string]any{"harness": "fake"}, "body": body})
@@ -69,13 +85,21 @@ func TestAdvisorGroupSendEdgeMigration(t *testing.T) {
 	if len(before) != 2 || before[0] == before[1] {
 		t.Fatalf("before recipients: %v", before)
 	}
-	migrated, err := gateway.OpenStore(filepath.Join(dir, "gateway.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := migrated.Close(); err != nil {
-		t.Fatal(err)
-	}
+	// OpenStore's migration also uses a transaction that can lose a
+	// snapshot to a live gateway write. A failed OpenStore closes its DB.
+	eventually(t, "migrate gateway schema", func() bool {
+		migrated, err := gateway.OpenStore(dbPath)
+		if err != nil {
+			if isBusy(err) {
+				return false
+			}
+			t.Fatal(err)
+		}
+		if err := migrated.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return true
+	})
 	after := send("after migration")
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("recipients changed: %v -> %v", before, after)
