@@ -23,6 +23,7 @@ type nodeTaskTarget struct {
 	id, owner, session string
 	revision           int
 	ref                protocol.StepRef
+	urgent             bool
 }
 
 // backfillDeliveryTasks makes changes recorded before routing was installed
@@ -326,44 +327,10 @@ func (s *Store) sessionHasRecentStepMessage(session string, recentWindow time.Du
 	return exists != 0, err
 }
 
-// isTaskOwnerReassigned checks if a step task was re-sent because its owner changed
-// (merger stopped, deleted, replaced, pruned, reassigned).
-func (s *Store) isTaskOwnerReassigned(t nodeTaskTarget) bool {
-	c, ok, err := queryChange(s.db, `id=?`, t.id)
-	if !ok || err != nil {
-		return false
-	}
-	// A step whose owner was /merger and is now /caller due to merger stop/delete/prune
-	if t.owner == callerTaskOwner && (t.ref.Step == protocol.StepTest || t.ref.Step == protocol.StepMerge || t.ref.Step == protocol.StepVerify) {
-		var hasMergerFallback int
-		_ = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source='/delivery/caller' AND target=? AND kind<>'accepts')`, c.Project).Scan(&hasMergerFallback)
-		if hasMergerFallback != 0 {
-			return true
-		}
-	}
-	p, err := s.deliveryPipeline(c.Project)
-	if err == nil {
-		step, ok := p.Find(t.ref)
-		if ok {
-			if step.Owner.Kind == protocol.OwnerMerger && t.owner != mergerTaskOwner {
-				return true
-			}
-			if step.Owner.Kind == protocol.OwnerNode && step.Owner.Node != "" && t.owner != step.Owner.Node {
-				return true
-			}
-			if step.Owner.Kind == protocol.OwnerCaller && t.owner != callerTaskOwner {
-				return true
-			}
-		}
-	}
-	// Check if a previous notice for this change and step was expired for a different session (reassigned)
-	var hasExpired int
-	_ = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages m
-		WHERE m.state='expired' AND m.sender='agent-net'
-		AND m.recipient<>?
-		AND m.body LIKE '%change: ' || ? || '%'
-		AND m.body LIKE '%step: ' || ? || '%')`, t.session, t.id, t.ref.String()).Scan(&hasExpired)
-	return hasExpired != 0
+func (s *Store) clearTaskUrgent(t nodeTaskTarget) error {
+	_, err := s.db.Exec(`UPDATE delivery_step_tasks SET urgent=0 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
+		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge))
+	return err
 }
 
 func (g *Gateway) flushStepTasks(session string) {
@@ -434,7 +401,7 @@ func (g *Gateway) sendStepTaskBatch(ctx context.Context, targets []nodeTaskTarge
 // or reported the step before it.
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	g.wakeOfflineStepOwners(ctx)
-	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id
+	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id,t.urgent
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
@@ -453,10 +420,12 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	for rows.Next() {
 		var target nodeTaskTarget
 		var after int
-		if err = rows.Scan(&target.id, &target.revision, &target.ref.Step, &target.ref.For, &after, &target.owner, &target.session); err != nil {
+		var urgentInt int
+		if err = rows.Scan(&target.id, &target.revision, &target.ref.Step, &target.ref.For, &after, &target.owner, &target.session, &urgentInt); err != nil {
 			break
 		}
 		target.ref.AfterMerge = after != 0
+		target.urgent = urgentInt != 0
 		targets = append(targets, target)
 	}
 	if err == nil {
@@ -472,9 +441,16 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		groups[target.session] = append(groups[target.session], target)
 	}
 
+	recentBySession := map[string]bool{}
+	for session := range groups {
+		recent, _ := g.store.sessionHasRecentStepMessage(session, g.recentWindow())
+		recentBySession[session] = recent
+	}
+
 	cap := g.batchCap()
 	quiet := g.quietWindow()
 
+	var urgentTargets []nodeTaskTarget
 	var immediateSingle []nodeTaskTarget
 	var immediateBatches [][]nodeTaskTarget
 	var timerSchedules []string
@@ -485,25 +461,20 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	}
 
 	for session, group := range groups {
-		var immediate []nodeTaskTarget
 		var batchable []nodeTaskTarget
 		for _, t := range group {
-			if g.store.isTaskOwnerReassigned(t) {
-				immediate = append(immediate, t)
+			if t.urgent {
+				urgentTargets = append(urgentTargets, t)
 			} else {
 				batchable = append(batchable, t)
 			}
-		}
-
-		for _, t := range immediate {
-			immediateSingle = append(immediateSingle, t)
 		}
 
 		if len(batchable) == 0 {
 			continue
 		}
 
-		recent, _ := g.store.sessionHasRecentStepMessage(session, g.recentWindow())
+		recent := recentBySession[session]
 		b, hasBatch := g.stepBatches[session]
 
 		if !recent && (!hasBatch || len(b.targets) == 0) {
@@ -554,6 +525,17 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	}
 	g.stepBatchesMu.Unlock()
 
+	for _, t := range urgentTargets {
+		m, err := g.store.storeStepTaskMessagesInternal([]nodeTaskTarget{t}, false)
+		if err != nil {
+			g.logLine("error", "where", "step task message", "err", err)
+			continue
+		}
+		_ = g.store.clearTaskUrgent(t)
+		if m.ID != "" {
+			g.dispatch(ctx, m)
+		}
+	}
 	for _, t := range immediateSingle {
 		m, err := g.store.storeStepTaskMessagesInternal([]nodeTaskTarget{t}, false)
 		if err != nil {

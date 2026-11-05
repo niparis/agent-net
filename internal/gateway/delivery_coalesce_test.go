@@ -266,3 +266,76 @@ func TestCoalesce25ChangesReleaseThenVerifyGiveAtMostTwoMessages(t *testing.T) {
 		t.Fatalf("expected at most 2 messages for 25 changes passing release then verify, got %d (before verify: %d)", totalMessages, msgsBeforeVerify)
 	}
 }
+
+func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testing.T) {
+	r := newDeliveryRig(t)
+	r.g.stepTaskQuietWindow = 800 * time.Millisecond
+	r.g.stepTaskBatchCap = 25
+
+	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "review", Node: "reviewer"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule)
+		VALUES('/delivery/caller','demo','tests','',''),('/delivery/caller','demo','merges','','')`); err != nil {
+		t.Fatal(err)
+	}
+
+	const numChanges = 25
+	var changeIDs []string
+	yes := true
+
+	for i := 0; i < numChanges; i++ {
+		c := r.submit(r.a, r.workerSubmit(fmt.Sprintf("feature/caller-edge-%d", i), commitA)).Change.Change
+		changeIDs = append(changeIDs, c.ID)
+
+		// accept
+		r.mustReport(r.a, protocol.StepReportRequest{
+			SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: "pass", Commit: commitA,
+		})
+		// test before merge
+		r.mustReport(r.a, protocol.StepReportRequest{
+			SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Result: "pass", Commit: commitA, Fields: map[string]string{"suite": "full"},
+		})
+		// merge
+		r.mustReport(r.a, protocol.StepReportRequest{
+			SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "merge"}, Result: "pass", Commit: commitA, Fields: map[string]string{"merged_commit": commitMerged}, MergeContainsHead: &yes,
+		})
+		// CI (test after merge)
+		r.mustReport(r.a, protocol.StepReportRequest{
+			SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test", AfterMerge: true}, Result: "pass", Commit: commitMerged, Fields: map[string]string{"suite": "full"},
+		})
+	}
+
+	// Wait for any prior batches (e.g. release tasks) to flush.
+	time.Sleep(1 * time.Second)
+
+	// Now report release for all 25 changes, making verify ready for all of them.
+	for _, cid := range changeIDs {
+		r.mustReport(r.a, protocol.StepReportRequest{
+			SessionID: r.caller, ChangeID: cid, StepRef: protocol.StepRef{Step: "release", AfterMerge: true}, Result: "pass", Commit: commitMerged,
+		})
+	}
+
+	// Wait for the quiet window to flush the verify batch.
+	time.Sleep(1 * time.Second)
+
+	var verifyMessages int
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&verifyMessages); err != nil {
+		t.Fatal(err)
+	}
+
+	if verifyMessages != 1 {
+		t.Fatalf("expected 1 batch message for 25 caller verify tasks with caller delivery edge, got %d", verifyMessages)
+	}
+
+	var body string
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=? AND step='verify')`, r.caller).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(body, "[agent-net step tasks]\n") {
+		t.Fatalf("expected batch prefix [agent-net step tasks], got %s", body)
+	}
+}
