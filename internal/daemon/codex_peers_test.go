@@ -263,6 +263,124 @@ func TestCodexDiscovery(t *testing.T) {
 	})
 }
 
+// The gateway handshake captures sessions to push after connecting. Discovery
+// can remove one before that captured push runs; it must not bring it back.
+func TestCodexDiscoveryDiscardsRemovedRegistration(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
+	f.set(fakeThread{ID: "t-open", Cwd: "/work/api", Status: "idle", Source: "cli"})
+	n := codexNode(t, g, f)
+	cli := cliClient(t, n)
+	eventually(t, "thread registered", func() bool {
+		return n.d.SessionID("codex", "t-open") != "" && len(codexAgents(t, cli)) == 1
+	})
+	n.d.mu.Lock()
+	pending := n.d.sessions[key("codex", "t-open")]
+	n.d.mu.Unlock()
+
+	f.remove("t-open")
+	f.notify("thread/closed")
+	eventually(t, "thread removed", func() bool {
+		return n.d.SessionID("codex", "t-open") == "" && len(codexAgents(t, cli)) == 0
+	})
+	n.d.pushSession(pending)
+	if got := codexAgents(t, cli); len(got) != 0 {
+		t.Fatalf("delayed registration resurrected a removed thread: %+v", got)
+	}
+}
+
+func TestCodexDiscoveryRemovesInFlightRegistration(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	started, release := make(chan struct{}), make(chan struct{})
+	var unblock sync.Once
+	defer unblock.Do(func() { close(release) })
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.testGatewayCall = func(_ context.Context, method string, params any) (json.RawMessage, bool, error) {
+			if method == "session.upsert" && params.(protocol.SessionUpsert).Session.NativeID == "t-open" {
+				close(started)
+				<-release
+			}
+			return nil, false, nil
+		}
+	}})
+	cli := cliClient(t, n)
+	done := make(chan struct{})
+	go func() {
+		n.d.SetSessions("codex", []protocol.SessionInfo{{NativeID: "t-open", Cwd: "/work/api", Status: "idle"}})
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(scaled(5 * time.Second)):
+		t.Fatal("registration did not start")
+	}
+	// Discovery removes the thread before registration returns its gateway ID,
+	// so SetSessions cannot send a remove yet.
+	n.d.SetSessions("codex", nil)
+	unblock.Do(func() { close(release) })
+	select {
+	case <-done:
+	case <-time.After(scaled(5 * time.Second)):
+		t.Fatal("registration did not finish")
+	}
+	if got := codexAgents(t, cli); len(got) != 0 {
+		t.Fatalf("in-flight registration resurrected a removed thread: %+v", got)
+	}
+}
+
+func TestCodexRegistrationPreservesLatestStatus(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	started, release := make(chan struct{}), make(chan struct{})
+	var unblock sync.Once
+	defer unblock.Do(func() { close(release) })
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.testGatewayCall = func(_ context.Context, method string, params any) (json.RawMessage, bool, error) {
+			if method == "session.upsert" {
+				in := params.(protocol.SessionUpsert).Session
+				if in.NativeID == "t-open" && in.Status == "busy" {
+					close(started)
+					<-release
+				}
+			}
+			return nil, false, nil
+		}
+	}})
+	cli := cliClient(t, n)
+	n.d.SetSessions("codex", []protocol.SessionInfo{{NativeID: "t-open", Cwd: "/work/api", Status: "idle"}})
+	n.d.mu.Lock()
+	ls := n.d.sessions[key("codex", "t-open")]
+	ls.info.Status = "busy"
+	n.d.mu.Unlock()
+	oldDone, newDone := make(chan struct{}), make(chan struct{})
+	go func() { n.d.pushSession(ls); close(oldDone) }()
+	select {
+	case <-started:
+	case <-time.After(scaled(5 * time.Second)):
+		t.Fatal("busy registration did not start")
+	}
+	n.d.mu.Lock()
+	ls.info.Status = "idle"
+	n.d.mu.Unlock()
+	go func() { n.d.pushSession(ls); close(newDone) }()
+	// Without serialization the idle update completes while the older busy
+	// update is held. With it, the newer call waits for the older call.
+	select {
+	case <-newDone:
+	case <-time.After(100 * time.Millisecond):
+	}
+	unblock.Do(func() { close(release) })
+	for _, done := range []chan struct{}{oldDone, newDone} {
+		select {
+		case <-done:
+		case <-time.After(scaled(5 * time.Second)):
+			t.Fatal("registration did not finish")
+		}
+	}
+	if got := codexAgents(t, cli)["/work/api"].Status; got != "idle" {
+		t.Fatalf("older registration overwrote idle status: %s", got)
+	}
+}
+
 func TestCodexKeepsWorkerSession(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
