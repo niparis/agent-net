@@ -14,9 +14,9 @@ import (
 
 // workerJudgeTimeout bounds the judge on the start path. A start must never
 // wait longer than this for a level; the fallback is normal. Real judge runs
-// took 9 to 29 s (2026-11-03, 40 starts) and 15% hit an earlier 30 s limit;
+// can take 42 to 58 s, so leave room for slow replies and a retry;
 // the start call itself allows 2 minutes.
-const workerJudgeTimeout = 60 * time.Second
+const workerJudgeTimeout = 90 * time.Second
 
 // assessWorkerStart runs the judge on the brief before the gateway chooses a
 // model. It always returns a result: a missing, failed, timed out or low
