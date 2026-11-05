@@ -809,7 +809,7 @@ END;
 CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr));
 CREATE TABLE IF NOT EXISTS agent_charter_history (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS agent_charter_history_agent ON agent_charter_history(agent_id, id);
-`}
+`, edgeKindsMigration()}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -872,6 +872,23 @@ func (s *Store) migrate() error {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
+		}
+		if strings.Contains(migrations[i], "Typed edge metadata") {
+			for _, table := range []string{"graph_edges", "graph_history"} {
+				for _, name := range []string{"source_kind", "target_kind"} {
+					var has int
+					if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, table, name).Scan(&has); err != nil {
+						tx.Rollback()
+						return err
+					}
+					if has == 0 {
+						if _, err := tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + name + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+							tx.Rollback()
+							return err
+						}
+					}
+				}
+			}
 		}
 		if strings.Contains(migrations[i], "worker task marker and run state columns") {
 			for _, col := range []struct{ table, name, spec string }{
