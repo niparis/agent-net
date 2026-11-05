@@ -82,7 +82,7 @@ func (p *Proxy) Run() (runErr error) {
 		status.resize(int(ws.Cols), int(ws.Rows))
 	}
 	// Give the child the full size back on the way out, so an attach client
-	// such as tmux tells its server the real size before it goes.
+	// tells its server the real size before it goes.
 	restoreSize := func() {
 		if termFile == nil {
 			return

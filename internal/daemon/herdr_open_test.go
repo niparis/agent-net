@@ -613,9 +613,8 @@ func TestHerdrKeepsCredentialsOutOfCommand(t *testing.T) {
 	}
 }
 
-func TestSessionStartHerdrPiDoesNotNeedTmux(t *testing.T) {
+func TestSessionStartHerdrPi(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
-	_, tmuxLog := fakeTmuxHost(t, false)
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "pi")
 	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
@@ -636,9 +635,21 @@ func TestSessionStartHerdrPiDoesNotNeedTmux(t *testing.T) {
 		return r.Status == "started"
 	})
 	requireHerdrOpened(t, log, "garden", bins["pi"], "--session-id", r.NativeID)
-	if raw, _ := os.ReadFile(tmuxLog); len(raw) > 0 {
-		t.Fatalf("tmux used: %s", raw)
+}
+
+func TestSessionStartPiOutsideHerdrUsesBackgroundPane(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "pi")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newRepo(t, "garden")
+	n.register(t, repo)
+	var r protocol.StartedSession
+	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "pi"}), &r)
+	if r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
+		t.Fatalf("initial start %+v", r)
 	}
+	requireHerdrOpened(t, log, "garden", bins["pi"], "--session-id", r.NativeID)
 }
 
 func TestCTOSessionProposalStartsInBackground(t *testing.T) {
@@ -868,11 +879,10 @@ func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 
 func TestEnterWithoutHerdrOrTerminalExplainsChecks(t *testing.T) {
 	withoutLocalHerdr(t)
-	fakeTmux(t, "")
 	g := startGateway(t, t.TempDir(), "")
 	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi-1", PID: 1, Name: "garden"}, nil, nil)
 	p := enterOf(t, n, id, "")
-	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "herdr") || !strings.Contains(strings.ToLower(p.Note), "tmux") {
+	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "herdr") {
 		t.Fatalf("note %+v", p)
 	}
 }

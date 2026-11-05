@@ -217,10 +217,7 @@ type TextQuery struct {
 // one session? (decision 0002, W16)
 type EnterRequest struct {
 	SessionID string `json:"session_id"`
-	// TmuxSocket is the socket path of the tmux server the asking terminal
-	// runs in (the part of $TMUX before the first comma), or "" when it is
-	// not in tmux. With it, the plan can switch the owner's tmux client to the
-	// session's pane instead of attaching a second client.
+	// TmuxSocket is retained for compatibility with older clients; it is unused.
 	TmuxSocket string `json:"tmux_socket,omitempty"`
 	// HerdrSocket is the value of $HERDR_SOCKET_PATH when the asking terminal
 	// runs inside herdr (HERDR_ENV=1), else "". The daemon uses that server.

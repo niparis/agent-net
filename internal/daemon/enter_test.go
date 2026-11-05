@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -39,22 +38,6 @@ func fakeBin(t *testing.T, names ...string) map[string]string {
 	return out
 }
 
-// fakeTmux puts a tmux on PATH that prints the given list-panes output and
-// writes its arguments to the returned file.
-func fakeTmux(t *testing.T, panes string) (argsFile string) {
-	t.Helper()
-	dir := t.TempDir()
-	argsFile = filepath.Join(dir, "args")
-	script := "#!/bin/sh\necho \"$@\" >> " + argsFile + "\ncat <<'EOF'\n" + panes + "\nEOF\n"
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return argsFile
-}
-
-// enterNode starts a node with one session of the given harness and returns
-// the node and the session's gateway ID.
 func enterNode(t *testing.T, g *testGateway, harness string, info protocol.SessionInfo, bins map[string]string, mutate func(*Config)) (*node, *fakeAdapter, string) {
 	t.Helper()
 	fa := &fakeAdapter{harness: harness}
@@ -78,9 +61,9 @@ func enterNode(t *testing.T, g *testGateway, harness string, info protocol.Sessi
 	return n, fa, id
 }
 
-func enterOf(t *testing.T, n *node, id, tmuxSocket string) protocol.EnterPlan {
+func enterOf(t *testing.T, n *node, id, _ string) protocol.EnterPlan {
 	t.Helper()
-	return enterRequest(t, n, protocol.EnterRequest{SessionID: id, TmuxSocket: tmuxSocket})
+	return enterRequest(t, n, protocol.EnterRequest{SessionID: id})
 }
 
 // enterOfHerdr asks for a session from a TUI inside the herdr server at socket.
@@ -136,70 +119,8 @@ func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
 	}
 }
 
-func TestEnterTmuxPane(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	// This test process is the session's process, and the pane's shell.
-	argsFile := fakeTmux(t, "99999|%9|other\n"+itoa(os.Getpid())+"|%7|work")
-	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "interactive"}
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Adapters = []Adapter{ea} }})
-	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: os.Getpid(), Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
-	var id string
-	eventually(t, "session id", func() bool {
-		if s := n.d.Sessions(); len(s) == 1 {
-			id = s[0].SessionID
-		}
-		return id != ""
-	})
-
-	// The TUI is not in tmux: attach a client and show the pane.
-	p := enterOf(t, n, id, "")
-	want := []string{"tmux", "select-window", "-t", "%7", ";", "select-pane", "-t", "%7", ";", "attach-session", "-t", "work"}
-	if !reflect.DeepEqual(p.Argv, want) {
-		t.Fatalf("not in tmux: argv %v, want %v", p.Argv, want)
-	}
-	// The TUI is in tmux: attach a nested client.
-	p = enterOf(t, n, id, "/tmp/tmux-1000/default")
-	if want := []string{"env", "-u", "TMUX", "tmux", "select-window", "-t", "%7", ";", "select-pane", "-t", "%7", ";", "attach-session", "-t", "work"}; !reflect.DeepEqual(p.Argv, want) {
-		t.Fatalf("in tmux: argv %v, want %v", p.Argv, want)
-	}
-	if b, _ := os.ReadFile(argsFile); !strings.Contains(string(b), "list-panes -a") {
-		t.Fatalf("tmux was asked: %q", b)
-	}
-}
-
-// A session whose own $TMUX names another server gets that server's socket, and
-// a TUI in a different tmux gets a new client, not a nested one.
-func TestEnterTmuxOtherServer(t *testing.T) {
-	cmd := exec.Command("sleep", "30")
-	cmd.Env = append(os.Environ(), "TMUX=/srv/sess.sock,123,0")
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
-	waitProcessEnv(t, cmd.Process.Pid, "TMUX=/srv/sess.sock,123,0")
-	argsFile := fakeTmux(t, itoa(cmd.Process.Pid)+"|%3|dev")
-	pane, ok := findTmuxPane(cmd.Process.Pid)
-	if !ok || pane.socket != "/srv/sess.sock" || pane.id != "%3" || pane.session != "dev" {
-		t.Fatalf("pane %+v ok=%v", pane, ok)
-	}
-	if b, _ := os.ReadFile(argsFile); !strings.HasPrefix(string(b), "-S /srv/sess.sock list-panes") {
-		t.Fatalf("tmux was asked: %q", b)
-	}
-	d := &Daemon{}
-	p, _ := d.tmuxPlan(protocol.SessionInfo{PID: cmd.Process.Pid}, protocol.EnterRequest{TmuxSocket: "/other"}, protocol.EnterPlan{Host: "h"}, "s")
-	want := []string{"env", "-u", "TMUX", "tmux", "-S", "/srv/sess.sock", "select-window", "-t", "%3", ";", "select-pane", "-t", "%3", ";", "attach-session", "-t", "dev"}
-	if !reflect.DeepEqual(p.Argv, want) {
-		t.Fatalf("argv %v, want %v", p.Argv, want)
-	}
-	p, _ = d.tmuxPlan(protocol.SessionInfo{PID: cmd.Process.Pid}, protocol.EnterRequest{TmuxSocket: "/srv/sess.sock"}, protocol.EnterPlan{}, "s")
-	if want := []string{"env", "-u", "TMUX", "tmux", "-S", "/srv/sess.sock", "select-window", "-t", "%3", ";", "select-pane", "-t", "%3", ";", "attach-session", "-t", "dev"}; !reflect.DeepEqual(p.Argv, want) {
-		t.Fatalf("same server: argv %v, want %v", p.Argv, want)
-	}
-}
-
 func TestEnterWithoutAWayGivesANote(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	fakeTmux(t, "") // tmux is there, with no panes
 	for _, harness := range []string{"pi", "claude"} {
 		info := protocol.SessionInfo{NativeID: "x1", PID: os.Getpid(), Cwd: "/nope", Name: "win", Status: "idle"}
 		n, _, id := enterNode(t, g, harness, info, nil, nil)
@@ -313,7 +234,7 @@ func TestEnterOnAnotherMachineUsesSSHByDefault(t *testing.T) {
 		p := enterOfErr(local, id)
 		return p != nil && p.Note != ""
 	})
-	p := enterOf(t, local, id, "/tmp/mytmux")
+	p := enterOf(t, local, id, "")
 	if want := []string{"ssh", "-t", "-o", "ConnectTimeout=5", "--", host, cmdline}; !reflect.DeepEqual(p.Argv, want) || p.Dir != "" {
 		t.Fatalf("default: %+v", p)
 	}

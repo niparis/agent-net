@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"os"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -19,7 +18,6 @@ func Run(ctx context.Context, src Source) error {
 	m := New(src)
 	m.graphPixel.set(graphview.Detect(os.Getenv, graphview.QueryTerminal))
 	m.graphPixel.motion = os.Getenv("AGENT_NET_GRAPH_MOTION") == "1"
-	m.tmuxSocket = tmuxSocketOf(os.Getenv("TMUX"))
 	m.herdrSocket = herdrSocketOf(os.Getenv("HERDR_ENV"), os.Getenv("HERDR_SOCKET_PATH"))
 	if m.herdrSocket != "" {
 		m.herdrPaneID = os.Getenv("HERDR_PANE_ID")
@@ -44,10 +42,4 @@ func herdrSocketOf(env, socket string) string {
 		return ""
 	}
 	return socket
-}
-
-// tmuxSocketOf is the socket path in a $TMUX value ("<socket>,<pid>,<index>").
-func tmuxSocketOf(env string) string {
-	sock, _, _ := strings.Cut(env, ",")
-	return sock
 }
