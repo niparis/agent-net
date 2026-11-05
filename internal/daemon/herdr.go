@@ -152,9 +152,9 @@ func herdrSocketCandidates(h herdrPane) []string {
 	return out
 }
 
-func herdrPanesFromServer(bin string, h herdrPane) ([]herdrPaneInfo, string, bool) {
+func (d *Daemon) herdrPanesFromServer(bin string, h herdrPane) ([]herdrPaneInfo, string, bool) {
 	for _, socket := range herdrSocketCandidates(h) {
-		panes, err := herdrPanes(bin, socket)
+		panes, err := d.herdrPanes(bin, socket)
 		if err == nil {
 			return panes, socket, true
 		}
@@ -162,23 +162,13 @@ func herdrPanesFromServer(bin string, h herdrPane) ([]herdrPaneInfo, string, boo
 	return nil, "", false
 }
 
-// herdrBinary finds the herdr program: the pane's own HERDR_BIN_PATH, the
-// configured path, PATH, then ~/.local/bin (a service may not have it in PATH).
+// herdrBinary honors an explicit pane hint, then uses the harness search.
 func (d *Daemon) herdrBinary(hint string) string {
-	for _, c := range []string{hint, d.cfg.HarnessPaths["herdr"]} {
-		if c != "" && filepath.IsAbs(c) && isExecutable(c) {
-			return c
-		}
+	if filepath.IsAbs(hint) && isExecutable(hint) {
+		return hint
 	}
-	if p, err := exec.LookPath("herdr"); err == nil {
-		return p
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if c := filepath.Join(home, ".local", "bin", "herdr"); isExecutable(c) {
-			return c
-		}
-	}
-	return ""
+	bin, _ := d.lookupHerdrBinary()
+	return bin
 }
 
 func isExecutable(p string) bool {
@@ -187,7 +177,7 @@ func isExecutable(p string) bool {
 }
 
 // herdrRun runs a herdr command against one server and returns its output.
-func herdrRun(bin, socket string, args ...string) ([]byte, error) {
+func (d *Daemon) herdrRun(bin, socket string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
@@ -201,7 +191,11 @@ func herdrRun(bin, socket string, args ...string) ([]byte, error) {
 		env = append(env, "HERDR_SOCKET_PATH="+socket)
 	}
 	cmd.Env = env
-	return cmd.Output()
+	out, err := cmd.Output()
+	if err != nil {
+		d.invalidateBinary("herdr", bin)
+	}
+	return out, err
 }
 
 type herdrPaneInfo struct {
@@ -217,8 +211,8 @@ type herdrPaneInfo struct {
 }
 
 // herdrPanes lists the panes of a server.
-func herdrPanes(bin, socket string) ([]herdrPaneInfo, error) {
-	out, err := herdrRun(bin, socket, "pane", "list")
+func (d *Daemon) herdrPanes(bin, socket string) ([]herdrPaneInfo, error) {
+	out, err := d.herdrRun(bin, socket, "pane", "list")
 	if err != nil {
 		return nil, err
 	}
@@ -238,8 +232,8 @@ func herdrPanes(bin, socket string) ([]herdrPaneInfo, error) {
 
 // herdrHolds says whether the pane runs one of the pids (its shell, or a
 // process of its foreground group).
-func herdrHolds(bin, socket, pane string, pids map[int]bool) bool {
-	out, err := herdrRun(bin, socket, "pane", "process-info", "--pane", pane)
+func (d *Daemon) herdrHolds(bin, socket, pane string, pids map[int]bool) bool {
+	out, err := d.herdrRun(bin, socket, "pane", "process-info", "--pane", pane)
 	if err != nil {
 		return false
 	}
@@ -307,13 +301,13 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	var panes []herdrPaneInfo
 	if fromServer {
 		var ok bool
-		panes, h.socket, ok = herdrPanesFromServer(bin, h)
+		panes, h.socket, ok = d.herdrPanesFromServer(bin, h)
 		if !ok {
 			return note("%s has a herdr server above its process, but no candidate herdr socket answers: open its window on %s", name, where)
 		}
 	} else {
 		var err error
-		panes, err = herdrPanes(bin, h.socket)
+		panes, err = d.herdrPanes(bin, h.socket)
 		if err != nil {
 			return note("%s runs in herdr, but the herdr server does not answer: open its window on %s", name, where)
 		}
@@ -324,13 +318,13 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	pids := pidChain(info.PID)
 	var pane *herdrPaneInfo
 	for i := range panes {
-		if panes[i].PaneID == h.id && herdrHolds(bin, h.socket, h.id, pids) {
+		if panes[i].PaneID == h.id && d.herdrHolds(bin, h.socket, h.id, pids) {
 			pane = &panes[i]
 			break
 		}
 	}
 	for i := 0; pane == nil && i < len(panes); i++ {
-		if panes[i].PaneID != h.id && herdrHolds(bin, h.socket, panes[i].PaneID, pids) {
+		if panes[i].PaneID != h.id && d.herdrHolds(bin, h.socket, panes[i].PaneID, pids) {
 			pane = &panes[i]
 		}
 	}
@@ -347,9 +341,9 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	if q.HerdrClient {
 		var err error
 		if pane.Agent != "" {
-			_, err = herdrRun(bin, h.socket, "agent", "focus", pane.PaneID)
+			_, err = d.herdrRun(bin, h.socket, "agent", "focus", pane.PaneID)
 		} else if herdrIDRe.MatchString(pane.TabID) {
-			_, err = herdrRun(bin, h.socket, "tab", "focus", pane.TabID)
+			_, err = d.herdrRun(bin, h.socket, "tab", "focus", pane.TabID)
 		} else {
 			err = fmt.Errorf("pane has no tab ID")
 		}

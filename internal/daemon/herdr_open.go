@@ -22,18 +22,17 @@ type herdrOpenedPane struct {
 	started                time.Time
 }
 
-const herdrInstallNote = "Herdr was not found or failed; install: https://herdr.dev/tui/docs/install/."
+const herdrInstallNote = "Herdr was not found; install: https://herdr.dev/tui/docs/install/."
 
 var shellEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // herdrServer selects the requested server, or starts the default headless
 // server. An explicitly requested socket must never be silently replaced.
-func herdrServer(bin, socket string) bool {
-	if _, err := herdrPanes(bin, socket); err == nil {
-		return true
-	}
-	if socket != "" {
-		return false
+func (d *Daemon) herdrServer(bin, socket string) error {
+	if _, err := d.herdrPanes(bin, socket); err == nil {
+		return nil
+	} else if socket != "" {
+		return err
 	}
 	cmd := exec.Command(bin, "server")
 	for _, kv := range os.Environ() {
@@ -42,7 +41,7 @@ func herdrServer(bin, socket string) bool {
 		}
 	}
 	if err := cmd.Start(); err != nil {
-		return false
+		return err
 	}
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
@@ -53,25 +52,16 @@ func herdrServer(bin, socket string) bool {
 	for {
 		select {
 		case <-done:
-			_, err := herdrPanes(bin, "")
-			return err == nil
+			_, err := d.herdrPanes(bin, "")
+			return err
 		case <-deadline.C:
-			return false
+			return fmt.Errorf("server did not become ready within 3 seconds")
 		case <-ticker.C:
-			if _, err := herdrPanes(bin, ""); err == nil {
-				return true
+			if _, err := d.herdrPanes(bin, ""); err == nil {
+				return nil
 			}
 		}
 	}
-}
-
-func herdrFallback(plan protocol.EnterPlan) protocol.EnterPlan {
-	if plan.Note == "" {
-		plan.Note = herdrInstallNote
-	} else {
-		plan.Note += " " + herdrInstallNote
-	}
-	return plan
 }
 
 // herdrEnvironment writes a one-use shell fragment instead of putting private
@@ -130,9 +120,10 @@ func (d *Daemon) openForCaller(key, name, socket, pane string, plan protocol.Ent
 // creation so concurrent Enter calls cannot create duplicate clients. When the
 // server is unavailable the original plan remains the fallback.
 func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol.EnterPlan) protocol.EnterPlan {
-	bin := d.herdrBinary("")
-	if bin == "" {
-		return herdrFallback(plan)
+	bin, lookupErr := d.lookupHerdrBinary()
+	if lookupErr != nil {
+		plan.Note = strings.TrimSpace(plan.Note + " " + lookupErr.Error())
+		return plan
 	}
 	if len(plan.Argv) == 0 {
 		return plan
@@ -146,16 +137,16 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	d.herdrOpenMu.Lock()
 	defer d.herdrOpenMu.Unlock()
 	if old, ok := d.herdrOpened[key]; key != "" && ok {
-		if panes, err := herdrPanes(old.bin, old.socket); err == nil {
+		if panes, err := d.herdrPanes(old.bin, old.socket); err == nil {
 			for _, pane := range panes {
 				if pane.PaneID == old.pane {
 					// Immediately after pane run, the shell may not have started
 					// its child yet. Later, an idle shell means the client exited.
-					if active, known := herdrPaneActive(old.bin, old.socket, old.pane); known && !active && time.Since(old.started) > time.Second {
+					if active, known := d.herdrPaneActive(old.bin, old.socket, old.pane); known && !active && time.Since(old.started) > time.Second {
 						break
 					}
-					if _, err := herdrRun(old.bin, old.socket, "tab", "focus", old.tab); err == nil {
-						_, _ = herdrRun(old.bin, old.socket, "agent", "focus", old.pane)
+					if _, err := d.herdrRun(old.bin, old.socket, "tab", "focus", old.tab); err == nil {
+						_, _ = d.herdrRun(old.bin, old.socket, "agent", "focus", old.pane)
 						return herdrOpenNotice(openedHerdrPlan(plan.Host, name, old.pane), plan)
 					}
 				}
@@ -163,8 +154,9 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 		}
 		delete(d.herdrOpened, key)
 	}
-	if !herdrServer(bin, socket) {
-		return herdrFallback(plan)
+	if err := d.herdrServer(bin, socket); err != nil {
+		plan.Note = strings.TrimSpace(plan.Note + " " + fmt.Sprintf("herdr at %s failed: %v", bin, err))
+		return plan
 	}
 	file, err := herdrEnvironment(plan.Env)
 	if err != nil {
@@ -182,10 +174,10 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	if plan.Dir != "" {
 		args = append(args, "--cwd", plan.Dir)
 	}
-	out, err := herdrRun(bin, socket, args...)
+	out, err := d.herdrRun(bin, socket, args...)
 	if err != nil {
 		_ = os.Remove(file)
-		return protocol.EnterPlan{Host: plan.Host, Note: "Herdr could not create a pane; check its server before retrying."}
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not create a pane: %v", bin, err)}
 	}
 	var created struct {
 		Result struct {
@@ -210,9 +202,9 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 		return protocol.EnterPlan{Host: plan.Host, Note: "Herdr created a tab but did not return its pane; check herdr before retrying."}
 	}
 	if callerPane != "" {
-		if _, err := herdrRun(bin, socket, "pane", "rename", created.Result.Pane.ID, cleanLine(name)); err != nil {
+		if _, err := d.herdrRun(bin, socket, "pane", "rename", created.Result.Pane.ID, cleanLine(name)); err != nil {
 			_ = os.Remove(file)
-			return protocol.EnterPlan{Host: plan.Host, Note: "Herdr created a pane but could not name it; check herdr before retrying."}
+			return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not name the pane: %v", bin, err)}
 		}
 	}
 	quoted := make([]string, len(plan.Argv))
@@ -223,9 +215,9 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	// The pane may use fish or another non-POSIX login shell. Keep the
 	// assignment and argv quoting inside a POSIX shell.
 	command = "sh -c " + shellQuote(command)
-	if _, err := herdrRun(bin, socket, "pane", "run", created.Result.Pane.ID, command); err != nil {
+	if _, err := d.herdrRun(bin, socket, "pane", "run", created.Result.Pane.ID, command); err != nil {
 		_ = os.Remove(file)
-		return protocol.EnterPlan{Host: plan.Host, Note: "Herdr created a tab but could not run the command; check herdr before retrying."}
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not run the command: %v", bin, err)}
 	}
 	if key != "" {
 		if d.herdrOpened == nil {
@@ -245,8 +237,8 @@ func herdrOpenNotice(opened, previous protocol.EnterPlan) protocol.EnterPlan {
 
 // herdrPaneActive distinguishes an exited client from its still-open shell.
 // Older or inaccessible servers may not supply process information.
-func herdrPaneActive(bin, socket, pane string) (active, known bool) {
-	out, err := herdrRun(bin, socket, "pane", "process-info", "--pane", pane)
+func (d *Daemon) herdrPaneActive(bin, socket, pane string) (active, known bool) {
+	out, err := d.herdrRun(bin, socket, "pane", "process-info", "--pane", pane)
 	if err != nil {
 		return false, false
 	}
@@ -302,7 +294,7 @@ func (d *Daemon) notifySessionStart(r protocol.StartedSession) {
 	} else if r.EnterPlan != nil && r.EnterPlan.Note != "" {
 		text := r.EnterPlan.Note
 		if len(r.EnterPlan.Argv) != 0 {
-			text = "The session needs a terminal to start. " + herdrInstallNote
+			text = "The session needs a terminal to start. " + r.EnterPlan.Note
 		}
 		d.broadcastCTOUI(protocol.UIRequest{Text: text, DaemonNotice: true})
 	}
@@ -322,7 +314,7 @@ func (d *Daemon) focusHerdrSession(socket, harness, native, host, name string) (
 	if !filepath.IsAbs(socket) {
 		socket = ""
 	}
-	panes, err := herdrPanes(bin, socket)
+	panes, err := d.herdrPanes(bin, socket)
 	if err != nil {
 		return protocol.EnterPlan{}, false
 	}
@@ -330,7 +322,7 @@ func (d *Daemon) focusHerdrSession(socket, harness, native, host, name string) (
 		if pane.Session == nil || pane.Session.Kind != "id" || pane.Session.Agent != harness || pane.Session.Value != native || !herdrIDRe.MatchString(pane.PaneID) {
 			continue
 		}
-		if _, err := herdrRun(bin, socket, "agent", "focus", pane.PaneID); err != nil {
+		if _, err := d.herdrRun(bin, socket, "agent", "focus", pane.PaneID); err != nil {
 			return protocol.EnterPlan{Host: host, Note: "cannot focus " + cleanLine(name) + " in herdr; open pane " + pane.PaneID}, true
 		}
 		return openedHerdrPlan(host, name, pane.PaneID), true
