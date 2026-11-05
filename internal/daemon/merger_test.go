@@ -161,6 +161,14 @@ func TestMergerFirstMessagePushRules(t *testing.T) {
 	}
 }
 
+func TestMergerFirstMessageBatchRules(t *testing.T) {
+	for _, rule := range []string{"merge-batch-<n>", "git diff --name-only", "--no-ff", "batch tip", "change head", "one at a time", "sensitive paths", "depend on each other", "CI link"} {
+		if !strings.Contains(MergerFirstMessage, rule) {
+			t.Errorf("missing batch rule %q", rule)
+		}
+	}
+}
+
 func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
