@@ -481,6 +481,15 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := checkMergeReady(tx, p, c, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
+	queued, err := stepTaskQueued(tx, c, q.StepRef)
+	if err != nil {
+		return protocol.StepReportResult{}, err
+	}
+	if queued {
+		if err := checkStepReady(tx, c, p, q.StepRef); err != nil {
+			return protocol.StepReportResult{}, err
+		}
+	}
 	var found bool
 	if directOwner {
 		found, err = claimDirectOwnerApproval(tx, c, q.StepRef, q.SessionID, machine)
