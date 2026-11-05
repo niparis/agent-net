@@ -63,6 +63,9 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 	if _, err := tx.Exec(`UPDATE sessions SET worker_run_active=0 WHERE id=? AND node_id=? AND worker<>''`, r.SessionID, r.NodeID); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='session_ended',answered_at=? WHERE session_id=? AND kind IN ('question','approval') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=?)`, s.now().UnixNano(), r.SessionID, r.SessionID, r.NodeID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}

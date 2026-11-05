@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -12,7 +13,25 @@ import (
 // CreateInboxItem stores an item for the owner. Callers must derive the session
 // and node from authenticated state rather than trusting agent-supplied values.
 func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, error) {
-	return s.createInboxItem(s.db, item)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return item, err
+	}
+	defer tx.Rollback()
+	item, err = s.createInboxItem(tx, item)
+	if err != nil {
+		return item, err
+	}
+	if item.Kind == "question" || item.Kind == "approval" {
+		_, err = tx.Exec(`UPDATE inbox_items SET status='replaced',answered_at=? WHERE session_id=? AND kind=? AND status='open' AND id<>?`, item.CreatedAt.UnixNano(), item.SessionID, item.Kind, item.ID)
+		if err != nil {
+			return item, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return item, err
+	}
+	return item, nil
 }
 
 // RequestWrittenApproval adds the exact action to the owner's inbox.
@@ -32,6 +51,9 @@ func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protoc
 	}
 	if strings.TrimSpace(item.SessionID) == "" || strings.TrimSpace(item.Text) == "" {
 		return item, reject("inbox session and text are required")
+	}
+	if (item.Kind == "question" || item.Kind == "approval" || item.Kind == "feature_idea") && utf8.RuneCountInString(item.Text) > protocol.MaxOwnerAskChars {
+		return item, reject("inbox text too long")
 	}
 	if len(item.Text) > protocol.MaxBodyBytes || len(item.Recommendation) > protocol.MaxBodyBytes {
 		return item, reject("inbox text too long")
@@ -246,4 +268,10 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 		return item, err
 	}
 	return item, nil
+}
+
+// CloseArchivedSessionInbox closes only requests belonging to a session on the authenticated node.
+func (s *Store) CloseArchivedSessionInbox(node, session string) error {
+	_, err := s.db.Exec(`UPDATE inbox_items SET status='closed',answer='session_archived',answered_at=? WHERE session_id=? AND kind IN ('question','approval') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=?)`, s.now().UnixNano(), session, session, node)
+	return err
 }

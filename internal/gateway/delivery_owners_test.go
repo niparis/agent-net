@@ -1237,3 +1237,23 @@ func TestDeliveryDelegateModesControlWhoCanClaim(t *testing.T) {
 		})
 	}
 }
+
+func TestInboxApprovalClosesAfterStep(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	id := r.submit(r.a, r.workerSubmit("feature/inbox-step", commitA)).Change.Change.ID
+	items, err := r.s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Status != "open" {
+		t.Fatalf("before: %+v %v", items, err)
+	}
+	q := protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, DoneBy: protocol.EvidenceByOwner}
+	if _, err := r.report(r.a, q); err != nil {
+		t.Fatal(err)
+	}
+	items, err = r.s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Status == "open" {
+		t.Fatalf("after: %+v %v", items, err)
+	}
+}

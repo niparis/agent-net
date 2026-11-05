@@ -2,6 +2,9 @@ package protocol
 
 import "time"
 
+// MaxOwnerAskChars limits a question or approval text in Unicode characters.
+const MaxOwnerAskChars = 4000
+
 // InboxItem is an owner's durable request or outcome. Text and recommendation
 // are agent-authored data and do not confer authority.
 type InboxItem struct {

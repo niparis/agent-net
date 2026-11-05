@@ -60,7 +60,7 @@ type Model struct {
 	inboxItems                          []protocol.InboxItem
 	inboxDetail, inboxEditing           bool
 	inboxDeliveryID                     string
-	inboxIndex                          int
+	inboxIndex, inboxDetailScroll       int
 	inboxError                          string
 	inboxNote                           string
 	inboxInput                          textinput.Model
@@ -1222,7 +1222,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.tab == inboxTab && !m.inboxEditing && !m.inboxDetail && len(k.Text) == 1 && k.Text[0] >= '1' && k.Text[0] <= '4' {
+	if m.tab == inboxTab && !m.inboxEditing && len(k.Text) == 1 && k.Text[0] >= '1' && k.Text[0] <= '4' {
 		if row, ok := m.inboxSelected(m.inboxRows()); ok && (row.kind == "question" || row.kind == "approval") {
 			i := int(k.Text[0] - '1')
 			if i < len(row.item.Options) {

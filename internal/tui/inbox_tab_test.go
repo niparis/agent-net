@@ -792,3 +792,46 @@ func TestInboxDetailGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("inbox_detail_%dx%d", size[0], size[1]), m.testView())
 	}
 }
+
+func TestInboxLongDetailScrollAndHints(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	m.inboxItems[1].Text = strings.Repeat("long question line words ", 100)
+	m.inboxItems[1].Options = []string{"yes", "no"}
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	if !strings.Contains(ansi.Strip(m.testView()), "1-2") {
+		t.Fatal("list lacks option hints")
+	}
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	view := ansi.Strip(m.testView())
+	if !strings.Contains(view, "more below") || !strings.Contains(view, "1-2") {
+		t.Fatalf("detail: %s", view)
+	}
+	golden(t, "inbox_detail_long_80x24", m.testView())
+	for i := 0; i < 3; i++ {
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	if !strings.Contains(ansi.Strip(m.testView()), "2. no") {
+		t.Fatal("page down did not show options")
+	}
+}
+
+func TestInboxDetailScrollUpAfterEnd(t *testing.T) {
+	m, _ := inboxAllKindsModel(80, 24)
+	var b strings.Builder
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, "line %02d\n", i)
+	}
+	m.inboxItems[1].Text = b.String()
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	for i := 0; i < 10; i++ {
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	before := m.testView()
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyUp})
+	if m.testView() == before {
+		t.Fatal("up does not scroll after reaching end")
+	}
+}

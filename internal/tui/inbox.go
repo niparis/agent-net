@@ -541,10 +541,25 @@ func (m Model) inboxTabView(w, h int) []string {
 	if m.inboxDetail {
 		out = append(out, section("Inbox detail", w))
 		row, _ := m.inboxSelected(rows)
+		var lines []string
 		for _, line := range m.inboxDetailLines(row) {
-			for _, wrapped := range wrapText(line, max(w-2, 1)) {
-				out = append(out, "  "+wrapped)
+			if line == "" {
+				lines = append(lines, "")
+				continue
 			}
+			for _, wrapped := range wrapText(line, max(w-2, 1)) {
+				lines = append(lines, "  "+wrapped)
+			}
+		}
+		room := max(h-len(out), 0)
+		start := min(max(m.inboxDetailScroll, 0), max(len(lines)-room, 0))
+		more := len(lines)-start > room
+		if more && room > 0 {
+			room--
+		}
+		out = append(out, lines[start:min(start+room, len(lines))]...)
+		if more && len(out) < h {
+			out = append(out, sDim.Render("  more below"))
 		}
 		for len(out) < h {
 			out = append(out, "")
@@ -1062,6 +1077,31 @@ func (m *Model) dropInboxItem(id string) {
 	m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
 }
 
+func (m Model) inboxDetailScrollLimit(rows []inboxRow) int {
+	row, ok := m.inboxSelected(rows)
+	if !ok {
+		return 0
+	}
+	width := max(m.width, 40)
+	height := max(m.height, 10) - 1 - m.ctoBoxHeight(m.tab)
+	room := height - 2
+	if m.inboxError != "" {
+		room--
+	}
+	if m.inboxNote != "" {
+		room--
+	}
+	count := 0
+	for _, line := range m.inboxDetailLines(row) {
+		if line == "" {
+			count++
+		} else {
+			count += len(wrapText(line, max(width-2, 1)))
+		}
+	}
+	return max(count-max(room, 0), 0)
+}
+
 // inboxTabKey handles the Inbox tab and its detail view.
 func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.inboxRows()
@@ -1117,11 +1157,31 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.inboxDetail {
-		if key == "back" || key == actClose {
+		limit := m.inboxDetailScrollLimit(rows)
+		m.inboxDetailScroll = min(m.inboxDetailScroll, limit)
+		switch key {
+		case "back", actClose:
 			m.inboxDetail = false
+			m.inboxDetailScroll = 0
+			return m, nil
+		case actUp:
+			m.inboxDetailScroll = max(m.inboxDetailScroll-1, 0)
+			return m, nil
+		case actDown:
+			m.inboxDetailScroll = min(m.inboxDetailScroll+1, limit)
+			return m, nil
+		case actPageUp:
+			m.inboxDetailScroll = max(m.inboxDetailScroll-max(m.height-8, 1), 0)
+			return m, nil
+		case actPageDown:
+			m.inboxDetailScroll = min(m.inboxDetailScroll+max(m.height-8, 1), limit)
+			return m, nil
+		case "answer", "approve", "refuse", "dismiss":
+		default:
+			return m, nil
 		}
-		return m, nil
 	}
+
 	switch key {
 	case actUp:
 		m.inboxIndex = max(0, m.inboxIndex-1)
@@ -1154,12 +1214,14 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.startEnterID(row.session)
 		case "approval", "question":
 			if m.inboxQuestionHasExtra(row, rows) {
+				m.inboxDetailScroll = 0
 				m.inboxDetail = true
 			}
 		case "proposal":
 			m.proposalDetail = &proposalDetail{proposal: row.proposal, loading: true}
 			return m, m.proposalDetailCmd(row.proposal)
 		default:
+			m.inboxDetailScroll = 0
 			m.inboxDetail = true
 		}
 	case "approve", "refuse":
@@ -1294,9 +1356,17 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 		open.label = "open session"
 		return []hint{open}
 	case "question":
-		return []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		h := []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		if len(row.item.Options) > 0 {
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+		}
+		return h
 	case "approval":
-		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		h := []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
+		if len(row.item.Options) > 0 {
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+		}
+		return h
 	case "proposal":
 		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse")}
 	case "outcome":
@@ -1314,7 +1384,18 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 func (m Model) inboxHints() []hint {
 	help := bindingHint(contextInbox, "help")
 	if m.inboxDetail {
-		return []hint{bindingHint(contextInbox, "back"), help, bindingHint(contextInbox, actQuit)}
+		row, ok := m.inboxSelected(m.inboxRows())
+		var h []hint
+		if ok && (row.kind == "question" || row.kind == "approval") {
+			if len(row.item.Options) > 0 {
+				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1})
+			}
+			h = append(h, bindingHint(contextInbox, "answer"))
+			if row.kind == "approval" {
+				h = append(h, bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"))
+			}
+		}
+		return append(h, bindingHint(contextInbox, "back"))
 	}
 	move := hint{key: "↑↓", label: "select", prio: 1}
 	rows := m.inboxRows()

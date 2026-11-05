@@ -138,6 +138,17 @@ func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
 			}
 		}
 	}
+	if method == "thread/archived" {
+		var p struct {
+			ThreadID string `json:"threadId"`
+		}
+		if json.Unmarshal(raw, &p) == nil && p.ThreadID != "" {
+			if sid := a.d.SessionID("codex", p.ThreadID); sid != "" {
+				go a.d.call(context.Background(), "session.archive", protocol.SessionRemove{SessionID: sid})
+			}
+		}
+	}
+
 	switch method {
 	case "thread/started", "thread/closed", "thread/status/changed", "thread/name/updated", "thread/archived", "thread/deleted":
 		select {

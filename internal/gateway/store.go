@@ -1005,7 +1005,27 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
-		result, err := tx.Exec(migrations[i])
+		var result sql.Result
+		if strings.Contains(migrations[i], "ALTER TABLE inbox_items ADD COLUMN options") {
+			for _, col := range []struct{ name, spec string }{
+				{"options", `TEXT NOT NULL DEFAULT '[]'`}, {"asker_name", `TEXT NOT NULL DEFAULT ''`}, {"change_title", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+					break
+				}
+				if has == 0 {
+					if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				result, err = tx.Exec(`SELECT 1`)
+			}
+		} else {
+			result, err = tx.Exec(migrations[i])
+		}
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)

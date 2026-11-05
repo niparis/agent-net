@@ -1185,6 +1185,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetSessionOffline(nc.id, p.SessionID)
 
+	case "session.archive":
+		p, err := decode[protocol.SessionRemove](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad session.archive")
+		}
+		return nil, st.CloseArchivedSessionInbox(nc.id, p.SessionID)
+
 	case "session.rename":
 		p, err := decode[protocol.SessionRenameRequest](raw)
 		if err != nil || p.SessionID == "" {
