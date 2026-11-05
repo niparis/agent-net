@@ -856,7 +856,7 @@ func (m Model) inboxPanelOrigin(row inboxRow, withAge bool) string {
 	case "approval", "question":
 		origin := m.inboxSessionOrigin(row.session)
 		name := m.inboxSessionName(row.session)
-		if name == row.session || strings.HasPrefix(name, "s_") {
+		if name == row.session || strings.Contains(name, "s_") {
 			origin = "session " + m.inboxAskerName(row.item)
 		}
 		add(origin)
