@@ -249,7 +249,7 @@ func checkApprovalTaskPolicy(tx *sql.Tx, c protocol.Change, p protocol.Pipeline,
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
+		JOIN sessions s ON (s.online=1 OR s.harness='claude') AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
 		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=c.caller) OR COALESCE(NULLIF(s.repo_project,''),p.project,'')=t.owner_node OR
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision

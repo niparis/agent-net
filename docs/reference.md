@@ -2500,6 +2500,19 @@ more than an hour offline it asks for confirmation first. Offline OpenCode and
 Codex rows keep their existing enter plans, wrapped in the remote plan when the
 row is on another machine. Other offline harnesses are refused.
 
+A message or delivery step for an offline Claude background session also asks
+its machine to resume it. The machine checks `claude agents --json --all`:
+the matching background record must be `done`, its folder must exist, and the
+session must not be a worker. When the record omits its kind, agent-net must
+have recorded the session as a background session. Stopped, removed or unreadable records are not
+resumed. The gateway makes at most one attempt per session per 10 minutes,
+including across gateway restarts, and logs a failure once. Queued messages
+cannot expire during the bounded wake; normal delivery resumes when the
+session registers. If Claude resumes into a copy with a new native ID, the
+original agent-net session ID and its queued messages follow that copy. This
+background wake never opens a view. A message queued while its machine is
+disconnected is checked when the machine reconnects.
+
 All three methods require the owner's CLI connection and refuse agent callers,
 including CLI commands inside agent, Codex app-server and OpenCode serve
 process trees. They are not agent tools. The session uses the harness's normal
