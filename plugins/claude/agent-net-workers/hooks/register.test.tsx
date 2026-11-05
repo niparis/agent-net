@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { formatWorkerRows } from './register'
+import { binaryPaths, formatWorkerRows } from './register'
 import type { AgentNetWorker } from '../types'
 
 const NOW = 1_700_000_000_000
@@ -131,7 +131,7 @@ test('an ended worker shows its end note, and none clears the line', async ($, o
   expect(session.appended().length).toBe(1)
 })
 
-test('a missing or failing agent-net shows nothing', async ($, on) => {
+test('a missing or failing agent-net reports the first failure', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const statuses: Array<string | undefined> = []
   on('process.run', () => ({
@@ -154,7 +154,7 @@ test('a missing or failing agent-net shows nothing', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
   expect(await ui.find({ type: 'Text', text: /○|✓|✗/ })).toBeUndefined()
   await ui.unmount()
-  expect(statuses.at(-1)).toBeUndefined()
+  expect(statuses.at(-1)).toContain('agent-net: not found')
 })
 
 test('a failed poll keeps the last worker rows until a successful poll replaces them', async ($, on) => {
@@ -488,4 +488,26 @@ test('an outdated panel warns even without workers and clears for an older binar
   const fresh = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
   expect(await fresh.find({ type: 'Text', text: /agent-net panel is out of date/ })).toBeUndefined()
   await fresh.unmount()
+})
+
+// Claude's reload creates a new registration and starts the session again.
+test('session start after reload starts polling with the background Claude session id', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const calls: string[][] = []
+  on('process.run', (_, e) => { calls.push([...e.argv]); return { value: runResult('{"workers":[]}') } })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'background-claude-id' }))
+  on('ui.status', () => ({ value: undefined }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: false })
+  await clock.settle()
+  expect(calls[0]?.slice(-2)).toEqual(['-owner-claude', 'background-claude-id'])
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: false })
+  await clock.settle()
+  expect(calls.length).toBe(2)
+  await clock.advance(3000)
+  expect(calls.length).toBeGreaterThan(2)
+})
+
+test('installed absolute paths precede PATH fallback', () => {
+  expect(binaryPaths('["/opt/agent-net","/home/test/.local/bin/agent-net"]')).toEqual(['/opt/agent-net', '/home/test/.local/bin/agent-net', 'agent-net'])
 })
