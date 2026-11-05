@@ -1473,3 +1473,12 @@ message trust, settings inheritance or delivery assignment. The gateway checks
 membership kinds, live Agent endpoints, active Teams and expected old membership
 in the write transaction. An owning Agent cannot be deleted or tombstoned while
 any Team retains its owner reference, including archived Teams.
+
+Session archive and restore are owner-only operations. Ordinary agent
+connections cannot call them. The CTO can submit a sessions_archive proposal;
+it cannot restore records or apply a proposal before approval. Proposals pin
+the previewed IDs and recheck them at approval. The gateway checks owner
+authority, refuses online sessions, and updates a batch in one transaction.
+Archiving retains rows and historical references; it does not revoke a session.
+A live session report restores its visibility.
+

@@ -27,7 +27,7 @@ func (s *Store) projectKnownTx(tx *sql.Tx, name string) (bool, error) {
 	if exists != 0 {
 		return true, nil
 	}
-	rows, err := tx.Query(`SELECT cwd, repo_root, repo_project, no_project FROM sessions WHERE harness != 'owner' AND repo_root<>'' AND (repo_project=? OR repo_project='')`, name)
+	rows, err := tx.Query(`SELECT cwd, repo_root, repo_project, no_project FROM sessions WHERE archived_at=0 AND harness != 'owner' AND repo_root<>'' AND (repo_project=? OR repo_project='')`, name)
 	if err != nil {
 		return false, err
 	}

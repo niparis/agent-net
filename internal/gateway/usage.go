@@ -234,7 +234,7 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 			CASE WHEN harness='bot' THEN
 				CASE WHEN last_seen > ? AND EXISTS(SELECT 1 FROM apps WHERE apps.id=sessions.node_id AND revoked_at IS NULL) THEN 1 ELSE 0 END
 			ELSE online END AS online
-			FROM sessions WHERE harness != 'owner')`, cutoff, s.now().Add(-10*time.Minute).UnixNano()).Scan(&c.Online, &c.Offline24h, &c.OfflineTotal)
+			FROM sessions WHERE archived_at=0 AND harness != 'owner')`, cutoff, s.now().Add(-10*time.Minute).UnixNano()).Scan(&c.Online, &c.Offline24h, &c.OfflineTotal)
 	s.pendingMu.Lock()
 	c.PendingStalls = s.pendingStalls
 	s.pendingMu.Unlock()

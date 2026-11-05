@@ -45,6 +45,7 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
+	archive                             *sessionsArchiveForm
 	workerLogDetail                     int
 	workersLog                          bool
 	workerLogRow                        int
@@ -456,6 +457,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case sessionsArchiveMsg:
+		return m.sessionsArchiveResult(msg)
 	case tea.MouseMsg:
 		return m.graphMouse(msg), nil
 	case tea.PasteMsg:
@@ -1076,6 +1079,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
+	if m.archive != nil {
+		return m.sessionsArchiveKey(k)
+	}
 	if m.resumeConfirm != nil {
 		a := *m.resumeConfirm
 		yes, _ := confirmAnswer(k)
@@ -1457,6 +1463,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.rebuildConversations()
 			m.ensureSelection()
 			m.fixScroll()
+		}
+	case "archive offline":
+		if m.tab == sessionsTab && m.showOffline {
+			return m.startSessionsArchive()
 		}
 	case "offline":
 		m.showOffline = !m.showOffline

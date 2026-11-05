@@ -73,6 +73,16 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		return nil, st.GraphUndo(p.ID, "owner", true)
 	case "node_settings_set":
 		return nil, st.SetNodeSetting(str("node"), str("setting"), str("value"), "owner", true)
+	case "sessions_archive":
+		var p protocol.SessionsArchiveRequest
+		if err := json.Unmarshal(q.Args, &p); err != nil {
+			return nil, err
+		}
+		if p.Restore {
+			return nil, reject("restore is owner-only")
+		}
+		p.DryRun = true
+		return st.ArchiveSessions(p)
 	case "session_rename":
 		return st.RenameSession(str("session_id"), str("name"), true)
 	case "project_display_set":

@@ -165,6 +165,8 @@ func (m Model) renderView() string {
 	add := func(s string) { out = append(out, s) }
 
 	switch {
+	case m.archive != nil:
+		return strings.Join(m.sessionsArchiveView(w, h), "\n")
 	case m.proposalConfirm:
 		out = append(out, m.proposalConfirmView(w)...)
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:

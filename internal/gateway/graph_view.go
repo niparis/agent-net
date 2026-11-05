@@ -110,7 +110,7 @@ func (s *Store) visibleGraph(all bool) (protocol.Graph, error) {
 		}
 		return s.graphContext(g)
 	}
-	rows, err := s.db.Query(`SELECT name FROM graph_nodes UNION SELECT name FROM projects WHERE graph_excluded<>1 UNION SELECT node FROM graph_charter WHERE value<>'' UNION SELECT source FROM graph_edges UNION SELECT target FROM graph_edges UNION SELECT repo_project FROM sessions WHERE repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
+	rows, err := s.db.Query(`SELECT name FROM graph_nodes UNION SELECT name FROM projects WHERE graph_excluded<>1 UNION SELECT node FROM graph_charter WHERE value<>'' UNION SELECT source FROM graph_edges UNION SELECT target FROM graph_edges UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
 	if err != nil {
 		return g, err
 	}

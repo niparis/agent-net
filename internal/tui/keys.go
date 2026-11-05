@@ -164,6 +164,7 @@ var keyBindings = []keyBinding{
 	withLocal(withHelp(bind(contextSessions, "left|right", "cell", "cell", 1), "move between session actions")),
 	withHelp(bind(contextSessions, "space", "change cell", "change", 1), "cycle the request rule: normal, ask, auto"),
 	withHelp(bind(contextSessions, "v", "cycle view", "view", -1), "cycle the view: active only, all, all with offline, all with offline and hidden"),
+	withHelp(bind(contextSessions, "a", "archive offline", "archive offline...", -1), "in the offline view, preview and archive offline sessions, or show archived and restore"),
 	bind(contextSessions, "R", "refresh", "refresh", -1),
 	withHelp(bind(contextSessions, "d", "details", "details", -1), "show or hide the selected session details"),
 	bind(contextSessions, "/", "filter", "filter", -1),

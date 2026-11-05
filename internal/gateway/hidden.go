@@ -44,7 +44,7 @@ func (s *Store) HiddenItems() (protocol.HiddenItems, error) {
 		return protocol.HiddenItems{}, err
 	}
 
-	rows, err := s.db.Query(`SELECT id, online, last_seen FROM sessions WHERE harness <> ?`, protocol.OwnerHarness)
+	rows, err := s.db.Query(`SELECT id, online, last_seen FROM sessions WHERE archived_at=0 AND harness <> ?`, protocol.OwnerHarness)
 	if err != nil {
 		return protocol.HiddenItems{}, err
 	}

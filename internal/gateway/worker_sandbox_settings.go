@@ -17,9 +17,17 @@ const workerSandboxKey = "workers.sandbox_level"
 // workerProjectNamesTx follows Graph's node discovery, including its filtering
 // of implicit projects, without opening another connection during a migration.
 func workerProjectNamesTx(tx *sql.Tx) (map[string][]string, error) {
+	var hasArchive bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name='archived_at')`).Scan(&hasArchive); err != nil {
+		return nil, err
+	}
+	filter := ""
+	if hasArchive {
+		filter = "archived_at=0 AND "
+	}
 	rows, err := tx.Query(`SELECT name,1,'',2 FROM graph_nodes
  UNION ALL SELECT name,0,path,graph_excluded FROM projects WHERE graph_excluded<>1 AND name NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT repo_project,0,repo_root,graph_excluded FROM sessions WHERE graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes)
+ UNION ALL SELECT repo_project,0,repo_root,graph_excluded FROM sessions WHERE ` + filter + `graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT source,1,'',2 FROM graph_edges WHERE source<>'*' AND source NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT target,1,'',2 FROM graph_edges WHERE target NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
 	if err != nil {

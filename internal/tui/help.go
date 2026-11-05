@@ -156,6 +156,9 @@ func (m Model) hints() []hint {
 			hs[3].prio = 1
 		}
 	}
+	if m.showOffline {
+		hs = append([]hint{{key: "a", label: "archive offline...", prio: 1}}, hs...)
+	}
 	return hs
 }
 

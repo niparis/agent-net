@@ -33,6 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
+	"sessions_archive": true, "sessions_archived": true,
 	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true,
@@ -629,6 +630,20 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if res, err = d.call(ctx, "session.agent.set", q); err == nil {
 			d.policy.forget(q.SessionID)
 		}
+	case "sessions_archive", "sessions_archived":
+		var q struct {
+			protocol.SessionsArchiveRequest
+			Owner string `json:"owner"`
+		}
+		if json.Unmarshal(raw, &q) != nil {
+			return nil, true, errors.New("bad sessions archive request")
+		}
+		q.Owner = d.ownerSessionID()
+		frame := "sessions.archive"
+		if method == "sessions_archived" {
+			frame = "sessions.archived"
+		}
+		res, err = d.call(ctx, frame, q)
 	case protocol.OpSessionRename:
 		// Only the owner names a session (decision 0033). The gate above
 		// refuses agent sessions; the CTO uses the same method through its
