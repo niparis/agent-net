@@ -246,7 +246,7 @@ func resetStoppedMergerTasks(tx *sql.Tx, project string) error {
  JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND t.owner_node='/merger' AND t.completed=0)`, project); err != nil {
 		return err
 	}
-	_, err := tx.Exec(`UPDATE delivery_step_tasks SET owner_node=?,claimed_by='' WHERE owner_node='/merger' AND completed=0
+	_, err := tx.Exec(`UPDATE delivery_step_tasks SET owner_node=?,claimed_by='',urgent=1 WHERE owner_node='/merger' AND completed=0
  AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, callerTaskOwner, project)
 	return err
 }
@@ -274,7 +274,7 @@ func resetConfiguredMergerTasks(tx *sql.Tx, project, node string) error {
 			`DELETE FROM delivery_step_messages WHERE message_id IN
     (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
     JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND c.machine=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.completed=0 AND (t.after_merge=0 OR t.claimed_by=''))`,
-			`UPDATE delivery_step_tasks SET owner_node='/merger',claimed_by='' WHERE change_id IN
+			`UPDATE delivery_step_tasks SET owner_node='/merger',claimed_by='',urgent=1 WHERE change_id IN
     (SELECT id FROM delivery_changes WHERE project=? AND machine=?) AND step=? AND for_step=? AND after_merge=? AND completed=0 AND (after_merge=0 OR claimed_by='')`,
 		} {
 			if _, err := tx.Exec(query, args...); err != nil {

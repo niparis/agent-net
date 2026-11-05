@@ -838,6 +838,47 @@ CREATE TABLE IF NOT EXISTS session_agent_history (
  at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS session_agent_history_session ON session_agent_history(session_id,id);
+`, `
+SELECT 1 /* delivery step tasks urgent column */;
+DROP TRIGGER IF EXISTS merger_removed;
+DROP TRIGGER IF EXISTS merger_replaced;
+CREATE TRIGGER merger_removed AFTER DELETE ON project_mergers BEGIN
+UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched','failed') AND id IN (
+SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t
+USING(change_id,revision,step,for_step,after_merge)
+JOIN delivery_changes c ON c.id=t.change_id
+WHERE t.owner_node='/merger' AND t.completed=0 AND c.project=OLD.project);
+DELETE FROM delivery_step_messages WHERE message_id IN (
+SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t
+USING(change_id,revision,step,for_step,after_merge)
+JOIN delivery_changes c ON c.id=t.change_id
+WHERE t.owner_node='/merger' AND t.completed=0 AND c.project=OLD.project);
+UPDATE delivery_step_tasks SET owner_node='/caller',claimed_by='',urgent=1
+WHERE owner_node='/merger' AND completed=0 AND change_id IN
+(SELECT c.id FROM delivery_changes c WHERE c.project=OLD.project);
+INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule,source_kind,target_kind)
+SELECT '/delivery/caller',target,kind,mode,rule,'special','repo' FROM graph_edges
+WHERE source='/delivery/merger' AND target=OLD.project AND kind<>'accepts';
+DELETE FROM graph_edges WHERE source='/delivery/merger' AND target=OLD.project AND kind<>'accepts';
+DELETE FROM project_mergers WHERE project=OLD.project;
+UPDATE setting_revision SET revision=revision+1 WHERE id=1;
+END;
+CREATE TRIGGER merger_replaced AFTER UPDATE OF session_id ON project_mergers
+WHEN OLD.session_id<>NEW.session_id BEGIN
+UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched','failed') AND id IN (
+SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t
+USING(change_id,revision,step,for_step,after_merge)
+JOIN delivery_changes c ON c.id=t.change_id
+WHERE t.owner_node='/merger' AND t.completed=0 AND c.project=OLD.project AND c.machine=OLD.node_id);
+DELETE FROM delivery_step_messages WHERE message_id IN (
+SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t
+USING(change_id,revision,step,for_step,after_merge)
+JOIN delivery_changes c ON c.id=t.change_id
+WHERE t.owner_node='/merger' AND t.completed=0 AND c.project=OLD.project AND c.machine=OLD.node_id);
+UPDATE delivery_step_tasks SET owner_node='/merger',claimed_by='',urgent=1
+WHERE owner_node='/merger' AND completed=0 AND change_id IN
+(SELECT c.id FROM delivery_changes c WHERE c.project=OLD.project AND c.machine=OLD.node_id);
+END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1300,6 +1341,19 @@ func (s *Store) migrate() error {
 			}
 			if has == 0 {
 				if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN caller_session_id TEXT NOT NULL DEFAULT ''`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "delivery step tasks urgent column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_step_tasks') WHERE name = 'urgent'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE delivery_step_tasks ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
