@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -1626,10 +1627,12 @@ func (m Model) idleLong(a protocol.AgentView) bool {
 	return m.now().Sub(time.Unix(a.LastSeen, 0)) > idleAfter
 }
 
-// treeMark is how a worker row hangs under the session that started it.
+// treeMark is how a nested row hangs under the session it belongs to: a
+// worker under the session that started it, or a project's merger under that
+// project's main agent.
 type treeMark struct {
 	prefix string // the tree glyphs before the name: "├─ ", "│  └─ ", or "↳ " for a lone worker
-	host   string // the worker's machine, when it differs from the group's
+	host   string // the row's machine, when it differs from the group's
 }
 
 // matches tells whether an agent passes the filter: every word must appear in
@@ -1656,7 +1659,7 @@ func (m Model) groups() []group {
 	by := map[string]*group{}
 	bots := group{nodeID: "bots", host: "Bots"}
 	var order []*group
-	workers := false // any worker on screen
+	nest := false // any worker or merger on screen
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
 			continue // the owner is a sender, not a row
@@ -1691,8 +1694,8 @@ func (m Model) groups() []group {
 			continue
 		}
 		g.agents = append(g.agents, a)
-		if a.Worker != nil {
-			workers = true
+		if a.Worker != nil || isMerger(a) {
+			nest = true
 		}
 	}
 	sort.Slice(order, func(i, j int) bool {
@@ -1736,7 +1739,7 @@ func (m Model) groups() []group {
 		})
 		out = append(out, *g)
 	}
-	out = m.nestWorkers(out, workers)
+	out = m.nestWorkers(out, nest)
 	if len(bots.agents) > 0 {
 		sort.Slice(bots.agents, func(i, j int) bool { return bots.agents[i].Profile.Name < bots.agents[j].Profile.Name })
 		out = append(out, bots)
@@ -1744,13 +1747,16 @@ func (m Model) groups() []group {
 	return out
 }
 
-// nestWorkers moves each worker under the session that started it, in that
-// session's machine group, sorted by start time. A worker whose caller is not
-// on screen (the owner, or a session hidden by the filter or the offline
+// nestWorkers moves each worker under the session that started it, and each
+// merger under its project's main agent, in that session's machine group.
+// Workers sort by start time and the merger comes after them, so a project
+// reads as its agent, its workers, then its merger. A worker whose caller is
+// not on screen (the owner, or a session hidden by the filter or the offline
 // switch) stays in its own group and gets a lone marker. A worker is a root
-// too when its chain of callers loops.
-func (m Model) nestWorkers(groups []group, workers bool) []group {
-	if !workers {
+// too when its chain of callers loops. A merger without a main agent on screen
+// is a plain top-level row.
+func (m Model) nestWorkers(groups []group, nest bool) []group {
+	if !nest {
 		return groups
 	}
 	shown := map[string]protocol.AgentView{}
@@ -1761,6 +1767,9 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 	}
 	parentOf := func(a protocol.AgentView) string {
 		if a.Worker == nil {
+			if isMerger(a) {
+				return m.mergerParent(a, shown)
+			}
 			return ""
 		}
 		if _, ok := shown[a.Worker.Owner]; !ok || a.Worker.Owner == a.SessionID {
@@ -1780,6 +1789,17 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 		}
 		return ""
 	}
+	// childStart orders children: workers by the time they started, a merger
+	// after all of them.
+	childStart := func(a protocol.AgentView) int64 {
+		if a.Worker != nil {
+			return a.Worker.StartedAt
+		}
+		if isMerger(a) {
+			return math.MaxInt64
+		}
+		return 0
+	}
 	children := map[string][]protocol.AgentView{}
 	for _, a := range shown {
 		if p := parentOf(a); p != "" {
@@ -1788,8 +1808,8 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 	}
 	for _, c := range children {
 		sort.Slice(c, func(i, j int) bool {
-			if c[i].Worker.StartedAt != c[j].Worker.StartedAt {
-				return c[i].Worker.StartedAt < c[j].Worker.StartedAt
+			if si, sj := childStart(c[i]), childStart(c[j]); si != sj {
+				return si < sj
 			}
 			return c[i].SessionID < c[j].SessionID
 		})
@@ -1828,6 +1848,76 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 		}
 	}
 	return out
+}
+
+// isMerger tells whether a session is a project's merger.
+func isMerger(a protocol.AgentView) bool {
+	return protocol.SessionType(a.Harness, a.Worker, a.Type) == "merger"
+}
+
+// projectOf is the project a session belongs to, as the session list names it.
+func projectOf(a protocol.AgentView) string {
+	return firstNonEmpty(a.Repo.Project, a.Profile.Project)
+}
+
+// mergerParent finds the main agent a merger belongs to: a plain agent session
+// of the same project on the same machine, on screen. When several match, the
+// caller of the newest open or recent delivery change for the project wins, as
+// that is the session that sends the merger work. Without delivery data, the
+// most recently active one wins, with the session ID breaking a tie so the
+// choice never changes between refreshes.
+func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
+	project := projectOf(a)
+	if project == "" {
+		return ""
+	}
+	ids := make([]string, 0, len(shown))
+	for id := range shown {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	caller := m.deliveryCaller(project)
+	best, bestActive, bestSeen := "", time.Time{}, int64(0)
+	for _, id := range ids {
+		c, ok := shown[id]
+		if !ok || c.SessionID == a.SessionID || c.NodeID != a.NodeID {
+			continue
+		}
+		if c.Worker != nil || protocol.SessionType(c.Harness, c.Worker, c.Type) != "agent" {
+			continue
+		}
+		if projectOf(c) != project {
+			continue
+		}
+		if caller != "" && c.SessionID == caller {
+			return c.SessionID
+		}
+		active := sessionActive(c)
+		if best == "" || active.After(bestActive) || (active.Equal(bestActive) && c.LastSeen > bestSeen) {
+			best, bestActive, bestSeen = c.SessionID, active, c.LastSeen
+		}
+	}
+	return best
+}
+
+// deliveryCaller is the caller of the newest open or recent change for a
+// project, when the delivery view has loaded any. Open changes win over the
+// rest; the shortest wait is the most recent activity. It is empty when there
+// is no such data, and the caller then falls back to activity.
+func (m Model) deliveryCaller(project string) string {
+	best, bestOpen := "", false
+	var bestWait time.Duration
+	found := false
+	for _, ch := range m.delivery.changes {
+		if ch.Repo != project || ch.Caller == "" {
+			continue
+		}
+		open := ch.State == "open"
+		if !found || (open && !bestOpen) || (open == bestOpen && ch.Waiting < bestWait) {
+			best, bestOpen, bestWait, found = ch.Caller, open, ch.Waiting, true
+		}
+	}
+	return best
 }
 
 // visible is the selection order: every table row.
