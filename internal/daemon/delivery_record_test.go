@@ -36,6 +36,17 @@ func newDeliveryRig(t *testing.T, fb *fakeAdapter) *deliveryRig {
 		r.sender, r.to = snd.d.SessionID("fake", "na"), recv.d.SessionID("fake", "nb")
 		return r.sender != "" && r.to != ""
 	})
+	// onDeliver reports session activity, whose upsert makes the gateway
+	// dispatch pending messages. Keep those pushes behind this barrier so
+	// only the test's direct calls can deliver. Stop cancels the context and
+	// drains the lane; queued pushes then have canceled delivery contexts.
+	ctx := recv.d.workerStreamCtx
+	ready := make(chan struct{})
+	recv.d.enqueue(r.to, func() {
+		close(ready)
+		<-ctx.Done()
+	})
+	<-ready
 	return r
 }
 
@@ -63,6 +74,36 @@ func recordState(d *Daemon, id string) string {
 		return "(none)"
 	}
 	return s
+}
+
+// A session activity update must not let the gateway take delivery timing
+// away from tests that call onDeliver themselves.
+func TestDeliveryRigKeepsGatewayPushesPending(t *testing.T) {
+	t.Parallel()
+	r := newDeliveryRig(t, &fakeAdapter{})
+	m := r.store(t, "manual-delivery")
+	r.recv.d.pushSession(r.recv.d.sessionByID(r.to))
+	eventually(t, "gateway push received or delivered", func() bool {
+		if recordState(r.recv.d, m.ID) != "(none)" {
+			return true
+		}
+		d := r.recv.d
+		d.lanesMu.Lock()
+		l := d.lanes[r.to]
+		d.lanesMu.Unlock()
+		if l == nil {
+			return false
+		}
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return len(l.q) > 0
+	})
+	if got := recordState(r.recv.d, m.ID); got != "(none)" {
+		t.Fatalf("gateway push wrote delivery record %q before manual delivery", got)
+	}
+	if n := len(r.fb.delivered()); n != 0 {
+		t.Fatalf("gateway push reached harness %d times before manual delivery", n)
+	}
 }
 
 // (a) The daemon dies after it wrote "injecting" and while it wrote to the
@@ -163,6 +204,50 @@ func TestDeliveryKnownFailureIsRecordedAndMayBeTriedAgain(t *testing.T) {
 	}
 	if got := recordState(r.recv.d, m.ID); got != deliveryDelivered {
 		t.Fatalf("record after the second try = %q, want %q", got, deliveryDelivered)
+	}
+}
+
+func TestDeliveryConcurrentPushDoesNotRetryInFlight(t *testing.T) {
+	t.Parallel()
+	fb := &fakeAdapter{fail: "socket missing"}
+	r := newDeliveryRig(t, fb)
+	m := r.store(t, "concurrent-failure")
+
+	// Hold the first attempt at the harness until the duplicate has returned.
+	fb.mu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			fb.mu.Unlock()
+		}
+	}()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.recv.d.onDeliver(context.Background(), m)
+	}()
+	eventually(t, "first attempt injecting", func() bool {
+		return recordState(r.recv.d, m.ID) == deliveryInjecting
+	})
+	r.recv.d.onDeliver(context.Background(), m)
+	if got := recordState(r.recv.d, m.ID); got != deliveryInjecting {
+		t.Fatalf("in-flight record = %q, want injecting", got)
+	}
+	fb.mu.Unlock()
+	locked = false
+	select {
+	case <-done:
+	case <-time.After(scaled(20 * time.Second)):
+		t.Fatal("first attempt did not finish")
+	}
+	if got := recordState(r.recv.d, m.ID); got != deliveryFailed {
+		t.Fatalf("record after concurrent failure = %q, want failed", got)
+	}
+	if n := len(fb.delivered()); n != 1 {
+		t.Fatalf("concurrent pushes wrote %d times, want 1", n)
+	}
+	if s, detail := r.gatewayState(m.ID); s != protocol.StateFailed || detail != "socket missing" {
+		t.Fatalf("sender sees %q %q", s, detail)
 	}
 }
 
