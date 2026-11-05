@@ -7,6 +7,13 @@ const workersAtom = atom({ plugin: 'agent-net-workers', key: 'workers' } as cons
 const notifiedAtom = atom({ plugin: 'agent-net-workers', key: 'notified' } as const, [] as string[])
 const staleSecondsAtom = atom({ plugin: 'agent-net-workers', key: 'stale-seconds' } as const, 0)
 
+const BINARY_PATHS = '__AGENT_NET_BINARY_PATHS__'
+
+export function binaryPaths(value = BINARY_PATHS): string[] {
+  if (value === '__AGENT_NET_BINARY_' + 'PATHS__') return ['agent-net']
+  try { return [...new Set([...JSON.parse(value) as string[], 'agent-net'])] } catch { return ['agent-net'] }
+}
+
 const PANEL_VERSION = '__AGENT_NET_PANEL_VERSION__'
 const outdatedAtom = atom({ plugin: 'agent-net-workers', key: 'outdated' } as const, false)
 
@@ -275,8 +282,11 @@ function statusText(rows: AgentNetWorker[]): string | undefined {
 
 type PollState = { lastGoodAt?: number; failedAt?: number }
 
-async function failedPoll($: EngineInterface, state: PollState): Promise<void> {
-  if (state.lastGoodAt === undefined) return
+async function failedPoll($: EngineInterface, state: PollState, error: string): Promise<void> {
+  if (state.lastGoodAt === undefined) {
+    $.ui.status(`agent-net: ${error}`)
+    return
+  }
   const now = await $.clock.now()
   state.failedAt ??= now
   const elapsedMs = now - state.failedAt
@@ -291,12 +301,24 @@ async function failedPoll($: EngineInterface, state: PollState): Promise<void> {
 
 async function poll($: EngineInterface, sessionId: string, state: PollState): Promise<void> {
   try {
-    const { exitCode, stdout } = await $.process.run(
-      ['agent-net', 'workers', '-json', '-recent', '-owner-claude', sessionId],
-      { timeoutMs: RUN_TIMEOUT_MS },
-    )
+    let result: Awaited<ReturnType<typeof $.process.run>> | undefined
+    let failure = ''
+    for (const path of binaryPaths()) {
+      try {
+        result = await $.process.run(
+          [path, 'workers', '-json', '-recent', '-owner-claude', sessionId],
+          { timeoutMs: RUN_TIMEOUT_MS },
+        )
+        if (result.exitCode !== 127) break
+        failure = result.stderr || `not found at ${path}`
+      } catch (error) {
+        failure = `could not run ${path}: ${String(error)}`
+      }
+    }
+    if (!result) { await failedPoll($, state, failure); return }
+    const { exitCode, stdout, stderr } = result
     if (exitCode !== 0) {
-      await failedPoll($, state)
+      await failedPoll($, state, stderr || failure || `workers exited with code ${exitCode}`)
       return
     }
     const parsed = JSON.parse(stdout) as { workers?: RawWorker[]; panel_version?: string }
@@ -312,9 +334,8 @@ async function poll($: EngineInterface, sessionId: string, state: PollState): Pr
     await update($, staleSecondsAtom, () => 0)
     $.ui.status(statusText(rows))
     await notifyEnds($, rows)
-  } catch {
-    // agent-net is not installed, or it failed: keep the last good state.
-    await failedPoll($, state)
+  } catch (error) {
+    await failedPoll($, state, String(error))
   }
 }
 

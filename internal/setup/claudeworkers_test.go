@@ -203,6 +203,10 @@ func TestClaudeWorkersModCLIFailureIsAStepResult(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(agentfiles.ClaudeWorkersPluginDir(), ".claude-plugin", "plugin.json")); err != nil {
 		t.Error("the files were not written")
 	}
+	register, err := os.ReadFile(filepath.Join(agentfiles.ClaudeWorkersPluginDir(), "hooks", "register.tsx"))
+	if err != nil || !strings.Contains(string(register), `\"/opt/test/agent-net\"`) {
+		t.Errorf("installed binary path missing from register: %v", err)
+	}
 	if st := loadWorkersModState(); st.Installed {
 		t.Errorf("state says installed: %+v", st)
 	}
