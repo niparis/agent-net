@@ -63,7 +63,7 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Recreate the state immediately before this migration, keeping the legacy data.
-	_, err := r.s.db.Exec(`DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER repo_agent_architect_insert; DROP TRIGGER repo_agent_architect_delete; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version=?`, migrationVersion(t, "Repo and agent records"))
+	_, err := r.s.db.Exec(`DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER repo_agent_architect_insert; DROP TRIGGER repo_agent_architect_delete; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
 	if err != nil {
 		t.Fatal(err)
 	}

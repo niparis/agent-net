@@ -606,7 +606,7 @@ settings:
     description: Worker brief or continuation text.
     kind: advice
     type: text
-    levels: [network, repo]
+    levels: [network, repo, agent]
     slots: [complete_yes]
     default: "your task is not finished. Carry on until it is done, then hand back with {{complete_yes}}, or say exactly what blocks you."
     live: true
@@ -655,7 +655,7 @@ settings:
     kind: rule
     type: bool
     stricter: false
-    levels: [network, repo, run]
+    levels: [network, repo, agent, run]
     default: true
     live: true
   - key: workers.auto_continue_max

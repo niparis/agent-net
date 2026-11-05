@@ -223,3 +223,31 @@ func TestAllTextSettingsRejectFramingMarkers(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentScopeResolution(t *testing.T) {
+	s := Snapshot{Values: []Value{
+		{Key: "workers.auto_continue", Level: "repo", Scope: "r", Value: raw("true")},
+		{Key: "workers.auto_continue", Level: "agent", Scope: "a", Value: raw("false")},
+		{Key: "workers.continue_prompt_text", Level: "repo", Scope: "r", Value: raw(`"repo {{complete_yes}}"`)},
+		{Key: "workers.continue_prompt_text", Level: "agent", Scope: "a", Value: raw(`"agent {{complete_yes}}"`)},
+	}}
+	e, err := s.Resolve("workers.auto_continue", Where{Repo: "r", Agent: "a", Run: map[string]json.RawMessage{"workers.auto_continue": raw("true")}})
+	if err != nil || string(e.Value) != "false" || e.Source != "agent a" || !e.Raised {
+		t.Fatalf("rule: %+v %v", e, err)
+	}
+	e, err = s.Resolve("workers.continue_prompt_text", Where{Repo: "r", Agent: "a"})
+	if err != nil || string(e.Value) != `"agent {{complete_yes}}"` || e.Source != "agent a" {
+		t.Fatalf("advice: %+v %v", e, err)
+	}
+}
+
+func TestAgentScopeAbsentPreservesAllSources(t *testing.T) {
+	s := Snapshot{Revision: 4, Maturity: map[string]string{"r": "critical"}}
+	for _, d := range Standard().Definitions {
+		before, e1 := s.Resolve(d.Key, Where{Repo: "r"})
+		after, e2 := s.Resolve(d.Key, Where{Repo: "r", Agent: "a"})
+		if fmt.Sprint(e1) != fmt.Sprint(e2) || string(before.Value) != string(after.Value) || before.Source != after.Source || before.Raised != after.Raised || before.Revision != after.Revision {
+			t.Fatalf("%s: before %+v %v; after %+v %v", d.Key, before, e1, after, e2)
+		}
+	}
+}

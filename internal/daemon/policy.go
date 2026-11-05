@@ -70,7 +70,12 @@ func (d *Daemon) policyOf(ctx context.Context, sid string) (protocol.PolicyGot, 
 	if err == nil {
 		// The node's charter travels with the policy answer, so a harness hook
 		// asks once per turn (decision 0022).
-		got.Charter = d.charterContext(ctx, got.Project)
+		repo := d.sessionCharterContext(ctx, sid, got.Project)
+		if got.Charter != "" && repo != "" {
+			got.Charter = repo + "\n" + got.Charter
+		} else if got.Charter == "" {
+			got.Charter = repo
+		}
 	}
 	if err != nil {
 		if have && now.Sub(e.at) < policyStale {

@@ -804,6 +804,11 @@ CREATE TRIGGER IF NOT EXISTS repo_agent_architect_delete AFTER DELETE ON graph_n
  UPDATE repos SET owner_agent_id=NULL WHERE owner_agent_id=OLD.name;
  UPDATE agents SET tombstone=1, updated_at=CAST(strftime('%s','now') AS INTEGER)*1000000000 WHERE id=OLD.name;
 END;
+`, `
+-- Agent charters are separate from the existing repo charter.
+CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr));
+CREATE TABLE IF NOT EXISTS agent_charter_history (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL REFERENCES agents(id), attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS agent_charter_history_agent ON agent_charter_history(agent_id, id);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

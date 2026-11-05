@@ -126,7 +126,7 @@ func Load(data []byte) (*Recipe, error) {
 		}
 		seen := map[string]bool{}
 		for _, l := range d.Levels {
-			if seen[l] || !contains([]string{"network", "repo", "session", "run"}, l) {
+			if seen[l] || !contains([]string{"network", "repo", "agent", "session", "run"}, l) {
 				return nil, fmt.Errorf("%s: invalid level", d.Key)
 			}
 			seen[l] = true
@@ -611,6 +611,7 @@ type Snapshot struct {
 type Host struct{ RAMBytes int64 }
 type Where struct {
 	Repo         string
+	Agent        string
 	Session, Run map[string]json.RawMessage
 	Host         Host
 }
@@ -677,7 +678,7 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 			log.Printf("settings: ignoring invalid %s at %s: %v", key, source, err)
 			return
 		}
-		if d.Kind == "rule" && !d.OwnerScopedText() && (networkSet || source == "session" || source == "run") {
+		if d.Kind == "rule" && !d.OwnerScopedText() && (networkSet || strings.HasPrefix(source, "agent ") || source == "session" || source == "run") {
 			bound, err := d.StricterValue(e.Value, candidate)
 			if err == nil {
 				if !bytes.Equal(bound, candidate) {
@@ -725,6 +726,11 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 					apply(v, "repo "+w.Repo+", maturity "+m)
 				}
 			}
+		}
+	}
+	if w.Agent != "" && contains(d.Levels, "agent") {
+		if v := find("agent", w.Agent); v != nil {
+			apply(v, "agent "+w.Agent)
 		}
 	}
 	if contains(d.Levels, "session") {
