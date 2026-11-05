@@ -114,10 +114,10 @@ func TestMergerParentIsDeliveryCaller(t *testing.T) {
 	}
 }
 
-func TestMergerParentFallsBackToRecentActivity(t *testing.T) {
+func TestMergerParentFallsBackToStableID(t *testing.T) {
 	snap := mergerFixture()
 	snap.Agents = append(snap.Agents, agent(secondMainID, "n_mac", "Mac", "claude", "agent-net-old", func(a *protocol.AgentView) {
-		a.LastActive, a.LastSeen = t0.Add(-20*time.Minute).Unix(), t0.Add(-20*time.Minute).Unix()
+		a.LastActive, a.LastSeen = t0.Unix(), t0.Unix()
 		a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
 	}))
 	m := treeModel(120, 34, snap) // no delivery data loaded
@@ -128,7 +128,7 @@ func TestMergerParentFallsBackToRecentActivity(t *testing.T) {
 	}
 	p := indexOfID(order, mainID)
 	if p < 0 || p+2 >= len(order) || order[p+2] != mergerID {
-		t.Fatalf("merger not under the most recently active agent: %v", order)
+		t.Fatalf("merger not under the stable parent: %v", order)
 	}
 }
 

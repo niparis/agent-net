@@ -1864,8 +1864,7 @@ func projectOf(a protocol.AgentView) string {
 // of the same project on the same machine, on screen. When several match, the
 // caller of the newest open or recent delivery change for the project wins, as
 // that is the session that sends the merger work. Without delivery data, the
-// most recently active one wins, with the session ID breaking a tie so the
-// choice never changes between refreshes.
+// lowest session ID wins so activity cannot change the parent.
 func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
 	project := projectOf(a)
 	if project == "" {
@@ -1877,7 +1876,7 @@ func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.Agen
 	}
 	sort.Strings(ids)
 	caller := m.deliveryCaller(project)
-	best, bestActive, bestSeen := "", time.Time{}, int64(0)
+	best := ""
 	for _, id := range ids {
 		c, ok := shown[id]
 		if !ok || c.SessionID == a.SessionID || c.NodeID != a.NodeID {
@@ -1892,9 +1891,8 @@ func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.Agen
 		if caller != "" && c.SessionID == caller {
 			return c.SessionID
 		}
-		active := sessionActive(c)
-		if best == "" || active.After(bestActive) || (active.Equal(bestActive) && c.LastSeen > bestSeen) {
-			best, bestActive, bestSeen = c.SessionID, active, c.LastSeen
+		if best == "" {
+			best = c.SessionID
 		}
 	}
 	return best
