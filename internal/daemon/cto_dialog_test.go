@@ -212,6 +212,75 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 	}
 }
 
+func TestCTODialogApprovalDoesNotRepeatOutcomeNote(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
+	n.d.cto.pid.Store(int64(os.Getpid()))
+	defer n.d.cto.pid.Store(0)
+	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
+	ctx := context.Background()
+	created, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.(map[string]any)["proposal_id"].(string)
+	raw, _ := json.Marshal(map[string]any{"id": id, "approve": true})
+	out, err := cto.dispatch(ctx, "cto_dialog_answer", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(out); got != id+" approved and applied" {
+		t.Fatalf("dialog outcome: %q", got)
+	}
+	var notes []string
+	if err := n.d.proposalRunner().deliverNote(ctx, func(_ context.Context, note string) error {
+		notes = append(notes, note)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("dialog outcome sent again: %q", notes)
+	}
+}
+
+func TestProposalOperatorApprovalStillDeliversNote(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
+	n.d.cto.pid.Store(int64(os.Getpid()))
+	defer n.d.cto.pid.Store(0)
+	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
+	ctx := context.Background()
+	created, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"tui purpose"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.(map[string]any)["proposal_id"].(string)
+	// The TUI approves through the operator path, which does not return the
+	// outcome to the CTO, so its note must still be delivered.
+	if _, _, err := n.d.proposalOperator(ctx, protocol.OpProposalAnswer, protocol.CTOProposalAnswer{ID: id, Action: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	var notes []string
+	if err := n.d.proposalRunner().deliverNote(ctx, func(_ context.Context, note string) error {
+		notes = append(notes, note)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || notes[0] != id+" approved and applied" {
+		t.Fatalf("tui outcome notes: %q", notes)
+	}
+}
+
 func TestCTOProjectPlainTextDoesNotApprove(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)

@@ -385,6 +385,13 @@ func (p proposalRunner) deliverNote(ctx context.Context, send func(context.Conte
 	return err
 }
 
+// markNoteDelivered records that the outcome note already reached the CTO by
+// another path, so the notes loop does not send it again.
+func (p proposalRunner) markNoteDelivered(ctx context.Context, id string) error {
+	_, err := p.state.db.ExecContext(ctx, `UPDATE cto_proposals SET note_delivered=1 WHERE id=?`, strings.TrimPrefix(id, "p_"))
+	return err
+}
+
 func (d *Daemon) proposalNotesLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
