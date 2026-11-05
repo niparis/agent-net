@@ -167,7 +167,7 @@ func (d *Daemon) herdrBinary(hint string) string {
 	if filepath.IsAbs(hint) && isExecutable(hint) {
 		return hint
 	}
-	bin, _ := d.terminalBinary("herdr")
+	bin, _ := d.lookupHerdrBinary()
 	return bin
 }
 

@@ -71,13 +71,9 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		if len(opened.Argv) == 0 {
 			return protocol.StartedSession{}, errors.New(opened.Note)
 		}
-		tmux, err := d.terminalBinary("tmux")
+		tmux, err := exec.LookPath("tmux")
 		if err != nil {
-			detail := err.Error()
-			if opened.Note != "" {
-				detail += "; " + opened.Note
-			}
-			return protocol.StartedSession{}, fmt.Errorf("pi needs tmux on %s to run in the background: %s", d.hostName(), detail)
+			return protocol.StartedSession{}, fmt.Errorf("pi needs tmux on %s to run in the background. %s", d.hostName(), herdrInstallNote)
 		}
 		var argv []string
 		if resume == "" {

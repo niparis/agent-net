@@ -120,7 +120,7 @@ func (d *Daemon) openForCaller(key, name, socket, pane string, plan protocol.Ent
 // creation so concurrent Enter calls cannot create duplicate clients. When the
 // server is unavailable the original plan remains the fallback.
 func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol.EnterPlan) protocol.EnterPlan {
-	bin, lookupErr := d.terminalBinary("herdr")
+	bin, lookupErr := d.lookupHerdrBinary()
 	if lookupErr != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + lookupErr.Error())
 		return plan

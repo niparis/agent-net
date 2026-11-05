@@ -10,9 +10,10 @@ import (
 	"github.com/niparis/agent-net/internal/harnesses"
 )
 
-// terminalBinary uses the harness search, including the login shell's primary
+// lookupHerdrBinary uses the harness search, including the login shell's primary
 // copy. Record the choice and any local fallback in the daemon log.
-func (d *Daemon) terminalBinary(name string) (string, error) {
+func (d *Daemon) lookupHerdrBinary() (string, error) {
+	const name = "herdr"
 	configured := d.cfg.HarnessPaths[name]
 	var opts harnesses.Options
 	if d.cfg.HarnessSearch != nil {
