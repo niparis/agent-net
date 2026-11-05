@@ -509,7 +509,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		// A session whose process asks to stay off the network is not
 		// registered at all. A worker started by this daemon is always
 		// registered: its caller waits for it.
-		if winfo == nil && d.sessionIgnored(pid) {
+		// OpenCode's shared service can register another process's saved
+		// session; its own environment does not identify a private judge.
+		if isJudgeDir(p.Cwd) || (winfo == nil && d.sessionIgnored(pid)) {
 			return map[string]any{"node_id": d.cfg.NodeID, "session_id": "", "version": d.helloVersion()}, nil
 		}
 		title := d.pluginTitle(p.Name, p.Cwd)

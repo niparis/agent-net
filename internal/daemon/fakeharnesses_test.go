@@ -93,6 +93,11 @@ func runFakeHarness() bool {
 
 // fakeOpenCodeRun is the one-shot OpenCode command for difficulty judges.
 func fakeOpenCodeRun() {
+	if os.Getenv("FAKE_OPENCODE_SAVE_SESSION") != "" {
+		wd, _ := os.Getwd()
+		raw, _ := json.Marshal([]map[string]string{{"id": "ses_judge", "directory": wd}})
+		_ = os.WriteFile(os.Getenv("FAKE_OPENCODE_SESSIONS"), raw, 0600)
+	}
 	if path := os.Getenv("FAKE_OPENCODE_RUN_RECORD"); path != "" {
 		socket := os.Getenv("AGENT_NET_SOCKET")
 		_, err := os.Stat(socket)
