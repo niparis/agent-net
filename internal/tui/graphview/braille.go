@@ -480,6 +480,8 @@ func abs(n int) int {
 // mode uses it for the label cells it keeps as text.
 func StyleRole(role, text string) string { return colorRole(role, text) }
 
+var edgeDimColor = palette.Color("#596171", "#454c58")
+
 // colorRole owns the terminal palette for semantic drawing roles.
 func colorRole(role, text string) string {
 	color := palette.Color("#596171", "#6f7889")
@@ -499,7 +501,7 @@ func colorRole(role, text string) string {
 	case "deploys", "selected", "selectedEdge", "flash", "busyPulse":
 		color = AccentColor
 	case "edgeDim":
-		color = palette.Color("#a7adb8", "#454c58")
+		color = edgeDimColor
 	case "node", "label", "card":
 		color = palette.Color("#242a34", "#d7dce5")
 	case "busy", "comet":
