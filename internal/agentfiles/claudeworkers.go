@@ -147,10 +147,25 @@ func writeHashField(h hash.Hash, value []byte) {
 // WriteClaudeWorkers writes the marketplace and the mod files, creating the
 // folder when it is not there. changed says whether any file was written.
 func WriteClaudeWorkers() (changed bool, err error) {
+	exe, _ := os.Executable()
+	return WriteClaudeWorkersAt(exe)
+}
+
+// WriteClaudeWorkersAt records the binary and the standard install fallback.
+func WriteClaudeWorkersAt(exe string) (changed bool, err error) {
 	files, err := claudeWorkersFiles(agentnetworkers.Files())
 	if err != nil {
 		return false, err
 	}
+	paths := []string{}
+	if filepath.IsAbs(exe) {
+		paths = append(paths, exe)
+	}
+	paths = append(paths, filepath.Join(home(), ".local", "bin", "agent-net"))
+	encoded, _ := json.Marshal(paths)
+	quoted, _ := json.Marshal(string(encoded))
+	register := filepath.ToSlash(filepath.Join(ClaudeWorkersPlugin, "hooks", "register.tsx"))
+	files[register] = []byte(strings.ReplaceAll(string(files[register]), "'__AGENT_NET_BINARY_PATHS__'", string(quoted)))
 	for name, data := range files {
 		c, _, err := WriteIfChanged(filepath.Join(ClaudeWorkersDir(), filepath.FromSlash(name)), data, 0o644)
 		if err != nil {

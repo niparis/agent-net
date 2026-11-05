@@ -55,13 +55,15 @@ func TestWriteClaudeWorkersWritesTheEmbeddedFiles(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		if string(got) != string(want) {
+		if name != "agent-net-workers/hooks/register.tsx" && string(got) != string(want) {
 			t.Errorf("%s is not the embedded file", name)
 		}
 	}
-	want := filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx")
-	if got, _ := os.ReadFile(want); string(got) != strings.ReplaceAll(string(agentnetworkers.Register), "__AGENT_NET_PANEL_VERSION__", ClaudeWorkersPanelVersion()) {
-		t.Error("hooks/register.tsx is not the embedded one")
+	register, err := os.ReadFile(filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx"))
+	exe, _ := os.Executable()
+	encoded, _ := json.Marshal(exe)
+	if err != nil || !strings.Contains(string(register), strings.ReplaceAll(string(encoded), `"`, `\"`)) {
+		t.Errorf("register does not contain the executable: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.test.tsx")); err == nil {
 		t.Error("the test file was written")
@@ -118,13 +120,14 @@ func TestSyncClaudeWorkersRefreshesAnOldCopy(t *testing.T) {
 	if _, err := WriteClaudeWorkers(); err != nil {
 		t.Fatal(err)
 	}
+	wantRegister := read(t, filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx"))
 	write(t, filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx"), "old mod")
 	write(t, filepath.Join(ClaudeWorkersDir(), ".claude-plugin", "marketplace.json"), "{}\n")
 	r := SyncClaudeWorkers()
 	if !r.Changed || r.Text != "updated" || r.Err != nil {
 		t.Fatalf("%+v", r)
 	}
-	if got := read(t, filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx")); got != strings.ReplaceAll(string(agentnetworkers.Register), "__AGENT_NET_PANEL_VERSION__", ClaudeWorkersPanelVersion()) {
+	if got := read(t, filepath.Join(ClaudeWorkersPluginDir(), "hooks", "register.tsx")); got != wantRegister {
 		t.Error("register.tsx was not refreshed")
 	}
 	if got := read(t, filepath.Join(ClaudeWorkersDir(), ".claude-plugin", "marketplace.json")); !strings.Contains(got, `"agent-net-workers"`) {

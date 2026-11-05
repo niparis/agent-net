@@ -92,7 +92,7 @@ func (r *runner) claudeWorkersMod() {
 	}
 
 	dir := agentfiles.ClaudeWorkersDir()
-	changed, err := agentfiles.WriteClaudeWorkers()
+	changed, err := agentfiles.WriteClaudeWorkersAt(r.Exe)
 	if err != nil {
 		r.step(workersModStepName, "", err)
 		return
