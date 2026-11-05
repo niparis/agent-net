@@ -32,6 +32,14 @@ Use the invite line that has a Tailscale address (`100.x.x.x`). Tailscale traffi
 
 Sessions that were already open when you installed agent-net can receive messages, because the daemon finds them on its own. They have no agent-net tools yet, because Claude Code and Pi load tools when a session starts. Restart the session, or start a new one. After an upgrade this is not needed for Claude Code sessions started on v0.3.5 or newer (they switch to the new binary by themselves), and Pi needs only `/reload`. See [upgrade.md](upgrade.md#running-sessions).
 
+## Herdr is missing or cannot open a session
+
+The daemon resolves Herdr using the harness search, including your login shell PATH. The login shell's Herdr takes precedence over a stale `~/.local/bin/herdr`. Check the daemon log for `herdr binary:` and `other installation:` to see which copy it uses.
+
+A `herdr not found (looked in: ...)` error lists the search folders. Put Herdr on your login shell PATH or set `harness_paths.herdr` in `node.json` to its absolute executable path. A `herdr at <path> failed: <error>` message names the binary and command failure; check that copy with `<path> --version` and `<path> pane list`.
+
+Run `agent-net setup` to refresh the daemon service environment. On macOS setup reloads the LaunchAgent with `bootout` and `bootstrap`. A kickstart restart alone keeps the environment of the already loaded job, even when the plist contains a newer PATH. Upgrade startup also repairs missing settings and reloads a daemon whose running PATH differs from its plist. On Linux it runs `systemctl --user daemon-reload` and queues a daemon restart when the environment needs to take effect.
+
 ## `e` says a session is not in a herdr or tmux pane
 
 On macOS, process environments may not be readable for Apple-signed programs such as `/bin/zsh`. When that happens, agent-net looks up the process tree for a `herdr server` command and probes its socket. The default socket documented by Herdr is `~/.config/herdr/herdr.sock`; named sessions and custom config locations can use another path.
