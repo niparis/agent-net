@@ -146,8 +146,13 @@ type worker struct {
 	savedAt               time.Time // when lastActive was last written
 	ownerGoneSince        time.Time
 	ownerChecked          time.Time
-	stopping              bool
-	handingBack           bool // from the hand-back notice until the worker has ended
+	// sendsInFlight counts the messages to or from the worker that the daemon
+	// has handed to the gateway but whose delivery has not been noted yet. A
+	// round trip can take longer than the idle limit on a busy machine, so the
+	// idle check must not end a worker while one of its messages is on the way.
+	sendsInFlight int
+	stopping      bool
+	handingBack   bool // from the hand-back notice until the worker has ended
 	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
 	endedCh                           chan struct{}
 	turnActive                        bool
@@ -471,6 +476,44 @@ func (d *Daemon) workerBySession(sessionID string) *worker {
 		}
 	}
 	return nil
+}
+
+// beginWorkerMessage marks the workers named by a message as having a send in
+// flight. The caller clears the marks with endWorkerMessage once the gateway
+// has answered, and checkWorkers treats a marked worker as working: the idle
+// limit must not end a worker before the message that restarts its idle clock
+// lands.
+func (d *Daemon) beginWorkerMessage(sessionIDs ...string) []*worker {
+	var marked []*worker
+	d.wmu.Lock()
+	for _, id := range sessionIDs {
+		if id == "" {
+			continue
+		}
+		for _, w := range d.workers {
+			if w.sessionID == id {
+				w.sendsInFlight++
+				marked = append(marked, w)
+				break
+			}
+		}
+	}
+	d.wmu.Unlock()
+	return marked
+}
+
+// endWorkerMessage clears the marks made by beginWorkerMessage.
+func (d *Daemon) endWorkerMessage(marked []*worker) {
+	if len(marked) == 0 {
+		return
+	}
+	d.wmu.Lock()
+	for _, w := range marked {
+		if w.sendsInFlight > 0 {
+			w.sendsInFlight--
+		}
+	}
+	d.wmu.Unlock()
 }
 
 // touchWorker records a message to or from a worker session.
@@ -963,8 +1006,16 @@ func (d *Daemon) closeEndedLocked(w *worker) {
 }
 
 func (d *Daemon) endWorker(w *worker, reason string) {
+	d.endWorkerWhen(w, reason, nil)
+}
+
+// endWorkerWhen is endWorker with a last check: when is called under the
+// worker lock just before the end starts, and returning false cancels it. The
+// idle check uses it to look again for activity that began after its snapshot,
+// so a message that starts at the idle deadline still keeps the worker alive.
+func (d *Daemon) endWorkerWhen(w *worker, reason string, when func() bool) {
 	d.wmu.Lock()
-	if w.stopping {
+	if w.stopping || (when != nil && !when()) {
 		d.wmu.Unlock()
 		return
 	}
@@ -1381,6 +1432,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		d.wmu.Lock()
 		age, idle, owner := now.Sub(w.startedAt), now.Sub(w.lastActive), w.owner
 		harness, native := w.harness, w.nativeID
+		sending := w.sendsInFlight > 0
 		// A worker that is still starting is not idle. Until its first request
 		// is noted, it also gets the start timeout on top of the idle limit, so
 		// the task can arrive and a notice always has a request to answer.
@@ -1399,10 +1451,12 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		// harness that cannot say returns an empty result.
 		stats := d.workerStats(w)
 		grew := d.noteWorkerUsage(w, stats)
-		// A session that is busy, or a run whose token count grew, is working:
-		// it is not idle even when no message has come for a while. This keeps
-		// a worker busy on a long task past the idle limit.
-		if grew || d.sessionBusy(harness, native) {
+		// A session that is busy, a run whose token count grew, or a message
+		// that is still on its way is working: it is not idle even when no
+		// message has come for a while. This keeps a worker busy on a long
+		// task past the idle limit, and keeps a slow message from ending the
+		// worker it is meant to keep alive.
+		if grew || sending || d.sessionBusy(harness, native) {
 			d.keepWorkerActive(w, now)
 			idle = 0
 		}
@@ -1417,7 +1471,11 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		case age >= set.MaxAge:
 			d.endWorker(w, protocol.StopMaxAge)
 		case idleLimit >= 0 && idle >= idleLimit:
-			d.endWorker(w, protocol.StopIdle)
+			// Look again under the worker lock: a message may have started
+			// after the snapshot above, and it keeps the worker alive.
+			d.endWorkerWhen(w, protocol.StopIdle, func() bool {
+				return w.sendsInFlight == 0 && now.Sub(w.lastActive) >= idleLimit
+			})
 		case due && d.Connected():
 			offline := d.ownerOffline(ctx, owner)
 			d.wmu.Lock()
