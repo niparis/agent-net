@@ -72,3 +72,33 @@ func TestPickModelHealth(t *testing.T) {
 		t.Fatalf("track %+v %v", tr, err)
 	}
 }
+
+func TestPickJudgeTimeoutHealth(t *testing.T) {
+	s, _ := newTestStore(t)
+	now := time.Date(2026, 11, 5, 20, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	add := func(id, harness, model, failure, note string) {
+		t.Helper()
+		a := protocol.WorkerAssessment{RunID: id, SessionID: "session", AssessedAt: now.Unix(), JudgeHarness: harness, JudgeModel: model, Error: failure, Reasoning: 1, Reasons: map[string]string{"judge_note": note}}
+		if err := s.RecordWorkerAssessment(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("one", "codex", "gpt-test", "", "first judge opencode-go/deepseek timed out at 39s of the 60s budget")
+	now = now.Add(time.Minute)
+	add("two", "codex", "gpt-test", "first judge opencode-go/deepseek timed out at 39s of the 60s budget; retry judge codex gpt-test timed out after the remaining 21s", "")
+	h, err := s.ModelHealth("opencode", "opencode-go/deepseek")
+	if err != nil || !h.Cooling || h.Failures != 2 {
+		t.Fatalf("first judge: %+v %v", h, err)
+	}
+	h, err = s.ModelHealth("codex", "gpt-test")
+	if err != nil || h.Failures != 1 {
+		t.Fatalf("retry judge: %+v %v", h, err)
+	}
+	now = now.Add(time.Minute)
+	add("success", "opencode", "opencode-go/deepseek", "", "")
+	h, err = s.ModelHealth("opencode", "opencode-go/deepseek")
+	if err != nil || h.Cooling || h.Failures != 0 {
+		t.Fatalf("success: %+v %v", h, err)
+	}
+}
