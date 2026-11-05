@@ -404,3 +404,24 @@ func TestParseJudgeReplyTruncatedOuterReasons(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestParseJudgeReplyKeepsEarlierScoresBeforeTruncation(t *testing.T) {
+	_, _, err := parseJudgeReply(difficultyScoresJSON + "\n" + `{"reasoning":`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+func TestParseJudgeReplyLongTruncatedOuter(t *testing.T) {
+	raw := `{"padding":"` + strings.Repeat("x", 64<<10) + `","reasons":{"reasoning":"text","scope":"text","coupling":"text","uncertainty":"text","verification":"text","risk":"text"}`
+	_, _, err := parseJudgeReply(raw)
+	if err == nil || !strings.Contains(err.Error(), "cut off") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestParseJudgeReplySkipsMalformedOuterBeforeScores(t *testing.T) {
+	raw := `{"reasoning":3,broken,"reasons":{"reasoning":"text"}}` + "\n" + difficultyScoresJSON
+	if _, _, err := parseJudgeReply(raw); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -289,7 +289,7 @@ func TestJudgeFirstFailureStartsRetryAtOnce(t *testing.T) {
 // A reply that does not parse is logged, capped, so the next failure shows
 // what the judge said.
 func TestJudgeParseFailureLogsReply(t *testing.T) {
-	fakeDifficultyRun(t, map[string][]string{"judge": {`{"reasoning":2,"scope":` + strings.Repeat("x", 3000)}})
+	fakeDifficultyRun(t, map[string][]string{"judge": {`{"reasoning":2,"scope":` + strings.Repeat("x", 20000)}})
 	reply := filepath.Join(t.TempDir(), "reply")
 	if err := os.WriteFile(reply, []byte("I will not score this."), 0o600); err != nil {
 		t.Fatal(err)
@@ -304,7 +304,7 @@ func TestJudgeParseFailureLogsReply(t *testing.T) {
 		t.Fatalf("assessment: %+v, %v", a, err)
 	}
 	if !strings.Contains(a.Notes, "the judge reply did not parse: no JSON object in the 53-byte reply") ||
-		!strings.Contains(a.Notes, "the retry judge reply did not parse: no complete JSON object in the 3023-byte reply (it may be cut off)") {
+		!strings.Contains(a.Notes, "the retry judge reply did not parse: no complete JSON object in the 20023-byte reply (it may be cut off)") {
 		t.Fatalf("note: %q", a.Notes)
 	}
 	var replies []string
@@ -316,7 +316,7 @@ func TestJudgeParseFailureLogsReply(t *testing.T) {
 	if len(replies) != 2 || !strings.Contains(replies[0], "I will not score this.") || !strings.Contains(replies[1], `{\"reasoning\":2`) {
 		t.Fatalf("reply logs: %q", replies)
 	}
-	if len(replies[1]) > 1200 {
+	if len(replies[1]) > judgeReplyLogLimit+200 {
 		t.Fatalf("reply log is not capped: %d bytes", len(replies[1]))
 	}
 }
@@ -456,5 +456,11 @@ func TestJudgeHedgePoint(t *testing.T) {
 		if got := judgeHedge(budget); got != want {
 			t.Errorf("judgeHedge(%s) = %s, want %s", budget, got, want)
 		}
+	}
+}
+
+func TestJudgeWorkerBudget(t *testing.T) {
+	if workerJudgeTimeout != 90*time.Second {
+		t.Fatalf("worker judge budget = %s, want 90s", workerJudgeTimeout)
 	}
 }

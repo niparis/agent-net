@@ -497,14 +497,10 @@ func (a *DifficultyAssessor) runDifficultyOneShot(ctx context.Context, harness, 
 
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
-// judgeReplyScan is how much of the end of a reply parseJudgeReply reads. A
-// judge's answer is a few hundred bytes at the end of its output.
-const judgeReplyScan = 64 << 10
-
 // parseJudgeReply finds the scores in a judge's final text. OpenCode may print
 // progress before the answer, and a model may wrap the JSON in a code fence or
-// write text around it, so every complete JSON object in the text is a
-// candidate, the last one first. A stray brace in the text does not hide a
+// write text around it. Score objects outside other objects are candidates,
+// the last one first. A stray brace in the text does not hide a
 // later object. The error says what was wrong with the reply and its size,
 // never only "unexpected end of JSON input".
 func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
@@ -512,10 +508,10 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 	if clean == "" {
 		return difficulty.Scores{}, nil, errors.New("the reply is empty")
 	}
+	// Scan from the beginning: slicing the tail can discard an outer brace
+	// and turn its nested reasons into a candidate.
 	text := clean
-	if len(text) > judgeReplyScan {
-		text = text[len(text)-judgeReplyScan:]
-	}
+	var scanErr error
 	var objects []string
 	for i := 0; i < len(text); {
 		j := strings.IndexByte(text[i:], '{')
@@ -525,7 +521,8 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 		i += j
 		dec := json.NewDecoder(strings.NewReader(text[i:]))
 		var obj json.RawMessage
-		if dec.Decode(&obj) == nil && len(obj) > 0 && obj[0] == '{' {
+		decodeErr := dec.Decode(&obj)
+		if decodeErr == nil && len(obj) > 0 && obj[0] == '{' {
 			objects = append(objects, string(obj))
 			i += int(dec.InputOffset())
 			continue
@@ -533,7 +530,14 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 		// A JSON-looking outer object owns its nested objects even when it
 		// is incomplete. Never reinterpret its reasons as numeric scores.
 		if strings.HasPrefix(strings.TrimSpace(text[i+1:]), "\"") {
-			return difficulty.Scores{}, nil, fmt.Errorf("no complete JSON object in the %d-byte reply (it may be cut off)", len(clean))
+			end := judgeObjectEnd(text[i:])
+			if end < 0 {
+				scanErr = fmt.Errorf("no complete JSON object in the %d-byte reply (it may be cut off): %v", len(clean), decodeErr)
+				break
+			}
+			scanErr = fmt.Errorf("invalid outer JSON object in the %d-byte reply: %v", len(clean), decodeErr)
+			i += end
+			continue
 		}
 		i++
 	}
@@ -552,6 +556,9 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 			lastErr = err
 		}
 	}
+	if scanErr != nil {
+		return difficulty.Scores{}, nil, scanErr
+	}
 	if lastErr != nil {
 		return difficulty.Scores{}, nil, lastErr
 	}
@@ -562,6 +569,38 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 		return difficulty.Scores{}, nil, fmt.Errorf("no complete JSON object in the %d-byte reply (it may be cut off)", len(clean))
 	}
 	return difficulty.Scores{}, nil, fmt.Errorf("no JSON object in the %d-byte reply", len(clean))
+}
+
+// judgeObjectEnd finds the boundary even when JSON syntax is invalid, so
+// nested objects cannot become independent candidates after a decode error.
+func judgeObjectEnd(text string) int {
+	depth := 0
+	quoted, escaped := false, false
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if quoted {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				quoted = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			quoted = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
 }
 
 // runOpenCode starts a one-shot judge in a fresh empty folder. OpenCode accepts
