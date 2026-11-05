@@ -13,6 +13,7 @@ type UIRequest struct {
 	DaemonNotice bool `json:"daemon_notice,omitempty"`
 	// StartPlan is sent only to the owner TUI that approved a session start
 	// when the command needs its terminal because Herdr is unavailable.
-	StartPlan *EnterPlan `json:"start_plan,omitempty"`
-	StartName string     `json:"start_name,omitempty"`
+	StartPlan       *EnterPlan `json:"start_plan,omitempty"`
+	StartProposalID string     `json:"start_proposal_id,omitempty"`
+	StartName       string     `json:"start_name,omitempty"`
 }
