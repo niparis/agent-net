@@ -247,6 +247,7 @@ type Config struct {
 }
 
 type localSession struct {
+	pushMu         sync.Mutex // orders gateway registration updates for this session
 	info           protocol.SessionInfo
 	sessionID      string
 	workerWaiting  *protocol.Waiting // last unsettled worker wait, protected by d.mu
@@ -939,8 +940,19 @@ func (d *Daemon) persistActivity(ls *localSession) {
 
 // pushSession tells the gateway about a session if the link is up.
 func (d *Daemon) pushSession(ls *localSession) {
-	info := d.infoOf(ls)
+	// Connection setup and discovery can push the same session concurrently.
+	// Read its current state only after older registrations have completed.
+	ls.pushMu.Lock()
+	defer ls.pushMu.Unlock()
 	d.mu.Lock()
+	// A reconnect may have captured this session before discovery removed it.
+	// Do not register that stale snapshot and bring the session back online.
+	k := key(ls.info.Harness, ls.info.NativeID)
+	if d.sessions[k] != ls {
+		d.mu.Unlock()
+		return
+	}
+	info := d.infoLocked(ls)
 	d.upserting++
 	d.mu.Unlock()
 	defer func() {
@@ -958,7 +970,14 @@ func (d *Daemon) pushSession(ls *localSession) {
 	if json.Unmarshal(data, &r) == nil && r.SessionID != "" {
 		d.mu.Lock()
 		ls.sessionID = r.SessionID
+		removed := d.sessions[k] != ls
 		d.mu.Unlock()
+		// Discovery can also remove it while the registration is in flight,
+		// before it has an ID to take offline. Finish that removal now, unless
+		// another local session has taken over the gateway identity.
+		if removed && d.sessionByID(r.SessionID) == nil {
+			d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: r.SessionID})
+		}
 	}
 }
 
