@@ -629,7 +629,7 @@ func TestDeliveryChangesSurviveRestart(t *testing.T) {
 func TestDeliveryChangesMigrationReplays(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
-	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery changes, revisions and evidence")); err != nil {
+	if _, err := r.s.db.Exec(`DROP TRIGGER IF EXISTS merger_removed; DROP TRIGGER IF EXISTS merger_replaced; ALTER TABLE delivery_step_tasks DROP COLUMN urgent; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery changes, revisions and evidence")); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrateOldFixture(t, r.s); err != nil {
