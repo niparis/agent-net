@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -43,6 +44,44 @@ func TestSessionIdentityMigrationBackfill(t *testing.T) {
 	if err := r.s.RecordWorkerRun(protocol.WorkerRun{NodeID: r.a, SessionID: r.worker, Harness: "claude", Outcome: protocol.OutcomeComplete, CallerSessionID: r.caller}); err != nil {
 		t.Fatal(err)
 	}
+	other, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "other", Repo: protocol.RepoInfo{Project: "other", Root: "/code/other"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetEdge(protocol.Edge{From: "demo", To: "other", Kind: "depends", Rule: "ask"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func() []any {
+		t.Helper()
+		relation, err := r.s.RelationFor(r.caller, other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rule, err := r.s.RequestRule(r.caller, other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		authority, err := r.s.MergeAuthorityForSession(r.sonnet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		policy, err := deliveryCall[protocol.PolicyGot](r, r.a, "policy.get", protocol.PolicyGet{SessionID: r.caller})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pipeline, err := r.s.deliveryPipeline("demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		group, err := deliveryCall[struct {
+			Allowed bool `json:"allowed"`
+		}](r, r.a, "group.authority", map[string]string{"session_id": r.caller})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return []any{relation, rule, authority, policy, pipeline, group}
+	}
+	before := snapshot()
 	if _, err := r.s.db.Exec(`DROP TRIGGER session_identity_repo_update; ALTER TABLE sessions DROP COLUMN agent_id; ALTER TABLE sessions DROP COLUMN repo_id; ALTER TABLE worker_runs DROP COLUMN caller_agent_id; ALTER TABLE worker_starts DROP COLUMN caller_agent_id`); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +100,9 @@ func TestSessionIdentityMigrationBackfill(t *testing.T) {
 	var caller string
 	if err := r.s.db.QueryRow(`SELECT COALESCE(caller_agent_id,'') FROM worker_runs WHERE session_id=?`, r.worker).Scan(&caller); err != nil || caller != "demo" {
 		t.Fatalf("caller %q: %v", caller, err)
+	}
+	if after := snapshot(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("routing or policy changed: before %+v, after %+v", before, after)
 	}
 }
 
@@ -316,4 +358,31 @@ func TestSessionFindKeepsLegacyAnnouncedProjectDisplay(t *testing.T) {
 		}
 	}
 	t.Fatalf("legacy announced project changed: %+v", page.Items)
+}
+
+func TestRequestRuleAndStorageUseResolvedFallbackAgent(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.AddArchitect("advisor", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='advisor' WHERE id=?`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other',agent_id=NULL WHERE id=?`, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetEdge(protocol.Edge{From: "advisor", To: "other", Kind: "governs", Mode: "advisor", Rule: "ask"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	rule, err := r.s.RequestRule(r.caller, r.sonnet)
+	if err != nil || rule != "ask" {
+		t.Fatalf("rule %q: %v", rule, err)
+	}
+	m, _, err := send(r.s, r.caller, r.sonnet, "request", "")
+	if err != nil || m.State != protocol.StateHeld {
+		t.Fatalf("message state %q: %v", m.State, err)
+	}
 }
