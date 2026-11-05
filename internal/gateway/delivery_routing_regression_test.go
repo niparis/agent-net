@@ -1,0 +1,118 @@
+package gateway
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+func TestMergerAfterMergeTestRouting(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := r.submit(r.a, r.workerSubmit("feature/after", commitA)).Change.Change
+	if _, err := r.s.db.Exec(`UPDATE delivery_changes SET state='merged',merged_commit=? WHERE id=?`, commitMerged, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,1,'test','',1,'/caller',0)`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	q := protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}
+	if err := r.s.SetMerger(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	check := func(want string) {
+		t.Helper()
+		var got string
+		if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='test' AND after_merge=1`, c.ID).Scan(&got); err != nil || got != want {
+			t.Fatalf("after-merge owner=%q want=%q err=%v", got, want, err)
+		}
+	}
+	check("/merger")
+	p, err := r.s.deliveryPipeline("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	step, _ := p.Find(protocol.StepRef{Step: "test", AfterMerge: true})
+	if step.Owner.Kind != protocol.OwnerMerger {
+		t.Fatalf("new task pipeline owner=%+v", step.Owner)
+	}
+	if _, err := r.s.db.Exec(`DELETE FROM delivery_step_tasks WHERE change_id=? AND after_merge=1`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := r.s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.State, c.MergedCommit = protocol.ChangeMerged, commitMerged
+	if err = r.s.queueSteps(tx, c, p, 0); err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	check("/merger")
+	q.SessionID = ""
+	if err := r.s.SetMerger(q, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	check("/caller")
+}
+
+func TestDeliveryStepTaskBatch(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "review", Node: "reviewer"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	// Accumulate a backlog without dispatching to the caller on each submit.
+	if _, err := r.s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for i := 0; i < 3; i++ {
+		ids = append(ids, r.submit(r.a, r.workerSubmit(fmt.Sprintf("feature/batch%d", i), commitA)).Change.Change.ID)
+	}
+	if _, err := r.s.db.Exec(`DELETE FROM delivery_step_tasks WHERE step<>'accept'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET online=1 WHERE id=?`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	r.g.dispatchStepTasks(context.Background())
+	check := func(want int) {
+		t.Helper()
+		var n int
+		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != want {
+			t.Fatalf("messages=%d want=%d err=%v", n, want, err)
+		}
+	}
+	check(1)
+	var body string
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?)`, r.caller).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if !strings.Contains(body, id) {
+			t.Fatalf("batch missing %s: %s", id, body)
+		}
+	}
+	r.g.dispatchStepTasks(context.Background())
+	check(1)
+	r.submit(r.a, r.workerSubmit("feature/later", commitA))
+	r.g.dispatchStepTasks(context.Background())
+	check(2)
+	if _, err := r.s.db.Exec(`UPDATE messages SET state='expired' WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?)`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	r.g.dispatchStepTasks(context.Background())
+	check(1)
+	var listed int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 5 {
+		t.Fatalf("listed=%d want=5 err=%v", listed, err)
+	}
+}

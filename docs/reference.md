@@ -2574,6 +2574,17 @@ approval line. Every project already has a default pipeline in this version;
 there is no separate pipeline on/off switch. Existing review and approval
 requirements remain in force.
 
+The test owner handles tests before and after merge unless the project has an
+explicit after-merge test assignment. Setup moves unfinished, unclaimed
+after-merge tasks to the merger when their pipeline owner is `@merger`.
+New after-merge test tasks follow that same owner and run on the merged commit.
+
+When a dispatch pass finds several new tasks for one session, it sends one
+notice listing each change ID, step, after-merge flag, commit and title. Claim
+and report instructions appear once. A single task keeps the detailed notice.
+Each listed task keeps its own notice association, so later tasks get a new
+notice and listed tasks are not sent again until their notice expires.
+
 A merger registration maps a project and machine to one session. Only that
 session receives, claims, and reports `@merger` steps for changes on that
 machine. Stopping the merger's harness session or taking it offline keeps
