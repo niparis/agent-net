@@ -82,3 +82,45 @@ func TestSyncDistInvalidatesSignedManifest(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncDistRejectsTestBinary(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := filepath.Join(t.TempDir(), "agent-net")
+	if err := os.WriteFile(renamed, binary, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, source string }{
+		{"test executable", exe},
+		{"renamed test executable", renamed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dist := t.TempDir()
+			files := map[string]string{
+				"agent-net-" + runtime.GOOS + "-" + runtime.GOARCH: "release binary",
+				"checksums.txt":     "manifest",
+				"checksums.txt.sig": "signature",
+			}
+			for name, contents := range files {
+				if err := os.WriteFile(filepath.Join(dist, name), []byte(contents), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r := &runner{Options: Options{Exe: tc.source}}
+			if _, err := r.syncDist(dist); err == nil || !strings.Contains(err.Error(), "test binary") {
+				t.Errorf("want test binary error, got %v", err)
+			}
+			for name, want := range files {
+				if got, err := os.ReadFile(filepath.Join(dist, name)); err != nil || string(got) != want {
+					t.Errorf("%s changed (size %d): %v", name, len(got), err)
+				}
+			}
+		})
+	}
+}

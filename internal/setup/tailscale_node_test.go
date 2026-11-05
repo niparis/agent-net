@@ -14,10 +14,11 @@ import (
 
 func TestSetupGatewaySavesTailscaleChoiceBeforeRestart(t *testing.T) {
 	data := t.TempDir()
+	exe := fakeGatewayExe(t)
 	var out bytes.Buffer
 	var choiceAtInstall error = errors.New("not installed")
 	r := &runner{
-		Options: Options{Out: &out, Gateway: true, Data: data, Exe: os.Args[0], Dist: t.TempDir(),
+		Options: Options{Out: &out, Gateway: true, Data: data, Exe: exe, Dist: t.TempDir(),
 			TailscaleName: "agent-net", TailscaleAuthKeyFile: "/run/secrets/ts-key"},
 		installServiceFn: func(Service) (string, error) {
 			_, choiceAtInstall = tsnode.ReadChoice(data)
@@ -25,6 +26,9 @@ func TestSetupGatewaySavesTailscaleChoiceBeforeRestart(t *testing.T) {
 		},
 	}
 	r.setupGateway(context.Background())
+	if r.failed != nil {
+		t.Fatal(r.failed)
+	}
 	if choiceAtInstall != nil {
 		t.Fatalf("choice not saved before the gateway restart: %v", choiceAtInstall)
 	}
@@ -38,18 +42,24 @@ func TestSetupGatewaySavesTailscaleChoiceBeforeRestart(t *testing.T) {
 
 	// A later setup without the flag keeps the choice.
 	out.Reset()
-	r = &runner{Options: Options{Out: &out, Gateway: true, Data: data, Exe: os.Args[0], Dist: t.TempDir()},
+	r = &runner{Options: Options{Out: &out, Gateway: true, Data: data, Exe: exe, Dist: t.TempDir()},
 		installServiceFn: func(Service) (string, error) { return "ok", nil }}
 	r.setupGateway(context.Background())
+	if r.failed != nil {
+		t.Fatal(r.failed)
+	}
 	if _, err := tsnode.ReadChoice(data); err != nil {
 		t.Fatal("choice lost by a plain setup:", err)
 	}
 
 	// --apps-tailscale-machine goes back to the machine's node.
 	out.Reset()
-	r = &runner{Options: Options{Out: &out, Gateway: true, Data: data, Exe: os.Args[0], Dist: t.TempDir(), TailscaleMachine: true},
+	r = &runner{Options: Options{Out: &out, Gateway: true, Data: data, Exe: exe, Dist: t.TempDir(), TailscaleMachine: true},
 		installServiceFn: func(Service) (string, error) { return "ok", nil }}
 	r.setupGateway(context.Background())
+	if r.failed != nil {
+		t.Fatal(r.failed)
+	}
 	if _, err := tsnode.ReadChoice(data); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("choice kept: %v", err)
 	}
@@ -59,11 +69,11 @@ func TestSetupGatewaySavesTailscaleChoiceBeforeRestart(t *testing.T) {
 
 	// A bad name fails the step and writes nothing.
 	out.Reset()
-	r = &runner{Options: Options{Out: &out, Gateway: true, Data: data, Exe: os.Args[0], Dist: t.TempDir(), TailscaleName: "Not Valid"},
+	r = &runner{Options: Options{Out: &out, Gateway: true, Data: data, Exe: exe, Dist: t.TempDir(), TailscaleName: "Not Valid"},
 		installServiceFn: func(Service) (string, error) { return "ok", nil }}
 	r.setupGateway(context.Background())
-	if r.failed == nil {
-		t.Fatal("bad name accepted")
+	if r.failed == nil || r.failedStep != "Tailscale name" {
+		t.Fatalf("bad name: step %q, error %v", r.failedStep, r.failed)
 	}
 	if _, err := tsnode.ReadChoice(data); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("bad choice written: %v", err)

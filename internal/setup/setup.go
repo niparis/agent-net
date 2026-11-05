@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"debug/buildinfo"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -301,6 +302,13 @@ func InvalidateSignedDist(dist string) error {
 
 // syncDist makes sure the dist dir has this binary for its own platform.
 func (r *runner) syncDist(dist string) (string, error) {
+	if strings.HasSuffix(r.Exe, ".test") {
+		return "", fmt.Errorf("refusing to copy test binary %s to gateway dist", r.Exe)
+	}
+	// A test executable can have been renamed, so check its build info too.
+	if info, err := buildinfo.ReadFile(r.Exe); err == nil && strings.HasSuffix(info.Path, ".test") {
+		return "", fmt.Errorf("refusing to copy test binary %s to gateway dist", r.Exe)
+	}
 	target := filepath.Join(dist, fmt.Sprintf("agent-net-%s-%s", runtime.GOOS, runtime.GOARCH))
 	src, err := os.ReadFile(r.Exe)
 	if err != nil {
