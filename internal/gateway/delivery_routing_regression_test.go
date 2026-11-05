@@ -114,8 +114,8 @@ func TestDeliveryStepTaskBatch(t *testing.T) {
 	r.g.flushStepTasks(r.caller)
 	check(1)
 	var listed int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 5 {
-		t.Fatalf("listed=%d want=5 err=%v", listed, err)
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 4 {
+		t.Fatalf("listed=%d want=4 err=%v", listed, err)
 	}
 }
 
@@ -191,8 +191,14 @@ func TestDeliveryTestWaitsForAcceptAndKeepsExistingTask(t *testing.T) {
 	if err := r.s.backfillDeliveryTasks(); err != nil {
 		t.Fatal(err)
 	}
+	for _, step := range r.get(c.ID).Steps {
+		if step.StepRef == (protocol.StepRef{Step: "test"}) && step.State != protocol.StepStateRunning {
+			t.Fatalf("claimed old task state = %s", step.State)
+		}
+	}
 	var claimed string
 	if err := r.s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=2 AND step='test' AND after_merge=0`, c.ID).Scan(&claimed); err != nil || claimed != r.sonnet || count(2) != 1 {
 		t.Fatalf("claimed=%q err=%v", claimed, err)
 	}
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Result: protocol.StepResultPass, Commit: commitB, Fields: map[string]string{"suite": "changed"}})
 }
