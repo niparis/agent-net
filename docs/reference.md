@@ -115,8 +115,10 @@ passed `node_id`. `proposal_answer` takes `node_id`, `proposal_id` and an action
 `a` approves, `x` declines, and `A` approves open proposals across online machines
 in order, stopping on an error. The daemon validates again and runs the stored
 call once with actor `owner (CTO proposal p_N)`. Full results, including plans,
-MCP results and invite lines, are shown to the owner. The CTO gets a short
-outcome note at its next idle moment, without the call's result data.
+MCP results and invite lines, are shown to the owner. An approval through
+`proposal_answer` gives the CTO a short outcome note at its next idle moment,
+without the call's result data. A dialog approval returns the outcome as the
+tool result instead, so no note follows it.
 
 The class table in the daemon fixes every tool and action as read, talk or
 proposal. Reads still run immediately. Talk (`agent_message_send`,
