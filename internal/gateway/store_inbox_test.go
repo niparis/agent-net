@@ -3,6 +3,7 @@ package gateway
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -185,5 +186,30 @@ func TestInboxDismissDoesNotMessageTheSession(t *testing.T) {
 	pending, err := s.Pending(node, false)
 	if err != nil || len(pending) != 0 {
 		t.Fatalf("dismiss queued %d messages: %v", len(pending), err)
+	}
+}
+
+func TestInboxConnectedNoticeExpiresAfterDay(t *testing.T) {
+	s, c := newTestStore(t)
+	old, err := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: "s_test", Node: "apps", Text: "Connected: Test (bot)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_test", Text: "approve?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(25 * time.Hour)
+	items, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ID == old.ID {
+			t.Fatal("old connected notice still visible")
+		}
+	}
+	if len(items) != 1 || items[0].Kind != "approval" {
+		t.Fatalf("items: %+v", items)
 	}
 }

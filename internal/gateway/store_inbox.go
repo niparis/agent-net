@@ -74,6 +74,9 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 			rows.Close()
 			return nil, err
 		}
+		if item.Kind == "check" && item.Node == "apps" && strings.HasPrefix(item.Text, "Connected: ") && !item.CreatedAt.After(s.now().Add(-24*time.Hour)) {
+			continue
+		}
 		items = append(items, item)
 	}
 	err = rows.Err()
