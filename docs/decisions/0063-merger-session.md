@@ -50,3 +50,10 @@ Step owners are project-wide, as in decision 0057. Registrations are per
 machine: a change waits when its machine has no registered merger. Stopping
 routing returns the project's test and merge owners to caller. Git remains
 outside agent-net's enforcement; the gateway validates evidence and routing.
+
+## 2026-11-05 - Keep the queue moving
+
+Clarify the merger's first message: failed or rejected tool calls do not mean
+the owner paused the session. Retry once, then use another approach or report
+the blocked step and continue with ready work. Ask the owner once when a
+decision is needed, while continuing work that does not depend on it.
