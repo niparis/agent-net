@@ -126,6 +126,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 		{"node_add", map[string]any{"name": "new"}}, {"node_remove", map[string]any{"name": "architect"}},
 		{"charter_set", map[string]any{"node": "alpha", "attr": "purpose", "value": "test"}},
 		{"edge_set", map[string]any{"from": "alpha", "to": "beta", "kind": "depends", "rule": "auto"}},
+		{"edge_set", map[string]any{"from": "/delivery/merger", "to": "alpha", "kind": "releases"}},
 		{"edge_remove", map[string]any{"from": "alpha", "to": "beta", "kind": "depends"}},
 		{"graph_undo", map[string]any{}}, {"node_settings_set", map[string]any{"node": "alpha", "setting": "merge_authority", "value": "ask"}},
 		{"session_rename", map[string]any{"session_id": a, "name": "planner"}},

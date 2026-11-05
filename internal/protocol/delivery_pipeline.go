@@ -349,8 +349,11 @@ func (o StepOwner) validateFor(step string) error {
 		return validText("owner node name", o.Node, maxNameBytes)
 	case OwnerCaller, OwnerPerson:
 	case OwnerGitHub, OwnerMerger:
-		if step != StepTest && step != StepMerge {
-			return fmt.Errorf("owner %s is only for test and merge, not %s", o.Kind, step)
+		if step != StepTest && step != StepMerge && !(o.Kind == OwnerMerger && step == StepRelease) {
+			if o.Kind == OwnerGitHub {
+				return fmt.Errorf("owner %s is only for test and merge, not %s", o.Kind, step)
+			}
+			return fmt.Errorf("owner %s is only for test, merge and release, not %s", o.Kind, step)
 		}
 	case OwnerDelegate, OwnerNone:
 		if step != StepApprove {

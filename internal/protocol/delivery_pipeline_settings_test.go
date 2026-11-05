@@ -216,3 +216,12 @@ func TestPipelineSettingsAfterMergeTestOwner(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseOwnerMergerAndGitHub(t *testing.T) {
+	if err := (StepOwner{Kind: OwnerMerger}).validateFor(StepRelease); err != nil {
+		t.Fatalf("merger must own release: %v", err)
+	}
+	if err := (StepOwner{Kind: OwnerGitHub}).validateFor(StepRelease); err == nil {
+		t.Fatal("github must not own release")
+	}
+}
