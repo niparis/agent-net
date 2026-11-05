@@ -1145,3 +1145,33 @@ func TestHerdrEnvironmentFailureDoesNotUseTerminalFallback(t *testing.T) {
 		t.Fatalf("plan %+v", p)
 	}
 }
+
+func TestCTOApprovedCodexWithoutHerdrOrTUIFails(t *testing.T) {
+	withoutLocalHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newHomeRepo(t, home, "code/garden")
+	n.register(t, repo)
+	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex"})
+	if _, err := n.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals %v %v", items, err)
+	}
+	_ = n.d.proposalRunner().decide(context.Background(), items[0].ID, true)
+	items, err = n.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var start protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &start); err != nil {
+		t.Fatal(err)
+	}
+	if items[0].Status != "failed" || start.Status != "failed" || start.Error == "" || !strings.Contains(items[0].Note, start.Error) {
+		t.Fatalf("proposal %#v start %#v", items[0], start)
+	}
+}

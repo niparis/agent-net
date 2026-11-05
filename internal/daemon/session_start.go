@@ -243,7 +243,18 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		plan := d.openForCaller("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, *r.EnterPlan)
 		r.EnterPlan = &plan
 		if notify {
-			d.notifyApprovedSessionStart(ctx, r)
+			delivered := d.notifyApprovedSessionStart(ctx, r)
+			if !plan.OpenedHerdr && !delivered {
+				r.Status = "failed"
+				r.Error = "session could not start on " + d.hostName() + ": no herdr pane and no approving TUI to run the plan"
+				if !callerInHerdr(p.HerdrSocket, p.HerdrPaneID) {
+					plan.Note = "No herdr caller coordinates were provided."
+					r.EnterPlan = &plan
+				}
+				if plan.Note != "" {
+					r.Error += ": " + plan.Note
+				}
+			}
 		}
 		return r, nil
 	}

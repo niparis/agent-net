@@ -241,7 +241,7 @@ func (d *Daemon) openApprovedRemoteSession(ctx context.Context, node, id string)
 }
 
 func (d *Daemon) proposalRunner() proposalRunner {
-	return proposalRunner{state: d.st, now: time.Now, validate: d.validateProposal, run: d.runProposal}
+	return proposalRunner{state: d.st, now: time.Now, validate: d.validateProposal, run: d.runProposal, log: d.log.Printf}
 }
 
 func (d *Daemon) proposalOperator(ctx context.Context, method string, q protocol.CTOProposalAnswer) (any, bool, error) {
@@ -291,6 +291,7 @@ type proposal struct {
 // proposalRunner is deliberately independent of the CTO tool dispatcher. A
 // caller supplies validation and execution for the calls it supports.
 type proposalRunner struct {
+	log      func(string, ...any)
 	state    *state
 	now      func() time.Time
 	validate func(context.Context, proposalCall) error
@@ -525,6 +526,16 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 		if err == nil {
 			result, err = p.run(ctx, item.Call, "owner (CTO proposal "+id+")")
 		}
+		if err == nil && ((item.Call.Tool == "session_change" && item.Call.Action == "session_start") || (item.Call.Tool == "project_change" && item.Call.Action == "create")) {
+			var start protocol.StartedSession
+			if json.Unmarshal(result, &start) == nil && start.Status == "failed" {
+				message := start.Error
+				if message == "" {
+					message = "session start failed"
+				}
+				err = errors.New(message)
+			}
+		}
 		if err != nil {
 			status = "failed"
 			message := []rune(cleanLine(err.Error()))
@@ -547,6 +558,11 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 				}
 			}
 		}
+	}
+	if p.log != nil {
+		var start protocol.StartedSession
+		_ = json.Unmarshal(result, &start)
+		p.log("proposal %s session %s outcome %s: %s", id, start.ID, status, note)
 	}
 	_, saveErr := p.state.db.ExecContext(context.WithoutCancel(ctx), `UPDATE cto_proposals SET status=?,note=?,result=? WHERE id=?`, status, note, string(result), strings.TrimPrefix(id, "p_"))
 	if saveErr != nil {
