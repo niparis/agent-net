@@ -157,7 +157,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			var err error
 			if protocol.ModelAuthFailure(p.Failure) {
 				err = g.store.RecordModelAuthFailure(nc.id, p.Harness, p.Model)
-			} else if !protocol.ProviderQuotaRefusal(p.Failure) {
+			} else if protocol.WorkerOutcomeDetail(p.Reason, p.Status, p.Complete, p.Failure) != protocol.OutcomeInfra {
 				err = g.store.RecordModelFailure(nc.id, p.Harness, p.Model, p.Failure)
 			}
 			if err != nil {
@@ -1687,7 +1687,34 @@ func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandida
 	if err != nil {
 		return protocol.WorkerModelChoice{}, "", err
 	}
-	choice, note, err := chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected)
+	var healthy []protocol.WorkerModelCandidate
+	var cooling []string
+	for _, c := range candidates {
+		h, err := g.store.ModelHealth(c.Harness, c.Model)
+		if err != nil {
+			return protocol.WorkerModelChoice{}, "", err
+		}
+		if h.Cooling {
+			cooling = append(cooling, fmt.Sprintf("skipped %s %s: cooling down after %d infrastructure failures (until %s UTC)", c.Harness, c.Model, h.Failures, h.Until.UTC().Format("15:04")))
+		} else {
+			healthy = append(healthy, c)
+		}
+	}
+	var choice protocol.WorkerModelChoice
+	var note string
+	if len(healthy) > 0 && len(cooling) > 0 {
+		choice, note, err = chooseProtectedWorker(healthy, difficulty, scores, minimums, quotas, running, &rotation, protected)
+	} else if len(cooling) > 0 {
+		err = fmt.Errorf("no healthy candidates")
+	}
+	if len(cooling) == 0 || err != nil {
+		choice, note, err = chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected)
+		if err == nil && len(cooling) > 0 {
+			note = appendModelNote(note, "used model cooling down because no healthy alternative is adequate")
+		}
+	} else {
+		note = appendModelNote(note, strings.Join(cooling, "; "))
+	}
 	if err == nil && persist {
 		err = g.store.saveWorkerRotation(rotation)
 	}

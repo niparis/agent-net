@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -93,12 +94,14 @@ func ProviderQuotaRefusal(detail string) bool {
 	return false
 }
 
+var providerServerError = regexp.MustCompile(`(?i)\b(?:http(?: status)?|status(?: code)?)[: ]+5[0-9][0-9]\b`)
+
 // WorkerOutcomeDetail classifies infrastructure failures without changing hand-backs.
 func WorkerOutcomeDetail(reason, status string, complete *bool, detail string) string {
 	if reason == StopLost || reason == StopStartFails {
 		return OutcomeInfra
 	}
-	if (reason == StopModelFails || reason == StopRunFailed) && (ProviderQuotaRefusal(detail) || ModelAuthFailure(detail)) {
+	if (reason == StopModelFails || reason == StopRunFailed) && (ProviderQuotaRefusal(detail) || ModelAuthFailure(detail) || providerServerError.MatchString(detail) || strings.Contains(strings.ToLower(detail), "timed out waiting for response headers") || strings.Contains(strings.ToLower(detail), "provider timeout")) {
 		return OutcomeInfra
 	}
 	return WorkerOutcome(reason, status, complete)
