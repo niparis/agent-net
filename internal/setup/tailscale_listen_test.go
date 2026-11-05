@@ -4,23 +4,36 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
+func fakeGatewayExe(t *testing.T) string {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	if err := os.WriteFile(exe, []byte("fake gateway binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return exe
+}
+
 func TestFreshGatewayOffersTailscaleListen(t *testing.T) {
-	exe := os.Args[0]
+	exe := fakeGatewayExe(t)
 
 	// Case 1: Fresh gateway, Tailscale present, accepted (via AllYes)
 	var out1 bytes.Buffer
 	var installedService1 Service
 	r1 := &runner{
-		Options:          Options{Out: &out1, Gateway: true, NoService: false, All: AllYes, Exe: exe},
+		Options:          Options{Out: &out1, Gateway: true, NoService: false, All: AllYes, Exe: exe, Dist: t.TempDir()},
 		freshGateway:     true,
 		interactive:      true,
 		tailscaleIP:      func() string { return "100.64.1.20" },
 		installServiceFn: func(s Service) (string, error) { installedService1 = s; return "ok", nil },
 	}
 	r1.setupGateway(context.Background())
+	if r1.failed != nil {
+		t.Fatal(r1.failed)
+	}
 
 	foundListen1 := false
 	for i, arg := range installedService1.Args {
@@ -41,13 +54,16 @@ func TestFreshGatewayOffersTailscaleListen(t *testing.T) {
 	var out2 bytes.Buffer
 	var installedService2 Service
 	r2 := &runner{
-		Options:          Options{Out: &out2, Gateway: true, NoService: false, All: AllNo, Exe: exe},
+		Options:          Options{Out: &out2, Gateway: true, NoService: false, All: AllNo, Exe: exe, Dist: t.TempDir()},
 		freshGateway:     true,
 		interactive:      true,
 		tailscaleIP:      func() string { return "100.64.1.20" },
 		installServiceFn: func(s Service) (string, error) { installedService2 = s; return "ok", nil },
 	}
 	r2.setupGateway(context.Background())
+	if r2.failed != nil {
+		t.Fatal(r2.failed)
+	}
 
 	foundDefault2 := false
 	for i, arg := range installedService2.Args {
@@ -68,13 +84,16 @@ func TestFreshGatewayOffersTailscaleListen(t *testing.T) {
 	var out3 bytes.Buffer
 	var installedService3 Service
 	r3 := &runner{
-		Options:          Options{Out: &out3, Gateway: true, NoService: false, All: AllYes, Exe: exe},
+		Options:          Options{Out: &out3, Gateway: true, NoService: false, All: AllYes, Exe: exe, Dist: t.TempDir()},
 		freshGateway:     false,
 		interactive:      true,
 		tailscaleIP:      func() string { return "100.64.1.20" },
 		installServiceFn: func(s Service) (string, error) { installedService3 = s; return "ok", nil },
 	}
 	r3.setupGateway(context.Background())
+	if r3.failed != nil {
+		t.Fatal(r3.failed)
+	}
 
 	foundDefault3 := false
 	for i, arg := range installedService3.Args {
@@ -92,13 +111,16 @@ func TestFreshGatewayOffersTailscaleListen(t *testing.T) {
 	var out4 bytes.Buffer
 	var installedService4 Service
 	r4 := &runner{
-		Options:          Options{Out: &out4, Gateway: true, NoService: false, All: AllYes, Exe: exe},
+		Options:          Options{Out: &out4, Gateway: true, NoService: false, All: AllYes, Exe: exe, Dist: t.TempDir()},
 		freshGateway:     true,
 		interactive:      true,
 		tailscaleIP:      func() string { return "" },
 		installServiceFn: func(s Service) (string, error) { installedService4 = s; return "ok", nil },
 	}
 	r4.setupGateway(context.Background())
+	if r4.failed != nil {
+		t.Fatal(r4.failed)
+	}
 
 	foundDefault4 := false
 	for i, arg := range installedService4.Args {
