@@ -532,6 +532,10 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 		if strings.HasPrefix(strings.TrimSpace(text[i+1:]), "\"") {
 			end := judgeObjectEnd(text[i:])
 			if end < 0 {
+				if repaired := closeJudgeObject(text[i:]); repaired != "" {
+					objects = append(objects, repaired)
+					break
+				}
 				scanErr = fmt.Errorf("no complete JSON object in the %d-byte reply (it may be cut off): %v", len(clean), decodeErr)
 				break
 			}
@@ -569,6 +573,42 @@ func parseJudgeReply(raw string) (difficulty.Scores, []string, error) {
 		return difficulty.Scores{}, nil, fmt.Errorf("no complete JSON object in the %d-byte reply (it may be cut off)", len(clean))
 	}
 	return difficulty.Scores{}, nil, fmt.Errorf("no JSON object in the %d-byte reply", len(clean))
+}
+
+// closeJudgeObject repairs only omitted terminal object braces. Validation
+// still rejects missing values, unfinished strings, arrays, and trailing prose.
+func closeJudgeObject(text string) string {
+	depth := 0
+	quoted, escaped := false, false
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if quoted {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				quoted = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			quoted = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+		}
+	}
+	if quoted || depth <= 0 {
+		return ""
+	}
+	repaired := text + strings.Repeat("}", depth)
+	if !json.Valid([]byte(repaired)) {
+		return ""
+	}
+	return repaired
 }
 
 // judgeObjectEnd finds the boundary even when JSON syntax is invalid, so

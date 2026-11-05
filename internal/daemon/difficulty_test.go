@@ -398,7 +398,7 @@ func TestCheapestDifficultyProfileChoosesLowestMaxCodexProfile(t *testing.T) {
 }
 
 func TestParseJudgeReplyTruncatedOuterReasons(t *testing.T) {
-	raw := `{"reasoning":3,"scope":2,"coupling":2,"uncertainty":2,"verification":2,"risk":1,"reasons":{"reasoning":"text","scope":"text","coupling":"text","uncertainty":"text","verification":"text","risk":"text"}`
+	raw := `{"reasoning":3,"scope":2,"coupling":2,"uncertainty":2,"verification":2,"risk":1,"reasons":{"reasoning":"text","scope":"text","coupling":"text","uncertainty":"text","verification":"text","risk":"tex`
 	_, _, err := parseJudgeReply(raw)
 	if err == nil || !strings.Contains(err.Error(), "cut off") {
 		t.Fatalf("got %v", err)
@@ -412,7 +412,7 @@ func TestParseJudgeReplyKeepsEarlierScoresBeforeTruncation(t *testing.T) {
 	}
 }
 func TestParseJudgeReplyLongTruncatedOuter(t *testing.T) {
-	raw := `{"padding":"` + strings.Repeat("x", 64<<10) + `","reasons":{"reasoning":"text","scope":"text","coupling":"text","uncertainty":"text","verification":"text","risk":"text"}`
+	raw := `{"padding":"` + strings.Repeat("x", 64<<10) + `","reasons":{"reasoning":"text","scope":"text","coupling":"text","uncertainty":"text","verification":"text","risk":"tex`
 	_, _, err := parseJudgeReply(raw)
 	if err == nil || !strings.Contains(err.Error(), "cut off") {
 		t.Fatalf("got %v", err)
