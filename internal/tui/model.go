@@ -1073,6 +1073,7 @@ func (m *Model) applyUsage(r fetchedMsg) {
 // ---- keys ----
 
 func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	k = normalizeKey(k)
 	if k.String() == "ctrl+c" {
 		m.quitting = true
 		return m, tea.Quit

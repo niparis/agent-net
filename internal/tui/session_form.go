@@ -683,6 +683,7 @@ func (m *Model) completeSessionProject() bool {
 // the field that has the focus: the Harness, Model and Folder switches change
 // their choice, and a text field moves its cursor.
 func (m Model) sessionFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	k = normalizeKey(k)
 	f := &m.sform
 	key := keyAction(contextForm, k.String())
 	switch key {
