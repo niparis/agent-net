@@ -270,11 +270,22 @@ func (d *Daemon) maySendGroup(ctx context.Context, sid string) bool {
 	if sid != "" && sid == d.ctoSessionID() {
 		return true
 	}
+	raw, err := d.call(ctx, "group.authority", protocol.QueryAgent{SessionID: sid})
+	if err == nil {
+		var got struct {
+			Allowed bool `json:"allowed"`
+		}
+		return json.Unmarshal(raw, &got) == nil && got.Allowed
+	}
+	if !strings.Contains(err.Error(), "unknown frame type") {
+		return false
+	}
+	// An older gateway still uses the project string for advisor edges.
 	view, err := d.agentView(ctx, sid)
 	if err != nil || view.Repo.Project == "" {
 		return false
 	}
-	raw, err := d.call(ctx, "graph.read", protocol.GraphRead{})
+	raw, err = d.call(ctx, "graph.read", protocol.GraphRead{})
 	if err != nil {
 		return false
 	}

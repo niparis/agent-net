@@ -1127,6 +1127,31 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "graph.read":
 		return g.handleGraphRead(raw)
 
+	case "group.authority":
+		p, err := decode[protocol.QueryAgent](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad group.authority")
+		}
+		a, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || a.NodeID != nc.id {
+			return nil, reject("session does not belong to this node")
+		}
+		allowed := false
+		if a.Repo.Project != "" {
+			identity, _, err := st.graphIdentity(p.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			err = st.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source=? AND kind='governs' AND mode='advisor')`, identity.agent).Scan(&allowed)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return map[string]bool{"allowed": allowed}, nil
+
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
 		if err != nil {
@@ -1694,11 +1719,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		graph, err := st.GraphFor(projectOfSession(a))
+		graph, err := st.GraphFor(c.Project)
 		if err != nil {
 			return nil, err
 		}
-		return protocol.PolicyGot{Charter: protocol.NodeContextWithSettings(graph, projectOfSession(a), c.Settings)}, nil
+		return protocol.PolicyGot{Charter: protocol.NodeContextWithSettings(graph, c.Project, c.Settings)}, nil
 
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)
@@ -1717,7 +1742,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a), Charter: c.agentText()}, nil
+		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: c.Project, Charter: c.agentText()}, nil
 
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)

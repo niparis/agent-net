@@ -59,19 +59,35 @@ func nodeName(a protocol.AgentView) string {
 // another. It is empty for a pair of sessions of the same node or when a node
 // is unknown.
 func (s *Store) RelationFor(fromSession, toSession string) (string, error) {
-	from, ok, err := s.Agent(fromSession)
-	if err != nil || !ok {
+	from, _, err := s.graphIdentity(fromSession)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
 		return "", err
 	}
-	to, ok, err := s.Agent(toSession)
-	if err != nil || !ok {
+	to, _, err := s.graphIdentity(toSession)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
 		return "", err
 	}
 	g, err := s.Graph()
 	if err != nil {
 		return "", err
 	}
-	return protocol.RelationText(g, nodeName(from), nodeName(to)), nil
+	// Dependencies speak about repos; governance speaks about agents.
+	for _, e := range g.Edges {
+		f, t := from.repo, to.repo
+		if e.Kind == "governs" {
+			f, t = from.agent, to.agent
+		}
+		if e.From == f && e.To == t && f != "" && t != "" && f != t && (e.Kind == "depends" || e.Kind == "governs") {
+			return protocol.RelationText(protocol.Graph{Edges: []protocol.Edge{e}}, f, t), nil
+		}
+	}
+	return protocol.RelationText(protocol.Graph{}, from.repo, to.repo), nil
 }
 
 // handleGraphRead serves "graph.read".
@@ -102,28 +118,61 @@ func (g *Gateway) relationForDelivery(m protocol.Message) string {
 }
 
 // RequestRule resolves the most specific request rule for two sessions.
-func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
-	from, ok, err := s.Agent(fromSession)
-	if err != nil || !ok {
-		return "normal", err
+type graphIdentity struct{ repo, agent string }
+
+func (s *Store) graphIdentity(session string) (graphIdentity, bool, error) {
+	project, agent, harness, worker, err := s.sessionIdentity(session)
+	if err != nil {
+		return graphIdentity{}, false, err
 	}
-	to, ok, err := s.Agent(toSession)
-	if err != nil || !ok {
-		return "normal", err
+	if harness == "cto" {
+		return graphIdentity{protocol.CTONodeName, protocol.CTONodeName}, false, nil
 	}
-	source, target := nodeName(from), nodeName(to)
-	if target == "" {
-		if to.PeerTrust {
-			return "auto", nil
-		}
-		return "normal", nil
+	// Workers are not the caller agent. Keep the existing repo endpoint for
+	// their routing until runs have their own graph endpoints.
+	if worker || agent == "" {
+		agent = project
 	}
+	var trust bool
+	err = s.db.QueryRow(`SELECT peer_trust FROM sessions WHERE id=?`, session).Scan(&trust)
+	return graphIdentity{project, agent}, trust, err
+}
+
+// requestRuleTx is shared by dispatch and the atomic send path.
+func requestRuleTx(q interface{ QueryRow(string, ...any) *sql.Row }, fromSession, toSession string) (string, error) {
 	var rule string
-	err = s.db.QueryRow(`SELECT rule FROM graph_edges WHERE target=? AND (source=? OR source='*') AND kind IN ('depends','governs','deploys') ORDER BY CASE WHEN source=? THEN 0 ELSE 1 END, kind LIMIT 1`, target, source, source).Scan(&rule)
+	err := q.QueryRow(`SELECT e.rule FROM graph_edges e
+ JOIN sessions src ON src.id=? JOIN sessions dst ON dst.id=?
+ LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
+ WHERE e.kind IN ('depends','governs','deploys') AND
+ e.target=CASE WHEN dst.harness='cto' THEN 'CTO' WHEN e.kind='governs' AND dst.worker='' THEN COALESCE(dst.agent_id,NULLIF(dst.repo_project,''),dp.project,'') ELSE COALESCE(dst.repo_id,NULLIF(dst.repo_project,''),dp.project,'') END
+ AND e.target<>'' AND (e.source='*' OR e.source=CASE WHEN src.harness='cto' THEN 'CTO' WHEN e.kind='governs' AND src.worker='' THEN COALESCE(src.agent_id,NULLIF(src.repo_project,''),sp.project,'') ELSE COALESCE(src.repo_id,NULLIF(src.repo_project,''),sp.project,'') END)
+ ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END,e.kind LIMIT 1`, fromSession, toSession).Scan(&rule)
 	if err == sql.ErrNoRows {
 		return "normal", nil
 	}
 	return rule, err
+}
+
+func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
+	_, _, err := s.graphIdentity(fromSession)
+	if err == sql.ErrNoRows {
+		return "normal", nil
+	}
+	if err != nil {
+		return "normal", err
+	}
+	target, trust, err := s.graphIdentity(toSession)
+	if err == sql.ErrNoRows {
+		return "normal", nil
+	}
+	if err != nil {
+		return "normal", err
+	}
+	if target.repo == "" && target.agent == "" && trust {
+		return "auto", nil
+	}
+	return requestRuleTx(s.db, fromSession, toSession)
 }
 
 func chartedProject(g protocol.Graph, project string) string {

@@ -813,6 +813,20 @@ CREATE INDEX IF NOT EXISTS agent_charter_history_agent ON agent_charter_history(
 ALTER TABLE inbox_items ADD COLUMN options TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE inbox_items ADD COLUMN asker_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN change_title TEXT NOT NULL DEFAULT '';
+`, `
+-- Explicit session and run identity, retaining project strings as adapters.
+ALTER TABLE sessions ADD COLUMN agent_id TEXT REFERENCES agents(id);
+ALTER TABLE sessions ADD COLUMN repo_id TEXT REFERENCES repos(id);
+ALTER TABLE worker_runs ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);
+ALTER TABLE worker_starts ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);
+INSERT OR IGNORE INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('cto','CTO','cto',0,0,0);
+UPDATE sessions SET repo_id=(SELECT id FROM repos WHERE id=COALESCE(NULLIF(sessions.repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id))) WHERE harness NOT IN ('cto','owner');
+UPDATE sessions SET agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE (SELECT owner_agent_id FROM repos WHERE id=sessions.repo_id) END;
+UPDATE worker_runs SET caller_agent_id=(SELECT agent_id FROM sessions WHERE id=worker_runs.caller_session_id);
+UPDATE worker_starts SET caller_agent_id=(SELECT agent_id FROM sessions WHERE id=worker_starts.owner);
+CREATE TRIGGER IF NOT EXISTS session_identity_repo_update AFTER UPDATE OF repo_project ON sessions BEGIN
+ UPDATE sessions SET repo_id=(SELECT id FROM repos WHERE id=NEW.repo_project) WHERE id=NEW.id AND NEW.harness NOT IN ('cto','owner');
+END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1005,6 +1019,26 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		migrationSQL := migrations[i]
+		// Earlier upgrade tests replay migrations on a newer schema. SQLite
+		// does not support ADD COLUMN IF NOT EXISTS.
+		if strings.Contains(migrationSQL, "Explicit session and run identity") {
+			for _, col := range []struct{ table, name, statement string }{
+				{"sessions", "agent_id", "ALTER TABLE sessions ADD COLUMN agent_id TEXT REFERENCES agents(id);"},
+				{"sessions", "repo_id", "ALTER TABLE sessions ADD COLUMN repo_id TEXT REFERENCES repos(id);"},
+				{"worker_runs", "caller_agent_id", "ALTER TABLE worker_runs ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);"},
+				{"worker_starts", "caller_agent_id", "ALTER TABLE worker_starts ADD COLUMN caller_agent_id TEXT REFERENCES agents(id);"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has != 0 {
+					migrationSQL = strings.Replace(migrationSQL, col.statement, "", 1)
+				}
+			}
+		}
 		var result sql.Result
 		if strings.Contains(migrations[i], "ALTER TABLE inbox_items ADD COLUMN options") {
 			for _, col := range []struct{ name, spec string }{
@@ -1024,7 +1058,7 @@ func (s *Store) migrate() error {
 				result, err = tx.Exec(`SELECT 1`)
 			}
 		} else {
-			result, err = tx.Exec(migrations[i])
+			result, err = tx.Exec(migrationSQL)
 		}
 		if err != nil {
 			tx.Rollback()
@@ -1604,6 +1638,15 @@ func (s *Store) upsertSession(q interface {
 	}
 	err = q.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
 		nodeID, in.Harness, in.NativeID).Scan(&id)
+	if err != nil {
+		return "", false, err
+	}
+	// Triggers from the repo migration have now created any new repo records.
+	// A sync may update the repo context but must not replace a selected agent.
+	_, err = q.Exec(`UPDATE sessions SET
+		repo_id=CASE WHEN harness IN ('cto','owner') THEN NULL ELSE (SELECT id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id))) END,
+		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT owner_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id)))) END
+		WHERE id=?`, id)
 	if err != nil {
 		return "", false, err
 	}
@@ -2469,15 +2512,8 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		return msg, false, reject("unknown message_type %q", m.Type)
 	}
 	if m.Type == protocol.TypeRequest && !m.FromCTO {
-		var rule string
-		err := tx.QueryRow(`SELECT e.rule FROM graph_edges e
-			JOIN sessions src ON src.id=? JOIN sessions dst ON dst.id=?
-			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
-			WHERE e.target=CASE WHEN dst.harness='cto' THEN ? ELSE COALESCE(NULLIF(dst.repo_project,''),dp.project,'') END
-			AND e.target<>'' AND (e.source=CASE WHEN src.harness='cto' THEN ? ELSE COALESCE(NULLIF(src.repo_project,''),sp.project,'') END OR e.source='*')
-			AND e.kind IN ('depends','governs','deploys')
-			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To, protocol.CTONodeName, protocol.CTONodeName).Scan(&rule)
-		if err != nil && err != sql.ErrNoRows {
+		rule, err := requestRuleTx(tx, m.From, m.To)
+		if err != nil {
 			return msg, false, err
 		}
 		if rule == "ask" {

@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +10,7 @@ import (
 )
 
 type resolvedContext struct {
+	Project       string
 	Repo          string
 	Agent         string
 	RepoCharter   protocol.Charter
@@ -53,51 +52,49 @@ func (s *Store) resolveSessionContext(session string) (resolvedContext, error) {
 }
 
 func (s *Store) resolveRunContext(run int64) (resolvedContext, error) {
-	var session, caller string
-	if err := s.db.QueryRow(`SELECT session_id,caller_session_id FROM worker_runs WHERE id=?`, run).Scan(&session, &caller); err != nil {
+	var session, callerAgent string
+	if err := s.db.QueryRow(`SELECT session_id,COALESCE(caller_agent_id,'') FROM worker_runs WHERE id=?`, run).Scan(&session, &callerAgent); err != nil {
 		return resolvedContext{}, err
 	}
-	return s.resolveContext(session, caller, true)
+	return s.resolveContext(session, callerAgent, true)
+}
+
+// sessionIdentity is the durable identity and repo context. Project is the
+// legacy adapter for sessions reported by old daemons without repo metadata.
+func (s *Store) sessionIdentity(session string) (project, agent, harness string, worker bool, err error) {
+	var w string
+	err = s.db.QueryRow(`SELECT COALESCE(s.repo_id,NULLIF(s.repo_project,''),p.project,''),COALESCE(s.agent_id,''),s.harness,s.worker FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &agent, &harness, &w)
+	return project, agent, harness, w != "", err
 }
 
 func (s *Store) resolveContext(session, callerOverride string, isRun bool) (resolvedContext, error) {
-	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.id = ? AND (n.id IS NOT NULL OR s.harness='bot')`, session))
+	project, agent, harness, worker, err := s.sessionIdentity(session)
 	if err != nil {
 		return resolvedContext{}, err
 	}
-	c, err := s.resolveRepoContext(projectOfSession(a))
+	c, err := s.resolveRepoContext(project)
 	if err != nil {
 		return c, err
 	}
-	if a.Harness == "cto" || protocol.IsOwner(a.Harness) {
+	c.Project = project
+	if protocol.IsOwner(harness) {
 		return c, nil
 	}
-	agentRepo := projectOfSession(a)
-	if a.Worker != nil || isRun {
+	if worker || isRun {
 		c.CallerContext = true
-		callerID := callerOverride
-		if callerID == "" && a.Worker != nil {
-			callerID = a.Worker.Owner
+		agent = callerOverride
+		if !isRun {
+			err = s.db.QueryRow(`SELECT COALESCE(CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=s.id) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=s.id ORDER BY created_at DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.owner')) END,'') FROM sessions s WHERE id=?`, session).Scan(&agent)
+			if err != nil {
+				return c, err
+			}
 		}
-		caller, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.id = ? AND (n.id IS NOT NULL OR s.harness='bot')`, callerID))
-		if errors.Is(err, sql.ErrNoRows) {
-			return c, nil
-		}
-		if err != nil {
-			return c, err
-		}
-		if caller.Harness == "cto" || protocol.IsOwner(caller.Harness) {
-			return c, nil
-		}
-		agentRepo = projectOfSession(caller)
 	}
-	err = s.db.QueryRow(`SELECT COALESCE(owner_agent_id,'') FROM repos WHERE id=?`, agentRepo).Scan(&c.Agent)
-	if errors.Is(err, sql.ErrNoRows) {
+	c.Agent = agent
+	if c.Agent == "" {
 		return c, nil
 	}
-	if err != nil {
-		return c, err
-	}
+
 	rows, err := s.db.Query(`SELECT attr,value FROM agent_charter WHERE agent_id=? ORDER BY attr`, c.Agent)
 	if err != nil {
 		return c, err

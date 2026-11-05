@@ -107,7 +107,7 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(repos) != 4 || len(agents) != 5 {
+		if len(repos) != 4 || len(agents) != 6 {
 			t.Fatalf("repos %+v agents %+v", repos, agents)
 		}
 		for _, repo := range repos {
