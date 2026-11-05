@@ -46,6 +46,7 @@ func TestMergerRoutingAndRegistration(t *testing.T) {
 		}
 	}
 	c := r.submit(r.a, r.workerSubmit("feature", commitA)).Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	r.g.dispatchStepTasks(context.Background())
 	rows, err := r.s.db.Query(`SELECT session_id FROM delivery_step_messages WHERE change_id=? AND step='test'`, c.ID)
 	if err != nil {
@@ -256,6 +257,7 @@ func TestMergerStartMovesExistingCallerClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := r.submit(r.a, r.workerSubmit("feature/existing", commitA)).Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	claim := protocol.StepClaimRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Commit: commitA}
 	if _, err := r.s.ClaimStep(r.a, claim); err != nil {
 		t.Fatal(err)
@@ -279,6 +281,7 @@ func TestMergerConfiguredStopWithoutRegistration(t *testing.T) {
 		}
 	}
 	c := r.submit(r.a, r.workerSubmit("feature/unregistered", commitA)).Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	r.g.dispatchStepTasks(context.Background())
 	var owner string
 	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step='test' AND after_merge=0`, c.ID, c.Revision).Scan(&owner); err != nil {
@@ -368,6 +371,7 @@ func TestMergerPruneNotifiesCaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := r.submit(r.a, r.workerSubmit("feature/prune", commitA)).Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	r.g.dispatchStepTasks(context.Background())
 	if err := r.s.SetSessionOffline(r.a, r.sonnet); err != nil {
 		t.Fatal(err)

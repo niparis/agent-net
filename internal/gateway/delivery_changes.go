@@ -683,6 +683,17 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 	startedSteps := map[protocol.StepRef]bool{}
 	for i := range v.Steps {
 		st := &v.Steps[i]
+		// Tasks queued under the previous rule remain ready across an upgrade.
+		if c.State == protocol.ChangeOpen && st.Step == protocol.StepTest && !st.AfterMerge && st.State == protocol.StepStateWaiting {
+			var exists int
+			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=0 AND completed=0)`, c.ID, c.Revision, st.Step, st.For).Scan(&exists); err != nil {
+				return protocol.ChangeView{}, err
+			}
+			if exists != 0 {
+				st.State, st.Note = protocol.StepStateReady, ""
+				v.Next = append(v.Next, st.StepRef)
+			}
+		}
 		if st.State != protocol.StepStateReady {
 			continue
 		}
