@@ -14,9 +14,6 @@ func (m Model) quotasView(w, h int) []string {
 	if m.workersLog {
 		return m.workersLogView(w, h)
 	}
-	if m.delivery.on {
-		return m.deliveryView(w, h)
-	}
 	out := []string{m.titleLine(w), m.quotasSubtabs(w)}
 	var subscription []string
 	protected := m.snap.ProtectedProviders

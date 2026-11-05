@@ -1,21 +1,21 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 7 nodes
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ 7 nodes, 4 edges
 Evidence API  early  autonomy: off
 Tools: 0 skills, 0 MCP servers · t open
 Document and evidence API.
 ○ no live sessions
-accept: caller
-test, merge: caller
+accept, test, review, merge, release, verify: cogforge (offline)
 governed by: trading-architect (owner)
 
 IN 1                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
-Card 1-6/14  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-7/14  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
 consumers        tenebrae, shop
 escalate         Breaking API changes.
 needs            MCP: tenebrae-library
+notes            Deploy through homelab.
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

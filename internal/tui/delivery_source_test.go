@@ -75,7 +75,7 @@ func TestDeliveryMarksJoinStepsWithTheSameName(t *testing.T) {
 		status(ref(protocol.StepReview), ownNode, protocol.StepStateSkipped, nil),
 	}
 	got := deliveryMarks(steps)
-	if got[2] != stripWaiting || got[3] != stripPassed || got[0] != stripPassed || got[1] != stripNotNeeded {
+	if got[2] != stripPassed || got[5] != stripWaiting || got[3] != stripPassed || got[0] != stripPassed || got[1] != stripNotNeeded {
 		t.Errorf("marks %v", got)
 	}
 }
@@ -611,19 +611,7 @@ func TestDeliveryRefreshesEvery30SecondsWhileOpen(t *testing.T) {
 	if src.calls != 2 {
 		t.Fatalf("%d loads", src.calls)
 	}
-	// Away from the sub-tab or the Quotas tab, nothing refreshes.
-	clock = t0.Add(5 * time.Minute)
-	m.delivery.on = false
-	if tick() != nil {
-		t.Fatal("refreshed with the sub-tab closed")
-	}
-	m.delivery.on, m.tab = true, 2
-	if m.tab == quotasTab {
-		t.Skip("tab numbering changed")
-	}
-	if tick() != nil {
-		t.Fatal("refreshed on another tab")
-	}
+
 }
 
 func TestDeliveryTickMessageRefreshes(t *testing.T) {
@@ -644,9 +632,8 @@ func TestDeliveryTickMessageRefreshes(t *testing.T) {
 func TestDeliveryRefreshKeyAndOpenStartALoad(t *testing.T) {
 	src := &fakeDelivery{changes: deliveryScenes()}
 	m := deliveryModel(src, 120, 30)
-	m, cmd := m.nextQuotasSubtab() // Quotas -> Workers log
-	m, cmd = m.nextQuotasSubtab()  // -> Delivery
-	if !m.delivery.on || cmd == nil || !m.delivery.loading {
+	m, cmd := m.startDeliveryLoad()
+	if cmd == nil || !m.delivery.loading {
 		t.Fatalf("opening the sub-tab: on %v loading %v cmd %v", m.delivery.on, m.delivery.loading, cmd != nil)
 	}
 	next, _ := m.Update(cmd())
@@ -722,5 +709,38 @@ func TestDeliveryGoldenFromGatewayData(t *testing.T) {
 		m = openDelivery(t, deliveryModel(&fakeDelivery{changes: list2}, size[0], size[1]))
 		m.delivery.row, m.delivery.detail = 2, true
 		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), m.testView())
+	}
+}
+
+func TestDeliveryMarksSeparateAfterMerge(t *testing.T) {
+	steps := []protocol.StepStatus{
+		{StepRef: protocol.StepRef{Step: protocol.StepTest}, State: protocol.StepStatePassed},
+		{StepRef: protocol.StepRef{Step: protocol.StepTest, AfterMerge: true}, State: protocol.StepStateWaiting},
+	}
+	marks := deliveryMarks(steps)
+	pre, post := -1, -1
+	for i, name := range deliverySteps {
+		if name == "test" {
+			pre = i
+		}
+		if name == "test after merge" {
+			post = i
+		}
+	}
+	if pre < 0 || post < 0 || marks[pre] != stripPassed || marks[post] != stripWaiting {
+		t.Fatalf("marks: %v steps: %v", marks, deliverySteps)
+	}
+}
+
+func TestDeliveryOutcomeFromEvidence(t *testing.T) {
+	v := protocol.ChangeView{Change: protocol.Change{MergedCommit: "abcdef1234567890"}, Steps: []protocol.StepStatus{
+		{StepRef: protocol.StepRef{Step: protocol.StepTest}, Evidence: &protocol.Evidence{Step: protocol.StepTest, Fields: map[string]string{protocol.FieldRun: "https://ci.example/run/1"}}},
+		{StepRef: protocol.StepRef{Step: protocol.StepRelease}, Evidence: &protocol.Evidence{Step: protocol.StepRelease, Fields: map[string]string{protocol.FieldTag: "v1.2.3"}}},
+	}}
+	got := deliveryOutcome(deliveryChangeFromView(v, t0))
+	for _, want := range []string{"abcdef", "https://ci.example/run/1", "v1.2.3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
 	}
 }

@@ -1,7 +1,7 @@
 Keys · all screens ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
  Global keys
-  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox
+  1-8                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox, Delivery
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -26,6 +26,7 @@ Keys · all screens ────────────────────
   d                      show or hide the selected session details
 
  Graph
+  d                      delivery
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
@@ -35,6 +36,5 @@ Keys · all screens ────────────────────
   enter                  open the selected agent card
   m                      toggle all message and owner lines
 
- Graph find
   more below
 up/down scroll  ? this screen  esc close

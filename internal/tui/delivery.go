@@ -12,31 +12,22 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The Delivery view shows the open changes of the delivery pipeline (see
-// docs/design/delivery-pipeline.md, "What the owner sees"). It lives as the
-// third sub-tab of the Quotas tab, after the Workers log: it is a list of
-// things the owner watches, like the log, and a tab of its own would break the
-// seven numbered tabs (1-7) that every key hint and the help overlay name.
-//
-// The view reads a small interface with its own types. delivery_source.go maps
-// the gateway's real types onto them; the list groups rows by who has to act,
-// so it reads the protocol's change and step state names.
-
 // deliverySteps are the steps of the pipeline, in the order the strip shows
 // them.
-var deliverySteps = []string{"accept", "review", "test", "approve", "merge", "release", "deploy", "verify"}
+var deliverySteps = []string{"accept", "review", "test", "approve", "merge", "test after merge", "release", "deploy", "verify"}
 
 // deliveryChange is one change.
 type deliveryChange struct {
-	ID       string
-	Title    string // what the work is, as the owner reads it
-	Repo     string
-	Branch   string
-	Head     string // the commit of the current revision
-	Revision int
-	State    string // the change state: open, merged, done or stopped
-	Caller   string // the session that gets the final notice
-	Step     string // the step the change is in
+	ID           string
+	Title        string // what the work is, as the owner reads it
+	Repo         string
+	Branch       string
+	MergedCommit string
+	Head         string // the commit of the current revision
+	Revision     int
+	State        string // the change state: open, merged, done or stopped
+	Caller       string // the session that gets the final notice
+	Step         string // the step the change is in
 	// StepOwner is who owns that step, as text: a node name, "caller",
 	// "owner", "github". OwnerKind is the protocol kind behind it.
 	StepOwner string
@@ -87,13 +78,14 @@ type deliveryDetailSource interface {
 // deliveryLoadTimeout is how long the view waits for the source.
 const deliveryLoadTimeout = 5 * time.Second
 
-// deliveryRefreshEvery is how often the open sub-tab loads again.
+// deliveryRefreshEvery is how often changes load again.
 const deliveryRefreshEvery = 30 * time.Second
 
 // deliveryState is everything the view keeps. It sits in the Model by value
 // and is replaced, never shared.
 type deliveryState struct {
-	on      bool // the Delivery sub-tab is showing
+	on      bool // retained for compatibility with existing fixtures
+	project string
 	detail  bool // the evidence of the selected change is showing
 	showAll bool // done and stale changes are on screen too
 	row     int
@@ -152,11 +144,11 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 	return m, m.deliveryLoad()
 }
 
-// deliveryTick loads again when the sub-tab has been open for deliveryRefreshEvery
+// deliveryTick loads again after deliveryRefreshEvery
 // since the last load.
 func (m Model) deliveryTick() (Model, tea.Cmd) {
 	d := m.delivery
-	if !d.on || m.tab != quotasTab || d.loading || m.now().Sub(d.loadedAt) < deliveryRefreshEvery {
+	if d.loading || m.now().Sub(d.loadedAt) < deliveryRefreshEvery {
 		return m, nil
 	}
 	return m.startDeliveryLoad()
@@ -226,6 +218,9 @@ func (m Model) deliveryVisible() []deliveryChange {
 	var out []deliveryChange
 	for _, ch := range m.delivery.changes {
 		group := deliveryGroupOf(ch, owner)
+		if m.delivery.project != "" && ch.Repo != m.delivery.project {
+			continue
+		}
 		if !m.delivery.showAll && (group == groupDone || deliveryStale(ch)) {
 			continue
 		}
@@ -328,25 +323,20 @@ func (m Model) deliveryDetailLoaded(msg deliveryDetailMsg) Model {
 	return m
 }
 
-// nextQuotasSubtab moves Quotas -> Workers log -> Delivery -> Quotas. It
-// returns the command that loads the changes when Delivery opens.
+// nextQuotasSubtab toggles the quota views.
 func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
-	switch {
-	case m.delivery.on:
-		m.delivery.on, m.delivery.detail = false, false
-	case m.workersLog:
-		m.workersLog = false
-		m.delivery.on = true
-		return m.startDeliveryLoad()
-	default:
-		m.workersLog = true
-	}
+	m.workersLog = !m.workersLog
 	return m, nil
 }
 
 func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	d := m.delivery
 	action := keyAction(contextDelivery, k.String())
+	if action == "all" && d.project != "" {
+		d.project, d.detail, d.row = "", false, 0
+		m.delivery = d
+		return m, nil
+	}
 	if action == "all" {
 		d.showAll = !d.showAll
 		d.detail = false
@@ -390,6 +380,9 @@ func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m, cmd
 		}
 	case "back":
+		if !d.detail {
+			d.project, d.row = "", 0
+		}
 		d.detail, d.detailErr, d.detailLoading = false, "", false
 	case "refresh":
 		// R is the owner asking: it loads even when an earlier load is out.
@@ -456,7 +449,11 @@ func deliveryStripStates(c deliveryChange) []stripState {
 		var newest *deliveryEvidence
 		for j := range c.Evidence {
 			e := &c.Evidence[j]
-			if e.Step != step || !sameCommit(e.Commit, c.Head) {
+			wantStep, commit := step, c.Head
+			if step == "test after merge" {
+				wantStep, commit = "test", c.MergedCommit
+			}
+			if e.Step != wantStep || (wantStep == "test" && (e.Fields["after_merge"] == "yes") != (step == "test after merge")) || !sameCommit(e.Commit, commit) {
 				continue
 			}
 			if newest == nil || !e.At.Before(newest.At) {
@@ -504,7 +501,7 @@ func deliveryWaitText(d time.Duration) string {
 	return strconv.Itoa(int(d/(24*time.Hour))) + "d"
 }
 
-// deliveryHints is the key line of the Delivery sub-tab.
+// deliveryHints is the key line of the Delivery tab.
 func (m Model) deliveryHints() []hint {
 	help, quit := bindingHint(contextDelivery, "help"), bindingHint(contextDelivery, actQuit)
 	if m.delivery.detail {
@@ -512,5 +509,5 @@ func (m Model) deliveryHints() []hint {
 		scroll.label = "scroll"
 		return []hint{scroll, bindingHint(contextDelivery, "back"), help, quit}
 	}
-	return []hint{bindingHint(contextDelivery, "workers log"), bindingPairHint(contextDelivery, actUp, actDown), bindingHint(contextDelivery, "open"), bindingHint(contextDelivery, "all"), bindingHint(contextDelivery, "refresh"), help, quit}
+	return []hint{bindingPairHint(contextDelivery, actUp, actDown), bindingHint(contextDelivery, "open"), bindingHint(contextDelivery, "all"), bindingHint(contextDelivery, "refresh"), help, quit}
 }

@@ -12,7 +12,7 @@ import (
 )
 
 // stripLetters are the one-letter names of the steps, in deliverySteps order.
-const stripLetters = "artpmldv"
+const stripLetters = "artpmTldv"
 
 // stripSpacedFrom is the inner width from which the strip and the list get
 // room for spaces between marks and a repo column.
@@ -73,7 +73,7 @@ func deliveryLegend(w int) []string {
 	type item struct{ text, sep string }
 	items := []item{
 		{"a accept", ""}, {"r review", " · "}, {"t test", " · "}, {"p approve", " · "},
-		{"m merge", " · "}, {"l release", " · "}, {"d deploy", " · "}, {"v verify.", " · "},
+		{"m merge", " · "}, {"T test after merge", " · "}, {"l release", " · "}, {"d deploy", " · "}, {"v verify.", " · "},
 		{"✓ passed", " "}, {"✗ failed", " "}, {"· waiting", " "}, {"- not needed", " "},
 	}
 	line := ""
@@ -85,7 +85,7 @@ func deliveryLegend(w int) []string {
 	}
 	// Keep the step names together when they fit on their own line; only the
 	// marks need the second line.
-	steps := "a accept · r review · t test · p approve · m merge · l release · d deploy · v verify."
+	steps := "a accept · r review · t test · p approve · m merge · T test after merge · l release · d deploy · v verify."
 	if ansi.StringWidth(steps) <= w {
 		return []string{sDim.Render(steps), sDim.Render("✓ passed ✗ failed · waiting - not needed")}
 	}
@@ -194,6 +194,30 @@ func (m Model) deliveryRow(c deliveryColumns, ch deliveryChange, selected bool) 
 	return line
 }
 
+// deliveryOutcome uses the merged commit and reported release and CI evidence.
+func deliveryOutcome(ch deliveryChange) string {
+	var parts []string
+	if ch.MergedCommit != "" {
+		parts = append(parts, "merged: "+shortCommit(ch.MergedCommit))
+	}
+	var ci, tag string
+	for _, e := range ch.Evidence {
+		if e.Step == "test" && (strings.HasPrefix(e.Fields[protocol.FieldRun], "https://") || strings.HasPrefix(e.Fields[protocol.FieldRun], "http://")) {
+			ci = e.Fields[protocol.FieldRun]
+		}
+		if e.Step == "release" && e.Fields[protocol.FieldTag] != "" {
+			tag = e.Fields[protocol.FieldTag]
+		}
+	}
+	if ci != "" {
+		parts = append(parts, "CI: "+sanitize(ci))
+	}
+	if tag != "" {
+		parts = append(parts, "release: "+sanitize(tag))
+	}
+	return strings.Join(parts, "  ")
+}
+
 // deliveryTitle is the main column: what the work is, never the branch.
 func deliveryTitle(ch deliveryChange) string {
 	if title := strings.TrimSpace(sanitize(ch.Title)); title != "" {
@@ -261,11 +285,9 @@ func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
 
 // quotasSubtabs is the line under the title: the three sub-tabs of Quotas.
 func (m Model) quotasSubtabs(w int) string {
-	labels := []string{"Quotas", "Workers log", "Delivery"}
+	labels := []string{"Quotas", "Workers log"}
 	active := 0
 	switch {
-	case m.delivery.on:
-		active = 2
 	case m.workersLog:
 		active = 1
 	}
@@ -282,7 +304,10 @@ func (m Model) quotasSubtabs(w int) string {
 
 // deliveryView draws the list, or the evidence of the selected change.
 func (m Model) deliveryView(w, h int) []string {
-	out := []string{m.titleLine(w), m.quotasSubtabs(w)}
+	out := []string{m.titleLine(w)}
+	if m.delivery.project != "" {
+		out = append(out, sDim.Render("Project: "+sanitize(m.delivery.project)))
+	}
 	d := m.delivery
 	inner := max(w-4, 1)
 	room := max(h-len(out)-2, 0) // the panel borders take two lines
@@ -347,6 +372,11 @@ func (m Model) deliveryView(w, h int) []string {
 			selLine = len(list)
 		}
 		list = append(list, m.deliveryRow(cols, ch, i == sel))
+		if outcome := deliveryOutcome(ch); outcome != "" {
+			for _, line := range wrap(outcome, max(inner-2, 1)) {
+				list = append(list, sDim.Render("  "+line))
+			}
+		}
 	}
 	body = append(body, messageFit(list, min(listRoom, len(list)), selLine)...)
 	body = append(body, messageFit(offline, min(len(offline), max(room-len(body), 0)), 0)...)

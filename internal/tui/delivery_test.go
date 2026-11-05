@@ -35,7 +35,9 @@ func dEv(step, result, commit, by, model string, at time.Time, fields map[string
 }
 
 // marks is a whole evidence strip for a scene.
-func marks(states ...stripState) []stripState { return states }
+func marks(states ...stripState) []stripState {
+	return append(append(append([]stripState{}, states[:5]...), stripWaiting), states[5:]...)
+}
 
 // deliveryScenes returns changes in different states. Times are relative to t0.
 // c_1 and c_2 wait on agents, c_3 needs the owner, c_4 is done and c_5 is a
@@ -55,7 +57,7 @@ func deliveryScenes() []deliveryChange {
 		},
 		{
 			ID: "c_2", Title: "Say what a delivery row waits for", Repo: "agent-net",
-			Branch: "delivery-pipeline", Head: "0b77d4e91a22", Revision: 1, State: "merged", Caller: "s_0000000000000004",
+			Branch: "delivery-pipeline", Head: "0b77d4e91a22", MergedCommit: "abcdef1234567890", Revision: 1, State: "merged", Caller: "s_0000000000000004",
 			Step: "test", StepOwner: "caller", OwnerKind: "caller", StepState: "ready", Waiting: 6 * time.Minute,
 			Marks: marks(stripPassed, stripPassed, stripWaiting, stripNotNeeded, stripPassed, stripWaiting, stripWaiting, stripWaiting),
 			Evidence: []deliveryEvidence{
@@ -98,17 +100,18 @@ func deliveryModel(src deliverySource, w, h int) Model {
 	m.snap = fakeSnapshot()
 	m.haveData = true
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m.tab = quotasTab
+	m.tab = deliveryTab
 	m.width, m.height = w, h
 	m = m.withDeliverySource(src)
 	return m
 }
 
-// open switches to the Delivery sub-tab and runs the load command.
+// open switches to the Delivery tab and runs the load command.
 func openDelivery(t *testing.T, m Model) Model {
 	t.Helper()
 	m.workersLog = false
 	m.delivery.on = true
+	m.tab = deliveryTab
 	cmd := m.deliveryLoad()
 	if cmd == nil {
 		t.Fatal("no load command")
@@ -288,7 +291,7 @@ func TestDeliveryStaleAndGroups(t *testing.T) {
 func TestDeliveryEmptyStateAndErrorLine(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{}, 80, 24))
 	got := deliveryText(m, 80, 24)
-	for _, want := range []string{"Delivery", "No open changes", "Quotas", "Workers log"} {
+	for _, want := range []string{"Delivery", "No open changes", "Quota"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q: %s", want, got)
 		}
@@ -309,7 +312,7 @@ func TestDeliveryErrorKeepsTheLastList(t *testing.T) {
 	src.changes, src.err = nil, errors.New("gateway down")
 	next, _ := m.Update(m.deliveryLoad()())
 	got := deliveryText(next.(Model), 120, 30)
-	if !strings.Contains(got, "Could not load changes: gateway down") || !strings.Contains(got, "Say what a delivery row waits for") {
+	if !strings.Contains(got, "Could not load changes: gateway down") || !strings.Contains(got, "Say what a delivery row waits") {
 		t.Errorf("error should sit above the old list: %s", got)
 	}
 }
@@ -443,11 +446,11 @@ func TestDeliveryStripStates(t *testing.T) {
 
 func TestDeliveryStripShowsGlyphsNotOnlyColour(t *testing.T) {
 	line := ansi.Strip(deliveryStrip(deliveryStripStates(deliveryScenes()[2]), false))
-	if line != "a✓r✗t·p-m·l·d·v·" {
+	if line != "a✓r✗t·p-m·T·l·d·v·" {
 		t.Errorf("compact strip %q", line)
 	}
 	line = ansi.Strip(deliveryStrip(deliveryStripStates(deliveryScenes()[1]), true))
-	if line != "a✓ r✓ t· p- m✓ l· d· v·" {
+	if line != "a✓ r✓ t· p- m✓ T· l· d· v·" {
 		t.Errorf("spaced strip %q", line)
 	}
 	if ansi.StringWidth(deliveryStrip(deliveryStripStates(deliveryScenes()[0]), false)) != deliveryStripWidth(false) {
@@ -456,43 +459,20 @@ func TestDeliveryStripShowsGlyphsNotOnlyColour(t *testing.T) {
 }
 
 func TestDeliverySubtabCycle(t *testing.T) {
-	src := &fakeDelivery{changes: deliveryScenes()}
-	m := deliveryModel(src, 80, 24)
-	press := func(k tea.KeyPressMsg) tea.Cmd {
-		next, cmd := m.Update(k)
-		m = next.(Model)
-		return cmd
+	m := deliveryModel(&fakeDelivery{}, 80, 24)
+	m.tab = quotasTab
+	m, _ = m.nextQuotasSubtab()
+	if !m.workersLog {
+		t.Fatal("workers log did not open")
 	}
-	tab := tea.KeyPressMsg{Code: tea.KeyTab}
-	press(tab)
-	if !m.workersLog || m.delivery.on {
-		t.Fatal("first tab should open the Workers log")
+	m, _ = m.nextQuotasSubtab()
+	if m.workersLog {
+		t.Fatal("quotas did not open")
 	}
-	cmd := press(tab)
-	if m.workersLog || !m.delivery.on {
-		t.Fatal("second tab should open Delivery")
-	}
-	if cmd == nil {
-		t.Fatal("opening Delivery should load")
-	}
-	next, _ := m.Update(cmd())
+	next, cmd := m.Update(tea.KeyPressMsg{Text: "8", Code: '8'})
 	m = next.(Model)
-	if src.calls != 1 || src.repo != "" || len(m.delivery.changes) != 5 {
-		t.Fatalf("calls %d repo %q changes %d", src.calls, src.repo, len(m.delivery.changes))
-	}
-	if got := ansi.Strip(m.testView()); !strings.Contains(got, "[ Delivery ]") {
-		t.Errorf("subtab not marked: %s", got)
-	}
-	press(tab)
-	if m.workersLog || m.delivery.on {
-		t.Fatal("third tab should return to Quotas")
-	}
-	// R reloads while on the Delivery sub-tab.
-	press(tab)
-	press(tab)
-	cmd = press(tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
-	if cmd == nil {
-		t.Fatal("R should reload")
+	if m.tab != deliveryTab || cmd == nil {
+		t.Fatal("delivery tab did not open and load")
 	}
 }
 
@@ -519,7 +499,7 @@ func TestDeliveryEnterOpensDetailAndEscCloses(t *testing.T) {
 		}
 	}
 	press(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if m.delivery.detail || m.tab != quotasTab || !m.delivery.on {
+	if m.delivery.detail || m.tab != deliveryTab {
 		t.Fatal("esc should only close the detail")
 	}
 }
@@ -592,7 +572,7 @@ func TestDeliveryHelpAndHints(t *testing.T) {
 	for _, h := range m.hints() {
 		hints += h.key + " " + h.label + "|"
 	}
-	for _, want := range []string{"evidence", "tab", "show all", "refresh"} {
+	for _, want := range []string{"evidence", "show all", "refresh"} {
 		if !strings.Contains(hints, want) {
 			t.Errorf("hints %q missing %q", hints, want)
 		}
@@ -621,7 +601,7 @@ func TestDeliveryGoldens(t *testing.T) {
 		{"delivery_detail", &fakeDelivery{changes: scenes}, "c_1", true, false},
 		{"delivery_detail_failed", &fakeDelivery{changes: scenes}, "c_3", true, false},
 	} {
-		for _, size := range [][2]int{{80, 24}, {120, 24}} {
+		for _, size := range [][2]int{{80, 24}, {120, 34}} {
 			m := openDelivery(t, deliveryModel(s.src, size[0], size[1]))
 			m.delivery.detail, m.delivery.showAll = s.detail, s.all
 			if s.rowID != "" {
@@ -629,5 +609,17 @@ func TestDeliveryGoldens(t *testing.T) {
 			}
 			golden(t, fmt.Sprintf("%s_%dx%d", s.name, size[0], size[1]), m.testView())
 		}
+	}
+}
+
+func TestDeliveryTopLevelAndProjectFilter(t *testing.T) {
+	m := deliveryModel(nil, 80, 24)
+	m.delivery.changes = []deliveryChange{{ID: "ch_a", Repo: "one"}, {ID: "ch_b", Repo: "two"}}
+	m.delivery.project = "one"
+	if got := m.deliveryVisible(); len(got) != 1 || got[0].ID != "ch_a" {
+		t.Fatalf("project filter: %+v", got)
+	}
+	if len(tabNames) != 8 || tabNames[7] != "Delivery" {
+		t.Fatalf("tabs: %v", tabNames)
 	}
 }

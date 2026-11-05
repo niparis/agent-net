@@ -1,34 +1,34 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 12 online · 1 busy                updated 14:05:00
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 1 busy     updated 14:05:00
 
 
                                                                    ⡀   ⡀  ⠠   •                         project-02 ⠾○⠶
-   ⠶⠶                                                                                                     ⢀⣀⠤⠒⠊⠉
-   ⠶○⠶ CTO                                                                                           ⢀⣀⠤⠒⠊⠁
-    ⢸                                                                                           ⢀⣀⠤⠒⠊⠁
-    ⢸                                                                                      ⢀⡠→⠒⠉⠁
-    ⢸                                                                                 ⢀⡠⠤⠒⠉⠁
-    ↑                                                                            ⣀⡠⠤⠒⠉⠁
-    ⣺                                                                       ⣀⡠⠔⠒⠉
-    •                                                                  ⣀⡠⠔⠒⠉
-    ⢸                                                             ⣀⠤⠔⠒⠉
-    ⢸                                                        ⣀⠤⠔⠊⠉
-    ⢸                                                   ⣀⠤⠔⠊⠉
-    ⡏                                             ⢀⣀⠤⠒⠊⠉
-    ⡇                                        ⢀⣀⠤⠒⠊⠁
-    ⡇                                   ⢀⣀⠤⠒⠊⠁
-    ⡇                              ⢀⡠⠤⠒⠉⠁
-    ⡇                         ⢀⡠⠤⠒⠉⠁
-    ⡇                    ⣀⡠⠤⠒⠉⠁
-    ⡇               ⣀⡠⠔⠒⠉
-    ⡇          ⣀⡠⠔⠒⠉
-    ⡇     ⣀⠤⠔⠒⠉
-    ⡇⣀⠤⠔⠊⠉
+   ⠶⠶                                                                                                      ⣀⡠⠔⠒⠉
+   ⠶○⠶ CTO                                                                                            ⣀⡠⠔⠒⠉
+    ⢸                                                                                            ⢀⡠⠤⠒⠉
+    ⢸                                                                                       ⢀→⠤⠒⠉⠁
+    ⢸                                                                                  ⢀⣀⠤⠒⠊⠁
+    ↑                                                                              ⣀⠤⠒⠊⠁
+    ⢼                                                                         ⣀⠤⠔⠊⠉
+    ⢺                                                                    ⣀⠤⠔⠊⠉
+    •                                                               ⣀⡠⠔⠒⠉
+    ⢸                                                          ⢀⡠⠔⠒⠉
+    ⢸                                                     ⢀⡠⠤⠒⠉⠁
+    ⡸                                                ⢀⣀⠤⠒⠉⠁
+    ⡇                                           ⢀⣀⠤⠒⠊⠁
+    ⡇                                       ⣀⠤⠒⠊⠁
+    ⡇                                  ⣀⠤⠔⠊⠉
+    ⡇                             ⣀⡠⠔⠊⠉
+    ⡇                        ⣀⡠⠔⠒⠉
+    ⡇                   ⢀⡠⠤⠒⠉
+    ⡇              ⢀⡠⠤⠒⠉⠁
+    ⡇         ⢀⣀⠤⠒⠉⠁
+    ⡇    ⢀⣀⠤⠒⠊⠁
+    ⡇⣀⠤⠔⠊⠁
    (○) project-01
 
   CTO → project-01 request  ·  CTO → project-02 request
   ● charter · ○ no charter · gold: your words · pink: talked, no rule set
   selected: project-01 · component · 2 edges
-  accept: caller
-  test, merge: caller
-  left/right select  +/- zoom  m traffic  enter card  ? help
-1-7 tabs  c CTO  ? help  q quit
+  accept, test, review, merge, release, verify: session-1 (offline)
+  left/right select  +/- zoom  d delivery  m traffic  enter card  ? help
+1-8 tabs  c CTO  ? help  q quit

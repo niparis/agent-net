@@ -1999,7 +1999,7 @@ gpt-6-luna · codex: 3 runs: 2 complete, 1 stopped (median 6 min) · resumes
 
 The owner can write a **playbook note** about a model (and optionally one harness) with `agent-net playbook set`, or the operator methods `playbook_set` and `playbook_get` (owner gate only; the CTO will use the same methods later). The note appears in the `playbooks` list of the start result and in `agent_machines_find`. Automatic notes from findings are built the same way; see [findings and the automatic playbook](#findings-and-the-automatic-playbook). The gateway stores notes in `playbook`, one row per subject and harness, at most 1 KiB for an owner note.
 
-**The operator interface.** The daemon's local socket serves these methods to the command line and the TUI, and the phone app will use the same ones: `info`, `nodes`, `list`, `projects`, `events`, `conversations`, `conversation_messages`, `message_status`, `workers` (reads) and `owner_send`, `worker_start`, `worker_stop` (actions). The owner-only methods include `conversations`, `conversation_messages`, `playbook_get`, `playbook_set` and `changes_owner_find` (see [the playbook](#the-playbook-and-the-track-record) and [the Delivery sub-tab](#the-delivery-sub-tab)). The types are in `internal/protocol/operator.go`; `worker_handback` is the worker's own call. Agent connections may use `worker_start`, `worker_stop`, `worker_handback`, `agent_learn`, `agent_worker_rate` and `workers`. `owner_send` is for the command line only; `agent_learn` and `agent_worker_rate` are for agent sessions only. `worker_defect` is the owner's own call for a defect found later, used by the Messages tab key; it takes a worker, a severity from 1 to 4 and a one-line note, and files the same `defect_found_later` report as `agent_worker_rate`.
+**The operator interface.** The daemon's local socket serves these methods to the command line and the TUI, and the phone app will use the same ones: `info`, `nodes`, `list`, `projects`, `events`, `conversations`, `conversation_messages`, `message_status`, `workers` (reads) and `owner_send`, `worker_start`, `worker_stop` (actions). The owner-only methods include `conversations`, `conversation_messages`, `playbook_get`, `playbook_set` and `changes_owner_find` (see [the playbook](#the-playbook-and-the-track-record) and [the Delivery tab](#the-delivery-tab)). The types are in `internal/protocol/operator.go`; `worker_handback` is the worker's own call. Agent connections may use `worker_start`, `worker_stop`, `worker_handback`, `agent_learn`, `agent_worker_rate` and `workers`. `owner_send` is for the command line only; `agent_learn` and `agent_worker_rate` are for agent sessions only. `worker_defect` is the owner's own call for a defect found later, used by the Messages tab key; it takes a worker, a severity from 1 to 4 and a one-line note, and files the same `defect_found_later` report as `agent_worker_rate`.
 
 ## The TUI screen
 
@@ -2012,34 +2012,27 @@ failure note. Missing assessments and picker notes show `-`. Fields from removed
 cleaned notices may be unavailable. The log has no row actions.
 `?` opens help.
 
-Tab 3 has a third sub-tab, Delivery. `Tab` moves Quotas, Workers log, Delivery,
-Quotas. See [the Delivery sub-tab](#the-delivery-sub-tab).
+Tab 8 opens Delivery. On a Graph project node, `d` opens Delivery filtered to
+that project. `Esc` or `a` clears the project filter.
 
-### The Delivery sub-tab
+### The Delivery tab
 
 Delivery lists the open changes of the [delivery pipeline](decisions/0057-delivery-pipeline.md)
 across all projects, newest first. A change is open while its state is `open`
 (not merged yet) or `merged` (merged, with steps after merge left). The list
 holds at most 300 changes.
 
-Each row shows REPO (the project), BRANCH (without the `agent-net/` prefix),
-HEAD (the commit of the current revision, on a wide screen), REV (`r2` is
-revision 2), STEP, OWNER, WAIT and EVIDENCE:
+Each row shows the title, project on wide screens, current step, status,
+waiting time and evidence. A second line shows the merged commit, CI run link
+and release tag when reported. The status names who must act or whether the
+step is running, failed or done. The waiting time is since the last evidence
+or update.
 
-- **STEP** is the first step that may start now. With none, it is the step
-  that needs you, else a step that failed, else one that waits.
-- **OWNER** is who does that step: `caller`, the name of a graph node,
-  `github`, `owner` (you), or `delegate`.
-- **WAIT** is the time since the last evidence or the last update of the
-  change, whichever is newer: `6m`, `2h14m`, `1d2h`.
-- **EVIDENCE** is one mark for each step: `a` accept, `r` review, `t` test,
-  `p` approve, `m` merge, `l` release, `d` deploy, `v` verify. The mark is a
-  glyph, so it does not depend on colour: `✓` passed, `✗` failed (a closed
-  change counts as failed), `*` running (the step needs you, or only some of
-  the steps with that name have passed, such as test before merge but not
-  after), `–` not needed (left out by the pipeline), `·` waiting. The marks
-  follow the state of each step, so a pass that does not count (for example a
-  review that is not independent enough) shows as `·`.
+The evidence strip has a mark for each step: `a` accept, `r` review, `t`
+test, `p` approve, `m` merge, `T` test after merge, `l` release, `d` deploy
+and `v` verify. The glyphs mean `✓` passed, `✗` failed, `*` running, `-`
+not needed and `·` waiting. They follow the step states, including whether a
+report counts for the current revision.
 
 `Enter` opens the selected change. The TUI reads the full change from the
 gateway and lists each pipeline step with its owner and state, followed by every
@@ -2058,8 +2051,7 @@ The task includes the revision's diff stat when available and says whether
 there are uncommitted changes. The first session to claim or report takes the
 task. A failed step or a completed change notifies the caller. Pipeline settings and owner controls are available.
 
-The sub-tab loads when it opens, on `R`, and every 30 seconds while it is open
-on the Quotas tab. A failed load keeps the last list and shows the error above
+The TUI loads changes at startup, on `R`, and every 30 seconds. A failed load keeps the last list and shows the error above
 it. The TUI reads through the daemon method `changes_owner_find`, which takes
 the same arguments as `agent_changes_find` (without `caller: me`) and is read
 only. Only the owner's command line or TUI may call it, never an agent

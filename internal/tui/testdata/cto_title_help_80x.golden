@@ -1,6 +1,6 @@
  Global keys
-  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
-                         Settings, Inbox
+  1-8                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
+                         Settings, Inbox, Delivery
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -28,6 +28,7 @@
   d                      show or hide the selected session details
 
  Graph
+  d                      delivery
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
@@ -81,7 +82,7 @@ Legend ────────────────────────�
   feature_requests shown only when another agent looks this node up
 
  Quotas
-  tab                    Quotas / Workers log / Delivery
+  tab                    Quotas / Workers log
   left/right             cycle the Quality panel agent
   p                      protect or unprotect this subscription
   s                      show or hide subscriptions that are not set up
@@ -91,12 +92,6 @@ Legend ────────────────────────�
   tab                    Quotas
   pgup                   ten runs up
   pgdown                 ten runs down
-
- Delivery
-  tab                    Quotas
-  pgup                   ten changes up
-  pgdown                 ten changes down
-  a                      show all
 
  Messages
   left/right             select the previous or next message
@@ -181,6 +176,11 @@ Legend ────────────────────────�
   a                      approve
   r                      decline
   A                      approve all
+
+ Delivery
+  pgup                   ten changes up
+  pgdown                 ten changes down
+  a                      show all
 
  In overlays
  Message body

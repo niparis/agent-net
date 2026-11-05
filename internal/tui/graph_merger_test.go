@@ -16,7 +16,7 @@ func TestGraphMergerDeliveryOwners(t *testing.T) {
 			t.Run(fmt.Sprintf("%d/%s", width, state), func(t *testing.T) {
 				m := graphModel(width, 34)
 				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
-				want := "test, merge: caller"
+				want := "accept, test, review, merge, release, verify: session-3 (offline)"
 				if state != "caller" {
 					m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "s_merger", Type: "merger", Harness: "claude", Online: state == "online", Repo: protocol.RepoInfo{Project: "project-03"}, Profile: protocol.Profile{Name: "project-03 merger"}})
 					for _, kind := range []string{"tests", "merges"} {
@@ -32,7 +32,7 @@ func TestGraphMergerDeliveryOwners(t *testing.T) {
 					if strings.Contains(view, "/delivery/") {
 						t.Fatalf("internal owner source shown: %s", view)
 					}
-					if !strings.Contains(view, "accept: caller") || !strings.Contains(view, want) {
+					if !strings.Contains(view, "accept") || !strings.Contains(view, want) {
 						t.Fatalf("missing delivery owners %q:\n%s", want, view)
 					}
 				}

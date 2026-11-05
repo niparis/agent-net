@@ -1,11 +1,10 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox │ 5 online
-  Quotas      Workers log    [ Delivery ]
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox 8 Delivery │ 5 online
 ╭─Change───────────────────────────────────────────────────────────────────────╮
 │ Show the provider in each quota row                                          │
 │ agent-net  w_0123456789abcdef                                                │
 │ head: aaaaaaaaaaaa  revision: r2  state: open  step: review  owner: merger   │
 │ status: waiting for merger  waiting: 20m                                     │
-│ a✓r·t✓p·m·l·d·v·                                                             │
+│ a✓r·t✓p·m·T·l·d·v·                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Steps and evidence (1-9 of 19)───────────────────────────────────────────────╮
 │ Steps                                                                        │
@@ -20,5 +19,6 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
 up/down scroll  esc back  ? help  q quit

@@ -300,7 +300,7 @@ type bodyMsg struct {
 // Init starts the first refresh and the clock that asks for the next ones.
 // New marks a fetch as running, so the first tick does not start a second.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, m.fetchCmd(), tick()}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, m.fetchCmd(), tick(), m.deliveryLoad()}
 	if m.cto != nil && m.cto.polling {
 		cmds = append(cmds, m.ctoPollCmd())
 	}
@@ -1282,10 +1282,14 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	for i := range tabNames {
-		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab"}[i] {
+		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab", "delivery tab"}[i] {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
+			if i == deliveryTab {
+				m.delivery.project = ""
+				return m.startDeliveryLoad()
+			}
 			if i == sessionsTab {
 				m.sessionCell = 0
 			}
@@ -1310,6 +1314,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if m.tab == deliveryTab {
+		return m.deliveryKey(k)
+	}
 	if m.tab == graphTab {
 		return m.graphKey(k)
 	}
@@ -1325,9 +1332,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.workersLog {
 			return m.workersLogKey(k)
-		}
-		if m.delivery.on {
-			return m.deliveryKey(k)
 		}
 		key := keyAction(contextQuotas, k.String())
 		switch key {
