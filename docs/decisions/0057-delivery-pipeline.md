@@ -57,6 +57,13 @@ and the frames `change.submit`, `change.get`, `change.list`, `step.report` and
 `agent_changes_find`. Until the daemon part lands they check their arguments
 and answer "not built yet".
 
+**Step tasks coalesce per recipient session.** When a step becomes ready for an
+owner who already has an undelivered or recent (last 30 s) step-task notice or
+who just reported the step before it, tasks coalesce into a pending batch sent
+after a short quiet window (10 s with no new task for that recipient, capped at
+25 lines per message). A single isolated task keeps the full format with diff
+stat and evidence.
+
 ## Not decided here
 
 The design's open questions stay the owner's: where step owners are stored,

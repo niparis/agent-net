@@ -704,7 +704,7 @@ func (s *Store) SetDeliveryOwner(q protocol.DeliveryOwnerSetRequest, actor strin
 	}
 	owner := protocol.DeliveryOwnerFromSource(node)
 	if owner.Kind == protocol.OwnerNode && node != "" {
-		_, err = tx.Exec(`UPDATE delivery_step_tasks SET owner_node=? WHERE claimed_by='' AND completed=0 AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, node, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
+		_, err = tx.Exec(`UPDATE delivery_step_tasks SET owner_node=?, urgent=1 WHERE claimed_by='' AND completed=0 AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, node, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
 	} else {
 		_, err = tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE claimed_by='' AND completed=0 AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
 	}

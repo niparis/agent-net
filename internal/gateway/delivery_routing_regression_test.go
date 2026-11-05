@@ -105,11 +105,13 @@ func TestDeliveryStepTaskBatch(t *testing.T) {
 	check(1)
 	r.submit(r.a, r.workerSubmit("feature/later", commitA))
 	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTasks(r.caller)
 	check(2)
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='expired' WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?)`, r.caller); err != nil {
 		t.Fatal(err)
 	}
 	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTasks(r.caller)
 	check(1)
 	var listed int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 5 {
