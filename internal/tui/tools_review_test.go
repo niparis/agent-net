@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestToolsReviewDescribesSelectedAgent(t *testing.T) {
@@ -26,6 +27,75 @@ func TestToolsReviewDescribesSelectedAgent(t *testing.T) {
 	m = pressKey(m, "d")
 	if !strings.Contains(plain(m), "/home/n/.agents/skills/x") {
 		t.Fatal(plain(m))
+	}
+}
+
+// A user-level skill switched off in one project keeps serving the other
+// projects. The plan says so before anything happens, and apply reports the
+// conversion targets instead of "Nothing changed".
+func TestToolsReviewUserLevelConversion(t *testing.T) {
+	m, s := agentToolsFixture(80, 24)
+	var projects []string
+	for _, p := range m.toolsProjects() {
+		if p != "homelab" {
+			projects = append(projects, p)
+		}
+	}
+	plan := protocol.ToolPlan{ID: "toggle_1", Item: "skill:archify:a", Operation: "skill_member",
+		ToggleProject: "homelab", Assignment: protocol.ToolAssignment{Scope: "projects", Projects: projects, Machines: []string{toolNodeR}}}
+	var applied []protocol.ToolTargetOutcome
+	for _, p := range projects {
+		plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: toolNodeR, Machine: "research", Project: p, Harness: "claude",
+			Action: "copy", State: "pending", Destination: "/src/" + p + "/.claude/skills/archify"})
+		applied = append(applied, protocol.ToolTargetOutcome{NodeID: toolNodeR, Machine: "research", Project: p, Action: "copy", State: "applied"})
+	}
+	plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: toolNodeR, Machine: "research", Action: "remove",
+		State: "pending", Source: "/home/n/.claude/skills/archify"})
+	applied = append(applied, protocol.ToolTargetOutcome{NodeID: toolNodeR, Machine: "research", Action: "remove", State: "applied"})
+	s.togglePlan = &plan
+	s.applyResult = &protocol.ToolApplyResult{Targets: applied}
+
+	m = pressKey(m, "right")
+	m = pressKey(m, " ")
+	text := plain(m)
+	flat := strings.Join(strings.Fields(text), " ")
+	for _, want := range []string{
+		"Switch off archify in homelab.",
+		"is installed for every project on research",
+		"copies it into the",
+		"other 12 projects and removes the user-level copy.",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "Nothing changed") {
+		t.Fatalf("appliable plan claims nothing changed:\n%s", text)
+	}
+	golden(t, "tools_agents_userlevel_plan_80x24", m.testView())
+
+	m = pressKey(m, "enter")
+	text = plain(m)
+	if !strings.Contains(text, "Applied: 13 targets") || strings.Contains(text, "Nothing changed") {
+		t.Fatalf("result:\n%s", text)
+	}
+	golden(t, "tools_agents_userlevel_result_80x24", m.testView())
+}
+
+func TestToolsReviewUserLevelAlreadyOn(t *testing.T) {
+	m, s := agentToolsFixture(120, 34)
+	s.togglePlan = &protocol.ToolPlan{ID: "toggle_1", Item: "skill:archify:a", Assignment: protocol.ToolAssignment{Scope: "global"}}
+	m.tl.agentPending = map[string]map[string]bool{"homelab": {"archify": true}}
+	model, cmd := m.reviewAgentChanges("homelab")
+	m = model.(Model)
+	m, _ = m.onToolsModal(cmd().(toolsModalMsg))
+	text := plain(m)
+	flat := strings.Join(strings.Fields(text), " ")
+	if !strings.Contains(flat, "archify is already on for every project.") {
+		t.Fatalf("missing already-on truth:\n%s", text)
+	}
+	if strings.Contains(flat, "no eligible target") {
+		t.Fatalf("already-on plan has no explanation:\n%s", text)
 	}
 }
 

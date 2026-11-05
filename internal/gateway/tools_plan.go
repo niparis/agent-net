@@ -97,6 +97,18 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		}
 		return false
 	}
+	// A checkout that already holds this exact copy needs no copy target.
+	// Turning a user-level skill off in one project converts the other project
+	// copies, and must not plan a second copy over an existing one.
+	observedCheckouts := map[string]bool{}
+	for _, report := range reports {
+		for _, obs := range report.Items {
+			if obs.Kind == kind && obs.Name == name && obs.Hash == hash && obs.Scope == protocol.InventoryProject && obs.ProjectRoot != "" {
+				observedCheckouts[report.NodeID+"\x00"+filepath.Clean(obs.ProjectRoot)] = true
+			}
+		}
+	}
+	toggleReq, toggling := ctx.Value(skillToggleKey{}).(protocol.ToolToggleRequest)
 	// Collect all checks before the rendering pass so each node gets one request.
 	probeLists := map[string][]protocol.ToolPlanProbe{}
 	addProbe := func(node string, p protocol.ToolPlanProbe) { probeLists[node] = append(probeLists[node], p) }
@@ -210,6 +222,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 			}
 			for _, checkout := range checkouts {
 				if ctx.Value(skillGroupKey{}) != nil && !g.skillCopyIdentity(item, node.NodeID, checkout.Name) {
+					continue
+				}
+				if toggling && !toggleReq.On && a.Scope == "projects" && checkout.Path != "" && observedCheckouts[node.NodeID+"\x00"+filepath.Clean(checkout.Path)] {
 					continue
 				}
 				checkoutStart := len(targets)
@@ -375,11 +390,42 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				projectNodes[target.NodeID] = true
 			}
 		}
+		// A user-level copy is removed to switch a skill off in one project.
+		// That is a conversion: the other selected projects keep the skill and
+		// need copies when they do not already have one.
+		userRemove := map[string]bool{}
+		for _, target := range targets {
+			if target.Project == "" && target.Action == "remove" && target.Conflict == "" {
+				userRemove[target.NodeID] = true
+			}
+		}
+		selectedNodes := map[string]bool{}
+		for _, project := range projects {
+			if selected(project.Name) && a.OnMachine(project.NodeID) {
+				selectedNodes[project.NodeID] = true
+			}
+		}
 		filtered := targets[:0]
 		for _, target := range targets {
-			selected := target.Project == toggle.Project && ((toggle.On && (target.Action == "copy" || target.Action == "skip")) || (!toggle.On && (target.Action == "remove" || target.Action == "manual")))
+			keep := false
+			switch {
+			case !toggle.On && a.Scope == "uninstalled":
+				// Switching the last project off removes every copy.
+				keep = target.Action == "remove" || target.Action == "manual"
+			case target.Project == toggle.Project:
+				keep = (toggle.On && (target.Action == "copy" || target.Action == "skip")) ||
+					(!toggle.On && (target.Action == "remove" || target.Action == "manual"))
+			case !toggle.On && target.Project == "":
+				// Keep the user-level removal on machines that keep a selected
+				// project, so the conversion cannot strand another machine.
+				keep = userRemove[target.NodeID] && selectedNodes[target.NodeID] &&
+					(target.Action == "remove" || target.Action == "manual")
+			case !toggle.On && userRemove[target.NodeID]:
+				// Copies and skips that keep the skill in the other projects.
+				keep = target.Action == "copy" || target.Action == "skip"
+			}
 			check := target.Conflict != "" && ((target.NodeID == "" && (target.Action == "import" || target.Action == "verify")) || (projectNodes[target.NodeID] && target.Action == "inspect" && (target.Project == "" || target.Project == toggle.Project)))
-			if selected || check {
+			if keep || check {
 				filtered = append(filtered, target)
 			}
 		}

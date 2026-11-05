@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolsdiff"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -74,8 +75,29 @@ func togglePlanLines(plan protocol.ToolPlan, current protocol.ToolAssignment, na
 			lines = append(lines, line)
 		}
 	}
-	move := assignmentMove(name, current, plan.Assignment)
-	if move != "" {
+	if on && plan.Assignment.Scope == "global" && len(plan.Targets) == 0 {
+		lines = append(lines, name+" is already on for every project.")
+		return lines
+	}
+	// Turning a user-level skill off in one project converts it: copies go to
+	// every other project, then the user-level copy is removed.
+	conversion := false
+	var userCopy protocol.ToolPlanTarget
+	if !on {
+		for _, target := range plan.Targets {
+			if target.Project == "" && target.Action == "remove" && target.Conflict == "" && target.Source != "" {
+				conversion = true
+				userCopy = target
+				break
+			}
+		}
+	}
+	if conversion {
+		folder := shortSkillPath(filepath.Dir(userCopy.Source))
+		lines = append(lines, name+" is installed for every project on "+sanitize(userCopy.Machine)+" ("+folder+").")
+		lines = append(lines, "To switch it off in "+sanitize(project)+" only, agent-net copies it into the other "+
+			nounCount(len(plan.Assignment.Projects), "project", "projects")+" and removes the user-level copy.")
+	} else if move := assignmentMove(name, current, plan.Assignment); move != "" {
 		lines = append(lines, move)
 	}
 	if len(plan.Assignment.Machines) == 1 {

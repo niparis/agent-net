@@ -228,6 +228,11 @@ func (s *Store) toolToggleAssignment(p protocol.ToolToggleRequest, validate bool
 			}
 		}
 		row.Projects[p.Project] = p.On
+		// A user-level copy already serves every project. Switching one on
+		// changes nothing and must not be turned into project copies.
+		if p.On && a.Scope == "global" {
+			return normalizeAssignment(a)
+		}
 		a.Scope = "projects"
 		a.Projects = nil
 		for name, on := range row.Projects {
