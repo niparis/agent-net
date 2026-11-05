@@ -102,18 +102,6 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 	}
 }
 
-func TestSessionStopPiPrivateWindow(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi_owner", Name: "shop", PID: 300, Status: "idle"}, nil, nil)
-	fakeProcessTree(t, map[int]int{300: 200, 200: 1}, nil)
-	args := fakeTmux(t, "200|%3|0")
-	cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
-	got, err := os.ReadFile(args)
-	if err != nil || !strings.Contains(string(got), "-L agent-net list-panes -a") || !strings.Contains(string(got), "-L agent-net kill-window -t %3") {
-		t.Fatalf("tmux commands %q: %v", got, err)
-	}
-}
-
 func TestSessionStopUnknownSession(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -126,36 +114,3 @@ func TestSessionStopUnknownSession(t *testing.T) {
 
 // A session in the owner's default tmux server must never be stopped, even
 // though Enter could attach its pane. Only the private host may be queried.
-func TestSessionStopPiRefusesOwnerTmux(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi_terminal", Name: "shop", PID: 300, Status: "idle"}, nil, nil)
-	fakeProcessTree(t, map[int]int{300: 200, 200: 1}, nil)
-	dir := t.TempDir()
-	args := filepath.Join(dir, "args")
-	script := "#!/bin/sh\necho \"$@\" >> " + shellQuote(args) + "\nif [ \"$1\" != -L ]; then echo '200|%3|0'; fi\n"
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
-	if err == nil || !strings.Contains(err.Error(), "runs in your terminal") {
-		t.Fatalf("terminal stop: %v", err)
-	}
-	got, err := os.ReadFile(args)
-	if err != nil || !strings.HasPrefix(string(got), "-L agent-net list-panes") || strings.Contains(string(got), "kill-window") {
-		t.Fatalf("tmux commands %q: %v", got, err)
-	}
-}
-
-func TestSessionStopPiUnknownPIDDoesNotQueryTmux(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi_unknown", Name: "shop", PID: 1, Status: "idle"}, nil, nil)
-	args := fakeTmux(t, "200|%3|0")
-	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
-	if err == nil || !strings.Contains(err.Error(), "runs in your terminal") {
-		t.Fatalf("stop: %v", err)
-	}
-	if _, err := os.Stat(args); !os.IsNotExist(err) {
-		t.Fatalf("queried tmux without a known session process: %v", err)
-	}
-}

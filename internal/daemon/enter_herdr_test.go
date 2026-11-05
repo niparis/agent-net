@@ -84,7 +84,7 @@ echo "sock=$HERDR_SOCKET_PATH session=${HERDR_SESSION:-none} $*" >> ` + f.log + 
 case "$1 $2" in
   "pane list") cat ` + dir + `/panes ;;
   "pane process-info") cat ` + dir + `/info-$4 2>/dev/null || exit 1 ;;
-  "agent focus"|"tab focus") exit 0 ;;
+  "agent focus"|"tab focus"|"pane close") exit 0 ;;
   *) exit 1 ;;
 esac
 `
@@ -252,28 +252,11 @@ func TestEnterHerdrFallbackUsesServerSocketArgument(t *testing.T) {
 	}
 }
 
-func TestEnterWithoutHerdrAncestorFallsThroughToTmux(t *testing.T) {
-	fakeProcessTree(t,
-		map[int]int{31870: 25104, 25104: 1},
-		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}},
-	)
-	argsFile := fakeTmux(t, "25104|%7|work")
-	d := &Daemon{}
-	p, err := d.terminalPlan(protocol.SessionInfo{PID: 31870}, protocol.EnterRequest{}, protocol.EnterPlan{Host: "h"}, "pi", false)
-	if err != nil || !reflect.DeepEqual(p.Argv, []string{"tmux", "select-window", "-t", "%7", ";", "select-pane", "-t", "%7", ";", "attach-session", "-t", "work"}) {
-		t.Fatalf("tmux fallback plan %+v err=%v", p, err)
-	}
-	if calls, _ := os.ReadFile(argsFile); !strings.Contains(string(calls), "list-panes -a") {
-		t.Fatalf("tmux was not asked after herdr lookup: %q", calls)
-	}
-}
-
 func TestEnterNoHerdrOrTmuxFailureExplainsChecks(t *testing.T) {
 	fakeProcessTree(t,
 		map[int]int{31870: 25104, 25104: 1},
 		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}},
 	)
-	fakeTmux(t, "")
 	d := &Daemon{}
 	p, err := d.terminalPlan(protocol.SessionInfo{PID: 31870}, protocol.EnterRequest{}, protocol.EnterPlan{Host: "h"}, "pi", false)
 	if err != nil || len(p.Argv) != 0 || !strings.Contains(p.Note, "no herdr variables and no herdr server above the process") {
@@ -401,7 +384,7 @@ func TestEnterOpenCodeClosedHerdrPaneUsesTheService(t *testing.T) {
 }
 
 // A pane with no detected agent is attached as a terminal. A herdr that does
-// not answer gives a note, not a tmux guess.
+// not answer gives a note.
 func TestEnterHerdrPlainTerminalAndDownServer(t *testing.T) {
 	f := newFakeHerdr(t)
 	f.panes(t, `{"pane_id":"w1:pB","terminal_id":"term_b"}`)
@@ -424,27 +407,6 @@ func TestEnterHerdrPlainTerminalAndDownServer(t *testing.T) {
 	}
 }
 
-// herdr is asked before tmux: a herdr pane is not a tmux pane, and a session
-// that is in both (tmux inside a herdr pane) is shown by herdr.
-func TestEnterHerdrBeforeTmux(t *testing.T) {
-	f := newFakeHerdr(t)
-	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
-	pid := f.session(t, "w1:pB")
-	f.holds(t, "w1:pB", pid)
-	argsFile := fakeTmux(t, strconv.Itoa(pid)+"|%7|work")
-	d := &Daemon{}
-	p, err := d.terminalPlan(protocol.SessionInfo{PID: pid}, protocol.EnterRequest{TmuxSocket: "/tmp/tmux-1/default"}, protocol.EnterPlan{Host: "h"}, "s", false)
-	if err != nil || len(p.Argv) < 4 || p.Argv[len(p.Argv)-3] != "agent" {
-		t.Fatalf("plan %+v err %v", p, err)
-	}
-	if b, _ := os.ReadFile(argsFile); len(b) != 0 {
-		t.Errorf("tmux was asked: %q", b)
-	}
-}
-
-// The macOS buffer of sysctl kern.procargs2: argc, path, padding, arguments,
-// then the environment. Values keep their spaces; the list ends at an empty
-// string, and what follows (a second copy of strings the kernel keeps) is not read.
 func TestParseProcArgs2(t *testing.T) {
 	buf := []byte{2, 0, 0, 0}
 	buf = append(buf, "/usr/local/bin/claude\x00\x00\x00\x00"...)
@@ -659,5 +621,18 @@ func TestEnterHerdrThroughSessionEnter(t *testing.T) {
 	}
 	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || p.Note != "opened inter in herdr" || !strings.Contains(f.calls(t), "agent focus w1:pB") {
 		t.Fatalf("plan %+v", p)
+	}
+}
+
+func TestSessionStopPiHerdrPane(t *testing.T) {
+	f := newFakeHerdr(t)
+	pid := f.session(t, "w3:p2")
+	f.panes(t, herdrAgentPane("w3:p2", "w3:t1"))
+	f.holds(t, "w3:p2", pid)
+	g := startGateway(t, t.TempDir(), "")
+	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi_owner", Name: "shop", PID: pid, Status: "idle"}, nil, nil)
+	cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
+	if !strings.Contains(f.calls(t), "pane close w3:p2") {
+		t.Fatalf("calls: %s", f.calls(t))
 	}
 }

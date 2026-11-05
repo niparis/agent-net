@@ -276,7 +276,7 @@ func pidChain(pid int) map[int]bool {
 }
 
 // herdrPlan finds the herdr pane of a session. ok is false when
-// the session does not run in herdr: the caller then tries tmux. When ok is
+// the session does not run in herdr. When ok is
 // true the plan is final, with a command or with a note that says why not.
 // viaGateway is true when another machine asked: whether its terminal is
 // inside herdr is not known, so the note names both detach keys.

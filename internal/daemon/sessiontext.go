@@ -1164,7 +1164,7 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		} else if handled, plan, ctoErr := d.ctoEnterQuery(ctx, q, true); handled {
 			data, err = plan, ctoErr
 		} else {
-			q.TmuxSocket, q.HerdrSocket, q.HerdrPaneID = "", "", "" // the asker's terminal means nothing here
+			q.HerdrSocket, q.HerdrPaneID = "", "" // the asker's terminal means nothing here
 			data, err = d.localEnter(ctx, q, true)
 		}
 	case "node.session_text":

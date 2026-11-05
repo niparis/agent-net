@@ -141,12 +141,12 @@ func (m Model) openCTO(id string) (Model, tea.Cmd) {
 // ctoEnterCmd asks session_enter for the CTO session. The Sessions row and the
 // CTO box use it, so both show the same plan.
 func (m Model) ctoEnterCmd(id string) tea.Cmd {
-	src, sock, hsock, hpane := m.src, m.tmuxSocket, m.herdrSocket, m.herdrPaneID
+	src, hsock, hpane := m.src, m.herdrSocket, m.herdrPaneID
 	name := m.ctoTitle()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
 		defer cancel()
-		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock, HerdrSocket: hsock, HerdrPaneID: hpane})
+		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, HerdrSocket: hsock, HerdrPaneID: hpane})
 		return enterMsg{name: name, plan: plan, err: err, cto: true}
 	}
 }

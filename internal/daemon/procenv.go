@@ -3,7 +3,7 @@ package daemon
 import "strings"
 
 // processEnviron is the environment of a process. Tests replace it so that the
-// herdr or tmux the tests run in is not seen.
+// herdr the tests run in is not seen.
 var processEnviron = osProcessEnviron
 
 // processArgs and processParentPID are replaceable so process-tree discovery

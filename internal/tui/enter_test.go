@@ -78,7 +78,7 @@ func TestEnterOnAWaitingRowEntersItWithoutCompose(t *testing.T) {
 	m, src := waitingTableModel()
 	m.selected = cogforgeMaintenanceID
 	m.selIdx = tableOrdinal(m, cogforgeMaintenanceID)
-	src.enterPlan = protocol.EnterPlan{Note: "cogforge-maintenance is not in a tmux pane agent-net can reach: open its window on build-vm"}
+	src.enterPlan = protocol.EnterPlan{Note: "cogforge-maintenance is not in a herdr pane agent-net can reach: open its window on build-vm"}
 
 	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.mode != modeNormal {
@@ -99,7 +99,6 @@ func TestEnterOnAWaitingRowEntersItWithoutCompose(t *testing.T) {
 func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 	m, src := workerModel(100, 24)
 	m = selectID(m, workerID)
-	m.tmuxSocket = "/tmp/tmux-1/default"
 	m.herdrSocket = "/tmp/herdr-1/herdr.sock"
 	src.enterPlan = protocol.EnterPlan{Argv: []string{"opencode", "--session", "ses_9"}, Dir: "/work/tenebrae",
 		Env: map[string]string{"OPENCODE_SERVER_PASSWORD": "pw"}, Note: "Press ctrl+b q to come back."}
@@ -116,7 +115,7 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 		t.Errorf("no status line while asking:\n%s", m.testView())
 	}
 	msg := cmd()
-	if want := (protocol.EnterRequest{SessionID: workerID, TmuxSocket: "/tmp/tmux-1/default", HerdrSocket: "/tmp/herdr-1/herdr.sock"}); !reflect.DeepEqual(src.enters, []protocol.EnterRequest{want}) {
+	if want := (protocol.EnterRequest{SessionID: workerID, HerdrSocket: "/tmp/herdr-1/herdr.sock"}); !reflect.DeepEqual(src.enters, []protocol.EnterRequest{want}) {
 		t.Fatalf("asked %+v", src.enters)
 	}
 	m, cmd = press2(m, msg)
@@ -144,7 +143,7 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 func TestEnterWithNoCommandShowsTheNote(t *testing.T) {
 	m, src := workerModel(100, 24)
 	m = selectID(m, workerID)
-	src.enterPlan = protocol.EnterPlan{Note: "tenebrae is not in a tmux pane agent-net can reach: open its window on Mac"}
+	src.enterPlan = protocol.EnterPlan{Note: "tenebrae is not in a herdr pane agent-net can reach: open its window on Mac"}
 	got, _, _, _ := capture(&m)
 	m, cmd := pressE(m)
 	m, cmd = press2(m, cmd())
@@ -242,14 +241,6 @@ func TestHerdrSocketOf(t *testing.T) {
 	for _, c := range []struct{ env, sock, want string }{{"1", "/h/herdr.sock", "/h/herdr.sock"}, {"", "/h/herdr.sock", ""}, {"1", "", ""}, {"0", "/h/s", ""}} {
 		if got := herdrSocketOf(c.env, c.sock); got != c.want {
 			t.Errorf("herdrSocketOf(%q, %q) = %q, want %q", c.env, c.sock, got, c.want)
-		}
-	}
-}
-
-func TestTmuxSocketOf(t *testing.T) {
-	for in, want := range map[string]string{"": "", "/tmp/tmux-1/default,123,0": "/tmp/tmux-1/default", "/s": "/s"} {
-		if got := tmuxSocketOf(in); got != want {
-			t.Errorf("tmuxSocketOf(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -188,9 +188,6 @@ type Model struct {
 	renameShown    string           // the name shown when the prompt opened
 	renameSet      bool             // that name is the owner's, not the reported one
 
-	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
-	// execProcess replaces tea.Exec in tests.
-	tmuxSocket string
 	// herdrSocket is the herdr server this terminal runs in, or "".
 	herdrSocket         string
 	herdrPaneID         string

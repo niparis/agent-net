@@ -40,13 +40,13 @@ A `herdr not found (looked in: ...)` error lists the search folders. Put Herdr o
 
 Run `agent-net setup` to refresh the daemon service environment. On macOS setup reloads the LaunchAgent with `bootout` and `bootstrap`. A kickstart restart alone keeps the environment of the already loaded job, even when the plist contains a newer PATH. Upgrade startup also repairs missing settings and reloads a daemon whose running PATH differs from its plist. On Linux it runs `systemctl --user daemon-reload` and queues a daemon restart when the environment needs to take effect.
 
-## `e` says a session is not in a herdr or tmux pane
+## `e` says a session is not in a herdr pane
 
 On macOS, process environments may not be readable for Apple-signed programs such as `/bin/zsh`. When that happens, agent-net looks up the process tree for a `herdr server` command and probes its socket. The default socket documented by Herdr is `~/.config/herdr/herdr.sock`; named sessions and custom config locations can use another path.
 
 - Check that the session process is a child of the Herdr server process. If the server is not in its parent chain and the process has no readable `HERDR_*` variables, agent-net cannot associate the session with that Herdr instance.
 - If the note says no candidate Herdr socket answers, check that the Herdr server is running for the same user and that its socket is reachable. Run `herdr pane list` from that user's shell to check the default socket.
-- If agent-net cannot find a Herdr pane, it still checks tmux. If neither multiplexer holds the process, open the session in its existing window.
+- If agent-net cannot find a Herdr pane, open the session in its existing window.
 
 ## Image paste fails after `e` on a session on another machine
 

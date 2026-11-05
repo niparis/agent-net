@@ -109,19 +109,42 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		}
 		result.Note = name + ": turn aborted; the conversation stays in the service. An idle service session costs nothing."
 	case "pi":
-		bin, err := exec.LookPath("tmux")
-		if err != nil {
+		h, found := findHerdrPane(info.PID)
+		fromServer := false
+		if !found {
+			h, found = findHerdrServer(info.PID)
+			fromServer = found
+		}
+		if !found {
 			return no(terminal)
 		}
-		// Query only our private server. A similarly named socket in the process's
-		// environment is not evidence that it is safe to kill the owner's window.
-		pane, ok := findTmuxPaneWithArgs(info.PID, bin, "", []string{"-L", piTmuxServer, "list-panes", "-a", "-F", "#{pane_pid}|#{pane_id}|#{session_name}"})
-		if !ok || !strings.HasPrefix(pane.id, "%") {
+		bin := d.herdrBinary(h.bin)
+		if bin == "" {
 			return no(terminal)
 		}
-		if err := exec.CommandContext(ctx, bin, "-L", piTmuxServer, "kill-window", "-t", pane.id).Run(); err != nil {
-			return no(fmt.Errorf("tmux could not stop %s: %w", name, err))
+		var panes []herdrPaneInfo
+		if fromServer {
+			var ok bool
+			panes, h.socket, ok = d.herdrPanesFromServer(bin, h)
+			if !ok {
+				return no(terminal)
+			}
+		} else {
+			var err error
+			panes, err = d.herdrPanes(bin, h.socket)
+			if err != nil {
+				return no(terminal)
+			}
 		}
+		for _, pane := range panes {
+			if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(info.PID)) {
+				if _, err := d.herdrRun(bin, h.socket, "pane", "close", pane.PaneID); err != nil {
+					return no(fmt.Errorf("herdr could not stop %s: %w", name, err))
+				}
+				return result, nil
+			}
+		}
+		return no(terminal)
 	default:
 		return no(terminal)
 	}

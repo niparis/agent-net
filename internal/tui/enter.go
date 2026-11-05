@@ -125,11 +125,11 @@ func (m Model) onResume(r resumeMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) enterCmd(id, name string) tea.Cmd {
-	src, sock, hsock, hpane := m.src, m.tmuxSocket, m.herdrSocket, m.herdrPaneID
+	src, hsock, hpane := m.src, m.herdrSocket, m.herdrPaneID
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock, HerdrSocket: hsock, HerdrPaneID: hpane})
+		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, HerdrSocket: hsock, HerdrPaneID: hpane})
 		return enterMsg{name: name, plan: plan, err: err}
 	}
 }

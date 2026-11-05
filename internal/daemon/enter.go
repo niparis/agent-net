@@ -6,11 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -21,7 +19,7 @@ import (
 //
 //	Claude Code background session   claude attach <id>
 //	Claude Code, Pi in a terminal    its herdr pane, else
-//	                                 its tmux pane, when there is one
+//	                                 a note to open its existing window
 //	OpenCode                         its herdr pane, else opencode --session <id>
 //	                                 (in the folder)
 //	Codex (not a worker)             codex resume <thread>, on the shared app server
@@ -415,90 +413,10 @@ func firstNonNil(errs ...error) error {
 	return nil
 }
 
-// tmuxPane is the tmux pane a process runs in.
-type tmuxPane struct {
-	id, session, socket string
-}
-
-// terminalPlan takes the owner to the terminal that shows a session with no
-// attach command of its own: a herdr pane first (a herdr pane is not a tmux
-// pane), then a tmux pane.
+// terminalPlan finds the herdr pane holding a session without an attach command.
 func (d *Daemon) terminalPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string, viaGateway bool) (protocol.EnterPlan, error) {
 	if p, ok := d.herdrPlan(info, q, plan, name, viaGateway); ok {
 		return p, nil
 	}
-	return d.tmuxPlan(info, q, plan, name)
-}
-
-// tmuxPlan takes the owner to the tmux pane of a session that has no attach
-// command of its own, or says that it cannot.
-func (d *Daemon) tmuxPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string) (protocol.EnterPlan, error) {
-	pane, ok := findTmuxPane(info.PID)
-	if !ok {
-		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a herdr or tmux pane agent-net can reach (no herdr variables and no herdr server above the process): open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil
-	}
-	tmux := []string{"tmux"}
-	if pane.socket != "" {
-		tmux = append(tmux, "-S", pane.socket)
-	}
-	out := protocol.EnterPlan{Host: plan.Host}
-	out.Argv = append(tmux, "select-window", "-t", pane.id, ";", "select-pane", "-t", pane.id, ";", "attach-session", "-t", pane.session)
-	if q.TmuxSocket != "" { // allow an attach from inside tmux
-		out.Argv = append([]string{"env", "-u", "TMUX"}, out.Argv...)
-	}
-	out.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
-	return out, nil
-}
-
-// findTmuxPane finds the pane that holds pid or one of its parents. It asks the
-// tmux server named in the process's own $TMUX, else the default server.
-func findTmuxPane(pid int) (tmuxPane, bool) {
-	if pid <= 1 {
-		return tmuxPane{}, false
-	}
-	bin, err := exec.LookPath("tmux")
-	if err != nil {
-		return tmuxPane{}, false
-	}
-	sock, _, _ := strings.Cut(processEnvVar(pid, "TMUX"), ",")
-	args := []string{"list-panes", "-a", "-F", "#{pane_pid}|#{pane_id}|#{session_name}"}
-	if sock != "" {
-		args = append([]string{"-S", sock}, args...)
-	}
-	return findTmuxPaneWithArgs(pid, bin, sock, args)
-}
-
-// findTmuxPaneWithArgs matches a process or its parent to the selected server.
-func findTmuxPaneWithArgs(pid int, bin, sock string, args []string) (tmuxPane, bool) {
-	if pid <= 1 {
-		return tmuxPane{}, false
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, args...).Output()
-	if err != nil {
-		return tmuxPane{}, false
-	}
-	panes := map[int]tmuxPane{}
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.SplitN(strings.TrimSpace(line), "|", 3)
-		if len(f) != 3 {
-			continue
-		}
-		var pp int
-		if _, err := fmt.Sscanf(f[0], "%d", &pp); err == nil && pp > 1 {
-			panes[pp] = tmuxPane{id: f[1], session: f[2], socket: sock}
-		}
-	}
-	for p, depth := pid, 0; p > 1 && depth < 64; depth++ {
-		if pane, ok := panes[p]; ok {
-			return pane, true
-		}
-		parent, err := processParentPID(p)
-		if err != nil {
-			break
-		}
-		p = parent
-	}
-	return tmuxPane{}, false
+	return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a herdr pane agent-net can reach (no herdr variables and no herdr server above the process): open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil
 }
