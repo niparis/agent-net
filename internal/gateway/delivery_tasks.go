@@ -247,6 +247,7 @@ func checkApprovalTaskPolicy(tx *sql.Tx, c protocol.Change, p protocol.Pipeline,
 // dispatchStepTasks writes one system notification per eligible session. The
 // task itself remains in the gateway until a session reports it.
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
+	g.wakeOfflineStepOwners(ctx)
 	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
@@ -292,6 +293,53 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		}
 		if m.ID != "" {
 			g.dispatch(ctx, m)
+		}
+	}
+}
+
+// wakeOfflineStepOwners asks only the recorded merger or the change's caller
+// to resume. Project and delegate owners can have many old sessions, so their
+// tasks wait for an online session. No notice is created until discovery brings
+// a session online, preserving batching across its accumulated ready tasks.
+func (g *Gateway) wakeOfflineStepOwners(ctx context.Context) {
+	rows, err := g.store.db.Query(`SELECT DISTINCT s.id
+  FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
+  JOIN sessions s ON s.online=0 AND s.harness='claude' AND s.worker=''
+  WHERE t.completed=0 AND t.claimed_by=''
+  AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
+  AND ((t.owner_node=? AND s.id=c.caller) OR (t.owner_node=? AND EXISTS
+   (SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)))
+  AND NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+   WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
+   AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired')`, callerTaskOwner, mergerTaskOwner)
+	if err != nil {
+		g.logLine("error", "where", "offline step owners", "err", err)
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			break
+		}
+		ids = append(ids, id)
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		g.logLine("error", "where", "offline step owners", "err", err)
+		return
+	}
+	for _, id := range ids {
+		a, ok, err := g.store.Agent(id)
+		if err != nil {
+			g.logLine("error", "where", "offline step owner", "err", err)
+			continue
+		}
+		if ok {
+			g.wakeSession(ctx, a)
 		}
 	}
 }
