@@ -52,7 +52,7 @@ func identityFixture(t *testing.T, s *Store, folder, charter string) {
 	if _, err = s.db.Exec(`INSERT INTO graph_charter VALUES(?, 'purpose', ?, 1, 'owner')`, folder, charter); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO graph_edges VALUES(?, 'other', 'depends', '', 'normal')`, folder); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?, 'other', 'depends', '', 'normal')`, folder); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`INSERT INTO graph_node_settings VALUES(?, 'sandbox', 'workspace', 1, 'owner')`, folder); err != nil {
