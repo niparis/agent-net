@@ -217,7 +217,14 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		return nil, nil
 
 	case "project_remove":
-		return st.RemoveProject(nc.id, str("name"), str("path"), nc.id, true)
+		node := nc.id
+		if on := str("on"); on != "" {
+			var err error
+			if node, err = st.NodeByHostOrID(on); err != nil {
+				return nil, err
+			}
+		}
+		return st.RemoveProject(node, str("name"), str("path"), nc.id, true)
 
 	default:
 		return nil, reject("unsupported proposal tool %q", q.Tool)

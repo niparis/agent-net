@@ -163,3 +163,20 @@ func TestProposalSessionStartGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("proposal_session_start_%d", w), m.testView())
 	}
 }
+
+func TestProjectRemoveProposalNamesMachine(t *testing.T) {
+	m, _ := inboxAllKindsModel(120, 34)
+	for _, tc := range []struct{ tool, action, args, machine string }{
+		{"project_change", "remove", `{"name":"garden","node_id":"n_mac"}`, "n_mac"},
+		{"project_remove", "", `{"path":"/work/garden","on":"n_mac"}`, "n_mac"},
+		{"project_change", "remove", `{"name":"garden"}`, "here"},
+	} {
+		p := protocol.CTOProposal{Tool: tc.tool, Action: tc.action, NodeID: "n_mac", Args: json.RawMessage(tc.args)}
+		if got := proposalSummary(p); !strings.Contains(got, "garden") || !strings.Contains(got, " @ "+tc.machine) {
+			t.Errorf("summary: %s", got)
+		}
+		if got := m.inboxProposalSummary(p); !strings.Contains(got, "garden") || !strings.Contains(got, "on Mac") {
+			t.Errorf("inbox: %s", got)
+		}
+	}
+}

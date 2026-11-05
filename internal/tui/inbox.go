@@ -301,6 +301,9 @@ func (m Model) inboxProposalSummary(p protocol.CTOProposal) string {
 	value := func(k string) string { v, _ := a[k].(string); return sanitize(v) }
 	machineID := value("node_id")
 	if machineID == "" {
+		machineID = value("on")
+	}
+	if machineID == "" {
 		machineID = p.NodeID
 	}
 	machine := m.inboxMachineName(machineID)
@@ -320,6 +323,13 @@ func (m Model) inboxProposalSummary(p protocol.CTOProposal) string {
 			harness = "claude"
 		}
 		return fmt.Sprintf("start a %s session in %s, on %s", inboxHarnessName(harness), project, machine)
+	}
+	if p.Tool == "project_remove" || (p.Tool == "project_change" && p.Action == "remove") {
+		project := value("name")
+		if project == "" {
+			project = value("path")
+		}
+		return fmt.Sprintf("remove project %s on %s", project, machine)
 	}
 	switch p.Action {
 	case "charter_set":

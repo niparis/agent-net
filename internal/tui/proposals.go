@@ -74,6 +74,20 @@ func proposalSummary(p protocol.CTOProposal) string {
 		}
 		return fmt.Sprintf("%s %s @ %s · %s · %s%s", verb, project, machine, harness, folder, first)
 	}
+	if p.Tool == "project_remove" || (p.Tool == "project_change" && p.Action == "remove") {
+		project := value("name")
+		if project == "" {
+			project = value("path")
+		}
+		machine := value("node_id")
+		if machine == "" {
+			machine = value("on")
+		}
+		if machine == "" {
+			machine = "here"
+		}
+		return fmt.Sprintf("remove project %s @ %s", project, machine)
+	}
 	switch p.Action {
 	case "charter_set":
 		return fmt.Sprintf("charter %s %s", value("node"), value("attr"))

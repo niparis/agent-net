@@ -253,14 +253,11 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 		_, err := d.projectAdd(ctx, p, "", "cli")
 		return err
 	case "project_remove":
-		if path := str("path"); path != "" {
-			expanded, err := expandPath(path)
-			if err != nil {
-				return err
-			}
-			fields["path"], _ = json.Marshal(expanded)
-			call.Args, _ = json.Marshal(fields)
+		p, err := proposalProjectRemove(call.Args)
+		if err != nil {
+			return err
 		}
+		call.Args, _ = json.Marshal(p)
 	case "worker_start":
 		var p protocol.WorkerStartRequest
 		if err := json.Unmarshal(call.Args, &p); err != nil {
@@ -302,6 +299,28 @@ func validateProposalProviders(providers []string) error {
 	return nil
 }
 
+// proposalProjectRemove translates the CTO's machine field to the registry API.
+// Use the same request for preflight and for the approved removal.
+func proposalProjectRemove(raw json.RawMessage) (protocol.ProjectRemove, error) {
+	var p struct {
+		protocol.ProjectRemove
+		NodeID string `json:"node_id"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return p.ProjectRemove, err
+	}
+	if p.NodeID != "" {
+		p.On = p.NodeID
+	}
+	if p.Path != "" {
+		var err error
+		if p.Path, err = expandPath(p.Path); err != nil {
+			return p.ProjectRemove, err
+		}
+	}
+	return p.ProjectRemove, nil
+}
+
 // runStoredCTOProposal is the owner runner, separate from the proposing path.
 func runStoredCTOProposal(ctx context.Context, call proposalCall, actor string, run func(context.Context, string, json.RawMessage) (any, error)) (json.RawMessage, error) {
 	call, err := concreteProposal(call)
@@ -334,6 +353,13 @@ func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor strin
 // Only the approved proposal runner may attach the CTO owner-instruction flag.
 // The immediate tool path always builds an unflagged peer message.
 func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "project_remove" {
+		p, err := proposalProjectRemove(raw)
+		if err != nil {
+			return nil, err
+		}
+		raw, _ = json.Marshal(p)
+	}
 	if name == "merger_start" || name == "merger_stop" {
 		if proposalActor(ctx) == "" {
 			return nil, errors.New("merger requires an approved proposal")

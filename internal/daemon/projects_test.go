@@ -318,3 +318,51 @@ func TestProjectAddAgainstOldGatewayIsAClearError(t *testing.T) {
 		t.Fatalf("no valid folder should not need the gateway: %v", err)
 	}
 }
+
+func TestCTOProjectRemoveMachineAfterApproval(t *testing.T) {
+	for _, target := range []string{"remote", "local"} {
+		t.Run(target, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			base := codeDir(t)
+			a := startNode(t, g, nodeOpts{})
+			b := startNode(t, g, nodeOpts{})
+			cliA, cliB := cliClient(t, a), cliClient(t, b)
+			cliB.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
+			args := map[string]any{"action": "remove", "name": "beta"}
+			removed, kept := a.d.NodeID(), b.d.NodeID()
+			if target == "remote" {
+				// No local entry: preflight must look on the target machine too.
+				args["node_id"] = b.d.NodeID()
+				removed, kept = b.d.NodeID(), a.d.NodeID()
+			} else {
+				cliA.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
+			}
+			raw, _ := json.Marshal(args)
+			ctx := context.Background()
+			if _, err := a.d.runCTOToolRaw(ctx, "project_change", raw); err != nil {
+				t.Fatal(err)
+			}
+			items, err := a.d.proposalRunner().list()
+			if err != nil || len(items) != 1 || items[0].Status != "open" {
+				t.Fatalf("items=%+v err=%v", items, err)
+			}
+			if ps := listProjects(t, cliA, "beta"); len(ps) == 0 {
+				t.Fatal("removed before approval")
+			}
+			if target == "remote" {
+				// Add the same name locally after preflight to catch applying on the wrong node.
+				cliA.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
+			}
+			if err := a.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+				t.Fatal(err)
+			}
+			items, err = a.d.proposalRunner().list()
+			if err != nil || len(items) != 1 || items[0].Status != "applied" {
+				t.Fatalf("items=%+v err=%v", items, err)
+			}
+			if ps := listProjects(t, cliA, "beta"); len(ps) != 1 || ps[0].NodeID != kept {
+				t.Fatalf("wanted %s removed and %s kept: %+v", removed, kept, ps)
+			}
+		})
+	}
+}
