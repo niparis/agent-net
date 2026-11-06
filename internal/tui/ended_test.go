@@ -57,6 +57,31 @@ func TestEndedVisibility(t *testing.T) {
 	}
 }
 
+func TestEndedWorktreesGroupedByProject(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Agents = []protocol.AgentView{
+		{SessionID: "older", NodeID: "node", Harness: "claude", RepoContext: "/repo/worktree-a", Repo: protocol.RepoInfo{Project: "project", Root: "/repo/worktree-a"}, LastSeen: m.now().Add(-time.Hour).Unix()},
+		{SessionID: "newer", NodeID: "node", Harness: "claude", RepoContext: "/repo/worktree-b", Repo: protocol.RepoInfo{Project: "project", Root: "/repo/worktree-b"}, LastSeen: m.now().Add(-time.Minute).Unix()},
+	}
+	groups := m.groups()
+	if len(groups) != 1 || len(groups[0].agents) != 1 || groups[0].agents[0].SessionID != "newer" {
+		t.Fatalf("expected only newest worktree session, got %+v", groups)
+	}
+	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "live", NodeID: "node", Harness: "claude", Online: true, Repo: protocol.RepoInfo{Project: "project", Root: "/repo/main"}})
+	groups = m.groups()
+	if len(groups) != 1 || len(groups[0].agents) != 1 || groups[0].agents[0].SessionID != "live" {
+		t.Fatalf("expected only online main session, got %+v", groups)
+	}
+}
+
+func TestEndedUnknownHarnessResumeHint(t *testing.T) {
+	a := protocol.AgentView{Harness: "agy", NativeID: "session-id", Cwd: "/repo/worktree"}
+	got := resumeHint(a)
+	if got != "/repo/worktree: resume it from agy in this folder" {
+		t.Fatalf("unexpected hint: %q", got)
+	}
+}
+
 func TestEndedResumeHint(t *testing.T) {
 	m := newModel(120, 34)
 	a := protocol.AgentView{SessionID: "ended", Harness: "claude", Cwd: "/repo/.claude/worktrees/topic", LastSeen: m.now().Add(-12 * time.Minute).Unix()}
