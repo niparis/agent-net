@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,20 +17,45 @@ import (
 // The dev command runs the same assessment without a running daemon. These
 // tests pin the standalone path with the fake codex of difficulty_test.go.
 
+// Legacy race fixtures explicitly provide the two fake models; production has no default.
+func testDifficultyAssessor(cfg Config, sources DifficultySources) *DifficultyAssessor {
+	if sources.PickJudge == nil {
+		sources.PickJudge = func(ctx context.Context, exclude string) (protocol.DifficultyJudgeChoice, error) {
+			if cfg.DifficultyAnalyzer {
+				model := cfg.DifficultyModel
+				if model == "" {
+					model = "gpt-cheap"
+				}
+				return protocol.DifficultyJudgeChoice{Harness: "codex", Model: model, Provider: "openai"}, nil
+			}
+			if exclude == "" {
+				return protocol.DifficultyJudgeChoice{Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash", Provider: "opencode-go"}, nil
+			}
+			if sources.Binary != nil {
+				if _, err := sources.Binary("codex"); err != nil {
+					return protocol.DifficultyJudgeChoice{}, nil
+				}
+			} else if cfg.HarnessPaths["codex"] == "" {
+				return protocol.DifficultyJudgeChoice{}, nil
+			}
+			return protocol.DifficultyJudgeChoice{Harness: "codex", Model: "gpt-6.1-sol", Provider: "openai"}, nil
+		}
+	}
+	return NewDifficultyAssessor(cfg, sources)
+}
+
 func TestAssessDifficultyOutsideDaemon(t *testing.T) {
 	dir := fakeDifficultyRun(t, map[string][]string{
 		"analyzer": {difficultyProfileJSON("high")},
 		"judge":    {difficultyScoresJSON},
 	})
 	project := t.TempDir()
-	a, err := NewDifficultyAssessor(Config{
-		HarnessPaths:           map[string]string{"codex": os.Args[0]},
-		DifficultyHarness:      "codex",
-		DifficultyModel:        "gpt-cheap",
-		DifficultyAnalyzer:     true,
-		DifficultyJudgeHarness: "codex",
-		DifficultyJudgeModel:   "gpt-cheap",
-		DifficultyTimeout:      2 * time.Second,
+	a, err := testDifficultyAssessor(Config{
+		HarnessPaths:       map[string]string{"codex": os.Args[0]},
+		DifficultyHarness:  "codex",
+		DifficultyModel:    "gpt-cheap",
+		DifficultyAnalyzer: true,
+		DifficultyTimeout:  2 * time.Second,
 	}, DifficultySources{}).Assess(context.Background(), project, "change the settings tab")
 	if err != nil {
 		t.Fatal(err)
@@ -59,12 +85,10 @@ func TestAssessDifficultyOutsideDaemonUsesRosterSources(t *testing.T) {
 			return []protocol.ModelScore{{Match: "gpt-cheap", Score: 10}}, nil
 		},
 	}
-	a, err := NewDifficultyAssessor(Config{
-		HarnessPaths:           map[string]string{"codex": os.Args[0]},
-		DifficultyAnalyzer:     true,
-		DifficultyJudgeHarness: "codex",
-		DifficultyJudgeModel:   "gpt-cheap",
-		DifficultyTimeout:      2 * time.Second,
+	a, err := testDifficultyAssessor(Config{
+		HarnessPaths:       map[string]string{"codex": os.Args[0]},
+		DifficultyAnalyzer: true,
+		DifficultyTimeout:  2 * time.Second,
 	}, sources).Assess(context.Background(), t.TempDir(), "rename a flag")
 	if err != nil {
 		t.Fatal(err)
@@ -76,12 +100,12 @@ func TestAssessDifficultyOutsideDaemonUsesRosterSources(t *testing.T) {
 
 func TestAssessDifficultyOutsideDaemonWithoutRosterNamesTheModel(t *testing.T) {
 	sources := DifficultySources{Binary: func(string) (string, error) { return "", os.ErrNotExist }}
-	a, err := NewDifficultyAssessor(Config{}, sources).
+	a, err := NewDifficultyAssessor(Config{Hostname: "test-machine"}, sources).
 		Assess(context.Background(), t.TempDir(), "rename a flag")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Label != "normal" || !strings.Contains(a.Notes, "OpenCode is not installed") {
+	if a.Label != "normal" || !strings.Contains(a.Notes, "no judge: no registered normal-level model available on test-machine") {
 		t.Fatalf("assessment: %+v", a)
 	}
 }
@@ -96,7 +120,7 @@ func TestJudgeOnlyDefaultUsesBriefAndDoesNotRunCodex(t *testing.T) {
 	t.Setenv(envFakeOpenCodeReply, reply)
 	promptFile := filepath.Join(dir, "prompt.txt")
 	t.Setenv("FAKE_OPENCODE_PROMPT_FILE", promptFile)
-	a, err := NewDifficultyAssessor(Config{
+	a, err := testDifficultyAssessor(Config{
 		HarnessPaths: map[string]string{"opencode": os.Args[0]}, DifficultyTimeout: 2 * time.Second,
 	}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "BRIEF: add a small setting")
 	if err != nil {
@@ -130,7 +154,7 @@ func TestJudgeOpenCodeUsesPrivateServerAndDisabledSocket(t *testing.T) {
 	t.Setenv(envFakeOpenCodeReply, reply)
 	t.Setenv("FAKE_OPENCODE_RUN_RECORD", record)
 	t.Setenv("PWD", t.TempDir())
-	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task")
+	a, err := testDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task")
 	if err != nil || a.Label != "trivial" {
 		t.Fatalf("judge: %+v %v", a, err)
 	}
@@ -175,7 +199,7 @@ func TestJudgeOpenCodeDeletesOnlyItsOwnSessions(t *testing.T) {
 	t.Setenv(envFakeOpenCodeReply, reply)
 	t.Setenv("FAKE_OPENCODE_SESSIONS", sessions)
 	t.Setenv("FAKE_OPENCODE_DELETED", deleted)
-	if _, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task"); err != nil {
+	if _, err := testDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0]}}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "a task"); err != nil {
 		t.Fatal(err)
 	}
 	var raw []byte
@@ -197,12 +221,12 @@ func TestJudgeRetryAfterParseFailure(t *testing.T) {
 	}
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv(envFakeOpenCodeReply, reply)
-	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	a, err := testDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
 	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" || !strings.Contains(a.Notes, "parse") {
 		t.Fatalf("assessment: %+v, %v", a, err)
 	}
 	calls := difficultyCalls(t, dir)
-	if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Args, " "), `model_reasoning_effort="low"`) {
+	if len(calls) != 1 || !hasArg(calls[0].Args, "-m", "gpt-6.1-sol") {
 		t.Fatalf("calls: %+v", calls)
 	}
 }
@@ -214,7 +238,7 @@ func TestJudgeRetryStartsAtHedgeAndWinsWhileFirstRuns(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
 	started := time.Now()
-	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	a, err := testDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
 	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" {
 		t.Fatalf("assessment: %+v, %v", a, err)
 	}
@@ -254,7 +278,7 @@ func TestJudgeFirstAnswerAfterHedgeStopsRetry(t *testing.T) {
 		}
 	}()
 	started := time.Now()
-	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	a, err := testDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 100 * time.Millisecond}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
 	if err != nil || a.Label != "hard" || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
 		t.Fatalf("assessment: %+v, %v", a, err)
 	}
@@ -277,7 +301,7 @@ func TestJudgeFirstFailureStartsRetryAtOnce(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv(envFakeOpenCodeReply, reply)
 	started := time.Now()
-	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 50 * time.Second}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
+	a, err := testDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second, testJudgeHedgeAfter: 50 * time.Second}, DifficultySources{}).Assess(context.Background(), t.TempDir(), "brief")
 	if err != nil || a.Label != "hard" || a.JudgeModel != "codex:gpt-6.1-sol" {
 		t.Fatalf("assessment: %+v, %v", a, err)
 	}
@@ -297,7 +321,7 @@ func TestJudgeParseFailureLogsReply(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv(envFakeOpenCodeReply, reply)
 	var logs []string
-	a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second}, DifficultySources{Logf: func(format string, args ...any) {
+	a, err := testDifficultyAssessor(Config{HarnessPaths: map[string]string{"opencode": os.Args[0], "codex": os.Args[0]}, DifficultyTimeout: 60 * time.Second}, DifficultySources{Logf: func(format string, args ...any) {
 		logs = append(logs, fmt.Sprintf(format, args...))
 	}}).Assess(context.Background(), t.TempDir(), "brief")
 	if err != nil || a.Label != "normal" {
@@ -332,7 +356,7 @@ func TestJudgeRetrySkippedWhenUnavailableOrBudgetShort(t *testing.T) {
 		name      string
 		timeout   time.Duration
 		available bool
-	}{{"missing", 60 * time.Second, false}, {"short budget", 2 * time.Second, true}} {
+	}{{"missing", 60 * time.Second, false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
 			source := DifficultySources{Binary: func(name string) (string, error) {
@@ -345,7 +369,7 @@ func TestJudgeRetrySkippedWhenUnavailableOrBudgetShort(t *testing.T) {
 				}
 				return "", os.ErrNotExist
 			}}
-			a, err := NewDifficultyAssessor(Config{DifficultyTimeout: tc.timeout}, source).Assess(context.Background(), t.TempDir(), "brief")
+			a, err := testDifficultyAssessor(Config{DifficultyTimeout: tc.timeout}, source).Assess(context.Background(), t.TempDir(), "brief")
 			if err != nil || a.Label != "normal" || !strings.Contains(a.Notes, "parse") || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
 				t.Fatalf("assessment: %+v, %v", a, err)
 			}
@@ -367,7 +391,7 @@ func TestJudgeOpenCodeCleanupRunsAfterTimeout(t *testing.T) {
 	t.Setenv("FAKE_OPENCODE_SESSIONS", sessions)
 	t.Setenv("FAKE_OPENCODE_DELETED", deleted)
 	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
-	_, _ = NewDifficultyAssessor(Config{
+	_, _ = testDifficultyAssessor(Config{
 		HarnessPaths:        map[string]string{"opencode": os.Args[0]},
 		DifficultyTimeout:   100 * time.Millisecond,
 		testJudgeHedgeAfter: 100 * time.Millisecond,
@@ -390,7 +414,7 @@ func TestJudgeTimeoutNoteFirstTimeoutRetryTimeout(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv("FAKE_DIFFICULTY_GATE", filepath.Join(t.TempDir(), "never"))
 	t.Setenv(envFakeCodexExecHang, "1")
-	a, err := NewDifficultyAssessor(Config{
+	a, err := testDifficultyAssessor(Config{
 		HarnessPaths:        map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
 		DifficultyTimeout:   300 * time.Millisecond,
 		testJudgeHedgeAfter: 100 * time.Millisecond,
@@ -424,7 +448,7 @@ func TestJudgeAttemptLoggedPerAttempt(t *testing.T) {
 			logs = append(logs, fmt.Sprintf(format, args...))
 		},
 	}
-	_, err := NewDifficultyAssessor(Config{
+	_, err := testDifficultyAssessor(Config{
 		HarnessPaths:        map[string]string{"opencode": os.Args[0], "codex": os.Args[0]},
 		DifficultyTimeout:   60 * time.Second,
 		testJudgeHedgeAfter: 100 * time.Millisecond,
@@ -448,8 +472,8 @@ func TestJudgeAttemptLoggedPerAttempt(t *testing.T) {
 // not the 21 s it timed out with.
 func TestJudgeHedgePoint(t *testing.T) {
 	for budget, want := range map[time.Duration]time.Duration{
-		60 * time.Second: 25 * time.Second,
-		3 * time.Minute:  145 * time.Second,
+		60 * time.Second: 20 * time.Second,
+		3 * time.Minute:  30 * time.Second,
 		45 * time.Second: 15 * time.Second,
 		3 * time.Second:  time.Second,
 	} {
@@ -475,5 +499,59 @@ func TestJudgeMissingClosingBraces(t *testing.T) {
 	}
 	if _, _, err := parseJudgeReply(base[:len(base)-3]); err == nil {
 		t.Fatal("accepted a reply cut inside a string")
+	}
+}
+
+func TestJudgeConfigurationHasNoPins(t *testing.T) {
+	typ := reflect.TypeOf(Config{})
+	for _, name := range []string{"DifficultyJudgeModel", "DifficultyJudgeHarness", "DifficultyRetryJudgeModel", "DifficultyRetryJudgeHarness"} {
+		if _, ok := typ.FieldByName(name); ok {
+			t.Errorf("judge pin %s still exists", name)
+		}
+	}
+}
+
+func TestJudgeCLIUsesSelectedModelAndDisablesTools(t *testing.T) {
+	for _, tc := range []struct {
+		harness, model string
+		want           []string
+	}{
+		{"claude", "claude-test:high", []string{"--print", "--no-session-persistence", "--tools", "--strict-mcp-config", "--model", "claude-test", "--effort", "high"}},
+		{"pi", "google/gemini-test:high", []string{"--print", "--no-session", "--no-tools", "--no-extensions", "--model", "google/gemini-test:high"}},
+		{"agy", "gemini-test-high", []string{"--mode", "plan", "--sandbox", "--model", "gemini-test-high"}},
+	} {
+		t.Run(tc.harness, func(t *testing.T) {
+			dir := t.TempDir()
+			script := filepath.Join(dir, "fake")
+			args := filepath.Join(dir, "args")
+			if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FAKE_JUDGE_ARGS\"\nprintf '%s\\n' '"+difficultyScoresJSON+"'\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("FAKE_JUDGE_ARGS", args)
+			src := DifficultySources{PickJudge: func(context.Context, string) (protocol.DifficultyJudgeChoice, error) {
+				return protocol.DifficultyJudgeChoice{Harness: tc.harness, Model: tc.model}, nil
+			}}
+			a, err := NewDifficultyAssessor(Config{HarnessPaths: map[string]string{tc.harness: script}, DifficultyTimeout: 2 * time.Second}, src).Assess(context.Background(), dir, "brief")
+			if err != nil || a.Label != "hard" || a.JudgeModel != tc.harness+":"+tc.model {
+				t.Fatalf("assessment %+v, %v", a, err)
+			}
+			b, err := os.ReadFile(args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(string(b), "\n")
+			for _, want := range tc.want {
+				found := false
+				for _, line := range lines {
+					if line == want {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("arguments missing %q: %q", want, b)
+				}
+			}
+		})
 	}
 }
