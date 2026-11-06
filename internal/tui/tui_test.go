@@ -608,8 +608,8 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "old-session") {
-		t.Error("offline sessions must be hidden at first")
+	if !strings.Contains(out, "old-session") {
+		t.Error("latest recent ended session must remain visible")
 	}
 }
 
@@ -625,7 +625,7 @@ func names(m Model) []string {
 
 func TestOfflineToggle(t *testing.T) {
 	m := newModel(100, 30)
-	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch" {
+	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch,old-session" {
 		t.Fatalf("online sessions: %s", got)
 	}
 	m = keys(m, "v")
@@ -640,8 +640,8 @@ func TestOfflineToggle(t *testing.T) {
 		t.Fatalf("the detail of an offline session lacks its last seen time:\n%s", m.testView())
 	}
 	m = keys(m, "v", "v", "v")
-	if strings.Contains(strings.Join(names(m), ","), "old-session") {
-		t.Fatal("v again did not hide it")
+	if !strings.Contains(strings.Join(names(m), ","), "old-session") {
+		t.Fatal("all view did not retain the latest ended session")
 	}
 }
 
@@ -657,7 +657,7 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("typed keys acted as commands: filter %q quit %v offline %v", m.filter, m.quitting, m.showOffline)
 	}
 	m = keys(m, "esc")
-	if !m.filtering || m.filter != "" || len(names(m)) != 5 {
+	if !m.filtering || m.filter != "" || len(names(m)) != 6 {
 		t.Fatalf("esc must clear the filter: %q %v", m.filter, names(m))
 	}
 	m = keys(m, "esc")
@@ -684,7 +684,7 @@ func TestFilter(t *testing.T) {
 	}
 	// Esc outside the input clears it too.
 	m = keys(m, "esc")
-	if m.filter != "" || len(names(m)) != 5 {
+	if m.filter != "" || len(names(m)) != 6 {
 		t.Fatalf("esc did not clear the filter: %q", m.filter)
 	}
 
@@ -1215,7 +1215,7 @@ func TestDetailShowsTheProjectSource(t *testing.T) {
 
 // A dormant session is reachable but quiet. It is hidden with the offline
 // ones and shows up under o.
-func TestDormantSessionsAreHiddenWithTheOfflineOnes(t *testing.T) {
+func TestDormantSessionsRemainDiscoverable(t *testing.T) {
 	snap := fakeSnapshot()
 	snap.Agents = append(snap.Agents, agent("s_0000000000000007", "n_mac", "Mac", "opencode", "shop: quiet", func(a *protocol.AgentView) {
 		a.Status = protocol.StatusDormant
@@ -1226,8 +1226,8 @@ func TestDormantSessionsAreHiddenWithTheOfflineOnes(t *testing.T) {
 	m.now = func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
-	if strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
-		t.Fatalf("a dormant session is shown by default: %v", names(m))
+	if !strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
+		t.Fatalf("latest dormant session is missing: %v", names(m))
 	}
 	m = keys(m, "v")
 	if !strings.Contains(strings.Join(names(m), ","), "shop: quiet") {

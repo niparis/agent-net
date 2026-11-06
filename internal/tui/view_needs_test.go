@@ -91,7 +91,7 @@ func TestWaitingStatusCell(t *testing.T) {
 	}
 	a.Waiting = nil
 	a.Online = false
-	if got := m.statusCell(a); got != "off" {
+	if got := m.statusCell(a); got != "ended just now" {
 		t.Errorf("offline status = %q", got)
 	}
 }

@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 1 busy     updated 14:05:00
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free                                         │
+│  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
+│  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                   view: all  (v)
+ Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+  office-politics    agent  -          claude                   ended 12m ago
+  tenebrae-53        agent  tenebrae   claude · opus-5-5        busy     38%  1.2G
+  ◐ strategies       agent  strategies claude · sonnet-5-5      idle    240%  4.6G backtest v2
+  web                agent  shop       opencode · sonnet-5      idle       ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
+  ◐ ci-runner        agent  agent-net  pi · gpt-6               idle      5%  300M
+  scratch            agent  -          pi                       shell    <1%   80M
+ old-box 1 session ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  old-session        agent  old        claude                   ended 1d ago
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  n new  left/right cell  ? help  q quit

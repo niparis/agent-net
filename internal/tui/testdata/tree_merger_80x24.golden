@@ -15,8 +15,8 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ◐ ci-runner    agent  agent-net  pi · gpt-6    idle       ?     ?
   scratch        agent  -          pi            shell      ?     ?
-
-
+ old-box 1 session ─────────────────────────────────────────────────────────────
+  old-session    agent  old        claude        ended 1d ago
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
