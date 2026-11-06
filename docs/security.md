@@ -1429,7 +1429,9 @@ A CTO `merger_start` proposal pins the registered project and machine before
 approval. Approval starts Claude there, registers the session, and assigns
 test and merge. The built-in brief requires its own merge worktree, excludes
 build outputs, binaries and secrets, and tells it to report failures without
-fixing code. These are session instructions, not a git permission boundary.
+fixing code. The one exception is a mechanical renumber when a migration or
+decision number clashes with the default branch. These are session
+instructions, not a git permission boundary.
 
 Typed Repo/Agent Graph cutover requires an authenticated owner request to
 `graph.refs.enable` with a backup destination. Every enrolled machine, including

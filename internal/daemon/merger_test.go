@@ -161,6 +161,14 @@ func TestMergerFirstMessagePushRules(t *testing.T) {
 	}
 }
 
+func TestMergerFirstMessageRenumberRules(t *testing.T) {
+	for _, rule := range []string{"only conflict with the default branch is a migration or decision number clash", "may rebase it in your own merge worktree", "renumber mechanically", "store.go migration comment", "migrations.lock line (move or append it so the lock file stays in order)", "migration version numbers asserted in tests", "docs/decisions file number and links to it", "Change no SQL, logic or other line", "Run the targeted tests for the touched packages", "commit the renumber on its own with a message naming the old and new numbers", "note it in the merge report", "Beyond that, still report fail and do not fix code"} {
+		if !strings.Contains(MergerFirstMessage, rule) {
+			t.Errorf("missing renumber rule %q", rule)
+		}
+	}
+}
+
 func TestMergerFirstMessageBatchRules(t *testing.T) {
 	for _, rule := range []string{"merge-batch-<n>", "git diff --name-only", "--no-ff", "batch tip", "change head", "one at a time", "sensitive paths", "depend on each other", "CI link"} {
 		if !strings.Contains(MergerFirstMessage, rule) {
