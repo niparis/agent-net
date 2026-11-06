@@ -590,7 +590,7 @@ func TestCompareBoxAt80Columns(t *testing.T) {
 			continue
 		}
 		text := strings.TrimRight(strings.TrimPrefix(line, "│ "), " │")
-		if strings.Contains(text, "…") {
+		if strings.Contains(text, "…") && !strings.Contains(text, "…/") {
 			t.Errorf("box cuts a word with an ellipsis: %q", line)
 		}
 		if text != "" && !strings.HasPrefix(text, "  ") && !strings.Contains(text, "keep a") {

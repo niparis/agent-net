@@ -2,13 +2,13 @@
   Skills per project    [ All tools ]
 ╭─demo: 2 different copies on research─────────────────────────────────────────────────────────────────────────────────╮
 │            a  research's copy                                   b  research's copy                                   │
+│   path     /home/test/.claude/skills/demo                       /home/test/.pi/agent/skills/demo                     │
 │   changed  unknown                                              unknown                                              │
 │   used by  one harness setup                                    one harness setup                                    │
 │   files    SKILL.md, added.txt                                  SKILL.md, removed.txt                                │
 │                                                                                                                      │
 │   The copy you keep goes to every harness on research. The other is backed up for 30 days.                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 

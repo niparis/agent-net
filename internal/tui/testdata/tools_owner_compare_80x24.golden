@@ -2,6 +2,7 @@
   Skills per project    [ All tools ]
 ╭─design-taste-frontend: 2 different copies on research────────────────────────╮
 │            a  pi's copy                     b  claude's copy                 │
+│   path     …/skills/design-taste-frontend   …/skills/design-taste-frontend   │
 │   changed  25 Oct                           28 Oct                           │
 │   used by  pi only                          claude only                      │
 │   files    SKILL.md, notes.md               SKILL.md, notes.md,              │
@@ -10,7 +11,6 @@
 │   The copy you keep goes to every harness on research. The other is backed   │
 │   up for 30 days.                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
