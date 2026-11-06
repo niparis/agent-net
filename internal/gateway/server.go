@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -708,7 +709,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "graph.refs.enable" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
+		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "graph.refs.enable" || h.Type == "graph.refs.status" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -1473,6 +1474,45 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.CTOGraphClass(q.Tool, q.Args)
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true, "network_session": true, "graph_authority": true}, nil
+	case "graph.refs.status":
+		p, err := decode[struct {
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		on, err := st.graphRefsEnabled()
+		if err != nil {
+			return nil, err
+		}
+		rows, err := st.db.QueryContext(ctx, `SELECT n.id FROM nodes n LEFT JOIN node_graph_refs c ON c.node_id=n.id WHERE n.removed=0 AND (COALESCE(c.supported,0)=0 OR trim(COALESCE(c.version,'')) IN ('','unknown') OR c.version<>n.version) ORDER BY n.id`)
+		if err != nil {
+			return nil, err
+		}
+		var blockers []string
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			blockers = append(blockers, fmt.Sprintf("upgrade required: machine %s has not reported typed Graph support", id))
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		g.mu.Lock()
+		for id, conn := range g.conns {
+			if !conn.graphRefs.Load() {
+				blockers = append(blockers, fmt.Sprintf("upgrade required: machine %s has not completed typed Graph hello", id))
+			}
+		}
+		g.mu.Unlock()
+		sort.Strings(blockers)
+		return map[string]any{"on": on, "blockers": blockers}, nil
+
 	case "graph.refs.enable":
 		p, err := decode[struct {
 			Owner  string `json:"owner"`
