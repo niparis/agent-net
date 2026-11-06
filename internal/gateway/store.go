@@ -2557,15 +2557,15 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			return msg, false, reject("an idle worker notice must reply to its task")
 		}
 		var workerOwner string
-		if err := tx.QueryRow(`SELECT COALESCE(json_extract(worker, '$.owner'), '') FROM sessions WHERE id=?`, p.Sender).Scan(&workerOwner); err != nil {
+		if err := tx.QueryRow(`SELECT COALESCE(CASE WHEN json_valid(worker) THEN json_extract(worker, '$.owner') END, '') FROM sessions WHERE id=?`, p.Sender).Scan(&workerOwner); err != nil {
 			return msg, false, err
 		}
 		if workerOwner == "" || workerOwner != p.Recipient {
 			return msg, false, reject("an idle worker notice must be sent to the worker's owner")
 		}
 		var latestTask string
-		err := tx.QueryRow(`SELECT id FROM messages WHERE sender=? AND recipient=? AND type IN (?,?) ORDER BY rowid DESC LIMIT 1`,
-			workerOwner, p.Sender, protocol.TypeRequest, protocol.TypeReply).Scan(&latestTask)
+		err := tx.QueryRow(`SELECT id FROM messages WHERE sender=? AND recipient=? AND type=? ORDER BY rowid DESC LIMIT 1`,
+			workerOwner, p.Sender, protocol.TypeRequest).Scan(&latestTask)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				return msg, false, reject("an idle worker notice has no current task")
