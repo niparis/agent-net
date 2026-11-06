@@ -1636,6 +1636,9 @@ func (q StepReportRequest) Validate() error {
 	if len(q.Note) > MaxEvidenceNoteBytes {
 		return fmt.Errorf("note is longer than %d bytes", MaxEvidenceNoteBytes)
 	}
+	if q.Result == StepResultClose && strings.TrimSpace(q.Note) == "" {
+		return errors.New("a close needs a note: say why the change is closed")
+	}
 	return nil
 }
 

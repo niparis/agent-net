@@ -147,6 +147,63 @@ func retireStepMessages(tx *sql.Tx, change string) error {
 	return err
 }
 
+// closeStepTasks ends every pending step task of c and returns the sessions
+// that had claimed one, so each can be told to drop the change. A closed
+// change keeps its evidence; only the open tasks end.
+func closeStepTasks(tx *sql.Tx, c protocol.Change) ([]string, error) {
+	rows, err := tx.Query(`SELECT DISTINCT claimed_by FROM delivery_step_tasks
+		WHERE change_id=? AND completed=0 AND claimed_by<>'' ORDER BY claimed_by`, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	var sessions []string
+	for rows.Next() {
+		var session string
+		if err := rows.Scan(&session); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND completed=0`, c.ID); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+// stepClosedNoticeTx tells a session that had claimed a step that the caller
+// closed change c, so it drops the change from its queue instead of reporting.
+func (s *Store) stepClosedNoticeTx(tx *sql.Tx, c protocol.Change, session string) (protocol.Message, error) {
+	if session == "" || session == c.Caller {
+		return protocol.Message{}, nil
+	}
+	var ok int
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?)`, session).Scan(&ok); err != nil || ok == 0 {
+		return protocol.Message{}, err
+	}
+	title := protocol.NeutralizeMarkers(c.Title)
+	if title == "" {
+		title = c.ID
+	} else {
+		title += " (" + c.ID + ")"
+	}
+	text := fmt.Sprintf("[agent-net step closed]\nchange: %s\nproject: %s\nrevision: %d\n\n%s was closed by its caller without merge. Drop it from your queue; do not report a step for it.",
+		c.ID, protocol.NeutralizeMarkers(c.Project), c.Revision, title)
+	now := s.now().UTC()
+	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: "agent-net", FromName: "agent-net", FromHarness: "agent-net",
+		To: session, Type: protocol.TypeNotification, Body: text, IdempotencyKey: protocol.NewID("step-closed"),
+		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored}
+	_, err := tx.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
+		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State)
+	return m, err
+}
+
 func dismissStepInbox(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, at int64) error {
 	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='rule_disabled',answered_at=? WHERE (status='open' OR (status='dismissed' AND answer='')) AND id IN (
 		SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
