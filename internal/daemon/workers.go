@@ -1319,11 +1319,18 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	}
 	// Both resume paths announce the new generation before the harness can
 	// register. A delayed report from the previous process cannot end it.
+	runStateSupported := true
 	if _, err := d.call(cctx, "worker.run_state", protocol.WorkerRunState{Session: sessionID, RunGeneration: w.runGeneration}); err != nil {
-		return err
+		var refusal RemoteError
+		if !errors.As(err, &refusal) || string(refusal) != `unknown frame type "worker.run_state"` {
+			return err
+		}
+		// An older gateway activates the worker before asking us to resume it.
+		// Only its explicit unknown-method refusal permits this legacy path.
+		runStateSupported = false
 	}
 	defer func() {
-		if !okStart {
+		if !okStart && runStateSupported {
 			rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			d.call(rollbackCtx, "worker.run_state", protocol.WorkerRunState{Session: sessionID, RunGeneration: w.runGeneration, Ended: true})

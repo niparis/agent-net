@@ -17,3 +17,8 @@ resume rolls back only its own generation. Stale reports are logged.
 Generation 0 means the sender predates this protocol. Those reports retain the
 previous behavior. The gateway still activates a worker before asking an old
 daemon to resume it. Finished workers stay ended after late session syncs.
+
+A new daemon also supports an older gateway. If the gateway explicitly refuses
+worker.run_state as an unknown frame type, the daemon resumes using the legacy
+activation. Other refusals and connection errors still fail the resume. The
+daemon does not send a run-state rollback to a gateway that lacks the method.

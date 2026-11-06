@@ -994,7 +994,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 `, `
--- Worker run generations fence delayed end reports after a resume.
+-- 125: Worker run generations fence delayed end reports after a resume.
 ALTER TABLE sessions ADD COLUMN worker_run_generation INTEGER NOT NULL DEFAULT 0;
 `}
 

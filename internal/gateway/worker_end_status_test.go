@@ -204,3 +204,30 @@ func TestWorkerRunGenerationEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerRunGenerationMigration(t *testing.T) {
+	if version := migrationVersion(t, "Worker run generations fence"); version != 125 {
+		t.Fatalf("worker run generation migration=%d, want 125 after ch_8171", version)
+	}
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`ALTER TABLE sessions DROP COLUMN worker_run_generation`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=125`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_run_generation'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("generation column: %d %v", count, err)
+	}
+	// Older-schema fixtures also replay the migration with the column present.
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=125`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+}
