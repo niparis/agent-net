@@ -952,6 +952,27 @@ CREATE TRIGGER IF NOT EXISTS session_lifecycle_update BEFORE UPDATE OF online,re
 -- these triggers also permits old-schema fixtures to drop identity columns.
 DROP TRIGGER IF EXISTS session_lifecycle_insert;
 DROP TRIGGER IF EXISTS session_lifecycle_update;
+`, `
+-- 123: owner-authorized Agent selection before first session registration.
+CREATE TABLE IF NOT EXISTS session_agent_starts (
+ node_id TEXT NOT NULL REFERENCES nodes(id),
+ harness TEXT NOT NULL,
+ native_id TEXT NOT NULL,
+ agent_id TEXT NOT NULL REFERENCES agents(id),
+ ref TEXT NOT NULL DEFAULT '',
+ cwd TEXT NOT NULL DEFAULT '',
+ existing TEXT NOT NULL DEFAULT '[]',
+ expires_at INTEGER NOT NULL DEFAULT 0,
+ owner_session TEXT NOT NULL DEFAULT '',
+ project TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(node_id,harness,native_id)
+);
+CREATE TABLE IF NOT EXISTS session_agent_start_failures (
+ node_id TEXT NOT NULL, ref TEXT NOT NULL, harness TEXT NOT NULL,
+ native_id TEXT NOT NULL, owner_session TEXT NOT NULL, project TEXT NOT NULL,
+ item_id TEXT NOT NULL, reason TEXT NOT NULL,
+ PRIMARY KEY(node_id,ref)
+);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1789,6 +1810,12 @@ func (s *Store) upsertSession(q interface {
 	if err != nil {
 		return "", false, err
 	}
+	if err := s.applyStartedAgent(q, nodeID, in, id, known); err != nil {
+		return "", false, err
+	}
+	if err := s.updateFailedAgentSession(q, nodeID, in.NativeID, id); err != nil {
+		return "", false, err
+	}
 	if err = checkActiveSessionIdentity(q, id); err != nil {
 		return "", false, err
 	}
@@ -1955,6 +1982,9 @@ func (s *Store) hostname(nodeID string) string {
 }
 
 func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, error) {
+	if _, err := s.ExpireSessionAgentStarts(); err != nil {
+		return "", err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return "", err
@@ -1975,6 +2005,9 @@ func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, e
 
 // SyncSessions upserts the full set and marks the node's other sessions offline.
 func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protocol.SessionInfo, error) {
+	if _, err := s.ExpireSessionAgentStarts(); err != nil {
+		return nil, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -2864,12 +2897,15 @@ func (s *Store) logStep(event, id string, extra ...any) {
 
 // Pending returns undelivered messages for the node's online sessions, oldest first.
 func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Message, error) {
+	if _, err := s.ExpireSessionAgentStarts(); err != nil {
+		return nil, err
+	}
 	states := `m.state = 'stored'`
 	if includeDispatched {
 		states = `m.state IN ('stored','dispatched')`
 	}
 	rows, err := s.db.Query(msgSelect+` JOIN sessions r ON r.id = m.recipient
-		WHERE r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
+		WHERE NOT ( `+sessionAgentHoldSQL("r")+` ) AND r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
 		ORDER BY m.created_at, m.rowid`, nodeID, s.now().UnixNano())
 	if err != nil {
 		return nil, err

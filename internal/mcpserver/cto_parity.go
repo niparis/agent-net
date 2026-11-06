@@ -37,7 +37,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("graph_undo", "Undo a graph change.", map[string]ctoField{"id": n("ID; omit for latest.")})
 	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", ctoNodeSettings...), "value": s("Empty clears.")})
 
-	startFields := map[string]ctoField{"project": s("Project."), "path": s("Path."), "node_id": s("Machine."), "harness": harness, "model": model, "folder": en("Folder.", "project", "worktree"), "branch": s("Branch."), "first_message": s("First message."), "create": b("Create.")}
+	startFields := map[string]ctoField{"agent_id": s("Lasting Agent; omit for Repo owner."), "project": s("Project."), "path": s("Path."), "node_id": s("Machine."), "harness": harness, "model": model, "folder": en("Folder.", "project", "worktree"), "branch": s("Branch."), "first_message": s("First message."), "create": b("Create.")}
 	add("session_start", "Start an owner session.", startFields)
 	add("merger_start", "Start the project merger.", map[string]ctoField{"project": s("Project."), "node_id": s("Machine."), "model": model})
 	add("merger_stop", "Stop routing to the project merger.", map[string]ctoField{"project": s("Project."), "node_id": s("Machine.")})

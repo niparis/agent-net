@@ -49,6 +49,11 @@ func (s *Store) resolveRepoContext(project string) (resolvedContext, error) {
 
 // resolveSessionContext resolves a lasting session or worker using its caller.
 func (s *Store) resolveSessionContext(session string) (resolvedContext, error) {
+	if pending, err := s.SessionAgentPending(session); err != nil {
+		return resolvedContext{}, err
+	} else if pending {
+		return resolvedContext{}, reject("session Agent selection is pending")
+	}
 	return s.resolveContext(session, "", false)
 }
 

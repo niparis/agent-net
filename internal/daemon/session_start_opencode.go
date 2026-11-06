@@ -54,7 +54,12 @@ func ownerOpenCodeService() (openCodeService, error) {
 
 // relayed says the owner approved the start from another machine; see
 // launchOwnerClaude.
-func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed bool) (protocol.StartedSession, error) {
+func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed bool) (result protocol.StartedSession, startErr error) {
+	defer func() {
+		if startErr != nil {
+			d.failStartAgent(r)
+		}
+	}()
 	down := fmt.Errorf("the OpenCode service is not running on %s", d.cfg.Hostname)
 	service, err := ownerOpenCodeService()
 	if err != nil {
@@ -74,6 +79,11 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		request["model"] = selected
 	}
 	directory := strings.ReplaceAll(url.QueryEscape(r.Path), "+", "%20")
+	if r.AgentID != "" {
+		if err := d.reserveStartAgent(ctx, "opencode", "", r.AgentID, r.ID, r.Path, r.Project); err != nil {
+			return protocol.StartedSession{}, err
+		}
+	}
 	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
 	body, code, err := api("POST", "/api/session", request, "x-opencode-directory", directory)
 	if err != nil {
@@ -91,6 +101,11 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		return protocol.StartedSession{}, errors.New("OpenCode answered without a session ID")
 	}
 	r.NativeID = created.Data.ID
+	if r.AgentID != "" {
+		if err := d.reserveStartAgent(ctx, "opencode", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
+			return protocol.StartedSession{}, err
+		}
+	}
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -103,7 +118,10 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		cctx, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
 		defer cancel()
 		var startErr error
-		if message != "" {
+		sendFirst := func() {
+			if message == "" {
+				return
+			}
 			// OpenCode 2.2 queues user turns through /prompt, as for the CTO.
 			api := openCodeWorkerAPI(cctx, service.URL, service.Password)
 			_, status, err := api("POST", "/api/session/"+url.PathEscape(r.NativeID)+"/prompt", map[string]string{"text": message, "delivery": "queue"}, "x-opencode-directory", directory)
@@ -112,6 +130,9 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 			} else if status < 200 || status >= 300 {
 				startErr = fmt.Errorf("OpenCode refused the first message (HTTP %d)", status)
 			}
+		}
+		if r.AgentID == "" {
+			sendFirst()
 		}
 		ticker := time.NewTicker(25 * time.Millisecond)
 		defer ticker.Stop()
@@ -130,8 +151,15 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 			case <-ticker.C:
 			}
 		}
+		if startErr == nil {
+			startErr = d.checkStartAgent(cctx, r)
+		}
+		if startErr == nil && r.AgentID != "" {
+			sendFirst()
+		}
 		if startErr != nil {
 			r.Status, r.Error = "failed", startErr.Error()
+			d.failStartAgent(r)
 		} else {
 			bin, err := d.harnessBinary("opencode")
 			if err == nil {

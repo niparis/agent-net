@@ -1441,3 +1441,26 @@ After cutover each new connection must pass its own typed-capable `hello` before
 it becomes available for routing. Old frames are refused with `upgrade required`.
 Legacy Graph string adapters remain available to upgraded daemons during the
 owner surface transition. Rollback requires restoring the pre-cutover backup.
+
+Explicit Agent selection at session start uses `session.agent.reserve`. The
+caller must name the owner pseudo-session on its authenticated machine. The
+local daemon exposes this only to its owner start path or an approved CTO
+proposal. Agent role text grants no authority. Unknown and tombstoned Agents
+are refused before launch and checked again at binding and first registration.
+A reservation cannot replace an existing identity or bind a worker.
+
+Before launch, a durable start reference records the Agent and existing session
+IDs. New lasting sessions of that harness have no final Agent and cannot
+receive messages or resolve their context until the exact returned native ID
+is bound. An already registered candidate may be assigned only while held and
+only if it was absent from the baseline. Binding and releasing delivery are
+transactional. A hold or native reservation awaiting first registration expires
+after two minutes, or sooner when the daemon reports failure. The deadline is a
+constant, not a configurable setting. Cancellation records the failed start,
+releases unrelated sessions with their normal defaults, and creates one owner
+Inbox item. A late registration receives the Repo-owner default; a late binding
+cannot revive the canceled Agent choice. An exact late ID may update the same
+Inbox item, never create a second one or guess an Agent from a directory.
+Existing sessions and workers are unaffected. Remote selections require `session_agents` in the
+destination's current hello. Old daemons and starts without a selection keep
+the existing Repo-owner default.

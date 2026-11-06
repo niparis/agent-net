@@ -111,6 +111,9 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	if target == nil {
 		return nil, reject("machine %s is offline", firstNonEmpty(host, nodeID))
 	}
+	if relay.AgentID != "" && !target.sessionAgents.Load() {
+		return nil, reject("target daemon does not support Agent selection; upgrade it before starting this session")
+	}
 	version, err := g.store.NodeVersion(nodeID)
 	if err != nil {
 		version = ""

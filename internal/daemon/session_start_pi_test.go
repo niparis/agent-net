@@ -15,13 +15,16 @@ func TestSessionStartPiFirstMessageIsAnOwnerMessage(t *testing.T) {
 	})
 	repo := newRepo(t, "shop")
 	n.register(t, repo)
+	n.register(t, newRepo(t, "chosen"))
 	fakeOpenHerdr(t)
 
 	var r sessionStartTestResult
-	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "shop", Harness: "pi",
-		FirstMessage: "Inspect this project"}), &r)
+	mustJSON(t, n.cli.mustCall("session_start", map[string]any{"project": "shop", "harness": "pi", "agent_id": "chosen", "first_message": "Inspect this project"}), &r)
 	lc, sessionID := helloPi(t, n.node, r.NativeID, repo, true)
 	push := lc.nextPush()
+	if a := n.agentOf(t, sessionID); a == nil || a.AgentID != "chosen" {
+		t.Fatalf("first delivery agent: %+v", a)
+	}
 	if push.Body != "Inspect this project" || push.From != n.ownerID() || push.To != sessionID ||
 		push.Type != protocol.TypeRequest || push.FromHarness != protocol.OwnerHarness {
 		t.Fatalf("first message: %+v", push)
@@ -76,5 +79,24 @@ func TestSessionStartPiRequiresHerdr(t *testing.T) {
 	_, err := d.launchOwnerPi(protocol.StartedSession{Project: "shop", Path: dir}, "", "", "", "", false)
 	if err == nil || !strings.Contains(err.Error(), "herdr not found (looked in: "+dir) {
 		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestSessionStartPiRemoteAgent(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	a := startWorkerNode(t, g, shortSet, nil)
+	b := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"pi": "/fake/pi"} })
+	b.register(t, newRepo(t, "remote-repo"))
+	b.register(t, newRepo(t, "chosen"))
+	fakeOpenHerdr(t)
+	var r protocol.StartedSession
+	mustJSON(t, a.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "remote-repo", NodeID: b.d.NodeID(), Harness: "pi", AgentID: "chosen", FirstMessage: "Inspect remote"}), &r)
+	lc, id := helloPi(t, b.node, r.NativeID, r.Path, true)
+	push := lc.nextPush()
+	if push.Body != "Inspect remote" {
+		t.Fatalf("message: %+v", push)
+	}
+	if agent := b.agentOf(t, id); agent == nil || agent.AgentID != "chosen" {
+		t.Fatalf("remote first identity: %+v", agent)
 	}
 }

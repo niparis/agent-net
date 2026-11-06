@@ -156,14 +156,15 @@ type offlineTimer struct {
 }
 
 type nodeConn struct {
-	graphRefs atomic.Bool
-	id        string
-	tokenHash string // credential used for this connection
-	ws        *websocket.Conn
-	wmu       sync.Mutex
-	cancel    context.CancelFunc
-	dead      chan struct{} // closed when the connection ends
-	health    *linkkeepalive.Monitor
+	sessionAgents atomic.Bool
+	graphRefs     atomic.Bool
+	id            string
+	tokenHash     string // credential used for this connection
+	ws            *websocket.Conn
+	wmu           sync.Mutex
+	cancel        context.CancelFunc
+	dead          chan struct{} // closed when the connection ends
+	health        *linkkeepalive.Monitor
 
 	pmu     sync.Mutex
 	nextID  int
@@ -368,6 +369,8 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 	go g.RunRetries(ctx)
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
+	agentStarts := time.NewTicker(time.Second)
+	defer agentStarts.Stop()
 	appsCleanup := time.NewTicker(10 * time.Minute)
 	defer appsCleanup.Stop()
 	for {
@@ -376,6 +379,14 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			return
 		case <-g.appsDone:
 			return
+		case <-agentStarts.C:
+			nodes, err := g.store.ExpireSessionAgentStarts()
+			if err != nil {
+				g.logLine("error", "where", "expire Agent starts", "err", err)
+			}
+			for _, node := range nodes {
+				g.dispatchPending(ctx, node, false)
+			}
 		case <-appsCleanup.C:
 			now := g.store.now()
 			if err := g.store.DeleteExpiredTokens(now); err != nil {
@@ -784,7 +795,7 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 		g.dispatchPending(ctx, nc.id, true)
 		g.wakePending(ctx, nc.id)
 	}
-	if h.Type == "session.upsert" && err == nil {
+	if (h.Type == "session.upsert" || h.Type == "session.agent.reserve") && err == nil {
 		g.dispatchPending(ctx, nc.id, false)
 	}
 	return nil
@@ -831,6 +842,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad hello")
 		}
+		nc.sessionAgents.Store(p.SessionAgents)
 		if err := st.SetNodeGraphRefs(nc.id, p.Version, p.GraphRefs); err != nil {
 			return nil, err
 		}
@@ -1284,6 +1296,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			res = append(res, map[string]string{"native_id": s.NativeID, "harness": s.Harness, "session_id": s.SessionID})
 		}
 		return map[string]any{"sessions": res}, nil
+
+	case "session.agent.status":
+		p, err := decode[protocol.SessionAgentReservation](raw)
+		if err != nil {
+			return nil, reject("bad session.agent.status")
+		}
+		return st.SessionAgentStartStatus(nc.id, p.Owner, p.Ref)
+	case "session.agent.reserve":
+		p, err := decode[protocol.SessionAgentReservation](raw)
+		if err != nil {
+			return nil, reject("bad session.agent.reserve")
+		}
+		return struct{}{}, st.ReserveSessionAgent(nc.id, p)
 
 	case "session.upsert":
 		p, err := decode[protocol.SessionUpsert](raw)
@@ -2351,6 +2376,9 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 }
 
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {
+	if held, err := g.store.SessionAgentPending(m.To); err != nil || held {
+		return
+	}
 	if m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, "step_") {
 		current, err := g.store.stepMessageCurrent(m.ID)
 		if err != nil || !current {

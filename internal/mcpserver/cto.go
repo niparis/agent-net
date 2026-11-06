@@ -99,6 +99,7 @@ var ctoTools = map[string]ctoToolDef{
 		fields: map[string]ctoField{
 			"action":     {typ: "string", enum: []string{"rename", "trust", "policy", "session_start", "merger_start", "merger_stop"}},
 			"session_id": {typ: "string", desc: "Session ID."},
+			"agent_id":   {typ: "string", desc: "Lasting Agent; omit for Repo owner."},
 			"project":    {typ: "string"}, "path": {typ: "string"}, "node_id": {typ: "string"},
 			"harness": {typ: "string"}, "model": {typ: "string"}, "folder": {typ: "string"},
 			"branch": {typ: "string"}, "first_message": {typ: "string"}, "create": {typ: "boolean"},
