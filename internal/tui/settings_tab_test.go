@@ -26,10 +26,14 @@ func TestSettingsTabAndRemovedKeys(t *testing.T) {
 		t.Fatalf("6: tab = %d", m.tab)
 	}
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"Connected apps", "Integrations", "Machines", "Notifications", "Tips"} {
+	for _, want := range []string{"Connected apps", "Integrations", "Machines", "Notifications"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("settings lacks %q", want)
 		}
+	}
+	m = selectSettingsKind(m, "tips")
+	if !strings.Contains(m.testView(), "Tips") {
+		t.Fatal("settings lacks Tips")
 	}
 }
 
