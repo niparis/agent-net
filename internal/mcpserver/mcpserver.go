@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/toolcatalog"
 	"github.com/niparis/agent-net/internal/upgrade"
 )
 
@@ -113,6 +114,15 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	return s
 }
 
+func isCTOCatalogTool(name string) bool {
+	for _, entry := range toolcatalog.ForRole(toolcatalog.RoleCTO) {
+		if entry.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // staleToolsNote is a receiving middleware. When take returns a note (the
 // daemon said these tools are older than the machine's agent-net), it adds the
 // note to the end of the next agent-net tool result. take gives the note out
@@ -126,7 +136,7 @@ func staleToolsNote(take func(ctx context.Context) string) mcp.Middleware {
 			}
 			call, ok := req.(*mcp.CallToolRequest)
 			out, ok2 := res.(*mcp.CallToolResult)
-			if !ok || !ok2 || out == nil || call.Params == nil || !strings.HasPrefix(call.Params.Name, "agent_") {
+			if !ok || !ok2 || out == nil || call.Params == nil || (!strings.HasPrefix(call.Params.Name, "agent_") && !isCTOCatalogTool(call.Params.Name)) {
 				return res, err
 			}
 			if n := take(ctx); n != "" {
@@ -188,6 +198,11 @@ type Daemon struct {
 	// successful hello (the first connection and each redial). It must not block.
 	OnHello func(daemonVersion string)
 
+	staleNote
+}
+
+// staleNote is shared by the ordinary and CTO MCP transports.
+type staleNote struct {
 	// noteMu guards the stale-tools note. The daemon sends it in the hello
 	// answer when this process is older than the daemon. It is given out once
 	// per Daemon (one session), however many times the hello is repeated.
@@ -196,8 +211,19 @@ type Daemon struct {
 	noteGiven bool
 }
 
+// observeVersion supplies a hint even when hello does not include tools_note
+// (the CTO channel only receives the daemon version).
+func (d *staleNote) observeVersion(mine, daemon string) {
+	if !upgrade.IsNewer(daemon, mine) {
+		return
+	}
+	d.noteMu.Lock()
+	defer d.noteMu.Unlock()
+	d.note = fmt.Sprintf("agent-net was upgraded to %s; restart this session (or run /mcp) to get new tools and fields.", daemon)
+}
+
 // takeNote returns the stale-tools note once, then "".
-func (d *Daemon) takeNote() string {
+func (d *staleNote) takeNote() string {
 	d.noteMu.Lock()
 	defer d.noteMu.Unlock()
 	if d.noteGiven || d.note == "" {
@@ -209,7 +235,7 @@ func (d *Daemon) takeNote() string {
 
 // dropNote forgets the note: this process is about to become the new binary,
 // whose tools are not stale.
-func (d *Daemon) dropNote() {
+func (d *staleNote) dropNote() {
 	d.noteMu.Lock()
 	d.note, d.noteGiven = "", true
 	d.noteMu.Unlock()
@@ -257,12 +283,17 @@ func (d *Daemon) conn(ctx context.Context) (*client.Client, error) {
 	}
 	d.cl = cl
 	var hr struct {
-		Note string `json:"tools_note"`
+		Note    string `json:"tools_note"`
+		Version string `json:"version"`
 	}
-	if json.Unmarshal(res, &hr) == nil && hr.Note != "" {
-		d.noteMu.Lock()
-		d.note = hr.Note
-		d.noteMu.Unlock()
+	if json.Unmarshal(res, &hr) == nil {
+		mine, _ := d.hello["version"].(string)
+		d.observeVersion(mine, hr.Version)
+		if hr.Note != "" {
+			d.noteMu.Lock()
+			d.note = hr.Note
+			d.noteMu.Unlock()
+		}
 	}
 	if d.OnHello != nil {
 		var r struct {
