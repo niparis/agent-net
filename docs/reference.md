@@ -2,6 +2,10 @@
 
 Decision [0036](decisions/0036-primitives.md) defines an agent as a lasting identity with a charter and a Graph node, and a session as one running process of an agent. A worker is an agent for one task. A task is a contract with a caller, doer, done condition and result; the free-text status label is an announced task. Authority covers actions requiring the owner; autonomy covers decisions about work. Pending work is derived. The current interfaces below may still use older labels and do not yet implement every part of the decision.
 
+## Typed Repo/Agent Graph cutover
+
+In Settings (`6`), select **Typed Repo/Agent Graph** under Integrations and press Enter. The screen shows whether it is on and lists machines that block the cutover. Accept or edit the suggested new absolute backup destination on the gateway machine; the suggested directory is beside the gateway data directory. Use Page Up and Page Down to see a long blocker list. Review the confirmation, and press Enter or `y`. The gateway takes the backup before enabling the cutover. The result shows the backup path or the gateway's refusal. Turning the cutover off later requires restoring that backup. Once on, it cannot be run again.
+
 ## Remove a machine or rotate its token
 
 In the TUI, open Settings (`6`) and select a machine. Press `x` to remove it
