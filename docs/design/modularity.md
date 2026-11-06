@@ -210,6 +210,6 @@ Each step ships alone and keeps today's behaviour.
 
 ## Open questions
 
-1. When a tracker exists, does it own the item state, or does agent-net? Conductor's answer is the tracker.
+1. **Decided 2026-11-06:** One owner per setup, chosen in the recipe per network or team. Internal tracking of agent-net's own changes and steps is the default. With a third-party tracker, the tracker owns the item and its state. agent-net keeps only the item link on the run and posts results one way (merged, released, failed); it never reads tracker state to decide anything. There is no two-way sync. Build this only if the step 7 gap list needs it.
 2. Should a part of a repo ever have its own maturity (a stable core and an experimental module)? Proposed: not now.
-3. A cross-cutting agent (for example a security reviewer for a team) owns nothing and works through relationships. Is that enough?
+3. **Decided 2026-11-06:** A cross-cutting agent can own nothing and works through relationships. Advertise its charter and expertise for discovery and ad-hoc help; assign it to a delivery step for a whole team when the work is required. See [teams and relationships](teams-relationships.md).
