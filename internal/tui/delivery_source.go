@@ -134,6 +134,8 @@ func deliveryMarks(steps []protocol.StepStatus) []stripState {
 			switch st.State {
 			case protocol.StepStateSkipped:
 				continue
+			case "unrecorded":
+				continue
 			case protocol.StepStatePassed:
 				passed++
 			case protocol.StepStateFailed, protocol.StepStateClosed:
@@ -212,20 +214,43 @@ func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, s
 // A list view has only the latest counted result of each step.
 func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange {
 	c := v.Change
+	steps := append([]protocol.StepStatus(nil), v.Steps...)
+	if c.State == protocol.ChangeDone || c.State == protocol.ChangeMerged || c.MergedCommit != "" {
+		for i := range steps {
+			if deliveryStepBeforeMerge(steps[i].Step) && !steps[i].AfterMerge && steps[i].State != protocol.StepStatePassed && steps[i].State != protocol.StepStateSkipped {
+				steps[i].State = "unrecorded"
+				steps[i].Note = "not recorded"
+			}
+		}
+		filtered := make([]protocol.StepRef, 0, len(v.Next))
+		for _, next := range v.Next {
+			if !deliveryStepBeforeMerge(next.Step) || next.AfterMerge {
+				filtered = append(filtered, next)
+			}
+		}
+		v.Next = filtered
+	}
 	out := deliveryChange{ID: c.ID, Title: c.Title, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
-		State: c.State, Caller: c.Caller, MergedCommit: c.MergedCommit, Marks: deliveryMarks(v.Steps), Full: v.Pipeline != nil}
-	for _, st := range v.Steps {
+		State: c.State, Caller: c.Caller, MergedCommit: c.MergedCommit, Marks: deliveryMarks(steps), Full: v.Pipeline != nil}
+	for _, st := range steps {
 		out.Steps = append(out.Steps, deliveryStep{Name: st.StepRef.String(), Owner: deliveryOwnerLabel(st.Owner), State: st.State, Note: st.Note})
 	}
+	v.Steps = steps
 	if r, owner, state, ok := currentStep(v); ok {
 		out.Step, out.StepOwner, out.OwnerKind, out.StepState = r.Step, deliveryOwnerLabel(owner), owner.Kind, state
+		for _, st := range steps {
+			if st.StepRef == r {
+				out.ClaimedBy = deliveryClaimedSession(st.Note)
+				break
+			}
+		}
 	}
 
 	var raw []protocol.Evidence
 	if out.Full {
 		raw = v.Evidence
 	} else {
-		for _, st := range v.Steps {
+		for _, st := range steps {
 			if st.Evidence != nil {
 				raw = append(raw, *st.Evidence)
 			}
@@ -241,6 +266,25 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 	sort.SliceStable(out.Evidence, func(i, j int) bool { return out.Evidence[i].At.Before(out.Evidence[j].At) })
 	out.Waiting = max(now.Sub(last), 0)
 	return out
+}
+
+func deliveryStepBeforeMerge(step string) bool {
+	switch step {
+	case "accept", "review", "test", "approve":
+		return true
+	}
+	return false
+}
+
+func deliveryClaimedSession(note string) string {
+	const prefix = "claimed by "
+	if i := strings.Index(note, prefix); i >= 0 {
+		fields := strings.Fields(note[i+len(prefix):])
+		if len(fields) > 0 {
+			return fields[0]
+		}
+	}
+	return ""
 }
 
 // deliveryEvidenceFrom maps one report. The session that is the change's

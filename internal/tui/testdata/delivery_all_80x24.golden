@@ -1,19 +1,19 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│5
-╭─Delivery─────────────────────────────────────────────────────────────5 shown─╮
-│   TITLE            STEP     STATUS                 AGE    EVIDENCE           │
+╭─Delivery─────────────────────────────────────────────────────────────8 shown─╮
+│   TITLE              STEP     STATUS                             AGE    DONE │
 │ Needs you · 1                                                                │
-│ ▸ Fix the deploy … review   failed                 2h5m   a✓r✗t·p-m·T·l·d·v· │
-│ Waiting on agents · 3                                                        │
-│   Show which prov… review   waiting for merger     2h14m  a✓r·t✓p-m·T·l·d·v· │
-│   Say what a deli… test     waiting for ci-runner  6m     a✓r✓t·p-m✓T·l·d·v· │
+│ ▸ Approve the deplo… approve  waiting for you                    3h0m   ○    │
+│ Moving · 3                                                                   │
+│   Show which provid… review   waiting for merger                 2h14m  ●○●  │
+│   Say what a delive… test     waiting for ci-runner (online)     6m     ●●○○ │
 │   merged: abcdef1                                                            │
-│   Import supplier… accept   waiting for s_unknown  1d6h!  a·r·t·p-m·T·l·d·v· │
+│   Fix the deploy ga… review   review failed, back to strategies  2h5m   ●✗   │
+│ Stuck · 3                                                                    │
+│   Import suppliers … accept   waiting for an unknown session (e… 1d6h   ○    │
+│   wbg-procurement · 2 changes: accept by wbg-procurement (exited) · 15h-22h  │
 │ Done · 1                                                                     │
-│   Drop the old pa… -        done                   3d0h   a✓r✓t✓p✓m✓T·l✓d✓v✓ │
-│ a accept · r review · t test · p approve · m merge · T test after merge      │
-│ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │
+│   Drop the old pars… -        done                               3d0h   ●    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 

@@ -115,15 +115,16 @@ func deliveryLegend(w int) []string {
 // deliveryColumns is the layout of the list for one width. The title is the
 // main column; the branch, head and revision live in the detail view.
 type deliveryColumns struct {
-	title, repo, step, status, age int
-	spaced                         bool
+	title, repo, step, status, age, progress int
+	spaced                                   bool
 }
 
 const (
-	deliveryStepW   = 8 // "approve" fits
-	deliveryStatusW = 22
-	deliveryAgeW    = 6
-	deliveryLead    = 2
+	deliveryStepW     = 8 // "approve" fits
+	deliveryStatusW   = 18
+	deliveryStatusCap = 34
+	deliveryAgeW      = 6
+	deliveryLead      = 2
 )
 
 // gap is the space between columns: tighter when the screen is narrow.
@@ -134,7 +135,7 @@ func (c deliveryColumns) gap() int {
 	return 1
 }
 
-func deliveryLayout(inner int, changes []deliveryChange) deliveryColumns {
+func (m Model) deliveryLayout(inner int, changes []deliveryChange) deliveryColumns {
 	var c deliveryColumns
 	c.spaced = inner >= stripSpacedFrom
 	gaps := 4 // between the five columns without a repo
@@ -146,13 +147,25 @@ func deliveryLayout(inner int, changes []deliveryChange) deliveryColumns {
 		c.repo = min(c.repo, 16)
 		gaps = 5
 	}
-	fixed := deliveryLead + c.repo + deliveryStepW + deliveryStatusW + deliveryAgeW + deliveryStripWidth(c.spaced) + gaps*c.gap()
-	c.title = max(inner-fixed, 12)
+	for _, ch := range changes {
+		c.progress = max(c.progress, ansi.StringWidth(deliveryProgress(ch)))
+		if len(ch.Children) > 1 {
+			continue
+		}
+		status, _ := m.deliveryStatusText(ch)
+		c.status = max(c.status, ansi.StringWidth(status))
+	}
+	c.progress = max(c.progress, 4)
+	maxStatus := max(inner-(deliveryLead+c.repo+deliveryStepW+deliveryAgeW+c.progress+gaps*c.gap()+1), deliveryStatusW)
+	maxStatus = min(maxStatus, deliveryStatusCap)
+	c.status = min(c.status, maxStatus)
+	fixed := deliveryLead + c.repo + deliveryStepW + c.status + deliveryAgeW + c.progress + gaps*c.gap()
+	c.title = max(inner-fixed, 1)
 	return c
 }
 
 func (c deliveryColumns) width() int {
-	n := deliveryLead + c.title + c.repo + deliveryStepW + deliveryStatusW + deliveryAgeW + deliveryStripWidth(c.spaced) + 4*c.gap()
+	n := deliveryLead + c.title + c.repo + deliveryStepW + c.status + deliveryAgeW + c.progress + 4*c.gap()
 	if c.repo > 0 {
 		n += c.gap()
 	}
@@ -165,11 +178,22 @@ func (c deliveryColumns) header() string {
 	if c.repo > 0 {
 		parts = append(parts, cell("REPO", c.repo))
 	}
-	parts = append(parts, cell("STEP", deliveryStepW), cell("STATUS", deliveryStatusW), cell("AGE", deliveryAgeW), "EVIDENCE")
+	parts = append(parts, cell("STEP", deliveryStepW), cell("STATUS", c.status), cell("AGE", deliveryAgeW), cell("DONE", c.progress))
 	return sDim.Render(strings.Repeat(" ", deliveryLead) + strings.Join(parts, gap))
 }
 
 func (m Model) deliveryRow(c deliveryColumns, ch deliveryChange, selected bool) string {
+	if len(ch.Children) > 1 {
+		title := deliveryTitle(ch)
+		if c.width() <= 80 {
+			title = strings.Replace(title, " changes wait for ", " changes: ", 1)
+		}
+		line := "  " + cell(title, max(c.width()-2, 1))
+		if selected {
+			line = selectedRow(line)
+		}
+		return line
+	}
 	gap := strings.Repeat(" ", c.gap())
 	lead := "  "
 	if selected {
@@ -181,12 +205,7 @@ func (m Model) deliveryRow(c deliveryColumns, ch deliveryChange, selected bool) 
 	}
 	status, style := m.deliveryStatusText(ch)
 	age := deliveryWaitText(ch.Waiting)
-	ageStyle := sDim
-	if deliveryStale(ch) {
-		age += "!"
-		ageStyle = lipgloss.NewStyle().Foreground(roleWarning)
-	}
-	parts = append(parts, cell(firstNonEmpty(ch.Step, "-"), deliveryStepW), style.Render(cell(status, deliveryStatusW)), ageStyle.Render(cell(age, deliveryAgeW)), deliveryStrip(deliveryStripStates(ch), c.spaced))
+	parts = append(parts, cell(firstNonEmpty(ch.Step, "-"), deliveryStepW), style.Render(cell(status, c.status)), sDim.Render(cell(age, deliveryAgeW)), cell(deliveryProgress(ch), c.progress))
 	line := lead + strings.Join(parts, gap)
 	if selected {
 		line = selectedRow(line)
@@ -226,27 +245,97 @@ func deliveryTitle(ch deliveryChange) string {
 	return "(untitled) " + shortID(ch.ID)
 }
 
+func deliveryProgress(ch deliveryChange) string {
+	states := deliveryStripStates(ch)
+	present := map[string]bool{}
+	for _, s := range ch.Steps {
+		for _, name := range deliverySteps {
+			if name == "test after merge" {
+				if s.Name == "test after merge" {
+					present[name] = true
+				}
+				continue
+			}
+			if s.Name == name || strings.HasPrefix(s.Name, name+" for ") || (name != "test" && s.Name == name+" after merge") {
+				present[name] = true
+			}
+		}
+	}
+	for _, e := range ch.Evidence {
+		present[e.Step] = true
+	}
+	if ch.Step != "" {
+		present[ch.Step] = true
+	}
+	var b strings.Builder
+	for i, name := range deliverySteps {
+		stepName := name
+		if name == "test after merge" {
+			if !present[name] {
+				continue
+			}
+			after := false
+			for _, e := range ch.Evidence {
+				if e.Step == "test" && e.Fields["after_merge"] == "yes" {
+					after = true
+				}
+			}
+			for _, s := range ch.Steps {
+				if strings.Contains(s.Name, "after merge") {
+					after = true
+				}
+			}
+			if !after {
+				continue
+			}
+		} else if !present[stepName] {
+			continue
+		}
+		switch states[i] {
+		case stripFailed:
+			b.WriteString("✗")
+		case stripPassed:
+			b.WriteString("●")
+		default:
+			b.WriteString("○")
+		}
+	}
+	return b.String()
+}
+
 // deliveryWho names the session or node a ready step waits for. The owner is
 // "you"; a caller session is the name the sessions list shows for it.
 func (m Model) deliveryWho(ch deliveryChange) string {
 	switch ch.OwnerKind {
-	case protocol.OwnerPerson, protocol.OwnerDelegate:
+	case protocol.OwnerPerson:
 		return "you"
+	case protocol.OwnerDelegate:
+		return firstNonEmpty(sanitize(ch.StepOwner), "the delegate")
 	case protocol.OwnerGitHub:
 		return "github"
 	case protocol.OwnerNode:
-		return firstNonEmpty(sanitize(ch.StepOwner), "a node")
+		name := firstNonEmpty(sanitize(ch.StepOwner), "a node")
+		if strings.HasPrefix(name, "s_") {
+			return m.deliverySession(name)
+		}
+		if presence := m.deliveryOwnerPresence(name); presence != "" {
+			return name + " (" + presence + ")"
+		}
+		return name
 	case protocol.OwnerCaller:
 		if ch.Caller == "" {
+			if strings.HasPrefix(ch.StepOwner, "s_") {
+				return m.deliverySession(ch.StepOwner)
+			}
 			return firstNonEmpty(sanitize(ch.StepOwner), "the caller")
 		}
 		if ch.Caller == m.snap.OwnerSession {
 			return "you"
 		}
-		if a, ok := m.agentByID(ch.Caller); ok {
-			return m.needsName(a)
-		}
-		return shortID(ch.Caller)
+		return m.deliverySession(ch.Caller)
+	}
+	if strings.HasPrefix(ch.StepOwner, "s_") {
+		return m.deliverySession(ch.StepOwner)
 	}
 	return firstNonEmpty(sanitize(ch.StepOwner), "someone")
 }
@@ -264,9 +353,9 @@ func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
 	case protocol.StepStateClosed:
 		return "closed", sDim
 	case protocol.StepStateRunning:
-		return "running", sBusy
+		return m.deliveryActor(ch) + " is " + deliveryVerb(ch.Step), sBusy
 	case protocol.StepStateFailed:
-		return "failed", sBad
+		return firstNonEmpty(ch.Step, "step") + " failed, back to " + m.deliveryChangeCaller(ch), sBad
 	case protocol.StepStatePassed:
 		return "passed", sBusy
 	case protocol.StepStateSkipped:
@@ -274,6 +363,9 @@ func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
 	case protocol.StepStateWaiting:
 		return "blocked", sDim
 	case protocol.StepStateReady, protocol.StepStateNeedsOwner:
+		if ch.ClaimedBy != "" {
+			return m.deliveryActor(ch) + " to " + deliveryVerb(ch.Step), sBusy
+		}
 		// The owner has to act; an agent waits for the owner's word.
 		return "waiting for " + m.deliveryWho(ch), lipgloss.NewStyle().Foreground(roleWarning)
 	}
@@ -281,6 +373,71 @@ func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
 		return "merged", sDim
 	}
 	return "-", sDim
+}
+
+func (m Model) deliveryActor(ch deliveryChange) string {
+	if ch.ClaimedBy != "" {
+		return m.deliverySession(ch.ClaimedBy)
+	}
+	if strings.HasPrefix(ch.StepOwner, "s_") {
+		return m.deliverySession(ch.StepOwner)
+	}
+	return firstNonEmpty(ch.StepOwner, "agent")
+}
+
+func (m Model) deliverySession(id string) string {
+	a, ok := m.agentByID(id)
+	if !ok {
+		return "an unknown session (exited)"
+	}
+	name := m.deliverySessionName(id)
+	if a.Online {
+		return name + " (online)"
+	}
+	return name + " (exited)"
+}
+
+func (m Model) deliveryChangeCaller(ch deliveryChange) string {
+	if ch.Caller == "" || ch.Caller == m.snap.OwnerSession {
+		return "you"
+	}
+	return m.deliverySessionName(ch.Caller)
+}
+
+func (m Model) deliverySessionName(id string) string {
+	a, ok := m.agentByID(id)
+	if !ok {
+		return "an unknown session"
+	}
+	name := strings.TrimSpace(sanitize(a.Profile.Name))
+	if name == "" && a.Worker != nil {
+		name = "worker " + firstNonEmpty(sanitize(a.Harness), "agent")
+	}
+	if name == "" {
+		name = "an unknown session"
+	}
+	return name
+}
+func deliveryVerb(step string) string {
+	switch step {
+	case "accept":
+		return "accepting"
+	case "review":
+		return "reviewing"
+	case "test":
+		return "testing"
+	case "approve":
+		return "approving"
+	case "merge":
+		return "merging"
+	case "release":
+		return "releasing"
+	case "deploy":
+		return "deploying"
+	case "verify":
+		return "verifying"
+	}
+	return "working"
 }
 
 // quotasSubtabs is the line under the title: the three sub-tabs of Quotas.
@@ -318,7 +475,6 @@ func (m Model) deliveryView(w, h int) []string {
 		}
 	}
 	visible := m.deliveryVisible()
-	owner := m.snap.OwnerSession
 	sel := min(max(d.row, 0), max(len(visible)-1, 0))
 	if d.detail && d.detailErr != "" {
 		for _, l := range wrap("Could not load change: "+sanitize(d.detailErr), inner) {
@@ -345,8 +501,7 @@ func (m Model) deliveryView(w, h int) []string {
 		}
 		return append(out, panel("Delivery", messageFit(body, min(len(body), room), 0), w, roleAccent)...)
 	}
-	cols := deliveryLayout(inner, visible)
-	legend := deliveryLegend(inner)
+	cols := m.deliveryLayout(inner, visible)
 	body := append([]string{}, errLine...)
 	body = append(body, cols.header())
 	var offline []string
@@ -360,33 +515,40 @@ func (m Model) deliveryView(w, h int) []string {
 	if !d.showAll && done+stale > 0 {
 		footer = append(footer, sDim.Render(deliveryHiddenText(done, stale)))
 	}
-	listRoom := max(room-len(body)-len(legend)-len(footer)-len(offline), 1)
+	listRoom := max(room-len(body)-len(footer)-len(offline), 1)
 	var list []string
-	selLine, prev, first := 0, groupNeedsYou, true
-	for i, ch := range visible {
-		if group := deliveryGroupOf(ch, owner); first || group != prev {
-			list = append(list, deliveryGroupHeader(group, deliveryGroupCount(visible, group, owner)))
-			prev, first = group, false
-		}
-		if i == sel {
-			selLine = len(list)
-		}
-		list = append(list, m.deliveryRow(cols, ch, i == sel))
-		if outcome := deliveryOutcome(ch); outcome != "" {
-			for _, line := range wrap(outcome, max(inner-2, 1)) {
-				list = append(list, sDim.Render("  "+line))
+	selLine := 0
+	groups := []deliveryGroup{groupNeedsYou, groupMoving, groupStuck}
+	if d.showAll {
+		groups = append(groups, groupDone)
+	}
+	for _, group := range groups {
+		list = append(list, deliveryGroupHeader(group, deliveryGroupCount(visible, group)))
+		for i, ch := range visible {
+			if ch.Group != group {
+				continue
+			}
+			if i == sel {
+				selLine = len(list)
+			}
+			list = append(list, m.deliveryRow(cols, ch, i == sel))
+			if outcome := deliveryOutcome(ch); outcome != "" {
+				for _, line := range wrap(outcome, max(inner-2, 1)) {
+					list = append(list, sDim.Render("  "+line))
+				}
 			}
 		}
 	}
 	body = append(body, messageFit(list, min(listRoom, len(list)), selLine)...)
 	body = append(body, messageFit(offline, min(len(offline), max(room-len(body), 0)), 0)...)
-	if len(footer) > 0 && room-len(body) >= len(legend)+len(footer) {
+	if len(footer) > 0 && room-len(body) >= len(footer) {
 		body = append(body, footer...)
 	}
-	if room-len(body) >= len(legend) {
-		body = append(body, legend...)
+	shown := 0
+	for _, ch := range visible {
+		shown += max(ch.Count, 1)
 	}
-	title := strconv.Itoa(len(visible)) + " shown"
+	title := strconv.Itoa(shown) + " shown"
 	return append(out, panelWithRightHeader("Delivery", title, body, w, roleAccent)...)
 }
 
@@ -402,11 +564,11 @@ func deliveryGroupHeader(group deliveryGroup, n int) string {
 	return sBold.Render(label)
 }
 
-func deliveryGroupCount(changes []deliveryChange, group deliveryGroup, ownerSession string) int {
+func deliveryGroupCount(changes []deliveryChange, group deliveryGroup) int {
 	n := 0
 	for _, ch := range changes {
-		if deliveryGroupOf(ch, ownerSession) == group {
-			n++
+		if ch.Group == group {
+			n += max(ch.Count, 1)
 		}
 	}
 	return n
@@ -414,9 +576,8 @@ func deliveryGroupCount(changes []deliveryChange, group deliveryGroup, ownerSess
 
 // deliveryHidden counts the rows the list leaves out until the owner asks.
 func (m Model) deliveryHidden() (done, stale int) {
-	owner := m.snap.OwnerSession
 	for _, ch := range m.delivery.changes {
-		if deliveryGroupOf(ch, owner) == groupDone {
+		if m.deliveryGroupFor(ch) == groupDone {
 			done++
 		} else if deliveryStale(ch) {
 			stale++
@@ -471,6 +632,7 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 		head = append(head, sDim.Render(l))
 	}
 	head = append(head, deliveryStrip(deliveryStripStates(ch), spaced))
+	head = append(head, deliveryLegend(inner)...)
 	head = append(head, errLine...)
 
 	evidence := append([]deliveryEvidence(nil), ch.Evidence...)

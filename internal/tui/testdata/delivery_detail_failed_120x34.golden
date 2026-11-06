@@ -1,18 +1,18 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 6 sessions, 5 online · 1 busy  00:00:00
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
 ╭─Change───────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Fix the deploy gate                                                                                                  │
 │ voicemechs  feature/a-very-long-branch-name-for-the-new-deploy-gate-and-more                                         │
-│ head: c41de0aa5512  revision: r3  state: open  step: review  owner: owner  status: failed  waiting: 2h5m             │
+│ head: c41de0aa5512  revision: r3  state: open  step: review  owner: owner  status: review failed, back to strategies │
+│ waiting: 2h5m                                                                                                        │
 │ a✓ r✗ t· p- m· T· l· d· v·                                                                                           │
+│ a accept · r review · t test · p approve · m merge · T test after merge · l release · d deploy · v verify.           │
+│ ✓ passed ✗ failed · waiting - not needed                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Evidence─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ STEP     RESULT      COMMIT       BY            MODEL                   TIME         FIELDS                          │
 │ review   passed      77aa00b old  merger        claude-opus-5-5         10-27 22:05  findings_open=0                 │
 │ accept   passed      c41de0a      caller        -                       10-29 08:05  -                               │
 │ review   failed      c41de0a      merger        claude-opus-5-5         10-29 12:00  findings_open=2 independent=yes │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

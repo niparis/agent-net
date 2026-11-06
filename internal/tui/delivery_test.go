@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
@@ -40,8 +41,8 @@ func marks(states ...stripState) []stripState {
 }
 
 // deliveryScenes returns changes in different states. Times are relative to t0.
-// c_1 and c_2 wait on agents, c_3 needs the owner, c_4 is done and c_5 is a
-// stale open change: the last two are hidden until the owner presses a.
+// c_1 and c_2 are moving, c_3 needs the owner, c_4 is done, c_5 is stale,
+// and c_6/c_7 collapse into one stuck line.
 func deliveryScenes() []deliveryChange {
 	return []deliveryChange{
 		{
@@ -92,12 +93,16 @@ func deliveryScenes() []deliveryChange {
 			Step: "accept", StepOwner: "caller", OwnerKind: "caller", StepState: "ready", Waiting: 30 * time.Hour,
 			Marks: marks(stripWaiting, stripWaiting, stripWaiting, stripNotNeeded, stripWaiting, stripWaiting, stripWaiting, stripWaiting),
 		},
+		{ID: "c_6", Title: "Wait for procurement accept A", Repo: "wbg-procurement", State: "open", Step: "accept", StepOwner: "wbg-procurement", OwnerKind: "node", StepState: "ready", Waiting: 15 * time.Hour},
+		{ID: "c_7", Title: "Wait for procurement accept B", Repo: "wbg-procurement", State: "open", Step: "accept", StepOwner: "wbg-procurement", OwnerKind: "node", StepState: "ready", Waiting: 22 * time.Hour},
+		{ID: "c_8", Title: "Approve the deploy gate", Repo: "voicemechs", State: "open", Step: "approve", StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateReady, Waiting: 3 * time.Hour},
 	}
 }
 
 func deliveryModel(src deliverySource, w, h int) Model {
 	m := New(&fakeSource{snap: fakeSnapshot()})
 	m.snap = fakeSnapshot()
+	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "s_wbg", Profile: protocol.Profile{Name: "wbg-procurement"}, Online: false})
 	m.haveData = true
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m.tab = deliveryTab
@@ -150,7 +155,7 @@ func TestDeliveryReadableInDarkAndLight(t *testing.T) {
 				}
 			}
 			got := ansi.Strip(strings.Join(lines, "\n"))
-			for _, want := range []string{"Needs you", "Waiting on agents", "waiting for merger", "waiting for ci-runner"} {
+			for _, want := range []string{"Needs you", "Moving", "Stuck", "merger", "ci-runner"} {
 				if !strings.Contains(got, want) {
 					t.Errorf("dark %v width %d missing %q:\n%s", dark, w, want, got)
 				}
@@ -181,12 +186,18 @@ func TestDeliveryTitleIsTheMainColumn(t *testing.T) {
 	if !strings.Contains(detail, "delivery-pipeline") && !strings.Contains(detail, "w_1bcfc4c4a93b2687") {
 		t.Errorf("detail does not show the branch:\n%s", detail)
 	}
+	if !strings.Contains(detail, "a accept") || !strings.Contains(detail, "T test after merge") {
+		t.Errorf("detail lost the evidence legend:\n%s", detail)
+	}
+	if strings.Contains(deliveryText(openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30)), 120, 30), "a accept · r review") {
+		t.Error("list still shows the letter legend")
+	}
 }
 
 func TestDeliverySaysWhatItWaitsFor(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
 	got := deliveryText(m, 120, 30)
-	for _, want := range []string{"waiting for merger", "waiting for ci-runner"} {
+	for _, want := range []string{"merger", "ci-runner"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q:\n%s", want, got)
 		}
@@ -207,19 +218,23 @@ func TestDeliverySaysWhatItWaitsFor(t *testing.T) {
 		t.Errorf("owner's caller session says %q", status)
 	}
 	other := deliveryChange{Step: "test", StepOwner: "caller", OwnerKind: "caller", StepState: "ready", Caller: "s_0000000000000004"}
-	if status, _ := m.deliveryStatusText(other); status != "waiting for ci-runner" {
+	if status, _ := m.deliveryStatusText(other); !strings.Contains(status, "ci-runner") || !strings.Contains(status, "waiting for") {
 		t.Errorf("caller session says %q", status)
 	}
 	running := deliveryChange{Step: "test", StepOwner: "merger", OwnerKind: "node", StepState: "running"}
-	if status, _ := m.deliveryStatusText(running); status != "running" {
+	if status, _ := m.deliveryStatusText(running); status != "merger is testing" {
 		t.Errorf("claimed step says %q", status)
+	}
+	claimed := deliveryChange{Step: "verify", StepOwner: "merger", StepState: "ready", ClaimedBy: "s_0000000000000004"}
+	if status, _ := m.deliveryStatusText(claimed); status != "ci-runner (online) to verifying" {
+		t.Errorf("ready claimed status %q", status)
 	}
 }
 
 func TestDeliveryGroupsAndHidesDoneAndStale(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 24))
 	got := deliveryText(m, 120, 24)
-	for _, want := range []string{"Needs you · 1", "Waiting on agents · 2", "1 done and 1 stale hidden · a shows all"} {
+	for _, want := range []string{"Needs you", "Moving", "Stuck", "1 done and 1 stale hidden · a shows all"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q:\n%s", want, got)
 		}
@@ -236,7 +251,7 @@ func TestDeliveryGroupsAndHidesDoneAndStale(t *testing.T) {
 		t.Fatal("a did not show all")
 	}
 	got = deliveryText(m, 120, 24)
-	for _, want := range []string{"Waiting on agents · 3", "Done · 1", "Drop the old parser", "Import suppliers", "1d6h!"} {
+	for _, want := range []string{"Moving", "Stuck", "Done · 1", "Drop the old parser", "Import suppliers", "1d6h"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("show all missing %q:\n%s", want, got)
 		}
@@ -272,12 +287,13 @@ func TestDeliveryStaleAndGroups(t *testing.T) {
 		want deliveryGroup
 	}{
 		{"person, ready", deliveryChange{State: "open", Step: "review", StepState: "ready", OwnerKind: "owner"}, groupNeedsYou},
-		{"delegate, ready", deliveryChange{State: "open", Step: "approve", StepState: "needs_owner", OwnerKind: "delegate"}, groupNeedsYou},
-		{"approval", deliveryChange{State: "open", Step: "approve", StepState: "ready", OwnerKind: "node"}, groupNeedsYou},
+		{"failed goes back to caller", deliveryChange{State: "open", Step: "review", StepState: "failed", OwnerKind: "owner"}, groupMoving},
+		{"delegate, ready", deliveryChange{State: "open", Step: "approve", StepState: "needs_owner", OwnerKind: "delegate"}, groupMoving},
+		{"approval without inbox item", deliveryChange{State: "open", Step: "approve", StepState: "ready", OwnerKind: "node"}, groupMoving},
 		{"owner's caller", deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_owner"}, groupNeedsYou},
-		{"other caller", deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_agent"}, groupWaiting},
-		{"node", deliveryChange{State: "open", Step: "review", StepState: "ready", OwnerKind: "node"}, groupWaiting},
-		{"passed", deliveryChange{State: "open", Step: "review", StepState: "passed", OwnerKind: "owner"}, groupWaiting},
+		{"other caller", deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_agent"}, groupMoving},
+		{"node", deliveryChange{State: "open", Step: "review", StepState: "ready", OwnerKind: "node"}, groupMoving},
+		{"passed", deliveryChange{State: "open", Step: "review", StepState: "passed", OwnerKind: "owner"}, groupMoving},
 		{"done", deliveryChange{State: "done"}, groupDone},
 		{"stopped", deliveryChange{State: "stopped"}, groupDone},
 		{"closed step", deliveryChange{State: "open", StepState: "closed"}, groupDone},
@@ -285,6 +301,26 @@ func TestDeliveryStaleAndGroups(t *testing.T) {
 		if got := deliveryGroupOf(tc.ch, "s_owner"); got != tc.want {
 			t.Errorf("%s: group %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestDeliveryCollapsesStuckAndExpandsWithEnter(t *testing.T) {
+	changes := []deliveryChange{
+		{ID: "a", Repo: "wbg-procurement", State: "open", Step: "accept", StepOwner: "wbg-procurement", OwnerKind: "node", StepState: "ready", Waiting: 15 * time.Hour},
+		{ID: "b", Repo: "wbg-procurement", State: "open", Step: "accept", StepOwner: "wbg-procurement", OwnerKind: "node", StepState: "ready", Waiting: 22 * time.Hour},
+	}
+	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: changes}, 120, 34))
+	visible := m.deliveryVisible()
+	if len(visible) != 1 || visible[0].Count != 2 {
+		t.Fatalf("expected collapsed pair: %#v", visible)
+	}
+	if !strings.Contains(visible[0].Title, "2 changes wait for accept by wbg-procurement (exited) · 15h-22h") {
+		t.Fatalf("bad summary: %q", visible[0].Title)
+	}
+	next, _ := m.Update(tea.KeyPressMsg{Text: "enter", Code: tea.KeyEnter})
+	m = next.(Model)
+	if len(m.deliveryVisible()) != 2 {
+		t.Fatalf("Enter did not expand stuck group: %#v", m.deliveryVisible())
 	}
 }
 
@@ -312,7 +348,7 @@ func TestDeliveryErrorKeepsTheLastList(t *testing.T) {
 	src.changes, src.err = nil, errors.New("gateway down")
 	next, _ := m.Update(m.deliveryLoad()())
 	got := deliveryText(next.(Model), 120, 30)
-	if !strings.Contains(got, "Could not load changes: gateway down") || !strings.Contains(got, "Say what a delivery row waits") {
+	if !strings.Contains(got, "Could not load changes: gateway down") || !strings.Contains(got, "Say what a delivery row") {
 		t.Errorf("error should sit above the old list: %s", got)
 	}
 }
@@ -327,7 +363,7 @@ func TestDeliveryRowsFitEveryWidth(t *testing.T) {
 			}
 		}
 		got := ansi.Strip(strings.Join(lines, "\n"))
-		for _, want := range []string{"Show which", "Say what", "Fix the", "waiting for merger", "waiting for ci-runner", "2h14m", "6m", "failed"} {
+		for _, want := range []string{"Show which", "Say what", "Fix the", "merger", "ci-runner", "2h14m", "6m", "failed"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("width %d missing %q: %s", w, want, got)
 			}
@@ -368,7 +404,7 @@ func TestDeliveryLegendNamesEveryLetter(t *testing.T) {
 func TestDeliveryColumnsAlign(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 30))
 	for _, w := range []int{80, 120, 200} {
-		cols := deliveryLayout(w-4, m.deliveryVisible())
+		cols := m.deliveryLayout(w-4, m.deliveryVisible())
 		if got := cols.width(); got > w-4 {
 			t.Errorf("width %d: columns take %d of %d", w, got, w-4)
 		}
@@ -378,6 +414,9 @@ func TestDeliveryColumnsAlign(t *testing.T) {
 			t.Fatalf("width %d: no STEP header: %q", w, header)
 		}
 		for _, ch := range m.deliveryVisible() {
+			if len(ch.Children) > 1 {
+				continue
+			}
 			row := ansi.Strip(m.deliveryRow(cols, ch, false))
 			if ansi.StringWidth(row) != cols.width() {
 				t.Errorf("width %d: row %d wide, want %d: %q", w, ansi.StringWidth(row), cols.width(), row)
@@ -444,6 +483,60 @@ func TestDeliveryStripStates(t *testing.T) {
 	}
 }
 
+func TestDeliveryProgressOnlyShowsConfiguredSteps(t *testing.T) {
+	c := deliveryChange{Marks: marks(stripPassed, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting), Steps: []deliveryStep{{Name: "accept", State: "passed"}, {Name: "approve for deploy", State: "ready"}, {Name: "test after merge", State: "running"}}}
+	got := deliveryProgress(c)
+	if got != "●○○" {
+		t.Fatalf("progress %q, want marks for accept, approve, after-merge test", got)
+	}
+}
+
+func TestDeliveryRevisionTwoLayoutAndOwnership(t *testing.T) {
+	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 24))
+	visible := m.deliveryVisible()
+	cols := m.deliveryLayout(76, visible)
+	if cols.title <= 16 || cols.status > 34 {
+		t.Errorf("80-column layout title/status widths = %d/%d", cols.title, cols.status)
+	}
+	if !strings.Contains(ansi.Strip(cols.header()), "DONE") {
+		t.Errorf("progress header does not fit: %q", ansi.Strip(cols.header()))
+	}
+
+	failed := deliveryChange{State: "open", Step: "review", StepState: "failed", Caller: "s_0000000000000002", Waiting: time.Hour}
+	if got := deliveryGroupOf(failed, m.snap.OwnerSession); got != groupMoving {
+		t.Errorf("failed step grouped as %v", got)
+	}
+	m.snap.Agents[1].Profile.Name = "agent-net 2"
+	if got, _ := m.deliveryStatusText(failed); got != "review failed, back to agent-net 2" {
+		t.Errorf("failed status %q", got)
+	}
+
+	unknown := deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_unknown"}
+	if got := m.deliveryWho(unknown); strings.Contains(got, "s_unknown") || !strings.Contains(got, "unknown session") {
+		t.Errorf("unknown caller leaked ID: %q", got)
+	}
+
+	stuck := m.deliveryVisible()[len(m.deliveryVisible())-1]
+	if !strings.Contains(stuck.Title, "by wbg-procurement (exited) · 15h-22h") {
+		t.Errorf("collapsed owner or age missing: %q", stuck.Title)
+	}
+	if strings.Contains(deliveryText(m, 80, 24), "1d6h!") {
+		t.Error("stale age still has an exclamation mark")
+	}
+}
+
+func TestDeliveryInboxApprovalNeedsOwner(t *testing.T) {
+	m := deliveryModel(nil, 80, 24)
+	ch := deliveryChange{ID: "ch_approval", State: "open", Step: "approve", StepState: "ready", OwnerKind: protocol.OwnerNode}
+	if got := m.deliveryGroupFor(ch); got != groupMoving {
+		t.Fatalf("unlinked approval step is %v", got)
+	}
+	m.inboxItems = []protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}}
+	if got := m.deliveryGroupFor(ch); got != groupNeedsYou {
+		t.Fatalf("inbox approval is %v", got)
+	}
+}
+
 func TestDeliveryStripShowsGlyphsNotOnlyColour(t *testing.T) {
 	line := ansi.Strip(deliveryStrip(deliveryStripStates(deliveryScenes()[2]), false))
 	if line != "a✓r✗t·p-m·T·l·d·v·" {
@@ -484,7 +577,6 @@ func TestDeliveryEnterOpensDetailAndEscCloses(t *testing.T) {
 	}
 	press(tea.KeyPressMsg{Code: tea.KeyDown})
 	press(tea.KeyPressMsg{Code: tea.KeyDown})
-	press(tea.KeyPressMsg{Code: tea.KeyDown}) // clamps at the last row
 	if m.delivery.row != 2 {
 		t.Fatalf("row %d", m.delivery.row)
 	}
@@ -601,7 +693,7 @@ func TestDeliveryGoldens(t *testing.T) {
 		{"delivery_detail", &fakeDelivery{changes: scenes}, "c_1", true, false},
 		{"delivery_detail_failed", &fakeDelivery{changes: scenes}, "c_3", true, false},
 	} {
-		for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		for _, size := range [][2]int{{80, 24}, {120, 24}, {120, 34}} {
 			m := openDelivery(t, deliveryModel(s.src, size[0], size[1]))
 			m.delivery.detail, m.delivery.showAll = s.detail, s.all
 			if s.rowID != "" {

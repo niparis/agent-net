@@ -1,14 +1,14 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 6 sessions, 5 online · 1 busy  00:00:00
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
 ╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────3 shown─╮
-│   TITLE                             REPO        STEP      STATUS                  AGE     EVIDENCE                   │
+│   TITLE                                      REPO        STEP      STATUS                              AGE     DONE  │
 │ Needs you · 1                                                                                                        │
-│ ▸ Say what a delivery row waits f…  agent-net   approve   waiting for you         6m      a✓ r✓ t✓ p· m· T· l· d· v· │
-│ Waiting on agents · 2                                                                                                │
-│   Fix the deploy gate               voicemechs  review    failed                  5h0m    a✓ r✗ t✓ p- m· T· l· d· v· │
-│   Show the provider in each quota…  agent-net   review    waiting for merger      2h0m    a✓ r· t· p· m· T· l· d· v· │
-│ a accept · r review · t test · p approve · m merge · T test after merge · l release · d deploy · v verify.           │
-│ ✓ passed ✗ failed · waiting - not needed                                                                             │
+│ ▸ Say what a delivery row waits for          agent-net   approve   waiting for you                     6m      ●●●○○ │
+│ Moving · 2                                                                                                           │
+│   Show the provider in each quota row        agent-net   review    waiting for merger                  2h0m    ●○○○  │
+│   Fix the deploy gate                        voicemechs  review    review failed, back to an unknown…  5h0m    ●✗●○○ │
+│ Stuck · 0                                                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
 
 
 
