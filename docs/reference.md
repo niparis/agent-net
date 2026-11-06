@@ -367,6 +367,7 @@ are proposals. The CTO has one action tool per area:
 | CTO change tool | Actions or area |
 |---|---|
 | `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` proposes a send as the owner |
+
 | `agent_message_reply` | a reply with an outcome; `as_owner: true` proposes a plain reply as the owner |
 | `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |
 | `agent_learn` | one finding, under the daily limit |
@@ -382,6 +383,8 @@ are proposals. The CTO has one action tool per area:
 | `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite` or `onboarding` |
 | `project_change` | `action: add`, `remove`, `display` or `create`; `remove` takes `name` or `path` and optional `node_id` |
 | `cto_new` | a new conversation for the active harness |
+
+For team delivery, use `to_set: {"team": "finance"}` with the team name or ID. The CTO and advisors can send to online sessions of member agents and the linked agents of member repos. The result lists recipients and members missed because they have no online session or a repo has no linked agent. Additional `to_set` filters narrow the recipients. `as_owner: true` creates an owner approval proposal for each recipient. Teams grant no authority. The CTO can list teams and membership with `agent_graph_read` using `typed: true`.
 
 Minor graph changes apply at once. Major graph changes become proposals unless
 the owner opened the window with `w`. All non-graph changes are proposals, even

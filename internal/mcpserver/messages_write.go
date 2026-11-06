@@ -17,6 +17,7 @@ import (
 // catalog's, including its $defs, and this file validates both directions.
 
 type messageSetIn struct {
+	Team       string   `json:"team,omitempty"`
 	Machine    string   `json:"machine,omitempty"`
 	Project    string   `json:"project,omitempty"`
 	Harness    string   `json:"harness,omitempty"`
@@ -69,6 +70,9 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		var set map[string]any
 		if in.ToSet != nil {
 			set = map[string]any{}
+			if in.ToSet.Team != "" {
+				set["team"] = in.ToSet.Team
+			}
 			if in.ToSet.Machine != "" {
 				set["machine"] = in.ToSet.Machine
 			}
@@ -125,8 +129,8 @@ func checkSendSelectors(in messageSendIn) error {
 	if in.To == "" && in.ToSet == nil {
 		return errors.New(`choose exactly one of to and to_set; example: {"to":"s01","body":"Please review."}`)
 	}
-	if in.ToSet != nil && in.ToSet.Machine == "" && in.ToSet.Project == "" && in.ToSet.Harness == "" {
-		return errors.New(`to_set needs a nonempty machine, project or harness filter; example: {"to_set":{"harness":"claude"},"body":"Please review."}`)
+	if in.ToSet != nil && in.ToSet.Team == "" && in.ToSet.Machine == "" && in.ToSet.Project == "" && in.ToSet.Harness == "" {
+		return errors.New(`to_set needs a nonempty team, machine, project or harness filter; example: {"to_set":{"harness":"claude"},"body":"Please review."}`)
 	}
 	return nil
 }
