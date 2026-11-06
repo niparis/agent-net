@@ -1409,6 +1409,9 @@ func (m Model) inboxHints() []hint {
 	rows := m.inboxRows()
 	row, ok := m.inboxSelected(rows)
 	if !ok {
+		if len(rows) == 0 {
+			return []hint{help, bindingHint(contextInbox, actQuit)}
+		}
 		return []hint{bindingPairHint(contextInbox, actUp, actDown), help, bindingHint(contextInbox, actQuit)}
 	}
 	return append(m.inboxItemHints(row), move, help)

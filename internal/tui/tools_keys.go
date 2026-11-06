@@ -111,7 +111,24 @@ func (m Model) toolsKeyLines(w int) []string {
 			}
 		}
 	default:
-		parts = toolsBindingParts(contextTools, nil)
+		parts = toolsBindingParts(contextTools, func(b keyBinding) bool {
+			if w <= 80 {
+				if b.action == actQuit || b.action == actDown || b.action == actUp {
+					return false
+				}
+			}
+			return true
+		})
+		if w <= 80 {
+			for i := 0; i+1 < len(parts); i += 2 {
+				if parts[i] == "enter" {
+					parts[i+1] = "open"
+				}
+				if parts[i] == "tab" {
+					parts[i+1] = "agents"
+				}
+			}
+		}
 	}
 	lines := wrapHints(parts, w)
 	if len(lines) == 0 {

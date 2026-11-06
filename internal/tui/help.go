@@ -193,10 +193,14 @@ func (m Model) helpLine(w int) string {
 	case modeSessionForm:
 		return sDim.Render(clip("up/down field · left/right change · enter start · esc cancel", w))
 	case modeQuotaConfirm:
-		if m.quotaUnprotect {
-			return confirmLine("Unprotect "+sanitize(m.quotaConfirm)+"?", w)
+		target := sanitize(m.quotaConfirm)
+		if m.quotaConfirmDisplay != "" && !strings.EqualFold(m.quotaConfirmDisplay, m.quotaConfirm) {
+			target = sanitize(m.quotaConfirmDisplay) + " (" + target + ")"
 		}
-		return confirmLine("Protect "+sanitize(m.quotaConfirm)+"?", w)
+		if m.quotaUnprotect {
+			return confirmLine("Unprotect "+target+"?", w)
+		}
+		return confirmLine("Protect "+target+"?", w)
 	case modeConfirm:
 		if m.confirmMachine != "" {
 			prefix := "Remove machine "
@@ -682,6 +686,11 @@ func (m Model) helpTitle() string {
 func (m Model) helpView(w, h int) []string {
 	out := []string{section(m.helpTitle(), w)}
 	lines := m.helpContent(w)
+	if !m.helpAll && len(lines) > 0 {
+		if strings.TrimSpace(ansi.Strip(lines[0])) == m.currentHelpSection().title {
+			lines = lines[1:]
+		}
+	}
 	if len(lines) <= h-1 {
 		return append(out, lines...)
 	}
@@ -689,8 +698,6 @@ func (m Model) helpView(w, h int) []string {
 	start := min(max(m.helpScroll, 0), max(len(lines)-room, 0))
 	if start > 0 {
 		out = append(out, sDim.Render("  more above"))
-	} else {
-		out = append(out, "")
 	}
 	end := min(start+room, len(lines))
 	out = append(out, lines[start:end]...)

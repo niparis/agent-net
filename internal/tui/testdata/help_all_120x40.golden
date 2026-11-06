@@ -1,5 +1,4 @@
 Keys · all screens ─────────────────────────────────────────────────────────────────────────────────────────────────────
-
  Global keys
   1-8                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox, Delivery
   enter                  go into the selected thing
@@ -37,4 +36,5 @@ Keys · all screens ────────────────────
   enter                  open the selected agent card
   m                      toggle all message and owner lines
   more below
+
 up/down scroll  ? this screen  esc close

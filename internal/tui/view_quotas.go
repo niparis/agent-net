@@ -266,7 +266,11 @@ func (m Model) quotasView(w, h int) []string {
 		if m.quotaShowUnset {
 			action = "s to hide"
 		}
-		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d other subscriptions · %s", count, action)))
+		word := "subscriptions"
+		if count == 1 {
+			word = "subscription"
+		}
+		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d other %s · %s", count, word, action)))
 	}
 	for _, e := range errors {
 		for _, line := range wrap(e, w-4) {
@@ -460,9 +464,19 @@ func quotaColumnWidths(rows []quotaRow, m Model, w int, badge string) (int, int,
 		}
 	}
 	// Reserve room for the bar, pace, reset text, and column separators.
-	budget := max(w-4-47, 12)
+	reserve := 47
+	if w < 100 {
+		reserve = 35
+	}
+	budget := max(w-4-reserve, 12)
 	for provider+plan+window > budget {
 		switch {
+		case window > 12:
+			window--
+		case plan > 8:
+			plan--
+		case provider > 16:
+			provider--
 		case window > 8:
 			window--
 		case plan > 5:

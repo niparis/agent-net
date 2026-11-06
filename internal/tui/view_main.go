@@ -272,6 +272,12 @@ func (m Model) mainView(w, h int) []string {
 			add(s)
 		}
 	}
+	if m.mode == modeCompose {
+		for _, s := range m.composeView(w, l.detail+l.feed+2) {
+			add(s)
+		}
+		return out
+	}
 	if m.mode == modeSessionForm {
 		for _, s := range m.sessionFormView(w, l.detail+l.feed+2) {
 			add(s)
@@ -316,6 +322,26 @@ const (
 	inboxTab    = 6
 	deliveryTab = 7
 )
+
+func (m Model) composeView(w, room int) []string {
+	title := "Message"
+	if m.composeName != "" {
+		title = "Message to " + m.composeName
+	}
+	var lines []string
+	val := m.compose.Value()
+	if val == "" {
+		lines = append(lines, sDim.Render("type a message..."))
+	} else {
+		for _, l := range wrap(val, w-4) {
+			lines = append(lines, l)
+		}
+	}
+	for len(lines) < max(room-2, 3) {
+		lines = append(lines, "")
+	}
+	return panel(title, lines, w, roleAccent)
+}
 
 var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Inbox", "Delivery"}
 var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Inbox", "Delivery"}
@@ -512,13 +538,6 @@ func (m Model) titleLine(w int) string {
 		mid = plain
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
 	}
-	if mid == "" && m.haveData && !m.mapOn {
-		for _, candidate := range []string{fmt.Sprintf("%d on", onlineCount), fmt.Sprint(onlineCount)} {
-			if ansi.StringWidth(left)+1+ansi.StringWidth(candidate) <= w {
-				return left + "│" + candidate
-			}
-		}
-	}
 	if mid == "" {
 		return clip(left, w)
 	}
@@ -644,7 +663,11 @@ func (m Model) machineLineFor(r machineRow, rows []machineRow, w, nameW int) str
 		line += " " + padStyled(m.machineTopCell(fig), layout.topW)
 	}
 	if layout.showNote && fig.note != "" {
-		line += " " + sDim.Render(cell(fig.note, layout.noteW))
+		note := fig.note
+		if ansi.StringWidth(note) > layout.noteW {
+			note = ansi.Truncate(note, layout.noteW, "…")
+		}
+		line += " " + sDim.Render(cell(note, layout.noteW))
 	}
 	return clip(strings.TrimRight(line, " "), w)
 }
@@ -767,20 +790,11 @@ func machineRowWidths(rows []machineRow, figures map[string]machineFigures, w, n
 		}
 	}
 	if width() > w && l.showNote {
-		l.showNote = false
-		l.showTop, l.showWorkers, l.showDisk = true, true, true
-		for _, drop := range []string{"top", "workers", "disk"} {
-			if width() <= w {
-				break
-			}
-			switch drop {
-			case "top":
-				l.showTop = false
-			case "workers":
-				l.showWorkers = false
-			case "disk":
-				l.showDisk = false
-			}
+		avail := w - (width() - l.noteW)
+		if avail >= 8 {
+			l.noteW = avail
+		} else {
+			l.showNote = false
 		}
 	}
 	if width() > w {
@@ -1618,8 +1632,30 @@ func (m Model) messagesView(w, h int) []string {
 		return out
 	}
 	available := max(h-6, 0)
-	listHeight := min(max((available+2)/2, 1), len(list)+1)
+	neededList := max(len(list)+1, 1)
+	neededChat := max(len(chat), 1)
+
+	listHeight := max((available+2)/2, 1)
 	chatHeight := max(available-listHeight, 0)
+
+	if neededChat < chatHeight {
+		excess := chatHeight - neededChat
+		chatHeight = neededChat
+		if neededList > listHeight {
+			give := min(excess, neededList-listHeight)
+			listHeight += give
+		}
+	} else if neededList < listHeight {
+		excess := listHeight - neededList
+		listHeight = neededList
+		chatHeight += excess
+		if neededChat < chatHeight {
+			chatHeight = neededChat
+		}
+	}
+	listHeight = min(listHeight, available)
+	chatHeight = min(chatHeight, max(available-listHeight, 0))
+
 	list = messageFit(list, max(listHeight-1, 0), selected)
 	if listHeight > 0 {
 		list = append(list, sDim.Render(clip(footer, listW)))

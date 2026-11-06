@@ -148,8 +148,14 @@ func (m Model) ctoView(w, h int) []string {
 	if len(errLines) >= rows && rows > 0 {
 		// An error that fills the box is more useful from its start: its
 		// tail alone reads like the end of a sentence with no beginning.
-		lines = append([]string(nil), errLines[:min(len(errLines), rows)]...)
-		lines[len(lines)-1] = ctoClipped(lines[len(lines)-1], w)
+		start := c.scroll
+		if start > len(errLines)-rows {
+			start = max(len(errLines)-rows, 0)
+		}
+		lines = append([]string(nil), errLines[start:min(start+rows, len(errLines))]...)
+		if start+rows < len(errLines) {
+			lines[len(lines)-1] = ctoClipped(lines[len(lines)-1], w)
+		}
 	} else {
 		end := len(lines) - c.scroll
 		start := max(end-rows, 0)
@@ -196,7 +202,26 @@ func ctoClipped(text string, width int) string {
 func wrapCTOLine(text string, width int) []string {
 	var parts []string
 	for _, line := range strings.Split(sanitizeBody(text), "\n") {
-		parts = append(parts, wrap(line, max(width-2, 8))...)
+		clean := sanitizeBody(line)
+		w0 := max(width, 8)
+		wCont := max(width-2, 8)
+		words := strings.Fields(clean)
+		if len(words) == 0 {
+			parts = append(parts, "")
+			continue
+		}
+		cur := words[0]
+		maxW := w0
+		for _, word := range words[1:] {
+			if ansi.StringWidth(cur)+1+ansi.StringWidth(word) <= maxW {
+				cur += " " + word
+			} else {
+				parts = append(parts, cur)
+				cur = word
+				maxW = wCont
+			}
+		}
+		parts = append(parts, cur)
 	}
 	for i := 1; i < len(parts); i++ {
 		parts[i] = "  " + parts[i]
