@@ -437,7 +437,7 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		}
 		rows, e := tx.Query(`SELECT name FROM graph_nodes WHERE kind='component'
  UNION SELECT name FROM projects WHERE graph_excluded<>1 AND name<>''
- UNION SELECT repo_project FROM sessions WHERE graph_excluded<>1 AND repo_project<>''`)
+ UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND graph_excluded<>1 AND repo_project<>''`)
 		if e != nil {
 			return result, e
 		}

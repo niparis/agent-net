@@ -78,7 +78,7 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 	rows, err := s.db.Query(`SELECT s.node_id, n.hostname, s.harness, s.cwd, s.online, s.last_seen,
 		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree, s.no_project
-		FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.harness != 'owner' ORDER BY s.last_seen DESC, s.id`)
+		FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.archived_at=0 AND s.harness != 'owner' ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -440,10 +440,10 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 	}
 	if r.Sessions > 0 {
 		cut := now.Add(-r.Sessions).UnixNano()
-		if err := del(new(int), `DELETE FROM profiles WHERE session_id IN (SELECT id FROM sessions WHERE harness <> 'bot' AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient)))`, cut); err != nil {
+		if err := del(new(int), `DELETE FROM profiles WHERE session_id IN (SELECT id FROM sessions WHERE archived_at=0 AND harness <> 'bot' AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient)))`, cut); err != nil {
 			return res, err
 		}
-		if err := del(&res.Sessions, `DELETE FROM sessions WHERE harness <> 'bot' AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, cut); err != nil {
+		if err := del(&res.Sessions, `DELETE FROM sessions WHERE archived_at=0 AND harness <> 'bot' AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, cut); err != nil {
 			return res, err
 		}
 	}

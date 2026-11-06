@@ -70,6 +70,11 @@ var ctoRoutingField = map[string]string{
 // the stored as-owner message call. The listed CTO tools come from the catalog;
 // these schemas validate stored proposals.
 var ctoTools = map[string]ctoToolDef{
+	"sessions_archive": {desc: "Propose archiving offline sessions. The owner sees the exact dry run before approval.", fields: map[string]ctoField{
+		"ids": {typ: "array"}, "expected": {typ: "array"},
+		"name": {typ: "string"}, "folder": {typ: "string"}, "project": {typ: "string"},
+		"harness": {typ: "string"}, "created_before": {typ: "string"}, "ended_workers": {typ: "boolean"},
+	}},
 	// message is not listed. It is the stored call of an as-owner send or reply
 	// that agent_message_send or agent_message_reply proposes; this schema
 	// validates that call.
@@ -255,7 +260,7 @@ func init() {
 // Schema metadata only. The daemon owns the authoritative class table.
 var ctoProposalReasons = func() map[string]bool {
 	out := map[string]bool{}
-	for _, name := range strings.Fields("message graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new") {
+	for _, name := range strings.Fields("message graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive") {
 		out[name] = true
 	}
 	return out

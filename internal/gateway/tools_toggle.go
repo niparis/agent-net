@@ -37,7 +37,7 @@ func (s *Store) knownToolProjectsTx(tx *sql.Tx) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err = tx.Query(`SELECT repo_root, repo_project, no_project FROM sessions WHERE harness != 'owner' AND repo_root<>''`)
+	rows, err = tx.Query(`SELECT repo_root, repo_project, no_project FROM sessions WHERE archived_at=0 AND harness != 'owner' AND repo_root<>''`)
 	if err != nil {
 		return nil, err
 	}

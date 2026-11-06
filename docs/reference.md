@@ -373,6 +373,7 @@ are proposals. The CTO has one action tool per area:
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone` or `undo` |
+| `sessions_archive` | Propose archiving offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Includes the exact dry run; owner approval required. |
 | `session_change` | `action: rename`, `trust` or `policy` |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
@@ -2755,6 +2756,40 @@ always use the registered project folder; folder, branch and create options
 are cleared. Cross-machine registration changes carry the calling machine's
 authenticated owner session, as session relays do.
 
+### Archive offline sessions
+
+In Sessions, press `v` until the offline view appears, then `a` for
+**archive offline...**. Enter previews all offline sessions. Press `f` to
+select by name glob, folder glob, project, harness, created-before date,
+explicit IDs, or ended workers. Filters combine with AND. IDs within the
+list combine with OR. A project of `*` means any project; an empty project
+field means no project. Dates accept YYYY-MM-DD or RFC3339 in UTC. Globs
+are case-sensitive; `*` matches one path segment. An ended worker has a
+completed run and no active run.
+
+The dry run lists the count, names, IDs and folders. Review with arrows,
+use Space to select records, then Enter to open confirmation and `y` to
+confirm. Escape cancels. Only the previewed IDs are changed. If any selected
+session comes online before confirmation, the entire operation is refused.
+
+In the same action, `r` shows archived records. Select the records to restore,
+press Enter, then `y`. Archiving hides records from session discovery, counts,
+project observations and Graph reads. It keeps the database rows, names,
+messages, worker runs, delivery changes and history. Retention cleanup does
+not delete archived session rows or profiles. A session that reports online
+again automatically leaves the archive.
+
+The CTO can propose `sessions_archive`, for example:
+
+```json
+{"name":"judge-*","folder":"/tmp/*","created_before":"2026-11-01","reason":"Clear old judge sessions"}
+```
+
+The proposal freezes the matching IDs and includes the dry-run count and
+names. It applies only after owner approval in the CTO dialog or Inbox.
+A newly matching session is never added to an existing proposal. Restore is
+an owner action.
+
 ## Teams
 
 After the typed Graph cutover (`graph.refs.enable`), Teams have stable IDs,
@@ -2777,3 +2812,4 @@ Read Teams with `agent_graph_read` using `typed: true` or a `ref` with
 `kind: team`. Typed reads include archived Teams with their `active` state,
 direct owner references and `member_of` edges. Legacy reads exclude Teams and
 membership. The CTO can read Teams but cannot propose or apply Team writes.
+

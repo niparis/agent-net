@@ -25,6 +25,8 @@
   space                  cycle the request rule: normal, ask, auto
   v                      cycle the view: active only, all, all with offline, all
                          with offline and hidden
+  a                      in the offline view, preview and archive offline
+                         sessions, or show archived and restore
   d                      show or hide the selected session details
   ◐                      runs in the background: no terminal is attached
 

@@ -23,7 +23,7 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"03_escape_filter", []check{{contextSessions, "esc", "back"}, {contextGraphFind, "esc", "clear or back"}, {contextToolsPicker, "esc", "cancel"}}},
 		{"04_shared_graph_help", []check{{contextGraph, "?", "help"}}},
 		{"05_no_session_e", []check{{contextSessions, "e", ""}}},
-		{"06_view_v", []check{{contextSessions, "v", "cycle view"}, {contextSessions, "A", ""}, {contextSessions, "a", ""}}},
+		{"06_view_v", []check{{contextSessions, "v", "cycle view"}, {contextSessions, "A", ""}, {contextSessions, "a", "archive offline"}}},
 		{"07_held_answer", []check{{contextHeld, "a", "approve"}, {contextHeld, "r", "refuse"}, {contextHeld, "A", ""}, {contextHeld, "R", ""}}},
 		{"08_outcome_overrule", []check{{contextOutcome, "O", "overrule"}, {contextOutcome, "o", ""}, {contextSessions, "o", ""}}},
 		{"09_proposal_decline", []check{{contextProposal, "r", "decline"}, {contextProposalDetail, "r", "decline"}, {contextProposal, "x", ""}}},

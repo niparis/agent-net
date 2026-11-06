@@ -13,17 +13,18 @@ import (
 )
 
 var ctoProposalFixtures = map[string]string{
-	"graph_change":    `{"action":"charter_set","node":"component","attr":"purpose","value":"review"}`,
-	"session_change":  `{"action":"rename","session_id":"s_test","name":"planner"}`,
-	"worker_change":   `{"action":"start","project":"project","task":"test","harness":"claude","touches":["tests"]}`,
-	"answer":          `{"kind":"held","message_id":"m_test","action":"a"}`,
-	"tools_change":    `{"action":"plan","item":"item","target":{"scope":"global"}}`,
-	"mcp_change":      `{"action":"add","server":{"name":"test","transport":"stdio","command":"/bin/true"}}`,
-	"mcp_call":        `{"server":"test","tool":"send","arguments":{"body":"stored"}}`,
-	"settings_change": `{"area":"cto","title":"CTO"}`,
-	"project_change":  `{"action":"add","paths":["/tmp/project"]}`,
-	"cto_new":         `{}`,
-	"message":         `{"action":"send","as_owner":true,"to":"s_test","body":"stored"}`,
+	"sessions_archive": `{"name":"judge-*"}`,
+	"graph_change":     `{"action":"charter_set","node":"component","attr":"purpose","value":"review"}`,
+	"session_change":   `{"action":"rename","session_id":"s_test","name":"planner"}`,
+	"worker_change":    `{"action":"start","project":"project","task":"test","harness":"claude","touches":["tests"]}`,
+	"answer":           `{"kind":"held","message_id":"m_test","action":"a"}`,
+	"tools_change":     `{"action":"plan","item":"item","target":{"scope":"global"}}`,
+	"mcp_change":       `{"action":"add","server":{"name":"test","transport":"stdio","command":"/bin/true"}}`,
+	"mcp_call":         `{"server":"test","tool":"send","arguments":{"body":"stored"}}`,
+	"settings_change":  `{"area":"cto","title":"CTO"}`,
+	"project_change":   `{"action":"add","paths":["/tmp/project"]}`,
+	"cto_new":          `{}`,
+	"message":          `{"action":"send","as_owner":true,"to":"s_test","body":"stored"}`,
 }
 
 func TestProposalEveryChangeRunsStoredCallOnce(t *testing.T) {

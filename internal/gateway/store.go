@@ -1044,6 +1044,8 @@ ALTER TABLE sessions ADD COLUMN harness_activity INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sessions ADD COLUMN harness_lost INTEGER NOT NULL DEFAULT 0;
 UPDATE sessions SET harness_activity=last_seen WHERE status='busy';
 
+`, `
+SELECT 1 /* session archive column */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1532,6 +1534,19 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], "session archive column") {
+			var has bool
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name='archived_at')`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if !has {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
 		if strings.Contains(migrations[i], "profile task started column") {
 			var has int
 			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name = 'task_started'`).Scan(&has); err != nil {
@@ -1919,7 +1934,7 @@ func (s *Store) upsertSession(q interface {
 		last_seen=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN sessions.last_seen ELSE excluded.last_seen END,
 		online=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
-			THEN 0 ELSE 1 END,
+			THEN 0 ELSE 1 END, archived_at=0,
 		last_active=MAX(sessions.last_active, excluded.last_active),
 		harness_activity=MAX(sessions.harness_activity, ?,
 			CASE WHEN excluded.status='busy' AND sessions.status<>'busy' THEN excluded.last_seen ELSE 0 END),
@@ -2200,7 +2215,7 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 	// The registered CTO belongs to this node even when its harness is asleep.
 	// A node disconnect marks it offline; its host sync makes it reachable again
 	// without allowing a different node to move the identity.
-	if _, err := tx.Exec(`UPDATE sessions SET online=1, status=CASE WHEN online=0 THEN 'dormant' ELSE status END, last_seen=? WHERE node_id=? AND harness='cto' AND id=(SELECT value FROM owner_settings WHERE key='cto_session')`, s.now().UnixNano(), nodeID); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET online=1, archived_at=0, status=CASE WHEN online=0 THEN 'dormant' ELSE status END, last_seen=? WHERE node_id=? AND harness='cto' AND id=(SELECT value FROM owner_settings WHERE key='cto_session')`, s.now().UnixNano(), nodeID); err != nil {
 		return nil, err
 	}
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 1 AND harness <> 'cto'`, nodeID)
@@ -2371,7 +2386,7 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 		return 0, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker != ''
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND node_id = ? AND online = 0 AND worker != ''
 		AND (worker_started = 0 OR worker_started < ?)
         AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, cut)
 	if err != nil {
@@ -2429,7 +2444,7 @@ func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker = ''
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND node_id = ? AND online = 0 AND worker = ''
 		AND substr(cwd, 1, ?) = ?
         AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, len(prefix), prefix)
 	if err != nil {
@@ -2595,7 +2610,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 }
 
 func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
-	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.id = ? AND (n.id IS NOT NULL OR s.harness='bot')`, sessionID))
+	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.archived_at=0 AND s.id = ? AND (n.id IS NOT NULL OR s.harness='bot')`, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, false, nil
 	}
@@ -2623,7 +2638,7 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
 
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
-	rows, err := s.db.Query(agentSelect + ` WHERE (n.id IS NOT NULL OR s.harness='bot') AND NOT (` + piChildSQL + `) ORDER BY s.last_seen DESC, s.id`)
+	rows, err := s.db.Query(agentSelect + ` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (` + piChildSQL + `) ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
 	}

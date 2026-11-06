@@ -97,6 +97,39 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 			}
 		}
 	}
+	if tool == "sessions_archive" {
+		var q protocol.SessionsArchiveRequest
+		if err := json.Unmarshal(args, &q); err != nil {
+			return "", err
+		}
+		if q.Restore {
+			return "", errors.New("restore is owner-only")
+		}
+		q.DryRun = true
+		raw, err := d.call(ctx, "cto.proposal.validate", map[string]any{"tool": tool, "args": q, "owner": d.ownerSessionID()})
+		if err != nil {
+			return "", err
+		}
+		var preview protocol.SessionsArchiveResult
+		if err := json.Unmarshal(raw, &preview); err != nil {
+			return "", err
+		}
+		if preview.Count == 0 {
+			return "", errors.New("no offline sessions match")
+		}
+		q.IDs = nil
+		reason += fmt.Sprintf("\nArchive %d offline sessions (restorable):", preview.Count)
+		for _, a := range preview.Sessions {
+			q.IDs = append(q.IDs, a.SessionID)
+			reason += "\n" + a.SessionID + " " + a.Name + " (" + a.Folder + ")"
+		}
+		q.Expected = q.IDs
+		q.DryRun = false
+		args, err = json.Marshal(q)
+		if err != nil {
+			return "", err
+		}
+	}
 	id, err := d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
 	if err == nil {
 		if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {

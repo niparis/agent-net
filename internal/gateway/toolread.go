@@ -486,7 +486,7 @@ func (s *Store) sessionCountsByNode() (map[string][2]int, error) {
 	rows, err := s.db.Query(`SELECT node_id,
 		COALESCE(SUM(CASE WHEN online = 1 AND harness != 'owner' THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN online = 1 AND worker != '' THEN 1 ELSE 0 END), 0)
-		FROM sessions GROUP BY node_id`)
+		FROM sessions WHERE archived_at=0 GROUP BY node_id`)
 	if err != nil {
 		return nil, err
 	}

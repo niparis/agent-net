@@ -353,6 +353,18 @@ func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor strin
 // Only the approved proposal runner may attach the CTO owner-instruction flag.
 // The immediate tool path always builds an unflagged peer message.
 func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "sessions_archive" {
+		if proposalActor(ctx) == "" {
+			return nil, errors.New("archive requires an approved proposal")
+		}
+		var p protocol.SessionsArchiveRequest
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		if p.Restore || len(p.IDs) == 0 || p.Expected == nil {
+			return nil, errors.New("archive proposal needs a pinned preview")
+		}
+	}
 	if name == "project_remove" {
 		p, err := proposalProjectRemove(raw)
 		if err != nil {

@@ -45,6 +45,7 @@ var Tools = []Tool{
 	toolEntry("tools_change", "Propose a change to shared tools and skills: plan, apply, undo, import or remove a native tool.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("mcp_change", "Propose adding, removing, testing or enabling a shared MCP server. Only the owner can approve it.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("settings_change", "Change settings values or undo a revision. Advice applies at once; rules and owner settings need approval.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
+	toolEntry("sessions_archive", "Propose archiving offline sessions after an exact dry run. Records can be restored by the owner.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: false}, false, false),
 	toolEntry("project_change", "Propose adding, removing, renaming or creating a project.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("mcp_call", "Propose a call to a tool on a shared MCP server; it runs after the owner approves. Credentials never appear in the call.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("proposal_ask", "Open the approval dialog in the chat for an open proposal that is already waiting.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
