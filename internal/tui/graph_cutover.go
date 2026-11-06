@@ -15,6 +15,7 @@ type graphCutoverStatusMsg struct {
 	epoch    int
 	on       bool
 	blockers []string
+	backup   string
 	err      error
 }
 type graphCutoverResultMsg struct{ err error }
@@ -37,11 +38,12 @@ func (m Model) graphCutoverStatusCmd() tea.Cmd {
 		var status struct {
 			On       bool     `json:"on"`
 			Blockers []string `json:"blockers"`
+			Backup   string   `json:"backup"`
 		}
 		if err == nil {
 			err = json.Unmarshal(raw, &status)
 		}
-		return graphCutoverStatusMsg{epoch: epoch, on: status.On, blockers: status.Blockers, err: err}
+		return graphCutoverStatusMsg{epoch: epoch, on: status.On, blockers: status.Blockers, backup: status.Backup, err: err}
 	}
 }
 func (m Model) graphCutoverKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
