@@ -371,6 +371,31 @@ func (s *Store) sessionHasRecentStepMessage(session string, recentWindow time.Du
 	return exists != 0, err
 }
 
+// stepReminderCutoff returns the oldest message time that still counts as a
+// delivered task notice. Zero disables reminders, so any recorded notice
+// suppresses a new one.
+func (s *Store) stepReminderCutoff() int64 {
+	interval := 2 * time.Hour
+	if snap, err := s.SettingsSnapshot(); err == nil {
+		interval = snap.Duration("delivery.step_reminder", settings.Where{})
+	}
+	if interval <= 0 {
+		return 0
+	}
+	return s.now().Add(-interval).UnixNano()
+}
+
+// stepMessageRecorded reports whether the step already has a live task notice
+// for this session that is newer than the reminder cutoff.
+func (s *Store) stepMessageRecorded(t nodeTaskTarget, cutoff int64) (bool, error) {
+	var recorded int
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+		WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND d.session_id=?
+		AND m.state<>'expired' AND (?=0 OR m.created_at>=?))`,
+		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session, cutoff, cutoff).Scan(&recorded)
+	return recorded != 0, err
+}
+
 func (s *Store) clearTaskUrgent(t nodeTaskTarget) error {
 	_, err := s.db.Exec(`UPDATE delivery_step_tasks SET urgent=0 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
 		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge))
@@ -397,6 +422,9 @@ func (g *Gateway) flushStepTasks(session string) {
 	delete(g.stepBatches, session)
 	g.stepBatchesMu.Unlock()
 
+	if g.onStepBatchFlushed != nil {
+		g.onStepBatchFlushed(session)
+	}
 	g.sendStepTaskBatch(context.Background(), toSend)
 }
 
@@ -445,16 +473,11 @@ func (g *Gateway) sendStepTaskBatch(ctx context.Context, targets []nodeTaskTarge
 // or reported the step before it.
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	snap, err := g.store.SettingsSnapshot()
-	reminderInterval := 2 * time.Hour
 	stuckLimit := 12 * time.Hour
 	if err == nil {
-		reminderInterval = snap.Duration("delivery.step_reminder", settings.Where{})
 		stuckLimit = snap.Duration("delivery.step_stuck", settings.Where{})
 	}
-	var reminderCutoff int64
-	if reminderInterval > 0 {
-		reminderCutoff = g.store.now().Add(-reminderInterval).UnixNano()
-	}
+	reminderCutoff := g.store.stepReminderCutoff()
 
 	g.checkStuckStepTasks(ctx, stuckLimit)
 	g.wakeOfflineStepOwners(ctx, reminderCutoff)
@@ -916,6 +939,21 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		}
 		loaded[t.id] = &details{change: c, pipeline: p, evidence: evidence}
 	}
+	// A dispatch pass can select a task while another pass is flushing the
+	// same batch, before that message and its rows are committed. Re-check at
+	// write time so a step already recorded is not sent again.
+	cutoff := s.stepReminderCutoff()
+	kept := queue[:0]
+	for _, t := range queue {
+		recorded, err := s.stepMessageRecorded(t, cutoff)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		if !recorded {
+			kept = append(kept, t)
+		}
+	}
+	queue = kept
 	// Pipeline order keeps a pair together whatever order the dispatch query
 	// returned the tasks in.
 	sort.SliceStable(queue, func(a, b int) bool {
