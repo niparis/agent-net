@@ -366,7 +366,7 @@ settings:
     type: duration
     min: 1ns
     levels: [network, repo]
-    default: 10m
+    default: 20m
     live: true
   - key: workers.max_age
     rows: [53]
