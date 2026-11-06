@@ -164,6 +164,7 @@ type worker struct {
 	idleNoticeSent, idleNoticePending bool
 	idleNoticeGeneration              uint64
 	idleNoticeReport, idleNoticeKey   string
+	idleNoticeCancel                  context.CancelFunc
 	// idleFollowUp is true when the owner's message starts a turn on a worker
 	// that went idle without a hand-back. The OpenCode router clears the idle
 	// notice before noteAsk runs, so noteAsk reads this to count the follow-up
