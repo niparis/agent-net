@@ -716,7 +716,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "graph.refs.enable" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
+		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "graph.refs.enable" || h.Type == "graph.refs.status" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -1506,6 +1506,36 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return st.TeamHistory(q.ID, 1000)
 		}
 		return map[string]bool{"ok": true}, st.WriteTeam(q, "owner")
+	case "graph.refs.status":
+		p, err := decode[struct {
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		on, err := st.graphRefsEnabled()
+		if err != nil {
+			return nil, err
+		}
+		blockers, err := g.graphRefsBlockers(ctx, st.db, true)
+		if err != nil {
+			return nil, err
+		}
+		if _, graphErr := st.graphForRef(nil); graphErr != nil {
+			blockers = append(blockers, graphErr.Error())
+		}
+		dataDir, err := filepath.Abs(g.opts.DataDir)
+		if err != nil {
+			return nil, err
+		}
+		backup := filepath.Join(filepath.Dir(dataDir), "gateway-before-typed-graph-"+st.now().Format("20060102-1504"))
+		if on {
+			if err := st.db.QueryRowContext(ctx, `SELECT backup FROM graph_ref_gate WHERE id=1`).Scan(&backup); err != nil {
+				return nil, err
+			}
+		}
+		return map[string]any{"on": on, "blockers": blockers, "backup": backup}, nil
+
 	case "graph.refs.enable":
 		p, err := decode[struct {
 			Owner  string `json:"owner"`
@@ -1523,21 +1553,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		// cutover. Offline nodes use their stored report; live links need hello.
 		g.machineAuthMu.Lock()
 		defer g.machineAuthMu.Unlock()
-		g.mu.Lock()
-		unready := ""
-		for id, conn := range g.conns {
-			if !conn.graphRefs.Load() {
-				unready = id
-				break
-			}
-		}
-		g.mu.Unlock()
-		if unready != "" {
-			return nil, reject("upgrade required: machine %s has not completed typed Graph hello", unready)
-		}
-		if err = st.checkGraphRefsGate(); err != nil {
+		blockers, err := g.graphRefsBlockers(ctx, st.db, true)
+		if err != nil {
 			return nil, err
 		}
+		if len(blockers) > 0 {
+			return nil, reject("%s", blockers[0])
+		}
+
 		if _, err = st.graphForRef(nil); err != nil {
 			return nil, err
 		}
@@ -1550,13 +1573,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		defer tx.Rollback()
-		var blocked int
-		if err = tx.QueryRow(`SELECT COUNT(*) FROM nodes n LEFT JOIN node_graph_refs c ON c.node_id=n.id WHERE n.removed=0 AND (COALESCE(c.supported,0)=0 OR trim(COALESCE(c.version,'')) IN ('','unknown') OR c.version<>n.version)`).Scan(&blocked); err != nil {
+		blockers, err = g.graphRefsBlockers(ctx, tx, false)
+		if err != nil {
 			return nil, err
 		}
-		if blocked > 0 {
+		if len(blockers) > 0 {
 			return nil, reject("upgrade required: enrollment changed during backup")
 		}
+
 		// Standalone architect charters become the actor's canonical charter.
 		if _, err = tx.Exec(`INSERT OR IGNORE INTO agent_charter(agent_id,attr,value,updated_at,updated_by) SELECT c.node,c.attr,c.value,c.updated_at,c.updated_by FROM graph_charter c JOIN graph_nodes n ON n.name=c.node AND n.kind='architect'`); err != nil {
 			return nil, err

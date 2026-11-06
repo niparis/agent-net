@@ -17,7 +17,7 @@ func TestGraphRefsGateAndLegacyCompatibility(t *testing.T) {
 	if _, err := g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.144","hostname":"test"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.checkGraphRefsGate(); err == nil {
+	if b, err := g.graphRefsBlockers(context.Background(), s.db, false); err != nil || len(b) == 0 {
 		t.Fatal("old daemon passed gate")
 	}
 	if _, err := g.handleGraphRead([]byte(`{"project":"demo"}`)); err != nil {
@@ -26,14 +26,14 @@ func TestGraphRefsGateAndLegacyCompatibility(t *testing.T) {
 	if _, err := g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.145","hostname":"test","graph_refs":true}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.checkGraphRefsGate(); err != nil {
-		t.Fatal(err)
+	if b, err := g.graphRefsBlockers(context.Background(), s.db, false); err != nil || len(b) != 0 {
+		t.Fatalf("blockers %v: %v", b, err)
 	}
 	offline, _, err := s.CreateNode("offline", "linux")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.checkGraphRefsGate(); err == nil {
+	if b, err := g.graphRefsBlockers(context.Background(), s.db, false); err != nil || len(b) == 0 {
 		t.Fatal("unreported offline node passed gate")
 	}
 	if _, err := s.db.Exec(`UPDATE nodes SET removed=1 WHERE id=?`, offline); err != nil {
@@ -159,7 +159,7 @@ func TestGraphRefsCutoverRequiresOwnerAndBackup(t *testing.T) {
 	if _, err = g.handle(context.Background(), nc, "hello", []byte(`{"version":"dev","hostname":"fixture","graph_refs":true}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.checkGraphRefsGate(); err == nil {
+	if b, e := g.graphRefsBlockers(context.Background(), s.db, false); e != nil || len(b) == 0 {
 		t.Fatal("unknown version passed gate")
 	}
 	if _, err = g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.145","hostname":"fixture","graph_refs":true}`)); err != nil {

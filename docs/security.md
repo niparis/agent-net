@@ -1434,6 +1434,8 @@ fixing code. The one exception is a mechanical renumber when a migration or
 decision number clashes with the default branch. These are session
 instructions, not a git permission boundary.
 
+The local `graph_refs_status` and `graph_refs_enable` operations use the owner-only caller gate. The daemon supplies its owner session identity for both gateway requests; agents and commands inside agent sessions cannot call them.
+
 Typed Repo/Agent Graph cutover requires an authenticated owner request to
 `graph.refs.enable` with a backup destination. Every enrolled machine, including
 an offline machine or one that has never connected, must first report the
