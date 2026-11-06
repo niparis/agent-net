@@ -369,6 +369,76 @@ func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
 	}
 }
 
+func TestSettingsNamedTargetReadAndCTOParity(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	st := g.gw.Store()
+	if _, err := st.UpsertSession(n.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "named-target", Repo: protocol.RepoInfo{Project: "shop"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.WriteSettings([]gateway.SettingsChange{{Key: "workers.auto_continue", Level: "repo", Scope: "shop", Value: json.RawMessage("false")}}, "owner", "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	request := protocol.SettingsReadRequest{Key: "workers.auto_continue", Target: &protocol.SettingsTarget{Level: "repo", Name: "shop"}}
+	rawArgs, _ := json.Marshal(request)
+	value, err := n.d.runCTOToolRaw(ctx, "agent_settings_read", rawArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(value)
+	var out struct {
+		Settings []protocol.SettingView `json:"settings"`
+	}
+	if err := json.Unmarshal(encoded, &out); err != nil || len(out.Settings) != 1 {
+		t.Fatalf("CTO named read: %s %v", encoded, err)
+	}
+	row := out.Settings[0]
+	if string(row.Value) != "false" || string(row.Explicit) != "false" || row.Source != "repo shop" || row.SourceLevel != "repo" {
+		t.Fatalf("repo target fields: %+v", row)
+	}
+	if row.SourceRef == nil || row.SourceRef.Kind != "repo" || row.SourceRef.ID != "shop" || row.SourceRef.Name != "shop" {
+		t.Fatalf("source ref: %+v", row.SourceRef)
+	}
+	if row.Target == nil || row.Target.Kind != "repo" || row.Target.ID != "shop" || row.Target.Token == "" {
+		t.Fatalf("target: %+v", row.Target)
+	}
+	if row.RecipeDigest == "" || row.ContextRevision == 0 || row.Raised {
+		t.Fatalf("read context: %+v", row)
+	}
+
+	ordinary, err := n.d.readSettings(ctx, request, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinaryJSON, _ := json.Marshal(ordinary)
+	ctoJSON, _ := json.Marshal(out.Settings)
+	if string(ordinaryJSON) != string(ctoJSON) {
+		t.Fatalf("public and CTO reads differ:\n%s\n%s", ordinaryJSON, ctoJSON)
+	}
+
+	agent, err := n.d.readSettings(ctx, protocol.SettingsReadRequest{Key: "workers.auto_continue", Target: &protocol.SettingsTarget{Level: "agent", Name: "shop"}}, false)
+	if err != nil || len(agent) != 1 {
+		t.Fatalf("agent namesake: %+v %v", agent, err)
+	}
+	if agent[0].Target == nil || agent[0].Target.Kind != "agent" || agent[0].Target.ID != "shop" || agent[0].Explicit != nil || agent[0].ExplicitNote != "not set here" {
+		t.Fatalf("agent namesake read: %+v", agent[0])
+	}
+
+	legacy, err := n.d.readSettings(ctx, protocol.SettingsReadRequest{Key: "workers.auto_continue", Repo: "shop"}, false)
+	if err != nil || len(legacy) != 1 || string(legacy[0].Value) != "false" || string(legacy[0].Explicit) != "false" || legacy[0].Target != nil {
+		t.Fatalf("legacy repo read changed: %+v %v", legacy, err)
+	}
+
+	if _, err = n.d.readSettings(ctx, protocol.SettingsReadRequest{Key: "workers.auto_continue", Repo: "shop", Target: request.Target}, false); err == nil {
+		t.Fatal("target and repo accepted together")
+	}
+	if _, err = n.d.readSettings(ctx, protocol.SettingsReadRequest{Key: "workers.auto_continue", Target: &protocol.SettingsTarget{Level: "repo", Name: "missing"}}, false); err == nil {
+		t.Fatal("unknown target read")
+	}
+}
+
 func TestSettingsGuidanceUndoPreservesAntigravityAcrossStart(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

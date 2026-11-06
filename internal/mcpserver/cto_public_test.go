@@ -73,6 +73,44 @@ func TestSettingsReadOfferedToAgentsAndCTO(t *testing.T) {
 	}
 }
 
+func TestSettingsReadTargetSchemaParity(t *testing.T) {
+	ctx := context.Background()
+	ordinary, err := connect(t, func(context.Context, string, any) (json.RawMessage, error) { return json.RawMessage(`[]`), nil }).ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cto, err := ctoTestSession(t).ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	find := func(list *mcp.ListToolsResult) *mcp.Tool {
+		for _, tool := range list.Tools {
+			if tool.Name == "agent_settings_read" {
+				return tool
+			}
+		}
+		return nil
+	}
+	a, b := find(ordinary), find(cto)
+	if a == nil || b == nil {
+		t.Fatal("agent_settings_read missing from a public session")
+	}
+	as, err := json.Marshal(a.InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs, err := json.Marshal(b.InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(as) != string(bs) {
+		t.Fatalf("public schemas differ:\n%s\n%s", as, bs)
+	}
+	if !strings.Contains(string(as), `"target"`) || !strings.Contains(string(as), `"network"`) {
+		t.Fatalf("target selector missing from the public schema: %s", as)
+	}
+}
+
 func TestCTOSettingsChangeSchemaAcceptsBatchAndUndo(t *testing.T) {
 	for _, raw := range []string{`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"test"}`, `{"area":"values_undo","revision":1}`} {
 		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(raw)); err != nil {

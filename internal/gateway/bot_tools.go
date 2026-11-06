@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 	"github.com/niparis/agent-net/internal/settingsview"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
@@ -139,7 +140,21 @@ func (g *Gateway) botToolCall(ctx context.Context, sid, name string, in map[stri
 		if err != nil {
 			return nil, err
 		}
-		rows, err := settingsview.Views(snap, history, q, false)
+		var target *protocol.SettingsRef
+		if q.Target != nil {
+			if q.Repo != "" {
+				return nil, fmt.Errorf("settings target and repo cannot be combined")
+			}
+			resolution, err := g.store.ResolveSettingsTarget(*q.Target)
+			if err != nil {
+				return nil, err
+			}
+			if resolution.Target == nil {
+				return nil, ambiguousSettingsTargetError(*q.Target, resolution.Choices)
+			}
+			target = resolution.Target
+		}
+		rows, err := settingsview.ViewsWithTarget(snap, history, q, false, settings.Where{}, target)
 		if err != nil {
 			return nil, err
 		}

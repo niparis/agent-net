@@ -1754,6 +1754,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]bool{"ok": true}, err
 	case "settings.snapshot":
 		return st.SettingsSnapshot()
+	case "settings.target":
+		p, err := decode[protocol.SettingsTarget](raw)
+		if err != nil {
+			return nil, reject("bad settings.target")
+		}
+		return st.ResolveSettingsTarget(p)
 	case "settings.write":
 		p, err := decode[protocol.SettingsWrite](raw)
 		if err != nil || len(p.Changes) == 0 {

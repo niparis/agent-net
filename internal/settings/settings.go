@@ -616,10 +616,14 @@ type Where struct {
 	Host         Host
 }
 type Effective struct {
-	Value    json.RawMessage
-	Source   string
-	Revision int64
-	Raised   bool
+	Value       json.RawMessage
+	Source      string
+	SourceLevel string
+	SourceID    string
+	SourceNote  string
+	Revision    int64
+	Raised      bool
+	Bound       json.RawMessage
 }
 
 func (s Snapshot) Clone() Snapshot {
@@ -670,9 +674,9 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 	if err != nil {
 		return Effective{}, err
 	}
-	e := Effective{Value: v, Source: "network default", Revision: s.Revision}
+	e := Effective{Value: v, Source: "network default", SourceLevel: "recipe", Revision: s.Revision}
 	networkSet := false
-	apply := func(raw json.RawMessage, source string) {
+	apply := func(raw json.RawMessage, source, level, id, note string) {
 		candidate, err := d.Codec(raw)
 		if err != nil {
 			log.Printf("settings: ignoring invalid %s at %s: %v", key, source, err)
@@ -683,6 +687,7 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 			if err == nil {
 				if !bytes.Equal(bound, candidate) {
 					e.Raised = true
+					e.Bound = bound
 				}
 				if bytes.Equal(bound, e.Value) && !bytes.Equal(bound, candidate) {
 					return
@@ -692,6 +697,9 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 		}
 		e.Value = candidate
 		e.Source = source
+		e.SourceLevel = level
+		e.SourceID = id
+		e.SourceNote = note
 	}
 	find := func(level, scope string) json.RawMessage {
 		for _, x := range s.Values {
@@ -706,6 +714,8 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 		if vv, err := d.Codec(v); err == nil {
 			e.Value = vv
 			e.Source = "network"
+			e.SourceLevel = "network"
+			e.SourceID = "network"
 			networkSet = true
 		} else {
 			log.Printf("settings: ignoring invalid %s at network: %v", key, err)
@@ -714,7 +724,7 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 	if w.Repo != "" && contains(d.Levels, "repo") {
 		v := find("repo", w.Repo)
 		if v != nil {
-			apply(v, "repo "+w.Repo)
+			apply(v, "repo "+w.Repo, "repo", w.Repo, "")
 		} else if m := strings.TrimSpace(s.Maturity[w.Repo]); m != "" {
 			level, explanation, hasExplanation := strings.Cut(m, " - ")
 			m = level
@@ -723,24 +733,24 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 			}
 			if n, ok := d.ByMaturity[m]; ok {
 				if v, err := d.yamlValue(&n); err == nil {
-					apply(v, "repo "+w.Repo+", maturity "+m)
+					apply(v, "repo "+w.Repo+", maturity "+m, "repo", w.Repo, "maturity "+m)
 				}
 			}
 		}
 	}
 	if w.Agent != "" && contains(d.Levels, "agent") {
 		if v := find("agent", w.Agent); v != nil {
-			apply(v, "agent "+w.Agent)
+			apply(v, "agent "+w.Agent, "agent", w.Agent, "")
 		}
 	}
 	if contains(d.Levels, "session") {
 		if v := w.Session[key]; v != nil {
-			apply(v, "session")
+			apply(v, "session", "session", "", "")
 		}
 	}
 	if contains(d.Levels, "run") {
 		if v := w.Run[key]; v != nil {
-			apply(v, "run")
+			apply(v, "run", "run", "", "")
 		}
 	}
 	return e, nil
