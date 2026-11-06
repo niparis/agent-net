@@ -11,12 +11,12 @@ Connected apps
 Integrations
   Choose integrations for every machine in your network.
   Configure integrations
+  Typed Repo/Agent Graph: loading
 
 Machines
   The name every machine in your network shows for each machine.
   NAME                  HOST NAME             VERSION       ONLINE
   Mac                   Mac                   v0.4.0        yes
-  build-vm              build-vm              v0.4.0        yes
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
