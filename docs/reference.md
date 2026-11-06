@@ -2698,7 +2698,13 @@ pushes the default branch. It never force-pushes, pushes tags, or releases.
 It retries a failed push a few times, then reports fail.
 
 It reports each step with commit hashes read from git and reports failures
-without fixing code or writing features. Git itself is not blocked. The Graph
+without fixing code or writing features. Git itself is not blocked. The one
+exception is a mechanical renumber when a change's only conflict with the
+default branch is a migration or decision number clash. It then rebases in its
+own merge worktree, renumbers the store.go migration comment, the
+migrations.lock line, the version numbers asserted in tests and the
+docs/decisions file number and links to it, runs the targeted tests and commits
+that renumber on its own. It changes no SQL, logic or other line. The Graph
 tab's selected project and project details card show the accept, test and merge
 owners. An offline merger is marked "offline, tasks wait".
 
