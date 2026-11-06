@@ -14,6 +14,7 @@ import (
 // told (reported) and it is past the longest run time: a hand-back row is also
 // what starts its harness session again (resumable).
 type workerRow struct {
+	RunGeneration                            int
 	Evidence                                 *protocol.WorkerEvidence
 	ID, Harness, Project, Path, Model, Owner string
 	// OwnerName is the caller's display name, for the commit trailers.
@@ -97,7 +98,7 @@ func (s *state) saveWorker(w workerRow) error {
 		difficulty_asked=excluded.difficulty_asked, difficulty_used=excluded.difficulty_used, touches=excluded.touches,
 		auto_continue=excluded.auto_continue, auto_continue_count=excluded.auto_continue_count,
 		auto_continue_run=excluded.auto_continue_run, task_id=excluded.task_id, midrun_count=excluded.midrun_count,
-		midrun_run=excluded.midrun_run, notice_since_request=excluded.notice_since_request, midrun_seen=excluded.midrun_seen, failure=excluded.failure, change_id=excluded.change_id, run_generation, run_evidence=excluded.run_evidence`,
+		midrun_run=excluded.midrun_run, notice_since_request=excluded.notice_since_request, midrun_seen=excluded.midrun_seen, failure=excluded.failure, change_id=excluded.change_id, run_evidence=excluded.run_evidence`,
 		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.OwnerName, w.NativeID, w.SessionID, w.PID, w.PGID,
 		w.StartToken, w.StartedAt.UnixNano(), w.LastActive.UnixNano(), w.EndedReason, boolInt(w.Resumable),
 		boolInt(w.Reported), w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.TaskText, w.Title, w.DoneStatus,
