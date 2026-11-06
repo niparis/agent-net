@@ -947,6 +947,12 @@ func (s *Store) migrate() error {
 	if err != nil {
 		return err
 	}
+	// A database from a newer release may hold tables, columns and triggers
+	// this binary does not know. Opening it would silently drop the rules the
+	// newer code enforced, so refuse and let the owner restore its backup.
+	if cur > len(migrations) {
+		return fmt.Errorf("gateway.db schema version %d is newer than this agent-net (knows %d); upgrade agent-net or restore the backup taken before the upgrade", cur, len(migrations))
+	}
 	for i := cur; i < len(migrations); i++ {
 		tx, err := s.db.Begin()
 		if err != nil {
