@@ -67,7 +67,9 @@ the same values. The owner can change them in Settings or with `settings_write`;
 the CTO must propose changes to these rules. A repo with no graph node uses the
 network merge authority. Text and worker delivery settings appear under
 `delivery.*` in Settings. The delegated merge text uses the configured
-`delivery.delegated_approver_modes`. Branch prefix changes apply to new workers;
+`delivery.delegated_approver_modes`. Task reminders and alerts use
+`delivery.step_reminder` (default 2h) and `delivery.step_stuck` (default 12h),
+with 0 turning them off. Branch prefix changes apply to new workers;
 a resumed worker keeps its recorded branch. Cleanup recognizes recorded branches
 with a valid older prefix. The worker sandbox is also a repo setting, with the
 older project policy and node-setting methods as adapters. Older daemons and extensions use their built-in merge text until upgraded, even when
@@ -2069,6 +2071,14 @@ are saved together.
 The gateway rebuilds missing ready tasks for existing changes at startup. A
 node task stays queued until a session claims or reports it. If an undelivered
 task notice expires, the gateway can issue a fresh notice to that session.
+When a ready step task stays unclaimed, the gateway re-sends a task reminder
+after `delivery.step_reminder` (default 2h, 0 turns it off), marked with
+`[agent-net step task reminder]` and the time it has been ready. At most one
+reminder is sent per interval, and reminders follow standard batching. When
+a step stays unclaimed past `delivery.step_stuck` (default 12h, 0 turns it off),
+the gateway sends one stuck notice to the change's caller session:
+`<title> (<id>): <step> has waited <age> for <owner>; nobody claimed it.`
+This notice is sent only once per change, revision and step.
 
 ### The playbook and the track record
 

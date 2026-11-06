@@ -437,6 +437,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 					g.dispatchPending(ctx, id, false)
 				}
 			}
+			g.dispatchStepTasks(ctx)
 		}
 	}
 }
