@@ -1668,7 +1668,7 @@ func matches(a protocol.AgentView, filter string) bool {
 	if len(words) == 0 {
 		return true
 	}
-	hay := strings.ToLower(strings.Join([]string{a.Profile.Name, a.Harness, a.Hostname, a.Repo.Project, a.Profile.Project, a.ProjectDisplayName,
+	hay := strings.ToLower(strings.Join([]string{a.Profile.Name, a.Harness, a.Hostname, a.Repo.Project, a.Profile.Project, a.ProjectDisplayName, a.AgentID, a.AgentName,
 		a.Repo.Branch, a.Model, a.Mode, modeShort(a.Mode), a.Status, a.Profile.Function, a.Profile.Task, a.Cwd, a.SessionID,
 		a.Repo.Remote}, "\n"))
 	for _, w := range words {

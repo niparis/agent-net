@@ -153,8 +153,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 			out = append(out, kv("tokens", tokens))
 		}
 	}
-	if a.AgentName != "" {
-		line := kv("agent", a.AgentName)
+	out = append(out, kv("repo", dashIfEmpty(m.agentProjectName(a))))
+	{
+		line := kv("agent", dashIfEmpty(a.AgentName))
 		if m.sessionCell == 3 && a.SessionID == m.selected {
 			line = sSel.Render(stripStyles(line))
 		}
@@ -228,9 +229,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 
 	msgs := m.feed.messagesOf(a.SessionID, 8)
-	if len(out) > n-1 && (len(msgs) > 0 || m.feed.unavailable != "") && n >= 3 {
+	if len(out) > n-2 && (len(msgs) > 0 || m.feed.unavailable != "") && n >= 3 {
 		// Messages need at least one row; the last lines give way.
-		out = out[:max(n-1, 1)]
+		out = out[:max(n-2, 1)]
 	}
 	switch {
 	case m.feed.unavailable != "":

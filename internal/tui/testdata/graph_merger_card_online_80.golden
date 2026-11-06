@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-project-03  autonomy: off
+repo project-03  autonomy: off
 Tools: 0 skills, 0 MCP servers · t open
 no purpose set
 ● 1 session
@@ -7,8 +7,8 @@ accept, review, release, verify: caller
 test, merge: project-03 merger (online)
 
 IN 2                                     OUT 1
-all projects ──▶ depends                 ──▶ project-04 depends
-project-02 ──▶ deploys
+all projects ──▶ depends                 ──▶ repo project-04 depends
+repo project-02 ──▶ deploys
 Card ───────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 no charter set

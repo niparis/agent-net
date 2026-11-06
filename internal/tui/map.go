@@ -23,6 +23,7 @@ type mapMsg struct {
 
 // mapState holds shared network data and the selected card state.
 type mapState struct {
+	labels           map[string]string
 	nodes            []protocol.Node
 	edges            []protocol.Edge
 	changes          []protocol.CharterChange
@@ -46,7 +47,7 @@ func (m Model) mapCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		at := now()
-		view, err := src.GraphView(ctx, protocol.QueryGraph{})
+		view, err := src.GraphView(ctx, protocol.QueryGraph{AutoTyped: true})
 		return mapMsg{view: view, err: err, at: at}
 	}
 }
@@ -59,6 +60,7 @@ func (m *Model) applyMap(r mapMsg) {
 		m.mp.err = mapError(r.err)
 		return
 	}
+	r.view = m.prepareGraph(r.view)
 	first := m.graphState.Graph == nil
 	m.graphState, _ = graphview.Update(m.graphState, graphview.GraphChanged{Graph: r.view})
 	if first {
@@ -90,6 +92,9 @@ func (m Model) mapKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "sessions":
 		m.mapOn, m.tab, m.focus = false, 0, focusSessions
 		m.filter = m.mp.selected
+		if node, ok := m.mapNode(m.mp.selected); ok && node.Ref != nil {
+			m.filter = strings.TrimPrefix(m.graphName(node.Name), node.Ref.Kind+" ")
+		}
 		m.input.SetValue(m.filter)
 		m.ensureSelection()
 		m.fixScroll()
@@ -201,7 +206,7 @@ func (m Model) mapProjectNodes() []protocol.Node {
 	})
 	var out []protocol.Node
 	for _, n := range nodes {
-		if (m.uiFilter == "" || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.uiFilter))) && (!m.mp.finding || (strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.mp.findQuery)) || strings.Contains(strings.ToLower(m.projectName(n.Name)), strings.ToLower(m.mp.findQuery)))) {
+		if (m.uiFilter == "" || strings.Contains(strings.ToLower(m.graphName(n.Name)), strings.ToLower(m.uiFilter))) && (!m.mp.finding || (strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.mp.findQuery)) || strings.Contains(strings.ToLower(m.graphName(n.Name)), strings.ToLower(m.mp.findQuery)))) {
 			out = append(out, n)
 		}
 	}

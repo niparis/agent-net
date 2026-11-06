@@ -52,7 +52,7 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 		}
 		return out[:rows]
 	}
-	title := m.projectName(node.Name)
+	title := m.graphName(node.Name)
 	if node.Kind != "" {
 		title += " · " + node.Kind
 	}
@@ -173,7 +173,7 @@ func (m Model) mapEdgeLines(node string, width int) []string {
 	byPeer(out, false)
 	var lines []string
 	add := func(dir string, e protocol.Edge) {
-		head := fmt.Sprintf("  %-3s  %s -> %s", dir, m.projectName(e.From), m.projectName(e.To))
+		head := fmt.Sprintf("  %-3s  %s -> %s", dir, m.graphName(e.From), m.graphName(e.To))
 		lines = append(lines, clip(head, width))
 		detail := sanitize(e.Kind)
 		if e.Mode != "" {
