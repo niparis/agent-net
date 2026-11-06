@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -14,6 +15,12 @@ import (
 func withDifficulty(next func(*Config)) func(*Config) {
 	return func(c *Config) {
 		c.testNoDifficulty = false
+		c.testJudgePick = func(_ context.Context, exclude string) (protocol.DifficultyJudgeChoice, error) {
+			if exclude == "" {
+				return protocol.DifficultyJudgeChoice{Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash"}, nil
+			}
+			return protocol.DifficultyJudgeChoice{Harness: "codex", Model: "gpt-6.1-sol"}, nil
+		}
 		if c.HarnessPaths == nil {
 			c.HarnessPaths = make(map[string]string)
 		}
