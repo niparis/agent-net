@@ -42,7 +42,13 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 		return "", err
 	}
 	if exists == 0 {
-		return "", reject("unknown node %q", name)
+		var repo bool
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND NOT EXISTS (SELECT 1 FROM archived_repos WHERE repo_id=repos.id))`, name).Scan(&repo); err != nil {
+			return "", err
+		}
+		if !repo {
+			return "", reject("unknown node %q", name)
+		}
 	}
 	return "component", nil
 }
@@ -68,7 +74,11 @@ func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
 			return err
 		}
-		if architect {
+		var typed bool
+		if err := tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&typed); err != nil {
+			return err
+		}
+		if architect && !typed {
 			targetKind = "agent"
 		}
 	}
@@ -78,6 +88,9 @@ func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64
 
 // AddArchitect creates a named architect without a project of the same name.
 func (s *Store) AddArchitect(name, actor string, validate ...bool) error {
+	if s.graphRefsOn.Load() {
+		return s.GraphLifecycle("agent.create", protocol.GraphLifecycleRequest{Name: name}, actor, len(validate) > 0 && validate[0])
+	}
 	if !validGraphName(name) {
 		return reject("invalid node name")
 	}
@@ -106,6 +119,9 @@ func (s *Store) AddArchitect(name, actor string, validate ...bool) error {
 
 // RemoveArchitect removes an architect with no edges, recording cleared attributes.
 func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
+	if s.graphRefsOn.Load() {
+		return s.GraphLifecycle("agent.tombstone", protocol.GraphLifecycleRequest{Ref: &protocol.GraphRef{Kind: "agent", ID: name}}, actor, len(validate) > 0 && validate[0])
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -231,6 +247,10 @@ func (s *Store) SetCharter(node, attr, value, actor string) error {
 }
 
 func setCharterTx(tx *sql.Tx, node, attr, value, actor string, now int64) error {
+	return setCharterKindTx(tx, node, attr, value, actor, now, false)
+}
+
+func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64, repo bool) error {
 	value, err := protocol.CleanCharterValue(attr, value)
 	if err != nil {
 		return reject("%v", err)
@@ -238,6 +258,9 @@ func setCharterTx(tx *sql.Tx, node, attr, value, actor string, now int64) error 
 	kind, err := graphKind(tx, node)
 	if err != nil {
 		return err
+	}
+	if repo {
+		kind = "component"
 	}
 	var old string
 	err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&old)
@@ -498,6 +521,17 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 	}
 	now := s.now().UnixNano()
 	switch typ {
+	case "lifecycle":
+		if err = s.requireGraphRefs(); err != nil {
+			return err
+		}
+		if err = setLifecycleTx(tx, targetKind, node, value, old, actor, now); err != nil {
+			return err
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		return tx.Commit()
 	case "agent_charter":
 		var current string
 		err = tx.QueryRow(`SELECT value FROM agent_charter WHERE agent_id=? AND attr=?`, node, attr).Scan(&current)
@@ -597,13 +631,20 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 				if ownerErr != nil || source != e.From {
 					return reject("invalid special delivery owner")
 				}
-			} else if e.From != "*" {
-				if _, err = graphKind(tx, e.From); err != nil {
+			}
+			if s.graphRefsOn.Load() {
+				if err = liveEdgeEndpoints(tx, e); err != nil {
 					return err
 				}
-			}
-			if _, err = graphKind(tx, e.To); err != nil {
-				return err
+			} else {
+				if owner.Kind == protocol.OwnerNode && e.From != "*" {
+					if _, err = graphKind(tx, e.From); err != nil {
+						return err
+					}
+				}
+				if _, err = graphKind(tx, e.To); err != nil {
+					return err
+				}
 			}
 			_, err = tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET mode=excluded.mode,rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule)
 		}
@@ -793,6 +834,15 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		return err
 	}
 	typed := e.FromRef != nil
+	var enabled bool
+	if err := tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&enabled); err != nil {
+		return err
+	}
+	if enabled {
+		if err := liveEdgeEndpoints(tx, e); err != nil {
+			return err
+		}
+	}
 	if typed {
 		var enabled bool
 		if err := tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&enabled); err != nil {
@@ -810,7 +860,11 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 				table = "agents"
 			}
 			var exists bool
-			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM `+table+` WHERE id=?)`, ref.ID).Scan(&exists); err != nil {
+			live := " AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)"
+			if ref.Kind == "agent" {
+				live = " AND tombstone=0"
+			}
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM `+table+` WHERE id=?`+live+`)`, ref.ID).Scan(&exists); err != nil {
 				return err
 			}
 			if !exists {

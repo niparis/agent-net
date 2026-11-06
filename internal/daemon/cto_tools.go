@@ -418,8 +418,11 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, tooOldGateway(err)
 		}
 		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, nil
-	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set":
+	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set", "repo_create", "repo_archive", "agent_create", "agent_tombstone":
 		delete(args, "by")
+		if name == "repo_create" || name == "repo_archive" || name == "agent_create" || name == "agent_tombstone" {
+			args["owner"] = d.ownerSessionID()
+		}
 		if name == "graph_undo" {
 			args["history_id"] = args["id"]
 			delete(args, "id")

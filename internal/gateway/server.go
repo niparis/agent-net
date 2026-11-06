@@ -1604,6 +1604,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return st.RefCharterHistory(*p.Ref, p.Limit)
 		}
 		return st.CharterHistory(p.Node, p.Limit)
+	case "repo.create", "repo.archive", "agent.create", "agent.tombstone":
+		if err := st.requireGraphRefs(); err != nil {
+			return nil, err
+		}
+		p, err := decode[protocol.GraphLifecycleRequest](raw)
+		if err != nil {
+			return nil, reject("bad lifecycle request")
+		}
+		if !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		err = st.GraphLifecycle(typ, p, graphActor(raw), false)
+		return map[string]any{"ok": err == nil, "retained": "Charters, settings, offline sessions and run and delivery history remain attached; an archived repo keeps its owner. Active edges and assignments must first be removed."}, err
 	case "node.add", "node.remove":
 		p, err := decode[protocol.GraphNodeRequest](raw)
 		if err != nil || p.Name == "" {

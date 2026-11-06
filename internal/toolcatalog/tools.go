@@ -38,7 +38,7 @@ var Tools = []Tool{
 	toolEntry("cto_placement_memory", "Read or save placement answers explicitly given by the owner.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_ui_show", "Show the owner a TUI tab with an item selected, or a short notice. Fails with no TUI open when no local TUI is connected.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_proposals_find", "Find your proposals and their state: open, approved, rejected, done or failed, with the result.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
-	toolEntry("graph_change", "Change the graph: charters, nodes, edges, node settings, or undo. Minor changes apply at once; others become a proposal for the owner.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
+	toolEntry("graph_change", "Change graph charters, nodes, edges, settings, or undo. Typed repo and agent creation, archive, tombstone and their undo always need owner approval.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("session_change", "Propose a session change for the owner: rename, trust a folder, set delegation policy, start a session, or start or stop a project merger.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("worker_change", "Propose starting or stopping a worker for the owner, with a complete brief.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("answer", "Propose the owner's answer to a held request, an inbox item or a contested outcome (let stand or overrule).", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),

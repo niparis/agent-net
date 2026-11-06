@@ -131,6 +131,10 @@ const (
 	OpEdgeHistory      = "edge_history"
 	OpDeliveryOwnerSet = "delivery_owner_set"
 	OpGraphUndo        = "graph_undo"
+	OpRepoCreate       = "repo_create"
+	OpRepoArchive      = "repo_archive"
+	OpAgentCreate      = "agent_create"
+	OpAgentTombstone   = "agent_tombstone"
 	// OpNodeSettingsGet and OpNodeSettingsSet read and change a node's
 	// overrides of its maturity defaults (decision 0022). Owner only, no
 	// agent tool.
@@ -141,7 +145,7 @@ const (
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpWorkerLog, OpProposalList, OpProposalAnswer, OpProposalStartAck, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
-	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo,
+	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect}
 
