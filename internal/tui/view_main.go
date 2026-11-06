@@ -1093,6 +1093,11 @@ func (m Model) sessionsTable(w, n int) []string {
 	if m.anySessionWaiting() {
 		statusWidth = 9
 	}
+	for _, a := range m.snap.Agents {
+		if a.StalledSince > 0 && a.Worker == nil {
+			statusWidth = max(statusWidth, min(18, len(m.statusCell(a))))
+		}
+	}
 	avail -= statusWidth - 6
 	var cols []column
 	if w <= 80 {
@@ -1388,7 +1393,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 					width += other.width + 1
 				}
 			}
-			parts = append(parts, cell(v, width))
+			v = cell(v, width)
+			if a.StalledSince > 0 {
+				v = statusLabel(v)
+			}
+			parts = append(parts, v)
 			continue
 		}
 		if c.name != "TASK" {
@@ -1423,7 +1432,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		return selectedRow(clip(line, w))
 	case m.hiddenSessions[a.SessionID]:
 		return sDim.Render(clip(stripStyles(line), w))
-	case !a.Online || a.Status == protocol.StatusDormant || m.idleLong(a):
+	case a.StalledSince == 0 && (!a.Online || a.Status == protocol.StatusDormant || m.idleLong(a)):
 		return sDim.Render(clip(stripStyles(line), w))
 	}
 	return clip(line, w)

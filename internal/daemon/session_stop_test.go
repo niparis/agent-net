@@ -35,7 +35,7 @@ func TestSessionStopClaudeBackground(t *testing.T) {
 	}
 	fa := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "bg", job: "abcd1234"}
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{fa} }})
-	fa.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "abcd1234-session", Name: "shop", Status: "idle", PID: 1})
+	fa.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "abcd1234-session", Name: "shop", Status: "busy", PID: 1})
 	var id string
 	eventually(t, "session registered", func() bool {
 		for _, s := range n.d.Sessions() {
@@ -44,6 +44,12 @@ func TestSessionStopClaudeBackground(t *testing.T) {
 		return id != ""
 	})
 	cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
+	n.d.mu.Lock()
+	ending := n.d.sessions[key("claude", "abcd1234-session")].ownerStopped
+	n.d.mu.Unlock()
+	if !ending {
+		t.Fatal("owner stop was not recorded before discovery removes the busy session")
+	}
 	got, err := os.ReadFile(args)
 	if err != nil || string(got) != "stop\nabcd1234\n" {
 		t.Fatalf("stop command %q: %v", got, err)
