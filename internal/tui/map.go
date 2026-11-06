@@ -28,9 +28,11 @@ type mapState struct {
 	edges   []protocol.Edge
 	changes []protocol.CharterChange
 	// full is the whole typed read before the Team filter. nodes and edges are
-	// what the Graph and its card show now.
+	// what the Graph and its card show now. baseZoom is the fitted zoom of the
+	// full graph, the cap for a small filtered Team.
 	full             protocol.GraphView
 	teams            []teamEntry
+	baseZoom         float64
 	at               time.Time
 	loaded           bool
 	loading          bool
@@ -73,6 +75,11 @@ func (m *Model) applyMap(r mapMsg) {
 	}
 	m.mp.changes = m.mp.full.Changes
 	m.mp.at, m.mp.loaded, m.mp.err = r.at, true, ""
+	m.mp.baseZoom = 0
+	if len(m.mp.teams) > 0 {
+		w, h := m.graphSize()
+		m.mp.baseZoom = graphview.New(m.mp.full).Fit(w, h).Zoom
+	}
 	m.applyTeamView(false)
 	if m.mp.pendingSelection != "" {
 		name := m.mp.selected

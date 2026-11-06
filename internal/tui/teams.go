@@ -119,6 +119,9 @@ func (m Model) teamFilterView(v protocol.GraphView) protocol.GraphView {
 }
 
 // applyTeamView redraws the graph from the full read with the current filter.
+// A filtered Team is laid out alone and centered. Its zoom is capped at the
+// full graph's fitted zoom, so a small Team stays near the middle with short
+// edges instead of stretching across the canvas.
 func (m *Model) applyTeamView(fit bool) {
 	view := m.teamFilterView(m.mp.full)
 	first := m.graphState.Graph == nil
@@ -126,6 +129,15 @@ func (m *Model) applyTeamView(fit bool) {
 	if first || fit {
 		w, h := m.graphSize()
 		m.graphState, _ = graphview.Update(m.graphState, graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}})
+		if m.teamFilter != "" && m.graphState.Graph != nil {
+			cam := m.graphState.Graph.Fit(w, h)
+			if m.mp.baseZoom > 0 && cam.Zoom > m.mp.baseZoom {
+				cam.Zoom, cam.FitZoom = m.mp.baseZoom, m.mp.baseZoom
+				cam.ScaleX, cam.ScaleY = 1, 1
+			}
+			m.graphState.Camera = cam
+			m.graphState.Tween = nil
+		}
 	}
 	m.mp.nodes, m.mp.edges = view.Nodes, view.Edges
 	m.mapEnsureSelection()

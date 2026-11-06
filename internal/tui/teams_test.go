@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -50,6 +51,51 @@ func teamModel(w, h int) (Model, *fakeSource) {
 	return m, m.src.(*fakeSource)
 }
 
+// teamLargeGraphFixture has a five member Team and enough other nodes for the
+// full Graph to have its normal spacing.
+func teamLargeGraphFixture() protocol.GraphView {
+	v := protocol.GraphView{
+		Nodes: []protocol.Node{
+			{Ref: teamRef("team", "crew"), Name: "Crew", Kind: "team", Active: teamActive(), Charter: protocol.Charter{Purpose: "Shared platform work"}},
+			{Ref: teamRef("team", "other"), Name: "Other", Kind: "team", Active: teamActive(), Charter: protocol.Charter{Purpose: "Other work"}},
+			{Ref: teamRef("repo", "crew-a"), Name: "crew-a", Kind: "component"},
+			{Ref: teamRef("repo", "crew-b"), Name: "crew-b", Kind: "component"},
+			{Ref: teamRef("repo", "crew-c"), Name: "crew-c", Kind: "component"},
+			{Ref: teamRef("agent", "ops"), Name: "ops", Kind: "architect"},
+			{Ref: teamRef("agent", "qa"), Name: "qa", Kind: "architect"},
+			{Ref: teamRef("repo", "other-a"), Name: "other-a", Kind: "component"},
+			{Ref: teamRef("repo", "other-b"), Name: "other-b", Kind: "component"},
+			{Ref: teamRef("repo", "other-c"), Name: "other-c", Kind: "component"},
+			{Ref: teamRef("agent", "other-d"), Name: "other-d", Kind: "architect"},
+		},
+	}
+	for _, member := range []*protocol.GraphRef{
+		teamRef("repo", "crew-a"), teamRef("repo", "crew-b"), teamRef("repo", "crew-c"),
+		teamRef("agent", "ops"), teamRef("agent", "qa"),
+	} {
+		v.Edges = append(v.Edges, protocol.Edge{From: member.ID, To: "crew", Kind: "member_of", FromRef: member, ToRef: teamRef("team", "crew")})
+	}
+	for _, member := range []*protocol.GraphRef{
+		teamRef("repo", "other-a"), teamRef("repo", "other-b"), teamRef("repo", "other-c"), teamRef("agent", "other-d"),
+	} {
+		v.Edges = append(v.Edges, protocol.Edge{From: member.ID, To: "other", Kind: "member_of", FromRef: member, ToRef: teamRef("team", "other")})
+	}
+	v.Edges = append(v.Edges,
+		protocol.Edge{From: "crew-a", To: "crew-b", Kind: "depends", FromRef: teamRef("repo", "crew-a"), ToRef: teamRef("repo", "crew-b")},
+		protocol.Edge{From: "ops", To: "crew-c", Kind: "governs", FromRef: teamRef("agent", "ops"), ToRef: teamRef("repo", "crew-c")},
+		protocol.Edge{From: "crew-b", To: "crew-c", Kind: "depends", FromRef: teamRef("repo", "crew-b"), ToRef: teamRef("repo", "crew-c")},
+		protocol.Edge{From: "crew-a", To: "other-a", Kind: "depends", FromRef: teamRef("repo", "crew-a"), ToRef: teamRef("repo", "other-a")},
+	)
+	return v
+}
+
+func teamLargeModel(w, h int) (Model, *fakeSource) {
+	m := mapModel(w, h, teamLargeGraphFixture())
+	m.applyMap(mapMsg{view: teamLargeGraphFixture(), at: t0})
+	m.tab = graphTab
+	return m, m.src.(*fakeSource)
+}
+
 func TestTeamFilterShowsOnlyOneTeamsMembers(t *testing.T) {
 	m, _ := teamModel(120, 34)
 	m.setTeamFilter("alpha")
@@ -77,6 +123,16 @@ func TestTeamFilterShowsOnlyOneTeamsMembers(t *testing.T) {
 	}
 	if _, ok := m.mapNode("shop"); ok {
 		t.Error("the card still lists a member of another team")
+	}
+	w, h := m.graphSize()
+	if m.mp.baseZoom <= 0 || m.graphState.Camera.Zoom > m.mp.baseZoom {
+		t.Errorf("filtered zoom %v is not capped at the full graph zoom %v", m.graphState.Camera.Zoom, m.mp.baseZoom)
+	}
+	for _, name := range []string{"cogforge", "agent\x00api-architect"} {
+		x, y := m.graphState.Camera.Project(m.graphState.Graph.Positions[name], w, h)
+		if math.Abs(x-float64(w)/2) > float64(w)*0.3 || math.Abs(y-float64(h)/2) > float64(h)*0.3 {
+			t.Errorf("%s is not near the middle: %.1f,%.1f in %dx%d", name, x, y, w, h)
+		}
 	}
 	if !strings.Contains(ansi.Strip(m.testView()), "team: Alpha") {
 		t.Error("the Graph footer does not name the Team")
@@ -225,6 +281,16 @@ func TestTeamGraphGoldens(t *testing.T) {
 		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "cogforge"})
 		golden(t, fmt.Sprintf("graph_team_alpha_%dx%d", size[0], size[1]), m.testView())
 	}
+}
+
+func TestTeamLargeGraphGolden(t *testing.T) {
+	m, _ := teamLargeModel(80, 24)
+	m.setTeamFilter("crew")
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "crew-a"})
+	if got := len(m.graphState.Graph.Nodes); got != 5 {
+		t.Fatalf("crew has %d nodes, want 5", got)
+	}
+	golden(t, "graph_team_crew_80x24", m.testView())
 }
 
 func TestTeamMemberGolden(t *testing.T) {
