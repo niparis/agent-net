@@ -47,10 +47,72 @@ func TestSecretsLeavesOrdinaryTextAlone(t *testing.T) {
 		"npm install --save-dev typescript",
 		"ls -la /home/user/code",
 		"tokenizer.encode(text)",
+		"return min(matches, key=lambda p: len(p.parts))",
+		"key=lambda p: p.stat().st_mtime, reverse=True)",
+		"sorted(items, key=len)",
+		"key: value",
+		`{"key": "id"}`,
+		"auth=None",
+		"auth: required",
 		"",
 	} {
 		if got := Secrets(in); got != in {
 			t.Errorf("Secrets(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestSecretsMasksCompoundSensitiveNames(t *testing.T) {
+	for _, in := range []string{
+		"api_key=plainvalue123",
+		"apiKey=plainvalue123",
+		"API-KEY=plainvalue123",
+		"secret_key=plainvalue123",
+		"private_key=plainvalue123",
+		"access_key=plainvalue123",
+		"ssh_key=plainvalue123",
+		"MY_APP_KEY=plainvalue123",
+		"signing.key=plainvalue123",
+		"secret=plainvalue123",
+		"token=plainvalue123",
+		"password=plainvalue123",
+		"credentials=plainvalue123",
+		"SERVICE_AUTH=plainvalue123",
+	} {
+		got := Secrets(in)
+		if strings.Contains(got, "plainvalue123") || !strings.Contains(got, Mask) {
+			t.Errorf("Secrets(%q) = %q, want value masked", in, got)
+		}
+	}
+}
+
+func TestSecretsDoesNotMaskWordsEndingInSk(t *testing.T) {
+	for _, in := range []string{
+		"- [What lands on disk: state the contract](#what-lands-on-disk-state-the-contract)",
+		"task-assignment-and-routing-rules",
+		"risk-assessment-for-the-quarter",
+		"a desk-booking-system-for-teams",
+	} {
+		if got := Secrets(in); got != in {
+			t.Errorf("Secrets(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestSecretsMasksSkKeysAtTokenBoundaries(t *testing.T) {
+	for _, in := range []string{
+		"OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx",
+		"sk-proj-abcdefghijklmnop1234",
+		"key: sk-ant-api03-abcdefghijklmnopqrst",
+		"sk-abcdefghijklmnopqrstuvwx",
+		" sk-abcdefghijklmnopqrstuvwx",
+		`"sk-abcdefghijklmnopqrstuvwx`,
+		"=sk-abcdefghijklmnopqrstuvwx",
+		"(sk-abcdefghijklmnopqrstuvwx",
+	} {
+		got := Secrets(in)
+		if strings.Contains(got, "sk-") || strings.Contains(got, "abcdefghijklmnop") {
+			t.Errorf("Secrets(%q) = %q, want key masked", in, got)
 		}
 	}
 }

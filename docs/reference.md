@@ -1782,12 +1782,12 @@ assignments.
 The owner can import an observed skill with the `tools_import` operator method.
 Pass `item` as the ID from `tools_items` and `location` as an object with
 `node_id` and `location` from that item's locations. The source machine must be
-online. The gateway refuses recognised secret shapes before storing a bundle.
-The owner should still inspect the skill files for secrets before importing.
-Import reads the selected directory and does not change it. The gateway rejects
-an import if its contents no longer match the observed hash. The packed bundle
-must be at most 2 MiB and may contain at most 2,048 entries. A larger skill can
-still appear in inventory but cannot currently be imported.
+online. The gateway copies skill contents as supplied and does not scan them
+for secrets. The owner is responsible for keeping secrets out of skills before
+importing them. Import reads the selected directory and does not change it. The
+gateway rejects an import if its contents no longer match the observed hash.
+The packed bundle must be at most 2 MiB and may contain at most 2,048 entries. A
+larger skill can still appear in inventory but cannot currently be imported.
 
 `tools_versions` takes `item` and returns the saved hashes, Git commits, source
 machine and path, and import times. `tools_export` takes `item` and `version`
