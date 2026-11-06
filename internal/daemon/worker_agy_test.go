@@ -606,18 +606,20 @@ func TestAgyWorkerExitedProcessStillExpires(t *testing.T) {
 	set.Idle = scaled(500 * time.Millisecond)
 	set.IdleNotice = time.Hour
 	w, _, _ := startAgyNode(t, set)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:exit", AutoContinue: autoContinueOff()})
-	deadline := time.Now().Add(scaled(3 * time.Second))
-	for time.Now().Before(deadline) {
-		if ns := w.notices(t); len(ns) > 0 {
-			if !strings.Contains(ns[0].Body, "status: timed out") {
-				t.Fatalf("notice: %s", ns[0].Body)
-			}
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:exit", AutoContinue: autoContinueOff()})
+	wk := w.d.workerBySession(res.SessionID)
+	if wk == nil {
+		t.Fatal("the worker is gone before the idle limit")
 	}
-	t.Fatal("a process that exited after a successful turn bypassed the idle limit")
+	// Wait for the real event: the fake process drains its turn and exits.
+	// The exit must not end the worker, so the idle limit is what ends it.
+	// Do not use a fixed deadline here: under load the daemon can take
+	// seconds to send the notice, after the idle limit has already fired.
+	eventually(t, "process exits after its turn", func() bool { return w.d.gone(wk) })
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "status: timed out") {
+		t.Fatalf("notice: %s", n.Body)
+	}
 }
 
 func TestAgyWorkerStreamFraming(t *testing.T) {
