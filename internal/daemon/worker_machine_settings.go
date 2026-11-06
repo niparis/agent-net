@@ -97,7 +97,11 @@ func (d *Daemon) workerSettings(repo string) WorkerSettings {
 }
 
 func (d *Daemon) workerSettingsViews(snap settings.Snapshot, history []protocol.SettingsHistory, q protocol.SettingsReadRequest, owner bool) ([]protocol.SettingView, error) {
-	views, err := settingsview.ViewsWithWhere(snap, history, q, owner, settings.Where{Host: settings.Host{RAMBytes: int64(d.load().Total)}})
+	return d.workerSettingsViewsAt(snap, history, q, owner, nil)
+}
+
+func (d *Daemon) workerSettingsViewsAt(snap settings.Snapshot, history []protocol.SettingsHistory, q protocol.SettingsReadRequest, owner bool, target *protocol.SettingsRef) ([]protocol.SettingView, error) {
+	views, err := settingsview.ViewsWithTarget(snap, history, q, owner, settings.Where{Host: settings.Host{RAMBytes: int64(d.load().Total)}}, target)
 	if err != nil {
 		return nil, err
 	}
