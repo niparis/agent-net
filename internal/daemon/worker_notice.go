@@ -463,6 +463,42 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	return n
 }
 
+// queueWorkerEnd keeps end notices in decision order without holding up the
+// worker loop. The worker stays registered until its notice and cleanup finish,
+// so a resume cannot change the facts that go into the notice.
+func (d *Daemon) queueWorkerEnd(fn func()) <-chan struct{} {
+	d.workerEndMu.Lock()
+	previous := d.workerEndTail
+	done := make(chan struct{})
+	d.workerEndTail = done
+	// Register before Stop closes admission and waits for background work. An
+	// end already in progress when admission closes must still send (or reach
+	// the durable outbox), so its producer finishes it inline during shutdown.
+	d.bgMu.Lock()
+	background := !d.bgClosed
+	if background {
+		d.bg.Add(1)
+	}
+	d.bgMu.Unlock()
+	d.workerEndMu.Unlock()
+	run := func() {
+		defer close(done)
+		if previous != nil {
+			<-previous
+		}
+		fn()
+	}
+	if background {
+		go func() {
+			defer d.bg.Done()
+			run()
+		}()
+	} else {
+		run()
+	}
+	return done
+}
+
 // rateOffer asks the gateway whether the caller should be asked to rate this
 // worker. It is best effort: an old gateway, or one that is not reachable,
 // leaves the notice as it is.

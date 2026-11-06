@@ -1018,10 +1018,18 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 // idle check uses it to look again for activity that began after its snapshot,
 // so a message that starts at the idle deadline still keeps the worker alive.
 func (d *Daemon) endWorkerWhen(w *worker, reason string, when func() bool) {
+	if done := d.beginWorkerEnd(w, reason, when); done != nil {
+		<-done
+	}
+}
+
+// beginWorkerEnd stops the worker synchronously and queues its notice and
+// cleanup. The worker loop leaves those to the queue; direct callers wait.
+func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-chan struct{} {
 	d.wmu.Lock()
 	if w.stopping || (when != nil && !when()) {
 		d.wmu.Unlock()
-		return
+		return nil
 	}
 	w.stopping = true
 	d.closeEndedLocked(w)
@@ -1090,28 +1098,34 @@ func (d *Daemon) endWorkerWhen(w *worker, reason string, when func() bool) {
 	d.wmu.Unlock()
 	endStatus, endNote := d.endFacts(w, reason)
 	d.rememberEnded(w, endStatus, endNote, time.Now())
-	if sendNotice {
-		if _, err := d.sendNotice(context.Background(), w, d.notice(w, status, note, stats), ""); err != nil {
-			d.Logf("worker %s: notice: %v", id, err)
+	ran := time.Since(started)
+	return d.queueWorkerEnd(func() {
+		if sendNotice {
+			n := d.notice(w, status, note, stats)
+			// Time waiting behind another notice is not worker run time.
+			n.RunTime = ran
+			if _, err := d.sendNotice(context.Background(), w, n, ""); err != nil {
+				d.Logf("worker %s: notice: %v", id, err)
+			}
 		}
-	}
-	d.finishWorktree(w)
-	// Keep the worker registered until its worktree and branch are settled.
-	// Continue and resume must not race cleanup of the old branch.
-	d.wmu.Lock()
-	delete(d.workers, w.id)
-	d.wmu.Unlock()
-	if dir != "" && !resumable {
-		os.RemoveAll(dir)
-	}
-	if resumable {
-		d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s ran=%s ended_after_handback=1",
-			id, sid, project, harness, reason, time.Since(started).Round(time.Second))
-	} else {
-		d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s ran=%s", id, sid, project, harness, reason,
-			time.Since(started).Round(time.Second))
-	}
-	d.reportWorkerEnds(context.Background())
+		d.finishWorktree(w)
+		// Keep the worker registered until its worktree and branch are settled.
+		// Continue and resume must not race cleanup of the old branch.
+		d.wmu.Lock()
+		delete(d.workers, w.id)
+		d.wmu.Unlock()
+		if dir != "" && !resumable {
+			os.RemoveAll(dir)
+		}
+		if resumable {
+			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s ran=%s ended_after_handback=1",
+				id, sid, project, harness, reason, time.Since(started).Round(time.Second))
+		} else {
+			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s ran=%s", id, sid, project, harness, reason,
+				time.Since(started).Round(time.Second))
+		}
+		d.reportWorkerEnds(context.Background())
+	})
 }
 
 // reportWorkerEnds tells the gateway about workers that ended, once each. A
@@ -1496,14 +1510,14 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			// The process may have ended after the failure check above. Ask
 			// again, so the harness's own error is not lost to the generic note.
 			if !d.endFailedWorker(ctx, w) {
-				d.endWorker(w, protocol.StopExited)
+				d.beginWorkerEnd(w, protocol.StopExited, nil)
 			}
 		case age >= set.MaxAge:
-			d.endWorker(w, protocol.StopMaxAge)
+			d.beginWorkerEnd(w, protocol.StopMaxAge, nil)
 		case idleLimit >= 0 && idle >= idleLimit:
 			// Look again under the worker lock: a message may have started
 			// after the snapshot above, and it keeps the worker alive.
-			d.endWorkerWhen(w, protocol.StopIdle, func() bool {
+			d.beginWorkerEnd(w, protocol.StopIdle, func() bool {
 				return w.sendsInFlight == 0 && now.Sub(w.lastActive) >= idleLimit
 			})
 		case due && d.Connected():
@@ -1518,7 +1532,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			gone := !w.ownerGoneSince.IsZero() && now.Sub(w.ownerGoneSince) >= set.OwnerGrace
 			d.wmu.Unlock()
 			if gone {
-				d.endWorker(w, protocol.StopOwnerGone)
+				d.beginWorkerEnd(w, protocol.StopOwnerGone, nil)
 			}
 		}
 	}
@@ -1538,7 +1552,7 @@ func (d *Daemon) endFailedWorker(ctx context.Context, w *worker) bool {
 	if provider {
 		reason = protocol.StopModelFails
 	}
-	d.endWorker(w, reason)
+	d.beginWorkerEnd(w, reason, nil)
 	return true
 }
 
