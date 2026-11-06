@@ -44,6 +44,7 @@ type NodeDelegation struct {
 
 // Node is a component or an architect. Components can be implicit projects.
 type Node struct {
+	Active    *bool     `json:"active,omitempty"`
 	Ref       *GraphRef `json:"ref,omitempty"`
 	Owner     *GraphRef `json:"owner,omitempty"`
 	Role      string    `json:"role,omitempty"`

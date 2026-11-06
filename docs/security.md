@@ -1464,3 +1464,11 @@ Inbox item, never create a second one or guess an Agent from a directory.
 Existing sessions and workers are unaffected. Remote selections require `session_agents` in the
 destination's current hello. Old daemons and starts without a selection keep
 the existing Repo-owner default.
+
+Team writes and Team history reads require the owner operator channel and an
+online owner session on the calling daemon's machine. Team writes also require
+the typed Graph cutover. Team ownership and membership grant no authority,
+message trust, settings inheritance or delivery assignment. The gateway checks
+membership kinds, live Agent endpoints, active Teams and expected old membership
+in the write transaction. An owning Agent cannot be deleted or tombstoned while
+any Team retains its owner reference, including archived Teams.

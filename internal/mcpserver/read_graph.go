@@ -22,6 +22,7 @@ type roGraphReadIn struct {
 }
 
 type roGraphNode struct {
+	Active   *bool                 `json:"active,omitempty"`
 	Ref      *protocol.GraphRef    `json:"ref,omitempty"`
 	Owner    *protocol.GraphRef    `json:"owner,omitempty"`
 	Role     string                `json:"role,omitempty"`
@@ -160,7 +161,7 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 		for _, rule := range node.Rules {
 			rules[rule.Name] = rule.Value
 		}
-		out = append(out, roGraphNode{Ref: node.Ref, Owner: node.Owner, Role: node.Role, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
+		out = append(out, roGraphNode{Active: node.Active, Ref: node.Ref, Owner: node.Owner, Role: node.Role, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
 	}
 	return out
 }

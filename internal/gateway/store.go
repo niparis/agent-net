@@ -996,6 +996,45 @@ END;
 `, `
 -- 125: Worker run generations fence delayed end reports after a resume.
 ALTER TABLE sessions ADD COLUMN worker_run_generation INTEGER NOT NULL DEFAULT 0;
+`, `
+-- Team records and typed membership. No inference or settings inheritance.
+CREATE TABLE IF NOT EXISTS teams (
+ id TEXT PRIMARY KEY,
+ name TEXT NOT NULL,
+ purpose TEXT NOT NULL DEFAULT '',
+ owner_agent_id TEXT REFERENCES agents(id),
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL
+);
+-- Separate typed keys avoid the legacy graph_edges primary key, which cannot
+-- distinguish an Agent and Repo with the same ID joining the same Team.
+CREATE TABLE IF NOT EXISTS team_members (
+ member_kind TEXT NOT NULL CHECK(member_kind IN ('agent','repo')),
+ member_id TEXT NOT NULL,
+ team_id TEXT NOT NULL REFERENCES teams(id),
+ PRIMARY KEY(member_kind,member_id)
+);
+CREATE INDEX IF NOT EXISTS team_members_team ON team_members(team_id);
+CREATE TABLE IF NOT EXISTS team_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ action TEXT NOT NULL,
+ team_id TEXT NOT NULL,
+ old_team_id TEXT NOT NULL DEFAULT '',
+ member_kind TEXT NOT NULL DEFAULT '',
+ member_id TEXT NOT NULL DEFAULT '',
+ old_value TEXT NOT NULL,
+ new_value TEXT NOT NULL,
+ at INTEGER NOT NULL,
+ actor TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS team_owner_delete BEFORE DELETE ON agents
+ WHEN EXISTS(SELECT 1 FROM teams WHERE owner_agent_id=OLD.id)
+ BEGIN SELECT RAISE(ABORT,'clear or transfer Team ownership first'); END;
+CREATE TRIGGER IF NOT EXISTS team_owner_tombstone BEFORE UPDATE OF tombstone ON agents
+ WHEN NEW.tombstone<>0 AND EXISTS(SELECT 1 FROM teams WHERE owner_agent_id=OLD.id)
+ BEGIN SELECT RAISE(ABORT,'clear or transfer Team ownership first'); END;
+
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

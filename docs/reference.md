@@ -2718,3 +2718,26 @@ start delivery assignments, as the approved CTO action does. Merger starts
 always use the registered project folder; folder, branch and create options
 are cleared. Cross-machine registration changes carry the calling machine's
 authenticated owner session, as session relays do.
+
+## Teams
+
+After the typed Graph cutover (`graph.refs.enable`), Teams have stable IDs,
+names, purposes, an optional owning Agent, active state and immutable history.
+An Agent or Repo may belong to one Team. Ownership does not imply membership
+or authority over members. Nothing inherits yet: settings, request rules and
+delivery behave as before.
+
+The owner operator methods are `team_write` and `team_history`. `team_write`
+takes `action` (`create`, `rename`, `archive` or `membership`) and `team_id`.
+Create takes `name`, optional `purpose` and optional typed `owner` Agent ref.
+Rename takes `name` and `expect_name`. Membership takes a typed `member` ref
+and `expect_team` (the old Team ID, empty when unassigned); an empty `team_id`
+removes membership. A move replaces membership atomically. Archive requires
+all members to be removed first and retains the identity and history. Team
+ownership is set at creation in this step; ownership edits and undo come later.
+`team_history` takes `team_id` and returns the most recent 1,000 changes.
+
+Read Teams with `agent_graph_read` using `typed: true` or a `ref` with
+`kind: team`. Typed reads include archived Teams with their `active` state,
+direct owner references and `member_of` edges. Legacy reads exclude Teams and
+membership. The CTO can read Teams but cannot propose or apply Team writes.
