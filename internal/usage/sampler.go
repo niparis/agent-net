@@ -46,6 +46,8 @@ type TreeStat struct {
 	// Samples is how many CPU samples the averages cover. 0 means the tree
 	// has only been seen once, so there is no CPU figure yet.
 	Samples int
+	// CPUSampledAt is the time of the last CPU interval, not the time read.
+	CPUSampledAt time.Time
 	// Alive is false when the root process is gone.
 	Alive bool
 }
@@ -411,8 +413,12 @@ func (s *Sampler) Averages(d time.Duration) Averages {
 }
 
 func (s *Sampler) treeStat(pid int, ts *treeState) TreeStat {
+	var sampledAt time.Time
+	if len(ts.cpu.pts) > 0 {
+		sampledAt = ts.cpu.pts[len(ts.cpu.pts)-1].at
+	}
 	return TreeStat{PID: pid, CPU: ts.cpu.value(), RSS: ts.rss.value(), Life: ts.life.value(), Procs: ts.procs,
-		Samples: len(ts.cpu.pts), Alive: ts.alive}
+		Samples: len(ts.cpu.pts), CPUSampledAt: sampledAt, Alive: ts.alive}
 }
 
 // Trees returns the figures of every followed tree, by root PID.

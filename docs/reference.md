@@ -34,9 +34,12 @@ deleting an override makes it inherit again.
 
 The advice setting `sessions.stall_timeout` controls how long a busy session
 or pending delivery may go without harness progress before the owner sees a
-stall warning. It defaults to 10 minutes and can be set for the network or a
-repo. A warning is a prompt to inspect the session; it never stops or restarts
-it. Workers use their own idle notices.
+stall warning. It defaults to 20 minutes and can be set for the network or a
+repo. Sessions waiting for the owner are excluded. For a busy Claude session,
+CPU use in its process tree is also a sign of progress when machine usage
+sampling is available and the process is not shared. A warning is a prompt to
+inspect the session; it never stops or restarts it. Workers use their own idle
+notices.
 
 Agents, workers and the CTO can read public settings with `agent_settings_read`.
 It accepts an optional `key` and `repo` and returns definitions, effective

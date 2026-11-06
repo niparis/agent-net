@@ -160,7 +160,7 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err = s.migrate(); err != nil {
+		if err = migrateOldFixture(t, s); err != nil {
 			t.Fatal(err)
 		}
 	}

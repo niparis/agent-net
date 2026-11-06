@@ -1928,7 +1928,7 @@ func (s *Store) upsertSession(q interface {
 	// the minute sweep. Keep a pending delivery warning until its ack.
 	_, err = q.Exec(`UPDATE inbox_items SET status='closed',answer='activity_or_end',answered_at=?
 		WHERE session_id=? AND message_id='session-stall' AND status IN ('open','dismissed') AND EXISTS
-		(SELECT 1 FROM sessions s WHERE s.id=? AND (s.worker<>'' OR s.harness_activity / 1000000000 > CAST(inbox_items.conversation_id AS INTEGER)
+		(SELECT 1 FROM sessions s WHERE s.id=? AND (s.worker<>'' OR s.waiting<>'' OR s.harness_activity / 1000000000 > CAST(inbox_items.conversation_id AS INTEGER)
 		OR (s.status<>'busy' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.recipient=s.id
 		AND (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS (SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))))))`, now, id, id)
 	if err != nil {
