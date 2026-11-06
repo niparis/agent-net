@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,7 +19,12 @@ type graphCutoverStatusMsg struct {
 	backup   string
 	err      error
 }
-type graphCutoverResultMsg struct{ err error }
+type graphCutoverResultMsg struct {
+	err       error
+	on        bool
+	backup    string
+	uncertain bool
+}
 type graphCutoverCaller interface {
 	Call(context.Context, string, any) (json.RawMessage, error)
 }
@@ -78,7 +84,8 @@ func (m Model) graphCutoverKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.rename, cmd = m.rename.Update(k)
 		return m, cmd
 	case modeGraphCutoverConfirm:
-		yes, no := confirmAnswer(k)
+		yes := k.String() == "y" || k.String() == "Y"
+		no := k.String() == "n" || k.String() == "N" || k.Code == tea.KeyEsc
 		if m.cutoverBusy {
 			return m, nil
 		}
@@ -99,6 +106,30 @@ func (m Model) graphCutoverKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				ctx, cancel := context.WithTimeout(context.Background(), 11*time.Minute)
 				defer cancel()
 				_, err := s.Call(ctx, "graph_refs_enable", map[string]string{"backup": p})
+				if err == nil {
+					return graphCutoverResultMsg{}
+				}
+				statusCtx, statusCancel := context.WithTimeout(context.Background(), Timeout)
+				defer statusCancel()
+				raw, statusErr := s.Call(statusCtx, "graph_refs_status", nil)
+				var status struct {
+					On     bool   `json:"on"`
+					Backup string `json:"backup"`
+				}
+				if statusErr == nil {
+					statusErr = json.Unmarshal(raw, &status)
+				}
+				if statusErr == nil && status.On {
+					return graphCutoverResultMsg{on: true, backup: status.Backup}
+				}
+				lower := strings.ToLower(err.Error())
+				timedOut := errors.Is(err, context.DeadlineExceeded) || strings.Contains(lower, "did not answer in time") || strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout")
+				if statusErr != nil {
+					return graphCutoverResultMsg{err: fmt.Errorf("enable returned: %v; could not verify status: %v; it may still complete: check this screen again", err, statusErr), uncertain: true}
+				}
+				if timedOut {
+					return graphCutoverResultMsg{err: errors.New("no answer in time; it may still complete: check this screen again"), uncertain: true}
+				}
 				return graphCutoverResultMsg{err: err}
 			}
 		}
@@ -137,11 +168,11 @@ func (m Model) graphCutoverView(w, h int) []string {
 		blockers(h - 9)
 		out = append(out, "", "  "+m.rename.View())
 		if m.cutoverError != "" {
-			add(m.cutoverError)
+			add(sanitize(m.cutoverError))
 		}
 	case modeGraphCutoverConfirm:
 		add("Enable the typed Repo/Agent Graph?")
-		add("Backup folder: " + m.cutoverPath)
+		add("Backup folder: " + sanitize(m.cutoverPath))
 		out = append(out, sDim.Render("  Holds the gateway database, skills and keys."))
 		add("Turning it off later means restoring the backup.")
 		blockers(h - 11)
@@ -150,10 +181,14 @@ func (m Model) graphCutoverView(w, h int) []string {
 		}
 	case modeGraphCutoverResult:
 		if m.cutoverError != "" {
-			add("Cutover failed: " + m.cutoverError)
+			if m.cutoverUncertain {
+				add(sanitize(m.cutoverError))
+			} else {
+				add("Cutover failed: " + sanitize(m.cutoverError))
+			}
 		} else {
 			add("Typed Repo/Agent Graph is on.")
-			add("Backup: " + m.cutoverPath)
+			add("Backup: " + sanitize(m.cutoverPath))
 		}
 	}
 	return out

@@ -154,6 +154,7 @@ type Model struct {
 	cutoverBlockers                             []string
 	cutoverError, cutoverPath, cutoverSuggested string
 	cutoverEpoch                                int
+	cutoverUncertain                            bool
 	cutoverScroll                               int
 	settingValues                               []protocol.SettingView
 	settingEdit                                 int
@@ -478,10 +479,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case graphCutoverResultMsg:
 		m.cutoverBusy = false
+		m.cutoverUncertain = msg.uncertain
 		if msg.err != nil {
 			m.cutoverError = msg.err.Error()
 		} else {
 			m.cutoverOn = true
+			if msg.on && msg.backup != "" {
+				m.cutoverPath = msg.backup
+			}
 			m.cutoverEpoch++
 			m.cutoverError = ""
 		}

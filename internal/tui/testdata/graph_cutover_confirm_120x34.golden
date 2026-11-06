@@ -31,4 +31,4 @@ Typed Repo/Agent Graph cutover
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter/y: enable · esc/n: cancel
+y: enable · esc/n: cancel
