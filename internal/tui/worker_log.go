@@ -355,22 +355,41 @@ func workerPickerRows(note string) ([][2]string, bool) {
 		switch {
 		case strings.Contains(part, " excluded: "):
 			p := strings.SplitN(part, " excluded: ", 2)
-			rows = append(rows, [2]string{"excluded", p[0] + " - " + p[1]})
+			rows = append(rows, [2]string{"Excluded", p[0] + " - " + p[1]})
 		case strings.HasSuffix(part, " kept for harder work"):
-			rows = append(rows, [2]string{"kept", strings.TrimSuffix(part, " kept for harder work") + " - for harder work"})
+			rows = append(rows, [2]string{"Kept", strings.TrimSuffix(part, " kept for harder work") + " - for harder work"})
 		case strings.Contains(part, "rotation weight"):
-			rows = append(rows, [2]string{"Rotation", part})
+			rows = append(rows, [2]string{"Rotation", strings.TrimPrefix(part, "rotation ")})
 		case strings.Contains(part, " starts"):
-			rows = append(rows, [2]string{"Recent", part})
+			rows = append(rows, [2]string{"Recent", workerPickerRecent(part)})
 		default:
 			if !strings.Contains(part, "pace") && !strings.Contains(part, "track record") {
 				return nil, false
 			}
-			rows = append(rows, [2]string{"Picker", part})
+			label := "Picker"
+			if strings.Contains(part, "pace") {
+				label = "Pace"
+			}
+			rows = append(rows, [2]string{label, part})
 		}
 	}
 	if footnote {
 		rows = append(rows, [2]string{"", "Automatic picks may be at most one level below their max."})
 	}
 	return rows, true
+}
+
+// workerPickerRecent keeps unfamiliar count formats intact.
+func workerPickerRecent(part string) string {
+	counts, period, ok := strings.Cut(part, " of the last ")
+	if !ok || !strings.HasSuffix(period, " starts") {
+		return part
+	}
+	for _, count := range strings.Split(counts, ", ") {
+		name, value, ok := strings.Cut(count, ": ")
+		if !ok || name == "" || value == "" || strings.Trim(value, "0123456789") != "" {
+			return part
+		}
+	}
+	return strings.ReplaceAll(counts, ": ", " ") + " (last " + period + ")"
 }

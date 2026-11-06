@@ -210,16 +210,25 @@ func TestWorkersLogNarrowKeepsTaskTitle(t *testing.T) {
 }
 
 func TestWorkerPickerStructured(t *testing.T) {
-	r := protocol.WorkerLogEntry{ModelNote: "codex gpt-6-luna:xhigh (23.3, good enough; codex 0% ahead of pace (week, 33% used at 33% elapsed); rotation weight 0.85; luna codex: 4, deepseek opencode: 3 of the last 7 simple starts; sonnet claude excluded: its max is hard (automatic picks may be at most one level below their max); deepseek opencode kept for harder work; terra codex excluded: its max is very hard (automatic picks may be at most one level below their max))"}
+	r := protocol.WorkerLogEntry{ModelNote: "codex gpt-6-luna:xhigh (23.3, good enough; codex 0% ahead of pace (week, 33% used at 33% elapsed); rotation weight 0.85; luna codex: 4, deepseek opencode: 3, terra-low: 2, terra medium codex: 1 of the last 10 simple starts; sonnet claude excluded: its max is hard (automatic picks may be at most one level below their max); deepseek opencode kept for harder work; terra codex excluded: its max is hard (automatic picks may be at most one level below their max); sol codex excluded: its max is hard (automatic picks may be at most one level below their max); terra max codex excluded: its max is very_complex (automatic picks may be at most one level below their max); terra-low kept for harder work; terra medium codex kept for harder work)"}
 	r.Title = "Secret check: sk- false match inside words"
 	r.Harness, r.Model, r.Status = "codex", "gpt-6-luna:xhigh", "done"
 	r.Failure = "the worker ended after its hand-back; a message from you starts it again"
-	r.Assessment = &protocol.WorkerAssessment{Label: "simple", D: 2.05, JudgeModel: "opencode-go/deepseek-v4.1-flash"}
+	r.Caller, r.CallerHost = "Agent One", "caller-machine"
+	r.Hostname, r.Project, r.RunSeconds = "test-machine", "demo", 120
+	r.Assessment = &protocol.WorkerAssessment{Label: "simple", D: 2.05, JudgeModel: "opencode-go/deepseek-v4.1-flash",
+		Reasoning: 2, Scope: 2, Coupling: 3, Uncertainty: 2, Verification: 1, Risk: 2,
+		Reasons: map[string]string{"reasoning": "Check substring boundaries.", "scope": "One secret matcher.", "coupling": "Shared validation path.", "uncertainty": "Known false match.", "verification": "Focused unit tests.", "risk": "Preserve valid detections."}}
 	got := ansi.Strip(strings.Join(workerLogDetails(r, 116), "\n"))
 	if !strings.Contains(got, "Chosen") || strings.Count(strings.ToLower(got), "automatic picks") != 1 {
 		t.Fatal(got)
 	}
-	for _, size := range [][2]int{{120, 40}, {80, 40}} {
+	for _, want := range []string{"Excluded  sonnet", "Kept      deepseek", "Pace      codex", "Rotation  weight 0.85", "luna codex 4, deepseek opencode 3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q: %s", want, got)
+		}
+	}
+	for _, size := range [][2]int{{120, 90}, {80, 90}} {
 		m := New(&fakeSource{snap: fakeSnapshot()})
 		m.tab = quotasTab
 		m.workersLog = true
