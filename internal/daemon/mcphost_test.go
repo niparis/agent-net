@@ -326,14 +326,25 @@ func TestMCPStdioAcrossNodes(t *testing.T) {
 	})
 
 	// Remove: the server stops and the tools go.
+	runner := a.d.mcp.runner("probe")
 	cli.mustCall("mcp_remove", protocol.MCPName{Name: "probe"})
 	waitPush(t, agentB, "mcp_changed")
 	if len(listServers(t, cli)) != 0 {
 		t.Fatal("server still listed after remove")
 	}
-	if a.d.mcp.runner("probe") != nil {
-		t.Fatal("host still runs the removed server")
-	}
+	// B's notification and the gateway's registry do not acknowledge A's
+	// asynchronous sync. Wait for A to drop the runner and finish stopping it.
+	eventually(t, "host stops the removed server", func() bool {
+		if a.d.mcp.runner("probe") != nil {
+			return false
+		}
+		select {
+		case <-runner.done:
+			return true
+		default:
+			return false
+		}
+	})
 }
 
 // The CLI may host a stdio server on another node with "on".
