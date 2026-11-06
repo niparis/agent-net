@@ -40,7 +40,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpCTOGraphWindow: true,
 	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true, protocol.OpProposalStartAck: true,
 	"notification_settings": true,
-	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "mcp_coverage_plan": true, "mcp_coverage_apply": true, "mcp_coverage_undo": true, "tools_items": true, "tools_item": true, "tools_toggle": true, "tools_new_projects": true, "tools_projects": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, "tools_summary": true, "tools_skill_details": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
+	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "mcp_coverage_plan": true, "mcp_coverage_apply": true, "mcp_coverage_undo": true, "tools_items": true, "tools_item": true, "tools_toggle": true, "tools_new_projects": true, "tools_projects": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, "tools_summary": true, "tools_skill_details": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true, "graph_refs_enable": true, "graph_refs_status": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpConversations:        true,
@@ -412,6 +412,18 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "tools.versions", json.RawMessage(raw))
 	case "tools_export":
 		res, err = d.call(ctx, "tools.export", json.RawMessage(raw))
+	case "graph_refs_status":
+		res, err = d.call(ctx, "graph.refs.status", map[string]string{"owner": d.ownerSessionID()})
+	case "graph_refs_enable":
+		var p struct {
+			Backup string `json:"backup"`
+			Owner  string `json:"owner"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.Backup == "" {
+			return nil, true, errors.New("graph cutover needs a backup path")
+		}
+		p.Owner = d.ownerSessionID()
+		res, err = d.call(withCallWait(ctx, 10*time.Minute), "graph.refs.enable", p)
 	case "gateway_backup":
 		res, err = d.call(withCallWait(ctx, 10*time.Minute), "gateway.backup", json.RawMessage(raw))
 	case "tools_toggle", "tools_new_projects", "tools_projects":

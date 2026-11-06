@@ -1,9 +1,11 @@
 package gateway
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -31,16 +33,54 @@ func (s *Store) SetNodeGraphRefs(node, version string, supported bool) error {
 	return err
 }
 
-func (s *Store) checkGraphRefsGate() error {
-	var node string
-	err := s.db.QueryRow(`SELECT n.id FROM nodes n LEFT JOIN node_graph_refs c ON c.node_id=n.id WHERE n.removed=0 AND (COALESCE(c.supported,0)=0 OR trim(COALESCE(c.version,'')) IN ('','unknown') OR c.version<>n.version) ORDER BY n.id LIMIT 1`).Scan(&node)
-	if err == sql.ErrNoRows {
-		return nil
+// graphRefsBlockers uses the same report rule for status, cutover and its
+// transaction recheck. Live links are included for the pre-backup checks.
+func (g *Gateway) graphRefsBlockers(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, live bool) ([]string, error) {
+	unready := map[string]bool{}
+	if live {
+		g.mu.Lock()
+		for id, conn := range g.conns {
+			if !conn.graphRefs.Load() {
+				unready[id] = true
+			}
+		}
+		g.mu.Unlock()
 	}
+	rows, err := q.QueryContext(ctx, `SELECT n.id, n.hostname, (COALESCE(c.supported,0)=0 OR trim(COALESCE(c.version,'')) IN ('','unknown') OR c.version<>n.version) FROM nodes n LEFT JOIN node_graph_refs c ON c.node_id=n.id WHERE n.removed=0`)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return reject("upgrade required: machine %s has not reported typed Graph support", node)
+	defer rows.Close()
+	var links, reports []string
+	for rows.Next() {
+		var id, host string
+		var blocked bool
+		if err := rows.Scan(&id, &host, &blocked); err != nil {
+			return nil, err
+		}
+		name := strings.TrimSpace(host)
+		if name == "" {
+			name = "(" + id + ")"
+		}
+		if unready[id] {
+			links = append(links, fmt.Sprintf("upgrade required: machine %s has not completed typed Graph hello", name))
+			delete(unready, id)
+		}
+		if blocked {
+			reports = append(reports, fmt.Sprintf("upgrade required: machine %s has not reported typed Graph support", name))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for id := range unready {
+		links = append(links, fmt.Sprintf("upgrade required: machine (%s) has not completed typed Graph hello", id))
+	}
+	sort.Strings(links)
+	sort.Strings(reports)
+	return append(links, reports...), nil
 }
 
 func (s *Store) requireGraphRefs() error {
