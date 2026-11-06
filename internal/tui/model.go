@@ -133,39 +133,39 @@ type Model struct {
 	convDetailLoading map[string]bool
 
 	// What the person chose.
-	sessionOrder                          map[string]sessionOrder
-	sessionNext, sessionFront             int64
-	orderFrozenUntil                      time.Time
-	frozenOrder                           map[string]int
-	selected                              string // session ID
-	selIdx                                int    // position in the visible list, to move on when the session leaves
-	tableTop                              int    // first table row on screen
-	resumeConfirm                         *protocol.AgentView
-	showOffline                           bool
-	activeOnly                            bool
-	hiddenSessions                        map[string]bool
-	hiddenNodes                           map[string]bool
-	showHiddenSessions                    bool
-	showHiddenNodes                       bool
-	settingsRow                           int
-	cutoverOn, cutoverLoaded, cutoverBusy bool
-	cutoverBlockers                       []string
-	cutoverError, cutoverPath             string
-	cutoverEpoch                          int
-	cutoverScroll                         int
-	settingValues                         []protocol.SettingView
-	settingEdit                           int
-	settingRepo                           string
-	settingUndoRevision                   int64
-	sessionCell                           int
-	filter                                string
-	uiFilter                              string
-	filtering                             bool
-	input                                 textinput.Model
-	focus                                 focus
-	feedCur                               int // index in the feed items when the feed has focus
-	open                                  *openMsg
-	quitting                              bool
+	sessionOrder                                map[string]sessionOrder
+	sessionNext, sessionFront                   int64
+	orderFrozenUntil                            time.Time
+	frozenOrder                                 map[string]int
+	selected                                    string // session ID
+	selIdx                                      int    // position in the visible list, to move on when the session leaves
+	tableTop                                    int    // first table row on screen
+	resumeConfirm                               *protocol.AgentView
+	showOffline                                 bool
+	activeOnly                                  bool
+	hiddenSessions                              map[string]bool
+	hiddenNodes                                 map[string]bool
+	showHiddenSessions                          bool
+	showHiddenNodes                             bool
+	settingsRow                                 int
+	cutoverOn, cutoverLoaded, cutoverBusy       bool
+	cutoverBlockers                             []string
+	cutoverError, cutoverPath, cutoverSuggested string
+	cutoverEpoch                                int
+	cutoverScroll                               int
+	settingValues                               []protocol.SettingView
+	settingEdit                                 int
+	settingRepo                                 string
+	settingUndoRevision                         int64
+	sessionCell                                 int
+	filter                                      string
+	uiFilter                                    string
+	filtering                                   bool
+	input                                       textinput.Model
+	focus                                       focus
+	feedCur                                     int // index in the feed items when the feed has focus
+	open                                        *openMsg
+	quitting                                    bool
 
 	// Actions (forms.go).
 	mode           inputMode
@@ -469,7 +469,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cutoverError = msg.err.Error()
 		} else {
 			m.cutoverLoaded = true
-			m.cutoverOn, m.cutoverBlockers, m.cutoverError = msg.on, msg.blockers, ""
+			m.cutoverOn, m.cutoverBlockers, m.cutoverError, m.cutoverSuggested = msg.on, msg.blockers, "", msg.backup
 		}
 		return m, nil
 	case graphCutoverResultMsg:

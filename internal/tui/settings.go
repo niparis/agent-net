@@ -263,6 +263,8 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.rename = newTextInput()
 				m.rename.Prompt = "Backup path on the gateway> "
 				m.rename.CharLimit = 1024
+				m.rename.SetValue(m.cutoverSuggested)
+				m.rename.CursorEnd()
 				m.cutoverError = ""
 				return m, m.rename.Focus()
 			}
