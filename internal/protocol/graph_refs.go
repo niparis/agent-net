@@ -13,7 +13,7 @@ type GraphRef struct {
 }
 
 func (r GraphRef) Validate() error {
-	if r.ID == "" || (r.Kind != "repo" && r.Kind != "agent" && r.Kind != "special") {
+	if r.ID == "" || (r.Kind != "repo" && r.Kind != "agent" && r.Kind != "special" && r.Kind != "team") {
 		return fmt.Errorf("graph reference needs kind and id")
 	}
 	return nil

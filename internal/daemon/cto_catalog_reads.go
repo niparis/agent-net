@@ -599,6 +599,9 @@ func ctoCatalogGraphNodes(nodes []protocol.PublicGraphNode) []map[string]any {
 			rules[rule.Name] = rule.Value
 		}
 		row := map[string]any{"name": node.Name, "kind": node.Kind, "maturity": maturity, "purpose": purpose, "rules": rules}
+		if node.Active != nil {
+			row["active"] = *node.Active
+		}
 		if node.Ref != nil {
 			row["ref"] = node.Ref
 			row["owner"] = node.Owner

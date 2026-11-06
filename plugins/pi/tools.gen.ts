@@ -210,6 +210,7 @@ export const TOOL_CATALOG = [
               "enum": [
                 "repo",
                 "agent",
+                "team",
                 "special"
               ]
             },

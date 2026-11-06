@@ -1473,6 +1473,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.CTOGraphClass(q.Tool, q.Args)
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true, "network_session": true, "graph_authority": true}, nil
+	case "team.write", "team.history":
+		q, err := decode[protocol.TeamWrite](raw)
+		if err != nil || !g.validToolOwner(nc, q.OwnerSession) {
+			return nil, reject("owner authority required")
+		}
+		if typ == "team.history" {
+			return st.TeamHistory(q.ID, 1000)
+		}
+		return map[string]bool{"ok": true}, st.WriteTeam(q, "owner")
 	case "graph.refs.enable":
 		p, err := decode[struct {
 			Owner  string `json:"owner"`

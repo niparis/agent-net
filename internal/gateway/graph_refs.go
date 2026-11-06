@@ -135,6 +135,12 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 		n := protocol.Node{Name: a.DisplayName, Kind: "agent", Role: a.Role, CreatedAt: a.CreatedAt, Ref: &protocol.GraphRef{Kind: "agent", ID: a.ID}}
 		g.Nodes = append(g.Nodes, n)
 	}
+	teams, err := s.teamGraph()
+	if err != nil {
+		return g, err
+	}
+	g.Nodes = append(g.Nodes, teams.Nodes...)
+	g.Edges = append(g.Edges, teams.Edges...)
 	byRef := map[protocol.GraphRef]*protocol.Node{}
 	for i := range g.Nodes {
 		byRef[*g.Nodes[i].Ref] = &g.Nodes[i]

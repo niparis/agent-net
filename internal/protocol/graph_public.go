@@ -42,6 +42,7 @@ type PublicRule struct {
 // Kind, Maturity, Line and Rules. A detail carries the full Charter and the
 // node's delegation policies as well.
 type PublicGraphNode struct {
+	Active     *bool            `json:"active,omitempty"`
 	Ref        *GraphRef        `json:"ref,omitempty"`
 	Owner      *GraphRef        `json:"owner,omitempty"`
 	Role       string           `json:"role,omitempty"`
@@ -153,7 +154,7 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 
 func publicNode(n Node) PublicGraphNode {
 	return PublicGraphNode{
-		Ref: n.Ref, Owner: n.Owner, Role: n.Role,
+		Ref: n.Ref, Owner: n.Owner, Role: n.Role, Active: n.Active,
 		Name:       n.Name,
 		Kind:       n.Kind,
 		Maturity:   n.Charter.Maturity,
@@ -168,7 +169,7 @@ func publicNode(n Node) PublicGraphNode {
 // NodeAutonomy, which ignore an unknown name or an invalid value. A secret or
 // path stored under any other setting name therefore never reaches an agent.
 func publicRules(n Node) []PublicRule {
-	if n.Kind == "agent" {
+	if n.Kind == "agent" || n.Kind == "team" {
 		return nil
 	}
 	return RulesFor(n.Charter.Maturity, n.Settings)

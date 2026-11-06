@@ -142,3 +142,17 @@ func TestReadToolsRefuseABadLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphReadTeamActiveAndTypedEndpoints(t *testing.T) {
+	active := false
+	ref := protocol.GraphRef{Kind: "team", ID: "alpha"}
+	owner := protocol.GraphRef{Kind: "agent", ID: "reviewer"}
+	f := &roFakeDaemon{graph: protocol.PublicGraphPage{Nodes: []protocol.PublicGraphNode{{Ref: &ref, Owner: &owner, Name: "Alpha", Kind: "team", Active: &active, Charter: &protocol.Charter{Purpose: "Shared work"}}}, Edges: []protocol.PublicGraphEdge{{From: "demo", To: "alpha", FromRef: &protocol.GraphRef{Kind: "repo", ID: "demo"}, ToRef: &ref, Kind: "member_of"}}}}
+	cs := connect(t, f.call)
+	out := roCall(t, cs, "agent_graph_read", map[string]any{"ref": map[string]any{"kind": "team", "id": "alpha"}})
+	nodes := out["nodes"].([]any)
+	n := nodes[0].(map[string]any)
+	if n["active"] != false || n["purpose"] != "Shared work" || n["owner"].(map[string]any)["kind"] != "agent" {
+		t.Fatalf("team read: %+v", out)
+	}
+}
