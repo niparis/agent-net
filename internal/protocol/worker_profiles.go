@@ -83,3 +83,19 @@ const (
 func (p WorkerProfile) Selection() ModelSelection {
 	return ParseModelSelection(p.Harness, "", p.Model, p.Effort)
 }
+
+// DifficultyJudgePick asks the gateway to rotate a normal-level worker profile
+// on the requesting machine. ExcludeProvider is used for the backup judge.
+type DifficultyJudgePick struct {
+	ExcludeProvider string `json:"exclude_provider,omitempty"`
+}
+
+// DifficultyJudgeChoice is empty when no eligible profile is available.
+type DifficultyJudgeChoice struct {
+	Machine  string `json:"machine"`
+	Harness  string `json:"harness,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Provider string `json:"provider,omitempty"`
+}
+
+const OpDifficultyJudgePick = "difficulty_judge_pick"

@@ -80,6 +80,16 @@ func tooOldGateway(err error) error {
 func (lc *localConn) dispatchActions(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	d := lc.d
 	switch method {
+	case protocol.OpDifficultyJudgePick:
+		if err := lc.operatorGate(method); err != nil {
+			return nil, true, err
+		}
+		var req protocol.DifficultyJudgePick
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &req) != nil {
+			return nil, true, errors.New("bad judge pick request")
+		}
+		choice, err := d.pickDifficultyJudge(ctx, req.ExcludeProvider)
+		return choice, true, err
 	case protocol.OpSend:
 		// The owner as a sender. The sender is the owner session of this
 		// machine, never a parameter.

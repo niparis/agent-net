@@ -17,11 +17,9 @@ import (
 // 5 and 7). assessDifficulty runs two short one-shot models and turns their
 // answer into a label. Worker starts run the judge-only path asynchronously.
 //
-// The analyzer runs through `codex exec`, the worker harness that supports a
-// read-only sandbox in the same command: -s read-only, -C <folder>, -m <model>,
-// and -o <file> for the final message. The independent judge runs through
-// `opencode run` in an empty folder and gets only the profile. The analyzer's
-// model and harness come from the worker roster unless explicitly configured.
+// The analyzer runs through `codex exec` in a read-only sandbox. The judge
+// runs a registered normal-level worker profile in an empty folder. The
+// analyzer's model comes from the worker roster unless explicitly configured.
 //
 // The analyzer runs in the project folder and may read it. The judge runs in an
 // empty temporary folder and gets only the profile. Each run has its own time
@@ -55,7 +53,8 @@ const difficultySchema = `{
 // NewDifficultyAssessor (see difficulty_assessor.go).
 func (d *Daemon) assessDifficulty(ctx context.Context, project, task string) (difficulty.Assessment, error) {
 	return NewDifficultyAssessor(d.cfg, DifficultySources{
-		Profiles: d.difficultyProfiles,
+		PickJudge: d.pickDifficultyJudge,
+		Profiles:  d.difficultyProfiles,
 		Scores: func(ctx context.Context) ([]protocol.ModelScore, error) {
 			return d.difficultyScores(ctx), nil
 		},
@@ -71,6 +70,20 @@ func (d *Daemon) safeLogf(format string, args ...any) {
 	if d != nil && d.log != nil {
 		d.Logf(format, args...)
 	}
+}
+
+// pickDifficultyJudge asks the gateway to use the same picker as worker starts.
+func (d *Daemon) pickDifficultyJudge(ctx context.Context, exclude string) (protocol.DifficultyJudgeChoice, error) {
+	if d.cfg.testJudgePick != nil {
+		return d.cfg.testJudgePick(ctx, exclude)
+	}
+	var out protocol.DifficultyJudgeChoice
+	raw, err := d.call(ctx, "worker.judge.pick", protocol.DifficultyJudgePick{ExcludeProvider: exclude})
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(raw, &out)
+	return out, err
 }
 
 // difficultyProfiles reads the worker roster through the gateway link. The
