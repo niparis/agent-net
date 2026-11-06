@@ -96,7 +96,17 @@ func (m Model) settingsItems() []settingsItem {
 		}
 		items = append(items, settingsItem{0, "app", i, settingsAppRow(max(m.width, 40), []string{a.Name, kind, a.ClientName, host, m.appsDate(a.CreatedAt), used})})
 	}
+	stateGraph := "loading"
+	if m.cutoverLoaded {
+		stateGraph = "off"
+		if m.cutoverOn {
+			stateGraph = "on"
+		}
+	} else if m.cutoverError != "" {
+		stateGraph = "unavailable"
+	}
 	items = append(items, settingsItem{1, "integrations", 0, "Configure integrations"})
+	items = append(items, settingsItem{1, "graph-cutover", 0, "Typed Repo/Agent Graph: " + stateGraph})
 	if len(m.machineRows()) == 0 {
 		items = append(items, settingsItem{2, "no machines", 0, "No machines yet"})
 	}
@@ -245,6 +255,16 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if open {
 				m.apps.index = item.index
 				return m.appsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+			}
+		case "graph-cutover":
+			if open && m.cutoverLoaded && !m.cutoverOn {
+				m.mode = modeGraphCutoverPath
+				m.cutoverScroll = 0
+				m.rename = newTextInput()
+				m.rename.Prompt = "Backup path on the gateway> "
+				m.rename.CharLimit = 1024
+				m.cutoverError = ""
+				return m, m.rename.Focus()
 			}
 		case "integrations":
 			if open {
@@ -453,6 +473,8 @@ func otherRoutesWarning(raw json.RawMessage) string {
 func (m Model) settingsView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	switch m.mode {
+	case modeGraphCutoverPath, modeGraphCutoverConfirm, modeGraphCutoverResult:
+		return m.graphCutoverView(w, h)
 	case modeIntegrations:
 		return append(out, m.integrationsView(w, max(h-1, 1))...)
 	case modeApps:
@@ -519,6 +541,18 @@ func (m Model) settingsView(w, h int) []string {
 			line = selectedRow(clip("▸ "+item.text, w))
 		}
 		body = append(body, clip(line, w))
+		if item.kind == "graph-cutover" && i == selected {
+			for _, blocker := range m.cutoverBlockers {
+				for _, line := range wrap(sanitize(blocker), max(w-4, 1)) {
+					body = append(body, sBad.Render("    "+line))
+				}
+			}
+			if m.cutoverError != "" {
+				for _, line := range wrap(sanitize(m.cutoverError), max(w-4, 1)) {
+					body = append(body, sBad.Render("    "+line))
+				}
+			}
+		}
 		if item.kind == "setting-value" && i == selected {
 			v := m.settingValues[item.index]
 			body = append(body, sDim.Render(clip("    "+v.Description, w)))
