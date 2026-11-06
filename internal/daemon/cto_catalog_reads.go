@@ -504,10 +504,12 @@ func ctoCharterGuide() string {
 
 func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (any, error) {
 	var q struct {
-		View   string `json:"view"`
-		Node   string `json:"node"`
-		Limit  int    `json:"limit"`
-		Cursor string `json:"cursor"`
+		Ref    *protocol.GraphRef `json:"ref"`
+		Typed  bool               `json:"typed"`
+		View   string             `json:"view"`
+		Node   string             `json:"node"`
+		Limit  int                `json:"limit"`
+		Cursor string             `json:"cursor"`
 	}
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 		return nil, errors.New("bad agent_graph_read arguments")
@@ -520,8 +522,8 @@ func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (
 		return nil, errors.New(`unknown agent_graph_read view; the only view is guide, for example {"view":"guide"}`)
 	}
 	limit := ctoCatalogLimit(q.Limit)
-	if strings.TrimSpace(q.Node) != "" {
-		page, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Node: q.Node})
+	if strings.TrimSpace(q.Node) != "" || q.Ref != nil {
+		page, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Node: q.Node, Ref: q.Ref, Typed: q.Typed})
 		if err != nil {
 			return nil, err
 		}
@@ -535,7 +537,7 @@ func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (
 	var edges []map[string]any
 	offset := 0
 	for page := 0; page < 1000; page++ {
-		got, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Offset: offset, Limit: protocol.PublicGraphMaxLimit})
+		got, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Offset: offset, Limit: protocol.PublicGraphMaxLimit, Typed: q.Typed})
 		if err != nil {
 			return nil, err
 		}
@@ -549,7 +551,10 @@ func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (
 		offset = got.Next
 	}
 	sort.SliceStable(nodes, func(i, j int) bool {
-		return nodes[i]["name"].(string) < nodes[j]["name"].(string)
+		if nodes[i]["name"] != nodes[j]["name"] {
+			return nodes[i]["name"].(string) < nodes[j]["name"].(string)
+		}
+		return fmt.Sprint(nodes[i]["ref"]) < fmt.Sprint(nodes[j]["ref"])
 	})
 	if nodes == nil {
 		nodes = []map[string]any{}
@@ -594,6 +599,11 @@ func ctoCatalogGraphNodes(nodes []protocol.PublicGraphNode) []map[string]any {
 			rules[rule.Name] = rule.Value
 		}
 		row := map[string]any{"name": node.Name, "kind": node.Kind, "maturity": maturity, "purpose": purpose, "rules": rules}
+		if node.Ref != nil {
+			row["ref"] = node.Ref
+			row["owner"] = node.Owner
+			row["role"] = node.Role
+		}
 		if charter := ctoCatalogCharter(node.Charter); charter != nil {
 			row["charter"] = charter
 		}
@@ -634,7 +644,14 @@ func ctoCatalogCharter(c *protocol.Charter) map[string]any {
 func ctoCatalogGraphEdges(edges []protocol.PublicGraphEdge) []map[string]any {
 	out := make([]map[string]any, 0, len(edges))
 	for _, edge := range edges {
-		out = append(out, map[string]any{"from": edge.From, "to": edge.To, "kind": edge.Kind, "mode": edge.Mode, "rule": edge.Rule})
+		var from, to any = edge.From, edge.To
+		if edge.FromRef != nil {
+			from = edge.FromRef
+		}
+		if edge.ToRef != nil {
+			to = edge.ToRef
+		}
+		out = append(out, map[string]any{"from": from, "to": to, "kind": edge.Kind, "mode": edge.Mode, "rule": edge.Rule})
 	}
 	return out
 }

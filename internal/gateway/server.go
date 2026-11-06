@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -155,6 +156,7 @@ type offlineTimer struct {
 }
 
 type nodeConn struct {
+	graphRefs atomic.Bool
 	id        string
 	tokenHash string // credential used for this connection
 	ws        *websocket.Conn
@@ -585,6 +587,36 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(4 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
 	nc := &nodeConn{id: nodeID, tokenHash: hashHex(token), ws: ws, cancel: cancel, dead: make(chan struct{}), health: health}
+	// After cutover a connection is not routable until its current binary has
+	// passed hello. A stored capability cannot authorize a downgraded binary.
+	if on, err := g.store.graphRefsEnabled(); err != nil || on {
+		if err != nil {
+			g.machineAuthMu.Unlock()
+			cancel()
+			ws.CloseNow()
+			return
+		}
+		hctx, done := context.WithTimeout(ctx, 10*time.Second)
+		_, raw, err := nc.health.Read(hctx, ws)
+		var h protocol.Header
+		var result any
+		if err == nil {
+			if json.Unmarshal(raw, &h) != nil || h.Type != "hello" {
+				err = reject("upgrade required: typed Graph hello required")
+			} else {
+				result, err = g.handle(hctx, nc, h.Type, raw)
+			}
+			reply, _ := protocol.EncodeResult(h.ID, result, err)
+			_ = nc.write(hctx, reply)
+		}
+		done()
+		if err != nil {
+			g.machineAuthMu.Unlock()
+			cancel()
+			ws.CloseNow()
+			return
+		}
+	}
 
 	g.mu.Lock()
 	if g.closed {
@@ -654,13 +686,18 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 		if json.Unmarshal(raw, &h) != nil {
 			continue
 		}
+		if err := g.store.graphFrameAllowed(nc, h.Type); err != nil {
+			reply, _ := protocol.EncodeResult(h.ID, nil, err)
+			_ = nc.write(ctx, reply)
+			return
+		}
 		if h.Type == "result" {
 			// Results to msg.deliver only say "accepted"; delivery.update has the outcome.
 			// Results to the gateway's own calls (node.upgrade) go to their waiter.
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
+		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "graph.refs.enable" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -736,6 +773,11 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 			nc.ws.Close(websocket.StatusServiceRestart, "machine credentials changed")
 		}
 	}
+	if h.Type == "hello" && err != nil {
+		if on, _ := g.store.graphRefsEnabled(); on {
+			return errNodeGone
+		}
+	}
 	if h.Type == "session.sync" && err == nil {
 		g.sendMCPSync(ctx, nc)
 		g.sendSettingsSync(ctx, nc)
@@ -756,6 +798,9 @@ func decode[T any](raw []byte) (T, error) {
 
 func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	st := g.store
+	if err := st.graphFrameAllowed(nc, typ); err != nil {
+		return nil, err
+	}
 	if st.machineRemoved(nc.id) {
 		return nil, reject("this machine was removed from the network; run agent-net setup to join again")
 	}
@@ -785,6 +830,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		p, err := decode[protocol.Hello](raw)
 		if err != nil {
 			return nil, reject("bad hello")
+		}
+		if err := st.SetNodeGraphRefs(nc.id, p.Version, p.GraphRefs); err != nil {
+			return nil, err
+		}
+		var supported bool
+		if err := st.db.QueryRow(`SELECT supported FROM node_graph_refs WHERE node_id=?`, nc.id).Scan(&supported); err != nil {
+			return nil, err
+		}
+		nc.graphRefs.Store(supported)
+		if on, err := st.graphRefsEnabled(); err != nil {
+			return nil, err
+		} else if on && !nc.graphRefs.Load() {
+			return nil, reject("upgrade required: daemon lacks typed Graph support")
 		}
 		if err := st.SetNodeHello(nc.id, p.Hostname, p.Version); err != nil {
 			return nil, err
@@ -1390,10 +1448,76 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.CTOGraphClass(q.Tool, q.Args)
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true, "network_session": true, "graph_authority": true}, nil
+	case "graph.refs.enable":
+		p, err := decode[struct {
+			Owner  string `json:"owner"`
+			Backup string `json:"backup"`
+		}](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if on, err := st.graphRefsEnabled(); err != nil {
+			return nil, err
+		} else if on {
+			return nil, reject("typed Graph cutover is already enabled")
+		}
+		// Keep a pre-hello connection from replacing a qualified link during
+		// cutover. Offline nodes use their stored report; live links need hello.
+		g.machineAuthMu.Lock()
+		defer g.machineAuthMu.Unlock()
+		g.mu.Lock()
+		unready := ""
+		for id, conn := range g.conns {
+			if !conn.graphRefs.Load() {
+				unready = id
+				break
+			}
+		}
+		g.mu.Unlock()
+		if unready != "" {
+			return nil, reject("upgrade required: machine %s has not completed typed Graph hello", unready)
+		}
+		if err = st.checkGraphRefsGate(); err != nil {
+			return nil, err
+		}
+		if _, err = st.graphForRef(nil); err != nil {
+			return nil, err
+		}
+		if err = g.Backup(p.Backup); err != nil {
+			return nil, err
+		}
+		// Recheck after the snapshot so an enrollment or downgrade cannot race it.
+		tx, err := st.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		var blocked int
+		if err = tx.QueryRow(`SELECT COUNT(*) FROM nodes n LEFT JOIN node_graph_refs c ON c.node_id=n.id WHERE n.removed=0 AND (COALESCE(c.supported,0)=0 OR trim(COALESCE(c.version,'')) IN ('','unknown') OR c.version<>n.version)`).Scan(&blocked); err != nil {
+			return nil, err
+		}
+		if blocked > 0 {
+			return nil, reject("upgrade required: enrollment changed during backup")
+		}
+		// Standalone architect charters become the actor's canonical charter.
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO agent_charter(agent_id,attr,value,updated_at,updated_by) SELECT c.node,c.attr,c.value,c.updated_at,c.updated_by FROM graph_charter c JOIN graph_nodes n ON n.name=c.node AND n.kind='architect'`); err != nil {
+			return nil, err
+		}
+		if _, err = tx.Exec(`UPDATE graph_history SET target_kind=CASE WHEN node IN (SELECT name FROM graph_nodes WHERE kind='architect') THEN 'agent' ELSE 'repo' END WHERE type='charter' AND target_kind=''`); err != nil {
+			return nil, err
+		}
+		_, err = tx.Exec(`UPDATE graph_ref_gate SET enabled=1,backup=? WHERE id=1`, p.Backup)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, tx.Commit()
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {
 			return nil, reject("bad graph.get")
+		}
+		if p.Typed || p.Ref != nil {
+			return st.GraphForRef(p.Ref)
 		}
 		return st.visibleGraph(p.All)
 	case "playbook.set":
@@ -1433,6 +1557,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad charter.set")
 		}
+		if p.Ref != nil {
+			return map[string]bool{"ok": true}, st.SetRefCharter(*p.Ref, p.Attr, p.Value, "owner", true)
+		}
 		tx, err := st.db.BeginTx(ctx, nil)
 		if err != nil {
 			return nil, err
@@ -1446,6 +1573,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {
 			return nil, reject("bad charter.set")
+		}
+		if p.Ref != nil {
+			return protocol.CharterSetResult{OK: true}, st.SetRefCharter(*p.Ref, p.Attr, p.Value, graphActor(raw), false)
 		}
 		if err := st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw)); err != nil {
 			return nil, err
@@ -1463,8 +1593,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return result, nil
 	case "charter.history":
 		p, err := decode[protocol.GraphHistoryRequest](raw)
-		if err != nil || p.Node == "" {
+		if err != nil || (p.Node == "" && p.Ref == nil) {
 			return nil, reject("bad charter.history")
+		}
+		if p.Ref != nil {
+			return st.RefCharterHistory(*p.Ref, p.Limit)
 		}
 		return st.CharterHistory(p.Node, p.Limit)
 	case "node.add", "node.remove":
@@ -1483,6 +1616,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad edge request")
 		}
+		if p.FromRef != nil || p.ToRef != nil {
+			if err := st.requireGraphRefs(); err != nil {
+				return nil, err
+			}
+			if err := validateEdgeRefs(p); err != nil {
+				return nil, err
+			}
+		}
 		tx, err := st.db.BeginTx(ctx, nil)
 		if err != nil {
 			return nil, err
@@ -1496,6 +1637,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		p, err := decode[protocol.Edge](raw)
 		if err != nil {
 			return nil, reject("bad edge request")
+		}
+		if p.FromRef != nil || p.ToRef != nil {
+			if err := st.requireGraphRefs(); err != nil {
+				return nil, err
+			}
+			if err := validateEdgeRefs(p); err != nil {
+				return nil, err
+			}
 		}
 		if typ == "edge.set" {
 			err = st.SetEdge(p, graphActor(raw))
@@ -1546,6 +1695,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		p, err := decode[protocol.GraphHistoryRequest](raw)
 		if err != nil {
 			return nil, reject("bad edge.history")
+		}
+		if p.Ref != nil {
+			return st.RefEdgeHistory(*p.Ref, p.Limit)
 		}
 		return st.EdgeHistory(p.Node, p.Limit)
 	case "graph.undo":

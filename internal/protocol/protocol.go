@@ -397,8 +397,10 @@ func EncodeResult(id string, data any, err error) ([]byte, error) {
 // Request payloads.
 type (
 	Hello struct {
-		Version  string `json:"version"`
-		Hostname string `json:"hostname"`
+		// GraphRefs advertises typed Graph support independently of release numbering.
+		GraphRefs bool   `json:"graph_refs,omitempty"`
+		Version   string `json:"version"`
+		Hostname  string `json:"hostname"`
 		// TimeZone is the machine's IANA time zone, for example Europe/Paris.
 		// Empty from an older daemon.
 		TimeZone string `json:"time_zone,omitempty"`

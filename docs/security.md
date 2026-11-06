@@ -1421,3 +1421,14 @@ approval. Approval starts Claude there, registers the session, and assigns
 test and merge. The built-in brief requires its own merge worktree, excludes
 build outputs, binaries and secrets, and tells it to report failures without
 fixing code. These are session instructions, not a git permission boundary.
+
+Typed Repo/Agent Graph cutover requires an authenticated owner request to
+`graph.refs.enable` with a backup destination. Every enrolled machine, including
+an offline machine or one that has never connected, must first report the
+`graph_refs` capability in `hello` with a known release version. An older or
+unknown daemon blocks cutover until the owner upgrades or removes that machine.
+The gateway takes a validated backup before enabling typed reads and writes.
+After cutover each new connection must pass its own typed-capable `hello` before
+it becomes available for routing. Old frames are refused with `upgrade required`.
+Legacy Graph string adapters remain available to upgraded daemons during the
+owner surface transition. Rollback requires restoring the pre-cutover backup.

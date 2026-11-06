@@ -11,6 +11,61 @@ import (
 // CTOGraphClass is a preflight. graphRecord repeats the check in the mutation
 // transaction, so a newly critical node cannot race a minor change.
 func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) {
+	var target struct {
+		Ref *protocol.GraphRef `json:"ref"`
+	}
+	if err := json.Unmarshal(raw, &target); err != nil {
+		return "", err
+	}
+	if target.Ref != nil {
+		if err := s.requireGraphRefs(); err != nil {
+			return "", err
+		}
+		if err := target.Ref.Validate(); err != nil {
+			return "", err
+		}
+		if target.Ref.Kind == "agent" {
+			var q protocol.CharterSetRequest
+			if err := json.Unmarshal(raw, &q); err != nil {
+				return "", err
+			}
+			tx, err := s.db.Begin()
+			if err != nil {
+				return "", err
+			}
+			defer tx.Rollback()
+			var old string
+			if err = tx.QueryRow(`SELECT value FROM agent_charter WHERE agent_id=? AND attr=?`, target.Ref.ID, q.Attr).Scan(&old); err != nil && err != sql.ErrNoRows {
+				return "", err
+			}
+			return ctoGraphClassTx(tx, "agent_charter", target.Ref.ID, q.Attr, old, q.Value)
+		}
+		if target.Ref.Kind != "repo" {
+			return "", reject("invalid charter target")
+		}
+		var args map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return "", err
+		}
+		args["node"], _ = json.Marshal(target.Ref.ID)
+		raw, _ = json.Marshal(args)
+	}
+	if tool == "edge_set" || tool == "edge_remove" {
+		var edge protocol.Edge
+		if err := json.Unmarshal(raw, &edge); err != nil {
+			return "", err
+		}
+		if err := validateEdgeRefs(edge); err != nil {
+			return "", err
+		}
+		if edge.FromRef != nil {
+			if err := s.requireGraphRefs(); err != nil {
+				return "", err
+			}
+		}
+		edge = legacyRefEdge(edge)
+		raw, _ = json.Marshal(edge)
+	}
 	var q struct {
 		Node, Name, Attr, Value, From, To, Kind, Mode, Rule, Setting string
 		ID                                                           int64
@@ -111,7 +166,7 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 			return "minor", nil
 		}
 		return "major", nil
-	case "charter":
+	case "charter", "agent_charter":
 		if strings.TrimSpace(value) == "" {
 			v.Kind = "remove"
 		}

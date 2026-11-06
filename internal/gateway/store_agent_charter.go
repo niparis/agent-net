@@ -9,17 +9,24 @@ import (
 
 // SetAgentCharter records an agent's own charter without changing its repo.
 func (s *Store) SetAgentCharter(agent, attr, value, actor string) error {
-	value, err := protocol.CleanCharterValue(attr, value)
-	if err != nil {
-		return err
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := setAgentCharterTx(tx, agent, attr, value, actor, s.now().UnixNano()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func setAgentCharterTx(tx *sql.Tx, agent, attr, value, actor string, now int64) error {
+	value, err := protocol.CleanCharterValue(attr, value)
+	if err != nil {
+		return err
+	}
 	var exists bool
-	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=?)`, agent).Scan(&exists); err != nil {
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, agent).Scan(&exists); err != nil {
 		return err
 	}
 	if !exists {
@@ -31,9 +38,8 @@ func (s *Store) SetAgentCharter(agent, attr, value, actor string) error {
 		return err
 	}
 	if old == value {
-		return tx.Commit()
+		return nil
 	}
-	now := s.now().UnixNano()
 	if value == "" {
 		_, err = tx.Exec(`DELETE FROM agent_charter WHERE agent_id=? AND attr=?`, agent, attr)
 	} else {
@@ -45,5 +51,5 @@ func (s *Store) SetAgentCharter(agent, attr, value, actor string) error {
 	if _, err = tx.Exec(`INSERT INTO agent_charter_history(agent_id,attr,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?)`, agent, attr, old, value, now, actor); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return graphRecord(tx, "agent_charter", agent, attr, old, value, actor, now)
 }

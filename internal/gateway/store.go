@@ -888,6 +888,14 @@ UPDATE sessions SET status = 'ended'
 WHERE online = 0 AND worker <> '' AND worker_run_active = 0 AND status <> 'ended';
 `, `
 CREATE TABLE IF NOT EXISTS node_health (node_id TEXT PRIMARY KEY, report TEXT NOT NULL, reported_at INTEGER NOT NULL);
+`, `
+-- Typed Graph capability reports and explicit backup-gated cutover.
+CREATE TABLE IF NOT EXISTS node_graph_refs (node_id TEXT PRIMARY KEY REFERENCES nodes(id), version TEXT NOT NULL, supported INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS graph_ref_gate (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 0, backup TEXT NOT NULL DEFAULT '');
+INSERT OR IGNORE INTO graph_ref_gate(id) VALUES(1);
+INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind)
+ SELECT 'agent_charter',agent_id,attr,old_value,new_value,at,actor,'agent' FROM agent_charter_history ORDER BY id;
+
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

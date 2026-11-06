@@ -151,13 +151,14 @@ type CTOEvents struct {
 
 // CTOGraphChange is an attributed graph history entry, oldest first.
 type CTOGraphChange struct {
-	ID       int64  `json:"id"`
-	Kind     string `json:"kind"`
-	Node     string `json:"node"`
-	Attr     string `json:"attr"`
-	OldValue string `json:"old_value"`
-	NewValue string `json:"new_value"`
-	At       int64  `json:"at"`
+	Ref      *GraphRef `json:"ref,omitempty"`
+	ID       int64     `json:"id"`
+	Kind     string    `json:"kind"`
+	Node     string    `json:"node"`
+	Attr     string    `json:"attr"`
+	OldValue string    `json:"old_value"`
+	NewValue string    `json:"new_value"`
+	At       int64     `json:"at"`
 }
 
 // CTOGraphWindow is owner-only state on the CTO host daemon.

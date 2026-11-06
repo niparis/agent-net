@@ -14,12 +14,17 @@ import (
 )
 
 type roGraphReadIn struct {
-	Node   string `json:"node"`
-	Limit  int    `json:"limit"`
-	Cursor string `json:"cursor"`
+	Ref    *protocol.GraphRef `json:"ref,omitempty"`
+	Typed  bool               `json:"typed,omitempty"`
+	Node   string             `json:"node"`
+	Limit  int                `json:"limit"`
+	Cursor string             `json:"cursor"`
 }
 
 type roGraphNode struct {
+	Ref      *protocol.GraphRef    `json:"ref,omitempty"`
+	Owner    *protocol.GraphRef    `json:"owner,omitempty"`
+	Role     string                `json:"role,omitempty"`
 	Name     string                `json:"name"`
 	Kind     string                `json:"kind"`
 	Maturity string                `json:"maturity"`
@@ -29,8 +34,8 @@ type roGraphNode struct {
 }
 
 type roGraphEdge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From any    `json:"from"`
+	To   any    `json:"to"`
 	Kind string `json:"kind"`
 	Mode string `json:"mode"`
 	Rule string `json:"rule"`
@@ -55,13 +60,17 @@ func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphRea
 	if err != nil {
 		return roGraphReadOut{}, err
 	}
-	filters := roFilterKey(struct{ Node string }{in.Node})
+	filters := roFilterKey(struct {
+		Node  string
+		Ref   *protocol.GraphRef
+		Typed bool
+	}{in.Node, in.Ref, in.Typed})
 	after, err := roDecodeCursor(in.Cursor, "agent_graph_read", roCursorCaller(ctx), filters)
 	if err != nil {
 		return roGraphReadOut{}, err
 	}
-	if in.Node != "" {
-		page, err := roGraphPage(ctx, call, in.Node, 0, 0)
+	if in.Node != "" || in.Ref != nil {
+		page, err := roGraphPage(ctx, call, in.Node, 0, 0, in.Ref, in.Typed)
 		if err != nil {
 			return roGraphReadOut{}, err
 		}
@@ -72,12 +81,17 @@ func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphRea
 		return out, nil
 	}
 
-	nodes, edges, err := roAllGraphNodes(ctx, call)
+	nodes, edges, err := roAllGraphNodes(ctx, call, in.Typed)
 	if err != nil {
 		return roGraphReadOut{}, err
 	}
-	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
-	nodeKey := func(node roGraphNode) string { return node.Name }
+	nodeKey := func(node roGraphNode) string {
+		if node.Ref != nil {
+			return node.Name + "\x00" + node.Ref.Kind + "\x00" + node.Ref.ID
+		}
+		return node.Name
+	}
+	sort.SliceStable(nodes, func(i, j int) bool { return nodeKey(nodes[i]) < nodeKey(nodes[j]) })
 	page, next := roWindow(nodes, limit, after, false, nodeKey)
 	out := roGraphReadOut{Nodes: page, Edges: edges}
 	if next != "" {
@@ -87,8 +101,8 @@ func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphRea
 	return out, nil
 }
 
-func roGraphPage(ctx context.Context, call Caller, node string, offset, limit int) (protocol.PublicGraphPage, error) {
-	raw, err := call(ctx, "agent_graph", protocol.PublicGraphQuery{Node: node, Offset: offset, Limit: limit})
+func roGraphPage(ctx context.Context, call Caller, node string, offset, limit int, ref *protocol.GraphRef, typed bool) (protocol.PublicGraphPage, error) {
+	raw, err := call(ctx, "agent_graph", protocol.PublicGraphQuery{Node: node, Offset: offset, Limit: limit, Ref: ref, Typed: typed})
 	if err != nil {
 		return protocol.PublicGraphPage{}, err
 	}
@@ -101,12 +115,12 @@ func roGraphPage(ctx context.Context, call Caller, node string, offset, limit in
 
 // roAllGraphNodes reads every node. The daemon pages the node list; every page
 // carries all edges.
-func roAllGraphNodes(ctx context.Context, call Caller) ([]roGraphNode, []roGraphEdge, error) {
+func roAllGraphNodes(ctx context.Context, call Caller, typed bool) ([]roGraphNode, []roGraphEdge, error) {
 	var nodes []roGraphNode
 	var edges []roGraphEdge
 	offset := 0
 	for page := 0; page < 1000; page++ {
-		got, err := roGraphPage(ctx, call, "", offset, protocol.PublicGraphMaxLimit)
+		got, err := roGraphPage(ctx, call, "", offset, protocol.PublicGraphMaxLimit, nil, typed)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -146,7 +160,7 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 		for _, rule := range node.Rules {
 			rules[rule.Name] = rule.Value
 		}
-		out = append(out, roGraphNode{Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
+		out = append(out, roGraphNode{Ref: node.Ref, Owner: node.Owner, Role: node.Role, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
 	}
 	return out
 }
@@ -168,7 +182,14 @@ func roCharterList(value string) []string {
 func roGraphEdges(edges []protocol.PublicGraphEdge) []roGraphEdge {
 	out := make([]roGraphEdge, 0, len(edges))
 	for _, edge := range edges {
-		out = append(out, roGraphEdge{From: edge.From, To: edge.To, Kind: edge.Kind, Mode: edge.Mode, Rule: edge.Rule})
+		var from, to any = edge.From, edge.To
+		if edge.FromRef != nil {
+			from = edge.FromRef
+		}
+		if edge.ToRef != nil {
+			to = edge.ToRef
+		}
+		out = append(out, roGraphEdge{From: from, To: to, Kind: edge.Kind, Mode: edge.Mode, Rule: edge.Rule})
 	}
 	return out
 }
