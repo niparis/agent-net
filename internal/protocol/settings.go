@@ -49,22 +49,66 @@ type SettingsHistory struct {
 }
 
 type SettingsReadRequest struct {
-	Key  string `json:"key,omitempty"`
-	Repo string `json:"repo,omitempty"`
+	Key    string          `json:"key,omitempty"`
+	Repo   string          `json:"repo,omitempty"`
+	Target *SettingsTarget `json:"target,omitempty"`
 }
+
+// SettingsTarget names one settings level and, for repo and agent, its display
+// name. The level disambiguates kinds: repo shop and agent shop are different
+// targets. Network is a singleton and takes no name.
+type SettingsTarget struct {
+	Level string `json:"level"`
+	Name  string `json:"name,omitempty"`
+}
+
+// SettingsRef is a resolved target or a source of an effective value. Kind is
+// network, repo, agent, or recipe for the standard recipe. Names are
+// presentation; ID is storage identity and never changes on rename.
+type SettingsRef struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Token string `json:"token,omitempty"`
+}
+
+// SettingsTargetChoice is one typed candidate for an ambiguous name.
+type SettingsTargetChoice struct {
+	Ref  SettingsRef `json:"ref"`
+	Name string      `json:"name"`
+}
+
+// SettingsTargetResolution is the one-time name lookup. Exactly one of Target
+// and Choices is set. An unknown name is an error and never a guess.
+type SettingsTargetResolution struct {
+	Level   string                 `json:"level"`
+	Name    string                 `json:"name,omitempty"`
+	Target  *SettingsRef           `json:"target,omitempty"`
+	Choices []SettingsTargetChoice `json:"choices,omitempty"`
+}
+
 type SettingView struct {
-	Key          string            `json:"key"`
-	Description  string            `json:"description"`
-	Kind         string            `json:"kind"`
-	Type         string            `json:"type"`
-	Levels       []string          `json:"levels"`
-	Values       []string          `json:"values,omitempty"`
-	Live         bool              `json:"live"`
-	Value        json.RawMessage   `json:"value"`
-	Source       string            `json:"source"`
-	Revision     int64             `json:"revision"`
-	Explicit     json.RawMessage   `json:"explicit,omitempty"`
-	Actor        string            `json:"actor,omitempty"`
-	History      []SettingsHistory `json:"history"`
-	DeliveryStep *StepRef          `json:"delivery_step,omitempty"`
+	Key             string            `json:"key"`
+	Description     string            `json:"description"`
+	Kind            string            `json:"kind"`
+	Type            string            `json:"type"`
+	Levels          []string          `json:"levels"`
+	Values          []string          `json:"values,omitempty"`
+	Live            bool              `json:"live"`
+	Value           json.RawMessage   `json:"value"`
+	Source          string            `json:"source"`
+	SourceLevel     string            `json:"source_level,omitempty"`
+	SourceRef       *SettingsRef      `json:"source_ref,omitempty"`
+	SourceLabel     string            `json:"source_label,omitempty"`
+	Revision        int64             `json:"revision"`
+	Explicit        json.RawMessage   `json:"explicit,omitempty"`
+	ExplicitNote    string            `json:"explicit_note,omitempty"`
+	Raised          bool              `json:"raised,omitempty"`
+	Bound           json.RawMessage   `json:"bound,omitempty"`
+	RecipeDigest    string            `json:"recipe_digest,omitempty"`
+	ContextRevision int64             `json:"context_revision,omitempty"`
+	Target          *SettingsRef      `json:"target,omitempty"`
+	Actor           string            `json:"actor,omitempty"`
+	History         []SettingsHistory `json:"history"`
+	DeliveryStep    *StepRef          `json:"delivery_step,omitempty"`
 }

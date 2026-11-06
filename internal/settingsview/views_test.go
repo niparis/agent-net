@@ -66,6 +66,63 @@ func TestDeliveryPipelineViewIncludesReviewSources(t *testing.T) {
 	}
 }
 
+func TestViewsNamedTargetStructuredFields(t *testing.T) {
+	snap := settings.Snapshot{Revision: 9, Values: []settings.Value{
+		{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: json.RawMessage("false")},
+		{Key: "workers.auto_continue", Level: "repo", Scope: "shop", Value: json.RawMessage("true")},
+	}}
+	target := &protocol.SettingsRef{Kind: "repo", ID: "shop", Name: "shop", Token: "token"}
+	rows, err := ViewsWithTarget(snap, nil, protocol.SettingsReadRequest{Key: "workers.auto_continue"}, true, settings.Where{}, target)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("views: %+v %v", rows, err)
+	}
+	row := rows[0]
+	if string(row.Value) != "false" || !row.Raised || string(row.Bound) != "false" {
+		t.Fatalf("raised fields: %+v", row)
+	}
+	if row.Source != "network" || row.SourceLevel != "network" || row.SourceRef == nil || row.SourceRef.Kind != "network" || row.SourceLabel != "network" {
+		t.Fatalf("source fields: %+v", row)
+	}
+	if string(row.Explicit) != "true" || row.ExplicitNote != "" {
+		t.Fatalf("explicit here: %+v", row)
+	}
+	if row.Target == nil || row.Target.ID != "shop" || row.RecipeDigest != settings.RecipeHash() || row.ContextRevision != 9 {
+		t.Fatalf("target and context: %+v", row)
+	}
+
+	snap.Values[0].Value = json.RawMessage("true")
+	snap.Values[1].Value = json.RawMessage("false")
+	rows, err = ViewsWithTarget(snap, nil, protocol.SettingsReadRequest{Key: "workers.auto_continue"}, true, settings.Where{}, target)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("repo source: %+v %v", rows, err)
+	}
+	row = rows[0]
+	if string(row.Value) != "false" || row.Raised || row.SourceLevel != "repo" || row.SourceRef == nil || row.SourceRef.ID != "shop" || row.SourceLabel != "repo shop" {
+		t.Fatalf("repo source fields: %+v", row)
+	}
+
+	agent := &protocol.SettingsRef{Kind: "agent", ID: "reviewer", Name: "reviewer", Token: "agent-token"}
+	rows, err = ViewsWithTarget(settings.Snapshot{Revision: 3}, nil, protocol.SettingsReadRequest{Key: "workers.auto_continue"}, true, settings.Where{}, agent)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("not-set fields: %+v %v", rows, err)
+	}
+	if row := rows[0]; row.ExplicitNote != "not set here" || row.SourceLevel != "recipe" || row.SourceLabel != "standard recipe" || row.Explicit != nil {
+		t.Fatalf("not-set fields: %+v", row)
+	}
+}
+
+func TestViewsLegacyRepoReadKeepsOriginals(t *testing.T) {
+	snap := settings.Snapshot{Revision: 7, Values: []settings.Value{{Key: "delivery.merge_authority", Level: "repo", Scope: "repo", Value: json.RawMessage(`"ask"`)}}}
+	rows, err := Views(snap, nil, protocol.SettingsReadRequest{Key: "delivery.merge_authority", Repo: "repo"}, true)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("legacy: %+v %v", rows, err)
+	}
+	row := rows[0]
+	if string(row.Value) != `"ask"` || row.Source != "repo repo" || string(row.Explicit) != `"ask"` || row.Target != nil {
+		t.Fatalf("legacy read changed: %+v", row)
+	}
+}
+
 func TestDeliveryPipelineViewRequiresSuiteAndNewTests(t *testing.T) {
 	snap := settings.Snapshot{DeliveryPipelineCutover: true, Values: []settings.Value{{Key: "delivery.pipeline.merge.requires", Level: "repo", Scope: "repo", Value: json.RawMessage(`["accept","review","test:suite","test:tests_added"]`)}}}
 	rows, err := Views(snap, nil, protocol.SettingsReadRequest{Key: "delivery.pipeline", Repo: "repo"}, true)

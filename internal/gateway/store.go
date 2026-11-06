@@ -973,6 +973,26 @@ CREATE TABLE IF NOT EXISTS session_agent_start_failures (
  item_id TEXT NOT NULL, reason TEXT NOT NULL,
  PRIMARY KEY(node_id,ref)
 );
+`, `
+-- Immutable settings target identities, keyed by typed kind and storage ID.
+-- Seeds existing network, repo and agent records; a rerun keeps current rows.
+CREATE TABLE IF NOT EXISTS settings_target_identity (
+ kind TEXT NOT NULL CHECK(kind IN ('network','repo','agent')),
+ id TEXT NOT NULL,
+ token TEXT NOT NULL,
+ PRIMARY KEY(kind,id));
+INSERT OR IGNORE INTO settings_target_identity(kind,id,token) VALUES('network','network',lower(hex(randomblob(16))));
+INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'repo',id,lower(hex(randomblob(16))) FROM repos;
+INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'agent',id,lower(hex(randomblob(16))) FROM agents;
+CREATE TRIGGER IF NOT EXISTS settings_target_identity_repo_delete AFTER DELETE ON repos BEGIN
+ DELETE FROM settings_target_identity WHERE kind='repo' AND id=OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_delete AFTER DELETE ON agents BEGIN
+ DELETE FROM settings_target_identity WHERE kind='agent' AND id=OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDATE OF tombstone ON agents WHEN NEW.tombstone<>0 BEGIN
+ DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
+END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

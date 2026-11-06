@@ -134,6 +134,27 @@ func guidanceChanged(old, next settings.Snapshot) bool {
 }
 
 func (d *Daemon) readSettings(ctx context.Context, q protocol.SettingsReadRequest, owner bool) ([]protocol.SettingView, error) {
+	var target *protocol.SettingsRef
+	if q.Target != nil {
+		if q.Repo != "" {
+			return nil, fmt.Errorf("settings target and repo cannot be combined")
+		}
+		raw, err := d.call(ctx, "settings.target", *q.Target)
+		if err != nil {
+			return nil, err
+		}
+		var resolution protocol.SettingsTargetResolution
+		if err = json.Unmarshal(raw, &resolution); err != nil {
+			return nil, err
+		}
+		if resolution.Target == nil {
+			if len(resolution.Choices) > 0 {
+				return nil, ambiguousSettingsTarget(*q.Target, resolution.Choices)
+			}
+			return nil, fmt.Errorf("unknown %s name %q", q.Target.Level, q.Target.Name)
+		}
+		target = resolution.Target
+	}
 	if latest, e := d.call(ctx, "settings.snapshot", nil); e == nil {
 		if e = d.acceptSettingsSnapshot(latest, false); e != nil {
 			return nil, e
@@ -147,7 +168,16 @@ func (d *Daemon) readSettings(ctx context.Context, q protocol.SettingsReadReques
 	if err := json.Unmarshal(raw, &history); err != nil {
 		return nil, err
 	}
-	return d.workerSettingsViews(d.SettingsSnapshot(), history, q, owner)
+	return d.workerSettingsViewsAt(d.SettingsSnapshot(), history, q, owner, target)
+}
+
+// ambiguousSettingsTarget names every typed candidate and never picks one.
+func ambiguousSettingsTarget(t protocol.SettingsTarget, choices []protocol.SettingsTargetChoice) error {
+	parts := make([]string, 0, len(choices))
+	for _, c := range choices {
+		parts = append(parts, fmt.Sprintf("%s %s (id %s)", c.Ref.Kind, c.Name, c.Ref.ID))
+	}
+	return fmt.Errorf("%s name %q is ambiguous: %s", t.Level, t.Name, strings.Join(parts, ", "))
 }
 
 func (d *Daemon) settingsRevisionHasRule(ctx context.Context, rev int64) (bool, error) {

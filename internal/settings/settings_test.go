@@ -34,6 +34,35 @@ func TestStandardAndParity(t *testing.T) {
 		}
 	}
 }
+func TestResolveSourceIdentity(t *testing.T) {
+	s := Snapshot{Revision: 4, Values: []Value{
+		{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: raw("true")},
+		{Key: "workers.auto_continue", Level: "repo", Scope: "shop", Value: raw("false")},
+	}}
+	e, err := s.Resolve("workers.auto_continue", Where{Repo: "shop"})
+	if err != nil || e.SourceLevel != "repo" || e.SourceID != "shop" || e.Raised {
+		t.Fatalf("repo source: %+v %v", e, err)
+	}
+	s.Values[0].Value = raw("false")
+	s.Values[1].Value = raw("true")
+	e, err = s.Resolve("workers.auto_continue", Where{Repo: "shop"})
+	if err != nil || e.Source != "network" || e.SourceLevel != "network" || e.SourceID != "network" || !e.Raised || string(e.Bound) != "false" {
+		t.Fatalf("raised source: %+v %v", e, err)
+	}
+	s.Values = []Value{
+		{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: raw("true")},
+		{Key: "workers.auto_continue", Level: "agent", Scope: "reviewer", Value: raw("false")},
+	}
+	e, err = s.Resolve("workers.auto_continue", Where{Agent: "reviewer"})
+	if err != nil || e.SourceLevel != "agent" || e.SourceID != "reviewer" {
+		t.Fatalf("agent source: %+v %v", e, err)
+	}
+	e, err = (Snapshot{}).Resolve("workers.auto_continue", Where{})
+	if err != nil || e.SourceLevel != "recipe" || e.SourceID != "" || e.Source != "network default" {
+		t.Fatalf("recipe source: %+v %v", e, err)
+	}
+}
+
 func TestLoaderStrict(t *testing.T) {
 	base := string(StandardYAML())
 	for name, bad := range map[string]string{

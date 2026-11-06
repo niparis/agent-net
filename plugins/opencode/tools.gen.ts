@@ -1054,7 +1054,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_settings_read",
-    "description": "Read settings, values, sources and history by key or repo.",
+    "description": "Read settings, values, sources and history by key, repo or named target. A target names level network, repo or agent; a name is looked up only in that kind.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1064,7 +1064,29 @@ export const TOOL_CATALOG = [
         },
         "repo": {
           "type": "string",
-          "description": "Repo."
+          "description": "Legacy repo context."
+        },
+        "target": {
+          "type": "object",
+          "description": "Named target: network, repo or agent. Network takes no name.",
+          "properties": {
+            "level": {
+              "type": "string",
+              "enum": [
+                "network",
+                "repo",
+                "agent"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "description": "Display name in the selected kind; omit for network."
+            }
+          },
+          "required": [
+            "level"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
