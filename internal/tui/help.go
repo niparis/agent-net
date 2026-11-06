@@ -226,6 +226,12 @@ func (m Model) helpLine(w int) string {
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
 	case modeSettingUndo:
 		return clip(sBold.Render(fmt.Sprintf("Undo all changes in revision %d? Enter confirms, esc cancels.", m.settingUndoRevision)), w)
+	case modeGraphCutoverPath:
+		return clip("enter: continue · esc: cancel", w)
+	case modeGraphCutoverConfirm:
+		return clip("y: enable · esc/n: cancel", w)
+	case modeGraphCutoverResult:
+		return clip("esc/enter: back", w)
 	case modeSettingRepo:
 		return clip(m.rename.View()+sDim.Render("   enter selects, empty selects network, esc cancels"), w)
 	case modeSettingValue:
