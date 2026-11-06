@@ -307,7 +307,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	}
 }
 
-// Job state is authoritative: a session file can appear before a resume fails.
+// Terminal failure states are authoritative: a session file can appear before a resume fails.
 // Claude Code writes {"state": ..., "detail": ...}; older builds used status
 // and error, so both are read.
 func claudeCTOJobState(sessions, ref string) (string, string) {
@@ -342,11 +342,11 @@ func claudeCTOJobState(sessions, ref string) (string, string) {
 }
 
 // claudeJobEnded reports a job state that means the background job is gone.
-// Any other state, including one this version does not know, counts as alive:
-// the process check decides then.
+// A live job can be done between turns. For that and unknown states, the
+// process check decides whether it is still alive.
 func claudeJobEnded(state string) bool {
 	switch state {
-	case "failed", "crashed", "killed", "stopped", "done":
+	case "failed", "crashed", "killed", "stopped":
 		return true
 	}
 	return false

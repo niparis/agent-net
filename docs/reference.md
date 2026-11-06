@@ -255,7 +255,9 @@ end supervision. A shutdown releases a live Claude job rather than killing it.
 
 The host daemon log records `cto.start`, `cto.stop` with a reason, `cto.wake`
 with a trigger, and `cto.crash` for unexpected exits. `cto.stop` on daemon
-shutdown with `action=release` means that the Claude job was left running.
+shutdown with `action=release` means that the Claude job was left running. A
+Claude job in `done` state remains available while its process is alive;
+`reason=job_done` records its exit after that state.
 
 Each harness resumes its conversation with its own saved model. For OpenCode,
 the model is resolved against the local inventory. With no preference, the
