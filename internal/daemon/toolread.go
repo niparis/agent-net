@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -62,6 +63,17 @@ func (lc *localConn) dispatchToolRead(ctx context.Context, client, method string
 		}
 		p.Caller = lc.toolReadCaller()
 		return lc.forwardToolRead(ctx, "query.machine_get", p)
+
+	case "machine_log":
+		var p protocol.MachineLogRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errBadToolRead("machine_log")
+		}
+		p, _, err := protocol.NormalizeMachineLog(p, time.Now())
+		if err != nil {
+			return nil, true, err
+		}
+		return lc.forwardToolRead(ctx, "query.machine_log", p)
 
 	case "projects_find":
 		var p protocol.ProjectsFindRequest

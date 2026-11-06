@@ -789,6 +789,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.SetNodeHello(nc.id, p.Hostname, p.Version); err != nil {
 			return nil, err
 		}
+		if err := st.SetNodeHealth(nc.id, p.Health); err != nil {
+			return nil, err
+		}
 		// Older daemons send no inventory; their stored one stays as it is.
 		if _, err := st.SetNodeHarnesses(nc.id, p.Harnesses); err != nil {
 			return nil, err
@@ -1103,6 +1106,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		if _, err = st.SetNodeHarnesses(nc.id, p.Harnesses); err != nil {
 			return nil, err
+		}
+		if p.Health != nil {
+			if err := st.SetNodeHealth(nc.id, p.Health); err != nil {
+				return nil, err
+			}
 		}
 		return nil, st.SetNodeLaunch(nc.id, p.Launch)
 

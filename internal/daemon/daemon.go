@@ -66,6 +66,7 @@ type Host interface {
 }
 
 type Config struct {
+	testLogRead func(context.Context, protocol.MachineLogRequest) (protocol.MachineLogResult, error)
 	// ClaudeDiscoveryGrace is how long an MCP hello waits for session discovery.
 	// Zero uses the production default of three seconds.
 	ClaudeDiscoveryGrace time.Duration
@@ -268,6 +269,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	startedAt           time.Time
 	cloneProject        func(context.Context, string, string) error // test hook
 	files               fileState
 	settingsMu          sync.Mutex
@@ -489,7 +491,7 @@ func New(cfg Config) (*Daemon, error) {
 		st.close()
 		return nil, err
 	}
-	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
+	d := &Daemon{startedAt: time.Now(), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},

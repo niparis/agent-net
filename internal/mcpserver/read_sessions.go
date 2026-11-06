@@ -17,6 +17,7 @@ var readToolMethods = map[string]string{
 	"agent_session_get":   "session_get",
 	"agent_machines_find": "machines_find",
 	"agent_machine_get":   "machine_get",
+	"agent_machine_log":   "machine_log",
 	"agent_projects_find": "projects_find",
 }
 
@@ -33,7 +34,7 @@ func readToolCall(ctx context.Context, run func(context.Context, string, any) (a
 // the tool redesign. Their names, descriptions and schemas come from
 // internal/toolcatalog. The daemon does the filtering and the paging.
 func addReadSessionTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
-	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find"} {
+	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find"} {
 		addCatalogReadTool(s, run, name)
 	}
 }

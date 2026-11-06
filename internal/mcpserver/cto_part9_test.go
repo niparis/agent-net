@@ -17,7 +17,7 @@ func TestCTOPart9ReadTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		have[tool.Name] = true
 	}
-	for _, name := range []string{"agent_sessions_find", "agent_session_get", "cto_proposals_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_machines_find", "agent_machine_get", "agent_projects_find", "agent_workers_find", "agent_mcp_servers_find", "agent_settings_read", "agent_worker_profiles_find"} {
+	for _, name := range []string{"agent_sessions_find", "agent_session_get", "cto_proposals_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_workers_find", "agent_mcp_servers_find", "agent_settings_read", "agent_worker_profiles_find"} {
 		if !have[name] {
 			t.Errorf("missing read tool %s", name)
 		}

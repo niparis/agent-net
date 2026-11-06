@@ -13,6 +13,7 @@ import (
 // The MCP layer validates every structured result against the tool's output
 // schema, so the schema must name every field the type can marshal.
 var protocolOutputs = map[string]reflect.Type{
+	"agent_machine_log":   reflect.TypeOf(protocol.MachineLogResult{}),
 	"agent_change_submit": reflect.TypeOf(protocol.ChangeSubmitResult{}),
 	"agent_step_claim":    reflect.TypeOf(protocol.StepClaimResult{}),
 	"agent_step_report":   reflect.TypeOf(protocol.StepReportResult{}),

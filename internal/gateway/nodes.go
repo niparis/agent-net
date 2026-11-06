@@ -1,11 +1,13 @@
 package gateway
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -267,4 +269,49 @@ func orDash(s string) string {
 		return "?"
 	}
 	return s
+}
+
+// SetNodeHealth replaces the last report, including clearing it when an older
+// daemon connects, so stale data cannot be mistaken for the current process.
+func (s *Store) SetNodeHealth(nodeID string, h *protocol.MachineHealth) error {
+	if h == nil {
+		_, err := s.db.Exec(`DELETE FROM node_health WHERE node_id=?`, nodeID)
+		return err
+	}
+	raw, err := json.Marshal(h)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO node_health(node_id,report,reported_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET report=excluded.report,reported_at=excluded.reported_at`, nodeID, string(raw), s.now().Unix())
+	return err
+}
+
+func (s *Store) nodeHealth(nodeID string, online bool) (protocol.MachineHealth, error) {
+	h := protocol.MachineHealth{Status: "not reported"}
+	var raw string
+	var at int64
+	err := s.db.QueryRow(`SELECT report,reported_at FROM node_health WHERE node_id=?`, nodeID).Scan(&raw, &at)
+	if err == sql.ErrNoRows {
+		return h, nil
+	}
+	if err != nil {
+		return h, err
+	}
+	if err := json.Unmarshal([]byte(raw), &h); err != nil {
+		return protocol.MachineHealth{}, err
+	}
+	h.Status = "reported"
+	h.ReportedAt = time.Unix(at, 0).UTC().Format(time.RFC3339)
+	if start, err := time.Parse(time.RFC3339, h.RestartTime); err == nil {
+		end := time.Unix(at, 0)
+		if online {
+			end = s.now()
+		}
+		seconds := int64(end.Sub(start).Seconds())
+		if seconds < 0 {
+			seconds = 0
+		}
+		h.UptimeSeconds = &seconds
+	}
+	return h, nil
 }
