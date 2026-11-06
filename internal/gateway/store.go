@@ -899,6 +899,38 @@ INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kin
  SELECT 'agent_charter',a.agent_id,a.attr,a.old_value,a.new_value,a.at,a.actor,'agent' FROM agent_charter_history a
  WHERE NOT EXISTS (SELECT 1 FROM graph_history h WHERE h.type='agent_charter' AND h.node=a.agent_id AND h.attr=a.attr AND h.old_value=a.old_value AND h.new_value=a.new_value AND h.at=a.at AND h.actor=a.actor) ORDER BY a.id;
 
+`, `
+-- Typed lifecycle and prospective display-name uniqueness. Existing collisions remain visible.
+CREATE TABLE IF NOT EXISTS archived_repos (repo_id TEXT PRIMARY KEY REFERENCES repos(id));
+CREATE TRIGGER IF NOT EXISTS repos_unique_name_insert BEFORE INSERT ON repos
+ WHEN NOT EXISTS (SELECT 1 FROM repos WHERE id=NEW.id) AND EXISTS (SELECT 1 FROM repos WHERE display_name=NEW.display_name COLLATE NOCASE)
+ BEGIN SELECT RAISE(ABORT, 'duplicate repo display name'); END;
+CREATE TRIGGER IF NOT EXISTS repos_unique_name_update BEFORE UPDATE OF display_name ON repos
+ WHEN NEW.display_name<>OLD.display_name AND EXISTS (SELECT 1 FROM repos WHERE id<>OLD.id AND display_name=NEW.display_name COLLATE NOCASE)
+ BEGIN SELECT RAISE(ABORT, 'duplicate repo display name'); END;
+CREATE TRIGGER IF NOT EXISTS agents_unique_name_insert BEFORE INSERT ON agents
+ WHEN NOT EXISTS (SELECT 1 FROM agents WHERE id=NEW.id) AND EXISTS (SELECT 1 FROM agents WHERE display_name=NEW.display_name COLLATE NOCASE)
+ BEGIN SELECT RAISE(ABORT, 'duplicate agent display name'); END;
+CREATE TRIGGER IF NOT EXISTS agents_unique_name_update BEFORE UPDATE OF display_name ON agents
+ WHEN NEW.display_name<>OLD.display_name AND EXISTS (SELECT 1 FROM agents WHERE id<>OLD.id AND display_name=NEW.display_name COLLATE NOCASE)
+ BEGIN SELECT RAISE(ABORT, 'duplicate agent display name'); END;
+CREATE TRIGGER IF NOT EXISTS repo_live_owner_insert BEFORE INSERT ON repos
+ WHEN NEW.owner_agent_id IS NOT NULL AND EXISTS (SELECT 1 FROM agents WHERE id=NEW.owner_agent_id AND tombstone<>0)
+ BEGIN SELECT RAISE(ABORT, 'tombstoned agent cannot own a repo'); END;
+CREATE TRIGGER IF NOT EXISTS repo_live_owner_update BEFORE UPDATE OF owner_agent_id ON repos
+ WHEN NEW.owner_agent_id IS NOT NULL AND EXISTS (SELECT 1 FROM agents WHERE id=NEW.owner_agent_id AND tombstone<>0)
+ BEGIN SELECT RAISE(ABORT, 'tombstoned agent cannot own a repo'); END;
+CREATE TRIGGER IF NOT EXISTS agent_owned_tombstone BEFORE UPDATE OF tombstone ON agents
+ WHEN NEW.tombstone<>0 AND EXISTS (SELECT 1 FROM repos WHERE owner_agent_id=NEW.id)
+ BEGIN SELECT RAISE(ABORT, 'agent owns a repo'); END;
+CREATE TRIGGER IF NOT EXISTS session_lifecycle_insert BEFORE INSERT ON sessions
+ WHEN NEW.online=1 AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND
+ (EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=NEW.repo_id) OR EXISTS(SELECT 1 FROM agents WHERE id=NEW.agent_id AND tombstone<>0))
+ BEGIN SELECT RAISE(ABORT, 'session identity is inactive'); END;
+CREATE TRIGGER IF NOT EXISTS session_lifecycle_update BEFORE UPDATE OF online,repo_id,agent_id ON sessions
+ WHEN NEW.online=1 AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND
+ (EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=NEW.repo_id) OR EXISTS(SELECT 1 FROM agents WHERE id=NEW.agent_id AND tombstone<>0))
+ BEGIN SELECT RAISE(ABORT, 'session identity is inactive'); END;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

@@ -11,11 +11,20 @@ import (
 // CTOGraphClass is a preflight. graphRecord repeats the check in the mutation
 // transaction, so a newly critical node cannot race a minor change.
 func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) {
+	if (tool == "node_add" || tool == "node_remove") && s.graphRefsOn.Load() {
+		return "rule", nil
+	}
 	var target struct {
 		Ref *protocol.GraphRef `json:"ref"`
 	}
 	if err := json.Unmarshal(raw, &target); err != nil {
 		return "", err
+	}
+	if tool == "repo_create" || tool == "repo_archive" || tool == "agent_create" || tool == "agent_tombstone" {
+		if err := s.requireGraphRefs(); err != nil {
+			return "", err
+		}
+		return "rule", nil
 	}
 	if target.Ref != nil {
 		if err := s.requireGraphRefs(); err != nil {
@@ -143,6 +152,9 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 }
 
 func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, error) {
+	if typ == "lifecycle" {
+		return "rule", nil
+	}
 	if typ == "edge" && deliveryEdgeStep(attr) != "" {
 		return "rule", nil
 	}

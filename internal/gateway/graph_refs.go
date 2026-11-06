@@ -92,13 +92,36 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 		return protocol.Graph{}, err
 	}
 	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
+	for _, table := range []string{"repos", "agents"} {
+		rows, err := s.db.Query(`SELECT display_name,group_concat(id, ', ') FROM ` + table + ` GROUP BY display_name COLLATE NOCASE HAVING COUNT(*)>1 ORDER BY display_name`)
+		if err != nil {
+			return g, err
+		}
+		for rows.Next() {
+			var name, ids string
+			if err = rows.Scan(&name, &ids); err != nil {
+				rows.Close()
+				return g, err
+			}
+			g.Warnings = append(g.Warnings, fmt.Sprintf("duplicate %s display name %q: %s; rename these records", table, name, ids))
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return g, err
+		}
+	}
 	byLegacy := map[string]protocol.Node{}
 	for _, n := range legacy.Nodes {
 		byLegacy[n.Name] = n
 	}
 	for _, r := range repos {
+		if r.Archived {
+			continue
+		}
 		n := byLegacy[r.ID]
 		n.Name, n.Kind, n.CreatedAt = r.DisplayName, "repo", r.CreatedAt
+		n.Charter = protocol.Charter{}
 		n.Ref = &protocol.GraphRef{Kind: "repo", ID: r.ID}
 		if r.OwnerAgentID != nil {
 			n.Owner = &protocol.GraphRef{Kind: "agent", ID: *r.OwnerAgentID}
@@ -116,7 +139,30 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 	for i := range g.Nodes {
 		byRef[*g.Nodes[i].Ref] = &g.Nodes[i]
 	}
-	rows, err := s.db.Query(`SELECT agent_id,attr,value FROM agent_charter`)
+	rows, err := s.db.Query(`SELECT node,attr,value FROM graph_charter`)
+	if err != nil {
+		return g, err
+	}
+	for rows.Next() {
+		var id, attr, value string
+		if err = rows.Scan(&id, &attr, &value); err != nil {
+			rows.Close()
+			return g, err
+		}
+		if n := byRef[protocol.GraphRef{Kind: "repo", ID: id}]; n != nil {
+			b, _ := json.Marshal(map[string]string{attr: value})
+			if err = json.Unmarshal(b, &n.Charter); err != nil {
+				rows.Close()
+				return g, err
+			}
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return g, err
+	}
+	rows, err = s.db.Query(`SELECT agent_id,attr,value FROM agent_charter`)
 	if err != nil {
 		return g, err
 	}
@@ -248,21 +294,31 @@ func (s *Store) SetRefCharter(ref protocol.GraphRef, attr, value, actor string, 
 	}
 	if ref.Kind == "repo" {
 		var exists bool
-		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=?)`, ref.ID).Scan(&exists); err != nil {
+		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND NOT EXISTS (SELECT 1 FROM archived_repos WHERE repo_id=repos.id))`, ref.ID).Scan(&exists); err != nil {
 			return err
 		}
 		if !exists {
 			return reject("unknown repo")
 		}
-		if validate {
-			tx, err := s.db.Begin()
-			if err != nil {
-				return err
-			}
-			defer tx.Rollback()
-			return setCharterTx(tx, ref.ID, attr, value, actor, s.now().UnixNano())
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
 		}
-		return s.SetCharter(ref.ID, attr, value, actor)
+		defer tx.Rollback()
+		if err = setCharterKindTx(tx, ref.ID, attr, value, actor, s.now().UnixNano(), true); err != nil {
+			return err
+		}
+		if validate {
+			return nil
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+		if attr == "maturity" {
+			s.refreshDeliveryTasks()
+			s.settingsNotify()
+		}
+		return nil
 	}
 	if ref.Kind != "agent" {
 		return reject("charter requires repo or agent")
@@ -305,7 +361,7 @@ func (s *Store) RefCharterHistory(ref protocol.GraphRef, limit int) ([]protocol.
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	rows, err := s.db.Query(`SELECT id,node,attr,old_value,new_value,at,actor FROM graph_history WHERE node=? AND type IN ('charter','agent_charter') AND target_kind=? ORDER BY id DESC LIMIT ?`, ref.ID, ref.Kind, limit)
+	rows, err := s.db.Query(`SELECT id,node,attr,old_value,new_value,at,actor FROM graph_history WHERE node=? AND type IN ('charter','agent_charter','lifecycle') AND target_kind=? ORDER BY id DESC LIMIT ?`, ref.ID, ref.Kind, limit)
 	if err != nil {
 		return nil, err
 	}

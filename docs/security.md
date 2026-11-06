@@ -608,7 +608,14 @@ tools and actions fail closed; a completeness test checks the MCP registry.
 The class table has exactly these three classes. `graph_change` is a proposal
 call, and the daemon checks its graph policy before the proposal route: a minor
 action applies at once, a major action applies during the owner window, and
-anything else is stored for the owner.
+anything else is stored for the owner. After typed Graph cutover, Repo creation
+and archive, Agent creation and tombstone, and their undo always require the
+owner. The CTO may only propose them through the dialog or Inbox; the owner
+window does not authorize them. Peer sessions cannot run them. The gateway
+checks the authenticated owner session and repeats lifecycle and reference
+checks when an approved proposal runs. Tombstoned Agents cannot own Repos.
+Archive and tombstone retain historical references and refuse active ones rather
+than cascading changes.
 
 Proposal calls cover major graph/charter/node settings outside the owner window,
 and always names, trust, policy, workers,
