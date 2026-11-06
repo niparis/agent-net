@@ -3,9 +3,9 @@
 Typed Repo/Agent Graph cutover
 
   Enable the typed Repo/Agent Graph?
-  Backup destination: /gateway-state/gateway-before-typed-graph-20261106-1200.db
+  Backup folder: /gateway-state/gateway-before-typed-graph-20261106-1200
+  A copy of the whole gateway data folder.
   Turning it off later means restoring the backup.
-
 
 
 
