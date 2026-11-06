@@ -3,9 +3,11 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -264,7 +266,58 @@ func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "Antigravity result written during downtime", func() bool { return !alive(pid) })
-	w.node.restart()
+	// Keep the gateway unavailable while the saved result is replayed. A
+	// file handback cannot use the offline outbox and must wait for the link.
+	d, err := New(w.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	early := make(chan struct{}, 1)
+	d.cfg.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+		if typ == "msg.send" && !d.Connected() {
+			select {
+			case early <- struct{}{}:
+			default:
+			}
+		}
+		return nil, false, nil
+	}
+	transport := d.client.Transport.(*http.Transport).Clone()
+	dial := transport.DialContext
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		select {
+		case <-release:
+			return dial(ctx, network, addr)
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	d.client.Transport = transport
+	if err := d.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	w.node.d = d
+	t.Cleanup(d.Stop)
+	recovered := d.workerBySession(res.SessionID)
+	eventually(t, "Antigravity result replayed before gateway connection", func() bool {
+		select {
+		case <-recovered.agy.stopped:
+			return true
+		default:
+			return false
+		}
+	})
+	select {
+	case <-early:
+		t.Fatal("file handback attempted before the gateway connected")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	eventually(t, "daemon reconnected to gateway", d.Connected)
 	w.cli = cliClient(t, w.node)
 	n := w.waitNotice(t, 1)[0]
 	path := filepath.Join(w.cfg.StateDir, "inbox", w.ownerID(), n.ID, "agy-result.txt")
