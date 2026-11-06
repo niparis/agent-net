@@ -73,6 +73,18 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 	}
 	open := r.submit(r.a, r.workerSubmit("feature", commitA)).Change.Change.ID
 	merged := r.submit(r.a, r.workerSubmit("merged", commitB)).Change.Change.ID
+	var acceptOwner string
+	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND after_merge=0`, open).Scan(&acceptOwner); err != nil || acceptOwner != "/caller" {
+		t.Fatalf("accept task owner = %q, want /caller, err=%v", acceptOwner, err)
+	}
+	var preMergeTests int
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND step='test' AND after_merge=0`, open).Scan(&preMergeTests); err != nil {
+		t.Fatal(err)
+	}
+	if preMergeTests != 0 {
+		t.Fatalf("pre-merge test tasks before accept = %d", preMergeTests)
+	}
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: open, StepRef: protocol.StepRef{Step: protocol.StepAccept}, Result: protocol.StepResultPass, Commit: commitA})
 	if _, err := r.s.db.Exec(`UPDATE delivery_changes SET state='merged',merged_commit=? WHERE id=?`, commitMerged, merged); err != nil {
 		t.Fatal(err)
 	}
@@ -86,13 +98,13 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 	beforeTasks := repoAgentTaskSnapshot(t, r.s)
 	foundOpen, foundMerged, foundNode := false, false, false
 	for _, task := range beforeTasks {
-		if task[0] == open {
+		if task[0] == open && task[2] == protocol.StepTest && task[4] == "0" {
 			foundOpen = true
 		}
-		if task[0] == merged && task[4] == "1" {
+		if task[0] == merged && task[2] == protocol.StepTest && task[4] == "1" {
 			foundMerged = true
 		}
-		if task[0] == open && task[5] == "advisor" {
+		if task[0] == open && task[2] == protocol.StepTest && task[4] == "0" && task[5] == "advisor" {
 			foundNode = true
 		}
 	}
