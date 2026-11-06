@@ -24,6 +24,7 @@ type deliveryRig struct {
 	t                      *testing.T
 	s                      *Store
 	g                      *Gateway
+	clk                    *clock
 	a, b                   string
 	caller, worker, sonnet string
 	deepseek, reviewer     string
@@ -31,8 +32,10 @@ type deliveryRig struct {
 
 func newDeliveryRig(t *testing.T) *deliveryRig {
 	t.Helper()
-	s, _ := newTestStore(t)
-	return deliveryRigOn(t, s)
+	s, c := newTestStore(t)
+	r := deliveryRigOn(t, s)
+	r.clk = c
+	return r
 }
 
 func deliveryRigOn(t *testing.T, s *Store) *deliveryRig {
