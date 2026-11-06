@@ -1,4 +1,4 @@
-# 0067 - Record worker early quits
+# 0068 - Record worker early quits
 
 Date: 2026-11-06
 Status: Built
