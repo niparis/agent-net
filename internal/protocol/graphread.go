@@ -4,7 +4,9 @@ package protocol
 // of one node, or for all of it. The answer is GraphGot. The graph is visible
 // to every enrolled machine (decision 0022), so this is not an owner method.
 type GraphRead struct {
-	Project string `json:"project,omitempty"` // a node name; empty means all
+	Ref     *GraphRef `json:"ref,omitempty"`
+	Typed   bool      `json:"typed,omitempty"`
+	Project string    `json:"project,omitempty"` // a node name; empty means all
 }
 
 // GraphGot answers "graph.read": the node's charter and the nodes and edges

@@ -7,8 +7,10 @@ const GraphHistoryPerNode = 5
 // QueryGraph asks for a snapshot of the component graph. An empty Project means
 // every node. A project name keeps that node and the nodes on an edge with it.
 type QueryGraph struct {
-	Project string `json:"project,omitempty"`
-	All     bool   `json:"all,omitempty"`
+	Ref     *GraphRef `json:"ref,omitempty"`
+	Typed   bool      `json:"typed,omitempty"`
+	Project string    `json:"project,omitempty"`
+	All     bool      `json:"all,omitempty"`
 }
 
 // GraphView is a read-only snapshot of the graph: nodes with their charters,

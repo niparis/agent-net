@@ -24,9 +24,11 @@ const (
 // its full charter and the edges that touch it. With no Node, Offset and Limit
 // page the node list; all edges come with every page.
 type PublicGraphQuery struct {
-	Node   string `json:"node,omitempty"`
-	Offset int    `json:"offset,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
+	Ref    *GraphRef `json:"ref,omitempty"`
+	Typed  bool      `json:"typed,omitempty"`
+	Node   string    `json:"node,omitempty"`
+	Offset int       `json:"offset,omitempty"`
+	Limit  int       `json:"limit,omitempty"`
 }
 
 // PublicRule is one node rule an agent follows: the setting name and its
@@ -40,6 +42,9 @@ type PublicRule struct {
 // Kind, Maturity, Line and Rules. A detail carries the full Charter and the
 // node's delegation policies as well.
 type PublicGraphNode struct {
+	Ref        *GraphRef        `json:"ref,omitempty"`
+	Owner      *GraphRef        `json:"owner,omitempty"`
+	Role       string           `json:"role,omitempty"`
 	Name       string           `json:"name"`
 	Kind       string           `json:"kind,omitempty"`
 	Maturity   string           `json:"maturity,omitempty"`
@@ -52,11 +57,13 @@ type PublicGraphNode struct {
 // PublicGraphEdge is the public part of an edge: who, what kind, the mode of a
 // governs edge, and the request rule.
 type PublicGraphEdge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Kind string `json:"kind"`
-	Mode string `json:"mode,omitempty"`
-	Rule string `json:"rule"`
+	FromRef *GraphRef `json:"-"`
+	ToRef   *GraphRef `json:"-"`
+	From    string    `json:"from"`
+	To      string    `json:"to"`
+	Kind    string    `json:"kind"`
+	Mode    string    `json:"mode,omitempty"`
+	Rule    string    `json:"rule"`
 }
 
 // PublicGraphPage answers a public graph read. Total counts every node that
@@ -76,9 +83,9 @@ type PublicGraphPage struct {
 func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 	page := PublicGraphPage{Nodes: []PublicGraphNode{}, Edges: []PublicGraphEdge{}}
 	node := strings.TrimSpace(q.Node)
-	if node != "" {
+	if node != "" || q.Ref != nil {
 		for _, n := range g.Nodes {
-			if n.Name != node {
+			if (q.Ref != nil && !RefMatches(n.Ref, q.Ref)) || (q.Ref == nil && n.Name != node) {
 				continue
 			}
 			detail := publicNode(n)
@@ -88,7 +95,7 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 			break
 		}
 		for _, e := range g.Edges {
-			if e.From == node || e.To == node {
+			if (q.Ref != nil && (RefMatches(e.FromRef, q.Ref) || RefMatches(e.ToRef, q.Ref))) || (q.Ref == nil && (e.From == node || e.To == node)) {
 				page.Edges = append(page.Edges, publicEdge(e))
 			}
 		}
@@ -99,7 +106,18 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 	}
 
 	nodes := append([]Node(nil), g.Nodes...)
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].Name != nodes[j].Name {
+			return nodes[i].Name < nodes[j].Name
+		}
+		if nodes[i].Kind != nodes[j].Kind {
+			return nodes[i].Kind < nodes[j].Kind
+		}
+		if nodes[i].Ref != nil && nodes[j].Ref != nil {
+			return nodes[i].Ref.ID < nodes[j].Ref.ID
+		}
+		return false
+	})
 	page.Total = len(nodes)
 	offset := q.Offset
 	if offset < 0 {
@@ -135,6 +153,7 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 
 func publicNode(n Node) PublicGraphNode {
 	return PublicGraphNode{
+		Ref: n.Ref, Owner: n.Owner, Role: n.Role,
 		Name:       n.Name,
 		Kind:       n.Kind,
 		Maturity:   n.Charter.Maturity,
@@ -149,6 +168,9 @@ func publicNode(n Node) PublicGraphNode {
 // NodeAutonomy, which ignore an unknown name or an invalid value. A secret or
 // path stored under any other setting name therefore never reaches an agent.
 func publicRules(n Node) []PublicRule {
+	if n.Kind == "agent" {
+		return nil
+	}
 	return RulesFor(n.Charter.Maturity, n.Settings)
 }
 
@@ -213,12 +235,18 @@ func publicEdge(e Edge) PublicGraphEdge {
 	if rule == "" {
 		rule = "normal"
 	}
-	return PublicGraphEdge{From: e.From, To: e.To, Kind: e.Kind, Mode: e.Mode, Rule: rule}
+	return PublicGraphEdge{FromRef: e.FromRef, ToRef: e.ToRef, From: e.From, To: e.To, Kind: e.Kind, Mode: e.Mode, Rule: rule}
 }
 
 func sortPublicEdges(edges []PublicGraphEdge) {
 	sort.Slice(edges, func(i, j int) bool {
 		a, b := edges[i], edges[j]
+		if a.FromRef != nil && b.FromRef != nil && a.FromRef.Kind != b.FromRef.Kind {
+			return a.FromRef.Kind < b.FromRef.Kind
+		}
+		if a.ToRef != nil && b.ToRef != nil && a.ToRef.Kind != b.ToRef.Kind {
+			return a.ToRef.Kind < b.ToRef.Kind
+		}
 		if a.From != b.From {
 			return a.From < b.From
 		}

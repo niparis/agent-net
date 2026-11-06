@@ -59,7 +59,20 @@ func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64
 	if actor == "" {
 		return reject("actor required")
 	}
-	_, err := tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?,?)`, typ, node, attr, old, value, at, actor)
+	targetKind := ""
+	if typ == "agent_charter" {
+		targetKind = "agent"
+	} else if typ == "charter" {
+		targetKind = "repo"
+		var architect bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
+			return err
+		}
+		if architect {
+			targetKind = "agent"
+		}
+	}
+	_, err := tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES(?,?,?,?,?,?,?,?)`, typ, node, attr, old, value, at, actor, targetKind)
 	return err
 }
 
@@ -176,6 +189,17 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 
 // SetCharter sets or clears one charter attribute, preserving its history.
 func (s *Store) SetCharter(node, attr, value, actor string) error {
+	if on, err := s.graphRefsEnabled(); err != nil {
+		return err
+	} else if on {
+		var architect bool
+		if err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
+			return err
+		}
+		if architect {
+			return s.SetAgentCharter(node, attr, value, actor)
+		}
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -358,6 +382,17 @@ func (s *Store) NodeSettings(node string) (protocol.NodeSettingsResult, error) {
 
 // CharterHistory lists changes newest first, bounded to 1000 entries.
 func (s *Store) CharterHistory(node string, limit int) ([]protocol.CharterChange, error) {
+	if on, err := s.graphRefsEnabled(); err != nil {
+		return nil, err
+	} else if on {
+		var architect bool
+		if err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
+			return nil, err
+		}
+		if architect {
+			return s.RefCharterHistory(protocol.GraphRef{Kind: "agent", ID: node}, limit)
+		}
+	}
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
@@ -379,6 +414,9 @@ func (s *Store) CharterHistory(node string, limit int) ([]protocol.CharterChange
 
 // EdgeHistory lists edge changes touching node (or all edges when node is empty).
 func (s *Store) EdgeHistory(node string, limit int) ([]protocol.EdgeChange, error) {
+	return s.edgeHistory(node, nil, limit)
+}
+func (s *Store) edgeHistory(node string, ref *protocol.GraphRef, limit int) ([]protocol.EdgeChange, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
@@ -414,7 +452,18 @@ func (s *Store) EdgeHistory(node string, limit int) ([]protocol.EdgeChange, erro
 		if e == nil {
 			return nil, fmt.Errorf("invalid edge history %d", h.ID)
 		}
-		if node == "" || e.From == node || e.To == node {
+		match := node == "" || e.From == node || e.To == node
+		if ref != nil {
+			match = false
+			for _, edge := range []*protocol.Edge{h.Old, h.New} {
+				if edge == nil {
+					continue
+				}
+				typedHistoryEdge(edge)
+				match = match || protocol.RefMatches(edge.FromRef, ref) || protocol.RefMatches(edge.ToRef, ref)
+			}
+		}
+		if match {
 			out = append(out, h)
 			if len(out) == limit {
 				break
@@ -432,19 +481,39 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		return err
 	}
 	defer tx.Rollback()
-	var typ, node, attr, old, value string
-	query := `SELECT id,type,node,attr,old_value,new_value FROM graph_history WHERE id=?`
+	var typ, node, attr, old, value, targetKind string
+	query := `SELECT id,type,node,attr,old_value,new_value,target_kind FROM graph_history WHERE id=?`
 	if id == 0 {
-		query = `SELECT id,type,node,attr,old_value,new_value FROM graph_history ORDER BY id DESC LIMIT 1`
-		err = tx.QueryRow(query).Scan(&id, &typ, &node, &attr, &old, &value)
+		query = `SELECT id,type,node,attr,old_value,new_value,target_kind FROM graph_history ORDER BY id DESC LIMIT 1`
+		err = tx.QueryRow(query).Scan(&id, &typ, &node, &attr, &old, &value, &targetKind)
 	} else {
-		err = tx.QueryRow(query, id).Scan(&id, &typ, &node, &attr, &old, &value)
+		err = tx.QueryRow(query, id).Scan(&id, &typ, &node, &attr, &old, &value, &targetKind)
 	}
 	if err != nil {
 		return err
 	}
+
+	if typ == "charter" && targetKind == "agent" && s.graphRefsOn.Load() {
+		typ = "agent_charter"
+	}
 	now := s.now().UnixNano()
 	switch typ {
+	case "agent_charter":
+		var current string
+		err = tx.QueryRow(`SELECT value FROM agent_charter WHERE agent_id=? AND attr=?`, node, attr).Scan(&current)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if current != value {
+			return reject("value changed since that history entry")
+		}
+		if err = setAgentCharterTx(tx, node, attr, old, actor, now); err != nil {
+			return err
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		return tx.Commit()
 	case "charter":
 		var current string
 		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&current)
@@ -720,7 +789,39 @@ func (s *Store) SetDeliveryOwner(q protocol.DeliveryOwnerSetRequest, actor strin
 }
 
 func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
-	if e.From == e.To {
+	if err := validateEdgeRefs(e); err != nil {
+		return err
+	}
+	typed := e.FromRef != nil
+	if typed {
+		var enabled bool
+		if err := tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&enabled); err != nil {
+			return err
+		}
+		if !enabled {
+			return reject("typed Graph cutover has not been enabled")
+		}
+		for _, ref := range []*protocol.GraphRef{e.FromRef, e.ToRef} {
+			if ref.Kind == "special" {
+				continue
+			}
+			table := "repos"
+			if ref.Kind == "agent" {
+				table = "agents"
+			}
+			var exists bool
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM `+table+` WHERE id=?)`, ref.ID).Scan(&exists); err != nil {
+				return err
+			}
+			if !exists {
+				return reject("unknown %s endpoint", ref.Kind)
+			}
+		}
+	}
+	same := e.From == e.To && (!typed || *e.FromRef == *e.ToRef)
+	// History retains the old keys; its typed columns supply endpoint kinds.
+	e = legacyRefEdge(e)
+	if same {
 		return reject("self edge")
 	}
 	if e.Rule == "" {
@@ -757,14 +858,24 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 			return reject("unknown special delivery owner")
 		}
 	} else if e.From != "*" {
-		from, err = graphKind(tx, e.From)
+		if typed {
+			from = "component"
+			if e.Kind == "governs" {
+				from = "architect"
+			}
+		} else {
+			from, err = graphKind(tx, e.From)
+		}
 		if err != nil {
 			return err
 		}
 	} else if e.Kind != "depends" {
 		return reject("wildcard requires dependency")
 	}
-	to, err := graphKind(tx, e.To)
+	to := "component"
+	if !typed {
+		to, err = graphKind(tx, e.To)
+	}
 	if err != nil {
 		return err
 	}
@@ -815,6 +926,15 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 
 // RemoveEdge deletes an edge and records its previous value.
 func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) error {
+	if err := validateEdgeRefs(e); err != nil {
+		return err
+	}
+	if e.FromRef != nil {
+		if err := s.requireGraphRefs(); err != nil {
+			return err
+		}
+	}
+	e = legacyRefEdge(e)
 	if deliveryEdgeStep(e.Kind) != "" && !actorAllowed(actor, "rule") {
 		return reject("only the owner may change delivery step owners")
 	}
@@ -886,7 +1006,13 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
-	rows, err = s.db.Query(`SELECT node,attr,value FROM graph_charter`)
+	charterQuery := `SELECT node,attr,value FROM graph_charter`
+	if on, err := s.graphRefsEnabled(); err != nil {
+		return g, err
+	} else if on {
+		charterQuery = `SELECT node,attr,value FROM graph_charter WHERE node NOT IN (SELECT name FROM graph_nodes WHERE kind='architect') UNION ALL SELECT a.agent_id,a.attr,a.value FROM agent_charter a JOIN graph_nodes n ON n.name=a.agent_id AND n.kind='architect'`
+	}
+	rows, err = s.db.Query(charterQuery)
 	if err != nil {
 		return g, err
 	}
@@ -1016,7 +1142,15 @@ func (s *Store) Graph() (protocol.Graph, error) {
 
 // CTOGraphHistory returns all attributed CTO changes after a history ID.
 func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) {
-	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
+	typed, err := s.graphRefsEnabled()
+	if err != nil {
+		return nil, err
+	}
+	targetColumn := "''"
+	if typed {
+		targetColumn = "target_kind"
+	}
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at,`+targetColumn+` FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
 	if err != nil {
 		return nil, err
 	}
@@ -1024,8 +1158,37 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 	out := []protocol.CTOGraphChange{}
 	for rows.Next() {
 		var v protocol.CTOGraphChange
-		if err = rows.Scan(&v.ID, &v.Kind, &v.Node, &v.Attr, &v.OldValue, &v.NewValue, &v.At); err != nil {
+		var targetKind string
+		if err = rows.Scan(&v.ID, &v.Kind, &v.Node, &v.Attr, &v.OldValue, &v.NewValue, &v.At, &targetKind); err != nil {
 			return nil, err
+		}
+		if typed {
+			if v.Kind == "edge" {
+				for _, raw := range []*string{&v.OldValue, &v.NewValue} {
+					if *raw == "" {
+						continue
+					}
+					var edge protocol.Edge
+					if err = json.Unmarshal([]byte(*raw), &edge); err != nil {
+						return nil, err
+					}
+					typedHistoryEdge(&edge)
+					v.Ref = edge.FromRef
+					b, _ := json.Marshal(edge)
+					*raw = string(b)
+				}
+			} else {
+				if v.Kind == "node" {
+					targetKind = "agent"
+				}
+				if targetKind != "" {
+					id := v.Node
+					if targetKind == "agent" && id == protocol.CTONodeName {
+						id = "cto"
+					}
+					v.Ref = &protocol.GraphRef{Kind: targetKind, ID: id}
+				}
+			}
 		}
 		out = append(out, v)
 	}

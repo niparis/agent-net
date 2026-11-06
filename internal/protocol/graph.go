@@ -44,10 +44,13 @@ type NodeDelegation struct {
 
 // Node is a component or an architect. Components can be implicit projects.
 type Node struct {
-	Name      string  `json:"name"`
-	Kind      string  `json:"kind"`
-	CreatedAt int64   `json:"created_at,omitempty"`
-	Charter   Charter `json:"charter"`
+	Ref       *GraphRef `json:"ref,omitempty"`
+	Owner     *GraphRef `json:"owner,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	Name      string    `json:"name"`
+	Kind      string    `json:"kind"`
+	CreatedAt int64     `json:"created_at,omitempty"`
+	Charter   Charter   `json:"charter"`
 	// Settings are the node's overrides of its maturity defaults (decision
 	// 0022). They sit beside the charter and only the owner changes them.
 	Settings map[string]string `json:"settings,omitempty"`
@@ -62,22 +65,25 @@ type Node struct {
 
 // CharterChange is an immutable charter history entry.
 type CharterChange struct {
-	ID       int64  `json:"id"`
-	Node     string `json:"node"`
-	Attr     string `json:"attr"`
-	OldValue string `json:"old_value"`
-	NewValue string `json:"new_value"`
-	At       int64  `json:"at"`
-	By       string `json:"by"`
+	Ref      *GraphRef `json:"ref,omitempty"`
+	ID       int64     `json:"id"`
+	Node     string    `json:"node"`
+	Attr     string    `json:"attr"`
+	OldValue string    `json:"old_value"`
+	NewValue string    `json:"new_value"`
+	At       int64     `json:"at"`
+	By       string    `json:"by"`
 }
 
 // Edge is a directed dependency or governance relationship.
 type Edge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Kind string `json:"kind"`
-	Mode string `json:"mode,omitempty"`
-	Rule string `json:"rule"`
+	FromRef *GraphRef `json:"-"`
+	ToRef   *GraphRef `json:"-"`
+	From    string    `json:"from"`
+	To      string    `json:"to"`
+	Kind    string    `json:"kind"`
+	Mode    string    `json:"mode,omitempty"`
+	Rule    string    `json:"rule"`
 }
 
 // Graph is a snapshot of all known nodes and edges.
@@ -124,9 +130,10 @@ func CleanCharterValue(attr, value string) (string, error) {
 
 // CharterSetRequest sets an attribute; an empty value clears it.
 type CharterSetRequest struct {
-	Node  string `json:"node"`
-	Attr  string `json:"attr"`
-	Value string `json:"value"`
+	Ref   *GraphRef `json:"ref,omitempty"`
+	Node  string    `json:"node"`
+	Attr  string    `json:"attr"`
+	Value string    `json:"value"`
 }
 
 // CharterSetResult reports advisory warnings without blocking the save.
@@ -137,8 +144,9 @@ type CharterSetResult struct {
 
 // GraphHistoryRequest selects history by node, newest first.
 type GraphHistoryRequest struct {
-	Node  string `json:"node"`
-	Limit int    `json:"limit,omitempty"`
+	Ref   *GraphRef `json:"ref,omitempty"`
+	Node  string    `json:"node"`
+	Limit int       `json:"limit,omitempty"`
 }
 
 // GraphNodeRequest identifies an architect.

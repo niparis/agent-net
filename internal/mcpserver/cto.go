@@ -79,12 +79,13 @@ var ctoTools = map[string]ctoToolDef{
 		desc: "Change the graph: charter_set, node_add, node_remove, edge_set, edge_remove, settings_set or undo. Minor changes apply; major ones are proposals.",
 		fields: map[string]ctoField{
 			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"}},
+			"ref":     {typ: "graph_ref", desc: "Typed target."},
 			"node":    {typ: "string", desc: "Node."},
 			"attr":    {typ: "string", desc: "Attribute.", enum: ctoCharterAttrs},
 			"value":   {typ: "string", desc: "Value; empty clears."},
 			"name":    {typ: "string", desc: "Node name."},
-			"from":    {typ: "string", desc: "Source."},
-			"to":      {typ: "string", desc: "Target."},
+			"from":    {typ: "graph_endpoint", desc: "Source."},
+			"to":      {typ: "graph_endpoint", desc: "Target."},
 			"kind":    {typ: "string", desc: "Dependency, governance or delivery owner edge.", enum: ctoEdgeKinds},
 			"mode":    {typ: "string", desc: "Advise, arbitrate, decide.", enum: []string{"advisor", "arbiter", "owner"}},
 			"rule":    {typ: "string", desc: "Deliver, own, hold, refuse.", enum: []string{"normal", "auto", "ask", "never"}},
@@ -331,6 +332,13 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 		}
 
 		prop := map[string]any{"type": f.typ}
+		if f.typ == "graph_ref" || f.typ == "graph_endpoint" {
+			ref := map[string]any{"type": "object", "properties": map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"repo", "agent", "special"}}, "id": map[string]any{"type": "string", "minLength": 1}}, "required": []string{"kind", "id"}, "additionalProperties": false}
+			prop = ref
+			if f.typ == "graph_endpoint" {
+				prop = map[string]any{"anyOf": []any{map[string]any{"type": "string"}, ref}}
+			}
+		}
 		if description != "" && !(spec.compact && len(description) <= 8) {
 			prop["description"] = description
 		}

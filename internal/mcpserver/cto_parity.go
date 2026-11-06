@@ -18,16 +18,16 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	model := s("Empty uses default.")
 	harness := en("Omit for default.", "opencode", "claude", "pi", "codex")
 
-	add("charter_set", "Set a charter attribute.", map[string]ctoField{"node": s("Node."), "attr": en("Attribute.", ctoCharterAttrs...), "value": s("2 KiB max; empty clears.")})
+	add("charter_set", "Set a charter attribute.", map[string]ctoField{"ref": {typ: "graph_ref"}, "node": s("Node."), "attr": en("Attribute.", ctoCharterAttrs...), "value": s("2 KiB max; empty clears.")})
 	add("node_add", "Add an architect node.", map[string]ctoField{"name": s("Name.")})
 	add("node_remove", "Remove an edgeless architect.", map[string]ctoField{"name": s("Name.")})
 	add("edge_set", "Set a directed edge.", map[string]ctoField{
-		"from": s("Source."), "to": s("Target."),
+		"from": {typ: "graph_endpoint"}, "to": {typ: "graph_endpoint"},
 		"kind": en("Consumer to provider, architect to component, deployer to app.", ctoEdgeKinds...),
 		"mode": en("Advise, arbitrate, decide.", "advisor", "arbiter", "owner"),
 		"rule": en("Deliver, own, hold, refuse.", "normal", "auto", "ask", "never"),
 	})
-	add("edge_remove", "Remove a graph edge.", map[string]ctoField{"from": s("Source."), "to": s("Target."), "kind": en("Kind and direction.", ctoEdgeKinds...)})
+	add("edge_remove", "Remove a graph edge.", map[string]ctoField{"from": {typ: "graph_endpoint"}, "to": {typ: "graph_endpoint"}, "kind": en("Kind and direction.", ctoEdgeKinds...)})
 	add("graph_undo", "Undo a graph change.", map[string]ctoField{"id": n("ID; omit for latest.")})
 	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", ctoNodeSettings...), "value": s("Empty clears.")})
 

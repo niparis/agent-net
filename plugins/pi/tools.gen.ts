@@ -201,6 +201,32 @@ export const TOOL_CATALOG = [
         "cursor": {
           "type": "string",
           "description": "Cursor from the previous page."
+        },
+        "ref": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "repo",
+                "agent",
+                "special"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false,
+          "description": "Typed Graph target."
+        },
+        "typed": {
+          "type": "boolean"
         }
       },
       "required": [],
