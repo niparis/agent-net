@@ -239,10 +239,23 @@ type MachinePlaybookPage struct {
 	Note       string               `json:"note,omitempty"`
 }
 
+// MachineHealth is the daemon's most recent diagnostic report. Disk space may
+// be absent when the filesystem could not be inspected.
+type MachineHealth struct {
+	Status         string            `json:"status"`
+	RestartTime    string            `json:"restart_time,omitempty"`
+	ReportedAt     string            `json:"reported_at,omitempty"`
+	UptimeSeconds  *int64            `json:"uptime_seconds,omitempty"`
+	Path           string            `json:"path,omitempty"`
+	Helpers        map[string]string `json:"helpers,omitempty"`
+	StateFreeBytes *uint64           `json:"state_free_bytes,omitempty"`
+}
+
 // MachineGetResult answers agent_machine_get: the machine and the one
 // requested category.
 type MachineGetResult struct {
 	Machine     MachineRow           `json:"machine"`
+	Health      MachineHealth        `json:"health"`
 	Models      *MachineModelPage    `json:"models,omitempty"`
 	Quotas      *MachineQuotaPage    `json:"quotas,omitempty"`
 	TrackRecord *MachineTrackPage    `json:"track_record,omitempty"`

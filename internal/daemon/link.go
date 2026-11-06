@@ -314,7 +314,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
 	inv, gen := d.inventory()
-	hello, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, TimeZone: machineTimeZone(), Harnesses: inv, Launch: d.launchFlag(), TailscaleIP: d.fileConfig().TailscaleIP()})
+	hello, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, TimeZone: machineTimeZone(), Harnesses: inv, Launch: d.launchFlag(), TailscaleIP: d.fileConfig().TailscaleIP(), Health: d.machineHealth()})
 	if err != nil {
 		return false, err
 	}

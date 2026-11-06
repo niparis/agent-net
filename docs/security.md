@@ -870,6 +870,12 @@ A registered project is a folder where workers may start sessions (see [decision
 
 ## What the gateway logs and keeps
 
+**Machine health.** Each daemon reports its process PATH, executable paths,
+restart time and state filesystem free space to the gateway with hello and its
+harness inventory. The gateway stores the latest report and returns it to agents
+and the CTO through `agent_machine_get`. PATH and helper paths can reveal local
+folder names. An older daemon clears the previous health report on hello.
+
 **The log.** The gateway writes one line per event to stderr (the systemd journal, or `~/Library/Logs/agent-net-gateway.log`). For each message it logs the time, the message and conversation IDs, the type, the sender and recipient (session ID, name, harness and host) and the size of the body in bytes. It never logs the body. It also logs each delivery step (stored, dispatched, delivered, failed, expired), each refused send, each new session (with its folder, project, git root, remote and branch), changes of the installed harnesses on a machine, each project that is registered or removed, and node connects and disconnects. The format is in [reference.md](reference.md#gateway-log-format). Session names come from agents, so the log quotes them: a name cannot add a field or a line. Logs are copied around by journals and log shippers. The remote URL has its credentials removed before it leaves the machine (see below), so a password in a git remote does not reach the log.
 
 **The database.** `gateway.db` holds the nodes (token hashes only), sessions, profiles, messages with their bodies, delivery records, and an `events` table.

@@ -330,7 +330,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | CTO read | Source and detail |
 |---|---|
 | `agent_sessions_find`, `agent_session_get` | Sessions and one session's full profile, as for an agent |
-| `agent_machines_find`, `agent_machine_get` | Machines, and one machine's models, quotas, track record or playbook |
+| `agent_machines_find`, `agent_machine_get` | Machines, and one machine's health, models, quotas, track record or playbook |
 | `agent_projects_find` | Public projects and where they live |
 | `agent_workers_find` | Workers; the CTO defaults to `started_by: anyone` |
 | `agent_messages_find`, `agent_message_get` | The CTO's own conversations, and one message body in chunks |
@@ -1099,6 +1099,14 @@ The version manager folders are: nvm (`$NVM_DIR` if set, and `~/.nvm/versions/no
 A harness can be installed more than once, for example OpenCode v1 from its install script and v2 from npm. The daemon finds every copy and drops copies that are the same file (same real path after symlinks). It reports one entry per harness. The `path`, `version` and `models` fields describe the primary copy. This is the copy that comes first in your login shell's `PATH`, and then `primary` is `true`. If the login shell does not find the harness, the primary copy is the first one in the search order and `primary` is absent: the daemon cannot tell which one you run. The other copies are in `others`, each with `path` and `version`. Models are listed only for the primary copy. Both fields are new after v0.3.5 and are left out when empty, so v0.3.5 daemons, gateways and clients still work with them.
 
 `agent-net nodes` shows the result. A machine on an older agent-net shows `unknown`. A machine that reports an empty list shows `none`. Agents get the same data from the `agent_machines_find` tool (Claude Code, Pi and OpenCode), including each machine's subscription quotas when it reported them.
+
+`agent_machine_get` also returns `health`: the daemon's last restart time and
+uptime, process PATH, the paths found on that PATH for herdr, claude, codex,
+opencode, pi, git, gh and ssh, and free bytes on the state directory's
+filesystem. Missing helpers say `not found`; a disk read failure omits the byte
+count. The machine version is in `machine.version`. Health travels with hello
+and harness inventory; `reported_at` identifies the latest sample. Offline
+uptime is as of that sample. Older daemons show `not reported`.
 
 ## CPU and memory
 
