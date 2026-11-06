@@ -886,6 +886,8 @@ END;
 -- marks those finished worker sessions ended.
 UPDATE sessions SET status = 'ended'
 WHERE online = 0 AND worker <> '' AND worker_run_active = 0 AND status <> 'ended';
+`, `
+CREATE TABLE IF NOT EXISTS node_health (node_id TEXT PRIMARY KEY, report TEXT NOT NULL, reported_at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

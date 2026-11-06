@@ -308,7 +308,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machine_get",
-    "description": "Read one category of a machine's details: models, quotas, track record or playbook. Pages long lists; ask for one category per call.",
+    "description": "Read a machine's health and one category of details: models, quotas, track record or playbook. Pages long lists; ask for one category per call.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -367,6 +367,54 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "machine_get"
+  },
+  {
+    "name": "agent_machine_log",
+    "description": "Read a machine's redacted daemon or gateway log. Select a time window and optional text filter; returns the newest matching lines, capped at 1000 lines and 256 KB.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machine": {
+          "type": "string",
+          "description": "Machine name or ID."
+        },
+        "log": {
+          "type": "string",
+          "enum": [
+            "daemon",
+            "gateway"
+          ],
+          "description": "Service log to read."
+        },
+        "since": {
+          "type": "string",
+          "default": "1h",
+          "description": "Positive duration such as 1h or an RFC3339 time."
+        },
+        "filter": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Only lines containing this text after redaction."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 200,
+          "description": "Maximum lines, from 1 to 1000."
+        }
+      },
+      "required": [
+        "machine",
+        "log"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "machine_log"
   },
   {
     "name": "agent_machines_find",

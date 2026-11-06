@@ -1141,6 +1141,13 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 	var data any
 	var err error
 	switch typ {
+	case "node.machine_log":
+		var q protocol.MachineLogRequest
+		if json.Unmarshal(raw, &q) != nil {
+			err = errors.New("bad machine log request")
+		} else {
+			data, err = d.readMachineLog(ctx, q)
+		}
 	case "node.proposal_list", "node.proposal_answer":
 		var q protocol.CTOProposalAnswer
 		if json.Unmarshal(raw, &q) != nil || q.NodeID != d.cfg.NodeID {

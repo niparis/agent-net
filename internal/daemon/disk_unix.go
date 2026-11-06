@@ -13,9 +13,14 @@ func homeDiskFree() uint64 {
 	if err != nil {
 		return 0
 	}
+	free, _ := diskFree(home)
+	return free
+}
+
+func diskFree(path string) (uint64, bool) {
 	var stat unix.Statfs_t
-	if err := unix.Statfs(home, &stat); err != nil || stat.Bsize <= 0 || stat.Bavail < 0 {
-		return 0
+	if err := unix.Statfs(path, &stat); err != nil || stat.Bsize <= 0 || stat.Bavail < 0 {
+		return 0, false
 	}
-	return uint64(stat.Bavail) * uint64(stat.Bsize)
+	return uint64(stat.Bavail) * uint64(stat.Bsize), true
 }

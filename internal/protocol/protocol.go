@@ -410,12 +410,14 @@ type (
 		Launch *bool `json:"launch,omitempty"`
 		// TailscaleIP is the machine's Tailscale address, or empty when it has
 		// none. A sending daemon uses it to push files over Taildrop.
-		TailscaleIP string `json:"tailscale_ip,omitempty"`
+		TailscaleIP string         `json:"tailscale_ip,omitempty"`
+		Health      *MachineHealth `json:"health,omitempty"`
 	}
 	// NodeHarnesses is the "node.harnesses" request: a new inventory.
 	NodeHarnesses struct {
-		Harnesses []HarnessInfo `json:"harnesses"`
-		Launch    *bool         `json:"launch,omitempty"`
+		Harnesses []HarnessInfo  `json:"harnesses"`
+		Health    *MachineHealth `json:"health,omitempty"`
+		Launch    *bool          `json:"launch,omitempty"`
 	}
 	SessionSync struct {
 		Sessions []SessionInfo `json:"sessions"`

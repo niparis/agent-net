@@ -11,7 +11,7 @@ import (
 var ctoReadSources = map[string]string{
 	"cto_proposals_find":  "own proposals",
 	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
-	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get",
+	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
 	"agent_messages_find": "messages", "agent_message_get": "messages,message_status",
 	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
@@ -28,7 +28,7 @@ func (d *Daemon) ctoReadConn() *localConn {
 
 func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	switch name {
-	case "agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "projects_layout":
+	case "agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "projects_layout":
 		return d.readCTOCatalogTool(ctx, name, raw)
 	case "cto_proposals_find":
 		var q struct {

@@ -25,7 +25,12 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	ctx := context.Background()
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, withSampler(os.Getpid()))
+	w := startWorkerNode(t, g, shortSet, func(c *Config) {
+		withSampler(os.Getpid())(c)
+		c.testLogRead = func(ctx context.Context, q protocol.MachineLogRequest) (protocol.MachineLogResult, error) {
+			return protocol.MachineLogResult{Machine: q.Machine, Log: q.Log, Since: q.Since, Lines: []string{}, Truncated: false}, nil
+		}
+	})
 	_, localID := dialFakePlugin(t, w.sock, "pi", "fixture", func(map[string]any) map[string]any {
 		return map[string]any{"ok": true, "page": map[string]any{"entries": []map[string]any{ent("1", "user", "hello")}}}
 	})
@@ -74,7 +79,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	reads := map[string]map[string]any{
 		"cto_proposals_find":  {},
 		"agent_sessions_find": {}, "agent_session_get": {"session": ids[0]},
-		"agent_machines_find": {}, "agent_machine_get": {"machine": "box-00"},
+		"agent_machines_find": {}, "agent_machine_get": {"machine": "box-00"}, "agent_machine_log": {"machine": w.cfg.Hostname, "log": "daemon"},
 		"agent_projects_find": {}, "agent_workers_find": {},
 		"agent_messages_find": {}, "agent_message_get": {"message": ctoMessage.ID},
 		"agent_graph_read": {}, "agent_settings_read": {"key": "workers.auto_continue"}, "agent_mcp_servers_find": {},

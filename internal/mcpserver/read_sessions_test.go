@@ -61,6 +61,7 @@ var readToolOutputs = map[string]string{
 	"sessions_find": `{"items":[{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"work on s01","last_seen":"2026-01-01T12:00:00Z","task_started":"2026-01-01T11:00:00Z"}],"total":1}`,
 	"session_get":   `{"session":{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"work on s01","last_seen":"2026-01-01T12:00:00Z","task_started":null}}`,
 	"machines_find": `{"items":[{"id":"n_1","name":"research","online":true,"version":"v0.3.2","harnesses":[{"name":"claude","version":"1.0"}],"sessions_online":3,"workers_running":1}],"total":1}`,
+	"machine_log":   `{"machine":"research","log":"daemon","since":"2026-01-01T11:00:00Z","lines":["safe"],"truncated":false}`,
 	"machine_get":   `{"machine":{"id":"n_1","name":"research","online":true,"version":"v0.3.2","harnesses":[{"name":"claude","version":"1.0"}],"sessions_online":3,"workers_running":1},"models":{"items":[{"harness":"claude","id":"claude-a"}],"total":1}}`,
 	"projects_find": `{"items":[{"name":"housing","display_name":"","machine":"research","folder":"/work/housing","sessions_online":1,"sessions_total":1,"source":"seen"}],"total":1}`,
 }
@@ -92,7 +93,7 @@ func TestReadToolsRegisteredFromCatalog(t *testing.T) {
 	for _, tool := range tools.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find"} {
+	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find"} {
 		entry := catalogToolT(t, name)
 		got, ok := byName[name]
 		if !ok {
@@ -124,6 +125,7 @@ func TestReadToolResultsMatchCatalogSchema(t *testing.T) {
 		{"agent_session_get", "session_get", map[string]any{"session": "s01"}},
 		{"agent_machines_find", "machines_find", map[string]any{"online": "any"}},
 		{"agent_machine_get", "machine_get", map[string]any{"machine": "research", "include": []string{"models"}}},
+		{"agent_machine_log", "machine_log", map[string]any{"machine": "research", "log": "daemon"}},
 		{"agent_projects_find", "projects_find", map[string]any{"name": "housing"}},
 	}
 	for _, c := range cases {

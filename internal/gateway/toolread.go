@@ -610,7 +610,12 @@ func (g *Gateway) MachineGet(p protocol.MachineGetRequest) (protocol.MachineGetR
 	if err != nil {
 		return protocol.MachineGetResult{}, err
 	}
-	out := protocol.MachineGetResult{Machine: machineRow(node, g.nodeOnline(node.NodeID), counts[node.NodeID], true)}
+	online := g.nodeOnline(node.NodeID)
+	health, err := g.store.nodeHealth(node.NodeID, online)
+	if err != nil {
+		return protocol.MachineGetResult{}, err
+	}
+	out := protocol.MachineGetResult{Machine: machineRow(node, online, counts[node.NodeID], true), Health: health}
 	if category == "" {
 		return out, nil
 	}
