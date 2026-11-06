@@ -16,7 +16,7 @@ func (g *Gateway) handleGraphView(raw []byte) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		out := protocol.GraphView{Nodes: graph.Nodes, Edges: graph.Edges, Changes: []protocol.CharterChange{}}
+		out := protocol.GraphView{Nodes: graph.Nodes, Edges: graph.Edges, Warnings: graph.Warnings, Changes: []protocol.CharterChange{}}
 		for _, n := range graph.Nodes {
 			history, err := g.store.RefCharterHistory(*n.Ref, protocol.GraphHistoryPerNode)
 			if err != nil {

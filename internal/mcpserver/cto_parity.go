@@ -19,6 +19,12 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	harness := en("Omit for default.", "opencode", "claude", "pi", "codex")
 
 	add("charter_set", "Set a charter attribute.", map[string]ctoField{"ref": {typ: "graph_ref"}, "node": s("Node."), "attr": en("Attribute.", ctoCharterAttrs...), "value": s("2 KiB max; empty clears.")})
+	for _, name := range []string{"repo_create", "agent_create"} {
+		add(name, "Create a typed identity; owner approval required.", map[string]ctoField{"name": s("Display name."), "role": s("Agent role; optional.")})
+	}
+	for _, name := range []string{"repo_archive", "agent_tombstone"} {
+		add(name, "Deactivate a typed identity; owner approval required.", map[string]ctoField{"ref": {typ: "graph_ref"}})
+	}
 	add("node_add", "Add an architect node.", map[string]ctoField{"name": s("Name.")})
 	add("node_remove", "Remove an edgeless architect.", map[string]ctoField{"name": s("Name.")})
 	add("edge_set", "Set a directed edge.", map[string]ctoField{

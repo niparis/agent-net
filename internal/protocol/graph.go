@@ -88,8 +88,9 @@ type Edge struct {
 
 // Graph is a snapshot of all known nodes and edges.
 type Graph struct {
-	Nodes []Node `json:"nodes"`
-	Edges []Edge `json:"edges"`
+	Warnings []string `json:"warnings,omitempty"`
+	Nodes    []Node   `json:"nodes"`
+	Edges    []Edge   `json:"edges"`
 }
 
 // ParseMaturity parses a maturity level with an optional explanation.
@@ -147,6 +148,14 @@ type GraphHistoryRequest struct {
 	Ref   *GraphRef `json:"ref,omitempty"`
 	Node  string    `json:"node"`
 	Limit int       `json:"limit,omitempty"`
+}
+
+// GraphLifecycleRequest creates a named identity or deactivates a typed ref.
+type GraphLifecycleRequest struct {
+	Name  string    `json:"name,omitempty"`
+	Role  string    `json:"role,omitempty"`
+	Ref   *GraphRef `json:"ref,omitempty"`
+	Owner string    `json:"owner,omitempty"`
 }
 
 // GraphNodeRequest identifies an architect.

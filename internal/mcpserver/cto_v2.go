@@ -48,7 +48,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 	concrete := ctoActionRoutes[tool][action]
 	if concrete == "" {
 		concrete = map[string]string{
-			"graph_change":   map[string]string{"charter_set": "charter_set", "node_add": "node_add", "node_remove": "node_remove", "edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set", "undo": "graph_undo"}[action],
+			"graph_change":   map[string]string{"charter_set": "charter_set", "node_add": "node_add", "node_remove": "node_remove", "edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set", "undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive", "agent_create": "agent_create", "agent_tombstone": "agent_tombstone"}[action],
 			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"}[action],
 			"worker_change":  map[string]string{"start": "worker_start", "stop": "worker_stop"}[action],
 		}[tool]
@@ -128,6 +128,13 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 	required := []string{}
 	example := actionExampleFor(tool, action)
 	switch tool {
+	case "graph_change":
+		switch action {
+		case "repo_create", "agent_create":
+			required = []string{"name"}
+		case "repo_archive", "agent_tombstone":
+			required = []string{"ref"}
+		}
 	case "session_change":
 		if action == "merger_start" || action == "merger_stop" {
 			required = []string{"project"}

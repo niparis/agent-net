@@ -76,14 +76,15 @@ var ctoTools = map[string]ctoToolDef{
 	"message": {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
 
 	"graph_change": {
-		desc: "Change the graph: charter_set, node_add, node_remove, edge_set, edge_remove, settings_set or undo. Minor changes apply; major ones are proposals.",
+		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Repo and agent create, archive, tombstone and their undo always require owner approval.",
 		fields: map[string]ctoField{
-			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"}},
+			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone"}},
 			"ref":     {typ: "graph_ref", desc: "Typed target."},
 			"node":    {typ: "string", desc: "Node."},
 			"attr":    {typ: "string", desc: "Attribute.", enum: ctoCharterAttrs},
 			"value":   {typ: "string", desc: "Value; empty clears."},
-			"name":    {typ: "string", desc: "Node name."},
+			"name":    {typ: "string", desc: "Display name."},
+			"role":    {typ: "string", desc: "Agent role; optional."},
 			"from":    {typ: "graph_endpoint", desc: "Source."},
 			"to":      {typ: "graph_endpoint", desc: "Target."},
 			"kind":    {typ: "string", desc: "Dependency, governance or delivery owner edge.", enum: ctoEdgeKinds},

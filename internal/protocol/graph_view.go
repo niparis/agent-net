@@ -16,9 +16,10 @@ type QueryGraph struct {
 // GraphView is a read-only snapshot of the graph: nodes with their charters,
 // the edges, and the newest charter changes per node.
 type GraphView struct {
-	Nodes   []Node          `json:"nodes"`
-	Edges   []Edge          `json:"edges"`
-	Changes []CharterChange `json:"changes"`
+	Warnings []string        `json:"warnings,omitempty"`
+	Nodes    []Node          `json:"nodes"`
+	Edges    []Edge          `json:"edges"`
+	Changes  []CharterChange `json:"changes"`
 }
 
 // GraphVoiceOwner identifies the owner origin in graph traffic.

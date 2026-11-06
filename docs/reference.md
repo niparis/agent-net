@@ -361,7 +361,7 @@ are proposals. The CTO has one action tool per area:
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
-| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set` or `undo` |
+| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone` or `undo` |
 | `session_change` | `action: rename`, `trust` or `policy` |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
@@ -385,6 +385,34 @@ set auto), `r` (decline once) or `R` (decline and set never). `kind: outcome`
 takes `action` `let_stand` or `overrule`. `graph_change` with `action: edge_set`
 takes kind `depends`, `governs` or `deploys`, governance mode `advisor`,
 `arbiter` or `owner`, and request rule `normal`, `auto`, `ask` or `never`.
+After typed Graph cutover, the owner can use `repo_create` and `agent_create`
+with `name`, or `repo_archive` and `agent_tombstone` with a typed `ref`.
+A Repo may have no checkout or owner; an Agent may have a free-text `role`.
+The CTO can propose these actions, and undoing them, for owner approval even
+when the owner window is open. Peers cannot run them. `node_add` and
+`node_remove` follow the same Agent lifecycle rules after cutover.
+
+Archive and tombstone do not delete data. Active graph edges and delivery
+assignments, online sessions, checkouts, pending worker starts, active delivery
+changes and merger registrations block the relevant action and are listed in
+its error. An Agent that owns a Repo cannot be tombstoned: reassign or clear
+the owner first. An archived Repo keeps its owner. Charters, settings, offline
+sessions, completed work and history remain attached. Undo restores the state
+through Graph history; undoing a creation deactivates it and checks current
+references. Display names are unique within each kind, ignoring case. Existing
+duplicates survive the upgrade and typed Graph reads return warnings naming
+them for the owner to resolve. Repos and Agents may share a name.
+
+The retained references include `projects`, `sessions`, `profiles`,
+`project_policies`, `graph_charter`, `agent_charter`, `graph_node_settings`,
+`graph_edges`, `graph_history`, `setting_values`, `setting_history`,
+`delivery_changes`, `delivery_revisions`, `delivery_evidence`,
+`delivery_step_tasks`, `delivery_step_messages`, `delivery_step_inbox`,
+`project_mergers`, `worker_starts`, `worker_runs`, `inbox_items`,
+`learned_suggestions`, `learned_views`, `learned_message_flow`,
+`charter_signals`, `findings`, `playbook` and `repos.owner_agent_id`.
+No ownership, edge, delivery, charter or session is silently moved or deleted.
+
 `graph_change` with `action: charter_set` takes the nine charter attributes.
 Node settings use `action: settings_set` with `node`, `setting` and `value`.
 The tool schemas describe the other fields and fixed values.
