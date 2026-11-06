@@ -399,9 +399,12 @@ its error. An Agent that owns a Repo cannot be tombstoned: reassign or clear
 the owner first. An archived Repo keeps its owner. Charters, settings, offline
 sessions, completed work and history remain attached. Undo restores the state
 through Graph history; undoing a creation deactivates it and checks current
-references. Display names are unique within each kind, ignoring case. Existing
-duplicates survive the upgrade and typed Graph reads return warnings naming
-them for the owner to resolve. Repos and Agents may share a name.
+references. Owner-created display names must be unique within each kind,
+ignoring case. Existing duplicates survive the upgrade, and automatic project
+or session discovery may also introduce duplicates. Typed Graph reads return
+warnings naming them for the owner to resolve. Repos and Agents may share a name.
+If discovery finds a tombstoned Agent with the Repo's ID, a new Repo is left
+unowned; discovery does not transfer ownership or revive the Agent.
 
 The retained references include `projects`, `sessions`, `profiles`,
 `project_policies`, `graph_charter`, `agent_charter`, `graph_node_settings`,

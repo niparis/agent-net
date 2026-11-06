@@ -902,18 +902,34 @@ INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kin
 `, `
 -- Typed lifecycle and prospective display-name uniqueness. Existing collisions remain visible.
 CREATE TABLE IF NOT EXISTS archived_repos (repo_id TEXT PRIMARY KEY REFERENCES repos(id));
-CREATE TRIGGER IF NOT EXISTS repos_unique_name_insert BEFORE INSERT ON repos
- WHEN NOT EXISTS (SELECT 1 FROM repos WHERE id=NEW.id) AND EXISTS (SELECT 1 FROM repos WHERE display_name=NEW.display_name COLLATE NOCASE)
- BEGIN SELECT RAISE(ABORT, 'duplicate repo display name'); END;
-CREATE TRIGGER IF NOT EXISTS repos_unique_name_update BEFORE UPDATE OF display_name ON repos
- WHEN NEW.display_name<>OLD.display_name AND EXISTS (SELECT 1 FROM repos WHERE id<>OLD.id AND display_name=NEW.display_name COLLATE NOCASE)
- BEGIN SELECT RAISE(ABORT, 'duplicate repo display name'); END;
-CREATE TRIGGER IF NOT EXISTS agents_unique_name_insert BEFORE INSERT ON agents
- WHEN NOT EXISTS (SELECT 1 FROM agents WHERE id=NEW.id) AND EXISTS (SELECT 1 FROM agents WHERE display_name=NEW.display_name COLLATE NOCASE)
- BEGIN SELECT RAISE(ABORT, 'duplicate agent display name'); END;
-CREATE TRIGGER IF NOT EXISTS agents_unique_name_update BEFORE UPDATE OF display_name ON agents
- WHEN NEW.display_name<>OLD.display_name AND EXISTS (SELECT 1 FROM agents WHERE id<>OLD.id AND display_name=NEW.display_name COLLATE NOCASE)
- BEGIN SELECT RAISE(ABORT, 'duplicate agent display name'); END;
+-- Automatic discovery may encounter existing display names. Only explicit
+-- lifecycle writes enforce uniqueness; remove any old trigger on replay.
+DROP TRIGGER IF EXISTS repos_unique_name_insert;
+DROP TRIGGER IF EXISTS repos_unique_name_update;
+DROP TRIGGER IF EXISTS agents_unique_name_insert;
+DROP TRIGGER IF EXISTS agents_unique_name_update;
+-- Discovery must not assign a tombstoned Agent, including on an ignored
+-- insert of an existing Repo. Keep that Repo unowned until the owner chooses.
+DROP TRIGGER IF EXISTS repo_agent_project_insert;
+DROP TRIGGER IF EXISTS repo_agent_project_update;
+DROP TRIGGER IF EXISTS repo_agent_session_insert;
+DROP TRIGGER IF EXISTS repo_agent_session_update;
+CREATE TRIGGER repo_agent_project_insert AFTER INSERT ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.name,NEW.name,'',NEW.added_at,NEW.added_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.added_at,NEW.added_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.name AND tombstone=0) THEN NEW.name ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_project_update AFTER UPDATE OF name ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.name,NEW.name,'',NEW.checked_at,NEW.checked_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.checked_at,NEW.checked_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.name AND tombstone=0) THEN NEW.name ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_session_insert AFTER INSERT ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.repo_project,NEW.repo_project,'',NEW.created_at,NEW.created_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.created_at,NEW.created_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.repo_project AND tombstone=0) THEN NEW.repo_project ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_session_update AFTER UPDATE OF repo_project ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.repo_project,NEW.repo_project,'',NEW.last_seen,NEW.last_seen,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.last_seen,NEW.last_seen,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.repo_project AND tombstone=0) THEN NEW.repo_project ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
 CREATE TRIGGER IF NOT EXISTS repo_live_owner_insert BEFORE INSERT ON repos
  WHEN NEW.owner_agent_id IS NOT NULL AND EXISTS (SELECT 1 FROM agents WHERE id=NEW.owner_agent_id AND tombstone<>0)
  BEGIN SELECT RAISE(ABORT, 'tombstoned agent cannot own a repo'); END;

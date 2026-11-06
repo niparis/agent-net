@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -138,8 +139,8 @@ func TestGraphLifecycleReferences(t *testing.T) {
 
 func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 	s, _ := newTestStore(t)
-	_, err := s.db.Exec(`DROP TRIGGER repos_unique_name_insert; DROP TRIGGER repos_unique_name_update;
- DROP TRIGGER agents_unique_name_insert; DROP TRIGGER agents_unique_name_update;
+	_, err := s.db.Exec(`DROP TRIGGER IF EXISTS repos_unique_name_insert; DROP TRIGGER IF EXISTS repos_unique_name_update;
+ DROP TRIGGER IF EXISTS agents_unique_name_insert; DROP TRIGGER IF EXISTS agents_unique_name_update;
  DROP TRIGGER repo_live_owner_insert; DROP TRIGGER repo_live_owner_update; DROP TRIGGER agent_owned_tombstone;
  DROP TRIGGER session_lifecycle_insert; DROP TRIGGER session_lifecycle_update;
  DROP TABLE archived_repos; DELETE FROM schema_version WHERE version=121;
@@ -148,11 +149,20 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	// An interrupted replay can leave old versions of the name triggers behind.
+	if _, err = s.db.Exec(`CREATE TRIGGER repos_unique_name_insert BEFORE INSERT ON repos BEGIN SELECT RAISE(ABORT, 'old repo trigger'); END;
+ CREATE TRIGGER agents_unique_name_insert BEFORE INSERT ON agents BEGIN SELECT RAISE(ABORT, 'old agent trigger'); END;`); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 2; i++ {
+		if i > 0 {
+			if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version=121`); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err = s.migrate(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
 		t.Fatal(err)
@@ -176,11 +186,9 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 			t.Fatalf("%s duplicate accepted", kind)
 		}
 	}
-	if _, err = s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at) VALUES('r3','SHARED',0,0)`); err == nil {
-		t.Fatal("duplicate bypassed store validation")
-	}
-	if _, err = s.db.Exec(`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a3','DUPLICATE',0,0)`); err == nil {
-		t.Fatal("duplicate agent bypassed validation")
+	// Automatic/legacy writes may introduce collisions, which Graph reports.
+	if _, err = s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at) VALUES('r3','SHARED',0,0); INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a3','DUPLICATE',0,0)`); err != nil {
+		t.Fatalf("legacy duplicate insert: %v", err)
 	}
 	for _, kind := range []string{"repo", "agent"} {
 		if err = s.GraphLifecycle(kind+".create", protocol.GraphLifecycleRequest{Name: "namesake"}, "owner", false); err != nil {
@@ -341,5 +349,105 @@ func TestGraphLifecycleRepoNamesakeOfLegacyArchitect(t *testing.T) {
 	graph, err = s.GraphForRef(agent.Ref)
 	if err != nil || len(graph.Nodes) != 1 || graph.Nodes[0].Charter.Purpose != "actor only" {
 		t.Fatalf("agent changed: %+v %v", graph, err)
+	}
+}
+
+func TestGraphLifecycleAutomaticRegistrationNames(t *testing.T) {
+	for _, kind := range []string{"session", "project"} {
+		t.Run(kind, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			node, _, err := s.CreateNode("fixture", "linux")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+				t.Fatal(err)
+			}
+			if err = s.loadGraphRefs(); err != nil {
+				t.Fatal(err)
+			}
+			// A Repo and an Agent are independently owner-created with lower-case names.
+			for _, tc := range []struct{ action, name string }{{"repo.create", "shop"}, {"agent.create", "reviewer"}} {
+				if err = s.GraphLifecycle(tc.action, protocol.GraphLifecycleRequest{Name: tc.name}, "owner", false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "session" {
+				// Upsert uses both the insert and update triggers across repeated discovery.
+				for i := 0; i < 2; i++ {
+					_, err = s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "worker", Repo: protocol.RepoInfo{Project: "Shop", Root: "/code/Shop"}})
+					if err != nil {
+						t.Fatalf("register session with namesake repo: %v", err)
+					}
+				}
+			} else {
+				// A new path and an update of an existing path both keep working.
+				for _, name := range []string{"another", "Reviewer", "Reviewer"} {
+					_, err = s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: name, Path: "/code/reviewer"}}})
+					if err != nil {
+						t.Fatalf("register project with namesake agent: %v", err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGraphLifecycleAutomaticRegistrationTombstonedOwner(t *testing.T) {
+	for _, tc := range []struct {
+		kind         string
+		existingRepo bool
+	}{{"session", false}, {"session", true}, {"project", false}, {"project", true}} {
+		t.Run(fmt.Sprintf("%s_existing_repo_%t", tc.kind, tc.existingRepo), func(t *testing.T) {
+			s, _ := newTestStore(t)
+			node, _, err := s.CreateNode("fixture", "linux")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+				t.Fatal(err)
+			}
+			if err = s.loadGraphRefs(); err != nil {
+				t.Fatal(err)
+			}
+			if err = s.GraphLifecycle("agent.create", protocol.GraphLifecycleRequest{Name: "former"}, "owner", false); err != nil {
+				t.Fatal(err)
+			}
+			if err = s.GraphLifecycle("agent.tombstone", protocol.GraphLifecycleRequest{Ref: &protocol.GraphRef{Kind: "agent", ID: "former"}}, "owner", false); err != nil {
+				t.Fatal(err)
+			}
+			if tc.existingRepo {
+				if err = s.GraphLifecycle("repo.create", protocol.GraphLifecycleRequest{Name: "former"}, "owner", false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for i := 0; i < 2; i++ {
+				if tc.kind == "session" {
+					_, err = s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "worker", Repo: protocol.RepoInfo{Project: "former", Root: "/code/former"}})
+				} else {
+					_, err = s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "former", Path: "/code/former"}}})
+				}
+				if err != nil {
+					t.Fatalf("registration: %v", err)
+				}
+			}
+			var owner *string
+			var tombstone bool
+			if err = s.db.QueryRow(`SELECT owner_agent_id FROM repos WHERE id='former'`).Scan(&owner); err != nil {
+				t.Fatal(err)
+			}
+			if err = s.db.QueryRow(`SELECT tombstone FROM agents WHERE id='former'`).Scan(&tombstone); err != nil {
+				t.Fatal(err)
+			}
+			if owner != nil || !tombstone {
+				t.Fatalf("repo owner %v, tombstone %v", owner, tombstone)
+			}
+			if _, err = s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('bad','bad',0,0,'former')`); err == nil {
+				t.Fatal("tombstoned agent assigned on insert")
+			}
+			if _, err = s.db.Exec(`UPDATE repos SET owner_agent_id='former' WHERE id='former'`); err == nil {
+				t.Fatal("tombstoned agent assigned on update")
+			}
+		})
 	}
 }
