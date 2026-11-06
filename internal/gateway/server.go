@@ -1508,7 +1508,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		backup := filepath.Join(filepath.Dir(dataDir), "gateway-before-typed-graph-"+st.now().Format("20060102-1504")+".db")
+		backup := filepath.Join(filepath.Dir(dataDir), "gateway-before-typed-graph-"+st.now().Format("20060102-1504"))
 		return map[string]any{"on": on, "blockers": blockers, "backup": backup}, nil
 
 	case "graph.refs.enable":
