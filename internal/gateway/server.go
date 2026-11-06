@@ -132,6 +132,10 @@ type Gateway struct {
 	stepBatches          map[string]*stepTaskBatch
 	lastReportMu         sync.Mutex
 	lastReportBySession  map[string]time.Time
+	// onStepBatchFlushed is a test hook, called after a batch leaves the map
+	// and before its message is stored, to reproduce a dispatch that overlaps
+	// the quiet-window flush.
+	onStepBatchFlushed func(session string)
 
 	mu                sync.Mutex
 	conns             map[string]*nodeConn
