@@ -97,6 +97,120 @@ func TestDeliveryStepReminder(t *testing.T) {
 	}
 }
 
+// recentStepMessage records a delivered step notice for the caller. It makes
+// the session look recently active, so the next ready tasks are batched behind
+// the quiet window instead of being sent immediately.
+func recentStepMessage(t *testing.T, r *deliveryRig, change string, ref protocol.StepRef) {
+	t.Helper()
+	now := r.s.now().UTC()
+	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
+		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: r.caller,
+		Type: protocol.TypeNotification, Body: "recent step activity", IdempotencyKey: protocol.NewID("step"),
+		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored}
+	if _, err := r.s.db.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
+		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`INSERT INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
+		VALUES(?,?,?,?,?,?,?)`, change, 1, ref.Step, ref.For, boolInt(ref.AfterMerge), r.caller, m.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func taskBodies(t *testing.T, r *deliveryRig) []string {
+	t.Helper()
+	rows, err := r.s.db.Query(`SELECT body FROM messages WHERE recipient=? AND sender='agent-net'
+		AND (body LIKE '[agent-net step task%') ORDER BY rowid`, r.caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, body)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// Two after-merge steps that become ready together get one task message. While
+// the reminder interval has not elapsed, further dispatch passes must send
+// nothing: no step named in the first message may be sent again.
+func TestDeliveryStepPairReadyTogetherNoEarlyReminder(t *testing.T) {
+	r := newDeliveryRig(t)
+	callerNeedsSharedPipeline(t, r)
+	c := mergedChange(t, r, "feature/pair-reminder", true)
+	// A notice from the merge phase makes the caller look recently active, so
+	// the pair waits for the quiet window like it did on the live gateway.
+	recentStepMessage(t, r, c.ID, protocol.StepRef{Step: protocol.StepMerge})
+
+	r.g.dispatchStepTasks(context.Background())
+
+	// A dispatch pass can overlap the quiet-window flush: it selects the tasks
+	// before the first message has recorded its rows. Run that pass right after
+	// the batch leaves the map and before the message is stored, as happened on
+	// the live gateway.
+	r.g.onStepBatchFlushed = func(string) {
+		r.g.onStepBatchFlushed = nil
+		r.g.dispatchStepTasks(context.Background())
+	}
+	r.g.flushStepTasks(r.caller)
+	// The overlapping pass left a batch behind. Flush it as its timer would.
+	r.g.flushStepTasks(r.caller)
+
+	bodies := taskBodies(t, r)
+	if len(bodies) != 1 {
+		t.Fatalf("caller got %d task messages, want 1: %v", len(bodies), bodies)
+	}
+	if !strings.Contains(bodies[0], "steps: release, verify (after merge)") {
+		t.Fatalf("pair line missing from:\n%s", bodies[0])
+	}
+
+	// Every step named in the message has its delivery_step_messages row.
+	var rows int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND session_id=?`,
+		c.ID, r.caller).Scan(&rows); err != nil || rows != 3 {
+		t.Fatalf("step message rows=%d want=3 (recent + release + verify) err=%v", rows, err)
+	}
+
+	// Dispatch several times inside the reminder interval. Nothing new may go out.
+	for i := 0; i < 3; i++ {
+		r.clk.t = r.clk.t.Add(3 * time.Second)
+		r.g.dispatchStepTasks(context.Background())
+		r.g.flushStepTasks(r.caller)
+	}
+	if got := taskBodies(t, r); len(got) != 1 {
+		t.Fatalf("caller got %d task messages inside the reminder interval, want 1: %v", len(got), got)
+	}
+
+	// Past delivery.step_reminder exactly one reminder goes out.
+	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTasks(r.caller)
+	bodies = taskBodies(t, r)
+	if len(bodies) != 2 {
+		t.Fatalf("caller got %d task messages after the reminder interval, want 2: %v", len(bodies), bodies)
+	}
+	if !strings.HasPrefix(bodies[1], "[agent-net step task reminder]") {
+		t.Fatalf("second message is not a reminder:\n%s", bodies[1])
+	}
+
+	// A further dispatch must not repeat the reminder.
+	r.clk.t = r.clk.t.Add(time.Minute)
+	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTasks(r.caller)
+	if got := taskBodies(t, r); len(got) != 2 {
+		t.Fatalf("caller got %d task messages after a repeated dispatch, want 2: %v", len(got), got)
+	}
+}
+
 func TestDeliveryStepStuckNotice(t *testing.T) {
 	r := setupMergerRig(t)
 
