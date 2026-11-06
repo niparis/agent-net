@@ -68,6 +68,24 @@ An install or upgrade stops with `release checksums signature is missing or inva
 
 For a joined machine, check the gateway first. A gateway rollback, a local build, or an older gateway may have no signed manifest. Restore a complete signed release on the gateway using the published install line, then retry. Automatic upgrades remember a failure and retry after one hour or when the gateway serves a different version. If a current signed release still fails verification, investigate corruption or compromise before retrying. See [Releasing](../RELEASING.md#release-signing-key).
 
+## The gateway will not start: schema version is newer
+
+The gateway exits at start with:
+
+```
+gateway.db schema version N is newer than this agent-net (knows M); upgrade agent-net or restore the backup taken before the upgrade
+```
+
+The database was written by a newer agent-net than the binary that is starting. This happens after a gateway rollback to an older release, or when a `gateway.db` from a newer gateway was copied in. The older binary refuses it on purpose: opening it would silently ignore tables, columns and triggers it does not know, and could drop rules the newer code enforced.
+
+Read the message in the gateway log on the gateway machine: `journalctl --user -u agent-net-gateway -e` on Linux, or `~/Library/Logs/agent-net-gateway.log` on macOS. Then either run the newer agent-net again, or restore the backup taken before the upgrade:
+
+```
+agent-net gateway restore --backup /path/to/backup --to /path/to/new-data
+```
+
+Start the gateway with that new data directory (stop the old one first). Do not edit or clear `schema_version` to get past the error. A backup made by a newer release is refused the same way, so restore one made by the release you are running.
+
 ## A joined machine keeps its first gateway URL
 
 A machine saves the address it joined with in `~/.config/agent-net/node.json`. If the gateway's address changes, the daemon keeps trying the old one. To switch:
