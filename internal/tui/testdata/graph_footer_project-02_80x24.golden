@@ -1,23 +1,23 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│12
 
 
-                       ⠶○⠶ project-07           ○ project-14
+                       ⠶○⠶ repo project-07      ○ repo project-14
 
-                                                                ⠶○⠶ project-11
-       ○ project-13             all projects depend
-                                 ○ project-05
-                                  • ⠑○ project-04               project-10 ○
+                                                repo project-11 ⠶○⠶
+       ○ repo project-13        all projects depend
+                                 ○ repo project-05
+                                  • ⠑○ repo project-04     repo project-10 ○
                                       ⠈⠢⢄
-    ○ project-12                         ○ project-03
-                                           ⠈(○) project-02
-                                              ⠈•⢄                project-08 ○
-           ○ project-09                          ○ project-01
-                                                   ⠈○ architect
+    ○ repo project-12                    ○ repo project-03
+                                           ⠈(○) repo project-02
+                                              ⠈•⢄           repo project-08 ○
+           ○ repo project-09                     ○ repo project-01
+                                                   ⠈○ agent architect
 
-                           ○ project-06
+                           ○ repo project-06
 
   ● charter · ○ open · gold: approved · pink: unverified
-  selected: project-02 · component · 2 edges
+  selected: repo project-02 · component · 2 edges
   accept, test, review, merge, release, verify: caller
 
   left/right select  +/- zoom  d delivery  m traffic  enter card  ? help

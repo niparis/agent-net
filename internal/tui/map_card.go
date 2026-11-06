@@ -50,8 +50,13 @@ func ruleStyle(rule string) lipgloss.Style {
 // mapSessionDots lists the live sessions of a project: one dot each, colored
 // by status.
 func (m Model) mapSessionDots(project string) (dots []string, busy int) {
+	node, _ := m.mapNode(project)
 	for _, a := range m.snap.Agents {
-		if !a.Online || firstNonEmpty(a.Repo.Project, a.Profile.Project) != project {
+		match := firstNonEmpty(a.Repo.Project, a.Profile.Project) == project
+		if node.Ref != nil {
+			match = (node.Ref.Kind == "repo" && firstNonEmpty(a.Repo.Project, a.Profile.Project) == node.Ref.ID) || (node.Ref.Kind == "agent" && a.AgentID == node.Ref.ID)
+		}
+		if !a.Online || !match {
 			continue
 		}
 		switch a.Status {
@@ -75,7 +80,7 @@ func (m Model) mapEdgeEntry(e protocol.Edge, incoming bool) string {
 		peer = e.From
 	}
 	arrow := edgeKindStyle(e.Kind).Render("──▶")
-	text := m.projectName(peer)
+	text := m.graphName(peer)
 	if peer == wildcardNode {
 		text = sDim.Render(text)
 	}
@@ -407,8 +412,10 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	}
 	out = append(out, charter...)
 	out = append(out, m.mapLearnedLines(node.Name, w)...)
-	out = append(out, section("Rules", w))
-	out = append(out, mapRulesLines(node, w)...)
+	if node.Ref == nil || node.Ref.Kind == "repo" {
+		out = append(out, section("Rules", w))
+		out = append(out, mapRulesLines(node, w)...)
+	}
 	return out
 }
 
@@ -428,16 +435,31 @@ func (m Model) mapFocusView(w, h int) []string {
 		return append(head, sDim.Render("  no nodes yet"), sDim.Render("  no node selected"))
 	}
 	node, _ := m.mapNode(m.mp.selected)
-	title := sBold.Render(clip(m.projectName(node.Name), max(w-24, 8)))
+	title := sBold.Render(clip(m.graphName(node.Name), max(w-24, 8)))
 	if level := maturityLevel(node.Charter.Maturity); level != "-" {
 		title += "  " + mapLevelStyle(level).Render(level)
 	}
-	title += "  " + sDim.Render("autonomy: "+protocol.NodeAutonomy(node.Settings))
-	if node.Kind == "architect" {
-		title += "  " + lipgloss.NewStyle().Foreground(roleCTO).Render("architect")
+	if node.Ref == nil || node.Ref.Kind == "repo" {
+		title += "  " + sDim.Render("autonomy: "+protocol.NodeAutonomy(node.Settings))
+	}
+	role := node.Role
+	if node.Ref == nil && node.Kind == "architect" {
+		role = "architect"
+	}
+	if role != "" {
+		title += "  " + lipgloss.NewStyle().Foreground(roleCTO).Render(sanitize(role))
 	}
 	head = append(head, clip(title, w))
-	head = append(head, m.nodeToolsLine(node.Name))
+	if node.Ref == nil || node.Ref.Kind == "repo" {
+		head = append(head, m.nodeToolsLine(graphRecordID(node)))
+	}
+	if node.Owner != nil {
+		name := m.mp.labels[graphRefKey(node.Owner)]
+		if name == "" {
+			name = "unavailable agent"
+		}
+		head = append(head, clip("owner: "+name, w))
+	}
 	purposeRows := 3
 	if h < 16 {
 		purposeRows = 2
@@ -466,7 +488,7 @@ func (m Model) mapFocusView(w, h int) []string {
 	var gov []string
 	for _, e := range m.mp.edges {
 		if e.Kind == "governs" && e.To == node.Name {
-			gov = append(gov, m.projectName(e.From)+" ("+dashIfEmpty(sanitize(e.Mode))+")")
+			gov = append(gov, m.graphName(e.From)+" ("+dashIfEmpty(sanitize(e.Mode))+")")
 		}
 	}
 	sort.Strings(gov)
