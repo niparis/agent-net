@@ -19,7 +19,7 @@ func TestSessionLifecycleMigrationReplay(t *testing.T) {
  DROP TABLE session_agent_history; DELETE FROM schema_version WHERE version>?`, version); err != nil {
 				t.Fatalf("rewind: %v", err)
 			}
-			if err := s.migrate(); err != nil {
+			if err := migrateOldFixture(t, s); err != nil {
 				t.Fatalf("replay from %d: %v", version, err)
 			}
 			var columns int
