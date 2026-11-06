@@ -140,8 +140,11 @@ func (m Model) inboxRows() []inboxRow {
 			continue
 		}
 		switch item.Kind {
-		case "check":
+		case "check", "session_stall":
 			name, text := inboxNoticeParts(item)
+			if item.Kind == "session_stall" {
+				name = m.inboxSessionName(item.SessionID)
+			}
 			rows = append(rows, inboxRow{
 				group: inboxNotice, key: "notice:" + item.ID, kind: "notice",
 				name: name, text: text,
@@ -809,6 +812,9 @@ func (m Model) inboxPanelTitle(row inboxRow) string {
 	case "proposal":
 		return "CTO proposal"
 	case "notice":
+		if row.item.Kind == "session_stall" {
+			return sanitize(row.name) + " may be stalled"
+		}
 		if row.name == "Notice" {
 			return "Notice"
 		}
@@ -884,7 +890,9 @@ func (m Model) inboxPanelOrigin(row inboxRow, withAge bool) string {
 	case "proposal":
 		add("CTO · " + m.inboxMachineName(row.proposal.NodeID))
 	case "notice":
-		add("connected app")
+		if row.item.Kind != "session_stall" {
+			add("connected app")
+		}
 		if row.item.SessionID != "" {
 			add(m.inboxSessionOrigin(row.item.SessionID))
 		}

@@ -243,13 +243,15 @@ type Config struct {
 }
 
 type localSession struct {
-	pushMu         sync.Mutex // orders gateway registration updates for this session
-	info           protocol.SessionInfo
-	sessionID      string
-	workerWaiting  *protocol.Waiting // last unsettled worker wait, protected by d.mu
-	conn           *localConn        // set for plugin sessions
-	statusRevision uint64            // changes on each plugin status event
-	lastActive     time.Time         // when the session last did something, not when it was seen
+	pushMu          sync.Mutex // orders gateway registration updates for this session
+	info            protocol.SessionInfo
+	sessionID       string
+	workerWaiting   *protocol.Waiting // last unsettled worker wait, protected by d.mu
+	conn            *localConn        // set for plugin sessions
+	statusRevision  uint64            // changes on each plugin status event
+	lastActive      time.Time         // when the session last did something, not when it was seen
+	harnessActivity time.Time         // harness output, state change or acknowledgement
+	ownerStopped    bool              // owner explicitly asked the harness to end
 	// owned is set for a session the daemon registered itself (a Codex worker
 	// in its private server). Discovery of a harness never removes it.
 	owned bool
@@ -706,6 +708,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		old.HarnessWaits = false                   // a wait does not change the repository
 		probe := infos[i]
 		probe.Repo, probe.SessionID, probe.Waiting, probe.HarnessWaits = protocol.RepoInfo{}, "", nil, false
+		probe.HarnessActivity = 0
 		probe.NoProject = false
 		probe.GraphExcluded, probe.GraphChecked = false, false
 		fresh := known && old != probe
@@ -718,7 +721,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	d.mu.Lock()
 	seen := map[string]bool{}
 	var changed []*localSession
-	var gone []string
+	var gone []protocol.SessionRemove
 	var updates []activityUpdate
 	for _, in := range infos {
 		in.Harness = harness
@@ -727,6 +730,11 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		// A harness may know real activity that the daemon does not: Claude
 		// Code's transcript time. LastActive lives on localSession, so the
 		// compared info keeps zero and a poll does not look like a change.
+		harnessActivity := time.Time{}
+		if in.HarnessActivity > 0 {
+			harnessActivity = time.Unix(in.HarnessActivity, 0)
+		}
+		in.HarnessActivity = 0
 		candidate := time.Time{}
 		if in.LastActive > 0 {
 			candidate = time.Unix(in.LastActive, 0)
@@ -745,7 +753,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			}
 		}
 		if ls == nil {
-			ls = &localSession{info: in, lastActive: candidate}
+			ls = &localSession{info: in, lastActive: candidate, harnessActivity: harnessActivity}
 			d.sessions[k] = ls
 			changed = append(changed, ls)
 			if candidate.After(d.activity[k]) {
@@ -767,14 +775,22 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 				infoChanged = true
 			}
 			activeChanged := false
+			if harnessActivity.After(ls.harnessActivity) {
+				ls.harnessActivity = harnessActivity
+				activeChanged = true
+			}
 			if candidate.After(ls.lastActive) {
 				ls.lastActive = candidate
 				activeChanged = true
 			}
 			if statusChanged && statusIsActivity(previousStatus, in.Status) {
+				if in.Status == "busy" {
+					ls.ownerStopped = false
+				}
 				// A turn started or ended in the harness. A quiet session that
 				// goes idle or dormant did nothing.
 				now := time.Now()
+				ls.harnessActivity = now
 				if !ls.lastActive.After(now) {
 					ls.lastActive = now
 					activeChanged = true
@@ -796,7 +812,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		if ls.info.Harness == harness && !ls.plugin() && !ls.owned && !seen[k] {
 			delete(d.sessions, k)
 			if ls.sessionID != "" {
-				gone = append(gone, ls.sessionID)
+				gone = append(gone, protocol.SessionRemove{SessionID: ls.sessionID, Lost: !ls.ownerStopped && ls.info.Worker == nil && ls.info.Status == "busy"})
 			}
 		}
 	}
@@ -807,11 +823,11 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	for _, ls := range changed {
 		d.pushSession(ls)
 	}
-	for _, id := range gone {
+	for _, goneSession := range gone {
 		// A resumed worker may replace a native session while retaining its
 		// gateway ID. Do not take that newly registered session offline.
-		if d.sessionByID(id) == nil {
-			d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: id})
+		if d.sessionByID(goneSession.SessionID) == nil {
+			d.call(context.Background(), "session.remove", goneSession)
 		}
 	}
 }
@@ -873,6 +889,9 @@ func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {
 	if ls.sessionID != "" {
 		info.SessionID = ls.sessionID
 	}
+	if !ls.harnessActivity.IsZero() {
+		info.HarnessActivity = ls.harnessActivity.Unix()
+	}
 	if !ls.lastActive.IsZero() {
 		info.LastActive = ls.lastActive.Unix()
 	}
@@ -925,6 +944,21 @@ func (d *Daemon) touchSession(ls *localSession, at time.Time) {
 	}
 	d.saveActivity(harness, native, at)
 	d.pushSession(ls)
+}
+
+// touchHarness records a sign of progress, never a discovery poll or message attempt.
+func (d *Daemon) touchHarness(ls *localSession, at time.Time) {
+	if ls == nil {
+		return
+	}
+	d.mu.Lock()
+	if !at.After(ls.harnessActivity.Add(5 * time.Second)) {
+		d.mu.Unlock()
+		return
+	}
+	ls.harnessActivity = at
+	d.mu.Unlock()
+	d.goBackground(func() { d.pushSession(ls) })
 }
 
 // saveActivity keeps a session's real activity time across a daemon restart.
@@ -1257,6 +1291,12 @@ retryWorker:
 		}
 	} else {
 		res = d.deliverTo(ctx, ls, m)
+	}
+	if res.Delivered {
+		if recipient := d.activitySession(m.To); recipient != nil && d.infoOf(recipient).Harness != "claude" {
+			// Claude only confirms a socket write, not receipt by the harness.
+			d.touchHarness(recipient, time.Now())
+		}
 	}
 	d.finishDelivery(ctx, m, res)
 }

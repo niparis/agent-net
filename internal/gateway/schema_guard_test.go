@@ -59,6 +59,15 @@ func TestOpenStoreMigratesOlderSchemaUp(t *testing.T) {
 	path := seededStorePath(t, "gw.db")
 	older := len(migrations) - 1
 	setSchemaVersion(t, path, older)
+	// Rewinding the version must also restore the schema of that version.
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepareOldSessionIdentity(t, &Store{db: db})
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	s, err := OpenStore(path)
 	if err != nil {

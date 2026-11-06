@@ -43,6 +43,7 @@ type codexAdapter struct {
 // codexThread is what the adapter keeps of one open thread.
 type codexThread struct {
 	ID, Cwd, Name, Model, Status, Mode string
+	Activity                           int64
 	Wait                               *protocol.Waiting // from the thread's active flags
 }
 
@@ -125,6 +126,19 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 // onNote reacts to the notifications every client gets: a thread started, a
 // thread changed status, a thread got a name.
 func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
+	if strings.HasPrefix(method, "item/") || strings.HasPrefix(method, "turn/") {
+		var p struct {
+			ThreadID string `json:"threadId"`
+		}
+		if json.Unmarshal(raw, &p) == nil && p.ThreadID != "" {
+			a.d.mu.Lock()
+			ls := a.d.sessions[key("codex", p.ThreadID)]
+			a.d.mu.Unlock()
+			if ls != nil {
+				a.d.touchHarness(ls, time.Now())
+			}
+		}
+	}
 	if method == "turn/started" {
 		var p struct {
 			ThreadID string `json:"threadId"`
@@ -191,6 +205,7 @@ type codexThreadRead struct {
 		Name           *string         `json:"name"`
 		Model          *string         `json:"model"`
 		Ephemeral      bool            `json:"ephemeral"`
+		Path           *string         `json:"path"`
 		ParentThreadID *string         `json:"parentThreadId"`
 		Source         json.RawMessage `json:"source"`
 		Status         struct {
@@ -310,6 +325,11 @@ func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
 		if src == "exec" || src == "appServer" || src == "custom" {
 			th.Mode = protocol.ModeBackground
 		}
+		if t.Path != nil && *t.Path != "" {
+			if fi, err := os.Stat(*t.Path); err == nil {
+				th.Activity = fi.ModTime().Unix()
+			}
+		}
 		threads[id] = th
 	}
 	a.mu.Lock()
@@ -324,7 +344,7 @@ func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
 	for _, id := range keys {
 		t := threads[id]
 		infos = append(infos, protocol.SessionInfo{Harness: "codex", NativeID: id, Cwd: t.Cwd, Name: t.Name,
-			Status: t.Status, Delivery: "codex-app-server", Mode: t.Mode, Model: t.Model, Waiting: t.Wait, HarnessWaits: t.Wait != nil})
+			Status: t.Status, Delivery: "codex-app-server", Mode: t.Mode, Model: t.Model, Waiting: t.Wait, HarnessWaits: t.Wait != nil, HarnessActivity: t.Activity})
 	}
 	a.d.SetSessions("codex", infos)
 	return nil

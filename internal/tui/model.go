@@ -1714,7 +1714,7 @@ func (m Model) groups() []group {
 			continue
 		}
 		// Dormant sessions are reachable but quiet: hidden with the offline ones.
-		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline && strings.TrimSpace(m.filter) == "" && (m.activeOnly || online[key(a)] || latest[key(a)].SessionID != a.SessionID) {
+		if a.StalledSince == 0 && (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline && strings.TrimSpace(m.filter) == "" && (m.activeOnly || online[key(a)] || latest[key(a)].SessionID != a.SessionID) {
 			continue
 		}
 		// A worker that ended is not a row, even when offline sessions are

@@ -103,7 +103,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		return clip("  "+sDim.Render(cell(label, lw))+" "+sanitize(value), w)
 	}
 	title := "  " + sBold.Render(clip(sanitize(dashIfEmpty(a.Profile.Name)), 26)) + "  " + sanitize(a.Harness)
-	if a.Online {
+	if a.StalledSince > 0 && a.Worker == nil {
+		title += "  " + sNeeds.Render(m.statusCell(a))
+	} else if a.Online {
 		title += "  " + statusStyle(a.Status).Render(statusShort(a.Status))
 	} else {
 		title += "  " + sBad.Render("offline, last seen "+m.clock(m.displayTime(a.LastSeen)))
@@ -128,6 +130,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	model = dashIfEmpty(model)
 	var out []string
+	if a.StalledSince > 0 && a.Worker == nil {
+		out = append(out, wrap("  No harness activity since "+m.clock(m.displayTime(a.StalledSince))+". Enter to look, or restart the session.", w)...)
+	}
 	for _, p := range a.Pending {
 		verb := "from"
 		if p.Outgoing {

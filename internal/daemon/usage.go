@@ -123,6 +123,7 @@ func (d *Daemon) usageLoop(ctx context.Context) {
 			return
 		case <-t.C:
 		}
+		d.observeClaudeCPU()
 		d.mu.Lock()
 		l := d.lk
 		d.mu.Unlock()
@@ -141,6 +142,40 @@ func (d *Daemon) usageLoop(ctx context.Context) {
 			d.Logf("the gateway is too old for CPU and memory reports, not sending them on this connection")
 			d.usage.disable(l)
 		}
+	}
+}
+
+// observeClaudeCPU uses the already sampled process tree for a busy Claude
+// session. A shared PID cannot identify which session is working. A timestamp
+// from the sampler stops an old nonzero reading from looking like new work.
+func (d *Daemon) observeClaudeCPU() {
+	if d.cfg.UsageSampler == nil {
+		return
+	}
+	trees := d.cfg.UsageSampler.Trees()
+	d.mu.Lock()
+	counts := map[int]int{}
+	for _, ls := range d.sessions {
+		if ls.info.PID > 0 {
+			counts[ls.info.PID]++
+		}
+	}
+	type observation struct {
+		session *localSession
+		at      time.Time
+	}
+	var active []observation
+	for _, ls := range d.sessions {
+		in := ls.info
+		tree := trees[in.PID]
+		if in.Harness == "claude" && in.Worker == nil && in.Status == "busy" && in.Waiting == nil &&
+			in.PID > 0 && counts[in.PID] == 1 && tree.Alive && tree.Samples > 0 && tree.CPU.Now > 0 && !tree.CPUSampledAt.IsZero() {
+			active = append(active, observation{ls, tree.CPUSampledAt})
+		}
+	}
+	d.mu.Unlock()
+	for _, o := range active {
+		d.touchHarness(o.session, o.at)
 	}
 }
 

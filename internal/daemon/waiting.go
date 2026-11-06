@@ -59,6 +59,9 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 	}
 	started := w != nil && !sameWaiting(oldWait, w)
 	harness, native, at := ls.info.Harness, ls.info.NativeID, time.Now()
+	if started || (oldWait != nil && w == nil) {
+		ls.harnessActivity = at
+	}
 	if started {
 		d.recordActivityLocked(ls, at)
 	}
