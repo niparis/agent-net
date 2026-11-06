@@ -73,7 +73,7 @@ var ctoTools = map[string]ctoToolDef{
 	// message is not listed. It is the stored call of an as-owner send or reply
 	// that agent_message_send or agent_message_reply proposes; this schema
 	// validates that call.
-	"message": {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
+	"message": {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"team_id": {typ: "string"}, "action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
 
 	"graph_change": {
 		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Repo and agent create, archive, tombstone and their undo always require owner approval.",

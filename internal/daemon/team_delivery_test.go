@@ -91,7 +91,14 @@ func TestTeamGroupSendExcludesOutsider(t *testing.T) {
 	if m := fa.delivered()[0]; m.To != fa.host.SessionID("fake", "a") {
 		t.Fatalf("outside delivery: %+v", m)
 	}
-	ownerRaw, err := cto.call("send", map[string]any{"to_set": map[string]any{"team": "finance"}, "body": "owner order", "as_owner": true})
+	if _, err = cto.call("send", map[string]any{"to_set": map[string]any{"team": "unknown"}, "body": "order"}); err == nil || !strings.Contains(err.Error(), "unknown team") {
+		t.Fatalf("unknown team: %v", err)
+	}
+	if err := n.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ownerValue, err := n.d.runCTOToolRaw(context.Background(), "agent_message_send", json.RawMessage(`{"to_set":{"team":"finance"},"body":"owner order","as_owner":true}`))
+	ownerRaw, _ := json.Marshal(ownerValue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +108,36 @@ func TestTeamGroupSendExcludesOutsider(t *testing.T) {
 	if err := json.Unmarshal(ownerRaw, &ownerResult); err != nil || len(ownerResult.Sent) != 1 || ownerResult.Sent[0].State != "proposed" {
 		t.Fatalf("owner proposal: %s %v", ownerRaw, err)
 	}
-	if _, err = cto.call("send", map[string]any{"to_set": map[string]any{"team": "unknown"}, "body": "order"}); err == nil || !strings.Contains(err.Error(), "unknown team") {
-		t.Fatalf("unknown team: %v", err)
+	secondValue, err := n.d.runCTOToolRaw(context.Background(), "agent_message_send", json.RawMessage(`{"to_set":{"team":"finance"},"body":"approved order","as_owner":true}`))
+	if err != nil {
+		t.Fatal(err)
 	}
+	secondRaw, _ := json.Marshal(secondValue)
+	var secondResult struct {
+		Sent []groupReceipt `json:"sent"`
+	}
+	if err := json.Unmarshal(secondRaw, &secondResult); err != nil || len(secondResult.Sent) != 1 {
+		t.Fatalf("second proposal: %s %v", secondRaw, err)
+	}
+	if err := n.d.proposalRunner().decide(context.Background(), secondResult.Sent[0].MessageID, true); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "approved team delivery", func() bool { return len(fa.delivered()) == 2 })
+	cli.mustCall("team_write", map[string]any{"action": "membership", "expect_team": "finance", "member": map[string]any{"kind": "agent", "id": "alice"}})
+	if err := n.d.proposalRunner().decide(context.Background(), ownerResult.Sent[0].MessageID, true); err == nil || !strings.Contains(err.Error(), "no longer an online team member") {
+		t.Fatalf("approval after removal: %v", err)
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ID == ownerResult.Sent[0].MessageID && item.Status != "failed" {
+			t.Fatalf("removed member proposal status: %+v", item)
+		}
+	}
+	if len(fa.delivered()) != 2 {
+		t.Fatalf("approved proposal reached removed member: %+v", fa.delivered())
+	}
+
 }

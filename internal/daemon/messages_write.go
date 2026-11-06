@@ -182,6 +182,10 @@ func (d *Daemon) replyAsOwner(ctx context.Context, messageID, body string) (any,
 
 // sendAsOwner stores an owner-send proposal for the owner's decision.
 func (d *Daemon) sendAsOwner(ctx context.Context, to, body, kind string) (any, error) {
+	return d.sendAsOwnerTeam(ctx, to, body, kind, "")
+}
+
+func (d *Daemon) sendAsOwnerTeam(ctx context.Context, to, body, kind, teamID string) (any, error) {
 	if strings.TrimSpace(to) == "" {
 		return nil, errors.New("as_owner needs to and body")
 	}
@@ -194,12 +198,16 @@ func (d *Daemon) sendAsOwner(ctx context.Context, to, body, kind string) (any, e
 	}
 	// The CTO message proposal carries only the fields its concrete schema
 	// defines; a message type is always a request on that path.
-	args, err := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"action":   "send",
 		"to":       target,
 		"body":     body,
 		"as_owner": true,
-	})
+	}
+	if teamID != "" {
+		fields["team_id"] = teamID
+	}
+	args, err := json.Marshal(fields)
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +256,7 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 	}
 	out := messageReceipts{Sent: []messageReceipt{}}
 	var teamIDs map[string]bool
+	var teamID string
 	if strings.TrimSpace(set.Team) != "" {
 		raw, err := d.call(ctx, "graph.read", protocol.GraphRead{Typed: true})
 		if err != nil {
@@ -260,6 +269,12 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 		teamIDs, out.Missed, err = teamRecipients(graph.Graph, set.Team, page.Agents)
 		if err != nil {
 			return nil, err
+		}
+		for _, node := range graph.Graph.Nodes {
+			if node.Ref != nil && node.Ref.Kind == "team" && (strings.EqualFold(node.Ref.ID, strings.TrimSpace(set.Team)) || strings.EqualFold(node.Name, strings.TrimSpace(set.Team))) && (node.Active == nil || *node.Active) {
+				teamID = node.Ref.ID
+				break
+			}
 		}
 	}
 	if asOwner && kind != "" && kind != protocol.TypeRequest {
@@ -276,7 +291,7 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 		seen[a.SessionID] = true
 		receipt := messageReceipt{To: messageSessionRef{ID: a.SessionID, Name: messageSessionName(a)}}
 		if asOwner {
-			proposed, err := d.sendAsOwner(ctx, a.SessionID, body, kind)
+			proposed, err := d.sendAsOwnerTeam(ctx, a.SessionID, body, kind, teamID)
 			if err != nil {
 				receipt.State = "failed"
 				out.Sent = append(out.Sent, receipt)
