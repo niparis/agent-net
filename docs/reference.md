@@ -4,7 +4,7 @@ Decision [0036](decisions/0036-primitives.md) defines an agent as a lasting iden
 
 ## Typed Repo/Agent Graph cutover
 
-In Settings (`6`), select **Typed Repo/Agent Graph** under Integrations and press Enter. The screen shows whether it is on and lists machines that block the cutover. Enter a new absolute backup destination on the gateway machine; use Page Up and Page Down to see a long blocker list. Review the confirmation, and press Enter or `y`. The gateway takes the backup before enabling the cutover. The result shows the backup path or the gateway's refusal. Turning the cutover off later requires restoring that backup. Once on, it cannot be run again.
+In Settings (`6`), select **Typed Repo/Agent Graph** under Integrations and press Enter. The screen shows whether it is on and lists machines that block the cutover. Accept or edit the suggested new absolute backup destination on the gateway machine; the suggested directory is beside the gateway data directory. Use Page Up and Page Down to see a long blocker list. Review the confirmation, and press Enter or `y`. The gateway takes the backup before enabling the cutover. The result shows the backup path or the gateway's refusal. Turning the cutover off later requires restoring that backup. Once on, it cannot be run again.
 
 ## Remove a machine or rotate its token
 
