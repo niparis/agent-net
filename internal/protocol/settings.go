@@ -103,10 +103,10 @@ type SettingView struct {
 	Revision        int64             `json:"revision"`
 	Explicit        json.RawMessage   `json:"explicit,omitempty"`
 	ExplicitNote    string            `json:"explicit_note,omitempty"`
-	Raised          bool              `json:"raised,omitempty"`
+	Raised          bool              `json:"raised"`
 	Bound           json.RawMessage   `json:"bound,omitempty"`
 	RecipeDigest    string            `json:"recipe_digest,omitempty"`
-	ContextRevision int64             `json:"context_revision,omitempty"`
+	ContextRevision int64             `json:"context_revision"`
 	Target          *SettingsRef      `json:"target,omitempty"`
 	Actor           string            `json:"actor,omitempty"`
 	History         []SettingsHistory `json:"history"`
