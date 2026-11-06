@@ -42,7 +42,7 @@ func TestGraphCutoverStates(t *testing.T) {
 	m.cutoverBlockers = nil
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !strings.Contains(m.testView(), "Backup folder: /gateway-state/gateway-before-typed-graph-20261106-1200") || !strings.Contains(m.testView(), "A copy of the whole gateway data folder.") || !strings.Contains(m.testView(), "restoring the backup") {
+	if !strings.Contains(m.testView(), "Backup folder: /gateway-state/gateway-before-typed-graph-20261106-1200") || !strings.Contains(m.testView(), "Holds the gateway database, skills and keys.") || !strings.Contains(m.testView(), "restoring the backup") {
 		t.Fatal(m.testView())
 	}
 	golden(t, "graph_cutover_confirm_120x34", m.testView())

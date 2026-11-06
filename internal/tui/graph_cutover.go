@@ -142,7 +142,7 @@ func (m Model) graphCutoverView(w, h int) []string {
 	case modeGraphCutoverConfirm:
 		add("Enable the typed Repo/Agent Graph?")
 		add("Backup folder: " + m.cutoverPath)
-		out = append(out, sDim.Render("  A copy of the whole gateway data folder."))
+		out = append(out, sDim.Render("  Holds the gateway database, skills and keys."))
 		add("Turning it off later means restoring the backup.")
 		blockers(h - 11)
 		if m.cutoverBusy {
