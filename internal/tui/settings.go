@@ -595,10 +595,12 @@ func (m Model) settingsView(w, h int) []string {
 	visible := append([]string(nil), body[start:min(len(body), start+room)]...)
 	if start+room < len(body) && len(visible) > 0 {
 		last := ansi.Strip(visible[len(visible)-1])
-		for _, desc := range descriptions {
-			if strings.TrimSpace(last) == strings.TrimSpace(desc) {
-				visible[len(visible)-1] += sDim.Render(" (more below)")
-				break
+		for _, labels := range [][]string{descriptions, names} {
+			for _, label := range labels {
+				if strings.TrimSpace(last) == strings.TrimSpace(label) {
+					visible[len(visible)-1] += sDim.Render(" (more below)")
+					break
+				}
 			}
 		}
 	}
