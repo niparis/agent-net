@@ -330,9 +330,5 @@ func resumeHint(a protocol.AgentView) string {
 	if a.Harness == "claude" || a.Harness == "pi" || a.Harness == "codex" || a.Harness == "opencode" {
 		return "Enter resumes it in " + sanitize(a.Cwd)
 	}
-	command := a.Harness + " resume " + a.NativeID
-	if a.Harness == "opencode" {
-		command = "opencode --session " + a.NativeID
-	}
-	return sanitize(a.Cwd + ": " + command)
+	return sanitize(a.Cwd + ": resume it from " + a.Harness + " in this folder")
 }

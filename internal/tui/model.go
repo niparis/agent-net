@@ -1685,7 +1685,7 @@ func (m Model) groups() []group {
 	latest := map[string]protocol.AgentView{}
 	online := map[string]bool{}
 	key := func(a protocol.AgentView) string {
-		return a.NodeID + "\n" + firstNonEmpty(a.RepoContext, firstNonEmpty(a.Repo.Root, firstNonEmpty(a.Repo.Project, a.Cwd)))
+		return a.NodeID + "\n" + firstNonEmpty(a.Repo.Project, firstNonEmpty(a.Repo.Root, a.Cwd))
 	}
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) || a.Harness == "bot" || a.Worker != nil || m.hiddenSessions[a.SessionID] {
