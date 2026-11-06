@@ -20,6 +20,11 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		if err != nil {
 			return protocol.StartedSession{}, err
 		}
+		if r.AgentID != "" {
+			if err := d.reserveStartAgent(d.ctoCtx, "pi", native, r.AgentID); err != nil {
+				return protocol.StartedSession{}, err
+			}
+		}
 		r.NativeID = native
 		piArgs = []string{bin, "--session-id", native, "--name", r.Project}
 		if r.Model != "" {

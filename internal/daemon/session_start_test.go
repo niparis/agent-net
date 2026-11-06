@@ -75,6 +75,8 @@ func TestSessionStartClaude(t *testing.T) {
 			t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
 			req := map[string]any{"project": "shop", "harness": "claude"}
 			if withMessage {
+				c.register(t, newRepo(t, "chosen"))
+				req["agent_id"] = "chosen"
 				req["model"] = "haiku"
 				req["first_message"] = "Inspect this project"
 			}
@@ -105,7 +107,7 @@ func TestSessionStartClaude(t *testing.T) {
 				t.Errorf("args %v", rec.Args)
 			}
 			if withMessage {
-				if argValue(rec.Args, "--model") != "haiku" || rec.Args[len(rec.Args)-1] != "Inspect this project" {
+				if argValue(rec.Args, "--model") != "haiku" {
 					t.Errorf("args %v", rec.Args)
 				}
 			} else if argValue(rec.Args, "--model") != "" {
@@ -121,8 +123,22 @@ func TestSessionStartClaude(t *testing.T) {
 			}
 			noFlagThatSkipsPermissions(t, rec.Args)
 			a := c.agentOf(t, r.SessionID)
-			if a == nil || a.Worker != nil {
+			wantAgent := "shop"
+			if withMessage {
+				wantAgent = "chosen"
+			}
+			if a == nil || a.Worker != nil || a.AgentID != wantAgent {
 				t.Fatalf("owner session: %+v", a)
+			}
+			if withMessage {
+				eventually(t, "first message after Agent registration", func() bool {
+					for _, m := range c.adapter.deliveredTo(r.SessionID) {
+						if m.Body == "Inspect this project" {
+							return c.agentOf(t, r.SessionID).AgentID == "chosen"
+						}
+					}
+					return false
+				})
 			}
 			rows, _ := c.d.st.workers()
 			if len(rows) != 0 {
@@ -436,6 +452,24 @@ func TestSessionStartCodexPlan(t *testing.T) {
 		mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", Model: tc.model, FirstMessage: tc.prompt}), &r)
 		if r.Status != "started" || r.Plan.Dir != repo || !reflect.DeepEqual(r.Plan.Argv, tc.args) {
 			t.Fatalf("plan: %+v, want %v in %s", r, tc.args, repo)
+		}
+	}
+}
+
+func TestSessionStartAgentRefusedBeforeLaunch(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.HarnessPaths = map[string]string{"pi": "/fake/pi", "codex": "/fake/codex", "opencode": "/fake/opencode"}
+	})
+	n.register(t, newRepo(t, "shop"))
+	for _, tc := range []struct{ harness, agent, want string }{
+		{"pi", "missing", "unknown or tombstoned"},
+		{"codex", "shop", "native session ID before launch"},
+		{"opencode", "shop", "native session ID before launch"},
+	} {
+		_, err := n.cli.call("session_start", protocol.SessionStartRequest{Project: "shop", Harness: tc.harness, AgentID: tc.agent})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: %v", tc.harness, err)
 		}
 	}
 }

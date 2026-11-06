@@ -1285,6 +1285,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"sessions": res}, nil
 
+	case "session.agent.reserve":
+		p, err := decode[protocol.SessionAgentReservation](raw)
+		if err != nil {
+			return nil, reject("bad session.agent.reserve")
+		}
+		return struct{}{}, st.ReserveSessionAgent(nc.id, p)
+
 	case "session.upsert":
 		p, err := decode[protocol.SessionUpsert](raw)
 		if err != nil {

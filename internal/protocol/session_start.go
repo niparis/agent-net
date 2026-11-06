@@ -89,6 +89,8 @@ func OwnerWorktreeBranch(project string, n int) string {
 // machine that runs the start. Branch names the new worktree's branch; empty
 // asks the machine for the lowest free agent-net/<project>-<n>.
 type SessionStartRequest struct {
+	// AgentID selects the lasting Agent. Empty keeps the Repo owner default.
+	AgentID      string `json:"agent_id,omitempty"`
 	Remote       string `json:"remote,omitempty"`
 	Merger       bool   `json:"merger,omitempty"`
 	Project      string `json:"project"`
@@ -150,6 +152,7 @@ type SessionStartQuery struct {
 // StartedSession is separate from a worker. It has no owner agent, brief,
 // deadline or cleanup rules. SessionID is filled after normal registration.
 type StartedSession struct {
+	AgentID    string `json:"agent_id,omitempty"`
 	Type       string `json:"type,omitempty"`
 	Background bool   `json:"background,omitempty"`
 	ID         string `json:"id"`
@@ -185,4 +188,13 @@ type SessionResumeRequest struct {
 // SessionStopResult describes the harness stop without removing the conversation.
 type SessionStopResult struct {
 	Note string `json:"note"`
+}
+
+// SessionAgentReservation is an owner-authorized selection for a future session.
+// NativeID may be empty for validation before launch.
+type SessionAgentReservation struct {
+	Owner    string `json:"owner_session"`
+	AgentID  string `json:"agent_id"`
+	Harness  string `json:"harness"`
+	NativeID string `json:"native_id,omitempty"`
 }

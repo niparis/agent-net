@@ -75,6 +75,9 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	sessionID := strings.TrimSpace(relay.SessionID)
 	switch typ {
 	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionProposalClone:
+		if relay.AgentID != "" {
+			return nil, reject("explicit Agent selection for remote starts requires target capability negotiation")
+		}
 		if nodeID == "" {
 			if nodeID, err = g.sessionStartNode(relay.SessionStartRequest); err != nil {
 				return nil, err

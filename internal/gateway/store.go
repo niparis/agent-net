@@ -952,6 +952,15 @@ CREATE TRIGGER IF NOT EXISTS session_lifecycle_update BEFORE UPDATE OF online,re
 -- these triggers also permits old-schema fixtures to drop identity columns.
 DROP TRIGGER IF EXISTS session_lifecycle_insert;
 DROP TRIGGER IF EXISTS session_lifecycle_update;
+`, `
+-- 123: owner-authorized Agent selection before first session registration.
+CREATE TABLE IF NOT EXISTS session_agent_starts (
+ node_id TEXT NOT NULL REFERENCES nodes(id),
+ harness TEXT NOT NULL,
+ native_id TEXT NOT NULL,
+ agent_id TEXT NOT NULL REFERENCES agents(id),
+ PRIMARY KEY(node_id,harness,native_id)
+);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1781,6 +1790,9 @@ func (s *Store) upsertSession(q interface {
 		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT owner_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id)))) END
 		WHERE id=?`, id)
 	if err != nil {
+		return "", false, err
+	}
+	if err := applyStartedAgent(q, nodeID, in, id, known); err != nil {
 		return "", false, err
 	}
 	if err = checkActiveSessionIdentity(q, id); err != nil {

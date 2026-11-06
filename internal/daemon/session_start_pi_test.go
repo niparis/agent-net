@@ -15,13 +15,16 @@ func TestSessionStartPiFirstMessageIsAnOwnerMessage(t *testing.T) {
 	})
 	repo := newRepo(t, "shop")
 	n.register(t, repo)
+	n.register(t, newRepo(t, "chosen"))
 	fakeOpenHerdr(t)
 
 	var r sessionStartTestResult
-	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "shop", Harness: "pi",
-		FirstMessage: "Inspect this project"}), &r)
+	mustJSON(t, n.cli.mustCall("session_start", map[string]any{"project": "shop", "harness": "pi", "agent_id": "chosen", "first_message": "Inspect this project"}), &r)
 	lc, sessionID := helloPi(t, n.node, r.NativeID, repo, true)
 	push := lc.nextPush()
+	if a := n.agentOf(t, sessionID); a == nil || a.AgentID != "chosen" {
+		t.Fatalf("first delivery agent: %+v", a)
+	}
 	if push.Body != "Inspect this project" || push.From != n.ownerID() || push.To != sessionID ||
 		push.Type != protocol.TypeRequest || push.FromHarness != protocol.OwnerHarness {
 		t.Fatalf("first message: %+v", push)

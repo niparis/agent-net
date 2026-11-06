@@ -1441,3 +1441,14 @@ After cutover each new connection must pass its own typed-capable `hello` before
 it becomes available for routing. Old frames are refused with `upgrade required`.
 Legacy Graph string adapters remain available to upgraded daemons during the
 owner surface transition. Rollback requires restoring the pre-cutover backup.
+
+Explicit Agent selection at session start uses `session.agent.reserve`. The
+caller must name the owner pseudo-session on its authenticated machine. The
+local daemon exposes this only to its owner start path or an approved CTO
+proposal. Agent role text grants no authority. Unknown and tombstoned Agents
+are refused before launch and checked again during registration. A reservation
+cannot replace the identity of an already registered session or a worker.
+Reservations bind a machine, harness and native session ID. Applying the Agent
+and consuming the reservation happen in the registration transaction, before
+pending gateway messages are dispatched. Daemons without a selection retain
+the existing Repo owner default.
