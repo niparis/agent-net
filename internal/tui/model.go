@@ -1682,6 +1682,24 @@ func matches(a protocol.AgentView, filter string) bool {
 // groups returns the sessions that pass the filter and the switches, grouped
 // by machine, with activity bands kept stable between refreshes.
 func (m Model) groups() []group {
+	latest := map[string]protocol.AgentView{}
+	online := map[string]bool{}
+	key := func(a protocol.AgentView) string {
+		return a.NodeID + "\n" + firstNonEmpty(a.RepoContext, firstNonEmpty(a.Repo.Root, firstNonEmpty(a.Repo.Project, a.Cwd)))
+	}
+	for _, a := range m.snap.Agents {
+		if protocol.IsOwner(a.Harness) || a.Harness == "bot" || a.Worker != nil || m.hiddenSessions[a.SessionID] {
+			continue
+		}
+		k := key(a)
+		if a.Online && a.Status != protocol.StatusDormant {
+			online[k] = true
+			continue
+		}
+		if a.LastSeen > 0 && m.now().Sub(time.Unix(a.LastSeen, 0)) <= 7*24*time.Hour && a.LastSeen > latest[k].LastSeen {
+			latest[k] = a
+		}
+	}
 	by := map[string]*group{}
 	bots := group{nodeID: "bots", host: "Bots"}
 	var order []*group
@@ -1694,7 +1712,7 @@ func (m Model) groups() []group {
 			continue
 		}
 		// Dormant sessions are reachable but quiet: hidden with the offline ones.
-		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
+		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline && strings.TrimSpace(m.filter) == "" && (m.activeOnly || online[key(a)] || latest[key(a)].SessionID != a.SessionID) {
 			continue
 		}
 		// A worker that ended is not a row, even when offline sessions are
