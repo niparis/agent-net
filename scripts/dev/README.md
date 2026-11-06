@@ -115,3 +115,19 @@ never the live one.
 cp ~/.local/state/agent-net/gateway/gateway.db* /tmp/gw/
 python3 scripts/dev/capability-backtest.py /tmp/gw/gateway.db
 ```
+
+## worker-data-review.py
+
+Prints every table in `docs/design/model-capability-review.md`: outcomes by
+model, effort and harness, outcomes by level and by D bucket, the judge's
+correlations with outcomes, the level cut-off windows, the review results, the
+picker counts and the stored plan rebuilt on today's data.
+
+```
+cp ~/.local/state/agent-net/gateway/gateway.db* /tmp/gw/
+python3 scripts/dev/worker-data-review.py /tmp/gw/gateway.db
+```
+
+The script opens the copy read only, uses only the standard library, and writes
+nothing. It folds the repeated `worker_runs` rows for one session into one
+task, because each report writes another row with the same start time.
