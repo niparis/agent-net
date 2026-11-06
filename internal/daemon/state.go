@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"midrun_run", `midrun_run INTEGER NOT NULL DEFAULT 0`},
 		{"notice_since_request", `notice_since_request INTEGER NOT NULL DEFAULT 0`},
 		{"change_id", `change_id TEXT NOT NULL DEFAULT ''`},
+		{"run_evidence", `run_evidence TEXT NOT NULL DEFAULT 'null'`},
 	} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)

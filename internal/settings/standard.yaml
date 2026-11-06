@@ -1,5 +1,14 @@
 format: 1
 settings:
+  - key: workers.early_quit_threshold
+    rows: [145]
+    description: Incomplete worker runs shorter than this with no changes or fewer than 20 uncommitted changed lines count as early quits.
+    kind: advice
+    type: duration
+    min: "0s"
+    levels: [network, repo]
+    default: "120s"
+    live: true
   - key: delivery.pipeline.review.required_risk
     rows: [127]
     description: The lowest risk score that requires review, in addition to difficulty and sensitive paths.

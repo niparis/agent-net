@@ -208,6 +208,7 @@ type MachineQuotaPage struct {
 
 // MachineTrackRow is one track record of a machine.
 type MachineTrackRow struct {
+	EarlyQuits    int     `json:"early_quits"`
 	Harness       string  `json:"harness"`
 	Model         string  `json:"model"`
 	Runs          int     `json:"runs"`

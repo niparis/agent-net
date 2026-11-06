@@ -51,13 +51,23 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 	if r.AutoContinue < 0 {
 		r.AutoContinue = 0
 	}
+	var files, lines any
+	var complete any = r.Complete
+	early := false
+	if e := r.Evidence; e != nil {
+		files, lines, early = e.FilesChanged, e.LinesChanged, e.EarlyQuit
+		if r.Complete == nil {
+			complete = e.Complete
+		}
+		r.RunSeconds = e.RunSeconds
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, auto_continue_count, caller, caller_session_id, difficulty, touches, difficulty_used, task_id, midrun_count, counters_known, caller_agent_id)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID); err != nil {
+	if _, err := tx.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, auto_continue_count, caller, caller_session_id, difficulty, touches, difficulty_used, task_id, midrun_count, counters_known, files_changed, lines_changed, worker_complete, early_quit, caller_agent_id)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, ?,?,?,?, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, files, lines, complete, early, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET worker_run_active=0 WHERE id=? AND node_id=? AND worker<>'' AND (?=0 OR worker_run_generation=?)`, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
@@ -89,7 +99,7 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 		window = protocol.TrackRecordDays * 24 * time.Hour
 	}
 	cut := s.now().Add(-window).Unix()
-	query := `SELECT harness, model, outcome, run_seconds, continue_count, fix_count, auto_continue_count FROM worker_runs WHERE ended_at >= ?`
+	query := `SELECT harness, model, outcome, run_seconds, continue_count, fix_count, auto_continue_count, early_quit FROM worker_runs WHERE ended_at >= ?`
 	args := []any{cut}
 	if nodeID != "" {
 		query += ` AND node_id = ?`
@@ -109,7 +119,8 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 		var harness, model, outcome string
 		var run int64
 		var cont, fix, auto int
-		if err := rows.Scan(&harness, &model, &outcome, &run, &cont, &fix, &auto); err != nil {
+		var early bool
+		if err := rows.Scan(&harness, &model, &outcome, &run, &cont, &fix, &auto, &early); err != nil {
 			return nil, err
 		}
 		k := key{harness, model}
@@ -123,6 +134,9 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 		tr.Continue += cont
 		tr.Fix += fix
 		tr.AutoContinue += auto
+		if early {
+			tr.EarlyQuits++
+		}
 		switch outcome {
 		case protocol.OutcomeComplete:
 			tr.Complete++
@@ -181,10 +195,10 @@ func (s *Store) TrackSubject(kind, subject string, window time.Duration) (*proto
 	tr := &protocol.TrackRecord{Harness: "all", Model: subject, Resumable: true}
 	switch kind {
 	case protocol.SubjectModel:
-		query = `SELECT harness, outcome, run_seconds, continue_count, fix_count, auto_continue_count FROM worker_runs WHERE model = ? AND ended_at >= ?`
+		query = `SELECT harness, outcome, run_seconds, continue_count, fix_count, auto_continue_count, early_quit FROM worker_runs WHERE model = ? AND ended_at >= ?`
 		args = []any{subject, cut}
 	case protocol.SubjectHarness:
-		query = `SELECT model, outcome, run_seconds, continue_count, fix_count, auto_continue_count FROM worker_runs WHERE harness = ? AND ended_at >= ?`
+		query = `SELECT model, outcome, run_seconds, continue_count, fix_count, auto_continue_count, early_quit FROM worker_runs WHERE harness = ? AND ended_at >= ?`
 		args = []any{subject, cut}
 		tr = &protocol.TrackRecord{Harness: subject, Model: "all", Resumable: protocol.HarnessCanResume(subject)}
 	case protocol.SubjectModelHarness:
@@ -192,7 +206,7 @@ func (s *Store) TrackSubject(kind, subject string, window time.Duration) (*proto
 		if !ok {
 			return nil, false, nil
 		}
-		query = `SELECT '', outcome, run_seconds, continue_count, fix_count, auto_continue_count FROM worker_runs WHERE model = ? AND harness = ? AND ended_at >= ?`
+		query = `SELECT '', outcome, run_seconds, continue_count, fix_count, auto_continue_count, early_quit FROM worker_runs WHERE model = ? AND harness = ? AND ended_at >= ?`
 		args = []any{model, harness, cut}
 		tr = &protocol.TrackRecord{Harness: harness, Model: model, Resumable: protocol.HarnessCanResume(harness)}
 	default:
@@ -208,13 +222,17 @@ func (s *Store) TrackSubject(kind, subject string, window time.Duration) (*proto
 		var other, outcome string
 		var run int64
 		var cont, fix, auto int
-		if err := rows.Scan(&other, &outcome, &run, &cont, &fix, &auto); err != nil {
+		var early bool
+		if err := rows.Scan(&other, &outcome, &run, &cont, &fix, &auto, &early); err != nil {
 			return nil, false, err
 		}
 		tr.Runs++
 		tr.Continue += cont
 		tr.Fix += fix
 		tr.AutoContinue += auto
+		if early {
+			tr.EarlyQuits++
+		}
 		switch outcome {
 		case protocol.OutcomeComplete:
 			tr.Complete++
@@ -434,6 +452,29 @@ func (s *Store) RecentWorkerFailures(nodeID, harness string) (map[string]bool, e
 			return nil, err
 		}
 		out[model] = true
+	}
+	return out, rows.Err()
+}
+
+// recentEarlyQuitLevels keeps the ordinary failure window, scoped to the
+// difficulty of each attempt. Existing failure scoring remains unchanged.
+func (s *Store) recentEarlyQuitLevels(node string) (map[string]map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT harness,model,difficulty FROM worker_runs WHERE node_id=? AND early_quit=1 AND ended_at>=?`, node, s.now().Add(-protocol.ModelFailureHours*time.Hour).Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]bool{}
+	for rows.Next() {
+		var h, m, d string
+		if err := rows.Scan(&h, &m, &d); err != nil {
+			return nil, err
+		}
+		key := h + "\x00" + m
+		if out[key] == nil {
+			out[key] = map[string]bool{}
+		}
+		out[key][d] = true
 	}
 	return out, rows.Err()
 }

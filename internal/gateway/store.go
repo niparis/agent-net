@@ -1035,6 +1035,9 @@ CREATE TRIGGER IF NOT EXISTS team_owner_tombstone BEFORE UPDATE OF tombstone ON 
  WHEN NEW.tombstone<>0 AND EXISTS(SELECT 1 FROM teams WHERE owner_agent_id=OLD.id)
  BEGIN SELECT RAISE(ABORT,'clear or transfer Team ownership first'); END;
 
+`, `
+-- worker early quit evidence (columns added replay-safely below).
+SELECT 1;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1448,6 +1451,25 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`ALTER TABLE worker_defects ADD COLUMN severity INTEGER NOT NULL DEFAULT 1`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+
+		if strings.Contains(migrations[i], "worker early quit evidence") {
+			for _, col := range []struct{ name, spec string }{
+				{"files_changed", "INTEGER"}, {"lines_changed", "INTEGER"},
+				{"worker_complete", "INTEGER"}, {"early_quit", "INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
 				}
 			}
 		}

@@ -181,6 +181,7 @@ type worker struct {
 	taskMsg, doneStatus, taskText, title string
 	// donePartial is true when the last hand-back said complete:false.
 	donePartial bool
+	evidence    *protocol.WorkerEvidence
 	// continueCount and fixCount count the messages from the owner after a
 	// hand-back with complete:no and complete:yes. continueRun and fixRun are
 	// the part since this run began, which the gateway counts as one run.
@@ -548,7 +549,7 @@ func (d *Daemon) saveWorkerLocked(w *worker) {
 
 // rowLocked is the database row of a worker. Callers hold d.wmu.
 func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
-	return workerRow{RunGeneration: w.runGeneration, ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
+	return workerRow{RunGeneration: w.runGeneration, Evidence: w.evidence, ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
 		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, Title: w.title, DoneStatus: w.doneStatus, DonePartial: w.donePartial,
@@ -1061,6 +1062,12 @@ func (d *Daemon) endWorkerWhen(w *worker, reason string, when func() bool) {
 	if en, ok := d.launchers[w.harness].(ender); ok {
 		en.end(d, w)
 	}
+	d.wmu.Lock()
+	hasEvidence := w.evidence != nil
+	d.wmu.Unlock()
+	if !done || !hasEvidence {
+		d.captureWorkerEvidence(w, nil)
+	}
 	if !done && reason != protocol.StopHandback && reason != protocol.StopStartFails {
 		if harness == "agy" && w.title != "" {
 			d.saveWorkerChanges(w, strings.TrimSpace(strings.SplitN(w.title, "\n", 2)[0]), reason, true)
@@ -1139,7 +1146,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			c := !r.DonePartial
 			complete = &c
 		}
-		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{RunGeneration: r.RunGeneration, SessionID: r.SessionID, WorkerID: r.ID,
+		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{RunGeneration: r.RunGeneration, Evidence: r.Evidence, SessionID: r.SessionID, WorkerID: r.ID,
 			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model, Failure: r.Failure,
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
@@ -1683,16 +1690,18 @@ func (d *Daemon) adoptWorkers() {
 				d.Logf("worker %s: remove idle notice: %v", r.ID, err)
 			}
 			r.EndedReason = protocol.StopLost
+			if r.DoneStatus == "" {
+				lost := &worker{runGeneration: r.RunGeneration, id: r.ID, worktree: r.Worktree, base: r.Base, project: r.Project, startedAt: r.StartedAt, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
+					owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
+				r.Evidence = d.measureWorkerEvidence(context.Background(), lost, nil)
+				d.saveUnfinished(lost, protocol.StopLost)
+			}
 			d.st.saveWorker(r)
 			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
-			if r.DoneStatus == "" {
-				d.saveUnfinished(&worker{runGeneration: r.RunGeneration, id: r.ID, worktree: r.Worktree, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
-					owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}, protocol.StopLost)
-			}
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}
-		w := &worker{runGeneration: r.RunGeneration, id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
+		w := &worker{runGeneration: r.RunGeneration, evidence: r.Evidence, id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
