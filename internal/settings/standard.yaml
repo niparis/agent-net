@@ -359,6 +359,15 @@ settings:
     levels: [network]
     default: Agent-Net-Caller
     live: true
+  - key: sessions.stall_timeout
+    rows: [150]
+    description: Time without harness activity before warning about a busy session.
+    kind: advice
+    type: duration
+    min: 1ns
+    levels: [network, repo]
+    default: 20m
+    live: true
   - key: workers.max_age
     rows: [53]
     description: Maximum worker run age.
@@ -957,3 +966,4 @@ ledger:
   - {row: 147, keys: [notices.worker_idle]}
   - {row: 148, keys: [notices.idle_check_and_wake_text]}
   - {row: 149, keys: [notices.error_hint_limits]}
+  - {row: 150, keys: [sessions.stall_timeout]}

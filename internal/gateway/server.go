@@ -396,6 +396,9 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				g.logLine("error", "where", "oauth cleanup", "err", err)
 			}
 		case <-t.C:
+			if err := g.store.checkSessionStalls(); err != nil {
+				g.logLine("error", "where", "session stalls", "err", err)
+			}
 			if err := g.store.samplePendingStalls(); err != nil {
 				g.logLine("error", "where", "pending sample", "err", err)
 			}
@@ -1326,6 +1329,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		p, err := decode[protocol.SessionRemove](raw)
 		if err != nil {
 			return nil, reject("bad session.remove")
+		}
+		if p.Lost {
+			return nil, st.SetSessionLost(nc.id, p.SessionID)
 		}
 		return nil, st.SetSessionOffline(nc.id, p.SessionID)
 

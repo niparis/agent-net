@@ -99,6 +99,7 @@ type localConn struct {
 	mu     sync.Mutex
 	client string
 	ls     *localSession // bound session; nil for cli
+	ended  bool          // plugin reported an explicit session shutdown
 	acks   map[string]chan ack
 	// peerPID is the process ID of the other end, read in hello.
 	peerPID     int
@@ -291,7 +292,7 @@ func (lc *localConn) cleanup() {
 	delete(lc.srv.conns, lc)
 	lc.srv.mu.Unlock()
 	lc.mu.Lock()
-	ls := lc.ls
+	ls, ended := lc.ls, lc.ended
 	lc.mu.Unlock()
 	if ls == nil || ls.conn != lc {
 		return
@@ -300,13 +301,15 @@ func (lc *localConn) cleanup() {
 	k := key(ls.info.Harness, ls.info.NativeID)
 	d.mu.Lock()
 	var sid string
+	lost := false
 	if d.sessions[k] == ls {
 		delete(d.sessions, k)
 		sid = ls.sessionID
+		lost = !ended && !ls.ownerStopped && ls.info.Worker == nil && ls.info.Status == "busy"
 	}
 	d.mu.Unlock()
 	if sid != "" {
-		d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: sid})
+		d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: sid, Lost: lost})
 	}
 }
 
@@ -544,6 +547,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			// is really working again sends status busy.
 			ls.info.Waiting = old.info.Waiting
 			ls.workerWaiting = old.workerWaiting
+			ls.harnessActivity = old.harnessActivity
 			if old.lastActive.After(ls.lastActive) {
 				ls.lastActive = old.lastActive
 			}
@@ -811,6 +815,10 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		// or idle, or says hello again, did nothing.
 		statusActivity := statusChanged && statusIsActivity(previousStatus, p.Status)
 		if statusActivity {
+			if p.Status == "busy" {
+				ls.ownerStopped = false
+			}
+			ls.harnessActivity = activeAt
 			d.recordActivityLocked(ls, activeAt)
 		}
 		d.mu.Unlock()
@@ -822,6 +830,22 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		ls.info.Repo = repo
 		d.mu.Unlock()
 		d.pushSession(ls)
+		return nil, nil
+
+	case "harness_end":
+		if ls == nil || ls.conn != lc {
+			return nil, errors.New("only plugin clients report session shutdown")
+		}
+		lc.mu.Lock()
+		lc.ended = true
+		lc.mu.Unlock()
+		return nil, nil
+
+	case "harness_activity":
+		if ls == nil || ls.conn != lc {
+			return nil, errors.New("only plugin clients report harness activity")
+		}
+		d.touchHarness(ls, time.Now())
 		return nil, nil
 
 	case "request_approval", "propose_idea", "ask_question":

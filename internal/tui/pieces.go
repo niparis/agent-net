@@ -8,6 +8,9 @@ import (
 )
 
 func statusLabel(status string) string {
+	if strings.HasPrefix(strings.TrimSpace(status), "stalled ") {
+		return lipgloss.NewStyle().Foreground(roleBase).Background(roleWarning).Render(status)
+	}
 	switch strings.TrimSpace(status) {
 	case "busy":
 		return lipgloss.NewStyle().Foreground(roleBase).Background(roleGood).Render(status)
