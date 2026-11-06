@@ -16,6 +16,8 @@ func TestSecretsMasksCommonShapes(t *testing.T) {
 		{"bearer header", "curl -H 'Authorization: Bearer abc123def456ghi789' https://x", "abc123def456ghi789"},
 		{"bearer text", "send bearer zzzzzzzzzzzzzzzz1234", "zzzzzzzzzzzzzzzz1234"},
 		{"token equals long hex", "token=0123456789abcdef0123456789abcdef01234567", "0123456789abcdef0123456789abcdef01234567"},
+		{"bare key", "key=abcdef1234567890abcdef", "abcdef1234567890abcdef"},
+		{"bare auth", "auth=None", "None"},
 		{"key equals base64", "api_key=QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=", "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo="},
 		{"env style", "OPENAI_API_KEY=hunter2hunter2 node app.js", "hunter2hunter2"},
 		{"json style", `{"password": "correct horse battery"}`, "correct horse battery"},
@@ -51,6 +53,61 @@ func TestSecretsLeavesOrdinaryTextAlone(t *testing.T) {
 	} {
 		if got := Secrets(in); got != in {
 			t.Errorf("Secrets(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestSecretsMasksCompoundSensitiveNames(t *testing.T) {
+	for _, in := range []string{
+		"api_key=plainvalue123",
+		"apiKey=plainvalue123",
+		"API-KEY=plainvalue123",
+		"secret_key=plainvalue123",
+		"private_key=plainvalue123",
+		"access_key=plainvalue123",
+		"ssh_key=plainvalue123",
+		"MY_APP_KEY=plainvalue123",
+		"signing.key=plainvalue123",
+		"secret=plainvalue123",
+		"token=plainvalue123",
+		"password=plainvalue123",
+		"credentials=plainvalue123",
+		"SERVICE_AUTH=plainvalue123",
+	} {
+		got := Secrets(in)
+		if strings.Contains(got, "plainvalue123") || !strings.Contains(got, Mask) {
+			t.Errorf("Secrets(%q) = %q, want value masked", in, got)
+		}
+	}
+}
+
+func TestSecretsDoesNotMaskWordsEndingInSk(t *testing.T) {
+	for _, in := range []string{
+		"- [What lands on disk: state the contract](#what-lands-on-disk-state-the-contract)",
+		"task-assignment-and-routing-rules",
+		"risk-assessment-for-the-quarter",
+		"a desk-booking-system-for-teams",
+	} {
+		if got := Secrets(in); got != in {
+			t.Errorf("Secrets(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestSecretsMasksSkKeysAtTokenBoundaries(t *testing.T) {
+	for _, in := range []string{
+		"OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx",
+		"sk-proj-abcdefghijklmnop1234",
+		"key: sk-ant-api03-abcdefghijklmnopqrst",
+		"sk-abcdefghijklmnopqrstuvwx",
+		" sk-abcdefghijklmnopqrstuvwx",
+		`"sk-abcdefghijklmnopqrstuvwx`,
+		"=sk-abcdefghijklmnopqrstuvwx",
+		"(sk-abcdefghijklmnopqrstuvwx",
+	} {
+		got := Secrets(in)
+		if strings.Contains(got, "sk-") || strings.Contains(got, "abcdefghijklmnop") {
+			t.Errorf("Secrets(%q) = %q, want key masked", in, got)
 		}
 	}
 }

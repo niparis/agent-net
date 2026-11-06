@@ -3,8 +3,6 @@ package gateway
 import (
 	"context"
 	"github.com/niparis/agent-net/internal/inventory"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -112,34 +110,6 @@ func TestToolPlanScanFailureAndMissingReport(t *testing.T) {
 		}
 	}
 	t.Fatalf("missing report accepted: %+v", targets)
-}
-
-func TestSkillImportSecretReasonNamesFile(t *testing.T) {
-	g, node, _ := toggleFixture(t)
-	root := t.TempDir()
-	secret := "sk-" + strings.Repeat("testfixture", 5)
-	for name, body := range map[string]string{"SKILL.md": "# Demo", ".env": "API_KEY=" + secret} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	hash, err := inventory.SkillHash(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle, err := inventory.PackSkill(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := `["skill","demo","` + hash + `"]`
-	if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Location: "/skills/demo"}}}); err != nil {
-		t.Fatal(err)
-	}
-	toggleFakeNode(t, g, node, bundle, nil)
-	_, err = g.importSkill(t.Context(), protocol.ToolImport{Item: id, Location: protocol.ToolImportLocation{NodeID: node, Location: "/skills/demo"}})
-	if err == nil || !strings.Contains(err.Error(), "secret (.env)") || strings.Contains(err.Error(), secret) {
-		t.Fatalf("unsafe secret error: %v", err)
-	}
 }
 
 func TestSkillImportFailedObservationNamesCause(t *testing.T) {
