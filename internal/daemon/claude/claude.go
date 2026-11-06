@@ -211,6 +211,7 @@ func (a *Adapter) poll() {
 		}
 		if !active.IsZero() {
 			info.LastActive = active.Unix()
+			info.HarnessActivity = active.Unix()
 		}
 		seenModels[sf.SessionID] = true
 		byNative[sf.SessionID] = found{pid: sf.PID, sock: sf.MessagingSocketPath, info: info, kind: sf.Kind, job: sf.JobID}

@@ -1038,6 +1038,12 @@ CREATE TRIGGER IF NOT EXISTS team_owner_tombstone BEFORE UPDATE OF tombstone ON 
 `, `
 -- worker early quit evidence (columns added replay-safely below).
 SELECT 1;
+`, `
+-- Session harness activity and unexpected loss.
+ALTER TABLE sessions ADD COLUMN harness_activity INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN harness_lost INTEGER NOT NULL DEFAULT 0;
+UPDATE sessions SET harness_activity=last_seen WHERE status='busy';
+
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1872,8 +1878,8 @@ func (s *Store) upsertSession(q interface {
 	lastActive := in.LastActive * int64(time.Second)
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
-		tools_version, tools_old, created_at, waiting, graph_excluded, no_project)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
 		-- A worker whose run is over stays ended. A late session sync from its
@@ -1882,12 +1888,14 @@ func (s *Store) upsertSession(q interface {
 		-- resume (SetWorkerRunActive) lets the registration bring it back.
 		status=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN 'ended' ELSE excluded.status END,
-		delivery=excluded.delivery,
+		delivery=excluded.delivery, harness_lost=0,
 		last_seen=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN sessions.last_seen ELSE excluded.last_seen END,
 		online=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN 0 ELSE 1 END,
 		last_active=MAX(sessions.last_active, excluded.last_active),
+		harness_activity=MAX(sessions.harness_activity, ?,
+			CASE WHEN excluded.status='busy' AND sessions.status<>'busy' THEN excluded.last_seen ELSE 0 END),
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
@@ -1900,7 +1908,9 @@ func (s *Store) upsertSession(q interface {
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, workerTitle,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
-		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject))
+		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject),
+		max(in.HarnessActivity*int64(time.Second), busyInitialActivity(in.Status, now)),
+		in.HarnessActivity*int64(time.Second))
 	if err != nil {
 		return "", false, err
 	}
@@ -1913,6 +1923,16 @@ func (s *Store) upsertSession(q interface {
 		if _, err := q.Exec(`UPDATE sessions SET worker_run_generation=MAX(worker_run_generation,?) WHERE id=?`, in.Worker.RunGeneration, id); err != nil {
 			return "", false, err
 		}
+	}
+	// A new progress report clears the current warning without waiting for
+	// the minute sweep. Keep a pending delivery warning until its ack.
+	_, err = q.Exec(`UPDATE inbox_items SET status='closed',answer='activity_or_end',answered_at=?
+		WHERE session_id=? AND message_id='session-stall' AND status IN ('open','dismissed') AND EXISTS
+		(SELECT 1 FROM sessions s WHERE s.id=? AND (s.worker<>'' OR s.harness_activity / 1000000000 > CAST(inbox_items.conversation_id AS INTEGER)
+		OR (s.status<>'busy' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.recipient=s.id
+		AND (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS (SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))))))`, now, id, id)
+	if err != nil {
+		return "", false, err
 	}
 	// Triggers from the repo migration have now created any new repo records.
 	// A sync may update the repo context but must not replace a selected agent.
@@ -2229,9 +2249,16 @@ func (s *Store) SessionNode(sessionID string) (string, error) {
 // worker. A worker that only lost its connection keeps its status, because it
 // may still be busy.
 func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET online = 0,
+	_, err := s.db.Exec(`UPDATE sessions SET online = 0, harness_lost=0,
 		status = CASE WHEN worker<>'' AND worker_run_active=0 THEN 'ended' ELSE status END,
 		last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
+	return err
+}
+
+// SetSessionLost records an unexpected disappearance while a turn was busy.
+// It does not decide that the session ended.
+func (s *Store) SetSessionLost(nodeID, sessionID string) error {
+	_, err := s.db.Exec(`UPDATE sessions SET online=0,harness_lost=CASE WHEN status='busy' AND worker='' THEN 1 ELSE 0 END,last_seen=? WHERE id=? AND node_id=?`, s.now().UnixNano(), sessionID, nodeID)
 	return err
 }
 
@@ -2482,7 +2509,8 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  'judge_harness',wa.judge_harness,'judge_model',wa.judge_model,'reasons',json(wa.reasons),
  'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
- COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),'')
+ COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
+ COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0)
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -2497,7 +2525,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.StalledSince)
 	if err != nil {
 		return a, err
 	}

@@ -17,6 +17,19 @@ func prepareOldSessionIdentity(t *testing.T, s *Store) {
 	if err := s.db.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_version`).Scan(&current); err != nil {
 		t.Fatal(err)
 	}
+	if current < migrationVersion(t, "Session harness activity and unexpected loss") {
+		for _, name := range []string{"harness_activity", "harness_lost"} {
+			var count int
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name=?`, name).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				if _, err := s.db.Exec(`ALTER TABLE sessions DROP COLUMN ` + name); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
 	if current >= migrationVersion(t, "Explicit session and run identity") {
 		return
 	}

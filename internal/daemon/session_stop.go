@@ -87,7 +87,9 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		if err != nil {
 			return no(err)
 		}
+		d.markOwnerStop(ls, true)
 		if err := exec.CommandContext(ctx, bin, "stop", job).Run(); err != nil {
+			d.markOwnerStop(ls, false)
 			return no(fmt.Errorf("Claude could not stop %s: %w", name, err))
 		}
 	case "opencode":
@@ -138,7 +140,9 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		}
 		for _, pane := range panes {
 			if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(info.PID)) {
+				d.markOwnerStop(ls, true)
 				if _, err := d.herdrRun(bin, h.socket, "pane", "close", pane.PaneID); err != nil {
+					d.markOwnerStop(ls, false)
 					return no(fmt.Errorf("herdr could not stop %s: %w", name, err))
 				}
 				return result, nil
@@ -149,4 +153,12 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		return no(terminal)
 	}
 	return result, nil
+}
+
+// Mark the request before the harness exits, so discovery does not mistake an
+// owner stop for an unexpected disappearance.
+func (d *Daemon) markOwnerStop(ls *localSession, stopped bool) {
+	d.mu.Lock()
+	ls.ownerStopped = stopped
+	d.mu.Unlock()
 }
