@@ -11,7 +11,6 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Title     Review worker history and difficulty scores                                                                │
@@ -20,7 +19,7 @@
 │ Where     test-machine / demo                                                                                        │
 │ Run time  2m0s                                                                                                       │
 │                                                                                                                      │
-│ normal  D 2.10  ·  fake/judge                                                                                        │
+│ normal  D 2.10  ·  judged by judge                                                                                   │
 │                                                                                                                      │
 │ Reasoning     3/5 ###..  Join stored runs and current sessions.                                                      │
 │ Scope         2/5 ##...  One read method and one sub-tab.                                                            │
@@ -28,7 +27,8 @@
 │ Uncertainty   1/5 #....  Known table schema.                                                                         │
 │ Verification  2/5 ##...  Gateway and TUI tests.                                                                      │
 │ Risk          1/5 #....  Read only history.                                                                          │
-│ Failure: the model call failed: the provider was unavailable                                                         │
+│                                                                                                                      │
+│ Failure   the model call failed: the provider was unavailable                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

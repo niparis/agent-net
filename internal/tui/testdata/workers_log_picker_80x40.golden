@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│0
+  Quotas    [ Workers log ]
+╭─Workers log──────────────────────────────────────────────────────────────────╮
+│ ▸ 00:00  gpt-6-luna  -     -          Secret check: sk- false match in… done │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Difficulty details───────────────────────────────────────────────────────────╮
+│ Title     Secret check: sk- false match inside words                         │
+│ Model     codex · gpt-6-luna · xhigh                                         │
+│                                                                              │
+│ simple  D 2.05  ·  judged by deepseek-v4.1-flash                             │
+│                                                                              │
+│ Reasoning     0/5 .....  No explanation provided                             │
+│ Scope         0/5 .....  No explanation provided                             │
+│ Coupling      0/5 .....  No explanation provided                             │
+│ Uncertainty   0/5 .....  No explanation provided                             │
+│ Verification  0/5 .....  No explanation provided                             │
+│ Risk          0/5 .....  No explanation provided                             │
+│                                                                              │
+│ Chosen    codex gpt-6-luna:xhigh - score 23.3, good enough                   │
+│ Picker    codex 0% ahead of pace (week, 33% used at 33% elapsed)             │
+│ Rotation  rotation weight 0.85                                               │
+│ Recent    luna codex: 4, deepseek opencode: 3 of the last 7 simple starts    │
+│ excluded  sonnet claude - its max is hard                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+tab Quotas  ↑↓ select run  ←→ details  ? help  q quit

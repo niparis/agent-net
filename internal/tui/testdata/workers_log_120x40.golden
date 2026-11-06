@@ -18,7 +18,7 @@
 │ Where     test-machine / demo                                                                                        │
 │ Run time  2m0s                                                                                                       │
 │                                                                                                                      │
-│ normal  D 2.10  ·  fake/judge                                                                                        │
+│ normal  D 2.10  ·  judged by judge                                                                                   │
 │                                                                                                                      │
 │ Reasoning     3/5 ###..  Join stored runs and current sessions.                                                      │
 │ Scope         2/5 ##...  One read method and one sub-tab.                                                            │
@@ -28,7 +28,7 @@
 │ Risk          1/5 #....  Read only history.                                                                          │
 │                                                                                                                      │
 │ Picker    codex test-model:high (34.5, good enough; eligible for this task and available on the chosen machine)      │
-│ Note: the worker ended after its hand-back; a message from you starts it again 1 automatic continue was sent.        │
+│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
