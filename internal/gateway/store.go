@@ -1264,6 +1264,33 @@ func (s *Store) migrate() error {
 			if err == nil {
 				result, err = tx.Exec(`SELECT 1`)
 			}
+		} else if strings.Contains(migrations[i], "Session harness activity and unexpected loss") {
+			// Rewound databases may retain either column. Preserve existing
+			// observations and initialize activity only when adding its column.
+			addedActivity := false
+			for _, col := range []struct{ name, spec string }{
+				{"harness_activity", "INTEGER NOT NULL DEFAULT 0"},
+				{"harness_lost", "INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name=?`, col.name).Scan(&has); err != nil {
+					break
+				}
+				if has == 0 {
+					if _, err = tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						break
+					}
+					if col.name == "harness_activity" {
+						addedActivity = true
+					}
+				}
+			}
+			if err == nil && addedActivity {
+				_, err = tx.Exec(`UPDATE sessions SET harness_activity=last_seen WHERE status='busy'`)
+			}
+			if err == nil {
+				result, err = tx.Exec(`SELECT 1`)
+			}
 		} else if strings.Contains(migrations[i], "Worker run generations fence") {
 			var has int
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_run_generation'`).Scan(&has)
