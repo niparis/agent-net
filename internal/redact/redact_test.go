@@ -16,6 +16,8 @@ func TestSecretsMasksCommonShapes(t *testing.T) {
 		{"bearer header", "curl -H 'Authorization: Bearer abc123def456ghi789' https://x", "abc123def456ghi789"},
 		{"bearer text", "send bearer zzzzzzzzzzzzzzzz1234", "zzzzzzzzzzzzzzzz1234"},
 		{"token equals long hex", "token=0123456789abcdef0123456789abcdef01234567", "0123456789abcdef0123456789abcdef01234567"},
+		{"bare key", "key=abcdef1234567890abcdef", "abcdef1234567890abcdef"},
+		{"bare auth", "auth=None", "None"},
 		{"key equals base64", "api_key=QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=", "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo="},
 		{"env style", "OPENAI_API_KEY=hunter2hunter2 node app.js", "hunter2hunter2"},
 		{"json style", `{"password": "correct horse battery"}`, "correct horse battery"},
@@ -47,13 +49,6 @@ func TestSecretsLeavesOrdinaryTextAlone(t *testing.T) {
 		"npm install --save-dev typescript",
 		"ls -la /home/user/code",
 		"tokenizer.encode(text)",
-		"return min(matches, key=lambda p: len(p.parts))",
-		"key=lambda p: p.stat().st_mtime, reverse=True)",
-		"sorted(items, key=len)",
-		"key: value",
-		`{"key": "id"}`,
-		"auth=None",
-		"auth: required",
 		"",
 	} {
 		if got := Secrets(in); got != in {

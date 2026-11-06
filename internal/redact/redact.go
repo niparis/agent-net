@@ -35,7 +35,7 @@ var (
 	urlCreds = regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@]*:)[^\s/@]+(@)`)
 	// name=value, name: value and "name": "value" where the name ends in a
 	// word that says "secret". The name may carry a prefix such as MY_APP_.
-	keyValue = regexp.MustCompile(`(?i)(\b(?:[a-z0-9_.\-]*(?:api[_\-]?key|apikey|access[_\-]?key|private[_\-]?key|secret|token|passw(?:or)?d|passwd|pwd|credentials?)|[a-z0-9_.\-]+(?:auth|key))["']?\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;&)}\]]+)`)
+	keyValue = regexp.MustCompile(`(?i)(\b[a-z0-9_.\-]*(?:api[_\-]?key|apikey|access[_\-]?key|private[_\-]?key|secret|token|passw(?:or)?d|passwd|pwd|credentials?|auth|key)["']?\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;&)}\]]+)`)
 	// A flag whose name says "secret", with its value after = or a space.
 	secretFlag = regexp.MustCompile(`(?i)(\s--?[a-z0-9\-]*(?:password|passwd|token|secret|api-?key|apikey|auth|credential)[a-z0-9\-]*)(=|\s+)(\S+)`)
 )
