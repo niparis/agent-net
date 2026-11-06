@@ -193,6 +193,9 @@ type SessionStopResult struct {
 // SessionAgentReservation is an owner-authorized selection for a future session.
 // NativeID may be empty for validation before launch.
 type SessionAgentReservation struct {
+	// Ref and Cwd prepare a durable launch hold before its native ID exists.
+	Ref      string `json:"start_ref,omitempty"`
+	Cwd      string `json:"cwd,omitempty"`
 	Owner    string `json:"owner_session"`
 	AgentID  string `json:"agent_id"`
 	Harness  string `json:"harness"`

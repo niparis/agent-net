@@ -74,6 +74,11 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		request["model"] = selected
 	}
 	directory := strings.ReplaceAll(url.QueryEscape(r.Path), "+", "%20")
+	if r.AgentID != "" {
+		if err := d.reserveStartAgent(ctx, "opencode", "", r.AgentID, r.ID, r.Path); err != nil {
+			return protocol.StartedSession{}, err
+		}
+	}
 	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
 	body, code, err := api("POST", "/api/session", request, "x-opencode-directory", directory)
 	if err != nil {
@@ -91,6 +96,11 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		return protocol.StartedSession{}, errors.New("OpenCode answered without a session ID")
 	}
 	r.NativeID = created.Data.ID
+	if r.AgentID != "" {
+		if err := d.reserveStartAgent(ctx, "opencode", r.NativeID, r.AgentID, r.ID, r.Path); err != nil {
+			return protocol.StartedSession{}, err
+		}
+	}
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -103,7 +113,10 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		cctx, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
 		defer cancel()
 		var startErr error
-		if message != "" {
+		sendFirst := func() {
+			if message == "" {
+				return
+			}
 			// OpenCode 2.2 queues user turns through /prompt, as for the CTO.
 			api := openCodeWorkerAPI(cctx, service.URL, service.Password)
 			_, status, err := api("POST", "/api/session/"+url.PathEscape(r.NativeID)+"/prompt", map[string]string{"text": message, "delivery": "queue"}, "x-opencode-directory", directory)
@@ -112,6 +125,9 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 			} else if status < 200 || status >= 300 {
 				startErr = fmt.Errorf("OpenCode refused the first message (HTTP %d)", status)
 			}
+		}
+		if r.AgentID == "" {
+			sendFirst()
 		}
 		ticker := time.NewTicker(25 * time.Millisecond)
 		defer ticker.Stop()
@@ -129,6 +145,9 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 				startErr = errors.New("the daemon did not register the OpenCode session")
 			case <-ticker.C:
 			}
+		}
+		if startErr == nil && r.AgentID != "" {
+			sendFirst()
 		}
 		if startErr != nil {
 			r.Status, r.Error = "failed", startErr.Error()

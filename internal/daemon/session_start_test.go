@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -243,6 +245,7 @@ func TestSessionStartOpenCode(t *testing.T) {
 			n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} })
 			repo := newRepo(t, "shop space")
 			n.register(t, repo)
+			n.register(t, newRepo(t, "chosen"))
 			var creates, prompts atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				user, pass, ok := r.BasicAuth()
@@ -270,6 +273,10 @@ func TestSessionStartOpenCode(t *testing.T) {
 					helloOpenCode(t, n.node, "ses_owner", repo)
 					fmt.Fprint(w, `{"data":{"id":"ses_owner"}}`)
 				case "POST /api/session/ses_owner/prompt":
+					a := n.agentOf(t, n.d.SessionID("opencode", "ses_owner"))
+					if a == nil || a.AgentID != "chosen" {
+						t.Errorf("first prompt identity: %+v", a)
+					}
 					var body struct{ Text, Delivery string }
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 						t.Error(err)
@@ -286,7 +293,7 @@ func TestSessionStartOpenCode(t *testing.T) {
 			defer server.Close()
 			writeOwnerOpenCodeService(t, state, server.URL)
 			var r protocol.StartedSession
-			mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "opencode", Model: "test/model:high", FirstMessage: message}), &r)
+			mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "opencode", AgentID: "chosen", Model: "test/model:high", FirstMessage: message}), &r)
 			if r.Status != "starting" {
 				t.Fatalf("initial result: %+v", r)
 			}
@@ -464,12 +471,109 @@ func TestSessionStartAgentRefusedBeforeLaunch(t *testing.T) {
 	n.register(t, newRepo(t, "shop"))
 	for _, tc := range []struct{ harness, agent, want string }{
 		{"pi", "missing", "unknown or tombstoned"},
-		{"codex", "shop", "native session ID before launch"},
-		{"opencode", "shop", "native session ID before launch"},
 	} {
 		_, err := n.cli.call("session_start", protocol.SessionStartRequest{Project: "shop", Harness: tc.harness, AgentID: tc.agent})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: %v", tc.harness, err)
 		}
+	}
+}
+
+func TestSessionStartCodexAgent(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond; c.HarnessPaths = bins })
+	n.register(t, newRepo(t, "shop"))
+	n.register(t, newRepo(t, "chosen"))
+	var r protocol.StartedSession
+	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "shop", Harness: "codex", AgentID: "chosen", FirstMessage: "Inspect this project"}), &r)
+	if r.NativeID == "" || r.SessionID == "" || r.Status != "started" {
+		t.Fatalf("start: %+v", r)
+	}
+	a := n.agentOf(t, r.SessionID)
+	if a == nil || a.AgentID != "chosen" {
+		t.Fatalf("first identity: %+v", a)
+	}
+	if r.EnterPlan == nil || !reflect.DeepEqual(r.EnterPlan.Argv, []string{bins["codex"], "resume", r.NativeID, "Inspect this project"}) {
+		t.Fatalf("plan: %+v", r.EnterPlan)
+	}
+}
+
+func TestCTOSessionStartChosenAgentProposal(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	c.register(t, newRepo(t, "chosen"))
+	path := filepath.Join(home, "code", "new-project")
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "agent_id": "chosen", "first_message": "hello"})
+	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("started before approval: %v", err)
+	}
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals: %+v %v", items, err)
+	}
+	if err = c.d.proposalRunner().decide(context.Background(), items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	items, err = c.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result protocol.StartedSession
+	if err = json.Unmarshal(items[0].Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	result = waitSessionStartPath(t, c.workerNode, result)
+	t.Cleanup(func() { killFakeClaude(t, path) })
+	if result.Status != "started" {
+		t.Fatalf("start: %+v", result)
+	}
+	if a := c.agentOf(t, result.SessionID); a == nil || a.AgentID != "chosen" {
+		t.Fatalf("approved Agent: %+v", a)
+	}
+}
+
+func TestSessionStartCodexUnavailableDoesNotHoldUnrelatedSessions(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.CodexHome = t.TempDir(); c.HarnessPaths = bins })
+	repo := newRepo(t, "shop")
+	n.register(t, repo)
+	n.register(t, newRepo(t, "chosen"))
+	if _, err := n.cli.call("session_start", protocol.SessionStartRequest{Project: "shop", Harness: "codex", AgentID: "chosen"}); err == nil {
+		t.Fatal("started without app server")
+	}
+	id, err := g.gw.Store().UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "codex", NativeID: "manual", Cwd: repo, Repo: protocol.RepoInfo{Project: "shop"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := n.agentOf(t, id); a == nil || a.AgentID != "shop" {
+		t.Fatalf("failed preflight left a hold: %+v", a)
+	}
+}
+
+func TestSessionStartRemoteAgentRejectsOldGateway(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	var relayed atomic.Bool
+	n := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.testGatewayCall = func(_ context.Context, method string, _ any) (json.RawMessage, bool, error) {
+			if method == "session.agent.reserve" {
+				return nil, true, errors.New("unknown frame type session.agent.reserve")
+			}
+			if method == protocol.FrameSessionStart {
+				relayed.Store(true)
+				return json.RawMessage(`{"id":"start_old","status":"started","node_id":"remote"}`), true, nil
+			}
+			return nil, false, nil
+		}
+	})
+	_, err := n.cli.call("session_start", protocol.SessionStartRequest{Project: "shop", NodeID: "remote", Harness: "pi", AgentID: "chosen"})
+	if err == nil || !strings.Contains(err.Error(), "gateway is too old") || relayed.Load() {
+		t.Fatalf("selection silently dropped: err=%v relayed=%v", err, relayed.Load())
 	}
 }

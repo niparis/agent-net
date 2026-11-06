@@ -1446,9 +1446,16 @@ Explicit Agent selection at session start uses `session.agent.reserve`. The
 caller must name the owner pseudo-session on its authenticated machine. The
 local daemon exposes this only to its owner start path or an approved CTO
 proposal. Agent role text grants no authority. Unknown and tombstoned Agents
-are refused before launch and checked again during registration. A reservation
-cannot replace the identity of an already registered session or a worker.
-Reservations bind a machine, harness and native session ID. Applying the Agent
-and consuming the reservation happen in the registration transaction, before
-pending gateway messages are dispatched. Daemons without a selection retain
-the existing Repo owner default.
+are refused before launch and checked again at binding and first registration.
+A reservation cannot replace an existing identity or bind a worker.
+
+Before launch, a durable start reference records the Agent and existing session
+IDs. New lasting sessions of that harness have no final Agent and cannot
+receive messages or resolve their context until the exact returned native ID
+is bound. An already registered candidate may be assigned only while held and
+only if it was absent from the baseline. Binding and releasing delivery are
+transactional. Crashes and failed bindings leave the hold in place; there is no
+automatic expiry or directory-based identity guess. Existing sessions and
+workers are unaffected. Remote selections require `session_agents` in the
+destination's current hello. Old daemons and starts without a selection keep
+the existing Repo-owner default.

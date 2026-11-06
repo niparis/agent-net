@@ -81,3 +81,22 @@ func TestSessionStartPiRequiresHerdr(t *testing.T) {
 		t.Fatalf("error: %v", err)
 	}
 }
+
+func TestSessionStartPiRemoteAgent(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	a := startWorkerNode(t, g, shortSet, nil)
+	b := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"pi": "/fake/pi"} })
+	b.register(t, newRepo(t, "remote-repo"))
+	b.register(t, newRepo(t, "chosen"))
+	fakeOpenHerdr(t)
+	var r protocol.StartedSession
+	mustJSON(t, a.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "remote-repo", NodeID: b.d.NodeID(), Harness: "pi", AgentID: "chosen", FirstMessage: "Inspect remote"}), &r)
+	lc, id := helloPi(t, b.node, r.NativeID, r.Path, true)
+	push := lc.nextPush()
+	if push.Body != "Inspect remote" {
+		t.Fatalf("message: %+v", push)
+	}
+	if agent := b.agentOf(t, id); agent == nil || agent.AgentID != "chosen" {
+		t.Fatalf("remote first identity: %+v", agent)
+	}
+}

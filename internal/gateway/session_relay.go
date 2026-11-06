@@ -75,9 +75,6 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	sessionID := strings.TrimSpace(relay.SessionID)
 	switch typ {
 	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionProposalClone:
-		if relay.AgentID != "" {
-			return nil, reject("explicit Agent selection for remote starts requires target capability negotiation")
-		}
 		if nodeID == "" {
 			if nodeID, err = g.sessionStartNode(relay.SessionStartRequest); err != nil {
 				return nil, err
@@ -113,6 +110,9 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	g.mu.Unlock()
 	if target == nil {
 		return nil, reject("machine %s is offline", firstNonEmpty(host, nodeID))
+	}
+	if relay.AgentID != "" && !target.sessionAgents.Load() {
+		return nil, reject("target daemon does not support Agent selection; upgrade it before starting this session")
 	}
 	version, err := g.store.NodeVersion(nodeID)
 	if err != nil {

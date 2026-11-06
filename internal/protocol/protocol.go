@@ -397,6 +397,7 @@ func EncodeResult(id string, data any, err error) ([]byte, error) {
 // Request payloads.
 type (
 	Hello struct {
+		SessionAgents bool `json:"session_agents,omitempty"`
 		// GraphRefs advertises typed Graph support independently of release numbering.
 		GraphRefs bool   `json:"graph_refs,omitempty"`
 		Version   string `json:"version"`

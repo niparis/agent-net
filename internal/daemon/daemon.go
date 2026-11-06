@@ -269,8 +269,6 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
-	// Agent starts hold discovery registration until their native ID is reserved.
-	startAgentMu        sync.RWMutex
 	startedAt           time.Time
 	cloneProject        func(context.Context, string, string) error // test hook
 	files               fileState
@@ -955,8 +953,6 @@ func (d *Daemon) persistActivity(ls *localSession) {
 
 // pushSession tells the gateway about a session if the link is up.
 func (d *Daemon) pushSession(ls *localSession) {
-	d.startAgentMu.RLock()
-	defer d.startAgentMu.RUnlock()
 	// Connection setup and discovery can push the same session concurrently.
 	// Read its current state only after older registrations have completed.
 	ls.pushMu.Lock()
@@ -999,8 +995,6 @@ func (d *Daemon) pushSession(ls *localSession) {
 }
 
 func (d *Daemon) snapshot() []protocol.SessionInfo {
-	d.startAgentMu.RLock()
-	defer d.startAgentMu.RUnlock()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	out := make([]protocol.SessionInfo, 0, len(d.sessions))

@@ -40,8 +40,12 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 		return protocol.StartedSession{}, err
 	}
 	if target != "" {
+		// Older gateways ignore unknown start fields. Require the selection API
+		// before allowing a relay to carry the requested identity.
 		if p.AgentID != "" {
-			return protocol.StartedSession{}, errors.New("explicit Agent selection for remote starts requires target capability negotiation")
+			if err := d.reserveStartAgent(ctx, p.Harness, "", p.AgentID); err != nil {
+				return protocol.StartedSession{}, err
+			}
 		}
 		return d.relaySessionStart(ctx, p, target)
 	}
@@ -233,10 +237,23 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Merger {
 		r.Type = "merger"
 	}
+	if r.AgentID != "" && r.Harness != "codex" && r.Harness != "opencode" {
+		if err := d.reserveStartAgent(ctx, r.Harness, "", r.AgentID, r.ID, r.Path); err != nil {
+			return protocol.StartedSession{}, err
+		}
+	}
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
 		args := []string{bin}
+		if r.AgentID != "" {
+			var err error
+			r, err = d.prepareOwnerCodex(ctx, r)
+			if err != nil {
+				return protocol.StartedSession{}, err
+			}
+			args = append(args, "resume", r.NativeID)
+		}
 		if p.Model != "" {
 			args = append(args, "-m", p.Model)
 		}
@@ -490,20 +507,16 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		defer d.wg.Done()
 		cctx, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
 		defer cancel()
-		if r.AgentID != "" {
-			d.startAgentMu.Lock()
-		}
 		d.claudeStartMu.Lock()
 		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", resume, nil, nil)
 		d.claudeStartMu.Unlock()
-		if r.AgentID != "" {
-			if err == nil {
-				err = d.reserveStartAgent(cctx, "claude", sf.SessionID, r.AgentID)
-			}
-			d.startAgentMu.Unlock()
-		}
 		if err == nil {
 			r.NativeID, r.JobID = sf.SessionID, sf.JobID
+			if r.AgentID != "" {
+				err = d.reserveStartAgent(cctx, "claude", sf.SessionID, r.AgentID, r.ID, r.Path)
+			}
+		}
+		if err == nil {
 			d.mu.Lock()
 			d.startedSessions[r.ID] = r
 			d.mu.Unlock()
@@ -622,10 +635,11 @@ func (d *Daemon) sessionStartGetLocal(id string) (protocol.StartedSession, error
 
 // reserveStartAgent is reachable from owner starts and approved CTO proposals.
 // Old gateways must refuse explicit selection instead of silently using a default.
-func (d *Daemon) reserveStartAgent(ctx context.Context, harness, native, agent string) error {
-	if harness == "codex" || harness == "opencode" {
-		return fmt.Errorf("Agent selection for %s requires a native session ID before launch; start without agent_id to use the Repo owner", harness)
+func (d *Daemon) reserveStartAgent(ctx context.Context, harness, native, agent string, launch ...string) error {
+	p := protocol.SessionAgentReservation{Owner: d.ownerSessionID(), Harness: harness, NativeID: native, AgentID: agent}
+	if len(launch) == 2 {
+		p.Ref, p.Cwd = launch[0], launch[1]
 	}
-	_, err := d.call(ctx, "session.agent.reserve", protocol.SessionAgentReservation{Owner: d.ownerSessionID(), Harness: harness, NativeID: native, AgentID: agent})
+	_, err := d.call(ctx, "session.agent.reserve", p)
 	return err
 }

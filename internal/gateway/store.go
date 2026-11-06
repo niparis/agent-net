@@ -959,6 +959,9 @@ CREATE TABLE IF NOT EXISTS session_agent_starts (
  harness TEXT NOT NULL,
  native_id TEXT NOT NULL,
  agent_id TEXT NOT NULL REFERENCES agents(id),
+ ref TEXT NOT NULL DEFAULT '',
+ cwd TEXT NOT NULL DEFAULT '',
+ existing TEXT NOT NULL DEFAULT '[]',
  PRIMARY KEY(node_id,harness,native_id)
 );
 `}
@@ -2875,7 +2878,7 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 		states = `m.state IN ('stored','dispatched')`
 	}
 	rows, err := s.db.Query(msgSelect+` JOIN sessions r ON r.id = m.recipient
-		WHERE r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
+		WHERE NOT ( `+sessionAgentHoldSQL("r")+` ) AND r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
 		ORDER BY m.created_at, m.rowid`, nodeID, s.now().UnixNano())
 	if err != nil {
 		return nil, err

@@ -139,6 +139,8 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			c.Write(context.Background(), websocket.MessageText, b)
 		}
 		var p struct {
+			Cwd                 string `json:"cwd"`
+			Model               string `json:"model"`
 			ThreadID            string `json:"threadId"`
 			ClientUserMessageID string `json:"clientUserMessageId"`
 			Input               []struct {
@@ -151,6 +153,13 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 		case "initialize":
 			f.mu.Unlock()
 			reply(map[string]any{"userAgent": "fake", "codexHome": f.home}, "")
+			continue
+		case "thread/start":
+			id := protocol.NewID("thread")
+			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Model: p.Model, Status: "idle", Source: "appServer"}
+			f.mu.Unlock()
+			reply(map[string]any{"thread": map[string]any{"id": id}}, "")
+			f.notify("thread/started")
 			continue
 		case "thread/loaded/list":
 			ids := []string{}
