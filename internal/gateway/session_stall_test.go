@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func TestSessionStallHarnessesAndInbox(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			c.t = c.t.Add(11 * time.Minute)
+			c.t = c.t.Add(21 * time.Minute)
 			if err := s.checkSessionStalls(); err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +48,7 @@ func TestSessionStallHarnessesAndInbox(t *testing.T) {
 			if a.StalledSince != 0 || items[0].Status == "open" {
 				t.Fatalf("activity did not clear stall: %+v %+v", a, items)
 			}
-			c.t = c.t.Add(11 * time.Minute)
+			c.t = c.t.Add(21 * time.Minute)
 			if err := s.checkSessionStalls(); err != nil {
 				t.Fatal(err)
 			}
@@ -80,7 +81,7 @@ func TestSessionStallPendingAndWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(11 * time.Minute)
+	c.t = c.t.Add(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +100,11 @@ func TestSessionStallSettingsAndDismissal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.WriteSettings([]SettingsChange{{Key: "sessions.stall_timeout", Level: "repo", Scope: "demo", Value: []byte(`"20m"`)}}, "owner", "test")
+	_, err = s.WriteSettings([]SettingsChange{{Key: "sessions.stall_timeout", Level: "repo", Scope: "demo", Value: []byte(`"30m"`)}}, "owner", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(11 * time.Minute)
+	c.t = c.t.Add(21 * time.Minute)
 	// A repeated discovery is not progress.
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
@@ -154,7 +155,7 @@ func TestSessionStallPendingDeliveryClearsOnAck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(11 * time.Minute)
+	c.t = c.t.Add(21 * time.Minute)
 	if err = s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +183,7 @@ func TestSessionStallNewPendingDoesNotClearBusyNotice(t *testing.T) {
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(11 * time.Minute)
+	c.t = c.t.Add(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +211,7 @@ func TestSessionStallLostBusySessionAndExplicitEnd(t *testing.T) {
 	if err := s.SetSessionLost(node, id); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(11 * time.Minute)
+	c.t = c.t.Add(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -231,19 +232,74 @@ func TestSessionStallLostBusySessionAndExplicitEnd(t *testing.T) {
 }
 
 func TestSessionStallBusyWhileWaiting(t *testing.T) {
+	for _, kind := range []string{protocol.WaitingQuestion, protocol.WaitingPermission} {
+		for _, pending := range []bool{false, true} {
+			t.Run(kind+fmt.Sprint(pending), func(t *testing.T) {
+				s, c := newTestStore(t)
+				node, _, _ := s.CreateNode("test-host", "linux")
+				in := protocol.SessionInfo{Harness: "codex", NativeID: "waiting", Status: "busy"}
+				id, err := s.UpsertSession(node, in)
+				if err != nil {
+					t.Fatal(err)
+				}
+				c.t = c.t.Add(21 * time.Minute)
+				if err = s.checkSessionStalls(); err != nil {
+					t.Fatal(err)
+				}
+				if a, _, _ := s.Agent(id); a.StalledSince == 0 {
+					t.Fatal("expected initial stall")
+				}
+				in.Waiting = &protocol.Waiting{Kind: kind, Text: "Continue?"}
+				if _, err = s.UpsertSession(node, in); err != nil {
+					t.Fatal(err)
+				}
+				if pending {
+					a, _ := twoSessions(t, s)
+					if _, _, err = send(s, a, id, "pending", ""); err != nil {
+						t.Fatal(err)
+					}
+				}
+				c.t = c.t.Add(time.Hour)
+				if err = s.checkSessionStalls(); err != nil {
+					t.Fatal(err)
+				}
+				a, _, _ := s.Agent(id)
+				items, _ := s.ListInbox()
+				if a.StalledSince != 0 || len(items) != 1 || items[0].Status == "open" {
+					t.Fatalf("waiting session retained stall: %+v %+v", a, items)
+				}
+			})
+		}
+	}
+}
+
+func TestSessionStallLongBusyRunWithCPUProgress(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("test-host", "linux")
-	in := protocol.SessionInfo{Harness: "codex", NativeID: "waiting", Status: "busy", Waiting: &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "Continue?"}}
+	in := protocol.SessionInfo{Harness: "claude", NativeID: "long-test", Status: "busy"}
 	id, err := s.UpsertSession(node, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(11 * time.Minute)
-	if err := s.checkSessionStalls(); err != nil {
+	c.t = c.t.Add(15 * time.Minute)
+	in.HarnessActivity = c.t.Unix() // daemon reports a fresh busy process-tree CPU sample
+	if _, err = s.UpsertSession(node, in); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(10 * time.Minute)
+	if err = s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
 	a, _, _ := s.Agent(id)
+	if a.StalledSince != 0 {
+		t.Fatal("active long test incorrectly stalled")
+	}
+	c.t = c.t.Add(11 * time.Minute)
+	if err = s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ = s.Agent(id)
 	if a.StalledSince == 0 {
-		t.Fatal("busy session with unchanged wait was not reported")
+		t.Fatal("silent session did not stall after CPU stopped")
 	}
 }

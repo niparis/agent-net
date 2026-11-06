@@ -70,7 +70,7 @@ func (s *Store) checkSessionStalls() error {
 		if c.status != "busy" && c.pending > baseline {
 			baseline = c.pending
 		}
-		eligible := (c.online != 0 || c.lost != 0) && c.worker == "" && (c.pending > 0 || c.status == "busy")
+		eligible := (c.online != 0 || c.lost != 0) && c.worker == "" && c.waiting == "" && (c.pending > 0 || c.status == "busy")
 		old, _ := strconv.ParseInt(saved, 10, 64)
 		if id != "" && (!eligible || c.active/int64(time.Second) > old) {
 			if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='activity_or_end',answered_at=? WHERE id=?`, now.UnixNano(), id); err != nil {
