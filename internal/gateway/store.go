@@ -974,7 +974,7 @@ CREATE TABLE IF NOT EXISTS session_agent_start_failures (
  PRIMARY KEY(node_id,ref)
 );
 `, `
--- Immutable settings target identities, keyed by typed kind and storage ID.
+-- 124: Immutable settings target identities, keyed by typed kind and storage ID.
 -- Seeds existing network, repo and agent records; a rerun keeps current rows.
 CREATE TABLE IF NOT EXISTS settings_target_identity (
  kind TEXT NOT NULL CHECK(kind IN ('network','repo','agent')),
