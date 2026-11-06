@@ -86,6 +86,12 @@ func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol
 
 func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	switch typ {
+	case "worker.judge.pick":
+		p, err := decode[protocol.DifficultyJudgePick](raw)
+		if err != nil {
+			return nil, reject("bad judge pick request")
+		}
+		return g.pickDifficultyJudge(nc.id, p)
 	case "worker.profile.list", "worker.profile.add", "worker.profile.remove":
 		p, err := decode[protocol.WorkerProfileFrame](raw)
 		if err != nil {
