@@ -85,12 +85,12 @@ func TestMessagesFilterCyclesWithOneKey(t *testing.T) {
 func TestGraphRemovedKeysDoNothing(t *testing.T) {
 	m := graphModel(120, 34)
 	zoom := m.graphState.Camera.Zoom
-	for _, key := range []string{"o", " ", "t", "0"} {
+	for _, key := range []string{"o", " ", "0"} {
 		if got := keyAction(contextGraph, key); got != "" {
 			t.Errorf("removed graph key %q still does %q", key, got)
 		}
 	}
-	m = keys(m, "o", " ", "t", "0")
+	m = keys(m, "o", " ", "0")
 	if m.tab != graphTab || m.graphState.Orbit || m.graphState.Paused || m.graphState.Camera.Zoom != zoom {
 		t.Fatalf("a removed graph key changed the graph: tab %v orbit %v paused %v zoom %v",
 			m.tab, m.graphState.Orbit, m.graphState.Paused, m.graphState.Camera.Zoom)

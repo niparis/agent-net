@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+Teams ──────────────────────────────────────────────────────────────────────────
+  name              members  purpose
+  Alpha             2        Shared API work
+> Beta              1        Storefront work
+
+  graph: all
+  member: repo homelab (no team)
+  space adds repo homelab to Beta
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+up/down select  enter show  c create  r rename  a archive  esc back  ? help

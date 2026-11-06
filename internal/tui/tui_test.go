@@ -218,6 +218,8 @@ type fakeSource struct {
 	hiddenGetErr     error
 	hiddenSetErr     error
 	hiddenSaved      []protocol.HiddenItems
+	teamWrites       []protocol.TeamWrite
+	teamErr          error
 
 	// CPU, memory, counts, top lists and session text. Nil means the daemon
 	// is older than the feature.
@@ -353,6 +355,11 @@ func (f *fakeSource) SetHiddenItems(_ context.Context, in protocol.HiddenItems) 
 	}
 	f.hidden = in
 	return in, nil
+}
+
+func (f *fakeSource) WriteTeam(_ context.Context, q protocol.TeamWrite) error {
+	f.teamWrites = append(f.teamWrites, q)
+	return f.teamErr
 }
 
 func (f *fakeSource) SetPeerTrust(_ context.Context, id string, on bool) error {

@@ -23,10 +23,14 @@ type mapMsg struct {
 
 // mapState holds shared network data and the selected card state.
 type mapState struct {
-	labels           map[string]string
-	nodes            []protocol.Node
-	edges            []protocol.Edge
-	changes          []protocol.CharterChange
+	labels  map[string]string
+	nodes   []protocol.Node
+	edges   []protocol.Edge
+	changes []protocol.CharterChange
+	// full is the whole typed read before the Team filter. nodes and edges are
+	// what the Graph and its card show now.
+	full             protocol.GraphView
+	teams            []teamEntry
 	at               time.Time
 	loaded           bool
 	loading          bool
@@ -60,16 +64,16 @@ func (m *Model) applyMap(r mapMsg) {
 		m.mp.err = mapError(r.err)
 		return
 	}
-	r.view = m.prepareGraph(r.view)
-	first := m.graphState.Graph == nil
-	m.graphState, _ = graphview.Update(m.graphState, graphview.GraphChanged{Graph: r.view})
-	if first {
-		w, h := m.graphSize()
-		m.graphState, _ = graphview.Update(m.graphState, graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}})
+	m.mp.full = m.prepareGraph(r.view)
+	m.mp.teams = teamsOf(r.view)
+	if m.teamFilter != "" {
+		if _, ok := m.teamByID(m.teamFilter); !ok {
+			m.teamFilter = ""
+		}
 	}
-	m.mp.nodes, m.mp.edges, m.mp.changes = r.view.Nodes, r.view.Edges, r.view.Changes
+	m.mp.changes = m.mp.full.Changes
 	m.mp.at, m.mp.loaded, m.mp.err = r.at, true, ""
-	m.mapEnsureSelection()
+	m.applyTeamView(false)
 	if m.mp.pendingSelection != "" {
 		name := m.mp.selected
 		if m.mp.pendingSelection != "" {

@@ -8,6 +8,8 @@ Keys · Graph ──────────────────────
   n                      start a session in this project
   enter                  open the selected agent card
   m                      toggle all message and owner lines
+  t                      show all nodes, then each active team in turn
+  T                      create, rename, fill or archive a team
 
  Graph find
   enter                  select the first match
@@ -17,8 +19,6 @@ Keys · Graph ──────────────────────
   enter                  open Sessions filtered to this agent's project
   n                      start a new session in this project (the same form,
                          filled from here)
-  t                      open Tools filtered to this node
-  a                      toggle autonomy off or wake
   more below
 
 up/down scroll  ? all screens  esc close

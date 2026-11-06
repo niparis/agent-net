@@ -39,6 +39,7 @@ const (
 	contextQualityDetails  keyContext = "Quality details"
 	contextGraph           keyContext = "Graph"
 	contextGraphFind       keyContext = "Graph find"
+	contextTeams           keyContext = "Teams"
 	contextCard            keyContext = "agent card"
 	contextToolsFilter     keyContext = "tools filter"
 	contextToolsCosts      keyContext = "tools project costs"
@@ -59,7 +60,7 @@ const (
 var allKeyContexts = []keyContext{
 	contextGlobal, contextWorkersLog, contextDelivery, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
-	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard,
+	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard, contextTeams,
 	contextTools, contextToolsFilter, contextToolsCosts, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
 	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
 }
@@ -296,6 +297,8 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextGraph, "n", "new session", "new", -1), "start a session in this project"),
 	withLocal(withHelp(bind(contextGraph, "enter", "open card", "card", -1), "open the selected agent card")),
 	withHelp(bind(contextGraph, "m", "show all traffic", "traffic", 1), "toggle all message and owner lines"),
+	withHelp(bind(contextGraph, "t", "next team", "team", 0), "show all nodes, then each active team in turn"),
+	withHelp(bind(contextGraph, "T", "manage teams", "teams", 2), "create, rename, fill or archive a team"),
 	bind(contextGraph, "R", "refresh", "refresh", -1),
 	bind(contextGraphFind, "esc", "clear or back", "clear or back", 1),
 	withLocal(withHelp(bind(contextGraphFind, "enter", "select match", "select", 1), "select the first match")),
@@ -402,6 +405,16 @@ var keyBindings = []keyBinding{
 	{contextHelp, []string{"end", "G"}, actLast, "last line", "", false, 0},
 	bind(contextConfirm, "enter|y|Y", "yes", "yes", 1),
 	bind(contextConfirm, "esc|n|N", "no", "no", 1),
+	bind(contextTeams, "q", actQuit, "quit", 0),
+	bind(contextTeams, "up|k", actUp, "select", 1),
+	bind(contextTeams, "down|j", actDown, "select", 1),
+	withHelp(bind(contextTeams, "enter", "show team", "show", 1), "filter the Graph to this team"),
+	withHelp(bind(contextTeams, "c", "create team", "create", 1), "make a team with a name and purpose"),
+	withHelp(bind(contextTeams, "r", "rename team", "rename", 1), "change the team's display name"),
+	withHelp(bind(contextTeams, "a", "archive team", "archive", 2), "archive a team with no members"),
+	withHelp(bind(contextTeams, "space", "member", "add/remove", 3), "add or remove the selected repo or agent"),
+	bind(contextTeams, "?", "help", "help", 0),
+	bind(contextTeams, "esc", "back", "back", 0),
 	bind(contextForm, "enter", "submit", "submit or next field", 1),
 	bind(contextForm, "esc", "cancel", "cancel", 1),
 	withHelp(bind(contextForm, "tab", "tab field", "next field", 1), "move to the next field"),

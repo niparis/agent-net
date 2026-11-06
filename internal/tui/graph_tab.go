@@ -371,6 +371,10 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "open card":
 		action = graphview.OpenSelected{}
+	case "next team":
+		return m.cycleTeamFilter()
+	case "manage teams":
+		return m.startTeamMenu()
 	case "refresh":
 		return m.startGraph()
 	}
@@ -434,7 +438,7 @@ func (m Model) graphView(w, h int) []string {
 		out = append(out, sDim.Render(clip("  "+line, w)))
 	}
 
-	out = append(out, sDim.Render(graphHintLine(w)))
+	out = append(out, sDim.Render(graphHintLine(m.teamFilterName(), w)))
 	return out
 }
 
@@ -516,7 +520,12 @@ func (m Model) graphTalkCmd() tea.Cmd {
 }
 
 // graphHintLine drops whole table hints, starting with the least important.
-func graphHintLine(w int) string {
+// The Team filter stays first: it names what the Graph shows.
+func graphHintLine(team string, w int) string {
+	if ansi.StringWidth(team) > 24 {
+		team = ansi.Truncate(team, 24, "…")
+	}
+	teamHint := hint{key: "t", label: "team: " + team, prio: 0}
 	direction := bindingPairHint(contextGraph, "select left", "select right")
 	direction.label, direction.prio = "select", 1
 	zoom := bindingPairHint(contextGraph, "zoom in", "zoom out")
@@ -527,7 +536,7 @@ func graphHintLine(w int) string {
 	traffic.prio = 2
 	delivery := bindingHint(contextGraph, "delivery")
 	delivery.prio = 3
-	hs := []hint{direction, zoom, delivery, traffic, card, bindingHint(contextGraph, "help")}
+	hs := []hint{teamHint, direction, zoom, delivery, traffic, card, bindingHint(contextGraph, "help")}
 	text := func() string {
 		parts := make([]string, 0, len(hs))
 		for _, h := range hs {

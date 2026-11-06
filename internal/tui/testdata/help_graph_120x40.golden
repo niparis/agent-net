@@ -8,6 +8,8 @@ Keys · Graph ──────────────────────
   n                      start a session in this project
   enter                  open the selected agent card
   m                      toggle all message and owner lines
+  t                      show all nodes, then each active team in turn
+  T                      create, rename, fill or archive a team
 
  Graph find
   enter                  select the first match
@@ -33,8 +35,6 @@ Legend ────────────────────────�
   Request rule on an edge from A to B
   normal  delivered; B judges it
   auto    delivered with a trust note; B can act without asking you, still inside B's merge authority and refusals
-  ask     held in the Inbox
-  never   refused
   more below
 
 up/down scroll  ? all screens  esc close

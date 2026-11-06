@@ -91,7 +91,7 @@ func TestSessionKeyLineShowsTheRelevantRowAction(t *testing.T) {
 }
 
 func TestGraphKeyLineIsShortAndHelpKeepsTheRest(t *testing.T) {
-	line := ansi.Strip(graphHintLine(120))
+	line := ansi.Strip(graphHintLine("all", 120))
 	if hints := strings.Split(strings.TrimSpace(line), "  "); len(hints) > 7 {
 		t.Errorf("graph key line: %d hints: %q", len(hints), line)
 	}

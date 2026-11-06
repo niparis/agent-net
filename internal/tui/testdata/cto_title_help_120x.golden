@@ -35,6 +35,8 @@
   n                      start a session in this project
   enter                  open the selected agent card
   m                      toggle all message and owner lines
+  t                      show all nodes, then each active team in turn
+  T                      create, rename, fill or archive a team
 
  Graph find
   enter                  select the first match
@@ -286,3 +288,14 @@ Legend ────────────────────────�
   shift+tab, up          previous field
   left/right             change the choice
   space                  toggle
+
+ Teams
+  q                      quit
+  up/down, j/k           select
+  enter                  filter the Graph to this team
+  c                      make a team with a name and purpose
+  r                      change the team's display name
+  a                      archive a team with no members
+  space                  add or remove the selected repo or agent
+  ?                      help
+  esc                    back

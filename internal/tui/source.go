@@ -53,6 +53,8 @@ var (
 	// ErrFeedUnavailable means the daemon or the gateway is older than the
 	// event feed. The screen then shows the sessions without the message feed.
 	ErrFeedUnavailable = operator.ErrFeedUnavailable
+	// ErrTooOld means the daemon or gateway does not know an action.
+	ErrTooOld = operator.ErrTooOld
 	// ClassifyError maps an error from a Source to a Problem.
 	ClassifyError = operator.ClassifyError
 	isOldPeer     = operator.IsOldPeer
