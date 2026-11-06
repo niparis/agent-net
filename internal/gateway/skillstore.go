@@ -13,9 +13,7 @@ import (
 	"fmt"
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/redact"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -189,34 +187,6 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 	defer os.RemoveAll(dir)
 	if inventory.UnpackSkill(result.Data, dir) != nil {
 		return v, reject("invalid or oversized skill bundle")
-	}
-	// Check before Git writes an immutable version. Do not echo file contents.
-	err = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		b, e := os.ReadFile(path)
-		if e != nil {
-			return e
-		}
-		if redact.Secrets(string(b)) != string(b) {
-			rel, err := filepath.Rel(dir, path)
-			if err != nil {
-				return err
-			}
-			return reject("%s: not switched: a file looks like it holds a secret (%s). agent-net does not copy skills with secrets. Remove the secret from the skill, then try again.", redact.Secrets(name), redact.Secrets(filepath.ToSlash(rel)))
-		}
-		return nil
-	})
-	if err != nil {
-		var refusal Rejection
-		if errors.As(err, &refusal) {
-			return v, err
-		}
-		return v, reject("cannot import skill: %v", err)
 	}
 	got, err := inventory.SkillHash(dir)
 	if err != nil || got != hash {
