@@ -574,6 +574,17 @@ export default function (pi: ExtensionAPI) {
     if (connected) request("status", { model: model ?? "" }).catch(() => {});
   });
 
+  let lastProgress = 0;
+  function progress() {
+    const now = Date.now();
+    if (!connected || now - lastProgress < 5000) return;
+    lastProgress = now;
+    request("harness_activity", {}).catch(() => {});
+  }
+  pi.on("message_update", async () => progress());
+  pi.on("tool_execution_start", async () => progress());
+  pi.on("tool_execution_end", async () => progress());
+
   pi.on("agent_start", async () => {
     if (connected) await request("waiting", { clear: true }).catch(() => {});
     sendStatus("busy");
@@ -581,6 +592,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_settled", async () => sendStatus("idle"));
 
   pi.on("session_shutdown", async () => {
+    if (connected) await request("harness_end", {}).catch(() => {});
     sessions.delete(sessionKey);
     stopped = true;
     if (mcpTimer) clearInterval(mcpTimer);

@@ -357,6 +357,14 @@ class SessionLink {
   name: string | undefined;
   lastActive = Date.now();
   private dormantTimer: NodeJS.Timeout | undefined;
+  private lastProgress = 0;
+
+  progress() {
+    const now = Date.now();
+    if (!this.connected || now - this.lastProgress < 5000) return;
+    this.lastProgress = now;
+    this.request("harness_activity", {}).catch(() => {});
+  }
 
   get status(): "idle" | "busy" | "dormant" {
     return this.dormant ? "dormant" : this.base;
@@ -1296,6 +1304,7 @@ export default {
         case "session.deleted":
         case "session.archived":
           h.asks.delete(root);
+          await h.links.get(sessionID)?.link.request("harness_end", {}).catch(() => {});
           dropLink(sessionID);
           return;
         case "session.created":
@@ -1319,6 +1328,7 @@ export default {
           // ensureLink learns the root of a session it has not seen yet.
           const link = await ensureLink(sessionID);
           if (!h.rootOf.has(sessionID)) link?.setModel(modelName(event.data?.model));
+          if (event.type === "session.step.started") link?.progress();
           link?.touch();
           return;
         }
@@ -1357,7 +1367,10 @@ export default {
           // too, but it does not register a session by itself.
           if (!String(event.type).startsWith("session.")) return;
           const id = h.rootOf.get(sessionID) ?? sessionID;
-          h.links.get(id)?.link.touch();
+          const link = h.links.get(id)?.link;
+          link?.touch();
+          // Output, step and tool events show progress; viewing or discovery does not.
+          if (/^session\.(message|step|tool|execution)\./.test(String(event.type))) link?.progress();
         }
       }
     }

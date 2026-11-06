@@ -179,12 +179,12 @@ func Load(data []byte) (*Recipe, error) {
 	}
 	seen := map[int]bool{}
 	for _, l := range r.Ledger {
-		if l.Row < 1 || l.Row > 149 || seen[l.Row] || (len(l.Keys) == 0) == (l.Code == "") {
+		if l.Row < 1 || l.Row > 150 || seen[l.Row] || (len(l.Keys) == 0) == (l.Code == "") {
 			return nil, fmt.Errorf("invalid ledger row %d", l.Row)
 		}
 		seen[l.Row] = true
 	}
-	if len(seen) != 149 {
+	if len(seen) != 150 {
 		return nil, fmt.Errorf("incomplete ledger")
 	}
 	return &r, nil
