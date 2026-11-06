@@ -82,7 +82,23 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 	c.pendingFiles = nil
 	c.mu.Unlock()
 	d.goBackground(func() {
-		if out, err := d.handbackToNoteWithFiles(context.Background(), w, req, "", "", "", true, files); err != nil {
+		defer files.Remove()
+		ctx := d.workerStreamCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		// Adoption replays results before Start launches the gateway link.
+		// File notices need that link and cannot use the offline outbox.
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for !d.Connected() {
+			select {
+			case <-ctx.Done():
+				return // leave the saved pending report for the next adoption
+			case <-tick.C:
+			}
+		}
+		if out, err := d.handbackToNoteWithFiles(ctx, w, req, "", "", "", true, files); err != nil {
 			d.Logf("worker %s: Antigravity handback: %v", w.id, err)
 		} else {
 			c.mu.Lock()
