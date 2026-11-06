@@ -18,15 +18,15 @@ and preserves the behavior of a network with no teams.
   single parent; it does not grant message trust or assign work.
 - The relationship module owns the interpretation of relationship edges. Its
   first implementation reproduces today's request gates, relationship text and
-  delivery assignment behavior. It does not replace caller authentication,
-  owner approval or the delivery state machine.
+  held-request and reminder behavior. Delivery uses one pipeline resolver.
+  It does not replace caller authentication, owner approval or the delivery
+  state machine.
 - A reviewer that owns nothing can advertise expertise for optional help, and
   can be assigned a delivery step for every Repo in a Team when work is
   required. Discovery is not assignment, and an assignment does not itself
   add a step or make a review required.
-- A team assignment is a default for its member repos. A repo assignment wins
-  for that exact step and phase. A required team rule can prevent a repo from
-  opting out, through the settings layer's normal tightening rules.
+- A Team assignment is a default for its member Repos. The owner must decide
+  whether a Repo may override a Team reviewer before delivery defaults ship.
 
 ## Team and membership
 
@@ -46,7 +46,10 @@ value. Removing membership leaves the member and its own settings intact,
 subject to the settings reconciliation below. Deleting a Team requires moving
 or removing its members and resolving assignments first; do not silently
 cascade them. Archive can retain the identity and history but cannot leave
-active members or assignments pointing at an inactive Team.
+active members or assignments pointing at an inactive Team. Delete Team settings
+rows with history in the same transaction; retain immutable history and refuse
+unsafe undo. An owning Agent cannot be deleted or tombstoned until the owner
+clears or transfers Team ownership explicitly.
 
 Membership is not inferred from a repo owner or session location. An Agent and
 its Repo may belong to different teams, or one may be unassigned. Show that
@@ -59,118 +62,98 @@ chain. No two teams' settings are combined.
 
 ## Settings and delivery
 
-For work in a Repo, resolve each applicable key through network, the Repo's
-Team, Repo, acting Agent and session or run, restricted to the levels declared
-by that key. For work without a Repo use network, the Agent's Team, Agent and
-session or run. A worker uses the Repo chain for delivery and the acting Agent
-level for applicable behavior settings. The session or run is an input, not a
-persisted team member. Show the effective value, source and any adjustment.
-An Agent's own Team does not insert a second Team into a Repo's chain.
+Team scope is new work. Add Team to `Where`, snapshot storage and resolution,
+settings addresses, write validation, history, undo and revision propagation.
+For a Repo use network, its Team, Repo, acting Agent and session or run, only
+where the key permits each level. Without a Repo use the Agent's Team. Never
+combine both Teams. Show effective value, source and raised status.
 
-Advice can change freely at an allowed lower level. A rule can only tighten.
-When a parent rule becomes stricter, adjust explicit child values that are now
-too loose and report the changes; never refuse the parent change merely because
-of children (`docs/design/settings-layer.md:21`). Membership changes can have
-the same effect: preview and atomically reconcile explicit Repo and applicable
-Agent values against the new chain, record history and report raised values.
-Leaving a team does not automatically loosen a value already raised. Runtime
-session and run overrides are resolved against the new bound and flagged when
-raised. A move must not partially change membership or settings on failure.
+Add Team to the delivery rule keys `delivery.tests_before_merge`,
+`delivery.merge_authority`, `delivery.deploy_rule`,
+`delivery.pipeline.review.required_risk`, `delivery.pipeline.review.required_from`,
+`delivery.pipeline.review.independent`, `delivery.pipeline.review.requires`,
+`delivery.pipeline.merge.requires`, `delivery.pipeline.merge.approver`, and
+`delivery.pipeline.deploy.approver`. CI and release have no enforced keys yet;
+add Team when those mechanisms exist. Team review requirements can use
+`delivery.pipeline.merge.requires` with `review` in custom tests mode, and the
+review keys set its details. An assignment alone does not require review.
 
-A team may supply delivery settings only for keys whose definitions permit the
-team level. The ordered pipeline has its own representation and validation
-(`docs/decisions/0057-delivery-pipeline.md`); do not pretend the whole pipeline
-is an ordered settings value. Resolve a valid pipeline first, then resolve each
-step assignment. A Team's required review must be represented by a supported,
-enforced delivery rule, not by the mere presence of a reviewer edge. Until
-such a team-level requirement exists, preview must say that an assignment
-alone does not require review.
+Preserve existing no-Team semantics, including that a shipped default is not a
+network bound. Before cutover capture value and source for every delivery key
+for populated and empty networks, and compare after every step. For rules, an
+explicit network row bounds Team and Repo; an explicit Team row bounds its
+children. On parent tightening or membership move, atomically persist each
+explicit child that is too loose at the stricter value, with history, source,
+revision and an impact preview. Validate writes against effective explicit
+bounds. On leaving or relaxing a parent, keep those persisted raised values;
+only an explicit authorized edit may relax them. Undo is a fresh validated
+change and cannot bypass current bounds. Reconcile membership and values in one
+transaction with expected old values. Runtime overrides are clamped and flagged,
+not persisted. Advice replaces freely. Test all of these and no-Team parity.
 
 ## Relationships today
 
-The original graph decision is `docs/decisions/0022-component-graph-and-cto.md`;
-peer trust and its limits are in `docs/decisions/0013-peer-trust-and-hints.md`.
-The split assigns typed endpoints in `docs/design/repo-agent-split.md:247`.
-The following is the behavior to capture in parity tests before extraction.
+These are current endpoints, before typed 3e references. `setEdgeTx` requires
+`governs` from an architect node to a component; delivery edges go from a
+component or architect to a component. `graphKind` does not consult Agents,
+so an Agent owning no Repo cannot be an endpoint
+(`internal/gateway/store_graph.go:27`, `internal/gateway/store_graph.go:771`).
+`depends` links consumer to provider. `governs` carries advisor, arbiter or
+owner mode. These are guidance and request rules, not sandbox authority.
+Delivery assignments map step references to owners, not evidence
+(`internal/protocol/delivery_pipeline.go:149`,
+`internal/protocol/delivery_pipeline.go:482`).
 
-| Edge | Meaning and present effect |
-|---|---|
-| `depends` | Consumer Repo to provider Repo. A directed request receives a consumer relation line. Its request rule can gate that request. It does not forbid other messages. |
-| `governs` | Governor Agent to governed Agent, with `advisor`, `arbiter` or `owner` mode. The directed request line names the mode. Its request rule can gate requests. Eligible modes also select delegated delivery approvers. Mode text is guidance, not a sandbox. |
-| `deploys` | Legacy deployer to Repo relation and deploy assignment. Its request rule participates in gating; it also supplies a deploy owner and target deploy guidance. Preserve legacy endpoint matching during typed migration. |
-| Delivery assignment | Agent to Repo, or a special owner. `accepts`, `reviews`, `tests`, `tests_after_merge`, `approves`, `approves_deploy`, `merges`, `releases`, `delivery_deploys`, `verifies`, and legacy `deploys` assign an exact step and phase. Assignment does not by itself grant peer trust. |
-| `member_of` | Proposed Agent or Repo to Team. It selects inheritance and team defaults; it has no request gate or authority by itself. |
+Legacy `deploys` is owner-gated but misses delivery-edge uniqueness and
+component-target checks. It is a fallback behind `delivery_deploys`
+(`internal/gateway/store_graph.go:732`, `internal/gateway/store_graph.go:736`,
+`internal/protocol/delivery_pipeline_settings.go:108`). Preserve this until a
+separate owner-approved change; test both edges together.
 
-The mapping of assignment kinds to steps and phases is in
-`internal/protocol/delivery_pipeline.go:54` and
-`internal/protocol/delivery_pipeline.go:77`. Special owners include caller,
-merger, owner, GitHub, delegate and none, with eligibility depending on step
-(`internal/protocol/delivery_pipeline.go:142`). The gateway resolves the
-pipeline from settings and assignments (`internal/gateway/delivery_changes.go:143`).
-Delivery tasks and evidence remain owned by the delivery system; a relationship
-is not evidence that a step passed. Reports are tied to a change revision and
-commit (`internal/protocol/delivery_pipeline.go:11`).
+Request gating matches `governs` by Agent identity and `depends` and `deploys`
+by Repo identity. Only `depends` permits a wildcard source. Exact source wins,
+then literal kind order: `deploys`, `depends`, `governs`. No match is normal;
+an unscoped recipient with peer trust gets auto
+(`internal/gateway/graphread.go:168`). Workers and sessions without an Agent
+use their Repo as Agent identity; CTO maps both identities to `CTONodeName`.
+For scoped sessions peer trust writes a wildcard depends edge for the Repo:
+on is auto, off is normal, shared by its sessions. Non-request messages instead
+use the session flag (`internal/gateway/store.go:1965`,
+`internal/gateway/server.go:2210`). Only the registered CTO is exempt from the
+send gate today, not the owner in person (`internal/gateway/store.go:2622`).
 
-There are separate request outcomes and relation text. For the gate, the
-current lookup matches directed `governs` against Agent identities and
-`depends` or `deploys` against Repo identities, including wildcard source;
-exact source precedes wildcard, then kind orders ties. No match is `normal`.
-An unscoped recipient with peer trust gets `auto`
-(`internal/gateway/graphread.go:151`). The values are:
-
-- `normal`: deliver under the receiver's ordinary rules.
-- `auto`: deliver with the gateway's peer-trust note and its existing limits.
-- `ask`: hold for the owner before delivery.
-- `never`: reject the request.
-
-The atomic send path holds or rejects non-CTO requests
-(`internal/gateway/store.go:2617`); dispatch checks `ask` again and supplies
-trust on `auto` (`internal/gateway/server.go:2195`). Preserve the existing CTO,
-bot, owner approval, worker, reply and notification handling rather than
-applying one generic gate to every message. In particular, a reply is not an
-approval, and gateway framing cannot be supplied by the sender.
-
-The relationship line is separate: on requests only, it names a matching
-directed `depends` or `governs` edge, or says no relation; same or unknown
-identities can yield no line (`internal/gateway/graphread.go:61`,
-`internal/gateway/graphread.go:109`, `internal/protocol/graph_context.go:192`).
-It does not mean that the edge is required to send. Do not collapse this into
-the request gate, or assume that a governance mode alone creates `auto` trust.
-The modularity plan's order/suggestion/information shorthand is an intent for
-wording, not a complete description of the present gate.
+The request relation line is separate: exact edges only, first in Graph order
+(source, target, kind). A wildcard can gate without framing. Same or unknown
+identities can yield no line. Preserve normal, auto, ask and never, existing
+approval, reply and notification handling. Parity fixtures cover trust on and
+off, two sessions in one Repo, same-name Agent and Repo ties, wildcard framing,
+depends plus governs, workers, unscoped sessions, CTO and owner in person.
 
 ## Module boundary
 
-The gateway selects a named, versioned relationship rule at network level,
-with a team selection where allowed. For a request to a Repo session, use the
-recipient Repo's Team; without a Repo, use the recipient Agent's Team. No team
-means network default. The shipped `current` rule is the only implementation
-in the first release. Selection is configuration, not executable code from a
-recipe. Unknown or unavailable rule versions fail closed for changed
-configuration and keep the last valid snapshot; never silently select a more
-permissive rule.
+The network owner alone selects the network rule. The first release ships only
+`current`; defer rule selection and proposals until a second concrete recipe.
+Any future Team selection may only tighten the network result, ranked from
+strictest to loosest: `never < ask < normal < auto`. Test every pair, including
+that Team selection can never yield auto when the network would not. Reject an
+unknown rule version change atomically; retain the last valid snapshot. The owner
+must decide the future selection policy before Team delivery defaults ship.
 
-The interface takes authenticated sender and recipient session identities,
-typed Agent and Repo refs, recipient team context, message type, relevant
-edges and their modes and rules, peer-trust and owner/CTO provenance. It
-returns a request disposition (`normal`, `auto`, `ask`, `never`) and relation
-framing, with the rule and evidence/source for inspection. Delivery asks a
-separate operation for the eligible assignment and delegated approver for an
-exact Repo and step reference. The gateway still enforces the disposition in
-the atomic write and rechecks at dispatch, writes the framing itself, and
-applies existing approval and security checks. The delivery engine still
-validates pipeline, eligibility, tasks and evidence. Give both operations a
-consistent graph/settings snapshot or transaction, and define deterministic
-ordering for every ambiguity. A rule cannot impersonate the owner, bypass
-caller checks or widen a security minimum.
+The module receives authenticated identities, typed refs, recipient Team context,
+message type, edges, peer trust and provenance from a consistent snapshot. It
+returns a disposition and a typed relation (from, to, kind, mode or no relation),
+with rule and evidence. The gateway validates and renders it, neutralizes marker
+text, enforces the atomic send gate and dispatch recheck, and retains owner and
+caller checks. A malicious marker in a rule result cannot become gateway framing.
 
-A future implementation can change edge interpretation and presentation, but
-must implement this contract and pass security invariants. Adding `reports_to`
-would be an explicit new typed edge and rule version, not an implicit effect
-of team membership. No general plugin loading or user-supplied executable
-rules is needed for these steps. Parity tests compare existing results across
-all edge modes, wildcard ties, missing identities, peer trust, message types,
-CTO provenance and delivery owners before routing is switched.
+Include held-request always decisions and reminder eligibility in the contract:
+preserve their current distinct matching and edge creation behavior in parity
+fixtures before switching, including their wildcard and identity differences.
+Keep the gateway's transaction and reminder recheck. Delivery lookup stays out
+of this module: the gateway resolves Team defaults into
+`snapshot.DeliveryAssignments`; `PipelineFromSettings` remains the one pure
+pipeline overlay for gateway, settings view, worker notices and maturity text.
+Fixtures cover all those callers, modes, message types and concurrent changes.
 
 ## Cross-cutting work
 
@@ -191,64 +174,67 @@ request rule. Membership or advertising is not authorization to act elsewhere.
 
 Show whether a session is online, can wake on a message, or is unavailable.
 Do not promise wake for every harness: current discovery already describes
-some sessions as waking on message (`internal/gateway/toolread.go:244`), and
+some sessions as waking on message (`internal/gateway/toolread.go:259`), and
 wake depends on supported session and daemon state
-(`internal/daemon/session_wake.go:17`). A wake failure or offline session is
+(`internal/daemon/session_wake.go:51`). A wake failure or offline session is
 visible to the sender; a message is not proof of completed work. If no session
 can be reached, the requester can choose another expert or ask the owner.
 
 ### Required team work
 
-The owner assigns the reviewer Agent to the Team's `reviews` step reference.
-For every member Repo, resolve the Repo's explicit assignment first, then the
-Team assignment, then the existing pipeline/default owner. A Repo with no
-explicit assignment inherits even if the Agent owns nothing and is not a
-member. The UI names the source. An explicit special owner is an override,
-not an absent assignment; clearing it exposes the team default. Only the
-owner changes these delivery assignments, as today
-(`internal/gateway/store_graph.go:732`).
+An owner may assign an Agent, including one that owns no Repo, to a Team step.
+Team defaults accept only an Agent, never `@none`, `@delegate`, or another
+special owner. A Repo may explicitly select a special owner; show its source.
+Test that a Team default cannot remove or delegate approval. The owner decision
+below controls Repo override before this feature ships.
 
-A team assignment applies when that step is present and ready; a separate
-pipeline requirement makes it mandatory. The existing delivery engine chooses
-an eligible non-worker session for the assigned Agent, queues and wakes it when
-supported, and checks claims, independence and evidence against the exact
-revision. If no eligible session is available, keep the step pending and show
-who is offline; never silently use the caller or mark it passed. A team
-assignment is not a broadcast and should not create one persistent edge per
-Repo. On membership or assignment change, recompute unclaimed pending tasks in
-one transaction using the existing owner-change behavior
-(`internal/gateway/store_graph.go:700`); preserve claimed work and completed
-evidence, and revalidate any report against its revision and owner rules.
-Preview affected repos and pending tasks. Explicitly test a move while a task
-is claimed, and make any required reassignment visible rather than dropping it.
+Subject to the owner decision on Repo overrides, resolve the pipeline first.
+For each exact reference use the Repo assignment,
+then Team default, then pipeline owner, subject to the existing guards:
+
+| Reference | Phases and precedence |
+|---|---|
+| accept, review, merge, release, verify | Exact phase; Repo, Team, pipeline. |
+| test | Each phase uses its exact assignment first; after-merge falls back to the before-merge test assignment, then pipeline. |
+| approve for merge or deploy | Exact phase and target; an empty target means merge. Apply an assignment only when the pipeline owner is none, or replace a delegate with the owner in person. Otherwise retain the pipeline owner. |
+| deploy | Exact phase; `delivery_deploys` wins over legacy `deploys`, then pipeline. Apply Repo before Team within each matching kind. |
+
+Test every reference and phase, including both deploy edges and approval guards.
+The gateway supplies resolved assignments and their source to the pure overlay.
+A Team assignment does not create a step by itself.
+
+Add typed Agent recipients to dispatch and claim. When an assignment names an
+Agent, match session Agent ID first, even if its Repo also matches a different
+assignment; Repo matching applies only to Repo recipients. A non-worker eligible
+session on either the change machine or another machine can claim and report
+for its assigned Agent. Check identity, independence, claim, revision, commit and
+evidence on both machines. No eligible session leaves the step pending; show
+availability, never silently pass or substitute the caller.
+
+On assignment or membership change, preview and recompute each affected Repo
+and step atomically. Expire queued messages for changed unclaimed tasks and
+route to the recomputed Agent; a special owner follows its existing semantics.
+Clearing a default falls back through the matrix, never automatically completes
+the task. Preserve completed evidence. Claimed tasks await the owner decision
+below; do not ship reassignment until decided. Test claimed and unclaimed tasks,
+cleared assignments, special owners, moves, revision and remote reports.
 
 ## Data and live migration
 
-Add a Team table keyed by stable ID, with name, purpose, nullable owner Agent,
-active state and history. Add typed membership edges to the 3e graph, with a
-unique active source across Teams. Add team delivery assignment edges keyed by
-Team and exact step reference, with the same owner validation as Repo
-assignments. Settings use the existing team scope and revision/history model.
-Keep edge kind, typed endpoint, mode and rule in graph history and undo. Team
-ownership is a direct reference like Repo ownership, not `governs`.
+Teams ship after split step 3e. That cutover rejects old daemons and drops legacy
+adapters; do not promise old clients a Team projection. Add typed Agent and Team
+endpoint validation as a prerequisite in 3e or Team step 1, including an Agent
+with no Repo and invalid kind tests. Keep Team records and `member_of` edges out
+of every legacy graph projection, including `Graph()` and the legacy node union;
+test each projection. New clients use typed IDs and the 3e version gate.
 
-Migrate additively: create empty tables and indexes in a new migration, leave
-existing Repos, Agents, IDs, edge strings, settings, session mappings, delivery
-changes, tasks and evidence untouched. Existing networks have no Teams and
-resolve identically. Do not infer teams from names, existing architect edges or
-ownership. Backfill only new typed metadata where 3e requires it, with checks
-for ambiguous legacy data and no silent guessing. Use a transaction for each
-cutover and retain old data as the split design does
-(`docs/design/repo-agent-split.md:274`).
-
-Old clients must continue to see their existing graph projection and delivery
-routing. Version new frames and snapshots so old clients can ignore unknown
-fields; reject writes that would erase team data through an old representation.
-An old gateway binary may open the database but cannot honor team inheritance
-or team assignments. Document downgrade as unsafe once teams are active; do
-not claim that the preserved old rows reflect later changes. Provide a preview
-and an explicit owner-directed removal of team-dependent configuration before
-any downgrade. Never automatically delete live data.
+Add Team records, history, typed membership, settings and assignments with
+uniqueness and expected-value checks. Start empty; do not infer membership.
+Migrate populated databases transactionally and compare no-Team behavior. Before
+Teams ship, release a schema version guard: a gateway refuses any database
+version newer than it knows. Test opening a future version and a known version.
+There is no downgrade data or downgrade path. Rollback restores a backup from
+before upgrade, as in the split design (`docs/design/repo-agent-split.md:328`).
 
 ## Owner and CTO surfaces
 
@@ -272,51 +258,78 @@ checks as a fresh change. No peer message counts as owner approval.
 
 ## Build steps
 
-Each step targets roughly 1,000 changed lines, including tests. Split a step
-further if needed; do not ship a partial cutover. Write failing tests first.
+Each estimate includes tests; split further if needed without partial cutover.
+Write failing tests first. Owner decisions below block Team delivery defaults.
 
-1. **Team records and graph reads.** Add empty schema, typed membership and
-   owner references, validation, history and read-only Graph/CTO views. Exercise
-   migration from a populated gateway, uniqueness, kind checks, old clients and
-   no-team parity. Nothing inherits yet.
-2. **Membership writes and settings.** Add owner-gated edits, preview, atomic
-   move and reconciliation, sources in Graph and session context. Test advice,
-   stricter parent adjustment, explicit child values, mixed-team Agent/Repo,
-   concurrent edits, undo and no-team parity.
-3. **Team delivery assignments.** Add team defaults and Repo precedence,
-   preview and pending-task reconciliation. Test exact phases, special owners,
-   no required step, offline reviewer, claimed tasks, revision evidence and
-   member moves. Keep existing Repo assignments and no-team routing unchanged.
-4. **Advertising.** Expose ownership-free Agents' charter, expertise, team and
-   honest availability through discovery and Sessions. Test discovery, supported
-   wake, offline and no-session cases without changing message authority.
-5. **Extract current relationship rule.** Capture parity fixtures first; route
-   request gate, relation framing and delivery owner lookup through the module
-   contract on the same transaction/snapshot. Test all current edge cases,
-   concurrent changes and security boundaries. Only `current` is selectable.
-6. **Named selection and proposals.** Add network/team selection, versioned
-   reads, owner-gated proposal and history. Test missing versions, stale
-   proposals and default parity. A second rule is built only for a concrete
-   recipe; this step does not invent one.
+0. **Schema guard** (about 200 lines): ship in a release before Teams; reject
+   unknown database versions and test known and future versions.
+1. **Team records and typed endpoints** (about 1,000 lines): schema, membership,
+   ownership, endpoint kinds, projections, history and parity.
+2a. **Team settings storage and reads** (about 800 lines): scope, definitions,
+   snapshots, resolver and source fixtures for every delivery key.
+2b. **Settings writes and reconciliation** (about 1,000 lines): validation,
+   previews, persisted raises, membership moves, history, undo and parity.
+3a. **Agent delivery eligibility** (about 900 lines): typed recipients, claim,
+   remote reports, precedence, revision and machine tests.
+3b. **Team delivery defaults** (about 1,000 lines): matrix, source, preview,
+   pending-task reconciliation, UI and all phase and special-owner cases.
+4. **Discovery gaps** (about 500 lines): Team context, charter search and
+   honest availability and supported wake. Expertise is already stored and
+   searched (`internal/gateway/toolread.go:278`); full session reads already
+   include purpose and charter. Test wake only on supported harnesses.
+5a. **Gate and framing module** (about 1,000 lines): fixtures first, typed
+   relation rendering, held decisions, reminders and atomic gate parity.
+5b. **Delivery lookup** (about 700 lines): resolve Team defaults into the
+   snapshot, preserve the pure overlay and parity for every caller.
 
-## Open questions
+No second rule has a concrete recipe, so selection and proposals are deferred.
 
-1. **Should an Agent and its working Repo be in different Teams?** Recommend
-   yes. Use only the Repo's Team for that work and show the mismatch. Forbid
-   it only if a real workflow needs the restriction.
-2. **May a Repo override a team reviewer?** Recommend yes for the assignment,
-   with the explicit source shown. A separate tighter team rule can require an
-   independent review; assignment alone cannot enforce a named reviewer.
-3. **What happens to claimed tasks when assignment changes?** Recommend keep
-   the claim and show the old owner until it completes or is explicitly
-   released; reassign only unclaimed tasks. Confirm the report eligibility rule
-   in the implementation design before changing live routing.
-4. **Should team membership imply trust or governance?** Recommend no. Keep
-   these explicit edges and owner-controlled request rules.
-5. **How is an offline ownership-free Agent resumed?** Recommend reuse the
-   supported session wake path and report unavailable otherwise. Do not build
-   a general agent launcher until a recipe needs one.
-6. **Can a team rule choose any new relationship implementation?** Recommend
-   only registered, versioned implementations and only where permitted by the
-   settings definition; unknown versions fail closed. Define an ordering before
-   permitting any override that can loosen a network security rule.
+## Owner decisions needed
+
+These choices remain open. Decide before step 3b; preserve current behavior
+until a decision is implemented and tested.
+
+1. Should the owner in person be exempt from relationship gates, as decision
+   0022 says? Recommendation: yes, with authenticated owner provenance; today
+   only the registered CTO is exempt.
+2. May a Repo override a Team reviewer? Recommendation: yes, show the source;
+   a separate Team rule can require independent review.
+3. What happens to claimed tasks after reassignment? Recommendation: retain the
+   claim and old owner until completion or explicit release, validate reports
+   against the original claim and revision, and reroute only unclaimed tasks.
+4. What rule selection can a Team make? Recommendation: only registered,
+   versioned rules that tighten the network result, with owner authorization;
+   defer selection until a concrete second recipe exists.
+
+## Changes after review
+
+| Finding | Resolution |
+|---|---|
+| B1 | Correct current endpoints; typed Agent and Team endpoint prerequisite and tests. |
+| B2 | Agent recipients, identity precedence and cross-machine claims and reports. |
+| B3 | New Team scope, storage, resolver, validation and named delivery keys. |
+| B4 | Persist raised children, reconcile atomically and capture all delivery values and sources. |
+| B5 | Owner network selection, strict rank, tightening tests and version rejection. |
+| B6 | Team defaults accept Agents only; explicit Repo special owners show source. |
+| B7 | Pre-Team schema guard; rollback restores backup. |
+| B8 | Ship after 3e version gate; filter and test all legacy projections. |
+| B9 | Held decisions and reminders join the contract and parity fixtures. |
+| S1 | Scoped peer trust and non-request session flag described and tested. |
+| S2 | Depends-only wildcard and alphabetical tie order documented and tested. |
+| S3 | Exact relation matching and Graph order fixtures. |
+| S4 | Worker, unscoped and CTO identity cases in parity fixtures. |
+| S5 | Current CTO exemption stated; owner-in-person decision requested. |
+| S6 | Step and phase matrix preserves pipeline guards. |
+| S7 | Team merge requirement and review keys make required review expressible. |
+| S8 | Typed relation and gateway rendering with marker test. |
+| S9 | One pure pipeline overlay consumes resolved snapshot assignments. |
+| S10 | Steps 2, 3 and 5 split with sizes. |
+| S11 | Discovery narrowed to missing context, search and supported wake. |
+| S12 | Per-Repo recomputation and claimed task decision, with tests. |
+| S13 | Legacy deploy behavior preserved and both edges tested. |
+| M1 | Corrected citations and removed obsolete references. |
+| M2 | Deferred selection and proposals pending a concrete second rule. |
+| M3 | Delete settings transactionally and retain history. |
+| M4 | Clear or transfer ownership before Agent deletion or tombstone. |
+| M5 | Owner decisions and recommendations replace open questions. |
+| M6 | Repo, Agent and Team name the target concepts; current node kinds are identified as historical. |
