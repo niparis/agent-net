@@ -135,6 +135,7 @@ func (s WorkerSettings) filled() WorkerSettings {
 
 // worker is one running worker. Fields are guarded by Daemon.wmu.
 type worker struct {
+	runGeneration                                      int
 	id, startRef, harness, project, path, model, owner string
 	// ownerName is the caller's name when the gateway knows it, for the
 	// commit trailers.
@@ -306,6 +307,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	// w.info may already be held by a session that another goroutine is
 	// encoding (noteAsk hands it out), so never write into it: replace it.
 	next := *w.info
+	next.RunGeneration = w.runGeneration
 	next.ContextTokens, next.ContextLimit, next.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
 	next.OSSandbox = w.osSandbox
 	next.Continue, next.Fix = w.continueCount, w.fixCount
@@ -546,7 +548,7 @@ func (d *Daemon) saveWorkerLocked(w *worker) {
 
 // rowLocked is the database row of a worker. Callers hold d.wmu.
 func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
-	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
+	return workerRow{RunGeneration: w.runGeneration, ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
 		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, Title: w.title, DoneStatus: w.doneStatus, DonePartial: w.donePartial,
@@ -693,7 +695,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		return refuse("%v", err)
 	}
 	rules := projectWorkerRules(l.Path)
-	w := &worker{id: protocol.NewID("w"), startRef: l.StartRef, harness: l.Harness, osSandbox: sandbox, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
+	w := &worker{runGeneration: 1, id: protocol.NewID("w"), startRef: l.StartRef, harness: l.Harness, osSandbox: sandbox, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
 		title:       l.Title,
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
@@ -1137,7 +1139,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			c := !r.DonePartial
 			complete = &c
 		}
-		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{SessionID: r.SessionID, WorkerID: r.ID,
+		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{RunGeneration: r.RunGeneration, SessionID: r.SessionID, WorkerID: r.ID,
 			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model, Failure: r.Failure,
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
@@ -1150,7 +1152,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			// Told, or refused for good (an older gateway, an unknown session).
 			// The claim stays, so a caller that read the row before this report
 			// cannot repeat it.
-			d.st.markWorkerReported(r.ID, r.EndedReason)
+			d.st.markWorkerReported(r.ID, r.EndedReason, r.RunGeneration)
 		default:
 			d.releaseWorkerReport(r.ID)
 			return // not connected: try again at the next connect
@@ -1268,7 +1270,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		d.wmu.Unlock()
 		return fmt.Errorf("this machine already runs %d workers, which is the limit", n)
 	}
-	w := &worker{id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner, ownerName: row.OwnerName,
+	w := &worker{runGeneration: row.RunGeneration + 1, id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner, ownerName: row.OwnerName,
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
 		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, title: row.Title, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
@@ -1293,6 +1295,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		delete(d.workers, w.id)
 		d.wmu.Unlock()
 		r := row
+		r.RunGeneration = w.runGeneration
 		r.EndedReason, r.Reported, r.Resumable = protocol.StopHandback, true, true
 		if r.PID != 0 {
 			d.st.saveWorker(r)
@@ -1314,6 +1317,25 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	if err := os.MkdirAll(w.dir, 0o700); err != nil {
 		return err
 	}
+	// Both resume paths announce the new generation before the harness can
+	// register. A delayed report from the previous process cannot end it.
+	runStateSupported := true
+	if _, err := d.call(cctx, "worker.run_state", protocol.WorkerRunState{Session: sessionID, RunGeneration: w.runGeneration}); err != nil {
+		var refusal RemoteError
+		if !errors.As(err, &refusal) || string(refusal) != `unknown frame type "worker.run_state"` {
+			return err
+		}
+		// An older gateway activates the worker before asking us to resume it.
+		// Only its explicit unknown-method refusal permits this legacy path.
+		runStateSupported = false
+	}
+	defer func() {
+		if !okStart && runStateSupported {
+			rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			d.call(rollbackCtx, "worker.run_state", protocol.WorkerRunState{Session: sessionID, RunGeneration: w.runGeneration, Ended: true})
+		}
+	}()
 	if err := rs.resume(cctx, d, w); err != nil {
 		d.Logf("worker.resume_failed worker=%s session=%s harness=%s reason=%q", w.id, sessionID, w.harness, err.Error())
 		return err
@@ -1664,13 +1686,13 @@ func (d *Daemon) adoptWorkers() {
 			d.st.saveWorker(r)
 			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
 			if r.DoneStatus == "" {
-				d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
+				d.saveUnfinished(&worker{runGeneration: r.RunGeneration, id: r.ID, worktree: r.Worktree, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
 					owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}, protocol.StopLost)
 			}
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}
-		w := &worker{id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
+		w := &worker{runGeneration: r.RunGeneration, id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,

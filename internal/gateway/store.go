@@ -993,6 +993,9 @@ END;
 CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDATE OF tombstone ON agents WHEN NEW.tombstone<>0 BEGIN
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
+`, `
+-- 125: Worker run generations fence delayed end reports after a resume.
+ALTER TABLE sessions ADD COLUMN worker_run_generation INTEGER NOT NULL DEFAULT 0;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1212,6 +1215,16 @@ func (s *Store) migrate() error {
 			}
 			if err == nil {
 				result, err = tx.Exec(`SELECT 1`)
+			}
+		} else if strings.Contains(migrations[i], "Worker run generations fence") {
+			var has int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_run_generation'`).Scan(&has)
+			if err == nil {
+				if has == 0 {
+					result, err = tx.Exec(migrations[i])
+				} else {
+					result, err = tx.Exec(`SELECT 1`)
+				}
 			}
 		} else {
 			result, err = tx.Exec(migrations[i])
@@ -1711,6 +1724,20 @@ func (s *Store) upsertSession(q interface {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
 	}
+	if known && in.Worker != nil && in.Worker.RunGeneration > 0 {
+		var current int
+		if err := q.QueryRow(`SELECT worker_run_generation FROM sessions WHERE id=?`, knownID).Scan(&current); err != nil {
+			return "", false, err
+		}
+		if in.Worker.RunGeneration < current {
+			return knownID, false, nil
+		}
+		if in.Worker.RunGeneration > current {
+			if _, err := q.Exec(`UPDATE sessions SET worker_run_generation=?, worker_run_active=1 WHERE id=?`, in.Worker.RunGeneration, knownID); err != nil {
+				return "", false, err
+			}
+		}
+	}
 	now := s.now().UnixNano()
 	// Mode and model come from a daemon. Keep only values that make sense.
 	if !protocol.ValidMode(in.Mode) {
@@ -1820,6 +1847,11 @@ func (s *Store) upsertSession(q interface {
 		nodeID, in.Harness, in.NativeID).Scan(&id)
 	if err != nil {
 		return "", false, err
+	}
+	if in.Worker != nil && in.Worker.RunGeneration > 0 {
+		if _, err := q.Exec(`UPDATE sessions SET worker_run_generation=MAX(worker_run_generation,?) WHERE id=?`, in.Worker.RunGeneration, id); err != nil {
+			return "", false, err
+		}
 	}
 	// Triggers from the repo migration have now created any new repo records.
 	// A sync may update the repo context but must not replace a selected agent.
@@ -2145,18 +2177,31 @@ func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 // SetWorkerSessionEnded records a worker's final state. Merely losing a
 // connection uses SetSessionOffline: a disconnected worker may still be busy.
 // A later registration after an explicit resume supplies its new live status.
-func (s *Store) SetWorkerSessionEnded(nodeID, sessionID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET online = 0, status = 'ended', worker_run_active = 0,
-		last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
+func (s *Store) SetWorkerSessionEnded(nodeID, sessionID string, generation ...int) error {
+	gen := 0
+	if len(generation) > 0 {
+		gen = generation[0]
+	}
+	result, err := s.db.Exec(`UPDATE sessions SET online = 0, status = 'ended', worker_run_active = 0,
+		last_seen = ? WHERE id = ? AND node_id = ? AND (?=0 OR worker_run_generation=?)`, s.now().UnixNano(), sessionID, nodeID, gen, gen)
+	if err == nil && gen > 0 && s.logf != nil {
+		if n, _ := result.RowsAffected(); n == 0 {
+			s.logf("worker.stale_end", "node", nodeID, "session", sessionID, "generation", gen)
+		}
+	}
 	return err
 }
 
 // SetWorkerRunActive marks a worker's run as started again. The gateway calls
-// it before it asks the machine to resume an ended worker, so that the new
-// session registration is not mistaken for the stale sync of a finished run.
-func (s *Store) SetWorkerRunActive(nodeID, sessionID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET worker_run_active = 1 WHERE id = ? AND node_id = ? AND worker<>''`,
-		sessionID, nodeID)
+// it for legacy resumes; new daemons announce the next generation before
+// registering the harness in either resume path. A stale generation is ignored.
+func (s *Store) SetWorkerRunActive(nodeID, sessionID string, generation ...int) error {
+	gen := 0
+	if len(generation) > 0 {
+		gen = generation[0]
+	}
+	_, err := s.db.Exec(`UPDATE sessions SET worker_run_active = 1, worker_run_generation=MAX(worker_run_generation,?) WHERE id = ? AND node_id = ? AND worker<>'' AND (?=0 OR worker_run_generation<=?)`,
+		gen, sessionID, nodeID, gen, gen)
 	return err
 }
 

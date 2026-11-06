@@ -60,10 +60,10 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE sessions SET worker_run_active=0 WHERE id=? AND node_id=? AND worker<>''`, r.SessionID, r.NodeID); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET worker_run_active=0 WHERE id=? AND node_id=? AND worker<>'' AND (?=0 OR worker_run_generation=?)`, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='session_ended',answered_at=? WHERE session_id=? AND kind IN ('question','approval') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=?)`, s.now().UnixNano(), r.SessionID, r.SessionID, r.NodeID); err != nil {
+	if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='session_ended',answered_at=? WHERE session_id=? AND kind IN ('question','approval') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=? AND (?=0 OR worker_run_generation=?))`, s.now().UnixNano(), r.SessionID, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

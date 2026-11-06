@@ -205,7 +205,9 @@ type WorkerCleanup struct {
 // worker reports it; the gateway keeps it. A session with it is a worker, and
 // a worker cannot start workers.
 type WorkerInfo struct {
-	Assessment *WorkerAssessment `json:"assessment,omitempty"`
+	// RunGeneration identifies this start or resume; zero is an older daemon.
+	RunGeneration int               `json:"run_generation,omitempty"`
+	Assessment    *WorkerAssessment `json:"assessment,omitempty"`
 	// ID is the worker's local ID on its machine.
 	ID string `json:"id"`
 	// StartRef is the reference of the start this worker belongs to.
@@ -464,11 +466,12 @@ type (
 	}
 	// WorkerStopped is "worker.stopped", machine to gateway.
 	WorkerStopped struct {
-		SessionID string `json:"session_id"`
-		WorkerID  string `json:"worker_id"`
-		Project   string `json:"project"`
-		Harness   string `json:"harness"`
-		Reason    string `json:"reason"`
+		RunGeneration int    `json:"run_generation,omitempty"`
+		SessionID     string `json:"session_id"`
+		WorkerID      string `json:"worker_id"`
+		Project       string `json:"project"`
+		Harness       string `json:"harness"`
+		Reason        string `json:"reason"`
 		// Failure is the cleaned model-call error, used to remember provider auth failures.
 		Failure string `json:"failure,omitempty"`
 		// Model is the model the worker ran, as the gateway resolved it. The
@@ -992,4 +995,12 @@ func ModelAuthFailure(detail string) bool {
 		}
 	}
 	return false
+}
+
+// WorkerRunState announces a new run before its harness registers, or rolls
+// back that same run when starting it fails.
+type WorkerRunState struct {
+	Session       string `json:"session"`
+	RunGeneration int    `json:"run_generation"`
+	Ended         bool   `json:"ended,omitempty"`
 }

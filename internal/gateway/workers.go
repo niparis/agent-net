@@ -128,6 +128,19 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return nil, nil
 
+	case "worker.run_state":
+		p, err := decode[protocol.WorkerRunState](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.RunGeneration <= 0 {
+			return nil, reject("worker run needs a positive generation")
+		}
+		if p.Ended {
+			return nil, g.store.SetWorkerSessionEnded(nc.id, p.Session, p.RunGeneration)
+		}
+		return nil, g.store.SetWorkerRunActive(nc.id, p.Session, p.RunGeneration)
+
 	case "worker.stopped":
 		p, err := decode[protocol.WorkerStopped](raw)
 		if err != nil {
@@ -139,6 +152,16 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		if owner != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
+		}
+		if p.RunGeneration != 0 {
+			var current int
+			if err := g.store.db.QueryRow(`SELECT worker_run_generation FROM sessions WHERE id=? AND node_id=?`, p.SessionID, nc.id).Scan(&current); err != nil {
+				return nil, err
+			}
+			if current != p.RunGeneration {
+				g.logLine("worker.stale_end", "node", nc.id, "session", p.SessionID, "generation", p.RunGeneration, "current", current)
+				return nil, nil
+			}
 		}
 		// The run feeds the model track record (decision 0022). An older
 		// machine sends no start, model or hand-back status: the session row
@@ -193,7 +216,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if difficulty == "" {
 			difficulty = "normal"
 		}
-		run := protocol.WorkerRun{NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
+		run := protocol.WorkerRun{RunGeneration: p.RunGeneration, NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
 			Outcome: protocol.WorkerOutcomeDetail(p.Reason, p.Status, p.Complete, p.Failure), StartedAt: p.StartedAt, EndedAt: end,
 			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, CallerSessionID: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches, TaskID: p.TaskID, Midrun: p.MidrunRun}
 		if err := g.store.RecordWorkerRun(run); err != nil {
@@ -209,7 +232,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		// The worker has ended: it leaves the worker list, and its record stays
 		// (offline) only for a follow-up that starts it again.
-		if err := g.store.SetWorkerSessionEnded(nc.id, p.SessionID); err != nil {
+		if err := g.store.SetWorkerSessionEnded(nc.id, p.SessionID, p.RunGeneration); err != nil {
 			return nil, err
 		}
 		detail := strings.TrimPrefix(pairs("reason", p.Reason, "harness", p.Harness, "project", p.Project, "model", p.Model), " ")
@@ -1497,16 +1520,15 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
-	// The machine starts the harness session again and registers it. Mark the
-	// run active first, or that registration would look like the stale sync of
-	// a finished worker and the row would stay ended.
+	// Keep the activation for older daemons, which cannot announce a run.
+	// New daemons fence the old run before registering the resumed harness.
 	if err := g.store.SetWorkerRunActive(a.NodeID, p.Recipient); err != nil {
 		return err
 	}
 	if _, err := target.call(cctx, "worker.resume", protocol.WorkerResume{Session: p.Recipient, Requester: p.Sender}); err != nil {
+		g.store.SetWorkerSessionEnded(a.NodeID, p.Recipient, a.Worker.RunGeneration)
 		// The machine does not have a record it can resume. Do not keep showing
 		// it as a worker that could start again.
-		g.store.SetWorkerSessionEnded(a.NodeID, p.Recipient)
 		g.logLine("worker.resume_failed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "reason", err)
 		return reject("worker %s cannot be started again: %v", p.Recipient, err)
 	}

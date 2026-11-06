@@ -32,8 +32,9 @@ const (
 
 // WorkerRun is one ended worker as the gateway counts it.
 type WorkerRun struct {
-	NodeID    string `json:"node_id"`
-	SessionID string `json:"session_id,omitempty"`
+	RunGeneration int    `json:"run_generation,omitempty"`
+	NodeID        string `json:"node_id"`
+	SessionID     string `json:"session_id,omitempty"`
 	// TaskID is the root session for a continued worker, or empty for a root.
 	TaskID  string `json:"task_id,omitempty"`
 	Harness string `json:"harness"`

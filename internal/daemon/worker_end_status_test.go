@@ -1,6 +1,10 @@
 package daemon
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -87,5 +91,108 @@ func TestLateSessionSyncAfterHandbackLeavesTheRowEnded(t *testing.T) {
 	a, _, _ := g.gw.Store().Agent(res.SessionID)
 	if a.Online || a.Status != "ended" {
 		t.Fatalf("after a late session sync: online=%v status=%q", a.Online, a.Status)
+	}
+}
+
+// Either entry point must publish the new run before an old end can arrive.
+func TestWorkerResumeRunGeneration(t *testing.T) {
+	for _, path := range []string{"gateway", "delivery"} {
+		t.Run(path, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			w := startWorkerNode(t, g, shortSet, nil)
+			repo := newRepo(t, "shop")
+			w.register(t, repo)
+			res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:handback first", Isolation: protocol.IsolationNone})
+			w.waitNotice(t, 1)
+			eventually(t, "first run reported", func() bool { rows, _ := w.d.st.workers(); return len(rows) == 1 && rows[0].Reported })
+			old, ok, err := w.d.st.workerBySession(res.SessionID)
+			if err != nil || !ok || old.RunGeneration != 1 {
+				t.Fatalf("first run: %+v %v", old, err)
+			}
+			var sent protocol.MessageSent
+			if path == "delivery" {
+				// Store a follow-up without the gateway's pre-send resume. This
+				// models a message dispatched before the previous run ended.
+				msg, _, err := g.gw.Store().StoreMessage(protocol.MsgSend{Sender: w.ownerID(), Recipient: res.SessionID, Body: "one more thing"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				sent.Message = &msg
+				w.d.onDeliver(context.Background(), msg)
+			} else {
+				mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"}), &sent)
+			}
+			w.replyTo(t, w.ownerID(), sent.Message.ID)
+			current, ok, err := w.d.st.workerBySession(res.SessionID)
+			if err != nil || !ok || current.RunGeneration != 2 {
+				t.Fatalf("resumed run: %+v %v", current, err)
+			}
+			_, err = w.d.call(context.Background(), "worker.stopped", protocol.WorkerStopped{SessionID: res.SessionID, WorkerID: old.ID, Harness: old.Harness, Reason: old.EndedReason, RunGeneration: old.RunGeneration})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := g.gw.Store().SetWorkerSessionEnded(w.d.NodeID(), res.SessionID, old.RunGeneration); err != nil {
+				t.Fatal(err)
+			}
+			a, ok, err := g.gw.Store().Agent(res.SessionID)
+			if err != nil || !ok || !a.Online || a.Status == "ended" || a.Worker.RunGeneration != 2 {
+				t.Fatalf("late end affected resumed worker: %+v %v", a, err)
+			}
+		})
+	}
+}
+
+func TestWorkerResumeAgainstOldGateway(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		refusal error
+		resumes bool
+	}{
+		{"unknown_method", RemoteError(`unknown frame type "worker.run_state"`), true},
+		{"other_refusal", RemoteError("worker run is not allowed"), false},
+		{"lost_connection", errNotConnected, false},
+		{"local_unknown_method_error", errors.New(`unknown frame type "worker.run_state"`), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			var calls atomic.Int32
+			w := startWorkerNode(t, g, shortSet, func(c *Config) {
+				c.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+					if typ == "worker.run_state" {
+						calls.Add(1)
+						return nil, true, tc.refusal
+					}
+					return nil, false, nil
+				}
+			})
+			repo := newRepo(t, "shop")
+			w.register(t, repo)
+			res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:handback first", Isolation: protocol.IsolationNone})
+			w.waitNotice(t, 1)
+			eventually(t, "first run reported", func() bool { row, ok, _ := w.d.st.workerBySession(res.SessionID); return ok && row.Reported })
+			raw, err := w.cli.call("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"})
+			if tc.resumes {
+				if err != nil {
+					t.Fatalf("legacy gateway prevented resume: %v", err)
+				}
+				var sent protocol.MessageSent
+				mustJSON(t, raw, &sent)
+				w.replyTo(t, w.ownerID(), sent.Message.ID)
+				row, ok, err := w.d.st.workerBySession(res.SessionID)
+				if err != nil || !ok || row.RunGeneration != 2 || row.EndedReason != "" {
+					t.Fatalf("resumed worker: %+v %v", row, err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("resume ignored a gateway error")
+				}
+				if w.d.workerCount() != 0 || len(w.logs.lines("worker.resumed")) != 0 {
+					t.Fatal("worker resumed despite gateway error")
+				}
+			}
+			if n := calls.Load(); n != 1 {
+				t.Fatalf("run_state calls=%d, want 1", n)
+			}
+		})
 	}
 }

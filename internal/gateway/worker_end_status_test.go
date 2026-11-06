@@ -1,6 +1,9 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -147,5 +150,84 @@ func TestMigrationEndsFinishedWorkerSessions(t *testing.T) {
 	a, _, _ = s.Agent(running)
 	if a.Status != "busy" {
 		t.Errorf("running worker after the repair: %q", a.Status)
+	}
+}
+
+func TestWorkerRunGenerationEnd(t *testing.T) {
+	for _, path := range []string{"gateway", "delivery"} {
+		for _, report := range []int{1, 2, 0} {
+			t.Run(fmt.Sprintf("%s/report%d", path, report), func(t *testing.T) {
+				g, node := scopeGateway(t)
+				in := protocol.SessionInfo{Harness: "opencode", NativeID: "worker", Status: "busy", Worker: &protocol.WorkerInfo{ID: "w_test", RunGeneration: 1}}
+				id, err := g.store.UpsertSession(node, in)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := g.store.SetWorkerSessionEnded(node, id, 1); err != nil {
+					t.Fatal(err)
+				}
+				if path == "gateway" {
+					if err := g.store.SetWorkerRunActive(node, id, 2); err != nil {
+						t.Fatal(err)
+					}
+				}
+				in.Worker.RunGeneration = 2
+				if _, err := g.store.UpsertSession(node, in); err != nil {
+					t.Fatal(err)
+				}
+				// The store-level end and run-record writes must also fence old runs.
+				if report == 1 {
+					if err := g.store.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: id, Harness: "opencode", Outcome: protocol.OutcomeComplete, RunGeneration: 1}); err != nil {
+						t.Fatal(err)
+					}
+					if err := g.store.SetWorkerSessionEnded(node, id, 1); err != nil {
+						t.Fatal(err)
+					}
+					var active int
+					if err := g.store.db.QueryRow(`SELECT worker_run_active FROM sessions WHERE id=?`, id).Scan(&active); err != nil || active != 1 {
+						t.Fatalf("stale record cleared active: %d %v", active, err)
+					}
+				}
+				raw, _ := json.Marshal(protocol.WorkerStopped{SessionID: id, WorkerID: "w_test", Harness: "opencode", Reason: protocol.StopHandback, RunGeneration: report})
+				if _, err := g.handleWorker(context.Background(), &nodeConn{id: node}, "worker.stopped", raw); err != nil {
+					t.Fatal(err)
+				}
+				a, _, _ := g.store.Agent(id)
+				if report == 1 {
+					if !a.Online || a.Status != "busy" {
+						t.Fatalf("stale end: online=%v status=%q", a.Online, a.Status)
+					}
+				} else if a.Online || a.Status != "ended" {
+					t.Fatalf("matching/legacy end: online=%v status=%q", a.Online, a.Status)
+				}
+			})
+		}
+	}
+}
+
+func TestWorkerRunGenerationMigration(t *testing.T) {
+	if version := migrationVersion(t, "Worker run generations fence"); version != 125 {
+		t.Fatalf("worker run generation migration=%d, want 125 after ch_8171", version)
+	}
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`ALTER TABLE sessions DROP COLUMN worker_run_generation`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=125`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_run_generation'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("generation column: %d %v", count, err)
+	}
+	// Older-schema fixtures also replay the migration with the column present.
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=125`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
 	}
 }
