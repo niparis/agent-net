@@ -12,7 +12,7 @@ owner pseudo-session before launch. The daemon admits it through owner starts
 or approved CTO proposals, using the existing authority boundary. The gateway
 rejects unknown or tombstoned Agents and checks again when binding.
 
-Migration 121 stores the requested Agent, start reference, working directory and
+Migration 123 stores the requested Agent, start reference, working directory and
 the set of existing session IDs before launch. Until the harness returns its
 native ID, new lasting sessions of that harness on that machine have no final
 Agent. The gateway holds their delivery and refuses context resolution. Existing
