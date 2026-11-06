@@ -1,21 +1,21 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│5
 ╭─Change───────────────────────────────────────────────────────────────────────╮
-│ Show the provider in each quota row                                          │
-│ agent-net  w_0123456789abcdef                                                │
-│ head: aaaaaaaaaaaa  revision: r2  state: open  step: review  owner: merger   │
-│ status: waiting for merger  waiting: 20m                                     │
-│ a✓r·t✓p·m·T·l·d·v·                                                           │
+│ Fix the deploy gate                                                          │
+│ voicemechs  feature/deploy-gate                                              │
+│ head: cccccccccccc  revision: r1  state: open  step: review  owner: merger   │
+│ status: review failed, back to an unknown session  waiting: 5h0m             │
+│ a✓r✗t✓p-m·T·l·d·v·                                                           │
+│ a accept · r review · t test · p approve · m merge · T test after merge      │
+│ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Steps and evidence (1-9 of 19)───────────────────────────────────────────────╮
+╭─Steps and evidence (1-7 of 10)───────────────────────────────────────────────╮
 │ Steps                                                                        │
 │ accept  caller  passed                                                       │
-│ review  merger  ready                                                        │
+│ review  merger  failed                                                       │
 │ test  github  passed                                                         │
-│ approve for merge  owner  needs_owner                                        │
+│ approve for merge  none  skipped                                             │
 │ merge  caller  waiting                                                       │
 │                                                                              │
-│ Evidence                                                                     │
-│ STEP     RESULT      COMMIT       BY            TIME                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

@@ -1,14 +1,14 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│5
 ╭─Delivery─────────────────────────────────────────────────────────────3 shown─╮
-│   TITLE            STEP     STATUS                 AGE    EVIDENCE           │
+│   TITLE             STEP     STATUS                             AGE    DONE  │
 │ Needs you · 1                                                                │
-│ ▸ Say what a deli… approve  waiting for you        6m     a✓r✓t✓p·m·T·l·d·v· │
-│ Waiting on agents · 2                                                        │
-│   Fix the deploy … review   failed                 5h0m   a✓r✗t✓p-m·T·l·d·v· │
-│   Show the provid… review   waiting for merger     2h0m   a✓r·t·p·m·T·l·d·v· │
-│ a accept · r review · t test · p approve · m merge · T test after merge      │
-│ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │
+│ ▸ Say what a deliv… approve  waiting for you                    6m     ●●●○○ │
+│ Moving · 2                                                                   │
+│   Show the provide… review   waiting for merger                 2h0m   ●○○○  │
+│   Fix the deploy g… review   review failed, back to an unknown… 5h0m   ●✗●○○ │
+│ Stuck · 0                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
 
 
 
