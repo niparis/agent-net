@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+agent shop  architect
+Own the shop and review changes.
+○ no live sessions
+
+IN 0                                     OUT 1
+                                         ──▶ repo shop accepts
+Card ───────────────────────────────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────
+no charter set
+
+
+
+
+
+
+
+
+RECENT  no changes yet
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit

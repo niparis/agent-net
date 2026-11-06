@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+repo shop  autonomy: off
+Tools: 0 skills, 0 MCP servers · t open
+owner: agent shop
+Build and ship the shop.
+○ no live sessions
+accept: agent shop (offline)
+test, review, merge, release, verify: caller
+
+IN 1                                     OUT 0
+agent shop ──▶ accepts
+Card 1-6/9  ctrl+u/d scroll ────────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────
+no charter set
+Rules ──────────────────────────────────────────────────────────────────────────
+tests_before_merge suite                  default
+merge_authority    full                   default
+worker_sandbox     sandboxed              default
+RECENT  no changes yet
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit

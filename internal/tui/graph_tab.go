@@ -135,8 +135,11 @@ func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.
 		if scene.Nodes[i].Name == protocol.GraphVoiceOwner {
 			continue
 		}
-		scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
-		scene.Nodes[i].Card.Name = m.projectName(scene.Nodes[i].Name)
+		scene.Nodes[i].Label = m.graphName(scene.Nodes[i].Name)
+		scene.Nodes[i].Card.Name = m.graphName(scene.Nodes[i].Name)
+		if node, ok := m.mapNode(scene.Nodes[i].Name); ok && node.Ref != nil {
+			scene.Nodes[i].Kind = node.Ref.Kind
+		}
 	}
 	return scene
 }
@@ -412,11 +415,11 @@ func (m Model) graphView(w, h int) []string {
 	if m.height > 24 {
 		feed := []string{}
 		for _, msg := range scene.Feed {
-			from := m.projectName(msg.From)
+			from := m.graphName(msg.From)
 			if msg.FromOwner {
 				from = "you"
 			}
-			feed = append(feed, fmt.Sprintf("%s → %s %s", from, m.projectName(msg.To), sanitize(msg.Kind)))
+			feed = append(feed, fmt.Sprintf("%s → %s %s", from, m.graphName(msg.To), sanitize(msg.Kind)))
 		}
 		if len(feed) == 0 {
 			feed = append(feed, "no messages yet")
@@ -661,6 +664,9 @@ func (m Model) graphDeliveryOwners(project string) []string {
 		for _, edge := range m.mp.edges {
 			if edge.To == project && edge.Kind == protocol.DeliveryStepEdge(step) {
 				source = edge.From
+				if edge.FromRef != nil {
+					source = edge.FromRef.ID
+				}
 			}
 		}
 		if source == "" {
@@ -674,7 +680,11 @@ func (m Model) graphDeliveryOwners(project string) []string {
 			}
 			if name != "" {
 				var sessions []string
-				if n, ok := m.mapNode(name); ok {
+				key := name
+				if node.Ref != nil {
+					key = graphRefKey(&protocol.GraphRef{Kind: "agent", ID: name})
+				}
+				if n, ok := m.mapNode(key); ok {
 					for _, session := range n.Sessions {
 						status := "offline"
 						if a, ok := m.agentByID(session.ID); ok && a.Online {
@@ -687,25 +697,25 @@ func (m Model) graphDeliveryOwners(project string) []string {
 				if len(sessions) > 0 {
 					return strings.Join(sessions, ", ")
 				}
-				return sanitize(name) + " (offline)"
+				return m.graphName(key) + " (offline)"
 			}
 			return assignment.Kind
 		}
 		var mergers []string
 		for _, a := range m.snap.Agents {
-			if protocol.SessionType(a.Harness, a.Worker, a.Type) != "merger" || firstNonEmpty(a.Repo.Project, a.Profile.Project) != project {
+			if protocol.SessionType(a.Harness, a.Worker, a.Type) != "merger" || firstNonEmpty(a.Repo.Project, a.Profile.Project) != graphRecordID(node) {
 				continue
 			}
 			status := "offline, tasks wait"
 			if a.Online {
 				status = "online"
 			}
-			name := firstNonEmpty(a.Profile.Name, project+" merger")
+			name := firstNonEmpty(a.Profile.Name, m.graphName(project)+" merger")
 			mergers = append(mergers, sanitize(name)+" ("+status+")")
 		}
 		sort.Strings(mergers)
 		if len(mergers) == 0 {
-			return sanitize(project) + " merger (offline, tasks wait)"
+			return m.graphName(project) + " merger (offline, tasks wait)"
 		}
 		return strings.Join(mergers, ", ")
 	}
