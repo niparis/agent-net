@@ -315,7 +315,7 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. The Inbox tab shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The CTO has 29 tools: 13 reads, 6 talk tools and 10 proposal tools. They are
+The CTO has 32 tools: 15 reads, 7 talk tools and 10 proposal tools. They are
 the catalog tools of the CTO role. List reads return `items` or rows, `total`
 and, when another page exists, `next_cursor`; pass it as `cursor`. The default
 page is 25 rows and the maximum is 100.
@@ -331,6 +331,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 |---|---|
 | `agent_sessions_find`, `agent_session_get` | Sessions and one session's full profile, as for an agent |
 | `agent_machines_find`, `agent_machine_get` | Machines, and one machine's health, models, quotas, track record or playbook |
+| `agent_machine_log` | Redacted daemon or gateway log on one online machine |
 | `agent_projects_find` | Public projects and where they live |
 | `agent_workers_find` | Workers; the CTO defaults to `started_by: anyone` |
 | `agent_messages_find`, `agent_message_get` | The CTO's own conversations, and one message body in chunks |
@@ -695,8 +696,8 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Claude Code sessions (read) | `~/.claude/sessions/` | The daemon reads one file per live session. It never writes here. |
 | Linux services | `~/.config/systemd/user/agent-net-daemon.service`, `agent-net-gateway.service` | systemd user units. |
 | macOS services | `~/Library/LaunchAgents/com.agent-net.daemon.plist`, `com.agent-net.gateway.plist` | launchd agents. |
-| Linux logs | `journalctl --user -u agent-net-daemon` (and `-u agent-net-gateway`) | journald rotates them. |
-| macOS logs | `~/Library/Logs/agent-net-daemon.log`, `agent-net-gateway.log` | launchd does not rotate them, so each process rotates its own file at 10 MB and keeps `agent-net-daemon.log.1` to `.5` (see [Housekeeping](#housekeeping)). |
+| Linux logs | `journalctl --user -u agent-net-daemon` (and `-u agent-net-gateway`) | journald rotates them. `agent_machine_log` reads either service on an online machine. |
+| macOS logs | `~/Library/Logs/agent-net-daemon.log`, `agent-net-gateway.log` | `agent_machine_log` includes rotated files. launchd does not rotate them, so each process rotates its own file at 10 MB and keeps `agent-net-daemon.log.1` to `.5` (see [Housekeeping](#housekeeping)). |
 
 **Machine name.** Each daemon reports a name for its machine on every start. If `node.json` has `"hostname": "mac-mini"`, that name is used. Otherwise, on macOS it is the first of these that is set, cut at the first dot: `scutil --get HostName`, `scutil --get LocalHostName` (System Settings, Sharing), then `os.Hostname()`. macOS changes `os.Hostname()` with the network (`Laptop-1.local`, `Laptop1`), so it is not used while a setting exists. On Linux it is `os.Hostname()` as it is. To show a shorter name, rename the machine once from the TUI (`N`) or with `agent-net nodes rename`: nothing needs to change on the machine itself (see [machine names](#machine-names)). `enter_ssh_hosts` keys match the name the machine is listed under. The gateway's own TLS and URL host (`enroll --host`, `invite`) is a network address and still comes from `os.Hostname()`.
 
@@ -1107,6 +1108,23 @@ filesystem. Missing helpers say `not found`; a disk read failure omits the byte
 count. The machine version is in `machine.version`. Health travels with hello
 and harness inventory; `reported_at` identifies the latest sample. Offline
 uptime is as of that sample. Older daemons show `not reported`.
+
+`agent_machine_log` reads one online machine's service log. Give `machine` (name
+or ID) and `log` (`daemon` or `gateway`). `since` is an RFC3339 timestamp or a
+positive duration such as `30m`; it defaults to `1h`. An optional `filter`
+matches text after redaction. `limit` defaults to 200 and cannot exceed 1,000.
+The newest matching lines come back in chronological order, with a 256 KiB
+response cap; `truncated` says older matching lines were left out. The target
+daemon reads the log and masks recognizable secrets before sending it through
+the gateway. This tool is available to agents, workers and the CTO.
+
+On Linux it reads the named user service through `journalctl`; on macOS it
+reads the fixed files in the logs table above, including rotations `.1` to
+`.5`. Timestamped daemon and gateway lines determine the time window; lines
+without a timestamp follow the preceding timestamp. An unfinished final line is
+left out. A missing log, offline
+machine, unsupported platform, oversized line or failed journal read returns an
+error. Older daemons do not support the log tool.
 
 ## CPU and memory
 

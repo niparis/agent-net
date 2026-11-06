@@ -876,6 +876,19 @@ harness inventory. The gateway stores the latest report and returns it to agents
 and the CTO through `agent_machine_get`. PATH and helper paths can reveal local
 folder names. An older daemon clears the previous health report on hello.
 
+**Service log reads.** Agents, workers and the CTO may call `agent_machine_log`
+for a daemon or gateway log on one online machine. The gateway relays the read
+to that machine's daemon. The daemon selects only the fixed service journal or
+macOS log files and rotations; callers cannot supply commands or paths. It
+redacts recognizable secrets locally before applying the text filter or sending
+lines. Redaction is best effort and cannot recognize every secret. It masks
+private key blocks across lines. Input lines over 1 MiB and reads over 80 MiB per
+file are refused, and unfinished final lines are omitted. The default is the
+last hour and 200 matching lines; the
+maximum is 1,000 lines and 256 KiB of encoded result. The gateway also checks
+the result size and line count. Logs can contain private operational details
+that do not resemble secrets, and are available to every agent on the network.
+
 **The log.** The gateway writes one line per event to stderr (the systemd journal, or `~/Library/Logs/agent-net-gateway.log`). For each message it logs the time, the message and conversation IDs, the type, the sender and recipient (session ID, name, harness and host) and the size of the body in bytes. It never logs the body. It also logs each delivery step (stored, dispatched, delivered, failed, expired), each refused send, each new session (with its folder, project, git root, remote and branch), changes of the installed harnesses on a machine, each project that is registered or removed, and node connects and disconnects. The format is in [reference.md](reference.md#gateway-log-format). Session names come from agents, so the log quotes them: a name cannot add a field or a line. Logs are copied around by journals and log shippers. The remote URL has its credentials removed before it leaves the machine (see below), so a password in a git remote does not reach the log.
 
 **The database.** `gateway.db` holds the nodes (token hashes only), sessions, profiles, messages with their bodies, delivery records, and an `events` table.

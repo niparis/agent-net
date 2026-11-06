@@ -50,6 +50,7 @@ func Secrets(s string) string {
 	s = bearer.ReplaceAllString(s, "${1}"+Mask)
 	s = urlCreds.ReplaceAllString(s, "${1}"+Mask+"${2}")
 	s = keyValue.ReplaceAllString(s, "${1}"+Mask)
+	s = strings.TrimPrefix(secretFlag.ReplaceAllString(" "+s, "${1}${2}"+Mask), " ")
 	for _, re := range tokenPatterns {
 		s = re.ReplaceAllString(s, Mask)
 	}

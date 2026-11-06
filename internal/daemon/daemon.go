@@ -66,6 +66,7 @@ type Host interface {
 }
 
 type Config struct {
+	testLogRead func(context.Context, protocol.MachineLogRequest) (protocol.MachineLogResult, error)
 	// ClaudeDiscoveryGrace is how long an MCP hello waits for session discovery.
 	// Zero uses the production default of three seconds.
 	ClaudeDiscoveryGrace time.Duration
