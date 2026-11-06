@@ -342,6 +342,8 @@ type Daemon struct {
 	bgMu            sync.Mutex
 	bgClosed        bool
 	bg              sync.WaitGroup
+	workerEndMu     sync.Mutex
+	workerEndTail   chan struct{}
 	cancel          context.CancelFunc
 	workerStreamCtx context.Context
 	ln              *localServer
@@ -622,9 +624,8 @@ func (d *Daemon) Stop() {
 	d.ctoDispatchMu.unlock()
 	d.mcp.stop()
 	d.wg.Wait()
-	// The ends of handed-back workers run in their own goroutines: they kill
-	// the session and write the state database, so they must finish before the
-	// state is closed.
+	// Worker ends and their ordered notices run in background goroutines.
+	// They must send or reach the durable outbox before the state is closed.
 	d.bg.Wait()
 	d.st.close()
 }
