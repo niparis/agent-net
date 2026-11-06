@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│5
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
@@ -18,7 +18,7 @@
 
 
 ╭─CTO · opencode · fake/m1─────────────────────────────────────────────────────╮
-│ error: Provider request failed because the account has insufficient…         │
+│ error: Provider request failed because the account has insufficient credits… │
 │ enter: open the CTO · ctrl+]: back · w: drive 30m                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter open CTO  ctrl+] back  m model  n new  u undo

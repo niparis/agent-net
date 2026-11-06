@@ -718,6 +718,7 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 		}
 	}
+	body = append(body, sDim.Render(clip("T:trivial S:simple N:normal H:hard V:very complex", w-4)))
 	legend := "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible"
 	body = append(body, sDim.Render(clip(legend, w-4)))
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
@@ -827,4 +828,31 @@ func (m Model) selectableQuotaRows() []quotaRow {
 		configured = append(configured, unused...)
 	}
 	return configured
+}
+
+func (m Model) quotaRowDisplayName(r quotaRow) string {
+	name := sanitize(r.provider.Provider)
+	nodes, ids := m.quotaNodes()
+	var machines []protocol.UsageNode
+	for _, id := range ids {
+		machines = append(machines, nodes[id])
+	}
+	machineBadge := ""
+	var liveMachine protocol.UsageNode
+	if m.width < 110 {
+		live := 0
+		for _, node := range machines {
+			if node.Usage.Quotas != nil && quotaMachineStatus(node.Usage.Quotas, r.provider.Provider) == "live" {
+				live++
+				liveMachine = node
+			}
+		}
+		if live == 1 && liveMachine.Usage.Quotas != nil {
+			machineBadge = sanitize(firstNonEmpty(liveMachine.Hostname, liveMachine.NodeID))
+		}
+	}
+	if machineBadge != "" && liveMachine.Usage.Quotas != nil && quotaMachineStatus(liveMachine.Usage.Quotas, r.provider.Provider) == "live" {
+		name += " (" + machineBadge + ")"
+	}
+	return name
 }

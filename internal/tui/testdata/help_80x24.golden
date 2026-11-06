@@ -1,6 +1,4 @@
 Keys · Sessions ────────────────────────────────────────────────────────────────
-
- Sessions
   pgup/pgdn              page
   home/g, end            first, last row
   enter                  open the selected session; details show trust, request
@@ -20,5 +18,7 @@ Keys · Sessions ─────────────────────
  Global keys
   1-8                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
                          Settings, Inbox, Delivery
+  enter                  go into the selected thing
   more below
+
 up/down scroll  ? all screens  esc close

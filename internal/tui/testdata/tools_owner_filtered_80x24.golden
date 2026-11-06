@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│6
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
   Skills per project    [ All tools ]
 ╭─34 skills · ~0 tokens in every session on research───────────────────────────╮
 │   NAME                          STATUS                              COST     │
@@ -6,6 +6,7 @@
 │ ! design-taste-frontend         2 different copies on research      ~0       │
 │ ! imnplementing-clean-architec… off for homelab                     ~0       │
 │   clean-architecture-python     on for homelab                      ~0       │
+│   diagnosing-bugs               on for homelab                      ~0       │
 │ 35 tools · ! needs attention · enter opens actions                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─code-review──────────────────────────────────────────────────────────────────╮
@@ -20,5 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-tab switches  q quit  ? help  ↑↓ move  / filter  t costs  esc clear  n add
-  enter actions  R rescan
+tab agents  ? help  / filter  t costs  esc clear  n add  enter open  R rescan

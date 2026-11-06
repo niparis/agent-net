@@ -3,10 +3,10 @@
 ╭─Tools · 40 tools───────────────────────────────────────────────╮╭─code-review────────────────────────────────────────╮
 │   NAME                    STATUS                      COST     ││ ~0 tokens in every session                         │
 │ ! code-review             v1 on Nicolas-MBP, v3 on…   ~0       ││ +~0 when the skill is used                         │
-│ ! design-taste-frontend   2 different copies on…      ~0       ││ on: v1 on Nicolas-MBP, v3 on research              │
-│ ! imnplementing-clean-ar… outside agent-net           ~0       ││ ! v1 on Nicolas-MBP, v3 on research                │
-│ ! web-design-guidelines   on for wbg-housing,…        ~0       ││ enter: make every machine use v3                   │
-│   clean-architecture-pyt… on everywhere               ~0       ││ from: agent-net v3                                 │
+│ ! design-taste-frontend   2 different copies on…      ~0       ││ ! on: v1 on Nicolas-MBP, v3 on research            │
+│ ! imnplementing-clean-ar… outside agent-net           ~0       ││ enter: make every machine use v3                   │
+│ ! web-design-guidelines   on for wbg-housing,…        ~0       ││ from: agent-net v3                                 │
+│   clean-architecture-pyt… on everywhere               ~0       ││                                                    │
 │   deploy-test-server      in the sovl-clone repo      ~0       ││                                                    │
 │   diagnosing-bugs         on everywhere; limited on…  ~0       ││                                                    │
 │   estate-runbook          in the homelab repo         ~0       ││                                                    │

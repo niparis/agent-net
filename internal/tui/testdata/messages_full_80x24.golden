@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│6
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
 │ ▸ tenebrae-53 ↔ strategies · Stored conversation 00: keep the l… now · 1 msg │
@@ -7,6 +7,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │   tenebrae-53 ↔ strategies · Stored conversation 03: keep the … 21m · 4 msgs │
 │   tenebrae-53 ↔ strategies · Stored conversation 04: keep the … 28m · 5 msgs │
 │   tenebrae-53 ↔ strategies · Stored conversation 05: keep the l… 35m · 1 msg │
+│   tenebrae-53 ↔ strategies · Stored conversation 06: keep the … 42m · 2 msgs │
 │ 0 system events                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
@@ -15,7 +16,6 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │   14:04 strategies                                                           │
 │ The full stored conversation is in the right pane.                           │
 │ It comes from the gateway, not the feed.                                     │
-│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
