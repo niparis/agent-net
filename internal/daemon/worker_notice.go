@@ -509,7 +509,7 @@ func (d *Daemon) sendNoticeToKeyWithFiles(ctx context.Context, w *worker, n prot
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
 	body := d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot()))
-	raw, err := d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, files)
+	raw, err := d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, files, n.Status == "idle without hand-back")
 	if err == nil {
 		switch n.Status {
 		case protocol.StatusDone, protocol.StatusFailed, protocol.StatusTimedOut, "partial", "idle without hand-back":
@@ -527,10 +527,10 @@ func (d *Daemon) sendNoticeToKeyWithFiles(ctx context.Context, w *worker, n prot
 // sendWorkerNoticeBody sends a worker notice through the same reply and outbox
 // path used for completion notices.
 func (d *Daemon) sendWorkerNoticeBody(ctx context.Context, w *worker, body, to, replyTo, noticeKey string) (json.RawMessage, error) {
-	return d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, nil)
+	return d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, nil, false)
 }
 
-func (d *Daemon) sendWorkerNoticeBodyWithFiles(ctx context.Context, w *worker, body, to, replyTo, noticeKey string, files *OutgoingFiles) (json.RawMessage, error) {
+func (d *Daemon) sendWorkerNoticeBodyWithFiles(ctx context.Context, w *worker, body, to, replyTo, noticeKey string, files *OutgoingFiles, idleNotice bool) (json.RawMessage, error) {
 	d.wmu.Lock()
 	sid, owner, parent := w.sessionID, w.owner, w.taskMsg
 	d.wmu.Unlock()
@@ -544,12 +544,12 @@ func (d *Daemon) sendWorkerNoticeBodyWithFiles(ctx context.Context, w *worker, b
 		noticeKey = protocol.NewID("k")
 	}
 	p := protocol.MsgSend{Sender: sid, Recipient: owner, Type: protocol.TypeNotification,
-		Body: body, IdempotencyKey: noticeKey}
+		Body: body, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice}
 	if parent != "" {
 		p.Type, p.ParentID = protocol.TypeReply, parent
 	}
 	if files != nil {
-		sent, err := d.sendPreparedFiles(ctx, FileSend{From: sid, To: owner, Body: body, Type: p.Type, ParentID: p.ParentID, IdempotencyKey: noticeKey}, files)
+		sent, err := d.sendPreparedFiles(ctx, FileSend{From: sid, To: owner, Body: body, Type: p.Type, ParentID: p.ParentID, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice}, files)
 		if err != nil {
 			if sent.Message.ID != "" {
 				return nil, fmt.Errorf("handback message %s was stored but file transfer failed: %w", sent.Message.ID, err)
@@ -1010,6 +1010,10 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 		return true, false
 	}
 	if !w.turnActive {
+		if w.idleNoticeCancel != nil {
+			w.idleNoticeCancel()
+			w.idleNoticeCancel = nil
+		}
 		w.idleFollowUp = w.idleNoticeSent && m.From == w.owner
 		w.idleNoticeSince = time.Time{}
 		w.idleNoticeSent = false

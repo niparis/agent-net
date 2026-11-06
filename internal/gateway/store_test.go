@@ -93,6 +93,101 @@ func TestIdempotency(t *testing.T) {
 	}
 }
 
+func TestWorkerIdleNoticeRejectsSupersededTask(t *testing.T) {
+	s, _ := newTestStore(t)
+	owner, peer := twoSessions(t, s)
+	node, err := s.SessionNode(peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := s.UpsertSession(node, protocol.SessionInfo{
+		Harness: "opencode", NativeID: "worker", Name: "shop worker",
+		Worker: &protocol.WorkerInfo{ID: "w_test", Owner: owner},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _, err := s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: worker, Body: "first task", IdempotencyKey: "task-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstNotice, created, err := s.StoreMessage(protocol.MsgSend{
+		Sender: worker, Recipient: owner, Type: protocol.TypeReply, Body: "idle notice",
+		ParentID: task.ID, IdempotencyKey: "idle-1", WorkerIdleNotice: true,
+	})
+	if err != nil || !created {
+		t.Fatalf("first idle notice: %v created=%v", err, created)
+	}
+	followup, _, err := s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: worker, Body: "continue", IdempotencyKey: "task-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, created, err := s.StoreMessage(protocol.MsgSend{
+		Sender: worker, Recipient: owner, Type: protocol.TypeReply, Body: "idle notice",
+		ParentID: task.ID, IdempotencyKey: "idle-1", WorkerIdleNotice: true,
+	}); err != nil || created || again.ID != firstNotice.ID {
+		t.Fatalf("same-key retry after follow-up: message=%+v created=%v err=%v", again, created, err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender: worker, Recipient: owner, Type: protocol.TypeReply, Body: "stale idle notice",
+		ParentID: task.ID, IdempotencyKey: "idle-2", WorkerIdleNotice: true,
+	}); err == nil {
+		t.Fatal("accepted an idle notice for a superseded task")
+	}
+	if _, created, err := s.StoreMessage(protocol.MsgSend{
+		Sender: worker, Recipient: owner, Type: protocol.TypeReply, Body: "next idle notice",
+		ParentID: followup.ID, IdempotencyKey: "idle-3", WorkerIdleNotice: true,
+	}); err != nil || !created {
+		t.Fatalf("idle notice for current task: created=%v err=%v", created, err)
+	}
+}
+
+func TestWorkerIdleNoticeSurvivesOwnerReplyFollowup(t *testing.T) {
+	s, _ := newTestStore(t)
+	owner, peer := twoSessions(t, s)
+	node, err := s.SessionNode(peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := s.UpsertSession(node, protocol.SessionInfo{
+		Harness: "opencode", NativeID: "worker", Name: "shop worker",
+		Worker: &protocol.WorkerInfo{ID: "w_test", Owner: owner},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _, err := s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: worker, Body: "first task", IdempotencyKey: "task-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handback, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender: worker, Recipient: owner, Type: protocol.TypeReply, Body: "finished the task",
+		ParentID: task.ID, IdempotencyKey: "handback-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender: owner, Recipient: worker, Type: protocol.TypeReply, Body: "please continue",
+		ParentID: handback.ID, IdempotencyKey: "owner-reply-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	next, created, err := s.StoreMessage(protocol.MsgSend{
+		Sender: worker, Recipient: owner, Type: protocol.TypeReply, Body: "idle notice after reply",
+		ParentID: task.ID, IdempotencyKey: "idle-2", WorkerIdleNotice: true,
+	})
+	if err != nil || !created {
+		t.Fatalf("idle notice after owner reply: message=%+v created=%v err=%v", next, created, err)
+	}
+	if again, created, err := s.StoreMessage(protocol.MsgSend{
+		Sender: worker, Recipient: owner, Type: protocol.TypeReply, Body: "idle notice after reply",
+		ParentID: task.ID, IdempotencyKey: "idle-2", WorkerIdleNotice: true,
+	}); err != nil || created || again.ID != next.ID {
+		t.Fatalf("idle notice retry after owner reply: message=%+v created=%v err=%v", again, created, err)
+	}
+}
+
 func mustNode(t *testing.T, s *Store, session string) string {
 	n, err := s.SessionNode(session)
 	if err != nil || n == "" {
