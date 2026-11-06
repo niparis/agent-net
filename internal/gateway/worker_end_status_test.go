@@ -140,7 +140,7 @@ func TestMigrationEndsFinishedWorkerSessions(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "One-time repair: older versions left")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
 	a, _, _ := s.Agent(finished)

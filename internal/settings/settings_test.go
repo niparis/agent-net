@@ -15,7 +15,7 @@ import (
 func raw(s string) json.RawMessage { return json.RawMessage(s) }
 func TestStandardAndParity(t *testing.T) {
 	r := Standard()
-	if len(r.Ledger) != 149 || len(r.Definitions) < 24 {
+	if len(r.Ledger) != 150 || len(r.Definitions) < 24 {
 		t.Fatalf("ledger/definitions: %d/%d", len(r.Ledger), len(r.Definitions))
 	}
 	for _, m := range []string{"", "unknown", "early", "growing", "mature", "critical", "critical - "} {
@@ -75,7 +75,7 @@ func TestLoaderStrict(t *testing.T) {
 		"type":                 strings.Replace(base, "default: sandboxed", "default: true", 1),
 		"stricter":             strings.Replace(base, "stricter: false\n", "", 1),
 		"slot":                 strings.Replace(base, "{{reply}}", "{{oops}}", 1),
-		"missing ledger":       strings.Replace(base, "  - {row: 149,", "  - {row: 150,", 1),
+		"missing ledger":       strings.Replace(base, "  - {row: 150,", "  - {row: 151,", 1),
 		"duplicate ledger":     strings.Replace(base, "  - {row: 149,", "  - {row: 148,", 1),
 	} {
 		t.Run(name, func(t *testing.T) {

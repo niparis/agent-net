@@ -157,6 +157,8 @@ type SessionInfo struct {
 	// started. It is not the time the daemon last saw the session alive.
 	// Empty from an older daemon.
 	LastActive int64 `json:"last_active,omitempty"`
+	// HarnessActivity is the last observed output, state change or delivery acknowledgement.
+	HarnessActivity int64 `json:"harness_activity,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -301,6 +303,8 @@ type AgentView struct {
 	// LastActive is when the session last did something, in Unix seconds.
 	// It is not when its daemon last reported it. 0 from an older gateway.
 	LastActive int64 `json:"last_active,omitempty"`
+	// StalledSince is the time of the last observed harness activity during a stall.
+	StalledSince int64 `json:"stalled_since,omitempty"`
 	// TaskStarted is when the announced task last changed, in Unix seconds. It
 	// is for the read tools; the old list tools keep their output unchanged.
 	TaskStarted int64   `json:"-"`
@@ -430,6 +434,7 @@ type (
 	}
 	SessionRemove struct {
 		SessionID string `json:"session_id"`
+		Lost      bool   `json:"lost,omitempty"`
 	}
 	ProfileAnnounce struct {
 		SessionID string `json:"session_id"`
