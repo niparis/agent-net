@@ -254,7 +254,7 @@ Worker commits reach the default branch as parents of merge commits, or in a row
 
 voicemechs (deploy rule "brief", the one real node setting the step 6 cutover found) adds `deploy` with no approval. This is a fact of the real setup; this check did not read it.
 
-**The owner's way with a merger node:** the same, with review, merge, both tests, release and verify owned by `merger`. The orchestrator keeps only `accept`. The merger works on the machine that holds the branches, unless open question 3 says otherwise.
+**The owner's way with a merger node:** the same, with merge, both tests and release owned by `merger`. The orchestrator keeps `accept`, review and verify. The merger works on the machine that holds the branches, unless open question 3 says otherwise.
 
 **A friend's way (pull requests):**
 
@@ -263,7 +263,7 @@ voicemechs (deploy rule "brief", the one real node setting the step 6 cutover fo
 | review | owner (a person, on the pull request) | |
 | test | github | required check |
 | merge | github (merge queue) or a merger node | requires review, test |
-| release | github (workflow on tag) | |
+| release | caller or merger | requires full CI on the exact merged commit |
 
 **Solo, minimal:** test by the worker's own node, merge by the caller. No review.
 
