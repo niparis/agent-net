@@ -24,6 +24,7 @@ gofmt -l .                  # must print nothing
 sh -n install.sh            # syntax check of the installer
 bash -n scripts/test.sh
 plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
+plugins/claude/agent-net-workers/test.sh # validate and test Claude hooks (needs npm)
 ```
 
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update).
