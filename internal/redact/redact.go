@@ -18,7 +18,7 @@ const Mask = "[REDACTED]"
 var (
 	// Whole tokens with a known prefix.
 	tokenPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`sk-[A-Za-z0-9_\-]{16,}`),                                          // OpenAI, Anthropic and look-alikes
+		regexp.MustCompile(`\bsk-[A-Za-z0-9_\-]{16,}`),                                        // OpenAI, Anthropic and look-alikes
 		regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{20,}`),                                    // GitHub tokens
 		regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{20,}`),                                  // GitHub fine-grained tokens
 		regexp.MustCompile(`\b(?:AKIA|ASIA|AGPA|AIDA|AROA)[0-9A-Z]{16}\b`),                    // AWS access key IDs
