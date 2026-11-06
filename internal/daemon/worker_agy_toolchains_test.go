@@ -19,7 +19,7 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 			old := standardGoPaths
 			standardGoPaths = func(home string) []string { return []string{filepath.Join(home, ".local", "go", "bin", "go")} }
 			t.Cleanup(func() { standardGoPaths = old })
-			w, records, _ := startAgyNode(t, shortSet)
+			w, records, repo := startAgyNode(t, shortSet)
 			base := t.TempDir()
 			home, err := os.UserHomeDir()
 			if err != nil {
@@ -66,7 +66,7 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 			}
 			w.d.cfg.HarnessSearch = &harnesses.Options{PATH: base, Dirs: []string{}, Home: home,
 				LoginShellPATH: func(_ context.Context) string { return "" }}
-			w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback"})
+			res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback"})
 			n := w.waitNotice(t, 1)[0]
 			r := agyRecords(records)[0]
 			var got []string
@@ -75,14 +75,20 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 					got = append(got, r.Args[i+1])
 				}
 			}
+			toolchains := want
+			gitDir := res.Worktree
+			if gitDir == "" {
+				gitDir = repo
+			}
+			want = append(append([]string(nil), toolchains...), workerGitRoots(context.Background(), gitDir)...)
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("--add-dir: got %v, want %v; args: %v", got, want, r.Args)
 			}
 			if r.Args[len(r.Args)-1] != "-p=" {
 				t.Fatalf("prompt must stay last: %v", r.Args)
 			}
-			if len(want) > 0 {
-				detail := "plus toolchains: " + strings.Join(want, ", ")
+			if len(toolchains) > 0 {
+				detail := "plus toolchains: " + strings.Join(toolchains, ", ")
 				if !strings.Contains(r.Turns[0], detail) || !strings.Contains(n.Body, detail) {
 					t.Errorf("toolchain permissions missing: brief=%s notice=%s", r.Turns[0], n.Body)
 				}

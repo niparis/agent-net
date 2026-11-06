@@ -29,10 +29,10 @@ import (
 // need the narrow folders that git writes to in the main repository, not the
 // whole git dir (which would also let the worker change hooks and config).
 
-// codexGitRoots returns the folders of the main repository that a commit in the
+// workerGitRoots returns the folders of the main repository that a commit in the
 // worker's folder writes to: the objects, the refs and their logs, and the
 // private folder of a linked worktree (its index and HEAD).
-func codexGitRoots(ctx context.Context, dir string) []string {
+func workerGitRoots(ctx context.Context, dir string) []string {
 	common, err := gitOut(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil || common == "" {
 		return nil
@@ -52,7 +52,7 @@ func codexGitRoots(ctx context.Context, dir string) []string {
 
 // codexWritableRoots are the extra writable folders of a sandboxed worker.
 func codexWritableRoots(ctx context.Context, w *worker) []string {
-	return codexGitRoots(ctx, w.path)
+	return workerGitRoots(ctx, w.path)
 }
 
 // codexSandbox is what the worker's level means for Codex.
