@@ -53,7 +53,7 @@ jobs:
       - run: go test -race -timeout 30m $(go list ./... | grep -v /internal/daemon)
 
   test-plugins:
-    name: pi and opencode plugins
+    name: pi, opencode and claude plugins
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -62,3 +62,4 @@ jobs:
           node-version: 22.12.0
       - run: sh plugins/pi/test.sh
       - run: sh plugins/opencode/test.sh
+      - run: sh plugins/claude/test-agent-net-workers.sh
