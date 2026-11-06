@@ -2,9 +2,13 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -148,5 +152,65 @@ func TestMergerMergeReportQueuesAfterMergeTest(t *testing.T) {
 			}
 			r.mustReport(r.a, protocol.StepReportRequest{SessionID: session, ChangeID: c.ID, StepRef: ref, Result: "pass", Commit: commitMerged, Fields: map[string]string{"suite": "full"}})
 		})
+	}
+}
+
+func TestMergerReleaseRouting(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "release", AfterMerge: true, Node: "@merger"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "test", AfterMerge: true, Node: "@caller"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	c := r.submit(r.a, r.workerSubmit("feature/release", commitA)).Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: "pass", Commit: commitA})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Result: "pass", Commit: commitA, Fields: map[string]string{"suite": "changed"}})
+	yes := true
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "merge"}, Result: "pass", Commit: commitA, Fields: map[string]string{"merged_commit": commitMerged}, MergeContainsHead: &yes})
+	ref := protocol.StepRef{Step: "release", AfterMerge: true}
+	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: ref, Commit: commitMerged}); err == nil {
+		t.Fatal("release claimed before full CI")
+	}
+	if err := r.s.SetSessionOffline(r.a, r.sonnet); err != nil {
+		t.Fatal(err)
+	}
+	r.g.logger = log.New(io.Discard, "", 0)
+	r.g.conns = map[string]*nodeConn{}
+	wakes := make(chan string, 1)
+	fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
+		if h.Type == protocol.FrameSessionWake {
+			var p struct {
+				SessionID string `json:"session_id"`
+			}
+			if err := json.Unmarshal(raw, &p); err != nil {
+				return err
+			}
+			wakes <- p.SessionID
+		}
+		return nil
+	})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test", AfterMerge: true}, Result: "pass", Commit: commitMerged, Fields: map[string]string{"suite": "full"}})
+	select {
+	case id := <-wakes:
+		if id != r.sonnet {
+			t.Fatalf("woke %s, want %s", id, r.sonnet)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("retired merger was not woken for release")
+	}
+	if _, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "claude", NativeID: "sonnet", Repo: protocol.RepoInfo{Project: "demo"}}); err != nil {
+		t.Fatal(err)
+	}
+	r.g.dispatchStepTasks(context.Background())
+	var n int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND step='release' AND session_id=?`, c.ID, r.sonnet).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("release notices=%d err=%v", n, err)
+	}
+	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: ref, Commit: commitMerged}); err != nil {
+		t.Fatal(err)
 	}
 }
