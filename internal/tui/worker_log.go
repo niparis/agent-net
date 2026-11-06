@@ -99,13 +99,6 @@ func (m Model) workersLogView(w, h int) []string {
 	if len(m.snap.WorkerLog) > 0 {
 		r := m.snap.WorkerLog[selected]
 		detail = workerLogDetails(r, inner)
-		if r.Failure != "" {
-			label := "Note: "
-			if r.Status == "failed" || r.Status == "timed out" {
-				label = "Failure: "
-			}
-			detail = append(detail, wrapHanging(label, sanitize(r.Failure), inner)...)
-		}
 	}
 	available := max(h-6, 0)
 	dh := min(len(detail), max(available*2/3, 0))
@@ -117,7 +110,7 @@ func (m Model) workersLogView(w, h int) []string {
 
 func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 	var detail []string
-	labels := []string{"Title", "Caller", "Model", "Where", "Run time"}
+	labels := []string{"Title", "Caller", "Model", "Where", "Run time", "Failure", "excluded"}
 	labelWidth := 0
 	for _, label := range labels {
 		labelWidth = max(labelWidth, len(label))
@@ -152,7 +145,7 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 		levelText := workerDifficultyStyle(level).Render(level)
 		summary := levelText + "  D " + fmt.Sprintf("%.2f", a.D)
 		if a.JudgeModel != "" {
-			summary += sDim.Render("  ·  " + sanitize(a.JudgeModel))
+			summary += sDim.Render("  ·  " + "judged by " + sanitize(a.JudgeModel[strings.LastIndex(a.JudgeModel, "/")+1:]))
 		}
 		detail = append(detail, clip(summary, width))
 		if a.Error != "" {
@@ -191,7 +184,30 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 		if len(detail) > 0 {
 			detail = append(detail, "")
 		}
-		detail = appendWorkerLogFact(detail, "Picker", picker, labelWidth, width)
+		if rows, ok := workerPickerRows(picker); ok {
+			for _, row := range rows {
+				if row[0] == "" {
+					for _, line := range appendWorkerLogFact(nil, "", row[1], labelWidth, width) {
+						detail = append(detail, sDim.Render(line))
+					}
+				} else {
+					addFact(row[0], row[1])
+				}
+			}
+		} else {
+			addFact("Picker", picker)
+		}
+	}
+	if r.Failure != "" {
+		detail = append(detail, "")
+		label, style := "Note", sDim
+		if r.Status == "failed" || r.Status == "timed out" {
+			label, style = "Failure", sBad
+		}
+		lines := appendWorkerLogFact(nil, label, r.Failure, labelWidth, width)
+		for _, line := range lines {
+			detail = append(detail, style.Render(line))
+		}
 	}
 	return detail
 }
@@ -316,4 +332,64 @@ func wrapHanging(prefix, text string, width int) []string {
 		out = append(out, strings.Repeat(" ", indent)+line)
 	}
 	return out
+}
+
+// workerPickerRows parses the gateway's semicolon-separated choice explanation.
+func workerPickerRows(note string) ([][2]string, bool) {
+	i := strings.Index(note, " (")
+	if i < 1 || !strings.HasSuffix(note, ")") {
+		return nil, false
+	}
+	parts := strings.Split(note[i+2:len(note)-1], "; ")
+	if !strings.HasSuffix(parts[0], ", good enough") {
+		return nil, false
+	}
+	rows := [][2]string{{"Chosen", note[:i] + " - score " + parts[0]}}
+	const rule = " (automatic picks may be at most one level below their max)"
+	footnote := false
+	for _, part := range parts[1:] {
+		if strings.Contains(part, rule) {
+			footnote = true
+			part = strings.ReplaceAll(part, rule, "")
+		}
+		switch {
+		case strings.Contains(part, " excluded: "):
+			p := strings.SplitN(part, " excluded: ", 2)
+			rows = append(rows, [2]string{"Excluded", p[0] + " - " + p[1]})
+		case strings.HasSuffix(part, " kept for harder work"):
+			rows = append(rows, [2]string{"Kept", strings.TrimSuffix(part, " kept for harder work") + " - for harder work"})
+		case strings.Contains(part, "rotation weight"):
+			rows = append(rows, [2]string{"Rotation", strings.TrimPrefix(part, "rotation ")})
+		case strings.Contains(part, " starts"):
+			rows = append(rows, [2]string{"Recent", workerPickerRecent(part)})
+		default:
+			if !strings.Contains(part, "pace") && !strings.Contains(part, "track record") {
+				return nil, false
+			}
+			label := "Picker"
+			if strings.Contains(part, "pace") {
+				label = "Pace"
+			}
+			rows = append(rows, [2]string{label, part})
+		}
+	}
+	if footnote {
+		rows = append(rows, [2]string{"", "Automatic picks may be at most one level below their max."})
+	}
+	return rows, true
+}
+
+// workerPickerRecent keeps unfamiliar count formats intact.
+func workerPickerRecent(part string) string {
+	counts, period, ok := strings.Cut(part, " of the last ")
+	if !ok || !strings.HasSuffix(period, " starts") {
+		return part
+	}
+	for _, count := range strings.Split(counts, ", ") {
+		name, value, ok := strings.Cut(count, ": ")
+		if !ok || name == "" || value == "" || strings.Trim(value, "0123456789") != "" {
+			return part
+		}
+	}
+	return strings.ReplaceAll(counts, ": ", " ") + " (last " + period + ")"
 }
