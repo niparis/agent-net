@@ -186,6 +186,8 @@ func TestDeliverySafetyValues(t *testing.T) {
 		"delivery.worker_branch_prefix": {`"../"`, `"bad//"`, `"-bad/"`},
 		"delivery.trailer_worker":       {`"$(command)"`, `"a b"`},
 		"delivery.cleanup_interval":     {`"0s"`, `"-1m"`},
+		"delivery.step_reminder":        {`"-1m"`},
+		"delivery.step_stuck":           {`"-1m"`},
 	} {
 		def, ok := Standard().Definition(key)
 		if !ok {
