@@ -97,3 +97,35 @@ func TestGraphRefsStatusMatchesEnable(t *testing.T) {
 	}
 	check("machine (" + node + ") has not completed")
 }
+
+func TestGraphRefsStatusReportsGraphError(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Delivery: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc := &nodeConn{id: node}
+	if _, err = g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.145","hostname":"fixture","graph_refs":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.store.db.Exec(`ALTER TABLE team_members RENAME TO broken_team_members`); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]string{"owner": owner})
+	result, err := g.handle(context.Background(), nc, "graph.refs.status", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(result)
+	if !strings.Contains(string(b), "team_members") {
+		t.Fatalf("missing graph error: %s", b)
+	}
+}

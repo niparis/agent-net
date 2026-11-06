@@ -229,7 +229,7 @@ func (m Model) helpLine(w int) string {
 	case modeGraphCutoverPath:
 		return clip("enter: continue · esc: cancel", w)
 	case modeGraphCutoverConfirm:
-		return clip("enter/y: enable · esc/n: cancel", w)
+		return clip("y: enable · esc/n: cancel", w)
 	case modeGraphCutoverResult:
 		return clip("esc/enter: back", w)
 	case modeSettingRepo:

@@ -1504,11 +1504,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		if _, graphErr := st.graphForRef(nil); graphErr != nil {
+			blockers = append(blockers, graphErr.Error())
+		}
 		dataDir, err := filepath.Abs(g.opts.DataDir)
 		if err != nil {
 			return nil, err
 		}
 		backup := filepath.Join(filepath.Dir(dataDir), "gateway-before-typed-graph-"+st.now().Format("20060102-1504"))
+		if on {
+			if err := st.db.QueryRowContext(ctx, `SELECT backup FROM graph_ref_gate WHERE id=1`).Scan(&backup); err != nil {
+				return nil, err
+			}
+		}
 		return map[string]any{"on": on, "blockers": blockers, "backup": backup}, nil
 
 	case "graph.refs.enable":

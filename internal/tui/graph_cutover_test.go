@@ -13,8 +13,11 @@ import (
 
 type cutoverSource struct {
 	fakeSource
-	err   error
-	calls int
+	err         error
+	calls       int
+	statusOn    bool
+	statusErr   error
+	statusCalls int
 }
 
 func (s *cutoverSource) Call(_ context.Context, method string, _ any) (json.RawMessage, error) {
@@ -22,7 +25,11 @@ func (s *cutoverSource) Call(_ context.Context, method string, _ any) (json.RawM
 		s.calls++
 		return nil, s.err
 	}
-	return json.RawMessage(`{"on":false,"blockers":[]}`), nil
+	s.statusCalls++
+	if s.statusErr != nil {
+		return nil, s.statusErr
+	}
+	return json.RawMessage(fmt.Sprintf(`{"on":%t,"blockers":[],"backup":"/saved/backup"}`, s.statusOn)), nil
 }
 func TestGraphCutoverStates(t *testing.T) {
 	s := &cutoverSource{}
@@ -124,5 +131,88 @@ func TestGraphCutoverPrefillsGatewayBackup(t *testing.T) {
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.rename.Value() != "/gateway-state/gateway-before-typed-graph-20261106-1200" {
 		t.Fatalf("prefill %q", m.rename.Value())
+	}
+}
+
+func TestGraphCutoverConfirmRequiresY(t *testing.T) {
+	s := &cutoverSource{}
+	m := newModel(80, 24)
+	m.src = s
+	m.tab = settingsTab
+	m.mode = modeGraphCutoverConfirm
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || m.mode != modeGraphCutoverConfirm || s.calls != 0 {
+		t.Fatal("Enter enabled cutover")
+	}
+	for _, key := range []string{"y", "Y"} {
+		n := m
+		n, cmd = press(n, tea.KeyPressMsg{Text: key, Code: rune(key[0])})
+		if cmd == nil || !n.cutoverBusy {
+			t.Fatalf("%s did not confirm", key)
+		}
+	}
+}
+func TestGraphCutoverReconcilesEnableError(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		on        bool
+		statusErr error
+		want      string
+	}{
+		{"completed", true, nil, "Typed Repo/Agent Graph is on"},
+		{"pending", false, nil, "no answer in time; it may still complete: check this screen again"},
+		{"unknown", false, errors.New("offline"), "may still complete"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &cutoverSource{err: context.DeadlineExceeded, statusOn: tc.on, statusErr: tc.statusErr}
+			m := newModel(120, 34)
+			m.src = s
+			m.tab = settingsTab
+			m.mode = modeGraphCutoverConfirm
+			m.cutoverPath = "/saved/backup"
+			m, cmd := press(m, tea.KeyPressMsg{Text: "y", Code: 'y'})
+			if cmd == nil {
+				t.Fatal("no enable command")
+			}
+			next, _ := m.Update(cmd())
+			m = next.(Model)
+			if s.statusCalls != 1 || !strings.Contains(m.testView(), tc.want) {
+				t.Fatalf("status calls %d: %s", s.statusCalls, m.testView())
+			}
+			if tc.on && !strings.Contains(m.testView(), "/saved/backup") {
+				t.Fatal(m.testView())
+			}
+			if tc.statusErr != nil && !strings.Contains(m.testView(), "context deadline exceeded") {
+				t.Fatal("original error hidden: " + m.testView())
+			}
+		})
+	}
+}
+
+func TestGraphCutoverScreens80(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = settingsTab
+	m.cutoverLoaded = true
+	m.cutoverSuggested = "/gateway/backups/pre-cutover"
+	m.cutoverBlockers = []string{"upgrade required: machine build-vm has not reported typed Graph support"}
+	m = selectSettingsKind(m, "graph-cutover")
+	golden(t, "graph_cutover_status_80x24", m.testView())
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	golden(t, "graph_cutover_confirm_80x24", m.testView())
+}
+
+func TestGraphCutoverSanitizesOutput(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = settingsTab
+	m.mode = modeGraphCutoverConfirm
+	m.cutoverPath = "/backup/\x1b[31munsafe\nnext"
+	if strings.Contains(m.View().Content, "\x1b[31m") || strings.Contains(m.testView(), "unsafe\nnext") {
+		t.Fatal("unsafe path in confirmation")
+	}
+	m.mode = modeGraphCutoverResult
+	m.cutoverError = "error\x1b[31m bad\nnext"
+	if strings.Contains(m.View().Content, "\x1b[31m") || strings.Contains(m.testView(), "bad\nnext") {
+		t.Fatal("unsafe error in result")
 	}
 }
