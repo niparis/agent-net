@@ -281,6 +281,65 @@ func TestToolToggleUnmanagedImportAndRefusal(t *testing.T) {
 	}
 }
 
+func TestToolToggleMarkdownLinkAndRealSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		body        string
+		wantRefusal bool
+	}{
+		{
+			name: "markdown link",
+			body: "# Demo\n\nSee [What lands on disk: state the contract](#what-lands-on-disk-state-the-contract).\n",
+		},
+		{
+			name: "Python key arguments",
+			body: "return min(matches, key=lambda p: len(p.parts))\nkey=lambda p: p.stat().st_mtime, reverse=True)\n",
+		},
+		{
+			name:        "real key",
+			body:        "# Demo\n\nOPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx\n",
+			wantRefusal: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g, node, _ := toggleFixture(t)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# Demo\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filepath.Join(dir, "references"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "references", "level-2-drilldown.md"), []byte(tc.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			hash, err := inventory.SkillHash(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundle, err := inventory.PackSkill(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := `["skill","demo","` + hash + `"]`
+			if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
+				t.Fatal(err)
+			}
+			toggleFakeNode(t, g, node, bundle, nil)
+			plan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+			if tc.wantRefusal {
+				if err == nil || !strings.Contains(err.Error(), "not switched") {
+					t.Fatalf("real key was not refused: plan=%+v err=%v", plan, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("markdown skill was refused: %v", err)
+			}
+		})
+	}
+}
+
 func TestToolToggleNewProjectAppliesStandingChoice(t *testing.T) {
 	for _, on := range []bool{true, false} {
 		t.Run(map[bool]string{true: "on", false: "off"}[on], func(t *testing.T) {
