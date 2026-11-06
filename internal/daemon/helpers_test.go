@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -409,7 +411,11 @@ func (lc *localClient) call(method string, params any) (json.RawMessage, error) 
 		}
 		return m["result"], nil
 	case <-time.After(scaled(20 * time.Second)):
-		return nil, errors.New("no response")
+		// Capture the blocked goroutines before test cleanup tears down the
+		// socket and gateway, so a rare stalled request can be diagnosed.
+		var stacks bytes.Buffer
+		pprof.Lookup("goroutine").WriteTo(&stacks, 2)
+		return nil, fmt.Errorf("no response\ngoroutines at %s timeout:\n%s", method, stacks.String())
 	}
 }
 
