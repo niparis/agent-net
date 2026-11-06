@@ -1158,7 +1158,7 @@ func (m Model) sessionsTable(w, n int) []string {
 		case m.activeOnly:
 			msg = "  no active sessions (a shows the quiet ones)"
 		case !m.showOffline:
-			msg = "  no online sessions (o shows the offline and dormant ones)"
+			msg = "  no sessions in this view (type / to find ended sessions; o shows offline)"
 		}
 		out = append(out, sDim.Render(msg))
 	}
@@ -1234,7 +1234,8 @@ func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string
 	}
 	t, st := m.treeOf(a)
 	switch {
-	case !a.Online:
+	case !a.Online || a.Status == protocol.StatusDormant:
+		cells["CPU"], cells["RAM"] = "\x00", "\x00"
 		return cells
 	case st != usageOK:
 		for _, k := range []string{"CPU", "RAM"} {
@@ -1380,6 +1381,16 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				v = delivery
 			}
 		}
+		if c.name == "STATUS" && (!a.Online || a.Status == protocol.StatusDormant) {
+			width := c.width
+			for _, other := range cols {
+				if other.name == "CPU" || other.name == "RAM" {
+					width += other.width + 1
+				}
+			}
+			parts = append(parts, cell(v, width))
+			continue
+		}
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
 		}
@@ -1412,7 +1423,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		return selectedRow(clip(line, w))
 	case m.hiddenSessions[a.SessionID]:
 		return sDim.Render(clip(stripStyles(line), w))
-	case !a.Online || m.idleLong(a):
+	case !a.Online || a.Status == protocol.StatusDormant || m.idleLong(a):
 		return sDim.Render(clip(stripStyles(line), w))
 	}
 	return clip(line, w)

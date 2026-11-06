@@ -184,7 +184,7 @@ func TestMachinesAreThisOneFirstThenByName(t *testing.T) {
 	}
 	m := treeModel(120, 34, snap)
 	gs := m.groups()
-	if len(gs) != 2 || gs[0].nodeID != "n_mac" || gs[1].nodeID != "n_vm" {
+	if len(gs) != 3 || gs[0].nodeID != "n_mac" || gs[1].nodeID != "n_vm" {
 		t.Fatalf("machine order %v, %v; want this machine, then alpha", gs[0].nodeID, gs[1].nodeID)
 	}
 }

@@ -92,7 +92,7 @@ func TestTreeOrder(t *testing.T) {
 			t.Errorf("build-vm group holds %s", a.Profile.Name)
 		}
 	}
-	if len(g) != 2 {
+	if len(g) != 3 {
 		t.Errorf("%d groups", len(g))
 	}
 }
@@ -126,8 +126,8 @@ func TestTreeNested(t *testing.T) {
 	loopA.Worker.Owner, loopB.Worker.Owner = loopB.SessionID, loopA.SessionID
 	snap.Agents = append(snap.Agents, loopA, loopB)
 	m = treeModel(120, 34, snap)
-	if got := len(m.visible()); got != len(snap.Agents)-2 { // no row for the owner or the offline session
-		t.Errorf("%d rows for %d sessions", got, len(snap.Agents)-2)
+	if got := len(m.visible()); got != len(snap.Agents)-1 { // no row for the owner
+		t.Errorf("%d rows for %d sessions", got, len(snap.Agents)-1)
 	}
 }
 

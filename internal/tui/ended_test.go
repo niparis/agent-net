@@ -1,25 +1,75 @@
 package tui
 
 import (
-	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestEndedVisibility(t *testing.T) {
-	m := Model{}
-	m.snap.Agents = []protocol.AgentView{{SessionID: "old", Harness: "claude", Cwd: "/work/project", LastSeen: time.Now().Add(-8 * 24 * time.Hour).Unix()}, {SessionID: "latest", Harness: "claude", Cwd: "/work/project", LastSeen: time.Now().Unix()}}
-	if g := m.groups(); len(g) != 1 || len(g[0].agents) != 1 || g[0].agents[0].SessionID != "latest" {
-		t.Fatalf("latest ended session missing: %+v", g)
+	m := newModel(120, 34)
+	recent := func(id, project string, age time.Duration) protocol.AgentView {
+		return protocol.AgentView{SessionID: id, Harness: "claude", Cwd: project, LastSeen: m.now().Add(-age).Unix()}
 	}
-	m.filter = "old"
-	if g := m.groups(); len(g) != 1 || g[0].agents[0].SessionID != "old" {
-		t.Fatalf("filter missed offline session: %+v", g)
+	m.snap.Agents = []protocol.AgentView{
+		recent("older", "/work/project", time.Hour),
+		recent("latest", "/work/project", time.Minute),
+		recent("expired", "/work/expired", 8*24*time.Hour),
+		recent("hidden", "/work/hidden", time.Minute),
+		recent("worker", "/work/worker", time.Minute),
+		recent("bot", "/work/bot", time.Minute),
+		recent("owner", "/work/owner", time.Minute),
+		recent("dormant", "/work/dormant", time.Minute),
+	}
+	m.hiddenSessions["hidden"] = true
+	m.snap.Agents[4].Worker = &protocol.WorkerInfo{}
+	m.snap.Agents[5].Harness = "bot"
+	m.snap.Agents[6].Harness = "owner"
+	m.snap.Agents[7].Status = protocol.StatusDormant
+	m.snap.Agents[7].Online = true
+	ids := func() string {
+		var ids []string
+		for _, g := range m.groups() {
+			for _, a := range g.agents {
+				ids = append(ids, a.SessionID)
+			}
+		}
+		return strings.Join(ids, ",")
+	}
+	if got := ids(); got != "dormant,latest" {
+		t.Fatalf("default: %s", got)
+	}
+	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "live", Harness: "claude", Cwd: "/work/project", Online: true})
+	if got := ids(); strings.Contains(got, "latest") {
+		t.Fatalf("online project also shows ended session: %s", got)
+	}
+	for _, filter := range []string{"older", "expired", "dormant"} {
+		m.filter = filter
+		if got := ids(); got != filter {
+			t.Fatalf("filter %q: %s", filter, got)
+		}
+	}
+	m.filter = "worker"
+	if got := ids(); got != "" {
+		t.Fatalf("ended worker: %s", got)
 	}
 }
+
 func TestEndedResumeHint(t *testing.T) {
-	if s := resumeHint(protocol.AgentView{Harness: "claude", Cwd: "/repo/.claude/worktrees/topic"}); !strings.Contains(s, "Enter resumes it in /repo/.claude/worktrees/topic") {
-		t.Fatal(s)
+	m := newModel(120, 34)
+	a := protocol.AgentView{SessionID: "ended", Harness: "claude", Cwd: "/repo/.claude/worktrees/topic", LastSeen: m.now().Add(-12 * time.Minute).Unix()}
+	m.snap.Agents = []protocol.AgentView{a}
+	m.selected = a.SessionID
+	got := strings.Join(m.detailLines(120, 20), "\n")
+	if !strings.Contains(got, "Enter resumes it in") || !strings.Contains(got, a.Cwd) {
+		t.Fatal(got)
 	}
+}
+
+func TestEndedScene(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "ended-worktree", NodeID: "n_mac", Hostname: "Mac", Harness: "claude", Cwd: "/repo/.claude/worktrees/topic", Profile: protocol.Profile{Name: "office-politics"}, LastSeen: m.now().Add(-12 * time.Minute).Unix()})
+	golden(t, "sessions_ended_120x34", m.testView())
 }

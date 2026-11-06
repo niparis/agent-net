@@ -12,8 +12,8 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ◐ ci-runner        agent  agent-net  pi · gpt-6               idle      5%  300M
   scratch            agent  -          pi                       shell    <1%   80M
-
-
+ old-box 1 session ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  old-session        agent  old        claude                   ended 1d ago
 
 
 

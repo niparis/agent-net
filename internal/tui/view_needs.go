@@ -124,7 +124,14 @@ func waitingStatus(a protocol.AgentView) string {
 // statusCell is the STATUS cell of the table; statusStyle has its colour.
 func (m Model) statusCell(a protocol.AgentView) string {
 	if !a.Online {
-		return "ended " + needsAge(m.now(), a.LastSeen) + " ago"
+		if a.LastSeen <= 0 {
+			return "ended"
+		}
+		age := needsAge(m.now(), a.LastSeen)
+		if age == "now" {
+			return "ended just now"
+		}
+		return "ended " + age + " ago"
 	}
 	if s := waitingStatus(a); s != "" {
 		return s
@@ -136,6 +143,9 @@ func (m Model) statusCell(a protocol.AgentView) string {
 			}
 		}
 		return "wait"
+	}
+	if a.Status == protocol.StatusDormant {
+		return "dormant"
 	}
 	return statusShort(a.Status)
 }

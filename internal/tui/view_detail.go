@@ -161,7 +161,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		out = append(out, line)
 	}
 	if !a.Online || a.Status == protocol.StatusDormant {
-		out = append(out, clip("  "+resumeHint(a), w))
+		out = append(out, wrap("  "+resumeHint(a), w)...)
 	}
 	out = append(out,
 		kv("id", id),
@@ -327,7 +327,7 @@ func toolsText(a protocol.AgentView) string {
 
 // resumeHint keeps the original folder visible for worktree sessions.
 func resumeHint(a protocol.AgentView) string {
-	if a.Harness == "claude" || a.Harness == "pi" {
+	if a.Harness == "claude" || a.Harness == "pi" || a.Harness == "codex" || a.Harness == "opencode" {
 		return "Enter resumes it in " + sanitize(a.Cwd)
 	}
 	command := a.Harness + " resume " + a.NativeID
