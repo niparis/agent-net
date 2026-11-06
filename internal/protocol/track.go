@@ -30,11 +30,23 @@ const (
 	OutcomeInfra    = "infra"
 )
 
+// WorkerEvidence is measured before the daemon saves unfinished work. Nil
+// evidence means no usable worktree measurement (including older daemons).
+type WorkerEvidence struct {
+	FilesChanged int   `json:"files_changed"`
+	LinesChanged int   `json:"lines_changed"`
+	Complete     *bool `json:"complete"`
+	RunSeconds   int64 `json:"run_seconds"`
+	EarlyQuit    bool  `json:"early_quit"`
+}
+
 // WorkerRun is one ended worker as the gateway counts it.
 type WorkerRun struct {
-	RunGeneration int    `json:"run_generation,omitempty"`
-	NodeID        string `json:"node_id"`
-	SessionID     string `json:"session_id,omitempty"`
+	RunGeneration int             `json:"run_generation,omitempty"`
+	Complete      *bool           `json:"complete,omitempty"`
+	Evidence      *WorkerEvidence `json:"evidence,omitempty"`
+	NodeID        string          `json:"node_id"`
+	SessionID     string          `json:"session_id,omitempty"`
 	// TaskID is the root session for a continued worker, or empty for a root.
 	TaskID  string `json:"task_id,omitempty"`
 	Harness string `json:"harness"`
@@ -67,6 +79,7 @@ type WorkerRun struct {
 
 // TrackRecord is what the gateway learned about one harness and model.
 type TrackRecord struct {
+	EarlyQuits       int    `json:"early_quits"`
 	Harness          string `json:"harness"`
 	Model            string `json:"model,omitempty"`
 	Runs             int    `json:"runs"`
@@ -170,7 +183,7 @@ func (t *TrackRecord) Line() string {
 		count int
 		word  string
 	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}, {t.Stopped, "stopped"}, {t.Infra, "infra"},
-		{t.Continue, "continue"}, {t.Fix, "fix"}, {t.AutoContinue, "auto-continues"}} {
+		{t.EarlyQuits, "early quits"}, {t.Continue, "continue"}, {t.Fix, "fix"}, {t.AutoContinue, "auto-continues"}} {
 		if n.count > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n.count, n.word))
 		}

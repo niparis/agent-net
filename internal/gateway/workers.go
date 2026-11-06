@@ -217,7 +217,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			difficulty = "normal"
 		}
 		run := protocol.WorkerRun{RunGeneration: p.RunGeneration, NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
-			Outcome: protocol.WorkerOutcomeDetail(p.Reason, p.Status, p.Complete, p.Failure), StartedAt: p.StartedAt, EndedAt: end,
+			Complete: p.Complete, Evidence: p.Evidence, Outcome: protocol.WorkerOutcomeDetail(p.Reason, p.Status, p.Complete, p.Failure), StartedAt: p.StartedAt, EndedAt: end,
 			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, CallerSessionID: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches, TaskID: p.TaskID, Midrun: p.MidrunRun}
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err
@@ -225,7 +225,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err := g.store.SetSessionWorkerRework(nc.id, p.SessionID, p.Continue, p.Fix, p.DifficultyAsked, p.DifficultyUsed, p.AutoContinue); err != nil {
 			return nil, err
 		}
-		if p.Status == protocol.StatusDone && p.Model != "" {
+		if p.Status == protocol.StatusDone && p.Model != "" && (p.Evidence == nil || !p.Evidence.EarlyQuit) {
 			if err := g.store.RecordModelSuccess(nc.id, p.Harness, p.Model); err != nil {
 				return nil, err
 			}
@@ -1637,6 +1637,10 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	earlyLevels, err := g.store.recentEarlyQuitLevels(node.NodeID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	trackByModel := make(map[string]protocol.TrackRecord, len(tracks))
 	for _, track := range tracks {
 		trackByModel[track.Harness+"\x00"+track.Model] = track
@@ -1694,7 +1698,7 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 			}
 			model := resolved
 			model = protocol.ParseModelSelection(profile.Harness, "", model, profile.Effort).LegacyModel()
-			candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero(), Track: trackByModel[h.Name+"\x00"+model]})
+			candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], EarlyQuitLevels: earlyLevels[h.Name+"\x00"+model], Failed: failures[model], Succeeded: !successes[model].IsZero(), Track: trackByModel[h.Name+"\x00"+model]})
 			if resolved != profile.Model {
 				resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
 			}

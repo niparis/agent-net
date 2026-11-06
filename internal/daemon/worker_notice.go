@@ -441,6 +441,9 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Title: title, Permissions: permissions, OSSandbox: osSandbox,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
 		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty}
+	d.wmu.Lock()
+	n.Evidence = w.evidence
+	d.wmu.Unlock()
 	n.DiffStat, _ = d.worktreeFacts(w)
 	n.Head = d.worktreeHead(w)
 	d.wmu.Lock()
@@ -671,6 +674,8 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		d.Logf("worker.handback worker=%s session=%s status=%s complete=false auto_continue=1", w.id, sessionID, req.Status)
 		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: false, AutoContinued: true}, nil
 	}
+	complete := req.Status == protocol.StatusDone && req.IsComplete()
+	d.captureWorkerEvidence(w, &complete)
 	committed := d.commitAtHandback(w, req)
 	// A complete hand-back is a revision of a delivery change (delivery
 	// pipeline build step 1). A partial one records nothing.
@@ -935,7 +940,7 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	if r.DoneStatus != "" || r.SessionID == "" {
 		return
 	}
-	w := &worker{id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
+	w := &worker{evidence: r.Evidence, id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
 		branch: r.Branch, base: r.Base}
 	status, note := d.noticeFor(protocol.StopLost)

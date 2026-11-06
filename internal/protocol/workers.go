@@ -466,12 +466,13 @@ type (
 	}
 	// WorkerStopped is "worker.stopped", machine to gateway.
 	WorkerStopped struct {
-		RunGeneration int    `json:"run_generation,omitempty"`
-		SessionID     string `json:"session_id"`
-		WorkerID      string `json:"worker_id"`
-		Project       string `json:"project"`
-		Harness       string `json:"harness"`
-		Reason        string `json:"reason"`
+		RunGeneration int             `json:"run_generation,omitempty"`
+		Evidence      *WorkerEvidence `json:"evidence,omitempty"`
+		SessionID     string          `json:"session_id"`
+		WorkerID      string          `json:"worker_id"`
+		Project       string          `json:"project"`
+		Harness       string          `json:"harness"`
+		Reason        string          `json:"reason"`
 		// Failure is the cleaned model-call error, used to remember provider auth failures.
 		Failure string `json:"failure,omitempty"`
 		// Model is the model the worker ran, as the gateway resolved it. The
@@ -828,6 +829,7 @@ func ValidHandbackStatus(s string) bool {
 // WorkerNotice holds the facts of the completion notice (W11). The daemon
 // measures them; the worker does not write them.
 type WorkerNotice struct {
+	Evidence    *WorkerEvidence
 	Permissions string
 	Status      string
 	Session     string
@@ -907,6 +909,13 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	b.WriteString("\nmodel: " + ParseModelSelection(n.Harness, "", n.Model, "").Display() + "\n")
 	b.WriteString(WorkerPermissionsLine(n.Permissions, n.Harness, n.OSSandbox) + "\n")
 	b.WriteString("run time: " + n.RunTime.Round(time.Second).String() + "\n")
+	if e := n.Evidence; e != nil && e.EarlyQuit {
+		files := "files"
+		if e.FilesChanged == 1 {
+			files = "file"
+		}
+		b.WriteString(fmt.Sprintf("early quit: %d %s, %d lines after %ds; the task was not attempted\n", e.FilesChanged, files, e.LinesChanged, e.RunSeconds))
+	}
 	if n.Tokens != "" {
 		b.WriteString("tokens: " + n.Tokens + "\n")
 	}

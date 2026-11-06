@@ -21,6 +21,8 @@ type WorkerModelCandidate struct {
 	Failed        bool
 	Succeeded     bool
 	Track         TrackRecord
+	// EarlyQuitLevels marks recent failed attempts only at their difficulty.
+	EarlyQuitLevels map[string]bool
 }
 
 // WorkerModelChoice explains an automatic worker model selection.
@@ -151,6 +153,8 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if measured {
 			servedRoom -= 5 * float64(running[provider])
 		}
+		// An early quit is one failed attempt, with the existing failure weight.
+		c.Failed = c.Failed || c.EarlyQuitLevels[level]
 		weight := workerRotationWeight(c, score, weakestAdequate, servedRoom, measured)
 		eligible = append(eligible, ranked{
 			choice: WorkerModelChoice{WorkerModelCandidate: c, Score: score, Fit: fit, QuotaNote: note},

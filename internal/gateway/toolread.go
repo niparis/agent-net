@@ -704,7 +704,7 @@ func (g *Gateway) MachineGet(p protocol.MachineGetRequest) (protocol.MachineGetR
 				continue
 			}
 			row := protocol.MachineTrackRow{Harness: t.Harness, Model: t.Model, Runs: t.Runs,
-				Complete: t.Complete, Partial: t.Partial, Failed: t.Failed}
+				Complete: t.Complete, Partial: t.Partial, Failed: t.Failed, EarlyQuits: t.EarlyQuits}
 			if t.MedianRunSeconds > 0 {
 				row.MedianMinutes = float64(t.MedianRunSeconds) / 60
 			}
