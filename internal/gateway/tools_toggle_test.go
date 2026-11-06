@@ -292,6 +292,10 @@ func TestToolToggleMarkdownLinkAndRealSecret(t *testing.T) {
 			body: "# Demo\n\nSee [What lands on disk: state the contract](#what-lands-on-disk-state-the-contract).\n",
 		},
 		{
+			name: "Python key arguments",
+			body: "return min(matches, key=lambda p: len(p.parts))\nkey=lambda p: p.stat().st_mtime, reverse=True)\n",
+		},
+		{
 			name:        "real key",
 			body:        "# Demo\n\nOPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx\n",
 			wantRefusal: true,
