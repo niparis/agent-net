@@ -269,3 +269,64 @@ func TestReleasingTheClaudeCTOLeavesItsJobRunning(t *testing.T) {
 		t.Fatal("the daemon still holds the released job")
 	}
 }
+
+func TestCTOClaudeIdleDoneJobRemainsAvailable(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	harness := "claude"
+	n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	first, err := n.d.ctoEnter(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.d.cto.mu.Lock()
+	ref := n.d.claudeCTO.ref
+	root := n.d.claudeCTO.root.Load()
+	n.d.cto.mu.Unlock()
+	job := filepath.Join(filepath.Dir(n.d.cfg.ClaudeSessionsDir), "jobs", ref)
+	if err := os.MkdirAll(job, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(job, "state.json"), []byte(`{"state":"done","tempo":"idle"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	monitored := make(chan struct{})
+	go func() { n.d.monitorClaudeCTO(ctx, ref, root.pid, root.token); close(monitored) }()
+	select {
+	case <-monitored:
+		t.Fatal("monitor stopped live idle job")
+	case <-time.After(1200 * time.Millisecond):
+	}
+	if !n.d.ctoRunning() {
+		t.Fatal("live idle job reported dormant")
+	}
+	second, err := n.d.ctoEnter(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Argv[2] != second.Argv[2] {
+		t.Fatalf("started another job: %v -> %v", first.Argv, second.Argv)
+	}
+	if _, err := n.d.ctoSendTriggered(context.Background(), "hello", "owner", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	n.d.cto.mu.Lock()
+	if n.d.claudeCTO.ref != ref {
+		t.Errorf("message started another job: %s -> %s", ref, n.d.claudeCTO.ref)
+	}
+	n.d.cto.mu.Unlock()
+	p, err := os.FindProcess(root.pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "dead done job stopped", func() bool { n.d.cto.mu.Lock(); defer n.d.cto.mu.Unlock(); return n.d.claudeCTO.ref == "" })
+	if reason := claudeCTOEndReason("done"); reason != "job_done" {
+		t.Fatalf("end reason %q", reason)
+	}
+}
