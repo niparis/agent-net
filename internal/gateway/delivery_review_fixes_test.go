@@ -41,7 +41,7 @@ func TestDeliveryClosedChangeClosesApprovalItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := r.submit(r.a, r.workerSubmit("feature/closed", commitA)).Change.Change.ID
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA, Note: "not wanted"})
 	items, err := r.s.ListInbox()
 	if err != nil {
 		t.Fatal(err)

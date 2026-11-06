@@ -1153,7 +1153,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_step_report",
-    "description": "Report the result of a delivery step you own for one change: pass, fail with findings, needs_owner, or close without merge. Name the exact commit you checked; a report for any other commit is refused.",
+    "description": "Report the result of a delivery step you own for one change: pass, fail with findings, needs_owner, or close without merge. The caller of a change may close it at any step, with a note saying why. Name the exact commit you checked; a report for any other commit is refused.",
     "inputSchema": {
       "type": "object",
       "properties": {

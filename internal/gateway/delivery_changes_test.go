@@ -526,7 +526,7 @@ func TestChangeListFiltersAndPages(t *testing.T) {
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldSuite: protocol.SuiteChanged}})
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}})
 	c3 := sub("demo", "b3")
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c3, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c3, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA, Note: "not wanted"})
 	c4 := r.submit(r.b, protocol.ChangeSubmitRequest{SessionID: r.deepseek, Project: "web", Branch: "b1", HeadCommit: commitA, Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.deepseek}}).Change.Change.ID
 	c5 := sub("demo", "b5")
 

@@ -392,6 +392,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		return protocol.StepReportResult{}, reject("session %q is not on this machine", q.SessionID)
 	}
 	by, doer, reportedBy := q.SessionID, reporter, ""
+	if q.Result == protocol.StepResultClose && q.DoneBy != "" {
+		return protocol.StepReportResult{}, reject("a close is reported by the session itself: leave done_by out")
+	}
 	directOwner := q.DoneBy == protocol.EvidenceByOwner
 	if directOwner {
 		by, doer, reportedBy = protocol.EvidenceByOwner, deliverySession{}, q.SessionID
@@ -430,29 +433,39 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if p, err = taskOwners(tx, c, p); err != nil {
 		return protocol.StepReportResult{}, err
 	}
-	if err := checkApprovalTaskPolicy(tx, c, p, q.StepRef); err != nil {
-		return protocol.StepReportResult{}, err
+	// The caller of a change (or the owner) may close it at any step, even when
+	// the step is owned by another node and is not ready yet. The report is
+	// still checked against the pipeline, revision and commit by Accepts, but
+	// the caller does not own the step and does not claim it.
+	closeAnyStep := q.Result == protocol.StepResultClose && (q.SessionID == c.Caller || reporter.harness == "owner")
+	if closeAnyStep {
+		by, doer, reportedBy = q.SessionID, reporter, ""
 	}
-	if step, ok := p.Find(q.StepRef); ok {
-		if directOwner && (step.Owner.Kind != protocol.OwnerDelegate || step.Step != protocol.StepApprove) {
-			return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step")
+	if !closeAnyStep {
+		if err := checkApprovalTaskPolicy(tx, c, p, q.StepRef); err != nil {
+			return protocol.StepReportResult{}, err
 		}
-		switch step.Owner.Kind {
-		case protocol.OwnerCaller:
-			if q.SessionID != c.Caller {
-				return protocol.StepReportResult{}, reject("%s is owned by the caller", q.StepRef)
+		if step, ok := p.Find(q.StepRef); ok {
+			if directOwner && (step.Owner.Kind != protocol.OwnerDelegate || step.Step != protocol.StepApprove) {
+				return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step")
 			}
-		case protocol.OwnerPerson:
-			return protocol.StepReportResult{}, reject("%s is owned by the person: answer its Inbox approval", q.StepRef)
-		case protocol.OwnerGitHub:
-			return protocol.StepReportResult{}, reject("%s is owned by GitHub", q.StepRef)
-		case protocol.OwnerDelegate:
-			if q.DoneBy != "" && q.DoneBy != q.SessionID && !directOwner {
-				return protocol.StepReportResult{}, reject("a delegate reports its own approval")
+			switch step.Owner.Kind {
+			case protocol.OwnerCaller:
+				if q.SessionID != c.Caller {
+					return protocol.StepReportResult{}, reject("%s is owned by the caller", q.StepRef)
+				}
+			case protocol.OwnerPerson:
+				return protocol.StepReportResult{}, reject("%s is owned by the person: answer its Inbox approval", q.StepRef)
+			case protocol.OwnerGitHub:
+				return protocol.StepReportResult{}, reject("%s is owned by GitHub", q.StepRef)
+			case protocol.OwnerDelegate:
+				if q.DoneBy != "" && q.DoneBy != q.SessionID && !directOwner {
+					return protocol.StepReportResult{}, reject("a delegate reports its own approval")
+				}
 			}
+		} else if directOwner {
+			return protocol.StepReportResult{}, reject("the approval step is not in this pipeline")
 		}
-	} else if directOwner {
-		return protocol.StepReportResult{}, reject("the approval step is not in this pipeline")
 	}
 	fields := map[string]string{}
 	for k, v := range q.Fields {
@@ -481,26 +494,28 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := checkMergeReady(tx, p, c, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
-	queued, err := stepTaskQueued(tx, c, q.StepRef)
-	if err != nil {
-		return protocol.StepReportResult{}, err
-	}
-	if queued {
-		if err := checkStepReady(tx, c, p, q.StepRef); err != nil {
+	var found bool
+	if !closeAnyStep {
+		queued, err := stepTaskQueued(tx, c, q.StepRef)
+		if err != nil {
 			return protocol.StepReportResult{}, err
 		}
-	}
-	var found bool
-	if directOwner {
-		found, err = claimDirectOwnerApproval(tx, c, q.StepRef, q.SessionID, machine)
-	} else {
-		found, err = claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, true)
-	}
-	if err != nil {
-		return protocol.StepReportResult{}, err
-	}
-	if step, ok := p.Find(q.StepRef); !found && ok && (step.Owner.Kind == protocol.OwnerNode || step.Owner.Kind == protocol.OwnerDelegate || step.Owner.Kind == protocol.OwnerMerger) {
-		return protocol.StepReportResult{}, reject("%s has not reached its owner", q.StepRef)
+		if queued {
+			if err := checkStepReady(tx, c, p, q.StepRef); err != nil {
+				return protocol.StepReportResult{}, err
+			}
+		}
+		if directOwner {
+			found, err = claimDirectOwnerApproval(tx, c, q.StepRef, q.SessionID, machine)
+		} else {
+			found, err = claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, true)
+		}
+		if err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		if step, ok := p.Find(q.StepRef); !found && ok && (step.Owner.Kind == protocol.OwnerNode || step.Owner.Kind == protocol.OwnerDelegate || step.Owner.Kind == protocol.OwnerMerger) {
+			return protocol.StepReportResult{}, reject("%s has not reached its owner", q.StepRef)
+		}
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
@@ -532,8 +547,12 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 			return protocol.StepReportResult{}, err
 		}
 	}
+	var closedSessions []string
 	if next.State == protocol.ChangeStopped {
 		if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=?)`, s.now().UnixNano(), c.ID); err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		if closedSessions, err = closeStepTasks(tx, c); err != nil {
 			return protocol.StepReportResult{}, err
 		}
 	}
@@ -543,17 +562,28 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := retireStepMessages(tx, c.ID); err != nil {
 		return protocol.StepReportResult{}, err
 	}
-	var notice protocol.Message
+	var notices []protocol.Message
 	if found && (e.Result != protocol.StepResultPass || next.State == protocol.ChangeDone) {
-		if notice, err = s.stepResultNoticeTx(tx, next, e); err != nil {
+		notice, err := s.stepResultNoticeTx(tx, next, e)
+		if err != nil {
 			return protocol.StepReportResult{}, err
 		}
+		notices = append(notices, notice)
+	}
+	for _, session := range closedSessions {
+		notice, err := s.stepClosedNoticeTx(tx, next, session)
+		if err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		notices = append(notices, notice)
 	}
 	if err := tx.Commit(); err != nil {
 		return protocol.StepReportResult{}, err
 	}
-	if notice.ID != "" {
-		s.logMessage(notice)
+	for _, notice := range notices {
+		if notice.ID != "" {
+			s.logMessage(notice)
+		}
 	}
 	view, err := s.changeView(next, p, false)
 	return protocol.StepReportResult{Evidence: e, Change: view}, err
