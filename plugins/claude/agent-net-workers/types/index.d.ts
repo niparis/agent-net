@@ -21,6 +21,6 @@ export type AgentNetWorker = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-net-workers': { workers: AgentNetWorker[]; notified: string[]; 'stale-seconds': number }
+    'agent-net-workers': { workers: AgentNetWorker[]; notified: string[]; 'stale-seconds': number; outdated: boolean }
   }
 }
