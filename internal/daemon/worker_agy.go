@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // Antigravity workers use one stream-json process per conversation (0049 D2).
@@ -149,8 +150,15 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	w.agy = c
 	d.wmu.Unlock()
 	mode, settings := "accept-edits", agyWorkerSettings
+	var gitDirs []string
 	if permissions == protocol.WorkersReadOnly {
 		mode, settings = "plan", agyReadOnlySettings
+	} else {
+		// A linked worktree's .git file points at the main repository's git
+		// folder, which the sandbox hides. Without these narrow folders a
+		// worker cannot run git status, and reading the .git file's target is
+		// denied in headless mode.
+		gitDirs = workerGitRoots(ctx, w.path)
 	}
 	env := d.workerGitEnv(w, os.Environ(), map[string]string{"AGENT_NET_WORKER": w.id, "AGENT_NET_SOCKET": d.cfg.SocketPath,
 		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session")})
@@ -169,6 +177,9 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 
 	args = append(args, "--mode", mode, "--sandbox", "--settings", settings)
 	for _, path := range toolchains {
+		args = append(args, "--add-dir", path)
+	}
+	for _, path := range gitDirs {
 		args = append(args, "--add-dir", path)
 	}
 	if native != "" {
@@ -319,7 +330,7 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 			}
 			c.failure = cleanFailure("Antigravity result " + r.Status + " " + r.Finished + ": " + detail)
 		} else if len(r.Denied) > 0 {
-			c.failure = "Antigravity denied a tool action in headless mode"
+			c.failure = cleanFailure("Antigravity denied a tool action in headless mode: " + agyDeniedText(r.Denied))
 		}
 		usage, handback, failure := c.usage, c.handback, c.failure
 		if handback != nil {
@@ -335,6 +346,9 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		// Keep the report until handbackTo has durably recorded the notice.
 		_ = c.saveStreamLocked()
 		c.mu.Unlock()
+		if len(r.Denied) > 0 {
+			d.Logf("worker.agy.denied worker=%s session=%s denied=%s", w.id, w.sessionID, agyDeniedText(r.Denied))
+		}
 		discarded.Remove()
 		b, _ := json.Marshal(usage)
 		tmp := filepath.Join(w.dir, "agy-usage.json.tmp")
@@ -410,6 +424,91 @@ func agyContextLimit(model string) int64 {
 		return 131_072
 	}
 	return 0
+}
+
+// agyDeniedShown is how many denied actions a failure notice names. The rest
+// are counted; the daemon log keeps the same short list.
+const agyDeniedShown = 3
+
+// agyDeniedText names the tool actions agy refused in headless mode. Each
+// entry has a tool name and the tool's arguments as JSON; the text keeps a
+// short, redacted path or command so the owner can tell what was blocked.
+func agyDeniedText(denied []json.RawMessage) string {
+	var parts []string
+	for i, raw := range denied {
+		if i == agyDeniedShown {
+			parts = append(parts, fmt.Sprintf("and %d more", len(denied)-agyDeniedShown))
+			break
+		}
+		parts = append(parts, agyDeniedOne(raw))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func agyDeniedOne(raw json.RawMessage) string {
+	var a struct {
+		ToolName    string          `json:"tool_name"`
+		ToolNameAlt string          `json:"toolName"`
+		Tool        string          `json:"tool"`
+		Args        json.RawMessage `json:"args"`
+		Arguments   json.RawMessage `json:"arguments"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		var s string
+		if json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
+			return redact.Args(s)
+		}
+		return redact.Args(string(raw))
+	}
+	tool := strings.TrimSpace(a.ToolName)
+	if tool == "" {
+		tool = strings.TrimSpace(a.ToolNameAlt)
+	}
+	if tool == "" {
+		tool = strings.TrimSpace(a.Tool)
+	}
+	if tool == "" {
+		tool = "a tool"
+	}
+	args := a.Args
+	if len(args) == 0 || string(args) == "null" {
+		args = a.Arguments
+	}
+	if args := agyDeniedArgs(args); args != "" {
+		return tool + " " + args
+	}
+	return tool
+}
+
+// agyDeniedArgs picks the path or command out of a denied tool's arguments.
+// Unknown shapes fall back to compact JSON. redact.Args masks secrets, removes
+// control characters and cuts the text to 80 characters.
+func agyDeniedArgs(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return redact.Args(s)
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return redact.Args(string(raw))
+	}
+	for _, key := range []string{"Path", "path", "FilePath", "file_path", "CommandLine", "command", "Command"} {
+		if v, ok := m[key].(string); ok && strings.TrimSpace(v) != "" {
+			label := strings.ToLower(key)
+			switch label {
+			case "filepath", "file_path":
+				label = "path"
+			case "commandline":
+				label = "command"
+			}
+			return redact.Args(label + "=" + v)
+		}
+	}
+	b, _ := json.Marshal(m)
+	return redact.Args(string(b))
 }
 
 func (agyLauncher) stats(_ context.Context, d *Daemon, w *worker) workerStats {

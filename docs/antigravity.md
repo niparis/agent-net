@@ -88,6 +88,14 @@ Read-only workers use `--mode plan --sandbox`, with only
 `mcp(agent-net_agent-net/*)` in the allow list. They get no command allow rule.
 The no-network project level is not enforced for agy.
 
+A writable worker also receives `--add-dir` for its worktree's private git
+folder and the main repository git folder's `objects`, `refs` and `logs`. This
+is the same narrow set a Codex worker gets. In a linked worktree the `.git`
+file points at the main git folder that the sandbox otherwise hides, so without
+these folders git cannot find the repository. With them `git status` and
+`git diff` work, and a commit can write objects and move the branch. The main
+`config` and `hooks` folders stay hidden.
+
 Permission probes on agy 1.4.12 confirmed workspace edits and shell commands
 with the normal worker flags. The sandbox made home read-only while allowing
 writes in the working folder and `/tmp`. Auto mode was unavailable for that

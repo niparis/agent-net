@@ -286,7 +286,7 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 	defer cancel()
 	if common, err := gitOut(ctx, path, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil && common != "" {
 		in.GitCommon = resolved(common)
-		for _, r := range codexGitRoots(ctx, path) {
+		for _, r := range workerGitRoots(ctx, path) {
 			in.GitRoots = append(in.GitRoots, resolved(r))
 		}
 	}
