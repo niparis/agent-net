@@ -615,7 +615,9 @@ window does not authorize them. Peer sessions cannot run them. The gateway
 checks the authenticated owner session and repeats lifecycle and reference
 checks when an approved proposal runs. Tombstoned Agents cannot own Repos.
 Archive and tombstone retain historical references and refuse active ones rather
-than cascading changes.
+than cascading changes. Session registration and Agent changes check for inactive
+identities in the same transaction as the write; a refusal leaves no partial
+session update.
 
 Proposal calls cover major graph/charter/node settings outside the owner window,
 and always names, trust, policy, workers,

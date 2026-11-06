@@ -947,6 +947,11 @@ CREATE TRIGGER IF NOT EXISTS session_lifecycle_update BEFORE UPDATE OF online,re
  WHEN NEW.online=1 AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND
  (EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=NEW.repo_id) OR EXISTS(SELECT 1 FROM agents WHERE id=NEW.agent_id AND tombstone<>0))
  BEGIN SELECT RAISE(ABORT, 'session identity is inactive'); END;
+`, `
+-- Validate active session identities in their write transactions. Removing
+-- these triggers also permits old-schema fixtures to drop identity columns.
+DROP TRIGGER IF EXISTS session_lifecycle_insert;
+DROP TRIGGER IF EXISTS session_lifecycle_update;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1778,6 +1783,9 @@ func (s *Store) upsertSession(q interface {
 	if err != nil {
 		return "", false, err
 	}
+	if err = checkActiveSessionIdentity(q, id); err != nil {
+		return "", false, err
+	}
 	// The owner session is the person, not a new agent: no session.new for it.
 	fresh := !known && !protocol.IsOwner(in.Harness)
 	if fresh {
@@ -1941,11 +1949,22 @@ func (s *Store) hostname(nodeID string) string {
 }
 
 func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, error) {
-	id, created, err := s.upsertSession(s.db, nodeID, in)
-	if err == nil && created {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	id, created, err := s.upsertSession(tx, nodeID, in)
+	if err != nil {
+		return "", err
+	}
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+	if created {
 		s.logNewSessions([]newSession{{id, nodeID, in}})
 	}
-	return id, err
+	return id, nil
 }
 
 // SyncSessions upserts the full set and marks the node's other sessions offline.

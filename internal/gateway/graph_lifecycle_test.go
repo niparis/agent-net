@@ -142,8 +142,8 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 	_, err := s.db.Exec(`DROP TRIGGER IF EXISTS repos_unique_name_insert; DROP TRIGGER IF EXISTS repos_unique_name_update;
  DROP TRIGGER IF EXISTS agents_unique_name_insert; DROP TRIGGER IF EXISTS agents_unique_name_update;
  DROP TRIGGER repo_live_owner_insert; DROP TRIGGER repo_live_owner_update; DROP TRIGGER agent_owned_tombstone;
- DROP TRIGGER session_lifecycle_insert; DROP TRIGGER session_lifecycle_update;
- DROP TABLE archived_repos; DELETE FROM schema_version WHERE version=121;
+ DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update;
+ DROP TABLE archived_repos; DELETE FROM schema_version WHERE version>=121;
  INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a1','Duplicate',0,0),('a2','duplicate',0,0);
  INSERT INTO repos(id,display_name,created_at,updated_at) VALUES('r1','Shared',0,0),('r2','shared',0,0)`)
 	if err != nil {
@@ -156,7 +156,7 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		if i > 0 {
-			if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version=121`); err != nil {
+			if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=121`); err != nil {
 				t.Fatal(err)
 			}
 		}
