@@ -214,36 +214,12 @@ func toggleBundle(t *testing.T, g *Gateway, n, body string) (string, []byte) {
 	return `["skill","demo","` + hash + `"]`, bundle
 }
 
-func TestToolToggleUnmanagedImportAndRefusal(t *testing.T) {
-	for _, mode := range []string{"ok", "too large", "secret"} {
+func TestToolToggleUnmanagedImportAndTooLargeRefusal(t *testing.T) {
+	for _, mode := range []string{"ok", "too large"} {
 		t.Run(mode, func(t *testing.T) {
 			g, n, _ := toggleFixture(t)
 			body := "# Demo\nA fixture skill.\n"
 			id, bundle := toggleBundle(t, g, n, body)
-			if mode == "secret" {
-				dir := t.TempDir()
-				if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0600); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Mkdir(filepath.Join(dir, "references"), 0700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(dir, "references", "setup.md"), []byte("sk-"+strings.Repeat("x", 24)), 0600); err != nil {
-					t.Fatal(err)
-				}
-				hash, err := inventory.SkillHash(dir)
-				if err != nil {
-					t.Fatal(err)
-				}
-				bundle, err = inventory.PackSkill(dir)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
-					t.Fatal(err)
-				}
-				id = `["skill","demo","` + hash + `"]`
-			}
 			var refused error
 			if mode == "too large" {
 				refused = errors.New("skill exceeds the 2 MB import limit")
@@ -269,13 +245,68 @@ func TestToolToggleUnmanagedImportAndRefusal(t *testing.T) {
 				if mode == "too large" && !strings.Contains(err.Error(), "import limit") {
 					t.Fatal(err)
 				}
-				if mode == "secret" && (!strings.Contains(err.Error(), "demo: not switched") || !strings.Contains(err.Error(), "references/setup.md") || !strings.Contains(err.Error(), "then try again")) {
-					t.Fatal(err)
-				}
 				return
 			}
 			if err != nil || count != 1 || plan.Assignment.Scope != "projects" || !reflect.DeepEqual(plan.Assignment.Projects, []string{"two"}) || !reflect.DeepEqual(plan.Assignment.Machines, []string{n}) {
 				t.Fatalf("plan %+v, versions %d, err %v", plan, count, err)
+			}
+		})
+	}
+}
+
+func TestToolToggleMarkdownPythonAndSecretLikeContent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{
+			name: "markdown link",
+			body: "# Demo\n\nSee [What lands on disk: state the contract](#what-lands-on-disk-state-the-contract).\n",
+		},
+		{
+			name: "Python key arguments",
+			body: "return min(matches, key=lambda p: len(p.parts))\nkey=lambda p: p.stat().st_mtime, reverse=True)\n",
+		},
+		{
+			name: "ordinary JavaScript and Python",
+			body: "if (e.key === 'Escape') { return; }\nvar STORAGE_KEY = 'x';\nvar ownerToken = null;\nvar token = new RegExp('token');\nvar recordsByKey = {};\nreturn min(matches, key=lambda p: len(p.parts))\nkey=lambda p: p.stat().st_mtime, reverse=True)\nsorted(items, key=len)\n",
+		},
+		{
+			name: "secret-like content",
+			body: "sk-abcdefghijklmnopqrstuvwx\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g, node, _ := toggleFixture(t)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# Demo\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filepath.Join(dir, "references"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "references", "level-2-drilldown.md"), []byte(tc.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			hash, err := inventory.SkillHash(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundle, err := inventory.PackSkill(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := `["skill","demo","` + hash + `"]`
+			if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
+				t.Fatal(err)
+			}
+			toggleFakeNode(t, g, node, bundle, nil)
+			plan, err := g.toggleTool(t.Context(), protocol.ToolToggleRequest{Item: id, Project: "one", On: false}, "owner")
+			if err != nil {
+				t.Fatalf("skill was refused: plan=%+v err=%v", plan, err)
+			}
+			if len(plan.Conflicts) != 0 || plan.Assignment.Scope != "projects" || !reflect.DeepEqual(plan.Assignment.Projects, []string{"two"}) || !reflect.DeepEqual(plan.Assignment.Machines, []string{node}) {
+				t.Fatalf("skill switch plan: %+v", plan)
 			}
 		})
 	}

@@ -255,7 +255,7 @@ What the sending daemon checks, before the message is stored:
 - **Limits.** At most 100 MB per file and 10 files per message. The gateway checks the manifest again when it stores the message: a file name is a plain name of at most 200 bytes (no `/`, `\`, control character, `.` or `..`), the IDs and names are unique, and each hash is a SHA-256.
 - **Allowed folders.** A session can send only files in its project or worktree, or in `/tmp`. A worker can send only files in its own worktree with `agent_handback`; a worker without one cannot attach files. Symlinks are resolved first. For `agent_file_send`, a link must stay inside the most specific allowed project, worktree or `/tmp` folder that contains the named path. For a hand-back, the named path and the resolved file must stay inside the worker's own worktree. Confined sends refuse files with multiple hard links, because another link could lie outside the allowed folder. A path must be absolute and name a regular file. The file system root never counts as a project.
 - **Never sent, whatever the project.** The credential folders and files under the home folder: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, `~/.pki`, `~/.password-store`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.config/gcloud`, `~/.config/gh`, `~/.config/hub`, `~/.local/share/keyrings`, `~/Library/Keychains`, and the harness logins `~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.local/share/opencode/auth.json`, `~/.pi/agent/auth.json`, `~/.gemini/oauth_creds.json`. Also agent-net's own folders: the daemon state folder, the config folder, the gateway data folder, `~/.local/state/agent-net`, `~/.local/share/agent-net` and `~/.config/agent-net`. One exception: a worker's worktree lives in the state folder, and it is that worker's project, so the worker may send files from its own worktree, and nothing else there.
-- **Secret scan.** Every text file (no NUL byte and valid UTF-8 in its first 8000 bytes) goes through the same scanner that keeps secrets out of skills. A hit refuses the file. The refusal names the file but never repeats the text. Only the owner can send such a file anyway (a flag the owner flow sets; no agent tool sets it). Binary files are not scanned.
+- **Secret scan.** Every text file (no NUL byte and valid UTF-8 in its first 8000 bytes) goes through the file-send scanner. A hit refuses the file. The refusal names the file but never repeats the text. Only the owner can send such a file anyway (a flag the owner flow sets; no agent tool sets it). Binary files are not scanned.
 - **A snapshot is sent.** The daemon opens each component of the resolved path without following symlinks, checks that the open descriptor names the same regular file and copies from that descriptor into `<state>/files/outgoing/` while it hashes it. A replaced path is refused. A file that changes after the snapshot cannot reach the receiver under the old hash. The copies are deleted when the send ends, and a crash leftover after a day.
 
 How the bytes travel:
@@ -695,7 +695,7 @@ Registered MCP servers run on the machine that hosts them, as your user. Scoping
 
 ## Skills and MCP management
 
-This section covers everything the owner can do with skills and MCP servers across machines ([decision 0027](decisions/0027-skills-and-mcp-management.md), [reference](reference.md#tools-inventory)): see them, import them, assign them, remove them and undo that. Skill files and MCP configs can hold secrets and can steer an agent, so the rules are strict. Each rule below is enforced in code, not only in guidance text.
+This section covers everything the owner can do with skills and MCP servers across machines ([decision 0027](decisions/0027-skills-and-mcp-management.md), [reference](reference.md#tools-inventory)): see them, import them, assign them, remove them and undo that. Skill files and MCP configs can hold secrets and can steer an agent. Each rule below is enforced in code, not only in guidance text.
 
 ### Who may change things
 
@@ -719,10 +719,9 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 
 ### The private skill store
 
-`tools_import` copies a skill from a machine to the gateway. Only an owner connection can ask for it. Review the files for secrets first, because this is the one step that sends skill contents.
+`tools_import` copies a skill from a machine to the gateway. Only an owner connection can ask for it. The gateway copies skill contents as supplied and does not scan them for secrets. The owner is responsible for keeping secrets out of skills before importing them.
 
 - The gateway checks the observed hash, so a skill that changed after its scan is rejected. It rejects traversal, escaping links, special files and bundles over 2 MiB or 2,048 entries.
-- Before storing an import, the gateway checks regular file contents with its common-secret recognizer. A recognized secret refuses the import without showing its value. This is a best-effort check, not proof that a skill is free of secrets.
 - The skill goes into `skills.git` in the gateway data directory: a private bare Git repository, mode 0700. SQLite keeps the item ID, content hash, commit and source. Nothing is pushed anywhere.
 - Git keeps history. A later version that drops a secret does not erase it from earlier commits. Anyone who can read the data directory or a backup can read these contents.
 - `gateway_backup` holds a consistent database snapshot, the skill repository, the CA key and the server key. The folder and its files are owner-only. Treat a backup like the gateway data. Restore writes only to a new directory and checks SQLite, Git objects and every saved skill hash before it finishes.
