@@ -62,19 +62,21 @@ func workerLogLine(r protocol.WorkerLogEntry, w int, selected bool, loc *time.Lo
 	dateFormat := "01-02 15:04"
 	model := sanitize(firstNonEmpty(r.Model, "-"))
 	difficulty := sanitize(firstNonEmpty(r.Difficulty, "-"))
-	modelWidth := min(25, max(w/4, 6))
-	difficultyWidth := min(10, max(w/8, 3))
+	modelWidth := min(20, max(w/5, 6))
+	difficultyWidth := min(8, max(w/10, 3))
+	callerWidth := min(12, max(w/9, 4))
 	if w < 100 {
 		dateFormat = "15:04"
 		model = workerLogShortModel(model)
 		difficulty = workerLogShortDifficulty(difficulty)
 		modelWidth = 10
 		difficultyWidth = 4
+		callerWidth = 9
 	}
 	if started.Format("2006-01-02") == time.Now().In(loc).Format("2006-01-02") {
 		dateFormat = "15:04"
 	}
-	prefix := started.Format(dateFormat) + "  " + cell(model, modelWidth) + "  " + cell(difficulty, difficultyWidth) + "  " + cell(sanitize(firstNonEmpty(r.Caller, "-")), min(14, max(w/8, 4))) + "  "
+	prefix := started.Format(dateFormat) + " " + cell(model, modelWidth) + " " + cell(difficulty, difficultyWidth) + " " + cell(sanitize(firstNonEmpty(r.Caller, "-")), callerWidth) + " "
 	status := r.Status
 	room := max(w-2-len(status)-1, 0)
 	line := lead + cell(sanitize(prefix+firstNonEmpty(r.Title, "-")), room) + " " + workerStatusStyle(status).Render(status)

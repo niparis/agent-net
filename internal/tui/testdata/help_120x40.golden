@@ -1,5 +1,4 @@
 Keys · Sessions ────────────────────────────────────────────────────────────────────────────────────────────────────────
- Sessions
   pgup/pgdn              page
   home/g, end            first, last row
   enter                  open the selected session; details show trust, request rule and delegation policy
@@ -24,6 +23,7 @@ Keys · Sessions ─────────────────────
   C                      focus the CTO box
   ?                      help
   q, ctrl+c              quit
+
 
 
 

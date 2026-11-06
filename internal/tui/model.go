@@ -85,17 +85,18 @@ type Model struct {
 	zoneName   string
 	zoneSource string
 
-	width, height     int
-	tab               int
-	quotaScroll       int
-	quotaSelected     int
-	quotaConfirm      string
-	quotaUnprotect    bool
-	quotaShowUnset    bool
-	qualityAgent      int
-	qualityDetail     bool
-	messageShowEvents bool
-	hideWorkerThreads bool
+	width, height       int
+	tab                 int
+	quotaScroll         int
+	quotaSelected       int
+	quotaConfirm        string
+	quotaConfirmDisplay string
+	quotaUnprotect      bool
+	quotaShowUnset      bool
+	qualityAgent        int
+	qualityDetail       bool
+	messageShowEvents   bool
+	hideWorkerThreads   bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap       Snapshot
@@ -1357,6 +1358,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			provider := m.quotaModelProvider(row.provider.Provider)
 			m.notice = notice{}
 			m.quotaConfirm, m.quotaUnprotect = provider, m.quotaProviderProtected(row.provider.Provider)
+			m.quotaConfirmDisplay = m.quotaRowDisplayName(row)
 			m.mode = modeQuotaConfirm
 		case "show unset":
 			m.quotaSelected = 0

@@ -3,7 +3,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages──────────────────────────────────────filter: all  (l)─╮╭─Conversation───────────────────────────────────────╮
 │ ▸ tenebrae-53 → worker: Polish the session… 2 messages · ended ││   13:55 tenebrae-53                                │
 │   tenebrae-53 → worker: Review the deploy    1 message · ended ││ [agent-net worker brief] Another agent started yo… │
-│   strategies ↔ web · A conversation whose… 1 message · 30m ago ││ - Do the whole task. Do not gold-plate it, and do… │
+│   strategies ↔ web · A conversation whose sid… 30m ago · 1 msg ││ - Do the whole task. Do not gold-plate it, and do… │
 │                                                                ││ - Do it yourself. Do not pass the whole task to a… │
 │                                                                ││ …                                                  │
 │                                                                ││   14:00 ended worker                               │

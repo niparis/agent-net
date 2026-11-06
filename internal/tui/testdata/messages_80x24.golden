@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│12
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
 │   tenebrae-53 ↔ ended session · Which environment should I use?   1m · 1 msg │
@@ -13,10 +13,10 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │   13:57 strategies                                                           │
 │ The deployment plan looks good.                                              │
 │ I checked the rollback steps too.                                            │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

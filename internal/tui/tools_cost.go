@@ -89,14 +89,20 @@ func (m Model) toolDetailView(w, h int) []string {
 			body = append(body, desc...)
 			add(tokenCountText(r.Item.StartTokens) + " in every session")
 			add("+" + formatTokens(r.Item.FullTokens) + " when the skill is used")
-			add("on: " + m.toolBaseStatus(r))
-			if reason := m.toolAttentionReason(r); reason != "" {
-				add("! " + reason)
-				for _, d := range m.tl.cat.Diffs {
-					if d.Name == r.Name && d.Fix != "" && !m.tl.accepted[d.Key] {
-						add("enter: " + d.Fix)
-						break
-					}
+			status := m.toolBaseStatus(r)
+			reason := m.toolAttentionReason(r)
+			if reason != "" && strings.TrimSpace(reason) == strings.TrimSpace(status) {
+				add("! on: " + status)
+			} else {
+				add("on: " + status)
+				if reason != "" {
+					add("! " + reason)
+				}
+			}
+			for _, d := range m.tl.cat.Diffs {
+				if d.Name == r.Name && d.Fix != "" && !m.tl.accepted[d.Key] {
+					add("enter: " + d.Fix)
+					break
 				}
 			}
 			var files []string
