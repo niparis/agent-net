@@ -367,7 +367,6 @@ are proposals. The CTO has one action tool per area:
 | CTO change tool | Actions or area |
 |---|---|
 | `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` proposes a send as the owner |
-
 | `agent_message_reply` | a reply with an outcome; `as_owner: true` proposes a plain reply as the owner |
 | `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |
 | `agent_learn` | one finding, under the daily limit |
