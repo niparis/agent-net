@@ -15,7 +15,7 @@ import (
 func (d *Daemon) agentGraph(ctx context.Context, q protocol.PublicGraphQuery) (protocol.PublicGraphPage, error) {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	raw, err := d.call(cctx, "graph.read", protocol.GraphRead{Project: q.Node})
+	raw, err := d.call(cctx, "graph.read", protocol.GraphRead{Project: q.Node, Ref: q.Ref, Typed: q.Typed})
 	if err != nil {
 		return protocol.PublicGraphPage{}, err
 	}

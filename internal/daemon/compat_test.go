@@ -192,3 +192,43 @@ func TestNewDaemonAgainstOldGateway(t *testing.T) {
 		t.Fatalf("projects against an old gateway: %v", err)
 	}
 }
+
+// A stored capability does not authorize a downgraded daemon on a new link.
+func TestGraphRefsOldDaemonRefusedAfterCutover(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	if _, err := n.d.call(ctx, "graph.refs.enable", map[string]string{"owner": n.d.ownerSessionID(), "backup": filepath.Join(t.TempDir(), "before-cutover")}); err != nil {
+		t.Fatal(err)
+	}
+	hc, err := PinnedClient(n.cfg.CAPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, frame := range []string{
+		`{"type":"hello","id":"old","version":"v0.3.2","hostname":"oldbox"}`,
+		`{"type":"session.sync","id":"old","sessions":[]}`,
+	} {
+		ws, _, err := websocket.Dial(ctx, n.cfg.GatewayURL+"/v1/node", &websocket.DialOptions{HTTPClient: hc, HTTPHeader: http.Header{"Authorization": {"Bearer " + n.cfg.Token}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = ws.Write(ctx, websocket.MessageText, []byte(frame)); err != nil {
+			ws.CloseNow()
+			t.Fatal(err)
+		}
+		_, raw, err := ws.Read(ctx)
+		ws.CloseNow()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result protocol.Header
+		if err = json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.OK || !strings.Contains(string(raw), "upgrade required") {
+			t.Fatalf("old daemon accepted: %s", raw)
+		}
+	}
+}

@@ -99,7 +99,12 @@ func (g *Gateway) handleGraphRead(raw []byte) (any, error) {
 	if err != nil {
 		return nil, reject("bad graph.read")
 	}
-	graph, err := g.store.GraphFor(p.Project)
+	var graph protocol.Graph
+	if p.Typed || p.Ref != nil {
+		graph, err = g.store.GraphForRef(p.Ref)
+	} else {
+		graph, err = g.store.GraphFor(p.Project)
+	}
 	if err != nil {
 		return nil, err
 	}

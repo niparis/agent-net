@@ -11,6 +11,21 @@ func (g *Gateway) handleGraphView(raw []byte) (any, error) {
 	if err != nil {
 		return nil, reject("bad query.graph")
 	}
+	if p.Typed || p.Ref != nil {
+		graph, err := g.store.GraphForRef(p.Ref)
+		if err != nil {
+			return nil, err
+		}
+		out := protocol.GraphView{Nodes: graph.Nodes, Edges: graph.Edges, Changes: []protocol.CharterChange{}}
+		for _, n := range graph.Nodes {
+			history, err := g.store.RefCharterHistory(*n.Ref, protocol.GraphHistoryPerNode)
+			if err != nil {
+				return nil, err
+			}
+			out.Changes = append(out.Changes, history...)
+		}
+		return out, nil
+	}
 	return g.store.graphView(p.Project, protocol.GraphHistoryPerNode, p.All)
 }
 
@@ -65,7 +80,7 @@ func (s *Store) graphView(project string, historyPerNode int, all bool) (protoco
 	rows, err := s.db.Query(`SELECT id,node,attr,old_value,new_value,at,actor FROM (
 		SELECT id,node,attr,old_value,new_value,at,actor,
 		       ROW_NUMBER() OVER (PARTITION BY node ORDER BY id DESC) AS rn
-		FROM graph_history WHERE type='charter'
+		FROM graph_history WHERE type='charter' OR (type='agent_charter' AND node IN (SELECT name FROM graph_nodes WHERE kind='architect'))
 	) WHERE rn<=? ORDER BY id DESC`, historyPerNode)
 	if err != nil {
 		return out, err
