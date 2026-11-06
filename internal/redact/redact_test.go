@@ -55,6 +55,37 @@ func TestSecretsLeavesOrdinaryTextAlone(t *testing.T) {
 	}
 }
 
+func TestSecretsDoesNotMaskWordsEndingInSk(t *testing.T) {
+	for _, in := range []string{
+		"- [What lands on disk: state the contract](#what-lands-on-disk-state-the-contract)",
+		"task-assignment-and-routing-rules",
+		"risk-assessment-for-the-quarter",
+		"a desk-booking-system-for-teams",
+	} {
+		if got := Secrets(in); got != in {
+			t.Errorf("Secrets(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestSecretsMasksSkKeysAtTokenBoundaries(t *testing.T) {
+	for _, in := range []string{
+		"OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx",
+		"sk-proj-abcdefghijklmnop1234",
+		"key: sk-ant-api03-abcdefghijklmnopqrst",
+		"sk-abcdefghijklmnopqrstuvwx",
+		" sk-abcdefghijklmnopqrstuvwx",
+		`"sk-abcdefghijklmnopqrstuvwx`,
+		"=sk-abcdefghijklmnopqrstuvwx",
+		"(sk-abcdefghijklmnopqrstuvwx",
+	} {
+		got := Secrets(in)
+		if strings.Contains(got, "sk-") || strings.Contains(got, "abcdefghijklmnop") {
+			t.Errorf("Secrets(%q) = %q, want key masked", in, got)
+		}
+	}
+}
+
 func TestArgsMasksFlagsAndCuts(t *testing.T) {
 	got := Args("deploy --token abc123secret --env prod --password=hunter2")
 	for _, s := range []string{"abc123secret", "hunter2"} {
