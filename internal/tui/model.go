@@ -212,6 +212,11 @@ type Model struct {
 	// is its data (map.go).
 	mapOn bool
 	mp    mapState
+	// teamFilter is the team ID the Graph shows, or "" for all. teamIndex and
+	// teamForm drive the Team list on the Graph tab (teams.go).
+	teamFilter string
+	teamIndex  int
+	teamForm   teamForm
 	// tl is the Tools tab (tools.go).
 	tl toolsState
 	// help shows the key overlay; expand gives the detail pane the room of
@@ -854,6 +859,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onResume(msg)
 	case sessionStartedMsg:
 		return m.onSessionStarted(msg)
+	case teamWriteMsg:
+		return m.onTeamWrite(msg)
 	case actionMsg:
 		next, cmd := m.onAction(msg)
 		if msg.err == nil && msg.onboarding != "" {
@@ -1169,6 +1176,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.settingUndoKey(k)
 	case modeIntegrations:
 		return m.integrationsKey(k)
+	case modeTeams:
+		return m.teamMenuKey(k)
+	case modeTeamForm:
+		return m.teamFormKey(k)
 	case modeApps:
 		next, cmd := m.appsKey(k)
 		updated := next.(Model)

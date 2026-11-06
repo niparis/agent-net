@@ -44,6 +44,17 @@ func (m Model) hints() []hint {
 			toggle.label = "this screen"
 		}
 		return []hint{bindingPairHint(contextHelp, actUp, actDown), toggle, bindingHint(contextHelp, actClose)}
+	case m.mode == modeTeams:
+		return []hint{
+			bindingPairHint(contextTeams, actUp, actDown),
+			bindingHint(contextTeams, "show team"),
+			bindingHint(contextTeams, "create team"),
+			bindingHint(contextTeams, "rename team"),
+			bindingHint(contextTeams, "archive team"),
+			bindingHint(contextTeams, "member"),
+			bindingHint(contextTeams, "back"),
+			bindingHint(contextTeams, "help"),
+		}
 	case m.mode == modeApps:
 		switch m.apps.stage {
 		case "url":
@@ -198,6 +209,8 @@ func (m Model) helpLine(w int) string {
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
 	case modeSessionForm:
 		return sDim.Render(clip("up/down field · left/right change · enter start · esc cancel", w))
+	case modeTeamForm:
+		return sDim.Render(clip("up/down field · enter saves or moves on · esc cancels", w))
 	case modeQuotaConfirm:
 		target := sanitize(m.quotaConfirm)
 		if m.quotaConfirmDisplay != "" && !strings.EqualFold(m.quotaConfirmDisplay, m.quotaConfirm) {
@@ -349,6 +362,8 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextProposalDetail)
 	case m.mode == modeApps:
 		return m.helpContextSection(contextApps)
+	case m.mode == modeTeams:
+		return m.helpContextSection(contextTeams)
 	case m.mode == modeConfirm, m.mode == modeQuotaConfirm, m.mode == modeTrust:
 		return m.helpContextSection(contextConfirm)
 	case m.mode != modeNormal:
@@ -426,7 +441,7 @@ func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
 		contextBody, contextApps, contextQualityDetails, contextProposalDetail, contextProposalHistory,
 		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd, contextToolsDiscard, contextToolsFilter, contextToolsCosts,
-		contextCTO, contextHelp, contextConfirm, contextForm,
+		contextCTO, contextHelp, contextConfirm, contextForm, contextTeams,
 	}
 }
 
@@ -485,6 +500,8 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 		return "Confirmations"
 	case contextForm:
 		return "Forms"
+	case contextTeams:
+		return "Teams"
 	}
 	return strings.ReplaceAll(string(context), "CTO", m.ctoTitle())
 }

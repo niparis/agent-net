@@ -62,7 +62,7 @@ func TestGraphTabKeys(t *testing.T) {
 	// Fit happens when the graph loads; 0 is no longer a key.
 	zoomed := m.graphState.Camera.Zoom
 	tools := m.tl.search
-	m = keys(m, "0", "t", "o", " ")
+	m = keys(m, "0", "o", " ")
 	if m.graphState.Camera.Zoom != zoomed || m.tab != graphTab || m.tl.search != tools || m.graphState.Orbit || m.graphState.Paused {
 		t.Fatal("a removed graph key still changed the graph")
 	}
@@ -202,11 +202,11 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"left/right select", "+/- zoom", "enter card", "? help"}, []string{"0 fit", "o orbit", "t tools", "space pause"}},
-		{60, []string{"left/right select", "+/- zoom", "enter card", "? help"}, []string{"0 fit", "o orbit", "t tools"}},
-		{40, []string{"left/right select", "+/- zoom", "? help"}, []string{"enter card", "0 fit", "o orbit", "t tools"}},
+		{80, []string{"left/right select", "+/- zoom", "enter card", "? help", "t team: all"}, []string{"0 fit", "o orbit", "t tools", "space pause"}},
+		{60, []string{"left/right select", "+/- zoom", "? help", "t team: all"}, []string{"enter card", "0 fit", "o orbit", "t tools"}},
+		{40, []string{"left/right select", "? help", "t team: all"}, []string{"+/- zoom", "enter card", "0 fit", "o orbit", "t tools"}},
 	} {
-		line := graphHintLine(tc.width)
+		line := graphHintLine("all", tc.width)
 		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? help") {
 			t.Fatalf("width %d: %q", tc.width, line)
 		}

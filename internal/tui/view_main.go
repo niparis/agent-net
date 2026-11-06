@@ -188,6 +188,12 @@ func (m Model) renderView() string {
 			// The New session form replaces the Graph card too, so n on the
 			// card keeps the Graph tab and Esc returns to the card.
 			out = append(out, m.mainView(w, contentHeight)...)
+		case m.mode == modeTeams:
+			out = append(out, m.titleLine(w))
+			out = append(out, m.teamsView(w, contentHeight-1)...)
+		case m.mode == modeTeamForm:
+			out = append(out, m.titleLine(w))
+			out = append(out, m.teamFormView(w, contentHeight-1)...)
 		case m.mapOn:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.mapView(w, contentHeight-1)...)

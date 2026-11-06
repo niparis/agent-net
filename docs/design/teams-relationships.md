@@ -9,6 +9,16 @@ including step 3e's typed graph references. Code citations describe the present
 implementation, not the proposed result. Each build step below ships separately
 and preserves the behavior of a network with no teams.
 
+## What a Team is for
+
+A Team is a label for filtering and reach. The owner can show one Team's
+members on the Graph, and the CTO can reach that group in one place. Teams
+enforce nothing: they change no request rule, setting, delivery default,
+permission or authority. Membership and ownership do not grant trust, work or
+access. The later sections of this proposal describe ideas that are not part of
+this step. Until an owner decision makes them real, a Team does nothing beyond
+labelling its members.
+
 ## Choices
 
 - A Team is a named group of Agents and Repos with a shared purpose. An Agent
