@@ -296,8 +296,17 @@ func TestToolToggleMarkdownLinkAndRealSecret(t *testing.T) {
 			body: "return min(matches, key=lambda p: len(p.parts))\nkey=lambda p: p.stat().st_mtime, reverse=True)\n",
 		},
 		{
+			name: "ordinary JavaScript and Python",
+			body: "if (e.key === 'Escape') { return; }\nvar STORAGE_KEY = 'x';\nvar ownerToken = null;\nvar token = new RegExp('token');\nvar recordsByKey = {};\nreturn min(matches, key=lambda p: len(p.parts))\nkey=lambda p: p.stat().st_mtime, reverse=True)\nsorted(items, key=len)\n",
+		},
+		{
 			name:        "real key",
 			body:        "# Demo\n\nOPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx\n",
+			wantRefusal: true,
+		},
+		{
+			name:        "PEM private key",
+			body:        "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----\n",
 			wantRefusal: true,
 		},
 	} {

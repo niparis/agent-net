@@ -57,6 +57,21 @@ func Secrets(s string) string {
 	return s
 }
 
+// HasSecret reports whether s contains one of the high-confidence secret
+// shapes used to refuse a skill import. It deliberately ignores the broader
+// heuristics used by Secrets for display redaction.
+func HasSecret(s string) bool {
+	if privateKey.MatchString(s) || urlCreds.MatchString(s) {
+		return true
+	}
+	for _, re := range tokenPatterns {
+		if re.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
 // ArgsLen is how many characters of a command line are kept.
 const ArgsLen = 80
 

@@ -202,7 +202,7 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 		if e != nil {
 			return e
 		}
-		if redact.Secrets(string(b)) != string(b) {
+		if redact.HasSecret(string(b)) {
 			rel, err := filepath.Rel(dir, path)
 			if err != nil {
 				return err
