@@ -42,6 +42,9 @@ func TestGraphRefsGateAndLegacyCompatibility(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.loadGraphRefs(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.144","hostname":"test"}`)); err == nil {
 		t.Fatal("old hello accepted after cutover")
 	}
@@ -57,6 +60,9 @@ func TestGraphRefsReadAndCTOWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.loadGraphRefs(); err != nil {
 		t.Fatal(err)
 	}
 	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
@@ -98,6 +104,9 @@ func TestGraphRefsAgentHistoryAndUndo(t *testing.T) {
 	s, _ := newTestStore(t)
 	graphSessions(t, s, "demo")
 	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.loadGraphRefs(); err != nil {
 		t.Fatal(err)
 	}
 	ref := protocol.GraphRef{Kind: "agent", ID: "demo"}
@@ -231,6 +240,9 @@ func TestGraphRefsTypedEdgesKeepRoutingKeys(t *testing.T) {
 	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.loadGraphRefs(); err != nil {
+		t.Fatal(err)
+	}
 	if err = s.SetEdge(e, "owner"); err != nil {
 		t.Fatal(err)
 	}
@@ -241,5 +253,52 @@ func TestGraphRefsTypedEdgesKeepRoutingKeys(t *testing.T) {
 	e.FromRef.Kind = "repo"
 	if err = s.SetEdge(e, "owner"); err == nil {
 		t.Fatal("mismatched endpoint accepted")
+	}
+}
+
+func TestGraphRefsCachedGate(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := reopened.graphRefsEnabled()
+	if err != nil || !enabled {
+		t.Fatalf("startup cache: %v %v", enabled, err)
+	}
+	nc := &nodeConn{}
+	if err = reopened.graphFrameAllowed(nc, "session.sync"); err == nil {
+		t.Fatal("unqualified frame allowed")
+	}
+	nc.graphRefs.Store(true)
+	if err = reopened.graphFrameAllowed(nc, "session.sync"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGraphRefsMigrationReplayIdempotent(t *testing.T) {
+	s, _ := newTestStore(t)
+	graphSessions(t, s, "demo")
+	if err := s.SetAgentCharter("demo", "purpose", "Actor purpose", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	version := migrationVersion(t, "Typed Graph capability reports")
+	for i := 0; i < 2; i++ {
+		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
+			t.Fatal(err)
+		}
+		if err := migrateOldFixture(t, s); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM graph_history WHERE type='agent_charter' AND node='demo'`).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("replay %d: %d rows, %v", i, count, err)
+		}
 	}
 }

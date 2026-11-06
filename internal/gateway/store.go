@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -33,6 +34,7 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
+	graphRefsOn       atomic.Bool
 	settingsHookMu    sync.RWMutex
 	settingsHook      func()
 	qualityMu         sync.Mutex
@@ -894,7 +896,8 @@ CREATE TABLE IF NOT EXISTS node_graph_refs (node_id TEXT PRIMARY KEY REFERENCES 
 CREATE TABLE IF NOT EXISTS graph_ref_gate (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 0, backup TEXT NOT NULL DEFAULT '');
 INSERT OR IGNORE INTO graph_ref_gate(id) VALUES(1);
 INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind)
- SELECT 'agent_charter',agent_id,attr,old_value,new_value,at,actor,'agent' FROM agent_charter_history ORDER BY id;
+ SELECT 'agent_charter',a.agent_id,a.attr,a.old_value,a.new_value,a.at,a.actor,'agent' FROM agent_charter_history a
+ WHERE NOT EXISTS (SELECT 1 FROM graph_history h WHERE h.type='agent_charter' AND h.node=a.agent_id AND h.attr=a.attr AND h.old_value=a.old_value AND h.new_value=a.new_value AND h.at=a.at AND h.actor=a.actor) ORDER BY a.id;
 
 `}
 
@@ -913,6 +916,10 @@ func OpenStore(path string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
 	if err := s.migrate(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.loadGraphRefs(); err != nil {
 		db.Close()
 		return nil, err
 	}

@@ -1510,7 +1510,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return map[string]bool{"ok": true}, tx.Commit()
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
+		st.graphRefsOn.Store(true)
+		return map[string]bool{"ok": true}, nil
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {

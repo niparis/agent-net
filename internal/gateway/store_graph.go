@@ -493,7 +493,7 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		return err
 	}
 
-	if typ == "charter" && targetKind == "agent" {
+	if typ == "charter" && targetKind == "agent" && s.graphRefsOn.Load() {
 		typ = "agent_charter"
 	}
 	now := s.now().UnixNano()
@@ -1146,7 +1146,11 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at,target_kind FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
+	targetColumn := "''"
+	if typed {
+		targetColumn = "target_kind"
+	}
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at,`+targetColumn+` FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
 	if err != nil {
 		return nil, err
 	}

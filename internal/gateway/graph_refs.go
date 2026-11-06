@@ -10,10 +10,17 @@ import (
 	"github.com/niparis/agent-net/internal/upgrade"
 )
 
-func (s *Store) graphRefsEnabled() (bool, error) {
+// The persisted gate is loaded at startup and published only after cutover
+// commits. Frame checks never need a database connection.
+func (s *Store) graphRefsEnabled() (bool, error) { return s.graphRefsOn.Load(), nil }
+
+func (s *Store) loadGraphRefs() error {
 	var on bool
-	err := s.db.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&on)
-	return on, err
+	if err := s.db.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&on); err != nil {
+		return err
+	}
+	s.graphRefsOn.Store(on)
+	return nil
 }
 
 // SetNodeGraphRefs records every hello, including a downgraded daemon's report.
