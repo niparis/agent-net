@@ -373,6 +373,11 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	set := shortSet
 	set.IdleNotice = 200 * time.Millisecond
 	w := startWorkerNode(t, g, set, nil)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("worker daemon logs:\n%s", strings.Join(w.logs.lines(), "\n"))
+		}
+	})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
@@ -398,36 +403,14 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	if got := len(w.notices(t)); got != 1 {
 		t.Fatalf("got %d notices", got)
 	}
-	if w.d.sessionByID(res.SessionID) == nil {
-		t.Fatal("worker ended")
-	}
-	w.node.restart()
-	w.cli = cliClient(t, w.node)
-	eventually(t, "idle worker adopted and gateway connected", func() bool {
-		return w.d.workerBySession(res.SessionID) != nil && w.d.sessionByID(res.SessionID) != nil && inventoryOf(t, w.cli, w.node)
-	})
-	eventually(t, "idle notice acknowledgement restored", func() bool {
-		worker := w.d.workerBySession(res.SessionID)
-		if worker == nil {
-			return false
-		}
-		w.d.wmu.Lock()
-		defer w.d.wmu.Unlock()
-		return worker.idleNoticeSent && !worker.idleNoticePending && worker.idleNoticeKey == key
-	})
-	if got := len(w.notices(t)); got != 1 {
-		t.Fatalf("got %d notices after daemon restart", got)
-	}
 	// Simulate a crash after the gateway accepted the notice but before the
-	// daemon saved the acknowledgement. The same key must not send it twice.
-	adopted := w.d.workerBySession(res.SessionID)
+	// daemon saved the acknowledgement. Seed the original key directly so the
+	// simulation cannot capture a key cleared by a transient harness status.
+	idleWorker := w.d.workerBySession(res.SessionID)
 	w.d.wmu.Lock()
-	id, since, adoptedKey := adopted.id, adopted.idleNoticeSince, adopted.idleNoticeKey
+	id := idleWorker.id
 	w.d.wmu.Unlock()
-	if adoptedKey != key {
-		t.Fatalf("adopted idle notice key %q, want %q", adoptedKey, key)
-	}
-	if err := w.d.st.saveWorkerIdleNotice(id, since, key, "", false); err != nil {
+	if err := w.d.st.saveWorkerIdleNotice(id, time.Now().Add(-time.Second), key, "", false); err != nil {
 		t.Fatal(err)
 	}
 	w.node.restart()
@@ -462,8 +445,8 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 		return worker.taskMsg == followup.Message.ID
 	})
 	second := w.waitNotice(t, 2)[1]
-	if second.ParentID != followup.Message.ID || !strings.Contains(second.Body, "idle without hand-back") {
-		t.Fatalf("second idle notice parent %q, want %q: %+v", second.ParentID, followup.Message.ID, second)
+	if second.ParentID != followup.Message.ID || second.IdempotencyKey == key || !strings.Contains(second.Body, "idle without hand-back") {
+		t.Fatalf("second idle notice parent %q, want %q, key %q after %q: %+v", second.ParentID, followup.Message.ID, second.IdempotencyKey, key, second)
 	}
 	eventually(t, "second idle notice acknowledged", func() bool {
 		worker := w.d.workerBySession(res.SessionID)

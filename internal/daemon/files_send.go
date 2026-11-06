@@ -24,14 +24,15 @@ const (
 // machine. AllowSecrets sends a text file the secret scanner flagged; only
 // the owner may set it.
 type FileSend struct {
-	From, To        string
-	Body            string
-	Type            string
-	ParentID        string
-	IdempotencyKey  string
-	Paths           []string
-	AllowSecrets    bool
-	ConfineSymlinks bool
+	From, To         string
+	Body             string
+	Type             string
+	ParentID         string
+	IdempotencyKey   string
+	WorkerIdleNotice bool
+	Paths            []string
+	AllowSecrets     bool
+	ConfineSymlinks  bool
 }
 
 // FileSent says how one file left this machine. Note explains a change of
@@ -85,7 +86,7 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 	}
 	raw, err := d.call(withCallWait(ctx, 90*time.Second), "msg.send", protocol.MsgSend{
 		Sender: req.From, Recipient: req.To, Type: req.Type, Body: req.Body,
-		ParentID: req.ParentID, IdempotencyKey: req.IdempotencyKey, Files: out.Manifest(),
+		ParentID: req.ParentID, IdempotencyKey: req.IdempotencyKey, WorkerIdleNotice: req.WorkerIdleNotice, Files: out.Manifest(),
 	})
 	if errors.Is(err, errNotConnected) {
 		return res, errors.New("files need a connection to the gateway; this machine is not connected now, so nothing was sent")

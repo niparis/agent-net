@@ -15,6 +15,10 @@ import (
 // resetIdleNotice starts a new period when the harness starts another turn.
 func (d *Daemon) resetIdleNotice(w *worker) {
 	d.wmu.Lock()
+	if w.idleNoticeCancel != nil {
+		w.idleNoticeCancel()
+		w.idleNoticeCancel = nil
+	}
 	w.idleNoticeSince = time.Time{}
 	w.idleNoticeSent = false
 	w.idleNoticePending = false
@@ -66,6 +70,10 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	d.mu.Unlock()
 	d.wmu.Lock()
 	if busy && !w.idleNoticeSince.IsZero() {
+		if w.idleNoticeCancel != nil {
+			w.idleNoticeCancel()
+			w.idleNoticeCancel = nil
+		}
 		w.idleNoticeSince = time.Time{}
 		w.idleNoticeSent = false
 		w.idleNoticePending = false
@@ -99,10 +107,13 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	}
 	w.idleNoticePending = true
 	generation, report, base, pass, noticeKey := w.idleNoticeGeneration, w.idleNoticeReport, w.apiBase, w.apiPass, w.idleNoticeKey
+	noticeCtx, cancelNotice := context.WithCancel(ctx)
+	w.idleNoticeCancel = cancelNotice
 	d.wmu.Unlock()
 	d.goBackground(func() {
+		defer cancelNotice()
 		if harness == "opencode" {
-			readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			readCtx, cancel := context.WithTimeout(noticeCtx, 3*time.Second)
 			report = openCodeLastAssistant(readCtx, base, pass, native)
 			cancel()
 		}
@@ -127,9 +138,10 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		if !valid {
 			return
 		}
-		_, err := d.sendNoticeToKey(ctx, w, n, report, "", "", noticeKey, false)
+		_, err := d.sendNoticeToKey(noticeCtx, w, n, report, "", "", noticeKey, false)
 		d.wmu.Lock()
 		if w.idleNoticeGeneration == generation && !w.stopping {
+			w.idleNoticeCancel = nil
 			w.idleNoticePending = false
 			if err == nil {
 				w.idleNoticeSent = true

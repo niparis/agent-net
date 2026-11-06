@@ -449,6 +449,10 @@ type (
 		ReplyOutcome
 		// WorkerTask is set only by the daemon that builds a worker brief.
 		WorkerTask bool `json:"worker_task,omitempty"`
+		// WorkerIdleNotice marks the worker's idle-without-hand-back notice.
+		// The gateway uses it to reject notices for a task superseded by a
+		// newer owner request.
+		WorkerIdleNotice bool `json:"worker_idle_notice,omitempty"`
 		// WorkerTaskRef identifies the gateway-tracked start for a remote relay.
 		WorkerTaskRef string `json:"worker_task_ref,omitempty"`
 		FromCTO       bool   `json:"sender_cto,omitempty"`
