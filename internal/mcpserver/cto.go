@@ -367,9 +367,12 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 
 // NewCTO is deliberately separate from the network MCP registry. It lists the
 // catalog tools of the CTO role.
-func NewCTO(call Caller, version string) *mcp.Server {
+func NewCTO(call Caller, version string, note ...func(context.Context) string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net-cto", Version: version}, nil)
 	s.AddReceivingMiddleware(renamedTools())
+	if len(note) > 0 && note[0] != nil {
+		s.AddReceivingMiddleware(staleToolsNote(note[0]))
+	}
 	originalCall := call
 	call = func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		raw, err := originalCall(ctx, method, params)
@@ -506,7 +509,12 @@ func RunCTO(ctx context.Context, socket, version string) error {
 	exe, _ := os.Executable()
 	opts := Options{Version: version, Exe: exe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"}
 	sw := &switcher{opts: opts, conn: conn, logf: logf}
-	ch, err := dialCTOChannel(ctx, socket, func(v string) { go sw.consider(ctx, v) })
+	var note staleNote
+	sw.dropNote = note.dropNote
+	ch, err := dialCTOChannel(ctx, socket, func(v string) {
+		note.observeVersion(version, v)
+		go sw.consider(ctx, v)
+	})
 	if err != nil {
 		return err
 	}
@@ -516,7 +524,7 @@ func RunCTO(ctx context.Context, socket, version string) error {
 			return ch.call(ctx, method, params)
 		}
 		return ch.call(ctx, "cto_tool", map[string]any{"name": method, "arguments": params})
-	}, version)
+	}, version, func(context.Context) string { return note.takeNote() })
 	return s.Run(ctx, stdioTransport{conn})
 }
 

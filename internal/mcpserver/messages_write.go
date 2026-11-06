@@ -215,7 +215,7 @@ func catalogExample(name string) string {
 	return "{}"
 }
 
-// catalogResult validates a structured value against the catalog output schema
+// catalogResult prunes newer fields, then validates against the catalog output schema
 // and returns it with the same JSON as one text block.
 func catalogResult(name string, value any) (*mcp.CallToolResult, error) {
 	resolved, err := resolveCatalogSchema(catalogTool(name).OutputSchema)
@@ -223,6 +223,10 @@ func catalogResult(name string, value any) (*mcp.CallToolResult, error) {
 		return toolError(fmt.Errorf("output schema: %v", err))
 	}
 	encoded, err := json.Marshal(value)
+	if err != nil {
+		return toolError(err)
+	}
+	encoded, err = toolcatalog.PruneOutput(catalogTool(name).OutputSchema, encoded)
 	if err != nil {
 		return toolError(err)
 	}
