@@ -1310,7 +1310,7 @@ func PipelineFromShorthand(tests, merge, deploy string) (Pipeline, error) {
 	requires = append(requires, Requirement{StepRef: approveMerge})
 	p := Pipeline{Steps: []PipelineStep{
 		{StepRef: StepRef{Step: StepAccept}, Owner: caller},
-		{StepRef: StepRef{Step: StepTest}, Owner: caller},
+		{StepRef: StepRef{Step: StepTest}, Owner: caller, Requires: []Requirement{{StepRef: StepRef{Step: StepAccept}}}},
 		review,
 		{StepRef: approveMerge, Owner: StepOwner{Kind: approver[merge]}},
 		{StepRef: StepRef{Step: StepMerge}, Owner: caller, Requires: requires},

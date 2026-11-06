@@ -171,7 +171,7 @@ func TestChangeSubmitCreatesChange(t *testing.T) {
 		t.Fatalf("pipeline\n got %s\nwant %s", got, want)
 	}
 	// The change is hard, so review is required (decision 2) and may start too.
-	if len(v.Next) != 3 || v.Next[0] != stepAccept || v.Next[1] != (protocol.StepRef{Step: protocol.StepTest}) || v.Next[2] != (protocol.StepRef{Step: protocol.StepReview}) {
+	if len(v.Next) != 2 || v.Next[0] != stepAccept || v.Next[1] != (protocol.StepRef{Step: protocol.StepReview}) {
 		t.Fatalf("next %+v", v.Next)
 	}
 	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: "ch_missing"}); err == nil {
