@@ -137,12 +137,12 @@ func TestWorkersLogNoteOnlyForFailedStatus(t *testing.T) {
 		{StartedAt: 1699999900, Title: "Failed run", Status: "failed", Failure: "the provider was unavailable"},
 	}
 	got := ansi.Strip(strings.Join(m.workersLogView(120, 40), "\n"))
-	if !strings.Contains(got, "Note: the worker ended after its hand-back") || strings.Contains(got, "Failure: the worker ended after its hand-back") {
+	if !strings.Contains(got, "Note      the worker ended after its hand-back") || strings.Contains(got, "Failure   the worker ended after its hand-back") {
 		t.Fatalf("done run should show a note: %s", got)
 	}
 	m.workerLogRow = 1
 	got = ansi.Strip(strings.Join(m.workersLogView(120, 40), "\n"))
-	if !strings.Contains(got, "Failure: the provider was unavailable") || strings.Contains(got, "Note: the provider was unavailable") {
+	if !strings.Contains(got, "Failure   the provider was unavailable") || strings.Contains(got, "Note      the provider was unavailable") {
 		t.Fatalf("failed run should show a failure: %s", got)
 	}
 }
@@ -206,5 +206,36 @@ func TestWorkersLogNarrowKeepsTaskTitle(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(workerLogLine(r, 120, false, time.UTC)), "11-14 22:13") {
 		t.Errorf("wide worker log line lost its date: %q", ansi.Strip(workerLogLine(r, 120, false, time.UTC)))
+	}
+}
+
+func TestWorkerPickerStructured(t *testing.T) {
+	r := protocol.WorkerLogEntry{ModelNote: "codex gpt-6-luna:xhigh (23.3, good enough; codex 0% ahead of pace (week, 33% used at 33% elapsed); rotation weight 0.85; luna codex: 4, deepseek opencode: 3, terra-low: 2, terra medium codex: 1 of the last 10 simple starts; sonnet claude excluded: its max is hard (automatic picks may be at most one level below their max); deepseek opencode kept for harder work; terra codex excluded: its max is hard (automatic picks may be at most one level below their max); sol codex excluded: its max is hard (automatic picks may be at most one level below their max); terra max codex excluded: its max is very_complex (automatic picks may be at most one level below their max); terra-low kept for harder work; terra medium codex kept for harder work)"}
+	r.Title = "Secret check: sk- false match inside words"
+	r.Harness, r.Model, r.Status = "codex", "gpt-6-luna:xhigh", "done"
+	r.Failure = "the worker ended after its hand-back; a message from you starts it again"
+	r.Caller, r.CallerHost = "Agent One", "caller-machine"
+	r.Hostname, r.Project, r.RunSeconds = "test-machine", "demo", 120
+	r.Assessment = &protocol.WorkerAssessment{Label: "simple", D: 2.05, JudgeModel: "opencode-go/deepseek-v4.1-flash",
+		Reasoning: 2, Scope: 2, Coupling: 3, Uncertainty: 2, Verification: 1, Risk: 2,
+		Reasons: map[string]string{"reasoning": "Check substring boundaries.", "scope": "One secret matcher.", "coupling": "Shared validation path.", "uncertainty": "Known false match.", "verification": "Focused unit tests.", "risk": "Preserve valid detections."}}
+	got := ansi.Strip(strings.Join(workerLogDetails(r, 116), "\n"))
+	if !strings.Contains(got, "Chosen") || strings.Count(strings.ToLower(got), "automatic picks") != 1 {
+		t.Fatal(got)
+	}
+	for _, want := range []string{"Excluded  sonnet", "Kept      deepseek", "Pace      codex", "Rotation  weight 0.85", "luna codex 4, deepseek opencode 3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q: %s", want, got)
+		}
+	}
+	for _, size := range [][2]int{{120, 90}, {80, 90}} {
+		m := New(&fakeSource{snap: fakeSnapshot()})
+		m.tab = quotasTab
+		m.workersLog = true
+		m.haveData = true
+		m.loc = time.UTC
+		m.snap.WorkerLog = []protocol.WorkerLogEntry{r}
+		m.width, m.height = size[0], size[1]
+		golden(t, fmt.Sprintf("workers_log_picker_%dx%d", size[0], size[1]), m.testView())
 	}
 }
