@@ -677,11 +677,15 @@ export const TOOL_CATALOG = [
             "online_only": {
               "type": "boolean",
               "default": true
+            },
+            "team": {
+              "type": "string",
+              "description": "Team name or ID. Only online team members receive the message."
             }
           },
           "required": [],
           "additionalProperties": false,
-          "description": "CTO and advisor nodes only: a group of recipients. Machine, project or harness is required."
+          "description": "CTO and advisor nodes only: a group of recipients. Team, machine, project or harness is required."
         },
         "body": {
           "type": "string",

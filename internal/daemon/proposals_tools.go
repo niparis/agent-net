@@ -404,9 +404,41 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		var q struct {
 			Action  string `json:"action"`
 			AsOwner bool   `json:"as_owner"`
+			TeamID  string `json:"team_id"`
+			To      string `json:"to"`
 		}
 		if json.Unmarshal(raw, &q) != nil || !q.AsOwner || proposalActor(ctx) == "" {
 			return nil, errors.New("CTO authority requires an approved as-owner message")
+		}
+		if q.TeamID != "" {
+			if q.Action != "send" {
+				return nil, errors.New("team proposal must be a send")
+			}
+			graphRaw, err := d.call(ctx, "graph.read", protocol.GraphRead{Typed: true})
+			if err != nil {
+				return nil, err
+			}
+			var graph protocol.GraphGot
+			if err := json.Unmarshal(graphRaw, &graph); err != nil {
+				return nil, err
+			}
+			agentsRaw, err := d.call(ctx, "query.agents", protocol.QueryAgents{OnlineOnly: true})
+			if err != nil {
+				return nil, err
+			}
+			var page struct {
+				Agents []protocol.AgentView `json:"agents"`
+			}
+			if err := json.Unmarshal(agentsRaw, &page); err != nil {
+				return nil, err
+			}
+			ids, _, err := teamRecipients(graph.Graph, q.TeamID, page.Agents)
+			if err != nil {
+				return nil, err
+			}
+			if !ids[q.To] {
+				return nil, errors.New("recipient is no longer an online team member")
+			}
 		}
 		p, err := d.ctoMessage(ctx, q.Action, raw)
 		if err != nil {

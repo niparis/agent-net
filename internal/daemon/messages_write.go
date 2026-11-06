@@ -16,6 +16,7 @@ import (
 // the tool catalog describes.
 
 type messageSet struct {
+	Team       string   `json:"team"`
 	Machine    string   `json:"machine"`
 	Project    string   `json:"project"`
 	Harness    string   `json:"harness"`
@@ -35,7 +36,8 @@ type messageReceipt struct {
 }
 
 type messageReceipts struct {
-	Sent []messageReceipt `json:"sent"`
+	Sent   []messageReceipt   `json:"sent"`
+	Missed []missedTeamMember `json:"missed,omitempty"`
 }
 
 func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessage) (any, error) {
@@ -74,12 +76,15 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 			return nil, errors.New("as_owner is for the CTO session only; send a normal message instead")
 		}
 		if p.ToSet != nil {
-			return nil, errors.New("as_owner cannot be used with to_set")
+			if strings.TrimSpace(p.ToSet.Team) == "" {
+				return nil, errors.New("as_owner with to_set needs a team")
+			}
+			return d.sendSet(ctx, sid, p.ToSet, p.Body, kind, p.IdempotencyKey, true)
 		}
 		return d.sendAsOwner(ctx, p.To, p.Body, kind)
 	}
 	if p.ToSet != nil {
-		return d.sendSet(ctx, sid, p.ToSet, p.Body, kind, p.IdempotencyKey)
+		return d.sendSet(ctx, sid, p.ToSet, p.Body, kind, p.IdempotencyKey, false)
 	}
 
 	to, err := d.resolveTo(ctx, p.To)
@@ -177,6 +182,10 @@ func (d *Daemon) replyAsOwner(ctx context.Context, messageID, body string) (any,
 
 // sendAsOwner stores an owner-send proposal for the owner's decision.
 func (d *Daemon) sendAsOwner(ctx context.Context, to, body, kind string) (any, error) {
+	return d.sendAsOwnerTeam(ctx, to, body, kind, "")
+}
+
+func (d *Daemon) sendAsOwnerTeam(ctx context.Context, to, body, kind, teamID string) (any, error) {
 	if strings.TrimSpace(to) == "" {
 		return nil, errors.New("as_owner needs to and body")
 	}
@@ -189,12 +198,16 @@ func (d *Daemon) sendAsOwner(ctx context.Context, to, body, kind string) (any, e
 	}
 	// The CTO message proposal carries only the fields its concrete schema
 	// defines; a message type is always a request on that path.
-	args, err := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"action":   "send",
 		"to":       target,
 		"body":     body,
 		"as_owner": true,
-	})
+	}
+	if teamID != "" {
+		fields["team_id"] = teamID
+	}
+	args, err := json.Marshal(fields)
 	if err != nil {
 		return nil, err
 	}
@@ -213,12 +226,12 @@ func (d *Daemon) sendAsOwner(ctx context.Context, to, body, kind string) (any, e
 // Only the CTO session and advisor nodes may call it. The receipt list always
 // names every attempted recipient, so a partial failure can be repaired
 // without sending twice.
-func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body, kind, key string) (any, error) {
+func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body, kind, key string, asOwner bool) (any, error) {
 	if !d.maySendGroup(ctx, sid) {
 		return nil, errors.New("group messages are for the CTO and advisor nodes only; send to one session with to")
 	}
-	if strings.TrimSpace(set.Machine) == "" && strings.TrimSpace(set.Project) == "" && strings.TrimSpace(set.Harness) == "" {
-		return nil, errors.New(`to_set needs a nonempty machine, project or harness filter; example: {"to_set":{"harness":"claude"},"body":"Please review."}`)
+	if strings.TrimSpace(set.Team) == "" && strings.TrimSpace(set.Machine) == "" && strings.TrimSpace(set.Project) == "" && strings.TrimSpace(set.Harness) == "" {
+		return nil, errors.New(`to_set needs a nonempty team, machine, project or harness filter; example: {"to_set":{"harness":"claude"},"body":"Please review."}`)
 	}
 	kinds, err := messageKinds(set.Kind)
 	if err != nil {
@@ -227,6 +240,9 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 	online := true
 	if set.OnlineOnly != nil {
 		online = *set.OnlineOnly
+	}
+	if set.Team != "" {
+		online = true
 	}
 	raw, err := d.call(ctx, "query.agents", protocol.QueryAgents{OnlineOnly: online})
 	if err != nil {
@@ -238,17 +254,52 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 	if err := json.Unmarshal(raw, &page); err != nil {
 		return nil, err
 	}
+	out := messageReceipts{Sent: []messageReceipt{}}
+	var teamIDs map[string]bool
+	var teamID string
+	if strings.TrimSpace(set.Team) != "" {
+		raw, err := d.call(ctx, "graph.read", protocol.GraphRead{Typed: true})
+		if err != nil {
+			return nil, err
+		}
+		var graph protocol.GraphGot
+		if err := json.Unmarshal(raw, &graph); err != nil {
+			return nil, err
+		}
+		teamIDs, out.Missed, err = teamRecipients(graph.Graph, set.Team, page.Agents)
+		if err != nil {
+			return nil, err
+		}
+		for _, node := range graph.Graph.Nodes {
+			if node.Ref != nil && node.Ref.Kind == "team" && (strings.EqualFold(node.Ref.ID, strings.TrimSpace(set.Team)) || strings.EqualFold(node.Name, strings.TrimSpace(set.Team))) && (node.Active == nil || *node.Active) {
+				teamID = node.Ref.ID
+				break
+			}
+		}
+	}
+	if asOwner && kind != "" && kind != protocol.TypeRequest {
+		return nil, errors.New("as_owner proposes a request, not a notification")
+	}
 	if key == "" {
 		key = protocol.NewID("k")
 	}
-	out := messageReceipts{Sent: []messageReceipt{}}
 	seen := map[string]bool{}
 	for _, a := range page.Agents {
-		if a.SessionID == "" || a.SessionID == sid || seen[a.SessionID] || !matchesMessageSet(a, set, kinds) {
+		if a.SessionID == "" || a.SessionID == sid || seen[a.SessionID] || (teamIDs != nil && !teamIDs[a.SessionID]) || !matchesMessageSet(a, set, kinds) {
 			continue
 		}
 		seen[a.SessionID] = true
 		receipt := messageReceipt{To: messageSessionRef{ID: a.SessionID, Name: messageSessionName(a)}}
+		if asOwner {
+			proposed, err := d.sendAsOwnerTeam(ctx, a.SessionID, body, kind, teamID)
+			if err != nil {
+				receipt.State = "failed"
+				out.Sent = append(out.Sent, receipt)
+				continue
+			}
+			out.Sent = append(out.Sent, proposed.(messageReceipts).Sent...)
+			continue
+		}
 		data, sendErr := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: a.SessionID, Type: kind,
 			Body: body, IdempotencyKey: key + ":" + a.SessionID})
 		if sendErr != nil {

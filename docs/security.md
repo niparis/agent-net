@@ -139,6 +139,8 @@ playbook notes in `agent_machines_find` remain public; the owner-only full playb
 view is removed. No ordinary agent read is widened for the CTO, except where
 the owner widened it for every agent.
 
+**Team delivery.** Only the CTO and advisor nodes can send to a group. A team selector uses typed membership and repo owner links to select online sessions. It grants no authority. Team recipients are resolved when the message is sent, so a member removed at that same moment can still receive that one message. Owner-authorized team proposals record the team ID and check membership again when approved. An enrolled machine and the gateway remain trusted to report the graph and session identities.
+
 **Project layout read.** The CTO read tool `projects_layout` scans disk under the home folder on online machines to report repository root locations, group folders, and origin remotes. The CTO can read folder names and remotes under the home folder on every machine. It is read-only: it does not register projects, execute scripts, or change files. It drops worktrees, caches, dependency folders, hidden folders, and temp folders, and is bounded by depth (at most 4 levels under home), result caps, and a 15-second timeout. Results are cached per machine for 10 minutes.
 
 **Charters and rules are public.** The owner decided, twice, that every agent
