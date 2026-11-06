@@ -30,7 +30,7 @@ func TestGraphCutoverStates(t *testing.T) {
 	m.src = s
 	m.tab = settingsTab
 	m.cutoverLoaded = true
-	m.cutoverSuggested = "/gateway-state/gateway-before-typed-graph-20261106-1200.db"
+	m.cutoverSuggested = "/gateway-state/gateway-before-typed-graph-20261106-1200"
 	m = selectSettingsKind(m, "graph-cutover")
 	if !strings.Contains(m.testView(), "Typed Repo/Agent Graph: off") {
 		t.Fatal(m.testView())
@@ -42,7 +42,7 @@ func TestGraphCutoverStates(t *testing.T) {
 	m.cutoverBlockers = nil
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !strings.Contains(m.testView(), "restoring the backup") {
+	if !strings.Contains(m.testView(), "Backup folder: /gateway-state/gateway-before-typed-graph-20261106-1200") || !strings.Contains(m.testView(), "A copy of the whole gateway data folder.") || !strings.Contains(m.testView(), "restoring the backup") {
 		t.Fatal(m.testView())
 	}
 	golden(t, "graph_cutover_confirm_120x34", m.testView())
@@ -61,7 +61,7 @@ func TestGraphCutoverStates(t *testing.T) {
 	m, cmd = press(m, tea.KeyPressMsg{Text: "y", Code: 'y'})
 	next, _ = m.Update(cmd())
 	m = next.(Model)
-	if !m.cutoverOn || !strings.Contains(m.testView(), "Backup: /gateway-state/gateway-before-typed-graph-20261106-1200.db") {
+	if !m.cutoverOn || !strings.Contains(m.testView(), "Backup: /gateway-state/gateway-before-typed-graph-20261106-1200") {
 		t.Fatal(m.testView())
 	}
 	m.mode = modeNormal
@@ -118,11 +118,11 @@ func TestGraphCutoverManyBlockers(t *testing.T) {
 func TestGraphCutoverPrefillsGatewayBackup(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = settingsTab
-	next, _ := m.Update(graphCutoverStatusMsg{backup: "/gateway-state/gateway-before-typed-graph-20261106-1200.db"})
+	next, _ := m.Update(graphCutoverStatusMsg{backup: "/gateway-state/gateway-before-typed-graph-20261106-1200"})
 	m = next.(Model)
 	m = selectSettingsKind(m, "graph-cutover")
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.rename.Value() != "/gateway-state/gateway-before-typed-graph-20261106-1200.db" {
+	if m.rename.Value() != "/gateway-state/gateway-before-typed-graph-20261106-1200" {
 		t.Fatalf("prefill %q", m.rename.Value())
 	}
 }

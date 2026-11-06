@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -69,7 +70,8 @@ func TestGraphRefsStatusMatchesEnable(t *testing.T) {
 		if err = json.Unmarshal(b, &status); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.HasPrefix(status.Backup, filepath.Dir(g.opts.DataDir)+string(filepath.Separator)+"gateway-before-typed-graph-") || !strings.HasSuffix(status.Backup, ".db") {
+		prefix := filepath.Join(filepath.Dir(g.opts.DataDir), "gateway-before-typed-graph-")
+		if _, e := time.Parse("20060102-1504", strings.TrimPrefix(status.Backup, prefix)); !strings.HasPrefix(status.Backup, prefix) || e != nil {
 			t.Fatalf("backup suggestion %q", status.Backup)
 		}
 		if len(status.Blockers) != 1 || !strings.Contains(status.Blockers[0], want) {
