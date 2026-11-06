@@ -13,6 +13,7 @@ Connected apps
 Integrations
   Choose integrations for every machine in your network.
   Configure integrations
+  Typed Repo/Agent Graph: loading
 
 Machines
   The name every machine in your network shows for each machine.
@@ -24,7 +25,6 @@ Machines
 Time zone
   The clock every time on this screen uses, wherever you run it.
   Time zone: auto
-
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
