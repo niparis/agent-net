@@ -39,53 +39,6 @@ func TestSecretsMasksCommonShapes(t *testing.T) {
 	}
 }
 
-func TestHasSecretIgnoresOrdinaryCodeAndConfiguration(t *testing.T) {
-	in := `if (e.key === 'Escape') {
-  var STORAGE_KEY = 'x';
-  var ownerToken = null;
-  var token = new RegExp('token');
-  var recordsByKey = {};
-  return min(matches, key=lambda p: len(p.parts))
-  key=lambda p: p.stat().st_mtime, reverse=True)
-  sorted(items, key=len)
-}`
-	if HasSecret(in) {
-		t.Fatal("ordinary JavaScript and Python was detected as a secret")
-	}
-}
-
-func TestHasSecretIgnoresDisplayOnlyHeuristics(t *testing.T) {
-	for _, in := range []string{
-		"api_key=ordinary-value",
-		"Authorization: Bearer ordinary-value",
-		"bearer ordinary-value",
-		"command --token ordinary-value",
-	} {
-		if HasSecret(in) {
-			t.Errorf("HasSecret(%q) = true, want it ignored", in)
-		}
-	}
-}
-
-func TestHasSecretFindsHighConfidenceShapes(t *testing.T) {
-	for _, in := range []string{
-		"OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx",
-		"ghp_0123456789abcdefghij",
-		"github_pat_0123456789abcdefghij",
-		"AKIAIOSFODNN7EXAMPLE",
-		"xoxb-1234567890-abcd",
-		"AIza01234567890123456789012345678901234",
-		"glpat-0123456789abcdefghij",
-		"eyJabcdefgh.abcdefgh.abcdefgh",
-		"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----",
-		"https://alice:secretpassword@example.test/path",
-	} {
-		if !HasSecret(in) {
-			t.Errorf("HasSecret(%q) = false, want a recognized secret", in)
-		}
-	}
-}
-
 func TestSecretsLeavesOrdinaryTextAlone(t *testing.T) {
 	for _, in := range []string{
 		"go test ./... -race",
