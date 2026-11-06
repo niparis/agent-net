@@ -124,7 +124,7 @@ func validateCloneStart(p protocol.SessionStartRequest) error {
 }
 
 // sessionStartLocal starts the session on this machine.
-func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartRequest) (protocol.StartedSession, error) {
+func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartRequest) (result protocol.StartedSession, startErr error) {
 	if err := validateCloneStart(p); err != nil {
 		return protocol.StartedSession{}, err
 	}
@@ -234,11 +234,16 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		}
 	}
 	r := protocol.StartedSession{AgentID: p.AgentID, Background: p.CTOProposal && p.Harness == "claude", ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
+	defer func() {
+		if startErr != nil || result.Status == "failed" {
+			d.failStartAgent(r)
+		}
+	}()
 	if p.Merger {
 		r.Type = "merger"
 	}
 	if r.AgentID != "" && r.Harness != "codex" && r.Harness != "opencode" {
-		if err := d.reserveStartAgent(ctx, r.Harness, "", r.AgentID, r.ID, r.Path); err != nil {
+		if err := d.reserveStartAgent(ctx, r.Harness, "", r.AgentID, r.ID, r.Path, r.Project); err != nil {
 			return protocol.StartedSession{}, err
 		}
 	}
@@ -513,7 +518,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		if err == nil {
 			r.NativeID, r.JobID = sf.SessionID, sf.JobID
 			if r.AgentID != "" {
-				err = d.reserveStartAgent(cctx, "claude", sf.SessionID, r.AgentID, r.ID, r.Path)
+				err = d.reserveStartAgent(cctx, "claude", sf.SessionID, r.AgentID, r.ID, r.Path, r.Project)
 			}
 		}
 		if err == nil {
@@ -541,6 +546,9 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 				}
 			}
 		}
+		if err == nil {
+			err = d.checkStartAgent(cctx, r)
+		}
 		if err == nil && r.Type == "merger" {
 			_, err = d.call(cctx, "merger.set", map[string]any{"project": r.Project, "node_id": d.cfg.NodeID, "session_id": r.SessionID, "configure": true, "by": "owner"})
 		}
@@ -550,6 +558,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		if err != nil {
 			r.Status = "failed"
 			r.Error = err.Error()
+			d.failStartAgent(r)
 		} else if r.Type == "merger" {
 			r.Status = "started"
 		} else {
@@ -625,8 +634,22 @@ func (d *Daemon) sessionStartGet(ctx context.Context, id string) (protocol.Start
 // sessionStartGetLocal answers the gateway for a start on this machine.
 func (d *Daemon) sessionStartGetLocal(id string) (protocol.StartedSession, error) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	r, ok := d.startedSessions[id]
+	d.mu.Unlock()
+	if r.AgentID != "" || !ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		status, err := d.startAgentStatus(ctx, id)
+		if err == nil && status.Status == "failed" {
+			r.ID, r.Status, r.Error, r.AgentID = id, "failed", status.Error, ""
+			if ok {
+				d.mu.Lock()
+				d.startedSessions[id] = r
+				d.mu.Unlock()
+			}
+			return r, nil
+		}
+	}
 	if !ok {
 		return r, errors.New("unknown session start")
 	}
@@ -637,9 +660,47 @@ func (d *Daemon) sessionStartGetLocal(id string) (protocol.StartedSession, error
 // Old gateways must refuse explicit selection instead of silently using a default.
 func (d *Daemon) reserveStartAgent(ctx context.Context, harness, native, agent string, launch ...string) error {
 	p := protocol.SessionAgentReservation{Owner: d.ownerSessionID(), Harness: harness, NativeID: native, AgentID: agent}
-	if len(launch) == 2 {
+	if len(launch) >= 2 {
 		p.Ref, p.Cwd = launch[0], launch[1]
+		if len(launch) > 2 {
+			p.Project = launch[2]
+		}
 	}
 	_, err := d.call(ctx, "session.agent.reserve", p)
 	return err
+}
+
+func (d *Daemon) startAgentStatus(ctx context.Context, ref string) (protocol.StartedSession, error) {
+	raw, err := d.call(ctx, "session.agent.status", protocol.SessionAgentReservation{Owner: d.ownerSessionID(), Ref: ref})
+	var status protocol.StartedSession
+	if err == nil {
+		err = json.Unmarshal(raw, &status)
+	}
+	return status, err
+}
+
+func (d *Daemon) checkStartAgent(ctx context.Context, r protocol.StartedSession) error {
+	if r.AgentID == "" {
+		return nil
+	}
+	status, err := d.startAgentStatus(ctx, r.ID)
+	if err != nil {
+		return err
+	}
+	if status.Status == "failed" {
+		return errors.New(status.Error)
+	}
+	return nil
+}
+
+func (d *Daemon) failStartAgent(r protocol.StartedSession) {
+	if r.AgentID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := d.call(ctx, "session.agent.reserve", protocol.SessionAgentReservation{Owner: d.ownerSessionID(), AgentID: r.AgentID, Harness: r.Harness, Ref: r.ID, Cwd: r.Path, Project: r.Project, NativeID: r.NativeID, Failed: true})
+	if err != nil {
+		d.Logf("Agent choice failure report for %s: %v", r.ID, err)
+	}
 }

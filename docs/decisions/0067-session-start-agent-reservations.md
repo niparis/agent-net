@@ -44,9 +44,20 @@ destination's `session_agents` hello capability.
 Old destinations cannot silently ignore a requested Agent. Requests without
 Agent selection and old daemons retain their existing Repo-owner defaults.
 
-A crash or failed response before binding leaves a durable hold, not a fallback
-to another Agent. It has no automatic expiry: an owner must bind the exact
-native ID through `session.agent.reserve` using the recorded start reference.
-Recovery must never choose the first session found in a directory. This can
-briefly hold concurrent new sessions of the same harness; sessions that existed
-before the start continue normally.
+A crash or failed response before registration leaves a durable hold for at most
+two minutes from preparation, enforced by `sessionAgentStartTimeout`. This is a
+constant, not a setting. A daemon failure report cancels the reservation sooner.
+Both unbound holds and bound IDs awaiting first registration share the original
+deadline. Expiry or cancellation marks the start failed, releases unrelated
+sessions to their normal Repo-owner defaults, and permits another selected start.
+The gateway sweeps every second and before registration, binding, status reads
+and delivery checks. The daemon checks the durable failure status before sending
+a selected first prompt or returning a successful polled start.
+
+A late native ID cannot revive a canceled choice. A session registering later
+uses its Repo-owner default. One owner Inbox item says "Agent choice for <start>
+failed; <session> uses the default <agent>". If the native ID was lost, the item
+names the new harness session without guessing which concurrent session it was.
+When an exact ID arrives later, the gateway updates that same item with the
+session and its actual default. Repeated reports and expiry create no duplicates.
+Existing sessions and workers remain unaffected by these bounded holds.

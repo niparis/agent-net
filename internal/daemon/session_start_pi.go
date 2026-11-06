@@ -21,7 +21,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 			return protocol.StartedSession{}, err
 		}
 		if r.AgentID != "" {
-			if err := d.reserveStartAgent(d.ctoCtx, "pi", native, r.AgentID, r.ID, r.Path); err != nil {
+			if err := d.reserveStartAgent(d.ctoCtx, "pi", native, r.AgentID, r.ID, r.Path, r.Project); err != nil {
 				return protocol.StartedSession{}, err
 			}
 		}
@@ -74,6 +74,9 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 				break
 			}
 		}
+		if startErr == nil {
+			startErr = d.checkStartAgent(cctx, r)
+		}
 		if startErr == nil && message != "" {
 			sender := d.ownerSessionID()
 			if sender == "" {
@@ -85,6 +88,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		}
 		if startErr != nil {
 			r.Status, r.Error = "failed", startErr.Error()
+			d.failStartAgent(r)
 		} else {
 			r.Status = "started"
 		}

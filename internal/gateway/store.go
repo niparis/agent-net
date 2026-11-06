@@ -962,7 +962,16 @@ CREATE TABLE IF NOT EXISTS session_agent_starts (
  ref TEXT NOT NULL DEFAULT '',
  cwd TEXT NOT NULL DEFAULT '',
  existing TEXT NOT NULL DEFAULT '[]',
+ expires_at INTEGER NOT NULL DEFAULT 0,
+ owner_session TEXT NOT NULL DEFAULT '',
+ project TEXT NOT NULL DEFAULT '',
  PRIMARY KEY(node_id,harness,native_id)
+);
+CREATE TABLE IF NOT EXISTS session_agent_start_failures (
+ node_id TEXT NOT NULL, ref TEXT NOT NULL, harness TEXT NOT NULL,
+ native_id TEXT NOT NULL, owner_session TEXT NOT NULL, project TEXT NOT NULL,
+ item_id TEXT NOT NULL, reason TEXT NOT NULL,
+ PRIMARY KEY(node_id,ref)
 );
 `}
 
@@ -1795,7 +1804,10 @@ func (s *Store) upsertSession(q interface {
 	if err != nil {
 		return "", false, err
 	}
-	if err := applyStartedAgent(q, nodeID, in, id, known); err != nil {
+	if err := s.applyStartedAgent(q, nodeID, in, id, known); err != nil {
+		return "", false, err
+	}
+	if err := s.updateFailedAgentSession(q, nodeID, in.NativeID, id); err != nil {
 		return "", false, err
 	}
 	if err = checkActiveSessionIdentity(q, id); err != nil {
@@ -1964,6 +1976,9 @@ func (s *Store) hostname(nodeID string) string {
 }
 
 func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, error) {
+	if _, err := s.ExpireSessionAgentStarts(); err != nil {
+		return "", err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return "", err
@@ -1984,6 +1999,9 @@ func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, e
 
 // SyncSessions upserts the full set and marks the node's other sessions offline.
 func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protocol.SessionInfo, error) {
+	if _, err := s.ExpireSessionAgentStarts(); err != nil {
+		return nil, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -2873,6 +2891,9 @@ func (s *Store) logStep(event, id string, extra ...any) {
 
 // Pending returns undelivered messages for the node's online sessions, oldest first.
 func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Message, error) {
+	if _, err := s.ExpireSessionAgentStarts(); err != nil {
+		return nil, err
+	}
 	states := `m.state = 'stored'`
 	if includeDispatched {
 		states = `m.state IN ('stored','dispatched')`

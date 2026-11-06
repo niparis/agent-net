@@ -577,3 +577,41 @@ func TestSessionStartRemoteAgentRejectsOldGateway(t *testing.T) {
 		t.Fatalf("selection silently dropped: err=%v relayed=%v", err, relayed.Load())
 	}
 }
+
+func TestSessionStartAgentFailureReportsAndNextStarts(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	c.register(t, newRepo(t, "chosen"))
+	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
+	t.Setenv(envFakeStartFails, "1")
+	var r protocol.StartedSession
+	req := protocol.SessionStartRequest{Project: "shop", Harness: "claude", AgentID: "chosen"}
+	mustJSON(t, c.cli.mustCall("session_start", req), &r)
+	eventually(t, "failed selected start", func() bool {
+		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		return r.Status == "failed"
+	})
+	items, err := g.gw.Store().ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("failed-start Inbox: %+v %v", items, err)
+	}
+	t.Setenv(envFakeStartFails, "")
+	mustJSON(t, c.cli.mustCall("session_start", req), &r)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	eventually(t, "next selected start", func() bool {
+		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		if r.Status == "failed" {
+			t.Fatalf("next start: %+v", r)
+		}
+		return r.Status == "started"
+	})
+	if a := c.agentOf(t, r.SessionID); a == nil || a.AgentID != "chosen" {
+		t.Fatalf("next Agent: %+v", a)
+	}
+	items, err = g.gw.Store().ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("duplicate Inbox: %+v %v", items, err)
+	}
+}

@@ -369,6 +369,8 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 	go g.RunRetries(ctx)
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
+	agentStarts := time.NewTicker(time.Second)
+	defer agentStarts.Stop()
 	appsCleanup := time.NewTicker(10 * time.Minute)
 	defer appsCleanup.Stop()
 	for {
@@ -377,6 +379,14 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			return
 		case <-g.appsDone:
 			return
+		case <-agentStarts.C:
+			nodes, err := g.store.ExpireSessionAgentStarts()
+			if err != nil {
+				g.logLine("error", "where", "expire Agent starts", "err", err)
+			}
+			for _, node := range nodes {
+				g.dispatchPending(ctx, node, false)
+			}
 		case <-appsCleanup.C:
 			now := g.store.now()
 			if err := g.store.DeleteExpiredTokens(now); err != nil {
@@ -1287,6 +1297,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"sessions": res}, nil
 
+	case "session.agent.status":
+		p, err := decode[protocol.SessionAgentReservation](raw)
+		if err != nil {
+			return nil, reject("bad session.agent.status")
+		}
+		return st.SessionAgentStartStatus(nc.id, p.Owner, p.Ref)
 	case "session.agent.reserve":
 		p, err := decode[protocol.SessionAgentReservation](raw)
 		if err != nil {

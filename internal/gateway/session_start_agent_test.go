@@ -6,6 +6,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSessionStartAgentReservation(t *testing.T) {
@@ -215,5 +216,131 @@ func TestSessionStartAgentLaunchHold(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("bound first message not eligible")
+	}
+}
+
+func TestSessionStartAgentHoldExpiresAndNextStartWorks(t *testing.T) {
+	s, clock := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	owner, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "owner", NativeID: protocol.OwnerNativeID})
+	_, err := s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "repo", Path: "/code/repo"}, {Name: "chosen", Path: "/code/chosen"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := protocol.SessionAgentReservation{Owner: owner, Harness: "claude", AgentID: "chosen", Ref: "start_crashed", Cwd: "/code/repo", Project: "repo"}
+	if err = s.ReserveSessionAgent(node, p); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "unrelated", Cwd: p.Cwd, Repo: protocol.RepoInfo{Project: "repo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, _, err := s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: id, Body: "hello", IdempotencyKey: "expiry"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.t = clock.t.Add(sessionAgentStartTimeout)
+	pending, err := s.Pending(node, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, m := range pending {
+		found = found || m.ID == message.ID
+	}
+	if !found {
+		t.Fatal("expiry did not release delivery")
+	}
+	c, err := s.resolveSessionContext(id)
+	if err != nil || c.Agent != "repo" {
+		t.Fatalf("expired default: %+v %v", c, err)
+	}
+	status, err := s.SessionAgentStartStatus(node, owner, p.Ref)
+	if err != nil || status.Status != "failed" {
+		t.Fatalf("expired status: %+v %v", status, err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 || !strings.HasPrefix(items[0].Text, "Agent choice for start_crashed failed; ") || !strings.Contains(items[0].Text, "uses the default repo") {
+		t.Fatalf("expiry inbox: %+v %v", items, err)
+	}
+	next := p
+	next.Ref = "start_next"
+	if err = s.ReserveSessionAgent(node, next); err != nil {
+		t.Fatalf("next selected start blocked: %v", err)
+	}
+	next.NativeID = "next"
+	if err = s.ReserveSessionAgent(node, next); err != nil {
+		t.Fatal(err)
+	}
+	nextID, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: next.NativeID, Cwd: p.Cwd, Repo: protocol.RepoInfo{Project: "repo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err = s.resolveSessionContext(nextID)
+	if err != nil || c.Agent != "chosen" {
+		t.Fatalf("timely binding lost: %+v %v", c, err)
+	}
+	p.NativeID = "late"
+	if err = s.ReserveSessionAgent(node, p); err == nil {
+		t.Fatal("late binding resurrected expired choice")
+	}
+	lateID, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "late", Cwd: p.Cwd, Repo: protocol.RepoInfo{Project: "repo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err = s.resolveSessionContext(lateID)
+	if err != nil || c.Agent != "repo" {
+		t.Fatalf("late default: %+v %v", c, err)
+	}
+	items, err = s.ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("duplicate failure inbox: %+v %v", items, err)
+	}
+}
+
+func TestSessionStartAgentFailureCancelsBoundReservation(t *testing.T) {
+	s, clock := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	owner, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "owner", NativeID: protocol.OwnerNativeID})
+	_, err := s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "repo", Path: "/code/repo"}, {Name: "chosen", Path: "/code/chosen"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := protocol.SessionAgentReservation{Owner: owner, Harness: "pi", AgentID: "chosen", Ref: "start_failed", Cwd: "/code/repo", Project: "repo"}
+	if err = s.ReserveSessionAgent(node, p); err != nil {
+		t.Fatal(err)
+	}
+	p.NativeID = "late"
+	if err = s.ReserveSessionAgent(node, p); err != nil {
+		t.Fatal(err)
+	}
+	p.Failed = true
+	if err = s.ReserveSessionAgent(node, p); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReserveSessionAgent(node, p); err != nil {
+		t.Fatal(err)
+	}
+	next := p
+	next.Ref, next.NativeID, next.Failed = "start_next", "", false
+	if err = s.ReserveSessionAgent(node, next); err != nil {
+		t.Fatal(err)
+	}
+	clock.t = clock.t.Add(time.Second)
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: p.NativeID, Cwd: p.Cwd, Repo: protocol.RepoInfo{Project: "repo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.resolveSessionContext(id)
+	if err != nil || c.Agent != "repo" {
+		t.Fatalf("failed late session: %+v %v", c, err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("failure inbox: %+v %v", items, err)
+	}
+	next.NativeID = "next"
+	if err = s.ReserveSessionAgent(node, next); err != nil {
+		t.Fatal(err)
 	}
 }

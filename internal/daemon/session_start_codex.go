@@ -20,7 +20,7 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 		return r, err
 	}
 	defer rpc.close()
-	if err = d.reserveStartAgent(ctx, "codex", "", r.AgentID, r.ID, r.Path); err != nil {
+	if err = d.reserveStartAgent(ctx, "codex", "", r.AgentID, r.ID, r.Path, r.Project); err != nil {
 		return r, err
 	}
 	params := map[string]any{"cwd": r.Path}
@@ -44,7 +44,7 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 		return r, errors.New("Codex answered without a thread ID")
 	}
 	r.NativeID = out.Thread.ID
-	if err = d.reserveStartAgent(ctx, "codex", r.NativeID, r.AgentID, r.ID, r.Path); err != nil {
+	if err = d.reserveStartAgent(ctx, "codex", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
 		return r, err
 	}
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -52,7 +52,7 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 	for {
 		r.SessionID = d.SessionID("codex", r.NativeID)
 		if r.SessionID != "" {
-			return r, nil
+			return r, d.checkStartAgent(ctx, r)
 		}
 		select {
 		case <-ctx.Done():

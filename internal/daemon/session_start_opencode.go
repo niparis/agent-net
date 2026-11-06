@@ -54,7 +54,12 @@ func ownerOpenCodeService() (openCodeService, error) {
 
 // relayed says the owner approved the start from another machine; see
 // launchOwnerClaude.
-func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed bool) (protocol.StartedSession, error) {
+func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed bool) (result protocol.StartedSession, startErr error) {
+	defer func() {
+		if startErr != nil {
+			d.failStartAgent(r)
+		}
+	}()
 	down := fmt.Errorf("the OpenCode service is not running on %s", d.cfg.Hostname)
 	service, err := ownerOpenCodeService()
 	if err != nil {
@@ -75,7 +80,7 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 	}
 	directory := strings.ReplaceAll(url.QueryEscape(r.Path), "+", "%20")
 	if r.AgentID != "" {
-		if err := d.reserveStartAgent(ctx, "opencode", "", r.AgentID, r.ID, r.Path); err != nil {
+		if err := d.reserveStartAgent(ctx, "opencode", "", r.AgentID, r.ID, r.Path, r.Project); err != nil {
 			return protocol.StartedSession{}, err
 		}
 	}
@@ -97,7 +102,7 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 	}
 	r.NativeID = created.Data.ID
 	if r.AgentID != "" {
-		if err := d.reserveStartAgent(ctx, "opencode", r.NativeID, r.AgentID, r.ID, r.Path); err != nil {
+		if err := d.reserveStartAgent(ctx, "opencode", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
 			return protocol.StartedSession{}, err
 		}
 	}
@@ -146,11 +151,15 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 			case <-ticker.C:
 			}
 		}
+		if startErr == nil {
+			startErr = d.checkStartAgent(cctx, r)
+		}
 		if startErr == nil && r.AgentID != "" {
 			sendFirst()
 		}
 		if startErr != nil {
 			r.Status, r.Error = "failed", startErr.Error()
+			d.failStartAgent(r)
 		} else {
 			bin, err := d.harnessBinary("opencode")
 			if err == nil {
