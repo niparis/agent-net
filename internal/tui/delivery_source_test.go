@@ -159,6 +159,43 @@ func TestDeliveryChangeFromAListView(t *testing.T) {
 	}
 }
 
+func TestDeliveryMergedUnrecordedPreMergeSteps(t *testing.T) {
+	v := listView(t0)
+	v.Change.State = protocol.ChangeDone
+	v.Change.MergedCommit = hash('f')
+	v.Next = []protocol.StepRef{ref(protocol.StepTest), ref(protocol.StepMerge)}
+	for i := range v.Steps {
+		if v.Steps[i].Step == "accept" || v.Steps[i].Step == "test" {
+			v.Steps[i].State = protocol.StepStateReady
+		}
+	}
+	got := deliveryChangeFromView(v, t0)
+	if got.Step == "accept" || got.Step == "test" {
+		t.Errorf("pre-merge step still current: %s", got.Step)
+	}
+	for _, step := range got.Steps {
+		if step.Name == "accept" || step.Name == "test" {
+			if step.State != "unrecorded" || step.Note != "not recorded" {
+				t.Errorf("%s remains open: %+v", step.Name, step)
+			}
+		}
+	}
+	for _, state := range got.Marks {
+		if state == stripRunning {
+			t.Error("merged change has an open progress mark")
+		}
+	}
+}
+
+func TestDeliveryClaimedSession(t *testing.T) {
+	if got := deliveryClaimedSession("claimed by s_session abc"); got != "s_session" {
+		t.Fatalf("claim %q", got)
+	}
+	if got := deliveryClaimedSession("waiting for input"); got != "" {
+		t.Fatalf("unexpected claim %q", got)
+	}
+}
+
 func TestDeliveryWaitingStartsAtTheNewerOfEvidenceAndUpdate(t *testing.T) {
 	v := listView(t0)
 	v.Change.UpdatedAt = t0.Add(-10 * time.Minute).Unix() // a new revision came after the evidence

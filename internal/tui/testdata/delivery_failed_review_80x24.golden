@@ -1,17 +1,17 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery│5
-╭─Delivery─────────────────────────────────────────────────────────────3 shown─╮
-│   TITLE            STEP     STATUS                 AGE    EVIDENCE           │
+╭─Delivery─────────────────────────────────────────────────────────────6 shown─╮
+│   TITLE               STEP     STATUS                            AGE    DONE │
 │ Needs you · 1                                                                │
-│ ▸ Fix the deploy … review   failed                 2h5m   a✓r✗t·p-m·T·l·d·v· │
-│ Waiting on agents · 2                                                        │
-│   Show which prov… review   waiting for merger     2h14m  a✓r·t✓p-m·T·l·d·v· │
-│   Say what a deli… test     waiting for ci-runner  6m     a✓r✓t·p-m✓T·l·d·v· │
+│   Approve the deploy… approve  waiting for you                   3h0m   ○    │
+│ Moving · 3                                                                   │
+│   Show which provide… review   waiting for merger                2h14m  ●○●  │
+│   Say what a deliver… test     waiting for ci-runner (online)    6m     ●●○○ │
 │   merged: abcdef1                                                            │
+│ ▸ Fix the deploy gate review   review failed, back to strategies 2h5m   ●✗   │
+│ Stuck · 2                                                                    │
+│   wbg-procurement · 2 changes: accept by wbg-procurement (exited) · 15h-22h  │
 │ 1 done and 1 stale hidden · a shows all                                      │
-│ a accept · r review · t test · p approve · m merge · T test after merge      │
-│ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
