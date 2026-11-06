@@ -6,7 +6,7 @@ for v in $(env | sed -n 's/^\(AGENT_NET_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"
 # Do not inherit credentials or contact the owner's daemon/configuration.
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
 unset ANTHROPIC_BASE_URL CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR
-here=$(cd "$(dirname "$0")" && pwd)
+here=$(cd "$(dirname "$0")/agent-net-workers" && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 export HOME="$tmp/home"
