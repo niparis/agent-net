@@ -205,6 +205,12 @@ func TestAgyProcess(t *testing.T) {
 		if strings.Contains(body, "FAKE:timeout") {
 			result["finished_reason"] = "print_timeout"
 		}
+		if strings.Contains(body, "FAKE:denied") {
+			result["denied_actions"] = []map[string]any{
+				{"tool_name": "ReadFile", "args": map[string]any{"Path": "/home/test/repo/.git/worktrees/w_test/HEAD"}, "reason": "outside the workspace"},
+				{"tool_name": "run_command", "args": map[string]any{"CommandLine": "curl -H 'Authorization: Bearer sk-secretsecretsecretsecret'"}, "reason": "not permitted"},
+			}
+		}
 		write(map[string]any{"event": "result", "result": result})
 		if strings.Contains(body, "FAKE:exit") {
 			os.Exit(0)
@@ -694,6 +700,64 @@ func TestAgyWorkerFailures(t *testing.T) {
 	}
 }
 
+func TestAgyWorkerDeniedNamesTool(t *testing.T) {
+	t.Parallel()
+	w, _, _ := startAgyNode(t, shortSet)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:denied", AutoContinue: autoContinueOff()})
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "status: failed") {
+		t.Fatalf("notice: %s", n.Body)
+	}
+	for _, want := range []string{"Antigravity denied a tool action", "ReadFile", "path=/home/test/repo/.git/worktrees/w_test/HEAD", "run_command", "command=curl"} {
+		if !strings.Contains(n.Body, want) {
+			t.Errorf("notice lacks %q: %s", want, n.Body)
+		}
+	}
+	if strings.Contains(n.Body, "sk-secretsecretsecretsecret") || !strings.Contains(n.Body, "[REDACTED]") {
+		t.Errorf("secret not redacted: %s", n.Body)
+	}
+	logs := w.logs.lines("worker.agy.denied")
+	if len(logs) != 1 || !strings.Contains(logs[0], "ReadFile") || !strings.Contains(logs[0], "run_command") || strings.Contains(logs[0], "sk-secretsecretsecretsecret") {
+		t.Fatalf("denied log: %v", logs)
+	}
+}
+
+func TestAgyDeniedText(t *testing.T) {
+	t.Parallel()
+	denied := []json.RawMessage{
+		json.RawMessage(`"plain denial"`),
+		json.RawMessage(`{"toolName":"write_file","arguments":{"file_path":"/tmp/a"}}`),
+		json.RawMessage(`{"tool_name":"run_command","args":"go test ./..."}`),
+		json.RawMessage(`{"tool_name":"ReadFile","args":{"Path":"/tmp/b"}}`),
+	}
+	got := agyDeniedText(denied)
+	for _, want := range []string{"plain denial", "write_file path=/tmp/a", "run_command go test ./...", "and 1 more"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("text lacks %q: %s", want, got)
+		}
+	}
+}
+
+func TestAgyWorkerGitDirsInLinkedWorktree(t *testing.T) {
+	t.Parallel()
+	w, dir, repo := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback", Isolation: protocol.IsolationWorktree})
+	w.waitNotice(t, 1)
+	r := agyRecords(dir)[0]
+	var got []string
+	for i, arg := range r.Args {
+		if arg == "--add-dir" && i+1 < len(r.Args) {
+			got = append(got, r.Args[i+1])
+		}
+	}
+	common := filepath.Join(repo, ".git")
+	for _, want := range []string{filepath.Join(common, "worktrees", filepath.Base(res.Worktree)), filepath.Join(common, "objects"), filepath.Join(common, "refs"), filepath.Join(common, "logs")} {
+		if !strings.Contains("\n"+strings.Join(got, "\n")+"\n", "\n"+want+"\n") {
+			t.Fatalf("git folder %s missing from --add-dir: %v", want, got)
+		}
+	}
+}
+
 func TestAgyWorkerReadOnly(t *testing.T) {
 	t.Parallel()
 	w, dir, repo := startAgyNode(t, shortSet)
@@ -703,6 +767,11 @@ func TestAgyWorkerReadOnly(t *testing.T) {
 	r := agyRecords(dir)[0]
 	if argValue(r.Args, "--mode") != "plan" || argValue(r.Args, "--settings") != `{"permissions":{"allow":["mcp(agent-net_agent-net/*)"]}}` {
 		t.Fatalf("read-only args: %v", r.Args)
+	}
+	for i, arg := range r.Args {
+		if arg == "--add-dir" && i+1 < len(r.Args) && strings.HasPrefix(r.Args[i+1], filepath.Join(repo, ".git")) {
+			t.Fatalf("read-only worker got a git folder: %v", r.Args[i+1])
+		}
 	}
 }
 
