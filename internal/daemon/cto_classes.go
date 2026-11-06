@@ -56,7 +56,7 @@ var ctoChangeActions = map[string]map[string]string{
 	"graph_change": {
 		"charter_set": "charter_set", "node_add": "node_add", "node_remove": "node_remove",
 		"edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set",
-		"undo": "graph_undo",
+		"undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive", "agent_create": "agent_create", "agent_tombstone": "agent_tombstone",
 	},
 	"session_change": {"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"},
 	"worker_change":  {"start": "worker_start", "stop": "worker_stop"},
@@ -79,7 +79,7 @@ var ctoChangeActions = map[string]map[string]string{
 
 var ctoActions = map[string]map[string][]string{
 	"message":         {"action": {"send", "reply"}},
-	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"}},
+	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone"}},
 	"session_change":  {"action": {"rename", "trust", "policy", "session_start", "merger_start", "merger_stop"}},
 	"worker_change":   {"action": {"start", "stop"}},
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},

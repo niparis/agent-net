@@ -8,6 +8,21 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// checkActiveSessionIdentity runs in the same transaction as identity writes.
+func checkActiveSessionIdentity(q interface{ QueryRow(string, ...any) *sql.Row }, session string) error {
+	var inactive bool
+	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id=? AND s.online=1
+ AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND
+ (EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=s.repo_id) OR EXISTS(SELECT 1 FROM agents WHERE id=s.agent_id AND tombstone<>0)))`, session).Scan(&inactive)
+	if err != nil {
+		return err
+	}
+	if inactive {
+		return reject("session identity is inactive")
+	}
+	return nil
+}
+
 // sessionAgentOwner checks an authenticated machine's owner pseudo-session.
 func sessionAgentOwner(q interface{ QueryRow(string, ...any) *sql.Row }, node, owner string) error {
 	var valid bool
@@ -79,6 +94,9 @@ func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) 
 		return tx.Commit()
 	}
 	if _, err = tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, p.Agent, p.SessionID); err != nil {
+		return err
+	}
+	if err = checkActiveSessionIdentity(tx, p.SessionID); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(`INSERT INTO session_agent_history(session_id,old_agent_id,new_agent_id,actor,at) VALUES(?,?,?,?,?)`, p.SessionID, old, p.Agent, p.Owner, s.now().UnixNano()); err != nil {

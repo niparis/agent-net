@@ -899,6 +899,59 @@ INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kin
  SELECT 'agent_charter',a.agent_id,a.attr,a.old_value,a.new_value,a.at,a.actor,'agent' FROM agent_charter_history a
  WHERE NOT EXISTS (SELECT 1 FROM graph_history h WHERE h.type='agent_charter' AND h.node=a.agent_id AND h.attr=a.attr AND h.old_value=a.old_value AND h.new_value=a.new_value AND h.at=a.at AND h.actor=a.actor) ORDER BY a.id;
 
+`, `
+-- Typed lifecycle and prospective display-name uniqueness. Existing collisions remain visible.
+CREATE TABLE IF NOT EXISTS archived_repos (repo_id TEXT PRIMARY KEY REFERENCES repos(id));
+-- Automatic discovery may encounter existing display names. Only explicit
+-- lifecycle writes enforce uniqueness; remove any old trigger on replay.
+DROP TRIGGER IF EXISTS repos_unique_name_insert;
+DROP TRIGGER IF EXISTS repos_unique_name_update;
+DROP TRIGGER IF EXISTS agents_unique_name_insert;
+DROP TRIGGER IF EXISTS agents_unique_name_update;
+-- Discovery must not assign a tombstoned Agent, including on an ignored
+-- insert of an existing Repo. Keep that Repo unowned until the owner chooses.
+DROP TRIGGER IF EXISTS repo_agent_project_insert;
+DROP TRIGGER IF EXISTS repo_agent_project_update;
+DROP TRIGGER IF EXISTS repo_agent_session_insert;
+DROP TRIGGER IF EXISTS repo_agent_session_update;
+CREATE TRIGGER repo_agent_project_insert AFTER INSERT ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.name,NEW.name,'',NEW.added_at,NEW.added_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.added_at,NEW.added_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.name AND tombstone=0) THEN NEW.name ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_project_update AFTER UPDATE OF name ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.name,NEW.name,'',NEW.checked_at,NEW.checked_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.checked_at,NEW.checked_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.name AND tombstone=0) THEN NEW.name ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_session_insert AFTER INSERT ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.repo_project,NEW.repo_project,'',NEW.created_at,NEW.created_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.created_at,NEW.created_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.repo_project AND tombstone=0) THEN NEW.repo_project ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_session_update AFTER UPDATE OF repo_project ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents VALUES(NEW.repo_project,NEW.repo_project,'',NEW.last_seen,NEW.last_seen,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.last_seen,NEW.last_seen,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.repo_project AND tombstone=0) THEN NEW.repo_project ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS repo_live_owner_insert BEFORE INSERT ON repos
+ WHEN NEW.owner_agent_id IS NOT NULL AND EXISTS (SELECT 1 FROM agents WHERE id=NEW.owner_agent_id AND tombstone<>0)
+ BEGIN SELECT RAISE(ABORT, 'tombstoned agent cannot own a repo'); END;
+CREATE TRIGGER IF NOT EXISTS repo_live_owner_update BEFORE UPDATE OF owner_agent_id ON repos
+ WHEN NEW.owner_agent_id IS NOT NULL AND EXISTS (SELECT 1 FROM agents WHERE id=NEW.owner_agent_id AND tombstone<>0)
+ BEGIN SELECT RAISE(ABORT, 'tombstoned agent cannot own a repo'); END;
+CREATE TRIGGER IF NOT EXISTS agent_owned_tombstone BEFORE UPDATE OF tombstone ON agents
+ WHEN NEW.tombstone<>0 AND EXISTS (SELECT 1 FROM repos WHERE owner_agent_id=NEW.id)
+ BEGIN SELECT RAISE(ABORT, 'agent owns a repo'); END;
+CREATE TRIGGER IF NOT EXISTS session_lifecycle_insert BEFORE INSERT ON sessions
+ WHEN NEW.online=1 AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND
+ (EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=NEW.repo_id) OR EXISTS(SELECT 1 FROM agents WHERE id=NEW.agent_id AND tombstone<>0))
+ BEGIN SELECT RAISE(ABORT, 'session identity is inactive'); END;
+CREATE TRIGGER IF NOT EXISTS session_lifecycle_update BEFORE UPDATE OF online,repo_id,agent_id ON sessions
+ WHEN NEW.online=1 AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND
+ (EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=NEW.repo_id) OR EXISTS(SELECT 1 FROM agents WHERE id=NEW.agent_id AND tombstone<>0))
+ BEGIN SELECT RAISE(ABORT, 'session identity is inactive'); END;
+`, `
+-- Validate active session identities in their write transactions. Removing
+-- these triggers also permits old-schema fixtures to drop identity columns.
+DROP TRIGGER IF EXISTS session_lifecycle_insert;
+DROP TRIGGER IF EXISTS session_lifecycle_update;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1736,6 +1789,9 @@ func (s *Store) upsertSession(q interface {
 	if err != nil {
 		return "", false, err
 	}
+	if err = checkActiveSessionIdentity(q, id); err != nil {
+		return "", false, err
+	}
 	// The owner session is the person, not a new agent: no session.new for it.
 	fresh := !known && !protocol.IsOwner(in.Harness)
 	if fresh {
@@ -1899,11 +1955,22 @@ func (s *Store) hostname(nodeID string) string {
 }
 
 func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, error) {
-	id, created, err := s.upsertSession(s.db, nodeID, in)
-	if err == nil && created {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	id, created, err := s.upsertSession(tx, nodeID, in)
+	if err != nil {
+		return "", err
+	}
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+	if created {
 		s.logNewSessions([]newSession{{id, nodeID, in}})
 	}
-	return id, err
+	return id, nil
 }
 
 // SyncSessions upserts the full set and marks the node's other sessions offline.

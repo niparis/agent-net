@@ -5,6 +5,7 @@ type RepoRecord struct {
 	ID, DisplayName      string
 	OwnerAgentID         *string
 	CreatedAt, UpdatedAt int64
+	Archived             bool
 }
 
 type AgentRecord struct {
@@ -15,14 +16,14 @@ type AgentRecord struct {
 
 // RepoAgents returns all repos and agents, including tombstones.
 func (s *Store) RepoAgents() ([]RepoRecord, []AgentRecord, error) {
-	rows, err := s.db.Query(`SELECT id,display_name,owner_agent_id,created_at,updated_at FROM repos ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id,display_name,owner_agent_id,created_at,updated_at,EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id) FROM repos ORDER BY id`)
 	if err != nil {
 		return nil, nil, err
 	}
 	var repos []RepoRecord
 	for rows.Next() {
 		var r RepoRecord
-		if err = rows.Scan(&r.ID, &r.DisplayName, &r.OwnerAgentID, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err = rows.Scan(&r.ID, &r.DisplayName, &r.OwnerAgentID, &r.CreatedAt, &r.UpdatedAt, &r.Archived); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
