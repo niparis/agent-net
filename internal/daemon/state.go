@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS workers (
 	// gateway has been told that it ended. A table from an older version does
 	// not have these columns.
 	for _, col := range []struct{ name, spec string }{
+		{"run_generation", `run_generation INTEGER NOT NULL DEFAULT 0`},
 		{"task_text", `task_text TEXT NOT NULL DEFAULT ''`},
 		{"failure", `failure TEXT NOT NULL DEFAULT ''`},
 		{"title", `title TEXT NOT NULL DEFAULT ''`},

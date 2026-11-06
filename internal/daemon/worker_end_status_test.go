@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"syscall"
 	"testing"
 	"time"
@@ -87,5 +88,53 @@ func TestLateSessionSyncAfterHandbackLeavesTheRowEnded(t *testing.T) {
 	a, _, _ := g.gw.Store().Agent(res.SessionID)
 	if a.Online || a.Status != "ended" {
 		t.Fatalf("after a late session sync: online=%v status=%q", a.Online, a.Status)
+	}
+}
+
+// Either entry point must publish the new run before an old end can arrive.
+func TestWorkerResumeRunGeneration(t *testing.T) {
+	for _, path := range []string{"gateway", "delivery"} {
+		t.Run(path, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			w := startWorkerNode(t, g, shortSet, nil)
+			repo := newRepo(t, "shop")
+			w.register(t, repo)
+			res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:handback first", Isolation: protocol.IsolationNone})
+			w.waitNotice(t, 1)
+			eventually(t, "first run reported", func() bool { rows, _ := w.d.st.workers(); return len(rows) == 1 && rows[0].Reported })
+			old, ok, err := w.d.st.workerBySession(res.SessionID)
+			if err != nil || !ok || old.RunGeneration != 1 {
+				t.Fatalf("first run: %+v %v", old, err)
+			}
+			var sent protocol.MessageSent
+			if path == "delivery" {
+				// Store a follow-up without the gateway's pre-send resume. This
+				// models a message dispatched before the previous run ended.
+				msg, _, err := g.gw.Store().StoreMessage(protocol.MsgSend{Sender: w.ownerID(), Recipient: res.SessionID, Body: "one more thing"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				sent.Message = &msg
+				w.d.onDeliver(context.Background(), msg)
+			} else {
+				mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"}), &sent)
+			}
+			w.replyTo(t, w.ownerID(), sent.Message.ID)
+			current, ok, err := w.d.st.workerBySession(res.SessionID)
+			if err != nil || !ok || current.RunGeneration != 2 {
+				t.Fatalf("resumed run: %+v %v", current, err)
+			}
+			_, err = w.d.call(context.Background(), "worker.stopped", protocol.WorkerStopped{SessionID: res.SessionID, WorkerID: old.ID, Harness: old.Harness, Reason: old.EndedReason, RunGeneration: old.RunGeneration})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := g.gw.Store().SetWorkerSessionEnded(w.d.NodeID(), res.SessionID, old.RunGeneration); err != nil {
+				t.Fatal(err)
+			}
+			a, ok, err := g.gw.Store().Agent(res.SessionID)
+			if err != nil || !ok || !a.Online || a.Status == "ended" || a.Worker.RunGeneration != 2 {
+				t.Fatalf("late end affected resumed worker: %+v %v", a, err)
+			}
+		})
 	}
 }
