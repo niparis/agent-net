@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -54,7 +55,14 @@ func (g *Gateway) Backup(dest string) (err error) {
 			_ = os.RemoveAll(dest)
 		}
 	}()
-	if _, err = g.store.db.Exec(`VACUUM INTO ?`, filepath.Join(dest, "gateway.db")); err != nil {
+	// Use a separate WAL reader so a slow snapshot does not occupy the
+	// store's sole connection and stall node hellos.
+	snapshotDB, err := sql.Open("sqlite", "file:"+g.store.path+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer snapshotDB.Close()
+	if _, err = snapshotDB.Exec(`VACUUM INTO ?`, filepath.Join(dest, "gateway.db")); err != nil {
 		return err
 	}
 	if err = os.Chmod(filepath.Join(dest, "gateway.db"), 0600); err != nil {

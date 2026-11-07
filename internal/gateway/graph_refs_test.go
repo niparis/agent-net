@@ -45,11 +45,16 @@ func TestGraphRefsGateAndLegacyCompatibility(t *testing.T) {
 	if err := s.loadGraphRefs(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.144","hostname":"test"}`)); err == nil {
-		t.Fatal("old hello accepted after cutover")
+	if _, err := g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.144","hostname":"test"}`)); err != nil {
+		t.Fatalf("old hello after cutover: %v", err)
 	}
-	if _, err := g.handle(context.Background(), nc, "session.sync", []byte(`{}`)); err == nil {
-		t.Fatal("old mutation accepted after cutover")
+	if _, err := g.handle(context.Background(), nc, "session.sync", []byte(`{}`)); err != nil {
+		t.Fatalf("old session sync after cutover: %v", err)
+	}
+	for _, frame := range []string{"graph.get", "graph.read", "query.graph", "team.write", "charter.set", "edge.set", "node.add", "repo.create", "agent.tombstone", "cto.graph_history"} {
+		if err := s.graphFrameAllowed(nc, frame); err == nil {
+			t.Errorf("old connection allowed %s", frame)
+		}
 	}
 }
 
@@ -184,7 +189,7 @@ func TestGraphRefsAutomaticCutoverBacksUpAndMigratesCharter(t *testing.T) {
 		t.Fatalf("legacy actor write: %+v %v", actorGraph, err)
 	}
 	fresh := &nodeConn{id: node}
-	if err = s.graphFrameAllowed(fresh, "delivery.submit"); err == nil {
+	if err = s.graphFrameAllowed(fresh, "graph.get"); err == nil {
 		t.Fatal("new connection inherited old hello authority")
 	}
 }
@@ -236,11 +241,11 @@ func TestGraphRefsCachedGate(t *testing.T) {
 		t.Fatalf("startup cache: %v %v", enabled, err)
 	}
 	nc := &nodeConn{}
-	if err = reopened.graphFrameAllowed(nc, "session.sync"); err == nil {
+	if err = reopened.graphFrameAllowed(nc, "graph.get"); err == nil {
 		t.Fatal("unqualified frame allowed")
 	}
 	nc.graphRefs.Store(true)
-	if err = reopened.graphFrameAllowed(nc, "session.sync"); err != nil {
+	if err = reopened.graphFrameAllowed(nc, "graph.get"); err != nil {
 		t.Fatal(err)
 	}
 }

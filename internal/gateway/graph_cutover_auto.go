@@ -200,8 +200,6 @@ func (g *Gateway) noteStaleGraphCutover(blockers []string) error {
 // call. It keeps the backup, the blocker checks and the transaction recheck.
 func (g *Gateway) enableGraphRefsAutomatically(ctx context.Context) {
 	st := g.store
-	g.machineAuthMu.Lock()
-	defer g.machineAuthMu.Unlock()
 	on, err := st.graphRefsEnabled()
 	if err != nil {
 		g.graphCutoverFailed("", err)
@@ -229,6 +227,26 @@ func (g *Gateway) enableGraphRefsAutomatically(ctx context.Context) {
 	backup := graphCutoverBackupPath(g.opts.DataDir, st.now())
 	if err = g.Backup(backup); err != nil {
 		g.graphCutoverFailed(backup, err)
+		return
+	}
+	// Connections must remain available during the backup. Once it completes,
+	// serialize admission and recheck both live links and stored reports.
+	g.machineAuthMu.Lock()
+	defer g.machineAuthMu.Unlock()
+	on, err = st.graphRefsEnabled()
+	if err != nil || on {
+		if err != nil {
+			g.graphCutoverFailed(backup, err)
+		}
+		return
+	}
+	blockers, err = g.graphRefsBlockers(ctx, st.db, true)
+	if err != nil {
+		g.graphCutoverFailed(backup, err)
+		return
+	}
+	if len(blockers) > 0 {
+		g.logLine("graph.cutover.deferred", "backup", backup, "blockers", len(blockers))
 		return
 	}
 	tx, err := st.db.BeginTx(ctx, nil)
