@@ -276,20 +276,9 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 			}
 		}
 		return nil
-	case "project_add":
-		var p protocol.ProjectAddRequest
-		if err := json.Unmarshal(call.Args, &p); err != nil {
-			return err
-		}
-		p.DryRun = true
-		_, err := d.projectAdd(ctx, p, "", "cli")
+	case "project_add", "project_remove":
+		_, err := d.projectChange(ctx, call.Tool, call.Args, true)
 		return err
-	case "project_remove":
-		p, err := proposalProjectRemove(call.Args)
-		if err != nil {
-			return err
-		}
-		call.Args, _ = json.Marshal(p)
 	case "worker_start":
 		var p protocol.WorkerStartRequest
 		if err := json.Unmarshal(call.Args, &p); err != nil {
@@ -397,12 +386,8 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 			return nil, errors.New("archive proposal needs a pinned preview")
 		}
 	}
-	if name == "project_remove" {
-		p, err := proposalProjectRemove(raw)
-		if err != nil {
-			return nil, err
-		}
-		raw, _ = json.Marshal(p)
+	if name == "project_add" || name == "project_remove" {
+		return d.projectChange(ctx, name, raw, false)
 	}
 	if name == "merger_start" || name == "merger_stop" {
 		if proposalActor(ctx) == "" {

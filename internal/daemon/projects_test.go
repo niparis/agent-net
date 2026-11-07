@@ -367,3 +367,82 @@ func TestCTOProjectRemoveMachineAfterApproval(t *testing.T) {
 		})
 	}
 }
+
+func TestCTOProjectAddMachineAfterApproval(t *testing.T) {
+	for _, target := range []string{"node_id", "hostname", "local"} {
+		t.Run(target, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			base := codeDir(t)
+			a := startNode(t, g, nodeOpts{})
+			b := startNode(t, g, nodeOpts{})
+			cli := cliClient(t, a)
+			args := map[string]any{"action": "add", "paths": []string{filepath.Join(base, "beta")}}
+			want := a.d.NodeID()
+			if target != "local" {
+				want = b.d.NodeID()
+				args["node_id"] = want
+				if target == "hostname" {
+					args["node_id"] = b.d.cfg.Hostname
+				}
+			}
+			raw, _ := json.Marshal(args)
+			ctx := context.Background()
+			if _, err := a.d.runCTOToolRaw(ctx, "project_change", raw); err != nil {
+				t.Fatal(err)
+			}
+			if ps := listProjects(t, cli, "beta"); len(ps) != 0 {
+				t.Fatalf("registered before approval: %+v", ps)
+			}
+			items, err := a.d.proposalRunner().list()
+			if err != nil || len(items) != 1 {
+				t.Fatalf("items=%+v err=%v", items, err)
+			}
+			if err := a.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+				t.Fatal(err)
+			}
+			if ps := listProjects(t, cli, "beta"); len(ps) != 1 || ps[0].NodeID != want {
+				t.Fatalf("wanted registration on %s: %+v", want, ps)
+			}
+			items, _ = a.d.proposalRunner().list()
+			out := addOutcome(t, items[0].Result)
+			if out.Machine != "host-"+want || len(out.Added) != 1 {
+				t.Fatalf("outcome: %+v", out)
+			}
+		})
+	}
+}
+
+func TestCTOProjectRemoveNeedsTargetDaemon(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	base := codeDir(t)
+	a := startNode(t, g, nodeOpts{})
+	b := startNode(t, g, nodeOpts{})
+	cliA, cliB := cliClient(t, a), cliClient(t, b)
+	cliB.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
+	raw, _ := json.Marshal(map[string]any{"action": "remove", "name": "beta", "node_id": b.d.NodeID()})
+	ctx := context.Background()
+	if _, err := a.d.runCTOToolRaw(ctx, "project_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	items, err := a.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	b.d.Stop()
+	eventually(t, "target offline", func() bool {
+		var nodes protocol.NodesInfo
+		mustJSON(t, cliA.mustCall("nodes", nil), &nodes)
+		for _, n := range nodes.Nodes {
+			if n.NodeID == b.d.NodeID() {
+				return !n.Online
+			}
+		}
+		return false
+	})
+	if err := a.d.proposalRunner().decide(ctx, items[0].ID, true); err == nil || !strings.Contains(err.Error(), "offline") {
+		t.Fatalf("wanted offline target error: %v", err)
+	}
+	if ps := listProjects(t, cliA, "beta"); len(ps) != 1 || ps[0].NodeID != b.d.NodeID() {
+		t.Fatalf("removed without target daemon: %+v", ps)
+	}
+}

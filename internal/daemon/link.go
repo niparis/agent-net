@@ -166,6 +166,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onSessionOwnerFrame(ctx, l, h, raw)
 			}()
+		case protocol.FrameProjectOwnerChange:
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onProjectOwnerFrame(ctx, l, h, raw)
+			}()
 		case "node.projects_layout":
 			d.wg.Add(1)
 			go func() {

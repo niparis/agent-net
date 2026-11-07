@@ -17,8 +17,8 @@ import (
 // machine that holds it, because only this daemon can see the folder. The
 // daemon checks every path (it exists, it is a git working tree), resolves it
 // to its main tree, strips credentials from the remote, and sends the checked
-// entries to the gateway. The gateway registers them on THIS node: there is no
-// way to name another machine, for agents or for the command line.
+// entries to the gateway. The gateway registers them on the sending node.
+// CTO proposals for another machine are relayed to its daemon first.
 
 // expandPath turns ~ and ~/x into the daemon user's home folder and requires
 // an absolute path.

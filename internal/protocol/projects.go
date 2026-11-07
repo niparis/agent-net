@@ -1,5 +1,7 @@
 package protocol
 
+import "encoding/json"
+
 // The project registry. A project is a git main tree on one machine. The
 // machine's own daemon checks the folder and sends the gateway the checked
 // entry; the gateway never looks at folders.
@@ -91,4 +93,20 @@ type ProjectAddOutcome struct {
 	// Overflow counts repositories a scan found beyond the cap. None of them
 	// were looked at.
 	Overflow int `json:"overflow"`
+}
+
+const (
+	FrameProjectChange      = "project.change"
+	FrameProjectOwnerChange = "project.owner_change"
+)
+
+// ProjectChangeRelay asks the target daemon to check or apply a project change.
+// The gateway supplies FromNode, just as for owner session relays.
+type ProjectChangeRelay struct {
+	Owner    string          `json:"owner_session"`
+	FromNode string          `json:"from_node,omitempty"`
+	NodeID   string          `json:"node_id,omitempty"`
+	Method   string          `json:"method"`
+	Args     json.RawMessage `json:"args"`
+	Preview  bool            `json:"preview,omitempty"`
 }
