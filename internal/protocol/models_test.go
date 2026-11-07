@@ -244,8 +244,8 @@ func TestNoticeEndsWithTheChecklist(t *testing.T) {
 	if !strings.HasPrefix(last, "If you learned something") || !strings.Contains(last, "agent_learn") {
 		t.Errorf("last line: %q", last)
 	}
-	if !strings.Contains(body, ChecklistMarker+" Before you tell your user it is done: read the diff in /wt/w_1, run the project's tests there") ||
-		!strings.Contains(body, "Merge only if your user asked.") {
+	if !strings.Contains(body, ChecklistMarker+" Before you tell your user it is done: read the diff in /wt/w_1, follow the accept contract") ||
+		!strings.Contains(body, "Merge only if your user asked.") || !strings.Contains(body, "Test scope: delivery.contract.test") {
 		t.Errorf("checklist: %q", body)
 	}
 	if strings.Index(body, ReportMarker) > strings.Index(body, ChecklistMarker) {

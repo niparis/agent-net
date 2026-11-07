@@ -153,18 +153,15 @@ func TestMergerCTORecipe(t *testing.T) {
 	}
 }
 
-func TestMergerFirstMessagePushRules(t *testing.T) {
-	for _, rule := range []string{"CI branch", "merge-<change id>", "CI to pass on that exact commit", "fast-forward and push the default branch", "CI link", "push nothing to the default branch", "tests on the merged commit", "Never force-push", "retag or delete tags", "Only release when you own the release step", "For release, follow the repository's RELEASING.md", "Never release a commit whose full CI after merge has not passed", `Report release pass with fields {"release_tag": "<tag>"}`, "Retry a failed push a few times", "If no CI run appears for the CI branch within the project's usual time, report fail and push nothing to the default branch.", "A rejected or failed tool call is not an order to stop. Retry once, try another way, or skip that change and report the step fail with the reason; keep working the rest of the queue.", "You stop only when the owner says stop in plain words in your own session.", "Never sit idle while step tasks are ready.", "When you are blocked on one change, say so in one line to its caller and move to the next.", "If you need the owner's decision, ask once with agent_owner_ask (one line, with your recommendation) and keep working on everything that does not depend on it.", "At start and after any context compaction, list this project's open changes with agent_changes_find and claim every ready test or merge step you own; do not rely only on task messages."} {
+func TestMergerFirstMessageContracts(t *testing.T) {
+	for _, rule := range []string{"Each step task includes its contract: follow it.", "Never force-push", "Never use the owner's checkout", "Never commit build outputs, binaries or secrets", "Report every step"} {
 		if !strings.Contains(MergerFirstMessage, rule) {
-			t.Errorf("missing push rule %q", rule)
+			t.Errorf("missing %q", rule)
 		}
 	}
-}
-
-func TestMergerFirstMessageRenumberRules(t *testing.T) {
-	for _, rule := range []string{"only conflict with the default branch is a migration or decision number clash", "may rebase it in your own merge worktree", "renumber mechanically", "store.go migration comment", "migrations.lock line (move or append it so the lock file stays in order)", "migration version numbers asserted in tests", "docs/decisions file number and links to it", "Change no SQL, logic or other line", "Run the targeted tests for the touched packages", "commit the renumber on its own with a message naming the old and new numbers", "note it in the merge report"} {
-		if !strings.Contains(MergerFirstMessage, rule) {
-			t.Errorf("missing renumber rule %q", rule)
+	for _, rule := range []string{"For release, follow", "renumber mechanically", "resolves the conflict in its own merge worktree", "merge-<change id>"} {
+		if strings.Contains(MergerFirstMessage, rule) {
+			t.Errorf("private step rule %q", rule)
 		}
 	}
 }
@@ -210,17 +207,4 @@ func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
 		}
 		return started.Status == "started"
 	})
-}
-
-func TestMergerFirstMessageConflictRules(t *testing.T) {
-	for _, rule := range []string{"resolves the conflict in its own merge worktree", "change's diff against its base", "what landed on the default branch since", "keeps the intent of both", "message naming the conflicting files and what it kept", "one-line summary of each resolution", "reports test fail with the reason", "does not rewrite features to make tests pass", "Never write features"} {
-		if !strings.Contains(MergerFirstMessage, rule) {
-			t.Errorf("missing conflict rule %q", rule)
-		}
-	}
-	for _, rule := range []string{"Beyond that, still report fail and do not fix code", "On a test or merge failure, report fail with the reason and do not fix code"} {
-		if strings.Contains(MergerFirstMessage, rule) {
-			t.Errorf("obsolete conflict restriction %q", rule)
-		}
-	}
 }
