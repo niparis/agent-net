@@ -41,9 +41,6 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 			return item, err
 		}
 		if strings.TrimSpace(item.Text) == "" {
-			if _, err := tx.Exec(`UPDATE sessions SET waiting='' WHERE id=?`, item.SessionID); err != nil {
-				return item, err
-			}
 			old.Status = "replaced"
 			old.AnsweredAt = now
 			if err := tx.Commit(); err != nil {
@@ -59,20 +56,6 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 	if item.Kind == "question" || item.Kind == "approval" {
 		_, err = tx.Exec(`UPDATE inbox_items SET status='replaced',answered_at=? WHERE session_id=? AND kind=? AND status='open' AND id<>?`, item.CreatedAt.UnixNano(), item.SessionID, item.Kind, item.ID)
 		if err != nil {
-			return item, err
-		}
-		w := protocol.CleanWaiting(&protocol.Waiting{
-			Kind:     item.Kind,
-			Text:     item.Text,
-			Options:  item.Options,
-			Explicit: true,
-			Since:    now.Unix(),
-		})
-		var wJSON []byte
-		if w != nil {
-			wJSON, _ = json.Marshal(w)
-		}
-		if _, err := tx.Exec(`UPDATE sessions SET waiting=? WHERE id=?`, string(wJSON), item.SessionID); err != nil {
 			return item, err
 		}
 	}

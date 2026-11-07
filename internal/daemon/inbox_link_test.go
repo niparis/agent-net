@@ -56,7 +56,21 @@ func TestInboxAskReplaceAndCloseDaemon(t *testing.T) {
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	conn, sid := helloPi(t, n, "asker", t.TempDir(), false)
 
-	// 1. Create first ask
+	// Session starts with no waiting
+	if w := waitingOf(t, n, sid); w != nil {
+		t.Fatalf("initial waiting = %+v, want nil", w)
+	}
+
+	// 1. Propose an idea leaves waiting unchanged (nil)
+	_, err := conn.call("propose_idea", map[string]any{"text": "A new feature idea", "recommendation": "build it"})
+	if err != nil {
+		t.Fatalf("propose idea: %v", err)
+	}
+	if w := waitingOf(t, n, sid); w != nil {
+		t.Fatalf("propose_idea set waiting: %+v", w)
+	}
+
+	// 2. Create first ask: waiting line matches the ask
 	raw, err := conn.call("ask_question", map[string]any{"text": "PR15 + router + Mac", "recommendation": "all three"})
 	if err != nil {
 		t.Fatalf("first ask: %v", err)
@@ -73,7 +87,16 @@ func TestInboxAskReplaceAndCloseDaemon(t *testing.T) {
 		return w != nil && w.Text == "PR15 + router + Mac"
 	})
 
-	// 2. Replace with second ask
+	// Proposing another idea leaves waiting unchanged
+	_, err = conn.call("propose_idea", map[string]any{"text": "Second feature idea", "recommendation": "consider"})
+	if err != nil {
+		t.Fatalf("second propose idea: %v", err)
+	}
+	if w := waitingOf(t, n, sid); w == nil || w.Text != "PR15 + router + Mac" {
+		t.Fatalf("propose_idea altered waiting: %+v", w)
+	}
+
+	// 3. Replace with second ask: waiting line matches new ask
 	raw, err = conn.call("ask_question", map[string]any{"text": "router + Mac", "recommendation": "both", "replaces": res1.Item.ID})
 	if err != nil {
 		t.Fatalf("replace ask: %v", err)
@@ -112,7 +135,7 @@ func TestInboxAskReplaceAndCloseDaemon(t *testing.T) {
 		}
 	}
 
-	// 3. Close ask without a new question
+	// 4. Close ask without a new question: waiting line is cleared
 	raw, err = conn.call("ask_question", map[string]any{"text": "", "replaces": res2.Item.ID})
 	if err != nil {
 		t.Fatalf("close ask: %v", err)
@@ -127,4 +150,17 @@ func TestInboxAskReplaceAndCloseDaemon(t *testing.T) {
 	eventually(t, "waiting cleared", func() bool {
 		return waitingOf(t, n, sid) == nil
 	})
+
+	raw, err = c.Call(context.Background(), "inbox_list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range listed.Items {
+		if it.ID == res2.Item.ID && it.Status != "replaced" {
+			t.Fatalf("res2 status = %q, want replaced", it.Status)
+		}
+	}
 }

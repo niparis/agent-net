@@ -336,12 +336,6 @@ func TestInboxOwnerAskReplaceAndClose(t *testing.T) {
 		t.Fatalf("first status = %q, want open", first.Status)
 	}
 
-	// Verify session A's waiting state follows first ask
-	a, ok, err := s.Agent(sidA)
-	if err != nil || !ok || a.Waiting == nil || a.Waiting.Text != "PR15 + router + Mac" {
-		t.Fatalf("agent waiting = %+v, want PR15 + router + Mac", a.Waiting)
-	}
-
 	// 2. Another session (Session B) cannot replace Session A's ask
 	_, err = s.CreateInboxItem(protocol.InboxItem{
 		Kind:      "question",
@@ -391,12 +385,6 @@ func TestInboxOwnerAskReplaceAndClose(t *testing.T) {
 		t.Fatalf("open items count = %d, want 1", openCount)
 	}
 
-	// Verify session A's waiting state follows second ask
-	a, ok, err = s.Agent(sidA)
-	if err != nil || !ok || a.Waiting == nil || a.Waiting.Text != "router + Mac" {
-		t.Fatalf("agent waiting after replace = %+v, want router + Mac", a.Waiting)
-	}
-
 	// 4. Session A closes its ask without a new question
 	closed, err := s.CreateInboxItem(protocol.InboxItem{
 		Kind:      "question",
@@ -420,11 +408,5 @@ func TestInboxOwnerAskReplaceAndClose(t *testing.T) {
 		if it.Status == "open" {
 			t.Fatalf("unexpected open item: %+v", it)
 		}
-	}
-
-	// Verify session A's waiting state is cleared
-	a, ok, err = s.Agent(sidA)
-	if err != nil || !ok || a.Waiting != nil {
-		t.Fatalf("agent waiting after close = %+v, want nil", a.Waiting)
 	}
 }

@@ -889,7 +889,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if err != nil {
 			return nil, err
 		}
-		if ls != nil {
+		if ls != nil && (kind == "question" || kind == "approval") {
 			if p.Replaces != "" && strings.TrimSpace(text) == "" {
 				d.setWaiting(ls, nil)
 			} else if strings.TrimSpace(text) != "" {
