@@ -423,3 +423,13 @@ func TestGraphCTOBoxStaysOnOtherTabs(t *testing.T) {
 		t.Error("Sessions lost the CTO box")
 	}
 }
+
+func TestGraphTabShowsInitialReadError(t *testing.T) {
+	m := mapModel(120, 34, protocol.GraphView{})
+	m.tab = graphTab
+	m.applyMap(mapMsg{err: fmt.Errorf("graph unavailable")})
+	view := ansi.Strip(strings.Join(m.graphView(120, 34), "\n"))
+	if !strings.Contains(view, "! could not read the graph: graph unavailable") || strings.Contains(view, "reading the graph...") {
+		t.Fatalf("graph error not shown: %s", view)
+	}
+}

@@ -395,6 +395,12 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphState.Graph == nil {
+		if m.mp.err != "" {
+			for _, line := range wrap("! could not read the graph: "+m.mp.err, max(w-2, 8)) {
+				out = append(out, "  "+sBad.Render(line))
+			}
+			return out
+		}
 		return append(out, sDim.Render("  reading the graph..."))
 	}
 	footer := m.graphFooterHeight()

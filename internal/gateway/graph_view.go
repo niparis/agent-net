@@ -18,6 +18,9 @@ func (g *Gateway) handleGraphView(raw []byte) (any, error) {
 		}
 		out := protocol.GraphView{Nodes: graph.Nodes, Edges: graph.Edges, Warnings: graph.Warnings, Changes: []protocol.CharterChange{}}
 		for _, n := range graph.Nodes {
+			if n.Ref == nil || (n.Ref.Kind != "repo" && n.Ref.Kind != "agent") {
+				continue
+			}
 			history, err := g.store.RefCharterHistory(*n.Ref, protocol.GraphHistoryPerNode)
 			if err != nil {
 				return nil, err
