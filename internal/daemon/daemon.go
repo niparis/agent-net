@@ -79,6 +79,8 @@ type Config struct {
 	// testCleanupFetch replaces cleanupFetchDefault in cleanupProjects, so a
 	// test can hold the fetch and check that cleanup holds no locks.
 	testCleanupFetch func(ctx context.Context, dir, defaultBranch string) string
+	// testCleanupNow replaces time.Now in cleanupProjects.
+	testCleanupNow func() time.Time
 
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.
@@ -323,6 +325,11 @@ type Daemon struct {
 	ctoNow          func() time.Time
 	ctoCompactEvery time.Duration
 	ctoCtx          context.Context
+	testCleanupNow  func() time.Time
+
+	cleanupLogMu        sync.Mutex
+	cleanupProjectLogs  map[string]time.Time
+	cleanupWorktreeLogs map[worktreeErrKey]time.Time
 
 	// shownHost is the name the gateway lists for this machine (the owner's
 	// display name, decision 0015). Empty until the gateway said.

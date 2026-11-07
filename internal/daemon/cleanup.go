@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +45,63 @@ func runEvery(ctx context.Context, first, every time.Duration, fn func()) {
 	}
 }
 
+func (d *Daemon) cleanupNow() time.Time {
+	if d.testCleanupNow != nil {
+		return d.testCleanupNow()
+	}
+	if d.cfg.testCleanupNow != nil {
+		return d.cfg.testCleanupNow()
+	}
+	return time.Now()
+}
+
+func checkProjectWorkTree(ctx context.Context, projectPath string) error {
+	fi, err := os.Stat(projectPath)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("not a directory: %s", projectPath)
+	}
+	out, err := gitOut(ctx, projectPath, "rev-parse", "--is-inside-work-tree")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(out) != "true" {
+		return errors.New("not a git repository")
+	}
+	return nil
+}
+
+func (d *Daemon) shouldLogProjectCleanup(project string, now time.Time) bool {
+	d.cleanupLogMu.Lock()
+	defer d.cleanupLogMu.Unlock()
+	if d.cleanupProjectLogs == nil {
+		d.cleanupProjectLogs = make(map[string]time.Time)
+	}
+	last, ok := d.cleanupProjectLogs[project]
+	if !ok || now.Sub(last) >= 24*time.Hour {
+		d.cleanupProjectLogs[project] = now
+		return true
+	}
+	return false
+}
+
+func (d *Daemon) shouldLogWorktreeError(path, errText string, now time.Time) bool {
+	d.cleanupLogMu.Lock()
+	defer d.cleanupLogMu.Unlock()
+	if d.cleanupWorktreeLogs == nil {
+		d.cleanupWorktreeLogs = make(map[worktreeErrKey]time.Time)
+	}
+	key := worktreeErrKey{path: filepath.Clean(path), err: errText}
+	last, ok := d.cleanupWorktreeLogs[key]
+	if !ok || now.Sub(last) >= 24*time.Hour {
+		d.cleanupWorktreeLogs[key] = now
+		return true
+	}
+	return false
+}
+
 func (d *Daemon) cleanupProjects(ctx context.Context) {
 	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -59,9 +117,15 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 		if p.NodeID != d.cfg.NodeID {
 			continue
 		}
-		now := time.Now()
+		now := d.cleanupNow()
+		if projErr := checkProjectWorkTree(ctx, p.Path); projErr != nil {
+			if d.log != nil && d.shouldLogProjectCleanup(p.Path, now) {
+				d.Logf("worker.cleanup project=%q error=%v", p.Path, projErr)
+			}
+			continue
+		}
 		if err := d.observeLegacyWorktrees(ctx, p.Path, now); err != nil {
-			if d.log != nil {
+			if d.log != nil && d.shouldLogProjectCleanup(p.Path, now) {
 				d.Logf("worker.cleanup project=%q error=%v", p.Path, err)
 			}
 			continue
@@ -101,10 +165,16 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 				continue
 			}
 			if err := d.cleanupWorktree(ctx, ready[i], now); err != nil && d.log != nil {
-				d.Logf("worker.worktree_cleanup path=%q error=%v", ready[i].Path, err)
+				if d.shouldLogWorktreeError(ready[i].Path, err.Error(), now) {
+					d.Logf("worker.worktree_cleanup path=%q error=%v", ready[i].Path, err)
+				}
 			}
 		}
 	}
+}
+
+type worktreeErrKey struct {
+	path, err string
 }
 
 type cleanupWorktree struct {
@@ -362,7 +432,28 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	})
 	if !missing {
 		if _, err := gitOut(ctx, w.Project, "worktree", "remove", w.Path); err != nil {
-			return err
+			unlocked := false
+			reason, locked := worktreeLockReason(ctx, w.Project, w.Path)
+			if locked && reason == "initializing" {
+				lockFile := findWorktreeLockFile(ctx, w.Project, w.Path, w.ID)
+				if lockFile != "" {
+					if fi, statErr := os.Stat(lockFile); statErr == nil && now.Sub(fi.ModTime()) >= time.Hour {
+						if _, unlockErr := gitOut(ctx, w.Project, "worktree", "unlock", w.Path); unlockErr != nil {
+							return unlockErr
+						}
+						if d.log != nil {
+							d.Logf("worker.worktree_cleanup path=%q unlocked_stale=initializing", w.Path)
+						}
+						if _, remErr := gitOut(ctx, w.Project, "worktree", "remove", w.Path); remErr != nil {
+							return remErr
+						}
+						unlocked = true
+					}
+				}
+			}
+			if !unlocked {
+				return err
+			}
 		}
 	}
 	if !missing && w.Harness == "claude" {
@@ -385,6 +476,79 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		}
 	}
 	return nil
+}
+
+// worktreeLockReason reads the lock reason for targetPath from git worktree list.
+func worktreeLockReason(ctx context.Context, project, targetPath string) (reason string, locked bool) {
+	out, err := gitOut(ctx, project, "worktree", "list", "--porcelain")
+	if err != nil {
+		return "", false
+	}
+	targetClean := filepath.Clean(targetPath)
+	targetReal, errReal := filepath.EvalSymlinks(targetClean)
+	inTarget := false
+	for _, rawLine := range strings.Split(out, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "worktree ") {
+			wtPath := filepath.Clean(strings.TrimPrefix(line, "worktree "))
+			inTarget = (wtPath == targetClean)
+			if !inTarget && errReal == nil {
+				if wtReal, errWt := filepath.EvalSymlinks(wtPath); errWt == nil && wtReal == targetReal {
+					inTarget = true
+				}
+			}
+			continue
+		}
+		if !inTarget {
+			continue
+		}
+		if line == "" {
+			inTarget = false
+			continue
+		}
+		if line == "locked" {
+			return "", true
+		}
+		if strings.HasPrefix(line, "locked ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "locked ")), true
+		}
+	}
+	return "", false
+}
+
+// findWorktreeLockFile locates the lock file ($GIT_DIR/worktrees/<id>/locked) for a worktree.
+func findWorktreeLockFile(ctx context.Context, project, wtPath, id string) string {
+	if out, err := gitOut(ctx, wtPath, "rev-parse", "--git-path", "locked"); err == nil {
+		p := strings.TrimSpace(out)
+		if p != "" {
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(wtPath, p)
+			}
+			return p
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(wtPath, ".git")); err == nil {
+		line := strings.TrimSpace(string(b))
+		if strings.HasPrefix(line, "gitdir:") {
+			gd := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+			if !filepath.IsAbs(gd) {
+				gd = filepath.Join(wtPath, gd)
+			}
+			return filepath.Join(gd, "locked")
+		}
+	}
+	if id != "" {
+		if out, err := gitOut(ctx, project, "rev-parse", "--git-path", filepath.Join("worktrees", id, "locked")); err == nil {
+			p := strings.TrimSpace(out)
+			if p != "" {
+				if !filepath.IsAbs(p) {
+					p = filepath.Join(project, p)
+				}
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 // cleanupDefaultBranch returns the project's default branch: the registered
