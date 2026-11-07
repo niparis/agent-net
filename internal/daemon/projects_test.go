@@ -387,7 +387,7 @@ func TestCTOProjectAddMachineAfterApproval(t *testing.T) {
 			}
 			raw, _ := json.Marshal(args)
 			ctx := context.Background()
-			if _, err := a.d.runCTOToolRaw(ctx, "project_change", raw); err != nil {
+			if _, err := legacyProposalFixture(ctx, a.d, "project_change", raw); err != nil {
 				t.Fatal(err)
 			}
 			if ps := listProjects(t, cli, "beta"); len(ps) != 0 {
@@ -421,7 +421,7 @@ func TestCTOProjectRemoveNeedsTargetDaemon(t *testing.T) {
 	cliB.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
 	raw, _ := json.Marshal(map[string]any{"action": "remove", "name": "beta", "node_id": b.d.NodeID()})
 	ctx := context.Background()
-	if _, err := a.d.runCTOToolRaw(ctx, "project_change", raw); err != nil {
+	if _, err := legacyProposalFixture(ctx, a.d, "project_change", raw); err != nil {
 		t.Fatal(err)
 	}
 	items, err := a.d.proposalRunner().list()
