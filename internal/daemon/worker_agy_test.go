@@ -941,7 +941,7 @@ func TestAgyUnfinishedCommitUsesTitle(t *testing.T) {
 	eventually(t, "fake agy writes work", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "agy-work.txt")); return err == nil })
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	notice := w.waitNotice(t, 1)[0]
-	if !strings.Contains(notice.Body, "unfinished changes were saved") {
+	if !strings.Contains(notice.Body, "left uncommitted changes; committed as WIP ") {
 		t.Fatalf("notice: %s", notice.Body)
 	}
 	if got := gitOutT(t, repo, "log", "-1", "--format=%s", res.Branch); got != "Finish unfinished work" {

@@ -852,6 +852,8 @@ type WorkerNotice struct {
 	// Saved is true when the daemon committed the worker's unfinished changes
 	// on its branch.
 	Saved bool
+	// WIPDetail describes a daemon WIP commit or a failure to make one.
+	WIPDetail string
 	// Head is the short hash of the worktree's HEAD when the notice was made,
 	// empty when unknown.
 	Head string
@@ -948,6 +950,9 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		}
 		if n.Saved {
 			b.WriteString("unfinished changes were saved as a commit on branch " + n.Branch + "\n")
+		}
+		if n.WIPDetail != "" {
+			b.WriteString(n.WIPDetail + "\n")
 		}
 		if n.DiffStat == "" {
 			b.WriteString("changes: none\n")

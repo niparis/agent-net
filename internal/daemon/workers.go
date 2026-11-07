@@ -208,7 +208,8 @@ type worker struct {
 	taskFull string
 	// unfinished is true when the daemon committed the unfinished changes of
 	// the worktree on the worker's branch.
-	unfinished bool
+	unfinished   bool
+	endWIPDetail string
 	// leftAsIs is true when the worktree had a merge, rebase, cherry-pick or
 	// revert in progress, so the daemon did not commit it.
 	leftAsIs          bool
@@ -1076,13 +1077,6 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	if !done || !hasEvidence {
 		d.captureWorkerEvidence(w, nil)
 	}
-	if !done && reason != protocol.StopHandback && reason != protocol.StopStartFails {
-		if harness == "agy" && w.title != "" {
-			d.saveWorkerChanges(w, strings.TrimSpace(strings.SplitN(w.title, "\n", 2)[0]), reason, true)
-		} else {
-			d.saveUnfinished(w, reason)
-		}
-	}
 	d.wmu.Lock()
 	row := d.rowLocked(w, reason)
 	row.Resumable = resumable
@@ -1100,8 +1094,20 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	d.rememberEnded(w, endStatus, endNote, time.Now())
 	ran := time.Since(started)
 	return d.queueWorkerEnd(func() {
+		wipDetail := ""
+		var wipErr error
+		if w.worktree != "" {
+			wipDetail, wipErr = commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
+		}
+		if wipErr != nil {
+			d.Logf("worker %s: end WIP commit: %v", id, wipErr)
+			if wipDetail == "" {
+				wipDetail = "left uncommitted changes; WIP commit failed: " + wipErr.Error()
+			}
+		}
 		if sendNotice {
 			n := d.notice(w, status, note, stats)
+			n.WIPDetail = wipDetail
 			// Time waiting behind another notice is not worker run time.
 			n.RunTime = ran
 			if _, err := d.sendNotice(context.Background(), w, n, ""); err != nil {
@@ -1114,7 +1120,8 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 		d.wmu.Lock()
 		delete(d.workers, w.id)
 		d.wmu.Unlock()
-		if dir != "" && !resumable {
+		keepDirtyWorktree := strings.HasPrefix(wipDetail, "left uncommitted changes;")
+		if dir != "" && !resumable && !keepDirtyWorktree {
 			os.RemoveAll(dir)
 		}
 		if resumable {
@@ -1708,7 +1715,6 @@ func (d *Daemon) adoptWorkers() {
 				lost := &worker{runGeneration: r.RunGeneration, id: r.ID, worktree: r.Worktree, base: r.Base, project: r.Project, startedAt: r.StartedAt, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
 					owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
 				r.Evidence = d.measureWorkerEvidence(context.Background(), lost, nil)
-				d.saveUnfinished(lost, protocol.StopLost)
 			}
 			d.st.saveWorker(r)
 			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
