@@ -1286,7 +1286,22 @@ func (s *Store) migrate() error {
 			}
 		}
 		var result sql.Result
-		if strings.Contains(migrations[i], "ALTER TABLE inbox_items ADD COLUMN options") {
+		if strings.Contains(migrations[i], "ALTER TABLE repo_leads ADD COLUMN lead_session") {
+			for _, table := range []string{"repo_leads", "teams"} {
+				var has int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='lead_session'`, table).Scan(&has); err != nil {
+					break
+				}
+				if has == 0 {
+					if _, err = tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN lead_session TEXT`); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				result, err = tx.Exec(`SELECT 1`)
+			}
+		} else if strings.Contains(migrations[i], "ALTER TABLE inbox_items ADD COLUMN options") {
 			for _, col := range []struct{ name, spec string }{
 				{"options", `TEXT NOT NULL DEFAULT '[]'`}, {"asker_name", `TEXT NOT NULL DEFAULT ''`}, {"change_title", `TEXT NOT NULL DEFAULT ''`},
 			} {
