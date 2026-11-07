@@ -355,3 +355,61 @@ func TestOutcomeInboxFailureRollsBackReply(t *testing.T) {
 		t.Fatalf("request %+v %v", req, err)
 	}
 }
+
+func TestReplyOutcomeNonRequestParent(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+
+	// Case 1: Notification parent that is an owner approval notice
+	approvalNotice, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:    a,
+		Recipient: b,
+		Type:      protocol.TypeNotification,
+		Body:      "approve",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET approval_note=? WHERE id=?`, "the owner approved: deploy abc, 2026-11-07T12:00:00Z", approvalNotice.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.StoreMessage(protocol.MsgSend{
+		Sender:       b,
+		Recipient:    a,
+		ParentID:     approvalNotice.ID,
+		Body:         "ok",
+		ReplyOutcome: protocol.ReplyOutcome{Outcome: "accept"},
+	})
+	if err == nil {
+		t.Fatal("expected error replying with outcome to notification parent")
+	}
+	want := approvalNotice.ID + " is a notification (an owner approval notice), not a request: omit outcome to reply to it."
+	if err.Error() != want {
+		t.Fatalf("got %q, want %q", err.Error(), want)
+	}
+
+	// Case 2: Generic notification parent
+	plainNotice, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:    a,
+		Recipient: b,
+		Type:      protocol.TypeNotification,
+		Body:      "reminder",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.StoreMessage(protocol.MsgSend{
+		Sender:       b,
+		Recipient:    a,
+		ParentID:     plainNotice.ID,
+		Body:         "ok",
+		ReplyOutcome: protocol.ReplyOutcome{Outcome: "accept"},
+	})
+	if err == nil {
+		t.Fatal("expected error replying with outcome to generic notification parent")
+	}
+	wantPlain := plainNotice.ID + " is a notification, not a request: omit outcome to reply to it."
+	if err.Error() != wantPlain {
+		t.Fatalf("got %q, want %q", err.Error(), wantPlain)
+	}
+}

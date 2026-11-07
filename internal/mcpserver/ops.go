@@ -61,14 +61,21 @@ func mcpTestCall(ctx context.Context, run func(context.Context, string, any) (an
 // ownerAskCall is the one owner request operation. Kind picks the daemon
 // method: question asks the owner, approval asks for one action, idea sends a
 // feature idea.
-func ownerAskCall(ctx context.Context, run func(context.Context, string, any) (any, error), kind, text, recommendation string, options []string, urgency string) (map[string]any, error) {
+func ownerAskCall(ctx context.Context, run func(context.Context, string, any) (any, error), kind, text, recommendation string, options []string, urgency string, replaces ...string) (map[string]any, error) {
+	repl := ""
+	if len(replaces) > 0 {
+		repl = replaces[0]
+	}
+	if kind == "" && repl != "" {
+		kind = "question"
+	}
 	switch kind {
 	case "question":
-		return opResult(run(ctx, "ask_question", map[string]any{"kind": "question", "text": text, "recommendation": recommendation, "options": options}))
+		return opResult(run(ctx, "ask_question", map[string]any{"kind": "question", "text": text, "recommendation": recommendation, "options": options, "replaces": repl}))
 	case "approval":
-		return opResult(run(ctx, "request_approval", map[string]any{"action": text, "recommendation": recommendation, "options": options}))
+		return opResult(run(ctx, "request_approval", map[string]any{"action": text, "recommendation": recommendation, "options": options, "replaces": repl}))
 	case "idea":
-		return opResult(run(ctx, "propose_idea", map[string]any{"text": text, "recommendation": recommendation}))
+		return opResult(run(ctx, "propose_idea", map[string]any{"text": text, "recommendation": recommendation, "replaces": repl}))
 	}
 	return nil, errors.New("kind must be question, approval or idea")
 }

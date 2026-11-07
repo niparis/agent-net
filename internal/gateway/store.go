@@ -2880,8 +2880,10 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO, WorkerTask: &workerTask,
 	}
 	threaded := false
+	var parent protocol.Message
 	if p.ParentID != "" {
-		parent, ok, err := s.message(tx, "m.id = ?", p.ParentID)
+		var ok bool
+		parent, ok, err = s.message(tx, "m.id = ?", p.ParentID)
 		if err != nil {
 			return msg, false, err
 		}
@@ -3009,17 +3011,24 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		}
 	}
 	if p.Outcome != "" {
+		if parent.Type != protocol.TypeRequest {
+			desc := parent.Type
+			if parent.Type == protocol.TypeNotification && (parent.ApprovalNote != "" || parent.OwnerApproved) {
+				desc = "notification (an owner approval notice)"
+			}
+			return msg, false, reject("%s is a %s, not a request: omit outcome to reply to it.", parent.ID, desc)
+		}
 		var fromID, toID string
 		if err := tx.QueryRow(`SELECT sender,recipient FROM messages WHERE id=? AND type=?`, p.ParentID, protocol.TypeRequest).Scan(&fromID, &toID); err != nil {
-			return msg, false, reject("outcome requires a request parent")
+			return msg, false, reject("%s is a %s, not a request: omit outcome to reply to it.", parent.ID, parent.Type)
 		}
 		from, _, _, _, err := sessionIdentityQuery(tx, fromID)
 		if err != nil {
-			return msg, false, reject("outcome requires a request parent")
+			return msg, false, err
 		}
 		to, _, _, _, err := sessionIdentityQuery(tx, toID)
 		if err != nil {
-			return msg, false, reject("outcome requires a request parent")
+			return msg, false, err
 		}
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
 			return msg, false, err
