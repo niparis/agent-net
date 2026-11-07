@@ -654,24 +654,21 @@ func TestBusyWorkerIsNotIdle(t *testing.T) {
 	if err := os.WriteFile(activeFile, []byte(native), 0600); err != nil {
 		t.Fatal(err)
 	}
-	w.d.mu.Lock()
-	if ls := w.d.sessions[key("opencode", native)]; ls != nil {
-		ls.info.Status = "busy"
-	}
-	w.d.mu.Unlock()
-	time.Sleep(900 * time.Millisecond)
-	if n := w.d.workerCount(); n != 1 {
-		t.Fatalf("a busy worker was ended as idle: %d running", n)
-	}
+	eventually(t, "OpenCode reports the busy turn", func() bool {
+		ls := w.d.sessionByID(res.SessionID)
+		return ls != nil && w.d.infoOf(ls).Status == "busy"
+	})
+	busySince := time.Now()
+	eventually(t, "busy worker stays running for the idle interval", func() bool {
+		if n := w.d.workerCount(); n != 1 {
+			t.Fatalf("a busy worker was ended as idle: %d running", n)
+		}
+		return time.Since(busySince) >= 900*time.Millisecond
+	})
 	// When it goes idle and stays quiet, the idle limit applies again.
 	if err := os.Remove(activeFile); err != nil {
 		t.Fatal(err)
 	}
-	w.d.mu.Lock()
-	if ls := w.d.sessions[key("opencode", native)]; ls != nil {
-		ls.info.Status = "idle"
-	}
-	w.d.mu.Unlock()
 	w.workerStopped(t, g, protocol.StopIdle)
 }
 
