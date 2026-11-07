@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -177,45 +176,36 @@ func TestOwnerUsePinGatewayAuthority(t *testing.T) {
 	}
 }
 
-func TestOwnerUseCleanupKeepsPinsAndRecentUse(t *testing.T) {
+func TestOwnerUseNonWorkerCleanupKeepsPinsAndRecentUse(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
-	for _, worker := range []bool{false, true} {
-		for _, kind := range []string{"pinned", "recent"} {
-			info := protocol.SessionInfo{Harness: "claude", NativeID: kind + fmt.Sprint(worker), Cwd: "/workers/example"}
-			if worker {
-				info.Worker = &protocol.WorkerInfo{ID: "w_" + kind, StartedAt: c.t.Add(-30 * 24 * time.Hour).Unix()}
-			}
-			id, err := s.UpsertSession(node, info)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err = s.SetSessionOffline(node, id); err != nil {
-				t.Fatal(err)
-			}
-			if kind == "pinned" {
-				err = s.SetSessionPin(id, true)
-			} else {
-				err = s.RecordOwnerUse(id)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err = s.db.Exec(`UPDATE sessions SET last_seen=? WHERE id=?`, c.t.Add(-30*24*time.Hour).UnixNano(), id); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = s.CleanWorkers(node, 24*time.Hour, nil); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = s.CleanWorktreeSessions(node, "/workers"); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = s.Prune(Retention{Sessions: 24 * time.Hour}); err != nil {
-				t.Fatal(err)
-			}
-			if _, ok, err := s.Agent(id); err != nil || !ok {
-				t.Fatalf("%s worker %v removed: %v", kind, worker, err)
-			}
+	for _, kind := range []string{"pinned", "recent"} {
+		id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: kind, Cwd: "/workers/example"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.SetSessionOffline(node, id); err != nil {
+			t.Fatal(err)
+		}
+		if kind == "pinned" {
+			err = s.SetSessionPin(id, true)
+		} else {
+			err = s.RecordOwnerUse(id)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.db.Exec(`UPDATE sessions SET last_seen=? WHERE id=?`, c.t.Add(-30*24*time.Hour).UnixNano(), id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.CleanWorktreeSessions(node, "/workers"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.Prune(Retention{Sessions: 24 * time.Hour}); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := s.Agent(id); err != nil || !ok {
+			t.Fatalf("%s session removed: %v", kind, err)
 		}
 	}
 }

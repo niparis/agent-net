@@ -2401,9 +2401,9 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 		return 0, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND owner_used_at < ? AND node_id = ? AND online = 0 AND worker != ''
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND node_id = ? AND online = 0 AND worker != ''
 		AND (worker_started = 0 OR worker_started < ?)
-        AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, s.now().Add(-7*24*time.Hour).UnixNano(), nodeID, cut)
+        AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, cut)
 	if err != nil {
 		return 0, err
 	}
