@@ -40,6 +40,11 @@ func TestOpenCodeRealDaemonRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if os.Getenv("AGENT_NET_TEST_REAL_OPENCODE_IDLE") == "1" {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(config), "opencode.json"), []byte(`{"experimental":{"location_idle_timeout":"1 second"}}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{realGate: true})
 	t.Setenv("AGENT_NET_SOCKET", n.sock)
@@ -154,8 +159,12 @@ func TestOpenCodeRealDaemonRestart(t *testing.T) {
 	}
 	for time.Now().Before(until) {
 		a, ok, e := g.gw.Store().Agent(sid)
-		if e != nil || !ok || !a.Online {
-			t.Fatalf("offline after restart: %+v %v", a, e)
+		if e != nil || !ok {
+			t.Fatalf("gateway session: %+v %v", a, e)
+		}
+		if !a.Online {
+			t.Log("OpenCode disposed its idle location; waiting for automatic recovery")
+			eventually(t, "session recovered from idle location disposal", func() bool { a, ok, e := g.gw.Store().Agent(sid); return e == nil && ok && a.Online })
 		}
 		time.Sleep(time.Second)
 	}

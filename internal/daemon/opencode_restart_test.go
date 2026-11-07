@@ -66,6 +66,10 @@ func TestOpenCodeSharedServiceAfterDaemonRestart(t *testing.T) {
 	n.d.mu.Unlock()
 	// Publish the running shared service, as opencode serve --service does.
 	writeOwnerOpenCodeService(t, os.Getenv("XDG_STATE_HOME"), base)
+	before, _, err := g.gw.Store().Agent(id)
+	if err != nil {
+		t.Fatal(err)
+	}
 	n.restart()
 	eventually(t, "shared service re-registered after restart", func() bool {
 		n.d.mu.Lock()
@@ -78,7 +82,7 @@ func TestOpenCodeSharedServiceAfterDaemonRestart(t *testing.T) {
 		t.Fatalf("shared service ended: %v", err)
 	}
 	// Discovery is presence, not user activity.
-	if a, _, _ := g.gw.Store().Agent(id); a.Status != "idle" {
-		t.Fatalf("status after recovery: %s", a.Status)
+	if a, _, _ := g.gw.Store().Agent(id); a.Status != "idle" || a.LastActive != before.LastActive {
+		t.Fatalf("recovery changed activity: before=%d after=%d status=%s", before.LastActive, a.LastActive, a.Status)
 	}
 }
