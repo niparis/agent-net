@@ -193,10 +193,6 @@ func TestSessionsPriorityLeadOfflineAndCollapseRefresh(t *testing.T) {
 			t.Fatalf("missing help %s", word)
 		}
 	}
-	line := ansi.Strip(m.helpLine(120))
-	if !strings.Contains(line, "z/Z") {
-		t.Fatal(line)
-	}
 }
 
 func TestSessionRoleTagsDoNotLeakANSI(t *testing.T) {

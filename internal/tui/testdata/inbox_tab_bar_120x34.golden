@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  n new  p pin  z/Z tree  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit

@@ -150,3 +150,102 @@ func TestSessionsArchiveSortAndPlural(t *testing.T) {
 		t.Fatal(view)
 	}
 }
+
+func TestRemoveOfflineSession(t *testing.T) {
+	m, _ := workerModel(80, 24)
+	src := &archiveSource{Source: m.src}
+	m.src = src
+	a := &m.snap.Agents[0]
+	a.Online = false
+	a.Worker = nil
+	m.selected = a.SessionID
+	m, _ = m.startConfirm()
+	if !strings.Contains(m.testView(), "from agent-net for good?") {
+		t.Fatalf("missing removal confirmation: %s", m.testView())
+	}
+	m, cmd := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if cmd == nil {
+		t.Fatal("missing archive call")
+	}
+	msg := cmd()
+	m2, _ := m.Update(msg)
+	m = m2.(Model)
+	if len(src.calls) != 1 || len(src.calls[0].IDs) != 1 || src.calls[0].IDs[0] != a.SessionID {
+		t.Fatalf("wrong call: %+v", src.calls)
+	}
+	for _, row := range m.snap.Agents {
+		if row.SessionID == a.SessionID {
+			t.Fatal("row remains")
+		}
+	}
+}
+
+func TestRemoveOfflineInView(t *testing.T) {
+	m, _ := workerModel(80, 24)
+	src := &archiveSource{Source: m.src}
+	m.src = src
+	m.showOffline = true
+	for i := range m.snap.Agents {
+		m.snap.Agents[i].Online = false
+	}
+	visible := m.visible()
+	if len(visible) == 0 {
+		t.Fatal("no visible sessions")
+	}
+	m, cmd := press(m, tea.KeyPressMsg{Code: 'X', Text: "X"})
+	if cmd != nil || !strings.Contains(m.testView(), "offline sessions shown?") {
+		t.Fatal("missing bulk confirmation")
+	}
+	m, cmd = press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if cmd == nil {
+		t.Fatal("missing archive call")
+	}
+	msg := cmd()
+	m2, _ := m.Update(msg)
+	m = m2.(Model)
+	if len(src.calls) != 1 || len(src.calls[0].IDs) != len(visible) {
+		t.Fatalf("wrong IDs: %+v", src.calls)
+	}
+	for _, a := range visible {
+		for _, left := range m.snap.Agents {
+			if a.SessionID == left.SessionID {
+				t.Fatal("row remains")
+			}
+		}
+	}
+}
+
+func TestRemoveConfirmationScreens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		for _, bulk := range []bool{false, true} {
+			m, _ := workerModel(size[0], size[1])
+			m.showOffline = true
+			m.snap.Agents[0].Online = false
+			m.snap.Agents[0].Worker = nil
+			m.selected = m.snap.Agents[0].SessionID
+			name := "single"
+			if bulk {
+				name = "all"
+				m, _ = m.startRemoveOffline()
+			} else {
+				m, _ = m.startConfirm()
+			}
+			golden(t, fmt.Sprintf("remove_%s_%dx%d", name, size[0], size[1]), m.testView())
+		}
+	}
+}
+
+func TestOnlineStillConfirmsStop(t *testing.T) {
+	m, _ := workerModel(80, 24)
+	m.snap.Agents[0].Online = true
+	m.snap.Agents[0].Worker = nil
+	m.selected = m.snap.Agents[0].SessionID
+	m, _ = m.startConfirm()
+	if !strings.Contains(m.testView(), "Conversation kept.") || len(m.removeIDs) != 0 {
+		t.Fatal("online session did not ask to stop")
+	}
+	_, cmd := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if cmd == nil {
+		t.Fatal("missing stop command")
+	}
+}

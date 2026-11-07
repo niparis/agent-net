@@ -309,3 +309,67 @@ func (m Model) sessionsArchiveView(w, h int) []string {
 	}
 	return panel(title, body[:min(len(body), max(0, h-2))], w, roleAccent)
 }
+
+type removeSessionsMsg struct {
+	ids  []string
+	name string
+	all  bool
+	err  error
+}
+
+func (m Model) startRemoveOffline() (Model, tea.Cmd) {
+	m.removeIDs = nil
+	for _, a := range m.visible() {
+		if !a.Online {
+			m.removeIDs = append(m.removeIDs, a.SessionID)
+		}
+	}
+	if len(m.removeIDs) == 0 {
+		m.fail("No offline sessions shown.")
+		return m, nil
+	}
+	m.removeAll = true
+	m.mode = modeConfirm
+	m.notice = notice{}
+	return m, nil
+}
+
+func (m Model) removeSessionsCmd(ids []string, name string, all bool) tea.Cmd {
+	c, ok := m.src.(inboxCaller)
+	return func() tea.Msg {
+		result := removeSessionsMsg{ids: ids, name: name, all: all}
+		if !ok {
+			result.err = fmt.Errorf("session archive unavailable")
+			return result
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		_, result.err = c.Call(ctx, "sessions_archive", protocol.SessionsArchiveRequest{IDs: ids, Expected: ids})
+		return result
+	}
+}
+
+func (m Model) removeSessionsResult(r removeSessionsMsg) (Model, tea.Cmd) {
+	if r.err != nil {
+		m.fail(explain(r.err))
+		return m, nil
+	}
+	ids := make(map[string]bool, len(r.ids))
+	for _, id := range r.ids {
+		ids[id] = true
+	}
+	agents := make([]protocol.AgentView, 0, len(m.snap.Agents))
+	for _, a := range m.snap.Agents {
+		if !ids[a.SessionID] {
+			agents = append(agents, a)
+		}
+	}
+	m.snap.Agents = agents
+	m.ensureSelection()
+	if r.all {
+		m.say(fmt.Sprintf("Removed %d offline sessions.", len(r.ids)))
+	} else {
+		m.say("Removed " + r.name + ".")
+	}
+	return m, m.fetchCmd()
+}

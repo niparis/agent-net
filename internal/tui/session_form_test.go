@@ -286,9 +286,6 @@ func TestNewSessionRefusalUsesHarnessWords(t *testing.T) {
 
 func TestNewSessionKeyIsInTheKeyLineAndHelp(t *testing.T) {
 	m := keys(newModel(120, 34), "1")
-	if line := ansi.Strip(m.helpLine(120)); !strings.Contains(line, "n new") {
-		t.Errorf("Sessions key line does not show n: %q", line)
-	}
 	help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
 	if !strings.Contains(help, "start a session in herdr") {
 		t.Errorf("Sessions help does not list n:\n%s", help)

@@ -82,7 +82,7 @@ func TestHideSessionPersistsAndCanBeShownAndUnhidden(t *testing.T) {
 func TestHideSessionKeyDoesNotTakeTheWorkerStopKey(t *testing.T) {
 	m := keys(newModel(120, 34), "?")
 	v := m.testView()
-	for _, want := range []string{"stop the selected worker or session", "hide or unhide the selected session", "cycle the view: active (default) or all, which includes offline sessions", "show or hide sessions hidden with h"} {
+	for _, want := range []string{"stop or remove the selected session", "hide or unhide the selected session", "cycle the view: active (default) or all, which includes offline sessions", "show or hide sessions hidden with h"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help is missing %q:\n%s", want, v)
 		}
