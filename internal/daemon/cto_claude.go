@@ -646,11 +646,10 @@ func (d *Daemon) adoptLiveClaudeCTO() bool {
 	if claudeJobEnded(status) {
 		return false
 	}
-	settings, err := d.ctoSettings(context.Background(), protocol.CTOSettingsRequest{})
+	_, model, _, err := d.localCTOModelSettings()
 	if err != nil {
 		return false
 	}
-	model := settings.ClaudeModel
 	if model == "" {
 		model = "opus"
 	}

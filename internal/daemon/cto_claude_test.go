@@ -779,3 +779,47 @@ func TestClaudeCTOAdoptionRestartHello(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeCTOStartupAdoptsWithoutGatewayOrHello(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	root := n.d.claudeCTO.root.Load()
+	ref := n.d.claudeCTO.ref
+	n.d.cfg.testStopCTOOnExit = false
+	n.d.Stop()
+	g.stop()
+	cfg := n.cfg
+	// The existing MCP child retries the old socket. It cannot reach this daemon.
+	cfg.SocketPath = filepath.Join(shortDir(t), "offline.sock")
+	logs := &logBuf{}
+	cfg.Logger = log.New(logs, "", 0)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		d.cto.mu.Lock()
+		d.claudeCTO.ref = ref
+		d.stopClaudeCTOLocked()
+		d.cto.mu.Unlock()
+		d.Stop()
+	})
+	if err := d.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if d.Connected() {
+		t.Fatal("unexpected gateway connection")
+	}
+	if d.claudeCTO.root.Load() == nil || !d.isCTOPeer(root.pid) {
+		t.Fatal("startup did not adopt live CTO without gateway or hello")
+	}
+	if len(logs.lines("cto.start harness=claude mode=adopted")) == 0 {
+		t.Fatal("missing startup adoption log")
+	}
+}
