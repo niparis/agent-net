@@ -702,6 +702,7 @@ func (lc *localConn) boundID() (string, error) {
 }
 
 func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMessage) (any, error) {
+	defer lc.d.slowCall(method, time.Now())
 	d := lc.d
 	lc.mu.Lock()
 	client, ls, agyID := lc.client, lc.ls, lc.agyNativeID

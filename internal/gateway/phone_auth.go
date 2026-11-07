@@ -113,8 +113,11 @@ func (g *Gateway) phoneAuth(next http.Handler) http.Handler {
 					case <-ctx.Done():
 						return
 					case <-ticker.C:
-						var valid int
-						err := g.store.db.QueryRowContext(ctx, `SELECT 1 FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.purpose='phone' AND t.expires_at>? AND a.id=? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(cookie.Value), g.store.now().UnixNano(), app.ID).Scan(&valid)
+						err := func() error {
+							defer g.slowLoop("phone_auth", time.Now())
+							var valid int
+							return g.store.db.QueryRowContext(ctx, `SELECT 1 FROM app_tokens t JOIN apps a ON a.id=t.app_id WHERE t.hash=? AND t.type='access' AND t.purpose='phone' AND t.expires_at>? AND a.id=? AND a.kind='owner_app' AND a.revoked_at IS NULL`, hashHex(cookie.Value), g.store.now().UnixNano(), app.ID).Scan(&valid)
+						}()
 						if err != nil {
 							cancel()
 							return

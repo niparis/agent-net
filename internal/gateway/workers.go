@@ -22,6 +22,7 @@ import (
 const launchWait = 75 * time.Second
 
 func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
+	defer g.slowRequest(h.Type, nc.id, time.Now())
 	data, err := g.handleWorker(ctx, nc, h.Type, raw)
 	if err != nil {
 		var rj Rejection

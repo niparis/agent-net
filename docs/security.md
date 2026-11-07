@@ -33,6 +33,13 @@ marker is fixed framing, separate from editable advice.
 
 ## Gateway exposure
 
+Go profiling is disabled unless the process has `AGENT_NET_PPROF` set.
+The gateway and daemon accept only a literal loopback IP for that listener.
+Profiles use a separate HTTP mux and are not added to the gateway routes.
+The profiling listener has no authentication; local users can read profiles
+while it is enabled.
+
+
 The gateway listens on `0.0.0.0:7420` by default, so it accepts connections on every network interface. These routes do not require a node token: `GET /v1/ca` serves the public CA certificate, `GET /install/bin/{os}/{arch}` serves the install binary, `GET /install/version` returns the release version, and `POST /v1/enroll` accepts a one-use enrollment code. `/install/checksums.txt` and `/install/checksums.txt.sig` are also public, and `/install/{code}` is gated by the one-use install code rather than a node token. These routes support joining and updating machines. The enrollment code expires after 10 minutes and can be used once. The join flow also checks the CA fingerprint. The other operational API routes require an enrolled node token or the local admin token.
 
 This fits a LAN or tailnet where the gateway port is reachable only by machines you control. Do not expose port 7420 to the open internet. The public routes would be reachable by anyone, and the enrollment route could be probed or abused if an invite code leaked. Keep invite codes private.

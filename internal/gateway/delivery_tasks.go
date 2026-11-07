@@ -529,6 +529,8 @@ func (g *Gateway) sendStepTaskBatch(ctx context.Context, targets []nodeTaskTarge
 // Tasks are coalesced into batches per recipient when the session has recent activity
 // or reported the step before it.
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
+	g.stepDispatchRuns.Add(1)
+	defer g.slowLoop("dispatchStepTasks", time.Now())
 	snap, err := g.store.SettingsSnapshot()
 	stuckLimit := 12 * time.Hour
 	if err == nil {

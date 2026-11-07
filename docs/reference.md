@@ -2993,7 +2993,18 @@ The separate CTO compaction loop handles OpenCode, so it does not overlap.
 ### Opt-in Go profiling
 
 Set `AGENT_NET_PPROF=127.0.0.1:6061` in the gateway or daemon process
- environment to serve Go profiles at `/debug/pprof/`. Use a different port for
- each process on the same host. The address must contain a literal loopback IP
- (IPv4 or IPv6). Other addresses are refused with `event=pprof.refused`.
- When unset, no profiling listener starts. Setup and service files do not set it.
+environment to serve Go profiles at `/debug/pprof/`. Use a different port for
+each process on the same host. The address must contain a literal loopback IP
+(IPv4 or IPv6). Other addresses are refused with `event=pprof.refused`.
+When unset, no profiling listener starts. Setup and service files do not set it.
+
+Work taking more than 200 ms produces a slow log line. Gateway requests use
+`event=slow method=<frame-type> ms=<duration> node=<node-id>`. Daemon local
+calls use `event=slow method=<method> ms=<duration>`, including the calls
+that compose the TUI snapshot and `session_enter`. Durations are elapsed
+milliseconds. Fast calls produce no timing log.
+
+Gateway background runs use `event=slow loop=<name> ms=<duration>`; their
+ticker waits are excluded. Step-task dispatches are counted each minute.
+When the count exceeds 60, the gateway logs
+`event=step.dispatch_count level=debug count=<count>`.
