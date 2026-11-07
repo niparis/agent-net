@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -55,15 +56,16 @@ const ctoMergerRecipe = `When the owner asks to set up a merger, a tester-merger
 // ctoRuntime owns one private OpenCode process. It is separate from workers
 // and never registers a session with the gateway.
 type ctoRuntime struct {
-	pid            atomic.Int64
-	mu             sync.Mutex
-	cmd            *exec.Cmd
-	exited         chan struct{}
-	run            *ctoProcess
-	base, password string
-	model, session string
-	compact        ctoCompactState
-	compactLoop    sync.Once
+	pid               atomic.Int64
+	mu                sync.Mutex
+	cmd               *exec.Cmd
+	exited            chan struct{}
+	run               *ctoProcess
+	base, password    string
+	version, identity string
+	model, session    string
+	compact           ctoCompactState
+	compactLoop       sync.Once
 }
 
 type ctoProcess struct {
@@ -110,6 +112,8 @@ func (c *ctoRuntime) stopLocked() {
 	c.run = nil
 	c.base = ""
 	c.password = ""
+	c.version = ""
+	c.identity = ""
 	c.model = ""
 	c.session = ""
 	c.compact.mu.Lock()
@@ -119,6 +123,10 @@ func (c *ctoRuntime) stopLocked() {
 func (c *ctoRuntime) stop() { c.mu.Lock(); defer c.mu.Unlock(); c.stopLocked() }
 
 func (c *ctoRuntime) api(ctx context.Context, method, path string, body any) ([]byte, error) {
+	return c.apiTo(ctx, c.base, c.password, method, path, body)
+}
+
+func (c *ctoRuntime) apiTo(ctx context.Context, base, password, method, path string, body any) ([]byte, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -127,15 +135,15 @@ func (c *ctoRuntime) api(ctx context.Context, method, path string, body any) ([]
 		}
 		rd = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rd)
+	req, err := http.NewRequestWithContext(ctx, method, base+path, rd)
 	if err != nil {
 		return nil, err
 	}
-	req.SetBasicAuth("opencode", c.password)
+	req.SetBasicAuth("opencode", password)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +156,14 @@ func (c *ctoRuntime) api(ctx context.Context, method, path string, body any) ([]
 		return nil, fmt.Errorf("OpenCode HTTP %d: %s", resp.StatusCode, truncate(string(b), 200))
 	}
 	return b, nil
+}
+
+func (d *Daemon) ctoOp(ctx context.Context, op opencodeapi.Operation, id, query string, body any) ([]byte, error) {
+	path, err := d.openCodePath(ctx, d.cto.base, d.cto.password, d.cto.version, d.cto.identity, op, id)
+	if err != nil {
+		return nil, err
+	}
+	return d.cto.api(ctx, op.Method(), path+query, body)
 }
 
 func (d *Daemon) startCTOLocked(ctx context.Context) error {
@@ -212,6 +228,8 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 		c.exited = make(chan struct{})
 		c.base = "http://127.0.0.1:" + strconv.Itoa(port)
 		c.password = pass
+		c.version = d.openCodeVersion()
+		c.identity = fmt.Sprintf("cto:%d:%d", cmd.Process.Pid, attempt)
 		exited := c.exited
 		run := &ctoProcess{}
 		c.run = run
@@ -230,16 +248,26 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 			d.scheduleCTOPresence()
 		}()
 		for {
-			if info, infoErr := c.api(startup, "GET", "/api/info", nil); infoErr == nil {
-				if err := d.checkOpenCodeCTOTools(startup, info); err != nil {
+			if routes, routeErr := d.discoverOpenCodeRoutes(startup, c.base, c.password, c.version, c.identity); routeErr == nil {
+				infoPath, pathErr := routes.Path(opencodeapi.Info, "")
+				if pathErr != nil {
 					d.stopOpenCodeCTOLocked("startup_failure")
-					return err
+					return pathErr
 				}
-				run.started.Store(true)
-				d.Logf("cto.start harness=opencode")
-				d.scheduleCTOPresence()
-				d.startCTOCompactionLoop()
-				return nil
+				if info, infoErr := c.api(startup, opencodeapi.Info.Method(), infoPath, nil); infoErr == nil {
+					if v := parseOpenCodeInfoVersion(info); v != "" {
+						c.version = v
+					}
+					if err := d.checkOpenCodeCTOTools(startup, info); err != nil {
+						d.stopOpenCodeCTOLocked("startup_failure")
+						return err
+					}
+					run.started.Store(true)
+					d.Logf("cto.start harness=opencode")
+					d.scheduleCTOPresence()
+					d.startCTOCompactionLoop()
+					return nil
+				}
 			}
 			select {
 			case <-exited:
@@ -312,7 +340,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if !ok || provider == "" || id == "" {
 		return "", fmt.Errorf("invalid OpenCode model %q", model)
 	}
-	body, err := d.cto.api(ctx, "POST", "/api/session", map[string]any{"title": "agent-net CTO", "agent": "cto", "model": map[string]string{"providerID": provider, "id": id}})
+	body, err := d.ctoOp(ctx, opencodeapi.CreateSession, "", "", map[string]any{"title": "agent-net CTO", "agent": "cto", "model": map[string]string{"providerID": provider, "id": id}})
 	if err != nil {
 		return "", err
 	}
@@ -372,7 +400,7 @@ func modelRef(providerID, id, modelID string) string {
 // openCodeCTOSessionSelection reads the model and agent selected in the live
 // OpenCode session.
 func (d *Daemon) openCodeCTOSessionSelection(ctx context.Context, id string) (string, string, error) {
-	b, err := d.cto.api(ctx, "GET", "/api/session/"+url.PathEscape(id), nil)
+	b, err := d.ctoOp(ctx, opencodeapi.GetSession, id, "", nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -422,7 +450,7 @@ func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (strin
 		}
 	}
 	if currentAgent != "cto" {
-		if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/agent", map[string]string{"agent": "cto"}); err != nil {
+		if _, err := d.ctoOp(ctx, opencodeapi.SetAgent, id, "", map[string]string{"agent": "cto"}); err != nil {
 			return "", err
 		}
 	}
@@ -432,7 +460,7 @@ func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (strin
 			return "", fmt.Errorf("invalid OpenCode model %q", model)
 		}
 		if currentModel != model {
-			if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/model", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
+			if _, err := d.ctoOp(ctx, opencodeapi.SetModel, id, "", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
 				return "", err
 			}
 		}
@@ -464,8 +492,8 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 	if _, err = d.syncOpenCodeCTOSelection(ctx, id); err != nil {
 		return nil, err
 	}
-	before := opencodeSessionContext(ctx, c.base, c.password, id)
-	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
+	before := d.openCodeSessionContext(ctx, c.base, c.password, c.version, c.identity, id)
+	_, err = d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"})
 	if err == nil {
 		cs := &c.compact
 		cs.mu.Lock()
@@ -556,12 +584,15 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if model, _, e := d.openCodeCTOSessionSelection(ctx, id); e == nil && model != "" {
 		out.Model = model
 	}
-	path := "/api/session/" + url.PathEscape(id) + "/message"
+	path, err := d.openCodePath(ctx, c.base, c.password, c.version, c.identity, opencodeapi.Messages, id)
+	if err != nil {
+		return out, err
+	}
 	query := "?order=asc"
 	seen := map[string]bool{}
 	var messages []json.RawMessage
 	for {
-		b, err := c.api(ctx, "GET", path+query, nil)
+		b, err := c.api(ctx, opencodeapi.Messages.Method(), path+query, nil)
 		if err != nil {
 			return out, err
 		}
@@ -661,14 +692,22 @@ func (d *Daemon) cacheCTOSettings(settings protocol.CTOSettings) {
 // The second result is false when the answer is unknown, and the caller must
 // not compact on a guess.
 func openCodeSessionBusy(ctx context.Context, base, password, session string) (bool, bool) {
-	req, err := http.NewRequestWithContext(ctx, "GET", base+"/api/session/active", nil)
+	return (*Daemon)(nil).openCodeSessionBusy(ctx, base, password, "", "", session)
+}
+
+func (d *Daemon) openCodeSessionBusy(ctx context.Context, base, password, version, identity, session string) (bool, bool) {
+	path, err := d.openCodePath(ctx, base, password, version, identity, opencodeapi.ActiveSession, "")
+	if err != nil {
+		return false, false
+	}
+	req, err := http.NewRequestWithContext(ctx, opencodeapi.ActiveSession.Method(), strings.TrimRight(base, "/")+path, nil)
 	if err != nil {
 		return false, false
 	}
 	if password != "" {
 		req.SetBasicAuth("opencode", password)
 	}
-	resp, err := (&http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
+	resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
 	if err != nil {
 		return false, false
 	}
@@ -692,16 +731,16 @@ func openCodeSessionBusy(ctx context.Context, base, password, session string) (b
 func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	c := &d.cto
 	c.mu.Lock()
-	base, password, session := c.base, c.password, c.session
+	base, password, version, identity, session := c.base, c.password, c.version, c.identity, c.session
 	c.mu.Unlock()
 	if base == "" || session == "" {
 		return nil
 	}
-	busy, known := openCodeSessionBusy(ctx, base, password, session)
+	busy, known := d.openCodeSessionBusy(ctx, base, password, version, identity, session)
 	if !known {
 		return nil
 	}
-	state := opencodeSessionContext(ctx, base, password, session)
+	state := d.openCodeSessionContext(ctx, base, password, version, identity, session)
 	settings := d.ctoCompactionSettings(ctx)
 	now := d.ctoNowTime()
 
@@ -770,7 +809,10 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	if reason == "" {
 		return nil
 	}
-	_, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(session)+"/compact", map[string]string{"delivery": "steer"})
+	compactPath, err := d.openCodePath(ctx, base, password, version, identity, opencodeapi.Compact, session)
+	if err == nil {
+		_, err = c.apiTo(ctx, base, password, opencodeapi.Compact.Method(), compactPath, map[string]string{"delivery": "steer"})
+	}
 	cs.mu.Lock()
 	if err == nil {
 		cs.pendingBefore = state.Tokens

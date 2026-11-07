@@ -5,16 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
-
-	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/agentfiles"
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -121,15 +119,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		if info.NativeID == "" {
 			return no(errors.New("OpenCode session ID is missing"))
 		}
-		version := "unknown"
-		installed, _ := d.inventory()
-		for _, h := range installed {
-			if h.Name == "opencode" && h.Version != "" {
-				version = h.Version
-				break
-			}
-		}
-		routes, err := d.openCodeRoutes.Discover(ctx, &http.Client{Timeout: 10 * time.Second}, service.URL, service.Password, version, service.identity)
+		routes, err := d.discoverOpenCodeRoutes(ctx, service.URL, service.Password, "", service.identity)
 		if err != nil {
 			return no(fmt.Errorf("could not discover OpenCode routes: %w", err))
 		}
@@ -139,7 +129,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		}
 		api := openCodeWorkerAPI(ctx, service.URL, service.Password)
 		directory := strings.ReplaceAll(url.QueryEscape(info.Cwd), "+", "%20")
-		_, status, err := api("POST", path, nil, "x-opencode-directory", directory)
+		_, status, err := api(opencodeapi.Interrupt.Method(), path, nil, "x-opencode-directory", directory)
 		if err != nil {
 			return no(errors.New("could not abort the OpenCode turn"))
 		}

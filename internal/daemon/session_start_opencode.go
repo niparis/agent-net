@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -120,13 +121,25 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 			return protocol.StartedSession{}, err
 		}
 	}
+	routes, err := d.discoverOpenCodeRoutes(ctx, service.URL, service.Password, "", service.identity)
+	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return protocol.StartedSession{}, down
+		}
+		return protocol.StartedSession{}, err
+	}
 	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
-	method, endpoint := "POST", "/api/session"
+	op, id := opencodeapi.CreateSession, ""
 	if resume {
-		method, endpoint = "GET", "/api/session/"+url.PathEscape(r.NativeID)
+		op, id = opencodeapi.GetSession, r.NativeID
 		request = nil
 	}
-	body, code, err := api(method, endpoint, request, "x-opencode-directory", directory)
+	endpoint, err := routes.Path(op, id)
+	if err != nil {
+		return protocol.StartedSession{}, err
+	}
+	body, code, err := api(op.Method(), endpoint, request, "x-opencode-directory", directory)
 	if err != nil {
 		return protocol.StartedSession{}, down
 	}
@@ -208,8 +221,13 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 				return
 			}
 			// OpenCode 2.2 queues user turns through /prompt, as for the CTO.
+			promptPath, err := routes.Path(opencodeapi.Prompt, r.NativeID)
+			if err != nil {
+				startErr = err
+				return
+			}
 			api := openCodeWorkerAPI(cctx, service.URL, service.Password)
-			_, status, err := api("POST", "/api/session/"+url.PathEscape(r.NativeID)+"/prompt", map[string]string{"text": message, "delivery": "queue"}, "x-opencode-directory", directory)
+			_, status, err := api(opencodeapi.Prompt.Method(), promptPath, map[string]string{"text": message, "delivery": "queue"}, "x-opencode-directory", directory)
 			if err != nil {
 				startErr = errors.New("could not send the first message to OpenCode")
 			} else if status < 200 || status >= 300 {

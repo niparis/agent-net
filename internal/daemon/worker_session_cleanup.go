@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 )
 
 // deleteWorkerHarnessSession only accepts retained, ended worker records. A
@@ -98,12 +98,28 @@ func (d *Daemon) deleteWorkerHarnessSession(ctx context.Context, r workerRow) er
 			return err
 		}
 		defer func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); _ = cmd.Wait() }()
-		api := openCodeWorkerAPI(ctx, "http://127.0.0.1:"+strconv.Itoa(port), password)
+		base := "http://127.0.0.1:" + strconv.Itoa(port)
+		identity := "cleanup:" + r.ID + ":" + strconv.Itoa(port)
+		version := d.openCodeVersion()
+		api := openCodeWorkerAPI(ctx, base, password)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
+		var routes opencodeapi.Routes
 		for {
-			if _, code, err := api("GET", "/api/info", nil); err == nil && code == http.StatusOK {
-				break
+			if discovered, routeErr := d.discoverOpenCodeRoutes(ctx, base, password, version, identity); routeErr == nil {
+				infoPath, pathErr := discovered.Path(opencodeapi.Info, "")
+				if pathErr != nil {
+					return pathErr
+				}
+				if info, code, err := api(opencodeapi.Info.Method(), infoPath, nil); err == nil && code == http.StatusOK {
+					routes = discovered
+					if v := parseOpenCodeInfoVersion(info); v != "" && v != version {
+						if updated, uerr := d.discoverOpenCodeRoutes(ctx, base, password, v, identity); uerr == nil {
+							routes = updated
+						}
+					}
+					break
+				}
 			}
 			select {
 			case <-ctx.Done():
@@ -111,7 +127,11 @@ func (d *Daemon) deleteWorkerHarnessSession(ctx context.Context, r workerRow) er
 			case <-ticker.C:
 			}
 		}
-		_, code, err := api("DELETE", "/api/session/"+url.PathEscape(r.NativeID), nil)
+		deletePath, err := routes.Path(opencodeapi.DeleteSession, r.NativeID)
+		if err != nil {
+			return err
+		}
+		_, code, err := api(opencodeapi.DeleteSession.Method(), deletePath, nil)
 		if err != nil {
 			return err
 		}

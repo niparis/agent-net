@@ -40,6 +40,11 @@ var operations = map[Operation]route{
 	Messages: {"get", "/api/session/{sessionID}/message"}, Prompt: {"post", "/api/session/{sessionID}/prompt"}, SetAgent: {"post", "/api/session/{sessionID}/agent"}, SetModel: {"post", "/api/session/{sessionID}/model"}, Compact: {"post", "/api/session/{sessionID}/compact"}, Interrupt: {"post", "/api/session/{sessionID}/interrupt"},
 }
 
+// Method returns the HTTP method for an operation.
+func (op Operation) Method() string {
+	return strings.ToUpper(operations[op].method)
+}
+
 // Routes describes the operations advertised by a single OpenCode service.
 type Routes struct {
 	version string

@@ -895,6 +895,6 @@ func fakeOpenCodeCapabilities(mux *http.ServeMux, old bool, auth func(*http.Requ
 			}
 			paths[route.path][route.method] = map[string]any{}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"paths": paths})
+		json.NewEncoder(w).Encode(map[string]any{"info": map[string]any{"version": "2.2.1"}, "paths": paths})
 	})
 }
