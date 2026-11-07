@@ -71,6 +71,7 @@ func (n notice) life() time.Duration { return n.hold() + noticeFade }
 // actionMsg is the end of an action that ran in the background.
 type actionMsg struct {
 	onboarding string
+	stopID     string
 	text       string
 	err        error
 }
@@ -225,6 +226,16 @@ func (m Model) confirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.defectCmd(worker, name, note, severity)
 		}
 		m.say("Stopping...")
+		verb := "stopping…"
+		if m.confirmClose {
+			verb = "closing…"
+		} else if m.confirmTerminal {
+			verb = "ending…"
+		}
+		if m.pendingStops == nil {
+			m.pendingStops = map[string]pendingStop{}
+		}
+		m.pendingStops[m.confirmID] = pendingStop{verb: verb, at: m.now()}
 		if m.confirmOwner {
 			return m, m.stopSessionCmd(m.confirmID)
 		}
@@ -359,9 +370,9 @@ func (m Model) stopCmd(id, name string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := src.StopWorker(ctx, id); err != nil {
-			return actionMsg{err: fmt.Errorf("Not stopped: %s", explain(err))}
+			return actionMsg{stopID: id, err: fmt.Errorf("Not stopped: %s", explain(err))}
 		}
-		return actionMsg{text: "Stopped worker " + name + "."}
+		return actionMsg{stopID: id, text: "Stopped worker " + name + "."}
 	}
 }
 
@@ -512,6 +523,9 @@ func (m Model) trustCmd(id, name string, on bool) tea.Cmd {
 // onAction ends an action: the result line, and an immediate refresh so the
 // updated data is visible.
 func (m Model) onAction(r actionMsg) (Model, tea.Cmd) {
+	if r.err != nil && r.stopID != "" {
+		delete(m.pendingStops, r.stopID)
+	}
 	if r.err != nil {
 		m.fail(r.err.Error())
 	} else {
@@ -578,8 +592,8 @@ func (m Model) stopSessionCmd(id string) tea.Cmd {
 		defer cancel()
 		note, err := src.SessionStop(ctx, id)
 		if err != nil {
-			return actionMsg{err: fmt.Errorf("Not stopped: %s", explain(err))}
+			return actionMsg{stopID: id, err: fmt.Errorf("Not stopped: %s", explain(err))}
 		}
-		return actionMsg{text: note}
+		return actionMsg{stopID: id, text: note}
 	}
 }
