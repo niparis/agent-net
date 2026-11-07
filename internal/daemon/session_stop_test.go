@@ -100,6 +100,10 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 			t.Setenv("XDG_STATE_HOME", state)
 			calls := make(chan string, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/openapi.json" {
+					fmt.Fprint(w, `{"paths":{"/api/session/{sessionID}/interrupt":{"post":{}}}}`)
+					return
+				}
 				user, password, ok := r.BasicAuth()
 				if !ok || user != "opencode" || password != "test-owner-password" {
 					t.Errorf("missing service authentication")
@@ -128,6 +132,26 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 	}
 }
 
+func TestSessionStopOpenCodeMissingInterruptRoute(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n, _, id := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "ses_owner", Status: "busy"}, nil, nil)
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			fmt.Fprint(w, `{"paths":{}}`)
+			return
+		}
+		t.Errorf("unexpected request %s", r.URL.Path)
+	}))
+	defer server.Close()
+	writeOwnerOpenCodeService(t, state, server.URL)
+	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
+	if err == nil || !strings.Contains(err.Error(), "has no interrupt route") {
+		t.Fatalf("missing route: %v", err)
+	}
+}
+
 func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n, _, id := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "ses_owner", Name: "shop", Status: "busy", Cwd: "/src/shop space"}, nil, nil)
@@ -135,6 +159,10 @@ func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", state)
 	calls := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			http.NotFound(w, r)
+			return
+		}
 		calls <- r.Method + " " + r.URL.Path
 		if r.URL.Path == "/api/session/ses_owner/interrupt" {
 			http.NotFound(w, r)
@@ -156,8 +184,8 @@ func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	for len(calls) > 0 {
 		gotCalls = append(gotCalls, <-calls)
 	}
-	wantCalls := []string{"POST /api/session/ses_owner/interrupt", "POST /api/session/ses_owner/abort"}
-	if len(gotCalls) != 2 || gotCalls[0] != wantCalls[0] || gotCalls[1] != wantCalls[1] {
+	wantCalls := []string{"POST /api/session/ses_owner/abort"}
+	if len(gotCalls) != 1 || gotCalls[0] != wantCalls[0] {
 		t.Fatalf("calls %v, want %v", gotCalls, wantCalls)
 	}
 }

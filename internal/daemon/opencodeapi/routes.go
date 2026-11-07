@@ -2,9 +2,11 @@
 package opencodeapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -78,4 +80,25 @@ func (r Routes) Path(op Operation, id string) (string, error) {
 		return "", fmt.Errorf("OpenCode %s has no %s route", r.version, op)
 	}
 	return strings.ReplaceAll(path, "{sessionID}", url.PathEscape(id)), nil
+}
+
+// Discover reads the service's capabilities with its configured credentials.
+func Discover(ctx context.Context, client *http.Client, base, password, version string) (Routes, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/openapi.json", nil)
+	if err != nil {
+		return Routes{}, err
+	}
+	req.SetBasicAuth("opencode", password)
+	resp, err := client.Do(req)
+	if err != nil {
+		return Routes{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return Detect(strings.NewReader(""), version)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return Routes{}, fmt.Errorf("OpenCode OpenAPI HTTP %d", resp.StatusCode)
+	}
+	return Detect(io.LimitReader(resp.Body, 8<<20), version)
 }

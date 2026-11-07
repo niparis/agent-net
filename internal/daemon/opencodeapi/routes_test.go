@@ -1,6 +1,10 @@
 package opencodeapi
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -52,5 +56,40 @@ func TestOperations(t *testing.T) {
 	}
 	if _, err := r.Path(Prompt, "x"); err == nil || !strings.Contains(err.Error(), "OpenCode 2.2.6 has no prompt route") {
 		t.Fatalf("missing prompt: %v", err)
+	}
+}
+
+func TestDiscover(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		status     int
+		body, want string
+	}{
+		{"new", 200, `{"paths":{"/api/session/{sessionID}/interrupt":{"post":{}}}}`, "/api/session/s/interrupt"},
+		{"old", 200, `{"paths":{"/api/session/{sessionID}/abort":{"post":{}}}}`, "/api/session/s/abort"},
+		{"absent", 404, "", "/api/session/s/abort"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req.URL.Path != "/openapi.json" {
+					t.Errorf("path %s", req.URL.Path)
+				}
+				u, p, ok := req.BasicAuth()
+				if !ok || u != "opencode" || p != "secret" {
+					t.Error("missing authentication")
+				}
+				w.WriteHeader(tc.status)
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			routes, err := Discover(context.Background(), server.Client(), server.URL, "secret", "2.2.6")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := routes.Path(Interrupt, "s")
+			if err != nil || got != tc.want {
+				t.Fatalf("%s: %q %v", tc.name, got, err)
+			}
+		})
 	}
 }
