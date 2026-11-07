@@ -72,6 +72,12 @@ type WorkerSettings struct {
 	// that are past the longest run time, and the gateway's copy of them.
 	// Default 10 minutes. Tests shorten it.
 	Cleanup time.Duration
+	// CacheMaxAge trims the shared worker Go build cache. Default 24 h.
+	// 0 turns it off.
+	CacheMaxAge time.Duration
+	// TmpMaxAge removes old subfolders from the worker test temp dir. Default 6 h.
+	// 0 turns it off.
+	TmpMaxAge time.Duration
 	// OSSandbox lists the projects whose Pi and OpenCode workers run in the
 	// OS sandbox ("*" is every project): workers.os_sandbox of node.json.
 	OSSandbox []string
@@ -129,6 +135,12 @@ func (s WorkerSettings) filled() WorkerSettings {
 	}
 	if s.Cleanup <= 0 {
 		s.Cleanup = 10 * time.Minute
+	}
+	if s.CacheMaxAge == 0 {
+		s.CacheMaxAge = defaults.Duration("workers.cache_max_age", where)
+	}
+	if s.TmpMaxAge == 0 {
+		s.TmpMaxAge = defaults.Duration("workers.tmp_max_age", where)
 	}
 	return s
 }

@@ -2149,6 +2149,26 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, reject("bad inbox.create")
 		}
+		if p.Kind == "check" {
+			nodeName := st.hostname(nc.id)
+			if nodeName == "" {
+				nodeName = nc.id
+			}
+			sid := p.SessionID
+			if sid == "" {
+				sid = nc.id
+			}
+			item, err := st.CreateInboxItem(protocol.InboxItem{
+				Kind:           "check",
+				SessionID:      sid,
+				Node:           nodeName,
+				Text:           p.Text,
+				Recommendation: p.Recommendation,
+				Options:        p.Options,
+				AskerName:      nodeName,
+			})
+			return map[string]any{"item": item}, err
+		}
 		if p.Kind != "approval" && p.Kind != "feature_idea" && p.Kind != "question" {
 			return nil, reject("invalid inbox kind")
 		}

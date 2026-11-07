@@ -27,6 +27,8 @@
     "KillGrace": 3000000000,
     "MCPSettle": 3000000000,
     "Cleanup": 600000000000,
+    "CacheMaxAge": 86400000000000,
+    "TmpMaxAge": 21600000000000,
     "OSSandbox": null
   },
   "node_json": {
@@ -46,6 +48,8 @@
     "KillGrace": 3000000000,
     "MCPSettle": 3000000000,
     "Cleanup": 600000000000,
+    "CacheMaxAge": 86400000000000,
+    "TmpMaxAge": 21600000000000,
     "OSSandbox": null
   }
 }

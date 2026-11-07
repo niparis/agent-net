@@ -396,6 +396,26 @@ settings:
     levels: [network, repo]
     default: 4h
     live: true
+  - key: workers.cache_max_age
+    rows: [53]
+    description: Maximum age of entries kept in the worker Go build cache.
+    kind: rule
+    type: duration
+    min: 0s
+    stricter: lower
+    levels: [network, repo]
+    default: 24h
+    live: true
+  - key: workers.tmp_max_age
+    rows: [53]
+    description: Maximum age of subfolders kept in the worker test temp directory.
+    kind: rule
+    type: duration
+    min: 0s
+    stricter: lower
+    levels: [network, repo]
+    default: 6h
+    live: true
   - key: workers.idle_timeout
     rows: [54]
     description: Idle time before a worker is stopped.
@@ -887,7 +907,7 @@ ledger:
   - {row: 50, keys: [relationships.edge_semantics]}
   - {row: 51, keys: [workers.isolation_minimum], step: 7}
   - {row: 52, keys: [workers.sandbox_level], step: 7}
-  - {row: 53, keys: [workers.max_age], step: 7}
+  - {row: 53, keys: [workers.max_age, workers.cache_max_age, workers.tmp_max_age], step: 7}
   - {row: 54, keys: [workers.idle_timeout], step: 7}
   - {row: 55, keys: [workers.caller_gone_grace], step: 7}
   - {row: 56, keys: [workers.queue_timeout], step: 7}
