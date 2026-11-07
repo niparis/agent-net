@@ -52,6 +52,12 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 			return nil, err
 		}
 		return nil, st.GraphLifecycle(strings.ReplaceAll(q.Tool, "_", "."), p, "owner", true)
+	case "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove":
+		tw, err := protocol.ResolveTeamAction(q.Tool, q.Args, st)
+		if err != nil {
+			return nil, err
+		}
+		return nil, st.ValidateTeam(tw, "owner")
 	case "node_add":
 		return nil, st.AddArchitect(str("name"), "owner", true)
 	case "node_remove":

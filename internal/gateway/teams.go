@@ -40,6 +40,16 @@ func (s *Store) Teams() ([]protocol.Team, error) {
 // WriteTeam validates authority, endpoints and expected values in the write
 // transaction. This step changes no settings, routing or delivery revisions.
 func (s *Store) WriteTeam(q protocol.TeamWrite, actor string) error {
+	return s.writeTeam(q, actor, false)
+}
+
+// ValidateTeam runs all checks and validations of WriteTeam inside a transaction
+// that is rolled back without committing changes.
+func (s *Store) ValidateTeam(q protocol.TeamWrite, actor string) error {
+	return s.writeTeam(q, actor, true)
+}
+
+func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error {
 	if err := s.requireGraphRefs(); err != nil {
 		return err
 	}
@@ -141,10 +151,32 @@ func (s *Store) WriteTeam(q protocol.TeamWrite, actor string) error {
 	if q.Member != nil && q.Action == "membership" {
 		kind, id = q.Member.Kind, q.Member.ID
 	}
+	if dryRun {
+		return nil
+	}
 	if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?,?,?,?)`, q.Action, q.ID, oldTeam, kind, id, oldValue, newValue, now, actor); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// Team looks up an active team by id or name.
+func (s *Store) Team(selector string) (id, name string, err error) {
+	selector = strings.TrimSpace(selector)
+	err = s.db.QueryRow(`SELECT id, name FROM teams WHERE (id=? OR name=?) AND active=1`, selector, selector).Scan(&id, &name)
+	if err == sql.ErrNoRows {
+		return "", "", reject("unknown Team")
+	}
+	return id, name, err
+}
+
+// MemberTeam returns the current team ID of a member, or "" if none.
+func (s *Store) MemberTeam(ref protocol.GraphRef) (teamID string, err error) {
+	err = s.db.QueryRow(`SELECT team_id FROM team_members WHERE member_kind=? AND member_id=?`, ref.Kind, ref.ID).Scan(&teamID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return teamID, err
 }
 
 func liveTeamMember(tx *sql.Tx, ref protocol.GraphRef) error {

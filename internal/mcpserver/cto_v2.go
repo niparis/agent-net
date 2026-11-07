@@ -49,7 +49,14 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 	concrete := ctoActionRoutes[tool][action]
 	if concrete == "" {
 		concrete = map[string]string{
-			"graph_change":   map[string]string{"charter_set": "charter_set", "node_add": "node_add", "node_remove": "node_remove", "edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set", "undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive", "agent_create": "agent_create", "agent_tombstone": "agent_tombstone"}[action],
+			"graph_change": map[string]string{
+				"charter_set": "charter_set", "node_add": "node_add", "node_remove": "node_remove",
+				"edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set",
+				"undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive",
+				"agent_create": "agent_create", "agent_tombstone": "agent_tombstone",
+				"team_create": "team_create", "team_rename": "team_rename", "team_archive": "team_archive",
+				"team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
+			}[action],
 			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"}[action],
 			"worker_change":  map[string]string{"start": "worker_start", "stop": "worker_stop"}[action],
 		}[tool]
@@ -135,6 +142,17 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 			required = []string{"name"}
 		case "repo_archive", "agent_tombstone":
 			required = []string{"ref"}
+		case "team_create":
+			required = []string{"name"}
+		case "team_rename":
+			required = []string{"team", "name"}
+		case "team_archive":
+			required = []string{"team"}
+		case "team_member_add", "team_member_remove":
+			if args["member"] == nil && args["ref"] == nil {
+				return fmt.Errorf("%s needs member or ref; example: %s", action, example)
+			}
+			required = []string{"team"}
 		}
 	case "session_change":
 		if action == "merger_start" || action == "merger_stop" {
@@ -217,6 +235,19 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 
 func actionExampleFor(tool, action string) string {
 	switch tool {
+	case "graph_change":
+		switch action {
+		case "team_create":
+			return `{"action":"team_create","name":"team-name"}`
+		case "team_rename":
+			return `{"action":"team_rename","team":"team-name","name":"new-name"}`
+		case "team_archive":
+			return `{"action":"team_archive","team":"team-name"}`
+		case "team_member_add":
+			return `{"action":"team_member_add","team":"team-name","member":{"kind":"agent","id":"agent-id"}}`
+		case "team_member_remove":
+			return `{"action":"team_member_remove","team":"team-name","member":{"kind":"agent","id":"agent-id"}}`
+		}
 	case "answer":
 		switch action {
 		case "inbox":

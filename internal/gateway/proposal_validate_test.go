@@ -176,3 +176,89 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 	})
 
 }
+
+func TestCTOProposalValidationTeams(t *testing.T) {
+	g, node := scopeGateway(t)
+	st := g.store
+	if _, err := st.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	st.graphRefsOn.Store(true)
+	own, err := st.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc := &nodeConn{id: node}
+	g.conns[node] = nc
+	t.Cleanup(func() { delete(g.conns, node) })
+
+	// Add an agent to be a member
+	if _, err := st.db.Exec(`INSERT INTO agents(id, display_name, created_at, updated_at) VALUES('agent-1', 'Agent 1', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Validate team_create
+	before := proposalSnapshot(t, st)
+	raw, _ := json.Marshal(map[string]any{
+		"tool":  "team_create",
+		"args":  map[string]any{"name": "test-team", "purpose": "Testing"},
+		"owner": own,
+	})
+	if _, err := g.validateCTOProposal(context.Background(), nc, raw); err != nil {
+		t.Fatalf("validate team_create: %v", err)
+	}
+	after := proposalSnapshot(t, st)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("team_create changed database")
+	}
+
+	// Now actually create the team so rename/archive/member actions can be tested
+	if err := st.WriteTeam(protocol.TeamWrite{Action: "create", ID: "test-team", Name: "test-team", Purpose: "Testing"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Validate team_member_add
+	before = proposalSnapshot(t, st)
+	raw, _ = json.Marshal(map[string]any{
+		"tool":  "team_member_add",
+		"args":  map[string]any{"team": "test-team", "member": map[string]any{"kind": "agent", "id": "agent-1"}},
+		"owner": own,
+	})
+	if _, err := g.validateCTOProposal(context.Background(), nc, raw); err != nil {
+		t.Fatalf("validate team_member_add: %v", err)
+	}
+	after = proposalSnapshot(t, st)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("team_member_add changed database")
+	}
+
+	// 3. Validate team_rename
+	before = proposalSnapshot(t, st)
+	raw, _ = json.Marshal(map[string]any{
+		"tool":  "team_rename",
+		"args":  map[string]any{"team": "test-team", "name": "renamed-team"},
+		"owner": own,
+	})
+	if _, err := g.validateCTOProposal(context.Background(), nc, raw); err != nil {
+		t.Fatalf("validate team_rename: %v", err)
+	}
+	after = proposalSnapshot(t, st)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("team_rename changed database")
+	}
+
+	// 4. Validate team_archive (no members yet)
+	before = proposalSnapshot(t, st)
+	raw, _ = json.Marshal(map[string]any{
+		"tool":  "team_archive",
+		"args":  map[string]any{"team": "test-team"},
+		"owner": own,
+	})
+	if _, err := g.validateCTOProposal(context.Background(), nc, raw); err != nil {
+		t.Fatalf("validate team_archive: %v", err)
+	}
+	after = proposalSnapshot(t, st)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("team_archive changed database")
+	}
+}
