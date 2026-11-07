@@ -109,7 +109,7 @@ func (s *Store) graphFrameAllowed(nc *nodeConn, typ string) error {
 			}
 		}
 		switch typ {
-		case "query.graph", "query.graph_talk", "node.add", "node.remove", "repo.create", "repo.archive", "agent.create", "agent.tombstone":
+		case "lead.set", "query.graph", "query.graph_talk", "node.add", "node.remove", "repo.create", "repo.archive", "agent.create", "agent.tombstone":
 			return reject("upgrade required: daemon must report typed Graph support in hello")
 		}
 	}
@@ -177,6 +177,18 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 		if r.OwnerAgentID != nil {
 			n.Owner = &protocol.GraphRef{Kind: "agent", ID: *r.OwnerAgentID}
 		}
+		var lead sql.NullString
+		if err := s.db.QueryRow(`SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END FROM repos WHERE id=?`, r.ID).Scan(&lead); err != nil {
+			return g, err
+		}
+		if lead.Valid {
+			n.Lead = &protocol.GraphRef{Kind: "agent", ID: lead.String}
+		}
+		limit, err := s.RepoAgentLimit(r.ID)
+		if err != nil {
+			return g, err
+		}
+		n.MaxAgents, n.AgentCount, n.OverMax = limit.MaxAgents, limit.AgentCount, limit.OverMax
 		g.Nodes = append(g.Nodes, n)
 	}
 	for _, a := range agents {

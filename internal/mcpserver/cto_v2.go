@@ -54,7 +54,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 				"edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set",
 				"undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive",
 				"agent_create": "agent_create", "agent_tombstone": "agent_tombstone",
-				"team_create": "team_create", "team_rename": "team_rename", "team_archive": "team_archive",
+				"lead_set": "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_archive": "team_archive",
 				"team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
 			}[action],
 			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"}[action],
@@ -140,7 +140,7 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 		switch action {
 		case "repo_create", "agent_create":
 			required = []string{"name"}
-		case "repo_archive", "agent_tombstone":
+		case "repo_archive", "agent_tombstone", "lead_set":
 			required = []string{"ref"}
 		case "team_create":
 			required = []string{"name"}

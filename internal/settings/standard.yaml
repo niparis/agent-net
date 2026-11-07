@@ -1,5 +1,13 @@
 format: 1
 settings:
+  - key: max_agents
+    description: Maximum live agent sessions in a repo; zero means no limit.
+    kind: rule
+    type: int
+    min: 0
+    levels: [repo]
+    default: 0
+    live: true
   - key: workers.early_quit_threshold
     rows: [145]
     description: Incomplete worker runs shorter than this with no changes or fewer than 20 uncommitted changed lines count as early quits.

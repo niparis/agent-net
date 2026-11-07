@@ -605,6 +605,10 @@ func ctoCatalogGraphNodes(nodes []protocol.PublicGraphNode) []map[string]any {
 		if node.Ref != nil {
 			row["ref"] = node.Ref
 			row["owner"] = node.Owner
+			row["lead"] = node.Lead
+			row["max_agents"] = node.MaxAgents
+			row["agent_count"] = node.AgentCount
+			row["over_max"] = node.OverMax
 			row["role"] = node.Role
 		}
 		if charter := ctoCatalogCharter(node.Charter); charter != nil {

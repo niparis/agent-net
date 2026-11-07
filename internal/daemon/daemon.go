@@ -1192,6 +1192,19 @@ func (d *Daemon) resolveTo(ctx context.Context, to string) (string, error) {
 	if strings.HasPrefix(to, "s_") {
 		return to, nil
 	}
+	if strings.HasPrefix(to, "repo:") || strings.HasPrefix(to, "team:") {
+		data, err := d.call(ctx, "lead.resolve", map[string]string{"address": to})
+		if err != nil {
+			return "", err
+		}
+		var result struct {
+			ID string `json:"session_id"`
+		}
+		if err = json.Unmarshal(data, &result); err != nil {
+			return "", err
+		}
+		return result.ID, nil
+	}
 	data, err := d.call(ctx, "query.agents", protocol.QueryAgents{OnlineOnly: true, Text: to})
 	if err != nil {
 		return "", err

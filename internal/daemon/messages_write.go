@@ -33,6 +33,7 @@ type messageReceipt struct {
 	MessageID string            `json:"message_id"`
 	To        messageSessionRef `json:"to"`
 	State     string            `json:"state"`
+	Note      string            `json:"note,omitempty"`
 }
 
 type messageReceipts struct {
@@ -91,7 +92,11 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 	if err != nil {
 		return nil, err
 	}
-	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind,
+	address := ""
+	if strings.HasPrefix(p.To, "repo:") || strings.HasPrefix(p.To, "team:") {
+		address = p.To
+	}
+	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind, LeadAddress: address,
 		Body: p.Body, IdempotencyKey: p.IdempotencyKey})
 	if err != nil || !p.Receipt {
 		return data, err
@@ -307,7 +312,7 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 			out.Sent = append(out.Sent, receipt)
 			continue
 		}
-		receipt.MessageID, receipt.State = messageStateOf(data)
+		receipt = d.receiptForSend(ctx, data, a.SessionID)
 		out.Sent = append(out.Sent, receipt)
 	}
 	return out, nil
@@ -406,6 +411,16 @@ func (d *Daemon) sessionName(ctx context.Context, id string) string {
 func (d *Daemon) receiptForSend(ctx context.Context, data json.RawMessage, to string) messageReceipt {
 	receipt := messageReceipt{To: messageSessionRef{ID: to, Name: d.sessionName(ctx, to)}}
 	receipt.MessageID, receipt.State = messageStateOf(data)
+	var result struct {
+		Message *protocol.Message `json:"message"`
+		Routing string            `json:"routing"`
+	}
+	if json.Unmarshal(data, &result) == nil {
+		receipt.Note = result.Routing
+		if result.Message != nil && result.Message.To != "" && result.Message.To != to {
+			receipt.To = messageSessionRef{ID: result.Message.To, Name: d.sessionName(ctx, result.Message.To)}
+		}
+	}
 	return receipt
 }
 

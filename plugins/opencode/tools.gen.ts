@@ -641,7 +641,7 @@ export const TOOL_CATALOG = [
       "properties": {
         "to": {
           "type": "string",
-          "description": "Recipient session ID or exact name."
+          "description": "Recipient session ID, exact name, repo:\u003cname\u003e, or team:\u003cname\u003e."
         },
         "to_set": {
           "type": "object",

@@ -46,6 +46,12 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		return nil, g.checkMachineAction(str("node_id"), q.Tool == "machine_rotate")
 	case "node_rename":
 		return g.handle(ctx, nc, "node.rename.validate", q.Args)
+	case "lead_set":
+		var p protocol.LeadSetRequest
+		if err := json.Unmarshal(q.Args, &p); err != nil {
+			return nil, err
+		}
+		return nil, st.SetLead(p, "owner", true)
 	case "repo_create", "repo_archive", "agent_create", "agent_tombstone":
 		var p protocol.GraphLifecycleRequest
 		if err := json.Unmarshal(q.Args, &p); err != nil {

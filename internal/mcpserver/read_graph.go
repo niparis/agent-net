@@ -22,16 +22,20 @@ type roGraphReadIn struct {
 }
 
 type roGraphNode struct {
-	Active   *bool                 `json:"active,omitempty"`
-	Ref      *protocol.GraphRef    `json:"ref,omitempty"`
-	Owner    *protocol.GraphRef    `json:"owner,omitempty"`
-	Role     string                `json:"role,omitempty"`
-	Name     string                `json:"name"`
-	Kind     string                `json:"kind"`
-	Maturity string                `json:"maturity"`
-	Purpose  string                `json:"purpose"`
-	Charter  *protocol.ReadCharter `json:"charter,omitempty"`
-	Rules    map[string]string     `json:"rules"`
+	Active     *bool                 `json:"active,omitempty"`
+	Ref        *protocol.GraphRef    `json:"ref,omitempty"`
+	Owner      *protocol.GraphRef    `json:"owner,omitempty"`
+	Lead       *protocol.GraphRef    `json:"lead,omitempty"`
+	MaxAgents  int                   `json:"max_agents,omitempty"`
+	AgentCount int                   `json:"agent_count,omitempty"`
+	OverMax    bool                  `json:"over_max,omitempty"`
+	Role       string                `json:"role,omitempty"`
+	Name       string                `json:"name"`
+	Kind       string                `json:"kind"`
+	Maturity   string                `json:"maturity"`
+	Purpose    string                `json:"purpose"`
+	Charter    *protocol.ReadCharter `json:"charter,omitempty"`
+	Rules      map[string]string     `json:"rules"`
 }
 
 type roGraphEdge struct {
@@ -161,7 +165,7 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 		for _, rule := range node.Rules {
 			rules[rule.Name] = rule.Value
 		}
-		out = append(out, roGraphNode{Active: node.Active, Ref: node.Ref, Owner: node.Owner, Role: node.Role, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
+		out = append(out, roGraphNode{Active: node.Active, Ref: node.Ref, Owner: node.Owner, Lead: node.Lead, MaxAgents: node.MaxAgents, AgentCount: node.AgentCount, OverMax: node.OverMax, Role: node.Role, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
 	}
 	return out
 }

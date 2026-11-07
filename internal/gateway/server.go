@@ -1354,6 +1354,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad session.agent.status")
 		}
 		return st.SessionAgentStartStatus(nc.id, p.Owner, p.Ref)
+	case "session.repo.reserve":
+		p, err := decode[protocol.RepoStartReservation](raw)
+		if err != nil {
+			return nil, reject("bad repo start reservation")
+		}
+		return st.ReserveRepoStart(nc.id, p)
 	case "session.agent.reserve":
 		p, err := decode[protocol.SessionAgentReservation](raw)
 		if err != nil {
@@ -1680,6 +1686,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return st.RefCharterHistory(*p.Ref, p.Limit)
 		}
 		return st.CharterHistory(p.Node, p.Limit)
+	case "lead.set":
+		p, err := decode[protocol.LeadSetRequest](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		err = st.SetLead(p, graphActor(raw), false)
+		return map[string]bool{"ok": err == nil}, err
 	case "repo.create", "repo.archive", "agent.create", "agent.tombstone":
 		if err := st.requireGraphRefs(); err != nil {
 			return nil, err
@@ -2219,6 +2232,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"item": item}, nil
 
+	case "lead.resolve":
+		var p struct {
+			Address string `json:"address"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad lead address")
+		}
+		id, err := st.ResolveLeadAddress(p.Address)
+		return map[string]string{"session_id": id}, err
 	case "msg.send":
 		p, err := decode[protocol.MsgSend](raw)
 		if err != nil {
@@ -2265,7 +2287,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 			return nil, err
 		}
-		m, created, err := st.StoreMessage(p)
+		m, created, route, err := st.StoreLeadMessage(p)
 		if err != nil {
 			var rj Rejection
 			if errors.As(err, &rj) {
@@ -2281,7 +2303,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if cur, ok, _ := st.Message(m.ID); ok {
 			m = cur
 		}
-		return map[string]any{"message": m}, nil
+		return map[string]any{"message": m, "routing": route}, nil
 
 	case "delivery.update":
 		p, err := decode[protocol.DeliveryUpdate](raw)

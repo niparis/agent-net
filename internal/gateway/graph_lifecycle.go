@@ -182,6 +182,7 @@ func lifecycleReferences(tx *sql.Tx, kind, id string) ([]string, error) {
 		}
 		queries = append(queries,
 			query{"repo owner", `SELECT id FROM repos WHERE owner_agent_id=? ORDER BY id`, []any{id}},
+			query{"repo lead", `SELECT repo_id FROM repo_leads WHERE agent_id=? ORDER BY repo_id`, []any{id}},
 			query{"session", `SELECT id FROM sessions WHERE agent_id=? AND online=1 ORDER BY id`, []any{id}},
 			query{"delivery task", `SELECT change_id||':'||step FROM delivery_step_tasks WHERE owner_node=? AND completed=0 ORDER BY change_id,step`, []any{id}},
 			query{"worker start", `SELECT ref FROM worker_starts WHERE caller_agent_id=? AND state='open' ORDER BY ref`, []any{id}},

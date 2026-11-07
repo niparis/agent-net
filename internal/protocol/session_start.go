@@ -152,18 +152,21 @@ type SessionStartQuery struct {
 // StartedSession is separate from a worker. It has no owner agent, brief,
 // deadline or cleanup rules. SessionID is filled after normal registration.
 type StartedSession struct {
-	AgentID    string `json:"agent_id,omitempty"`
-	Type       string `json:"type,omitempty"`
-	Background bool   `json:"background,omitempty"`
-	ID         string `json:"id"`
-	Status     string `json:"status"` // starting, started, failed
-	NodeID     string `json:"node_id"`
-	Hostname   string `json:"hostname,omitempty"`
-	Harness    string `json:"harness"`
-	Project    string `json:"project"`
-	Path       string `json:"path"`
-	Branch     string `json:"branch,omitempty"`
-	Model      string `json:"model,omitempty"`
+	// LimitReserved is local launch bookkeeping; it is not sent to the UI.
+	LimitReserved   bool            `json:"-"`
+	SuggestedChange *SettingsChange `json:"suggested_change,omitempty"`
+	AgentID         string          `json:"agent_id,omitempty"`
+	Type            string          `json:"type,omitempty"`
+	Background      bool            `json:"background,omitempty"`
+	ID              string          `json:"id"`
+	Status          string          `json:"status"` // starting, started, failed
+	NodeID          string          `json:"node_id"`
+	Hostname        string          `json:"hostname,omitempty"`
+	Harness         string          `json:"harness"`
+	Project         string          `json:"project"`
+	Path            string          `json:"path"`
+	Branch          string          `json:"branch,omitempty"`
+	Model           string          `json:"model,omitempty"`
 	// EnterNote says how Enter reaches a session on another machine, for the
 	// result line after a start with a first message. Empty on this machine.
 	EnterNote string     `json:"enter_note,omitempty"`
@@ -202,4 +205,23 @@ type SessionAgentReservation struct {
 	AgentID  string `json:"agent_id"`
 	Harness  string `json:"harness"`
 	NativeID string `json:"native_id,omitempty"`
+}
+
+// RepoStartReservation reserves a place during an agent-net session launch.
+// NativeID binds the place to the exact harness session; Release cancels it.
+type RepoStartReservation struct {
+	Owner    string `json:"owner"`
+	Ref      string `json:"ref"`
+	Project  string `json:"project"`
+	Harness  string `json:"harness"`
+	NativeID string `json:"native_id,omitempty"`
+	Release  bool   `json:"release,omitempty"`
+	Check    bool   `json:"check,omitempty"`
+}
+
+type RepoStartResult struct {
+	Reserved        bool            `json:"reserved,omitempty"`
+	Status          string          `json:"status,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	SuggestedChange *SettingsChange `json:"suggested_change,omitempty"`
 }

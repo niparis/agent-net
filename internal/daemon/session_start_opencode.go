@@ -155,6 +155,9 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 		return protocol.StartedSession{}, errors.New("OpenCode answered without a session ID")
 	}
 	r.NativeID = created.Data.ID
+	if err := d.bindRepoStart(ctx, r); err != nil {
+		return protocol.StartedSession{}, err
+	}
 	if r.AgentID != "" {
 		if err := d.reserveStartAgent(ctx, "opencode", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
 			return protocol.StartedSession{}, err
@@ -261,6 +264,7 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 			sendFirst()
 		}
 		if startErr != nil {
+			d.releaseRepoStart(r)
 			r.Status, r.Error = "failed", startErr.Error()
 			d.failStartAgent(r)
 		} else {

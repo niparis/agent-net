@@ -20,7 +20,7 @@ type Team struct {
 
 // TeamWrite is owner-only. Membership ID is the new Team, empty to remove.
 // ExpectTeam is the old Team ID, empty for an unassigned member. Moves are
-// atomic. Rename requires ExpectName. Ownership is set at creation only.
+// atomic. Rename requires ExpectName. LeadSetRequest changes ownership later.
 type TeamWrite struct {
 	Action       string    `json:"action"`
 	ID           string    `json:"team_id"`
@@ -189,4 +189,18 @@ func ResolveTeamAction(action string, raw json.RawMessage, look TeamLookup) (Tea
 	default:
 		return TeamWrite{}, fmt.Errorf("unknown team action %q", action)
 	}
+}
+
+// LeadSetRequest sets or clears the lead of a Repo or Team.
+type LeadSetRequest struct {
+	Ref   GraphRef  `json:"ref"`
+	Lead  *GraphRef `json:"lead"`
+	Owner string    `json:"owner,omitempty"`
+}
+
+// RepoAgentLimit is a snapshot of the live non-worker agent count.
+type RepoAgentLimit struct {
+	MaxAgents  int  `json:"max_agents"`
+	AgentCount int  `json:"agent_count"`
+	OverMax    bool `json:"over_max"`
 }

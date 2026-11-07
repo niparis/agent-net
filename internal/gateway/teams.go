@@ -38,7 +38,7 @@ func (s *Store) Teams() ([]protocol.Team, error) {
 }
 
 // WriteTeam validates authority, endpoints and expected values in the write
-// transaction. This step changes no settings, routing or delivery revisions.
+// transaction. Membership affects lead routing but not settings or delivery revisions.
 func (s *Store) WriteTeam(q protocol.TeamWrite, actor string) error {
 	return s.writeTeam(q, actor, false)
 }
@@ -241,8 +241,8 @@ func writeTeamMember(tx *sql.Tx, q protocol.TeamWrite) (string, error) {
 	return old, err
 }
 
-// TeamHistory is owner-only through the operator relay. Undo and proposals are
-// deferred; retained snapshots cannot bypass current validation.
+// TeamHistory is owner-only through the operator relay. Retained snapshots
+// cannot bypass current validation.
 func (s *Store) TeamHistory(id string, limit int) ([]protocol.TeamChange, error) {
 	if err := s.requireGraphRefs(); err != nil {
 		return nil, err
@@ -278,7 +278,7 @@ func (s *Store) teamGraph() (protocol.Graph, error) {
 	}
 	for _, t := range teams {
 		active := t.Active
-		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, CreatedAt: t.CreatedAt})
+		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: t.Owner, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, CreatedAt: t.CreatedAt})
 	}
 	rows, err := s.db.Query(`SELECT member_kind,member_id,team_id FROM team_members ORDER BY member_kind,member_id`)
 	if err != nil {

@@ -286,8 +286,13 @@ type PendingRequest struct {
 type AgentView struct {
 	// AgentID and AgentName identify the lasting agent attached by the gateway.
 	// Old gateways omit both. Workers and owner sessions have no agent.
-	AgentID   string `json:"agent_id,omitempty"`
-	AgentName string `json:"agent_name,omitempty"`
+	AgentID        string `json:"agent_id,omitempty"`
+	AgentName      string `json:"agent_name,omitempty"`
+	RepoLead       bool   `json:"repo_lead,omitempty"`
+	TeamLead       bool   `json:"team_lead,omitempty"`
+	RepoMaxAgents  int    `json:"repo_max_agents,omitempty"`
+	RepoAgentCount int    `json:"repo_agent_count,omitempty"`
+	RepoOverMax    bool   `json:"repo_over_max,omitempty"`
 	// RepoContext is the gateway resolved repo key; it is not a wire field.
 	RepoContext        string           `json:"-"`
 	Type               string           `json:"type"`
@@ -478,9 +483,12 @@ type (
 		OwnerApproved bool   `json:"owner_approved,omitempty"`
 		Sender        string `json:"sender_session_id"`
 		Recipient     string `json:"recipient_session_id"`
-		Type          string `json:"message_type"`
-		Body          string `json:"body"`
-		ParentID      string `json:"parent_message_id,omitempty"`
+		// LeadAddress records an explicit repo: or team: address. The gateway
+		// validates the recipient is still that lead before bypassing routing.
+		LeadAddress string `json:"lead_address,omitempty"`
+		Type        string `json:"message_type"`
+		Body        string `json:"body"`
+		ParentID    string `json:"parent_message_id,omitempty"`
 		// ConversationID, without ParentID, threads the message into an
 		// existing conversation without naming a message it answers. The
 		// recipient must have written to the sender in that conversation. A

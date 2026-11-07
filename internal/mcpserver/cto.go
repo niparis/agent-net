@@ -83,8 +83,9 @@ var ctoTools = map[string]ctoToolDef{
 	"graph_change": {
 		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Repo and agent create, archive, tombstone and their undo always require owner approval.",
 		fields: map[string]ctoField{
-			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove"}},
+			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove", "lead_set"}},
 			"ref":     {typ: "graph_ref", desc: "Typed target."},
+			"lead":    {typ: "graph_ref", desc: "Agent lead; omit to clear."},
 			"member":  {typ: "graph_ref", desc: "Member ref (agent or repo)."},
 			"team":    {typ: "string", desc: "Team name or ID."},
 			"purpose": {typ: "string", desc: "Team purpose."},
@@ -344,7 +345,7 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 		prop := map[string]any{"type": f.typ}
 		if f.typ == "graph_ref" || f.typ == "graph_endpoint" {
 			ref := map[string]any{"type": "object", "properties": map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"repo", "agent", "special"}}, "id": map[string]any{"type": "string", "minLength": 1}}, "required": []string{"kind", "id"}, "additionalProperties": false}
-			if name == "agent_graph_read" {
+			if name == "agent_graph_read" || name == "graph_change" || name == "lead_set" {
 				ref["properties"].(map[string]any)["kind"].(map[string]any)["enum"] = []string{"repo", "agent", "team", "special"}
 			}
 			prop = ref

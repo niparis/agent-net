@@ -2826,8 +2826,8 @@ an owner action.
 After the typed Graph cutover, Teams have stable IDs,
 names, purposes, an optional owning Agent, active state and immutable history.
 An Agent or Repo may belong to one Team. Ownership does not imply membership
-or authority over members. Nothing inherits yet: settings, request rules and
-delivery behave as before.
+or authority over members. Settings and request rules do not inherit. Leads
+can redirect messages from outside the crew, as described below.
 
 The owner operator methods are `team_write` and `team_history`. `team_write`
 takes `action` (`create`, `rename`, `archive` or `membership`) and `team_id`.
@@ -2836,13 +2836,13 @@ Rename takes `name` and `expect_name`. Membership takes a typed `member` ref
 and `expect_team` (the old Team ID, empty when unassigned); an empty `team_id`
 removes membership. A move replaces membership atomically. Archive requires
 all members to be removed first and retains the identity and history. Team
-ownership is set at creation in this step; ownership edits and undo come later.
+ownership can also be changed with `lead_set`; undo is not available.
 `team_history` takes `team_id` and returns the most recent 1,000 changes.
 
 Read Teams with `agent_graph_read` using `typed: true` or a `ref` with
 `kind: team`. Typed reads include archived Teams with their `active` state,
 direct owner references and `member_of` edges. Legacy reads exclude Teams and
-membership. The CTO can read Teams but cannot propose or apply Team writes.
+membership. The CTO can read Teams and propose `lead_set` changes; other Team writes remain owner-only.
 
 In the TUI, the Graph tab shows all nodes by default. Press `t` to cycle the
 filter through all nodes, then each active Team in turn; the key line names the
@@ -2852,7 +2852,42 @@ the selected Team, `c` creates a Team with a name and purpose, `r` renames it,
 Space adds or removes the selected Repo or Agent, and `a` archives a Team with
 no members. A gateway refusal shows in the result line at the bottom. When
 the typed Graph cutover waits for machines to upgrade, the screen says so
-instead of hiding Teams. Teams enforce nothing: these actions change labels and membership only.
+instead of hiding Teams.
+
+
+### Leads and agent counts
+
+The owner operator `lead_set` takes a typed `ref` for a Repo or Team and a
+`lead` Agent ref. Omit `lead` to clear it. The CTO can propose the same action
+with `graph_change`; approval is required. A Repo defaults to its owner Agent
+until explicitly set or cleared. A Repo lead must own the Repo or have a
+session recorded there. A Team lead is its owner Agent.
+
+For messages to a non-lead session from outside its Repo or Team crew, the
+gateway redirects to a live lead and adds a note to the message and receipt.
+The owner and CTO are exempt, as are workers messaging their caller. If there is
+no lead or no live lead session, the original target receives the message and
+the receipt says why. Use `repo:<name>` or `team:<name>` to address a live lead
+by name or ID. Typed Graph reads expose `lead`, `max_agents`, `agent_count` and
+`over_max`; session views expose corresponding Repo counts and lead flags.
+
+The repo setting `max_agents` is a non-negative integer; zero or unset means no
+limit. The count excludes workers, mergers, the CTO and bots. Manually started
+terminal sessions are included and are never refused. The gateway reserves a
+place during an agent-net start, so simultaneous starts cannot take the same
+place. The reservation is released on failure or session registration. A
+terminal handoff without a native ID matches a new session of the same harness
+in the Repo. An interrupted launch expires after two minutes. A late registration may put a
+Repo over max and is never killed.
+
+An agent-net start at the max returns `status: failed` and a
+`suggested_change` setting `max_agents` to the current max plus one, with its
+expected old value. CTO start proposals check the count before asking for
+approval and return the same suggestion when the Repo is full. The start is
+checked again when an approved proposal runs. Each machine that can start
+sessions must run a version with Repo admission support; an older daemon
+cannot enforce this rule for its own local starts. The TUI confirmation to
+raise the max is a later step.
 
 ### Owner session use and pins
 

@@ -55,6 +55,9 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 		return r, errors.New("Codex answered without a thread ID")
 	}
 	r.NativeID = out.Thread.ID
+	if err := d.bindRepoStart(ctx, r); err != nil {
+		return r, err
+	}
 	if r.AgentID != "" {
 		if err = d.reserveStartAgent(ctx, "codex", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
 			return r, err
