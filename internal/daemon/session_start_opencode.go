@@ -55,6 +55,14 @@ func ownerOpenCodeService() (openCodeService, error) {
 // relayed says the owner approved the start from another machine; see
 // launchOwnerClaude.
 func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed bool) (result protocol.StartedSession, startErr error) {
+	return d.startOwnerOpenCode(ctx, r, message, socket, pane, notify, relayed, false)
+}
+
+func (d *Daemon) resumeOwnerOpenCode(ctx context.Context, r protocol.StartedSession, socket, pane string) (protocol.StartedSession, error) {
+	return d.startOwnerOpenCode(ctx, r, "", socket, pane, false, false, true)
+}
+
+func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed, resume bool) (result protocol.StartedSession, startErr error) {
 	defer func() {
 		if startErr != nil {
 			d.failStartAgent(r)
@@ -85,7 +93,12 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		}
 	}
 	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
-	body, code, err := api("POST", "/api/session", request, "x-opencode-directory", directory)
+	method, endpoint := "POST", "/api/session"
+	if resume {
+		method, endpoint = "GET", "/api/session/"+url.PathEscape(r.NativeID)
+		request = nil
+	}
+	body, code, err := api(method, endpoint, request, "x-opencode-directory", directory)
 	if err != nil {
 		return protocol.StartedSession{}, down
 	}
@@ -105,6 +118,50 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		if err := d.reserveStartAgent(ctx, "opencode", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
 			return protocol.StartedSession{}, err
 		}
+	}
+	if resume {
+		bin, err := d.harnessBinary("opencode")
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		plan := protocol.EnterPlan{Argv: []string{bin, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; the session keeps running."}
+		opened := d.openForCaller("opencode:"+r.NativeID, r.Project, socket, pane, plan)
+		r.Status = "started"
+		r.EnterPlan = &opened
+		d.mu.Lock()
+		if d.startedSessions == nil {
+			d.startedSessions = make(map[string]protocol.StartedSession)
+		}
+		d.startedSessions[r.ID] = r
+		d.mu.Unlock()
+		d.wg.Add(1)
+		go func(r protocol.StartedSession) {
+			defer d.wg.Done()
+			wait, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
+			defer cancel()
+			ticker := time.NewTicker(25 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				d.mu.Lock()
+				if ls := d.sessions[key("opencode", r.NativeID)]; ls != nil {
+					r.SessionID = ls.sessionID
+				}
+				if r.SessionID != "" {
+					d.startedSessions[r.ID] = r
+				}
+				d.mu.Unlock()
+				if r.SessionID != "" {
+					return
+				}
+				select {
+				case <-wait.Done():
+					d.Logf("OpenCode resumed viewer opened; session registration is still pending")
+					return
+				case <-ticker.C:
+				}
+			}
+		}(r)
+		return r, nil
 	}
 	d.mu.Lock()
 	if d.startedSessions == nil {

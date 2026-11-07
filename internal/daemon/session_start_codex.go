@@ -13,6 +13,10 @@ import (
 // The long-lived discovery client remains read-only. No turn starts here: the
 // owner's CLI resumes this exact ID and handles its normal permission prompts.
 func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSession) (protocol.StartedSession, error) {
+	return d.prepareOwnerCodexThread(ctx, r, false)
+}
+
+func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.StartedSession, resume bool) (protocol.StartedSession, error) {
 	ctx, cancel := context.WithTimeout(ctx, d.workerSettings("").StartTimeout)
 	defer cancel()
 	rpc, err := dialCodexSocket(ctx, codexSocketPath(d.cfg.CodexHome), d.helloVersion(), nil)
@@ -20,8 +24,10 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 		return r, err
 	}
 	defer rpc.close()
-	if err = d.reserveStartAgent(ctx, "codex", "", r.AgentID, r.ID, r.Path, r.Project); err != nil {
-		return r, err
+	if r.AgentID != "" {
+		if err = d.reserveStartAgent(ctx, "codex", "", r.AgentID, r.ID, r.Path, r.Project); err != nil {
+			return r, err
+		}
 	}
 	params := map[string]any{"cwd": r.Path}
 	if r.Model != "" {
@@ -31,7 +37,12 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 			params["config"] = map[string]string{"model_reasoning_effort": effort}
 		}
 	}
-	raw, err := rpc.call(ctx, "thread/start", params)
+	method := "thread/start"
+	if resume {
+		method = "thread/resume"
+		params["threadId"] = r.NativeID
+	}
+	raw, err := rpc.call(ctx, method, params)
 	if err != nil {
 		return r, err
 	}
@@ -44,8 +55,10 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 		return r, errors.New("Codex answered without a thread ID")
 	}
 	r.NativeID = out.Thread.ID
-	if err = d.reserveStartAgent(ctx, "codex", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
-		return r, err
+	if r.AgentID != "" {
+		if err = d.reserveStartAgent(ctx, "codex", r.NativeID, r.AgentID, r.ID, r.Path, r.Project); err != nil {
+			return r, err
+		}
 	}
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
@@ -60,4 +73,23 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 		case <-ticker.C:
 		}
 	}
+}
+
+func (d *Daemon) resumeOwnerCodex(ctx context.Context, r protocol.StartedSession, socket, pane string) (protocol.StartedSession, error) {
+	bin, err := d.harnessBinary("codex")
+	if err != nil {
+		return r, err
+	}
+	r, err = d.prepareOwnerCodexThread(ctx, r, true)
+	if err != nil {
+		return r, err
+	}
+	plan := protocol.EnterPlan{Argv: []string{bin, "resume", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; Codex keeps running."}
+	if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
+		plan.Env = map[string]string{"CODEX_HOME": home}
+	}
+	opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
+	r.EnterPlan = &opened
+	r.Status = "started"
+	return r, nil
 }

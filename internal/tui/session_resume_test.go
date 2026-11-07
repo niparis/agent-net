@@ -93,7 +93,7 @@ func TestResumeUnsupportedRowsAndExistingEnterPlans(t *testing.T) {
 		resume        bool
 	}{
 		{"pi", "n_mac", false, true}, {"pi", "n_vm", false, true}, {"claude", "n_vm", false, true},
-		{"opencode", "n_mac", false, false}, {"codex", "n_mac", false, false}, {"other", "n_mac", true, false},
+		{"opencode", "n_mac", false, true}, {"codex", "n_mac", false, true}, {"opencode", "n_vm", false, true}, {"codex", "n_vm", false, true}, {"other", "n_mac", true, false},
 	} {
 		t.Run(tc.harness+tc.node, func(t *testing.T) {
 			m, src := workerModel(120, 34)
@@ -107,7 +107,7 @@ func TestResumeUnsupportedRowsAndExistingEnterPlans(t *testing.T) {
 			src.sessionStart = startedSession("tenebrae", tc.harness)
 			m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if tc.unsupported {
-				if cmd != nil || !strings.Contains(m.notice.text, "resume works for Claude and Pi for now") {
+				if cmd != nil || !strings.Contains(m.notice.text, "Open its conversation in the harness directly") {
 					t.Fatalf("notice %+v", m.notice)
 				}
 				return
@@ -140,5 +140,31 @@ func TestResumeHerdrDoesNotEnterTwice(t *testing.T) {
 	m, cmd = press2(m, cmd())
 	if cmd != nil || len(src.enters) != 0 || m.notice.text != "opened tenebrae in herdr" {
 		t.Fatalf("notice %q, enters %+v, command %v", m.notice.text, src.enters, cmd != nil)
+	}
+}
+
+func TestResumeOpenCodeEntersRegisteredSession(t *testing.T) {
+	m, src := workerModel(120, 34)
+	m.snap.Agents[0].Online = false
+	m.snap.Agents[0].Harness = "opencode"
+	m.showOffline = true
+	m = selectID(m, "s_0000000000000001")
+	src.sessionStart = startedSession("tenebrae", "claude")
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, cmd = press2(m, cmd())
+	if len(src.sessionResumes) != 1 || src.sessionResumes[0].SessionID != "s_0000000000000001" || cmd == nil {
+		t.Fatalf("resume %+v", src.sessionResumes)
+	}
+	_, _ = press2(m, cmd())
+	if len(src.enters) != 1 || src.enters[0].SessionID != "s_owner_new" {
+		t.Fatalf("enter %+v", src.enters)
+	}
+}
+
+func TestResumeViewerBeforeRegistration(t *testing.T) {
+	m, _ := workerModel(120, 34)
+	m, cmd := m.onResume(resumeMsg{res: protocol.StartedSession{Status: "started", EnterPlan: &protocol.EnterPlan{OpenedHerdr: true, Note: "Opened viewer"}}})
+	if cmd != nil || m.notice.err || m.notice.text != "Opened viewer" {
+		t.Fatalf("viewer rejected: %+v", m.notice)
 	}
 }
