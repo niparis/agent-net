@@ -75,9 +75,9 @@ func TestAutoUpgradeDoesNothing(t *testing.T) {
 		name, version, served string
 		opt                   func(*Config)
 	}{
+		{"dev build", "dev", "v0.2.0", nil},
 		{"equal", "v0.2.0", "v0.2.0", nil},
 		{"node is newer", "v0.3.0", "v0.2.0", nil},
-		{"dev build", "dev", "v0.2.0", nil},
 		{"opt-out", "v0.1.0", "v0.2.0", func(c *Config) { c.NoAutoUpgrade = true }},
 		{"served is not a release", "v0.1.0", "v0.2.0-3-gabc-dirty", nil},
 	} {

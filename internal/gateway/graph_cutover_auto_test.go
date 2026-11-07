@@ -3,7 +3,11 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log"
+	"net/http"
+
+	"github.com/coder/websocket"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,5 +233,79 @@ func TestGraphCutoverStaleBlockersRaiseOneInboxItem(t *testing.T) {
 	waitGraphCutoverOn(t, g)
 	if items = openGraphCutoverNotices(t, g, graphCutoverBlockerMarker); len(items) != 0 {
 		t.Fatalf("stale blocker notice not cleared: %v", items)
+	}
+}
+
+func TestGraphCutoverBackupDoesNotBlockHello(t *testing.T) {
+	g, url, id, token := newLinkGateway(t, time.Second)
+	if err := g.store.SetNodeGraphRefs(id, "v0.4.145", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.store.SetNodeHello(id, "test-host", "v0.4.145"); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := g.skillRepository()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.mu.Lock()
+	done := make(chan struct{})
+	go func() { defer close(done); g.checkGraphCutover(context.Background()) }()
+	// Wait until the check is running and has reached the backup.
+	waitLink(t, "cutover check", func() bool {
+		if g.graphCutoverCheckMu.TryLock() {
+			g.graphCutoverCheckMu.Unlock()
+			return false
+		}
+		return true
+	})
+	time.Sleep(100 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ws, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})
+	if err == nil {
+		err = ws.Write(ctx, websocket.MessageText, []byte(`{"type":"hello","id":"1","version":"dev","hostname":"test-host"}`))
+		if err == nil {
+			_, _, err = ws.Read(ctx)
+		}
+		ws.CloseNow()
+	}
+	cancel()
+	repo.mu.Unlock()
+	<-done
+	if err != nil {
+		t.Fatalf("hello blocked by backup: %v", err)
+	}
+	if on, _ := g.store.graphRefsEnabled(); on {
+		t.Fatal("cutover enabled despite dev hello during backup")
+	}
+}
+
+func TestGraphCutoverBlockedNodesCanSayHello(t *testing.T) {
+	g, url, id, _ := newLinkGateway(t, time.Second)
+	if err := g.store.SetNodeHello(id, "blocker", "dev"); err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range []string{"v0.4.144", "dev", "v0.4.145-1-gabc"} {
+		_, token, err := g.store.CreateNode(version, "linux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ws, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})
+		if err == nil {
+			raw, _ := json.Marshal(map[string]any{"type": "hello", "id": "1", "version": version, "hostname": version})
+			err = ws.Write(ctx, websocket.MessageText, raw)
+			if err == nil {
+				_, _, err = ws.Read(ctx)
+			}
+			ws.CloseNow()
+		}
+		cancel()
+		if err != nil {
+			t.Fatalf("%s hello: %v", version, err)
+		}
+	}
+	if on, _ := g.store.graphRefsEnabled(); on {
+		t.Fatal("cutover enabled with blockers")
 	}
 }
