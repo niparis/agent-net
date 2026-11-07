@@ -64,6 +64,8 @@ func ResolveTeamAction(action string, raw json.RawMessage, look TeamLookup) (Tea
 		_ = json.Unmarshal(fields[key], &s)
 		return strings.TrimSpace(s)
 	}
+	// Proposal metadata such as reason is not part of the team write itself.
+	// Parse the known action fields and leave that metadata ignored.
 	graphMember := func() (*GraphRef, error) {
 		var ref GraphRef
 		if rawRef, ok := fields["member"]; ok && len(rawRef) > 0 && string(rawRef) != "null" {

@@ -161,6 +161,20 @@ func TestCTOV2EveryActionValidates(t *testing.T) {
 	}
 }
 
+func TestCTOV2GraphTeamActionsAcceptProposalReason(t *testing.T) {
+	for _, args := range []string{
+		`{"action":"team_create","name":"team","reason":"group related work"}`,
+		`{"action":"team_rename","team":"team","name":"new","reason":"clearer name"}`,
+		`{"action":"team_archive","team":"team","reason":"team is done"}`,
+		`{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"},"reason":"assign ownership"}`,
+		`{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"},"reason":"assignment ended"}`,
+	} {
+		if err := ValidateCTOActionSchema("graph_change", json.RawMessage(args)); err != nil {
+			t.Errorf("%s: %v", args, err)
+		}
+	}
+}
+
 func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()

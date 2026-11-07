@@ -69,9 +69,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 	for name := range fields {
 		allowed[name] = true
 	}
-	if tool != "graph_change" {
-		allowed["reason"] = true
-	}
+	allowed["reason"] = true
 	for name := range args {
 		if !allowed[name] {
 			return fmt.Errorf("field %q is not valid for %s action %q; example: %s", name, tool, action, actionExample(tool))

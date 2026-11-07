@@ -55,6 +55,16 @@ func concreteProposal(call proposalCall) (proposalCall, error) {
 	if class != ctoProposal {
 		return call, errors.New("tool call is not a proposal")
 	}
+	// Proposal reasons are metadata stored beside the concrete call. They are
+	// not part of the action arguments passed to the concrete validator.
+	var fields map[string]json.RawMessage
+	if call.Tool == "graph_change" && json.Unmarshal(call.Args, &fields) == nil {
+		delete(fields, "reason")
+		call.Args, err = json.Marshal(fields)
+		if err != nil {
+			return call, err
+		}
+	}
 	concrete, args, action, err := ctoConcreteCall(call.Tool, call.Args)
 	if err != nil {
 		return call, err

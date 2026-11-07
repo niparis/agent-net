@@ -62,9 +62,13 @@ func TestCTOGraphTeamProposalLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. team_create proposal
-	res, err := w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_create","name":"omega","purpose":"Omega team"}`))
+	res, err := w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_create","name":"omega","purpose":"Omega team","reason":"group related work"}`))
 	if err != nil {
 		t.Fatalf("team_create proposal: %v", err)
+	}
+	var proposals []protocol.CTOProposal
+	if err := json.Unmarshal(w.cli.mustCall("proposal_list", nil), &proposals); err != nil || len(proposals) != 1 || proposals[0].Reason != "group related work" {
+		t.Fatalf("team_create proposal reason: %+v %v", proposals, err)
 	}
 	approveCTOToolResult(t, w.d, res)
 

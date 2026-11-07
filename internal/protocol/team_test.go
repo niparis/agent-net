@@ -39,7 +39,7 @@ func TestResolveTeamAction(t *testing.T) {
 	}
 
 	// 1. team_create
-	tw, err := ResolveTeamAction("team_create", json.RawMessage(`{"name":"ops","purpose":"Operations"}`), look)
+	tw, err := ResolveTeamAction("team_create", json.RawMessage(`{"name":"ops","purpose":"Operations","reason":"organize the work"}`), look)
 	if err != nil {
 		t.Fatalf("team_create: %v", err)
 	}
