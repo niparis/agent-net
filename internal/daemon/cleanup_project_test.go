@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -758,5 +760,304 @@ func TestCleanupWorktreeSquash(t *testing.T) {
 	}
 	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/agent-net/w_squash"); err == nil {
 		t.Fatal("squash branch remains")
+	}
+}
+
+func TestCleanupWorktreeStaleInitializingLockRemoved(t *testing.T) {
+	t.Parallel()
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_stale_init")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_stale_init", dir)
+	gitIn(t, project, "worktree", "lock", "--reason", "initializing", dir)
+	lockFile := filepath.Join(project, ".git", "worktrees", "w_stale_init", "locked")
+	if _, err := os.Stat(lockFile); err != nil {
+		t.Fatalf("lock file missing: %v", err)
+	}
+	now := time.Now()
+	stale := now.Add(-2 * time.Hour)
+	if err := os.Chtimes(lockFile, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_stale_init")
+
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{StateDir: state}, log: log.New(&logs, "", 0), workers: map[string]*worker{}}
+	candidate := cleanupWorktree{ID: "w_stale_init", Project: project, Path: dir, Branch: "agent-net/w_stale_init", EndedAt: now.Add(-25 * time.Hour)}
+	if err := d.cleanupWorktree(context.Background(), candidate, now); err != nil {
+		t.Fatalf("stale initializing lock cleanup failed: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("worktree directory remains: %v", err)
+	}
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/agent-net/w_stale_init"); err == nil {
+		t.Fatal("merged branch remains")
+	}
+	if !strings.Contains(logs.String(), "unlocked_stale=initializing") {
+		t.Fatalf("log does not report unlocked_stale=initializing: %s", logs.String())
+	}
+}
+
+func TestCleanupWorktreeFreshInitializingLockKept(t *testing.T) {
+	t.Parallel()
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_fresh_init")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_fresh_init", dir)
+	gitIn(t, project, "worktree", "lock", "--reason", "initializing", dir)
+	lockFile := filepath.Join(project, ".git", "worktrees", "w_fresh_init", "locked")
+	if _, err := os.Stat(lockFile); err != nil {
+		t.Fatalf("lock file missing: %v", err)
+	}
+	now := time.Now()
+	fresh := now.Add(-10 * time.Minute)
+	if err := os.Chtimes(lockFile, fresh, fresh); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_fresh_init")
+
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{StateDir: state}, log: log.New(&logs, "", 0), workers: map[string]*worker{}}
+	candidate := cleanupWorktree{ID: "w_fresh_init", Project: project, Path: dir, Branch: "agent-net/w_fresh_init", EndedAt: now.Add(-25 * time.Hour)}
+	if err := d.cleanupWorktree(context.Background(), candidate, now); err == nil {
+		t.Fatal("expected error on fresh locked worktree, got nil")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("fresh locked worktree removed: %v", err)
+	}
+	if strings.Contains(logs.String(), "unlocked_stale=initializing") {
+		t.Fatalf("fresh lock should not be unlocked: %s", logs.String())
+	}
+}
+
+func TestCleanupWorktreeOtherLockReasonKept(t *testing.T) {
+	t.Parallel()
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_other_lock")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_other_lock", dir)
+	gitIn(t, project, "worktree", "lock", "--reason", "owner hold", dir)
+	lockFile := filepath.Join(project, ".git", "worktrees", "w_other_lock", "locked")
+	if _, err := os.Stat(lockFile); err != nil {
+		t.Fatalf("lock file missing: %v", err)
+	}
+	now := time.Now()
+	stale := now.Add(-2 * time.Hour)
+	if err := os.Chtimes(lockFile, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_other_lock")
+
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{StateDir: state}, log: log.New(&logs, "", 0), workers: map[string]*worker{}}
+	candidate := cleanupWorktree{ID: "w_other_lock", Project: project, Path: dir, Branch: "agent-net/w_other_lock", EndedAt: now.Add(-25 * time.Hour)}
+	if err := d.cleanupWorktree(context.Background(), candidate, now); err == nil {
+		t.Fatal("expected error on worktree locked with other reason, got nil")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("worktree with other lock reason removed: %v", err)
+	}
+	if strings.Contains(logs.String(), "unlocked_stale=initializing") {
+		t.Fatalf("other lock reason should not be unlocked: %s", logs.String())
+	}
+}
+
+func TestCleanupWorktreeDirtyLockedKept(t *testing.T) {
+	t.Parallel()
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_dirty_locked")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_dirty_locked", dir)
+	gitIn(t, project, "worktree", "lock", "--reason", "initializing", dir)
+	lockFile := filepath.Join(project, ".git", "worktrees", "w_dirty_locked", "locked")
+	if _, err := os.Stat(lockFile); err != nil {
+		t.Fatalf("lock file missing: %v", err)
+	}
+	now := time.Now()
+	stale := now.Add(-2 * time.Hour)
+	if err := os.Chtimes(lockFile, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_dirty_locked")
+	if err := os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("dirty content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{StateDir: state}, log: log.New(&logs, "", 0), workers: map[string]*worker{}}
+	candidate := cleanupWorktree{ID: "w_dirty_locked", Project: project, Path: dir, Branch: "agent-net/w_dirty_locked", EndedAt: now.Add(-25 * time.Hour)}
+	if err := d.cleanupWorktree(context.Background(), candidate, now); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("dirty locked worktree removed: %v", err)
+	}
+	if strings.Contains(logs.String(), "unlocked_stale=initializing") {
+		t.Fatalf("dirty worktree must not be unlocked: %s", logs.String())
+	}
+}
+
+func TestCleanupProjectsSkipsMissingAndNonGitAndRateLimits(t *testing.T) {
+	tmp := t.TempDir()
+	missingPath := filepath.Join(tmp, "missing_proj")
+	nonGitPath := filepath.Join(tmp, "nongit_proj")
+	if err := os.MkdirAll(nonGitPath, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	clock := time.Now()
+	nodeID := "node-1"
+
+	projectsResult := protocol.ProjectsResult{
+		Projects: []protocol.ProjectView{
+			{NodeID: nodeID, Name: "missing", Path: missingPath},
+			{NodeID: nodeID, Name: "nongit", Path: nonGitPath},
+		},
+	}
+	rawProjects, _ := json.Marshal(projectsResult)
+
+	d := &Daemon{
+		cfg: Config{
+			NodeID:   nodeID,
+			StateDir: tmp,
+			testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+				if typ == "query.projects" {
+					return rawProjects, true, nil
+				}
+				return nil, false, nil
+			},
+		},
+		log:     log.New(&logs, "", 0),
+		workers: map[string]*worker{},
+		testCleanupNow: func() time.Time {
+			return clock
+		},
+	}
+
+	// Pass 1: should log once for missing and once for nongit.
+	d.cleanupProjects(context.Background())
+	out1 := logs.String()
+	if !strings.Contains(out1, `project="`+missingPath+`"`) {
+		t.Fatalf("pass 1 missingPath not logged: %s", out1)
+	}
+	if !strings.Contains(out1, `project="`+nonGitPath+`"`) {
+		t.Fatalf("pass 1 nonGitPath not logged: %s", out1)
+	}
+
+	// Pass 2: 1 hour later (within 24h), should NOT log again.
+	logs.Reset()
+	clock = clock.Add(1 * time.Hour)
+	d.cleanupProjects(context.Background())
+	out2 := logs.String()
+	if strings.Contains(out2, `project="`+missingPath+`"`) {
+		t.Fatalf("pass 2 unexpectedly logged missingPath again within 24h: %s", out2)
+	}
+	if strings.Contains(out2, `project="`+nonGitPath+`"`) {
+		t.Fatalf("pass 2 unexpectedly logged nonGitPath again within 24h: %s", out2)
+	}
+
+	// Pass 3: 25 hours after pass 1 (exceeds 24h), should log again.
+	logs.Reset()
+	clock = clock.Add(24 * time.Hour)
+	d.cleanupProjects(context.Background())
+	out3 := logs.String()
+	if !strings.Contains(out3, `project="`+missingPath+`"`) {
+		t.Fatalf("pass 3 missingPath should log after 24h: %s", out3)
+	}
+	if !strings.Contains(out3, `project="`+nonGitPath+`"`) {
+		t.Fatalf("pass 3 nonGitPath should log after 24h: %s", out3)
+	}
+}
+
+func TestCleanupWorktreeErrorRateLimited(t *testing.T) {
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_err_ratelimit")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_err_ratelimit", dir)
+	gitIn(t, project, "worktree", "lock", "--reason", "owner hold", dir)
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_err_ratelimit")
+
+	st, err := openState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+
+	clock := time.Now()
+	ended := clock.Add(-25 * time.Hour)
+	if _, err := st.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at) VALUES(?,?,?,?,?)`, "w_err_ratelimit", project, dir, "agent-net/w_err_ratelimit", ended.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+
+	nodeID := "node-1"
+	projectsResult := protocol.ProjectsResult{
+		Projects: []protocol.ProjectView{
+			{NodeID: nodeID, Name: "project", Path: project},
+		},
+	}
+	rawProjects, _ := json.Marshal(projectsResult)
+
+	var logs bytes.Buffer
+	d := &Daemon{
+		cfg: Config{
+			NodeID:   nodeID,
+			StateDir: state,
+			testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+				if typ == "query.projects" {
+					return rawProjects, true, nil
+				}
+				if typ == protocol.FrameChangeList {
+					return json.RawMessage(`{"branch":"agent-net/w_err_ratelimit","changes":[]}`), true, nil
+				}
+				return nil, false, nil
+			},
+		},
+		st:      st,
+		log:     log.New(&logs, "", 0),
+		workers: map[string]*worker{},
+		testCleanupNow: func() time.Time {
+			return clock
+		},
+	}
+
+	// Pass 1: should log error=
+	d.cleanupProjects(context.Background())
+	out1 := logs.String()
+	if !strings.Contains(out1, `worker.worktree_cleanup path="`+dir+`" error=`) {
+		t.Fatalf("pass 1 expected error log for worktree: %s", out1)
+	}
+
+	// Pass 2: 2 minutes later (same error, within 24h), should NOT log error=
+	logs.Reset()
+	clock = clock.Add(2 * time.Minute)
+	d.cleanupProjects(context.Background())
+	out2 := logs.String()
+	if strings.Contains(out2, `worker.worktree_cleanup path="`+dir+`" error=`) {
+		t.Fatalf("pass 2 unexpectedly logged worktree error within 24h: %s", out2)
+	}
+
+	// Pass 3: 25 hours later, should log error= again
+	logs.Reset()
+	clock = clock.Add(25 * time.Hour)
+	d.cleanupProjects(context.Background())
+	out3 := logs.String()
+	if !strings.Contains(out3, `worker.worktree_cleanup path="`+dir+`" error=`) {
+		t.Fatalf("pass 3 expected error log for worktree after 24h: %s", out3)
 	}
 }
