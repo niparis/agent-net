@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/niparis/agent-net/internal/claudetext"
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -243,61 +243,6 @@ func mergeCTOEventPages(older []protocol.CTOEvents, latest protocol.CTOEvents) p
 	return out
 }
 
-var reCommandTags = regexp.MustCompile(`(?s)</?(command|local-command)[^>]*>`)
-
-func extractTag(s, tag string) string {
-	open := "<" + tag + ">"
-	close := "</" + tag + ">"
-	start := strings.Index(s, open)
-	if start == -1 {
-		return ""
-	}
-	start += len(open)
-	end := strings.Index(s[start:], close)
-	if end == -1 {
-		rem := s[start:]
-		if nextOpen := strings.Index(rem, "<"); nextOpen != -1 {
-			return strings.TrimSpace(rem[:nextOpen])
-		}
-		return strings.TrimSpace(rem)
-	}
-	return strings.TrimSpace(s[start : start+end])
-}
-
-func cleanClaudeCommandMarkup(text, lastCmd string) (string, string, bool) {
-	trimmed := strings.TrimSpace(text)
-	if strings.Contains(trimmed, "<command-name>") || strings.Contains(trimmed, "<command-message>") {
-		cmdName := extractTag(trimmed, "command-name")
-		if cmdName == "" {
-			cmdName = extractTag(trimmed, "command-message")
-			if cmdName != "" && !strings.HasPrefix(cmdName, "/") {
-				cmdName = "/" + cmdName
-			}
-		}
-		cmdArgs := strings.TrimSpace(extractTag(trimmed, "command-args"))
-		cmd := cmdName
-		if cmdArgs != "" {
-			cmd = cmdName + " " + cmdArgs
-		}
-		if cmd == "" {
-			cmd = strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
-		}
-		return strings.TrimSpace(cmd), cmdName, false
-	}
-	if strings.Contains(trimmed, "<local-command-stdout>") || strings.Contains(trimmed, "<local-command-stderr>") {
-		out := strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
-		if lastCmd != "" && !strings.HasPrefix(out, lastCmd+" → ") && !strings.Contains(out, " → ") {
-			out = lastCmd + " → " + out
-		}
-		return out, lastCmd, true
-	}
-	if strings.Contains(trimmed, "<command-") || strings.Contains(trimmed, "<local-command-") {
-		out := strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
-		return out, lastCmd, false
-	}
-	return text, lastCmd, false
-}
-
 func ctoMessage(raw json.RawMessage) string {
 	text, _ := ctoMessageWithCmd(raw, "")
 	return text
@@ -344,7 +289,7 @@ func ctoMessageWithCmd(raw json.RawMessage, lastCmd string) (string, string) {
 		return "", lastCmd
 	}
 
-	clean, newCmd, isOutput := cleanClaudeCommandMarkup(text, lastCmd)
+	clean, newCmd, isOutput := claudetext.CleanCommandMarkup(text, lastCmd)
 	if clean == "" {
 		return "", newCmd
 	}

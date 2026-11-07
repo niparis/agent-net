@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudetext"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 )
@@ -334,7 +334,7 @@ func entriesOfLine(line []byte, sidechain bool) []protocol.TextEntry {
 		if strings.TrimSpace(s) == "" {
 			return nil
 		}
-		clean, _, _ := cleanClaudeCommandMarkup(s, "")
+		clean, _, _ := claudetext.CleanCommandMarkup(s, "")
 		if strings.TrimSpace(clean) == "" {
 			return nil
 		}
@@ -355,7 +355,7 @@ func entriesOfLine(line []byte, sidechain bool) []protocol.TextEntry {
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
-			clean, _, _ := cleanClaudeCommandMarkup(b.Text, "")
+			clean, _, _ := claudetext.CleanCommandMarkup(b.Text, "")
 			if strings.TrimSpace(clean) != "" {
 				out = append(out, mk(base, "", clean))
 			}
@@ -458,59 +458,4 @@ func summarizeInput(tool string, raw json.RawMessage) string {
 	}
 	s = strings.Join(strings.Fields(s), " ")
 	return redact.Cut(s, textToolInputMax)
-}
-
-var reCommandTags = regexp.MustCompile(`(?s)</?(command|local-command)[^>]*>`)
-
-func cleanClaudeCommandMarkup(text, lastCmd string) (string, string, bool) {
-	trimmed := strings.TrimSpace(text)
-	if strings.Contains(trimmed, "<command-name>") || strings.Contains(trimmed, "<command-message>") {
-		cmdName := extractTag(trimmed, "command-name")
-		if cmdName == "" {
-			cmdName = extractTag(trimmed, "command-message")
-			if cmdName != "" && !strings.HasPrefix(cmdName, "/") {
-				cmdName = "/" + cmdName
-			}
-		}
-		cmdArgs := strings.TrimSpace(extractTag(trimmed, "command-args"))
-		cmd := cmdName
-		if cmdArgs != "" {
-			cmd = cmdName + " " + cmdArgs
-		}
-		if cmd == "" {
-			cmd = strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
-		}
-		return strings.TrimSpace(cmd), cmdName, false
-	}
-	if strings.Contains(trimmed, "<local-command-stdout>") || strings.Contains(trimmed, "<local-command-stderr>") {
-		out := strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
-		if lastCmd != "" && !strings.HasPrefix(out, lastCmd+" → ") && !strings.Contains(out, " → ") {
-			out = lastCmd + " → " + out
-		}
-		return out, lastCmd, true
-	}
-	if strings.Contains(trimmed, "<command-") || strings.Contains(trimmed, "<local-command-") {
-		out := strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
-		return out, lastCmd, false
-	}
-	return text, lastCmd, false
-}
-
-func extractTag(s, tag string) string {
-	open := "<" + tag + ">"
-	close := "</" + tag + ">"
-	start := strings.Index(s, open)
-	if start == -1 {
-		return ""
-	}
-	start += len(open)
-	end := strings.Index(s[start:], close)
-	if end == -1 {
-		rem := s[start:]
-		if nextOpen := strings.Index(rem, "<"); nextOpen != -1 {
-			return strings.TrimSpace(rem[:nextOpen])
-		}
-		return strings.TrimSpace(rem)
-	}
-	return strings.TrimSpace(s[start : start+end])
 }
