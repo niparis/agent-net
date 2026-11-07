@@ -1,0 +1,24 @@
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (1) 8 Delivery │ 26 online
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● build cpu ? mem ? disk ?                                                  │
+│  ● desk  cpu ? mem ? disk ?                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
+ Needs you (1)                                                Inbox: 1 to decide
+  video          desk    -       claude · op… needs you     ?     ? Combine the…
+ Working (3)
+▸ ★ demo lead    desk    demo    claude · gp… idle          ?     ? +2 (1 busy)
+ Idle (22)
+  ★ pinned       desk    -       claude · gp… idle          ?     ? Review the …
+  21 more idle · v to show
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open  m msg  n new  p pin  z/Z tree  ? help  q quit

@@ -5,15 +5,15 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 agents per repo: project-with-long-name-3 4/3 over max · project-with-long-name…
-  NAME           TYPE   PROJECT         MODEL            STATUS   CPU   RAM TASK
- Mac (here) 4 sessions ────────────────────────────────────────────── active (v)
-▸ ↳ tenebrae     worker tenebrae        opencode · haik… busy       ?     ?
-  tenebrae-53    agent  project-with-l… claude · opus-5… busy       ?     ?
-  ◐ strategies   agent  project-with-l… claude · sonnet… idle       ?     ? bac…
-  web            agent  project-with-l… opencode · sonn… idle       ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ◐ ci-runner    agent  project-with-l… pi · gpt-6       idle       ?     ?
-  scratch        agent  -               pi               shell      ?     ?
+  NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
+ Working (2)                                                             all (v)
+▸ ↳ tenebrae     Mac     tenebrae  opencode · … busy        ?     ?
+  tenebrae-53    Mac     project-… claude · op… busy        ?     ?
+ Idle (4)
+  ◐ strategies   Mac     project-… claude · so… idle        ?     ? backtest v2
+  web            Mac     project-… opencode · … idle        ?     ?
+  ◐ ci-runner    build-… project-… pi · gpt-6   idle        ?     ?
+  scratch        build-… -         pi           shell       ?     ?
 
 
 
@@ -21,4 +21,4 @@ agents per repo: project-with-long-name-3 4/3 over max · project-with-long-name
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  ? help  q quit
+up/down select  enter open  m msg  x stop  p pin  z/Z tree  ? help  q quit

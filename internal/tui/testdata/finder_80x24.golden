@@ -4,14 +4,14 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G no claude · n… │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
- Mac (he╭─Find session──────────────────────────────────────4 matches─╮ctive (v)
+  NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
+ Working╭─Find session──────────────────────────────────────4 matches─╮ctive (v)
 ▸ tenebr│ › st▌                                                       │
-  ◐ stra│   NAME        PROJECT    MACHINE    HARNESS   STATE     AGE │backtest…
-  web   │ › strategies  strategies Mac        claude    idle       1m │
- build-v│   tenebrae-53 tenebrae   Mac        claude    busy       2m │─────────
-  ◐ ci-r│   ci-runner   agent-net  build-vm   pi        idle       4m │
-  scratc│   scratch     -          build-vm   pi        shell      5m │
+ Idle (4│   NAME        PROJECT    MACHINE    HARNESS   STATE     AGE │
+  4 more│ › strategies  strategies Mac        claude    idle       1m │
+        │   tenebrae-53 tenebrae   Mac        claude    busy       2m │
+        │   ci-runner   agent-net  build-vm   pi        idle       4m │
+        │   scratch     -          build-vm   pi        shell      5m │
         │ enter open  up/down select  esc close                       │
         ╰─────────────────────────────────────────────────────────────╯
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  n new  p pin  ? help  q quit
+up/down select  enter open  m msg  n new  p pin  z/Z tree  ? help  q quit

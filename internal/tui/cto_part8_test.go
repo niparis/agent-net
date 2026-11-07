@@ -137,6 +137,7 @@ func TestEnterOnTheCTORowAndBoxGiveTheSamePlan(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m.snap = snap
 	m.cto = &ctoState{generation: 1, title: "Atlas", harness: "opencode", model: "fake/m1"}
+	m.activeOnly = false
 	m.selected = ctoTestSession
 	m.ensureSelection()
 

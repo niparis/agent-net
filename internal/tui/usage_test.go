@@ -263,6 +263,7 @@ func TestHeavyTrees(t *testing.T) {
 func TestSharedTreeIsNotARowAndTopUsesHighestSessionCPU(t *testing.T) {
 	snap, u := openCodeSnapshot()
 	m := modelWith(snap, u, 160, 40)
+	m.activeOnly = false
 	v := m.testView()
 	if strings.Contains(v, "service, shared by") {
 		t.Fatalf("the shared service still has a row of its own:\n%s", v)
@@ -277,7 +278,7 @@ func TestSharedTreeIsNotARowAndTopUsesHighestSessionCPU(t *testing.T) {
 		t.Fatalf("the sessions are not marked shared:\n%s", v)
 	}
 	for _, row := range m.tableRows() {
-		if row.agent.SessionID == "" && !row.header {
+		if row.agent.SessionID == "" && !row.header && !row.fold {
 			t.Fatal("a table row is not a machine heading or a session")
 		}
 	}
@@ -314,32 +315,16 @@ func TestPrivateServiceIsOnTheWorkerRow(t *testing.T) {
 	}
 }
 
-func TestMachineHeadingUsesTheNodeNameAndMatchesByNodeID(t *testing.T) {
-	snap := fakeSnapshot()
-	snap.Nodes[0].Hostname = "NicolassMBP950"
-	for i := range snap.Agents {
-		if snap.Agents[i].NodeID == "n_mac" {
-			snap.Agents[i].Hostname = "Nicolass-MacBook-Pro-950.local"
-		}
+func TestMachineColumnUsesTheNodeNameAndFallsBack(t *testing.T) {
+	m := modelWith(fakeSnapshot(), nil, 120, 34)
+	a := m.snap.Agents[0]
+	if got := m.sessionMachine(a); got != "Mac" {
+		t.Fatalf("node name %s", got)
 	}
-	m := modelWith(snap, nil, 100, 30)
-	v := m.testView()
-	if !strings.Contains(v, "NicolassMBP950 (here)") {
-		t.Fatalf("no heading with the node name:\n%s", v)
-	}
-	if strings.Contains(v, "Nicolass-MacBook") {
-		t.Fatalf("the local hostname leaked into the screen:\n%s", v)
-	}
-	// "(here)" follows the node ID, not the name.
-	m.snap.NodeID = "n_vm"
-	v = m.testView()
-	if strings.Contains(v, "NicolassMBP950 (here)") || !strings.Contains(v, "build-vm (here)") {
-		t.Fatalf("(here) did not follow the node ID:\n%s", v)
-	}
-	// A node that is not in the list falls back to the session's hostname.
 	m.snap.Nodes = nil
-	if g := m.groups(); len(g) == 0 || !strings.Contains(g[0].host, "build-vm") && !strings.Contains(g[0].host, "Nicolass") {
-		t.Fatalf("fallback %+v", g)
+	a.Hostname = "fallback.example.test"
+	if got := m.sessionMachine(a); got != "fallback" {
+		t.Fatalf("fallback %s", got)
 	}
 }
 
@@ -387,6 +372,7 @@ func TestTopProcessesAreFetchedOnDemandAndCached(t *testing.T) {
 
 func TestSelectingASessionStartsItsTopFetch(t *testing.T) {
 	m := newModel(100, 30)
+	m.activeOnly = false
 	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if cmd == nil {
 		t.Fatal("moving the selection did not start the top fetch")
@@ -457,7 +443,7 @@ func TestTaskColumnTakesTheRoomAndCutsWithDots(t *testing.T) {
 		t.Fatalf("TASK is only %d wide: %+v", task.width, cols)
 	}
 	for _, c := range columnsNarrow(78, 14, 12) {
-		if c.name == "MODEL" && c.width < 16 {
+		if c.name == "MODEL" && c.width < 12 {
 			t.Fatalf("narrow MODEL is only %d wide", c.width)
 		}
 	}

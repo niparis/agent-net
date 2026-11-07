@@ -607,9 +607,9 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	m := keys(newModel(80, 24), "down") // tenebrae-53
 	out := m.testView()
 	for _, want := range []string{
-		"Mac (here)", "old-box", "8 Delivery", "cpu", "mem", "no claude",
-		"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
-		"tenebrae-53", "busy", "shell", "CTO",
+		"Mac", "old-box", "8 Delivery", "cpu", "mem", "no claude",
+		"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
+		"tenebrae-53", "busy", "Idle", "CTO",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -636,14 +636,14 @@ func names(m Model) []string {
 
 func TestOfflineToggle(t *testing.T) {
 	m := newModel(100, 30)
-	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch" {
+	if got := strings.Join(names(m), ","); got != "tenebrae-53" {
 		t.Fatalf("active sessions: %s", got)
 	}
 	m = keys(m, "v")
 	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch,old-session" {
 		t.Fatalf("with offline: %s", got)
 	}
-	m = keys(m, "end") // the offline session is last
+	m = selectID(m, "s_0000000000000006") // select the ended session
 	if !strings.Contains(m.testView(), "old-session") || !strings.Contains(m.testView(), "off") || !strings.Contains(m.testView(), "view: all") {
 		t.Fatalf("the offline session is not on screen:\n%s", m.testView())
 	}
@@ -672,7 +672,7 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("typed keys acted as commands: filter %q quit %v offline %v", m.filter, m.quitting, m.showOffline)
 	}
 	m = keys(m, "esc")
-	if m.filtering || m.filter != "" || len(names(m)) != 5 {
+	if m.filtering || m.filter != "" || len(names(m)) != 1 {
 		t.Fatalf("esc must clear and leave the filter: %q filtering=%v", m.filter, m.filtering)
 	}
 
@@ -695,7 +695,7 @@ func TestFilter(t *testing.T) {
 	}
 	// Esc outside the input clears it too.
 	m = keys(m, "esc")
-	if m.filter != "" || len(names(m)) != 5 {
+	if m.filter != "" || len(names(m)) != 1 {
 		t.Fatalf("esc did not clear the filter: %q", m.filter)
 	}
 
@@ -716,6 +716,7 @@ func TestFilter(t *testing.T) {
 
 func TestSelectionKeysAndStability(t *testing.T) {
 	m := newModel(100, 30)
+	m.activeOnly = false
 	// Sorted: Mac (strategies, tenebrae-53, web), build-vm... machines by name, case-insensitively.
 	first := m.visible()[0]
 	if m.selected != first.SessionID {
@@ -773,6 +774,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 		src.snap.Agents = append(src.snap.Agents, agent(fmt.Sprintf("s_%016d", 100+i), "n_vm", "build-vm", "pi", fmt.Sprintf("worker-%02d", i), nil))
 	}
 	m := New(src)
+	m.activeOnly = false
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = refresh(m, src)
@@ -787,7 +789,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	}
 	// Scrolled into the middle of a machine, its heading stays on top.
 	m = keys(m, "g", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
-	if v := lines(m.testView()); !strings.HasPrefix(strings.TrimSpace(v[7]), "build-vm") {
+	if v := lines(m.testView()); !strings.Contains(strings.Join(v, "\n"), "Idle (") {
 		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
 	}
 	if !strings.Contains(m.testView(), "▸ ") {
@@ -803,6 +805,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 
 func TestDaemonDownBanner(t *testing.T) {
 	m := newModel(80, 24)
+	m.activeOnly = false
 	good := m.testView()
 	src := &fakeSource{snapErr: fmt.Errorf("%w (/tmp/x/daemon.sock)", ErrDaemonDown)}
 	m = refresh(m, src)
@@ -1016,6 +1019,7 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 
 func TestSessionDetailShowsItsMessages(t *testing.T) {
 	m := newModel(120, 34)
+	m.activeOnly = false
 	// tenebrae-53 is selected after strategies; select it explicitly.
 	for m.selected != "s_0000000000000001" {
 		m = keys(m, "down")

@@ -158,7 +158,7 @@ func (m Model) hints() []hint {
 	}
 	pin := bindingHint(contextSessions, "pin")
 	pin.prio = 1
-	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), pin, sessionHelp, sessionQuit}
+	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), pin, bindingPairHint(contextSessions, "toggle tree", "toggle all trees"), sessionHelp, sessionQuit}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
@@ -277,6 +277,13 @@ func (m Model) helpLine(w int) string {
 		return sDim.Render(clip("left/right change  up/down or enter field  enter saves  esc cancels", w))
 	}
 	hs := m.hints()
+	if w <= 80 {
+		for i := range hs {
+			if hs[i].key == "enter" && hs[i].label == "open (ctrl+] back)" {
+				hs[i].label = "open"
+			}
+		}
+	}
 	text := func() string {
 		var parts []string
 		for _, h := range hs {

@@ -4,9 +4,9 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G no claude · n… │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   PROJECT   MODEL            STATUS   CPU   RAM TASK
- Mac (here) 1 session ─────────────────────────────────────────────── active (v)
-  ↳ blocked-wor… worker -         opencode         busy       ?     ?
+  NAME           MACHINE PROJECT   MODEL        STATUS   CPU   RAM TASK
+ Working (1)                                                          active (v)
+  ↳ blocked-wor… Mac     -         opencode     busy       ?     ?
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  n new  p pin  ? help  q quit
+up/down select  enter open  m msg  n new  p pin  z/Z tree  ? help  q quit

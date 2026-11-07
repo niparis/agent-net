@@ -47,28 +47,18 @@ func tableOrdinal(m Model, id string) int {
 
 func TestWaitingSessionTableRowCanBeReached(t *testing.T) {
 	m, _ := waitingTableModel()
-	ordinal := tableOrdinal(m, cogforgeMaintenanceID)
-	if ordinal <= 0 {
-		t.Fatalf("waiting row has no row above it: %d", ordinal)
+	if ordinal := tableOrdinal(m, cogforgeMaintenanceID); ordinal != 0 {
+		t.Fatalf("waiting row is not first: %d", ordinal)
 	}
-	var above protocol.AgentView
-	seen := 0
-	for _, g := range m.groups() {
-		for _, a := range g.agents {
-			if seen == ordinal-1 {
-				above = a
-			}
-			seen++
-		}
-	}
-	m.selected = above.SessionID
+	m.selected = cogforgeMaintenanceID
 	m.ensureSelection()
 	m.move(1)
-	if m.selected != cogforgeMaintenanceID {
-		t.Fatalf("down from %q skipped the table row and selected %q", above.Profile.Name, m.selected)
+	if m.selected == cogforgeMaintenanceID {
+		t.Fatal("down did not leave the waiting row")
 	}
-	if m.selIdx != ordinal {
-		t.Fatalf("selected position %d, want table position %d", m.selIdx, ordinal)
+	m.move(-1)
+	if m.selected != cogforgeMaintenanceID || m.selIdx != 0 {
+		t.Fatalf("up did not reach waiting row: %s at %d", m.selected, m.selIdx)
 	}
 }
 

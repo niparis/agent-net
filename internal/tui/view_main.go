@@ -83,9 +83,6 @@ func (m Model) layout() layout {
 		if l.banner {
 			fixed++
 		}
-		if !m.expand && m.waitingCount() > 0 {
-			fixed++ // the "waiting in Inbox" line
-		}
 		l.sessions = max(h-fixed, 1)
 		return l
 	}
@@ -296,9 +293,6 @@ func (m Model) mainView(w, h int) []string {
 	}
 
 	if m.mode == modeNormal {
-		if n := m.waitingCount(); n > 0 && !m.expand {
-			add(sAccent.Render(clip(fmt.Sprintf("%d waiting in Inbox (7)", n), w)))
-		}
 		for _, s := range m.sessionsTable(w, l.sessions) {
 			add(s)
 		}
@@ -1036,7 +1030,7 @@ func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 func sessionColumns(avail, nameWant, projectWant int, narrow bool) []column {
 	cols := []column{
 		{name: "NAME", min: 4, max: min(max(nameWant, 18), 32)},
-		{name: "TYPE", min: 6, max: 6},
+		{name: "MACHINE", min: 7, max: 12},
 		{name: "PROJECT", min: 7, max: min(max(projectWant, 9), 16)},
 		{name: "MODEL", min: 18, max: 24},
 		{name: "STATUS", min: 6, max: 6},
@@ -1045,8 +1039,11 @@ func sessionColumns(avail, nameWant, projectWant int, narrow bool) []column {
 		{name: "TASK", min: 4, max: 4000},
 	}
 	if narrow {
-		cols[0].max = min(cols[0].max, 14)
-		cols[3].min, cols[3].max = 16, 16
+		cols[0].min, cols[0].max = 8, 14
+		cols[1].max = 7
+		cols[2].min = 3
+		cols[3].min, cols[3].max = 12, 12
+		cols[7].min = 12
 	} else {
 		cols[7].min = 20
 	}
@@ -1062,7 +1059,7 @@ func sessionColumns(avail, nameWant, projectWant int, narrow bool) []column {
 		deficit -= cut
 	}
 	extra := max(0, avail-sumMin(cols))
-	for _, i := range []int{0, 2, 3, 7} {
+	for _, i := range []int{0, 1, 2, 3, 7} {
 		add := min(extra, cols[i].max-cols[i].min)
 		cols[i].width += add
 		extra -= add
@@ -1117,27 +1114,20 @@ func cellR(s string, w int) string {
 }
 
 func (m Model) sessionsTable(w, n int) []string {
-	nameWant, projectWant := 0, 0
-	hasLeadMark := false
+	nameWant, projectWant, summaryWant := 0, 0, 0
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
+			summaryWant = max(summaryWant, ansi.StringWidth(g.marks[a.SessionID].summary))
 			name := m.nameText(a, g.marks[a.SessionID], 1<<20)
-			if g.mine {
-				name += m.mineMachineSuffix(a)
-			}
 			nameWant = max(nameWant, ansi.StringWidth(name))
-			hasLeadMark = hasLeadMark || leadWidth(a) > 0
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 		}
-	}
-	if hasLeadMark {
-		nameWant = max(0, nameWant-2)
 	}
 	indicator := "view: " + m.sessionViewName()
 	if w > 80 {
 		indicator += "  (v)"
 	} else {
-		indicator = ""
+		indicator = m.sessionViewName() + " (v)"
 	}
 	avail := w - 2
 	statusWidth := 6
@@ -1149,8 +1139,11 @@ func (m Model) sessionsTable(w, n int) []string {
 			statusWidth = max(statusWidth, min(18, len(m.statusCell(a))))
 		}
 	}
-	for _, a := range m.mineAgents() {
-		statusWidth = max(statusWidth, ansi.StringWidth(m.mineStatusCell(a)))
+	for _, a := range m.snap.Agents {
+		if m.sessionNeedsOwner(a) {
+			statusWidth = max(statusWidth, 9)
+		}
+		statusWidth = max(statusWidth, ansi.StringWidth(m.sessionStatusCell(a)))
 	}
 	avail -= statusWidth - 6
 	var cols []column
@@ -1158,6 +1151,17 @@ func (m Model) sessionsTable(w, n int) []string {
 		cols = columnsNarrow(avail, nameWant, projectWant)
 	} else {
 		cols = columnsForProject(avail, nameWant, projectWant, false)
+	}
+
+	// Preserve the entire collapsed count, including double-digit child counts.
+	if summaryWant > cols[7].width {
+		need := summaryWant - cols[7].width
+		for _, i := range []int{0, 2, 1, 3} {
+			cut := min(need, max(0, cols[i].width-1))
+			cols[i].width -= cut
+			cols[7].width += cut
+			need -= cut
+		}
 	}
 	if w <= 80 {
 		hasDelivery := false
@@ -1227,7 +1231,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	}
 	top := min(m.tableTop, max(len(rows)-1, 0))
 	if top > 0 && top < len(rows) && !rows[top].header {
-		// The machine heading has scrolled off: keep it as the first line.
+		// The group heading has scrolled off: keep it as the first line.
 		for j := top - 1; j >= 0; j-- {
 			if rows[j].header {
 				out = append(out, m.groupLine(rows[j].g, w))
@@ -1237,7 +1241,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	}
 	visibleIndex := 0
 	for i := 0; i < top; i++ {
-		if !rows[i].header {
+		if !rows[i].header && !rows[i].fold {
 			visibleIndex++
 		}
 	}
@@ -1247,23 +1251,17 @@ func (m Model) sessionsTable(w, n int) []string {
 		if r.header {
 			line := m.groupLine(r.g, w)
 			if indicator != "" && !viewShown {
-				line = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(indicator)-1)) + sDim.Render(" "+indicator)
+				if !r.g.first || m.waitingCount() == 0 {
+					line = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(indicator)-1)) + sDim.Render(" "+indicator)
+				}
 				viewShown = true
 			}
 			out = append(out, line)
+		} else if r.fold {
+			out = append(out, sDim.Render(clip(fmt.Sprintf("  %d more idle · v to show", r.g.hidden), w)))
 		} else {
-			out = append(out, m.sessionLine(r.agent, r.mark, cols, w, visibleIndex, r.g.mine))
+			out = append(out, m.sessionLine(r.agent, r.mark, cols, w, visibleIndex))
 			visibleIndex++
-		}
-	}
-	if w <= 80 {
-		for i, line := range out {
-			plain := ansi.Strip(line)
-			if strings.Contains(plain, "─") && !strings.HasPrefix(plain, " Mine ") {
-				label := " " + m.sessionViewName() + " (v)"
-				out[i] = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(label))) + sDim.Render(label)
-				break
-			}
 		}
 	}
 	// A table with fewer rows than room keeps its height.
@@ -1273,33 +1271,15 @@ func (m Model) sessionsTable(w, n int) []string {
 	return out
 }
 
-// groupLine is the heading of one machine: its name, bold, a light rule, the
-// session count and how many the active filter hides.
+// groupLine names an urgency band and puts the Inbox count on the first one.
 func (m Model) groupLine(g group, w int) string {
-	if g.mine {
-		head := " " + sBold.Render("Mine") + " " + sDim.Render(fmt.Sprintf("%d ", len(g.agents)))
-		rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
-		return clip(head+sDim.Render(rule), w)
+	head := " " + sBold.Render(fmt.Sprintf("%s (%d)", g.host, g.total))
+	right := ""
+	if g.first && m.waitingCount() > 0 {
+		right = fmt.Sprintf("Inbox: %d to decide", m.waitingCount())
 	}
-	name := g.host
-	if g.nodeID == m.snap.NodeID && g.nodeID != "" {
-		name += " (here)"
-	}
-	var notes []string
-	if len(g.agents) > 0 {
-		notes = append(notes, plural(len(g.agents), "session"))
-	}
-	if g.hidden > 0 {
-		notes = append(notes, fmt.Sprintf("%d hidden", g.hidden))
-	}
-	head := " " + sBold.Render(sanitize(name))
-	if len(notes) > 0 {
-		head += " " + sDim.Render(strings.Join(notes, " · ")+" ")
-	} else {
-		head += " "
-	}
-	rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
-	return clip(head+sDim.Render(rule), w)
+	room := max(0, w-ansi.StringWidth(head)-ansi.StringWidth(right))
+	return clip(head+sDim.Render(strings.Repeat(" ", room))+sAccent.Render(right), w)
 }
 
 // repoLimitsLine shows network-wide counts once, above the session table.
@@ -1423,7 +1403,7 @@ func (m Model) pendingTask(a protocol.AgentView, width int) string {
 	return strings.TrimSpace(cellDots(prefix, width-ansi.StringWidth(suffix))) + suffix
 }
 
-func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int, mine bool) string {
+func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int) string {
 	selected := a.SessionID == m.selected && m.selIdx == visibleIndex
 	marker := "  "
 	if selected {
@@ -1440,6 +1420,8 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			switch c.name {
 			case "NAME":
 				v = sanitize(a.Profile.Name)
+			case "MACHINE":
+				v = m.sessionMachine(a)
 			case "TYPE", "AGENT":
 				v = "bot"
 			case "PROJECT", "MODEL", "TRUST", "RULE", "DELEGATE":
@@ -1466,9 +1448,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 	var parts []string
 	for _, c := range cols {
 		if v, ok := uc[c.name]; ok {
-			// A Mine row keeps the CPU and RAM columns even when the row is
+			// Keep the CPU and RAM columns even when the row is
 			// offline, so every row lines up.
-			if mine && v == "\x00" {
+			if v == "\x00" {
 				parts = append(parts, cell("", c.width))
 			} else if v != "\x00" {
 				parts = append(parts, v)
@@ -1478,13 +1460,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		var v string
 		switch c.name {
 		case "NAME":
-			if mine {
-				v = m.mineNameCell(a, mk, c.width)
-			} else {
-				v = m.nameText(a, mk, c.width)
-			}
-		case "TYPE":
-			v = protocol.SessionType(a.Harness, a.Worker, a.Type)
+			v = m.sessionNameCell(a, mk, c.width)
+		case "MACHINE":
+			v = m.sessionMachine(a)
 		case "AGENT":
 			v = a.AgentName
 		case "PROJECT":
@@ -1497,10 +1475,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		case "STATUS":
 			if m.hiddenSessions[a.SessionID] && m.showHiddenSessions {
 				v = "hidden"
-			} else if mine {
-				v = m.mineStatusCell(a)
 			} else {
-				v = m.statusCell(a)
+				v = m.sessionStatusCell(a)
+				if m.sessionNeedsOwner(a) {
+					v = "needs you"
+				}
 			}
 		case "TRUST":
 			v = m.requestRuleBadge(a)
@@ -1519,30 +1498,24 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			if delivery := m.sessionTaskText(a); delivery != "" {
 				v = delivery
 			}
-			if mine && !a.Online {
+			if mk.summary != "" {
+				room := max(0, c.width-ansi.StringWidth(mk.summary)-1)
+				v = strings.TrimSpace(cellDots(v, room))
+				if v != "" {
+					v += " "
+				}
+				v += mk.summary
+			}
+			if !a.Online {
 				v = offlineAge(m.now(), a.LastSeen)
 			}
-		}
-		if !mine && c.name == "STATUS" && (!a.Online || a.Status == protocol.StatusDormant) {
-			width := c.width
-			for _, other := range cols {
-				if other.name == "CPU" || other.name == "RAM" {
-					width += other.width + 1
-				}
-			}
-			v = cell(v, width)
-			if a.StalledSince > 0 {
-				v = statusLabel(v)
-			}
-			parts = append(parts, v)
-			continue
 		}
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
 		}
-		if c.name == "NAME" && mine {
-			// mineNameCell has already fitted the name and padded the cell.
-		} else if c.name == "TASK" || c.name == "NAME" || c.name == "PROJECT" || c.name == "AGENT" || c.name == "MODEL" {
+		if c.name == "NAME" {
+			// sessionNameCell already fitted and styled the role tag.
+		} else if c.name == "TASK" || c.name == "PROJECT" || c.name == "AGENT" || c.name == "MODEL" {
 			v = cellDots(v, c.width)
 		} else {
 			v = cell(v, c.width)
@@ -1595,63 +1568,15 @@ func rowName(a protocol.AgentView) string {
 	return shortID(a.SessionID)
 }
 
-// multiMachine says whether the network has more than one machine, so a Mine
-// row names the machine it runs on.
-func (m Model) multiMachine() bool {
-	nodes := map[string]bool{}
-	for _, n := range m.snap.Nodes {
-		if n.NodeID != "" {
-			nodes[n.NodeID] = true
-		}
-	}
-	for _, a := range m.snap.Agents {
-		if a.NodeID != "" {
-			nodes[a.NodeID] = true
-		}
-	}
-	return len(nodes) > 1
+// sessionMachine is the short host label used in the machine column.
+func (m Model) sessionMachine(a protocol.AgentView) string {
+	host := sanitize(m.nodeName(a.NodeID, a.Hostname))
+	return strings.Split(host, ".")[0]
 }
 
-func (m Model) mineMachineSuffix(a protocol.AgentView) string {
-	if !m.multiMachine() {
-		return ""
-	}
-	machine := sanitize(m.nodeName(a.NodeID, a.Hostname))
-	if machine == "" {
-		return ""
-	}
-	return " · " + machine
-}
-
-// mineNameCell fits a Mine row's NAME cell. The session name gives way first,
-// then the dim machine suffix, so the other columns stay aligned.
-func (m Model) mineNameCell(a protocol.AgentView, mk treeMark, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	name := m.nameText(a, mk, 1<<20)
-	suffix := m.mineMachineSuffix(a)
-	if suffix != "" {
-		if ansi.StringWidth(suffix) > max(w-4, 0) {
-			suffix = ansi.Truncate(suffix, max(w-4, 0), "…")
-		}
-		room := w - ansi.StringWidth(suffix)
-		if room < 4 {
-			suffix, room = "", w
-		}
-		if ansi.StringWidth(name) > room {
-			name = ansi.Truncate(name, room, "…")
-		}
-	} else if ansi.StringWidth(name) > w {
-		name = ansi.Truncate(name, w, "…")
-	}
-	pad := w - ansi.StringWidth(name) - ansi.StringWidth(suffix)
-	return name + sDim.Render(suffix) + strings.Repeat(" ", max(pad, 0))
-}
-
-// mineStatusCell is the short STATUS text of a Mine row. The age of an offline
+// sessionStatusCell is the short STATUS text. The age of an offline
 // session moves to TASK, so every state fits the STATUS column.
-func (m Model) mineStatusCell(a protocol.AgentView) string {
+func (m Model) sessionStatusCell(a protocol.AgentView) string {
 	switch {
 	case a.Worker == nil && a.StalledSince > 0:
 		return "stalled"
@@ -1711,10 +1636,7 @@ func taskText(a protocol.AgentView) string {
 	return sanitize(title)
 }
 
-// nameText is the NAME cell of a session in w columns. A worker has its tree
-// glyphs before the name, and "@host" after it when it runs on another machine
-// than its caller. The name gives way first: it is cut with an ellipsis so the
-// glyphs and the host stay.
+// nameText builds a plain session name with its tree, pin and role marks.
 func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 	name := rowName(a)
 	if a.Harness == "cto" {
@@ -1722,25 +1644,46 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 	}
 	mark := modeMark(a)
 	lead := ""
-	if leadWidth(a) > 0 {
+	if leadWidth(a) > 0 && a.PinnedAt == 0 {
 		lead = "★ "
-		if !m.leadLive(a) {
-			lead = sDim.Render(lead)
-		}
 	}
 	pin := ""
 	if a.PinnedAt > 0 {
-		pin = "▪ "
+		pin = "★ "
 	}
 	suffix := ""
-	if mk.host != "" {
-		suffix = " @" + sanitize(mk.host)
+	if a.Harness == "cto" {
+		suffix = " cto"
+	} else if isMerger(a) {
+		if !strings.HasSuffix(name, "merger") {
+			suffix = " merger"
+		}
 	}
-	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(pin) - utf8.RuneCountInString(mark) - leadWidth(a) - utf8.RuneCountInString(suffix)
+	room := w - ansi.StringWidth(mk.prefix) - ansi.StringWidth(pin) - ansi.StringWidth(mark) - ansi.StringWidth(lead) - ansi.StringWidth(suffix)
 	if room >= 4 && utf8.RuneCountInString(name) > room {
 		name = ansi.Truncate(name, room, "…")
 	}
 	return mk.prefix + pin + mark + lead + name + suffix
+}
+
+// sessionNameCell applies role colour after sanitizing and fitting plain text.
+func (m Model) sessionNameCell(a protocol.AgentView, mk treeMark, w int) string {
+	name := m.nameText(a, mk, 1<<20)
+	tag := ""
+	if a.Harness == "cto" {
+		tag = " cto"
+	} else if isMerger(a) {
+		tag = " merger"
+	}
+	if tag == "" {
+		return cellDots(name, w)
+	}
+	name = strings.TrimSuffix(name, tag)
+	if w <= ansi.StringWidth(tag) {
+		return cellDots(name, w)
+	}
+	fitted := strings.TrimRight(cellDots(name, w-ansi.StringWidth(tag)), " ") + sDim.Render(tag)
+	return fitted + strings.Repeat(" ", max(0, w-ansi.StringWidth(fitted)))
 }
 
 func (m Model) leadLive(a protocol.AgentView) bool {

@@ -24,6 +24,7 @@ func TestSessionStallScene(t *testing.T) {
 
 func TestSessionStallLostRowVisible(t *testing.T) {
 	m := newModel(120, 34)
+	m.activeOnly = false
 	a := &m.snap.Agents[0]
 	a.Online = false
 	a.StalledSince = t0.Add(-12 * time.Minute).Unix()

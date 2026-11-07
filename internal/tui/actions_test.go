@@ -54,6 +54,7 @@ func workerModel(w, h int) (Model, *fakeSource) {
 	snap, evs := workerFixture()
 	src := &fakeSource{snap: snap, events: evs}
 	m := New(src)
+	m.activeOnly = false
 	m.loc = time.UTC
 	m.now = func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
@@ -62,6 +63,11 @@ func workerModel(w, h int) (Model, *fakeSource) {
 
 // selectID moves the selection to a session.
 func selectID(m Model, id string) Model {
+	if indexOfID(ids(m), id) < 0 {
+		if _, ok := m.agentByID(id); ok {
+			m.activeOnly = false
+		}
+	}
 	m.selected = id
 	m.ensureSelection()
 	m.fixScroll()

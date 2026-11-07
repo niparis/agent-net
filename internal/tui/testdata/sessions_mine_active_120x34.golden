@@ -4,15 +4,15 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                  TYPE   PROJECT    MODEL                    STATUS    CPU   RAM TASK
- Mine 4 ────────────────────────────────────────────────────────────────────────────────────────────── view: active  (v)
-▸ ▪ ◐ strategies · Mac  agent  strategies claude · sonnet-5-5      idle     240%  4.6G backtest v2
-  ▪ web · Mac           agent  shop       opencode · sonnet-5      idle        ?     ?
-  tenebrae-53 · Mac     agent  tenebrae   claude · opus-5-5        busy      38%  1.2G
-  old-session · old-box agent  old        claude                   offline             1d ago
- build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ◐ ci-runner           agent  agent-net  pi · gpt-6               idle       5%  300M
-  scratch               agent  -          pi                       shell     <1%   80M
+  NAME               MACHINE      PROJECT    MODEL                    STATUS    CPU   RAM TASK
+ Working (1)                                                                                           view: active  (v)
+▸ tenebrae-53        Mac          tenebrae   claude · opus-5-5        busy      38%  1.2G
+ Idle (4)
+  ★ ◐ strategies     Mac          strategies claude · sonnet-5-5      idle     240%  4.6G backtest v2
+  ★ web              Mac          shop       opencode · sonnet-5      idle        ?     ?
+  2 more idle · v to show
+
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  n new  p unpin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  n new  p pin  z/Z tree  ? help  q quit

@@ -23,7 +23,7 @@ func TestTrustNeedsASelectedSession(t *testing.T) {
 func TestTrustKeyIsInHelp(t *testing.T) {
 	m, _ := workerModel(160, 40)
 	foot := lines(m.testView())
-	if hints := strings.Split(ansi.Strip(foot[len(foot)-1]), "  "); len(hints) > 7 {
+	if hints := strings.Split(ansi.Strip(foot[len(foot)-1]), "  "); len(hints) > 8 {
 		t.Errorf("footer has too many hints: %q", foot[len(foot)-1])
 	}
 	m, _ = press(m, tea.KeyPressMsg{Text: "?", Code: []rune("?")[0]})
