@@ -45,6 +45,10 @@ func TestStoppedWorkerKeepsUnfinishedWork(t *testing.T) {
 	if st := gitOutT(t, res.Worktree, "status", "--porcelain"); st != "" {
 		t.Errorf("worktree still has changes: %s", st)
 	}
+	eventually(t, "successful end drops the worker state directory", func() bool {
+		_, err := os.Stat(filepath.Join(w.cfg.StateDir, "workers", workerIDOf(res)))
+		return os.IsNotExist(err)
+	})
 }
 
 // A worker lost while the daemon was down: the new daemon commits its changes.

@@ -3,6 +3,8 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -91,6 +93,45 @@ func TestWorkerBlockedEndNoticeDoesNotDelayIdleLimit(t *testing.T) {
 	if len(notices) != 2 || notices[0].From != first.SessionID || notices[1].From != second.SessionID {
 		t.Fatalf("end notices duplicated or reordered: %+v", notices)
 	}
+}
+
+func TestWorkerHandbackWIPDoesNotWaitBehindQueuedEndNotice(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+	if err := os.WriteFile(filepath.Join(res.Worktree, "left.txt"), []byte("left\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	blocked, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	w.d.queueWorkerEnd(func() { close(blocked); <-release })
+	<-blocked
+	finished := make(chan error, 1)
+	go func() {
+		_, err := w.d.handback(context.Background(), res.SessionID, protocol.WorkerHandbackRequest{Status: protocol.StatusBlocked, Report: "blocked"})
+		finished <- err
+	}()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		unblock()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Fatal("hand-back did not return after releasing the end queue")
+		}
+		t.Fatal("hand-back WIP commit waited behind a blocked global end notice")
+	}
+	unblock()
 }
 
 // Stop must drain both admitted jobs and an end already in progress when it
