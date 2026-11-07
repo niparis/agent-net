@@ -1508,3 +1508,17 @@ Automatic archival changes visibility, not historical records. It excludes
 pinned, online, recently owner-used, owner, CTO, bot, and registered merger
 sessions, and the owner can restore an archived record. A restore records use
 so the automatic job does not immediately archive it again.
+
+Worker retention cleanup deletes harness data only for ended worker records.
+Live workers are excluded. Codex deletion uses the recorded thread UUID and the
+harness's forced delete command, never a session name or a project-wide delete.
+OpenCode deletion runs against the worker's private data directory, never the
+owner's shared OpenCode database. Configuration and owner authentication files
+are not removed. Failed harness deletion retains the worker record for retry.
+Worker records are dropped if harness deletion still fails seven days after
+cleanup eligibility. An unsupported Codex delete command also drops the record.
+Safety refusals for live workers and invalid identities or data paths never
+expire. Deletion runs in a bounded background pass, separate from gateway link
+setup and worker health checks.
+The daemon logs these skips; an explicit missing-thread response counts as success.
+`workers.delete_sessions: false` in node.json disables harness data deletion.

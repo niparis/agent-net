@@ -58,6 +58,7 @@ func (nc NodeConfig) EnterSSHEnabled() bool { return nc.EnterSSH == nil || *nc.E
 // NodeWorkers is the "workers" part of node.json. Durations are Go durations
 // such as "60m" or "4h".
 type NodeWorkers struct {
+	DeleteSessions *bool `json:"delete_sessions,omitempty"`
 	// Max is the hard cap of workers on the machine (default 12).
 	Max        int    `json:"max,omitempty"`
 	Idle       string `json:"idle,omitempty"`
@@ -109,6 +110,7 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 	if nc.Workers == nil {
 		return s, nil
 	}
+	s.DeleteSessions = nc.Workers.DeleteSessions
 	s.Max = nc.Workers.Max
 	if nc.Workers.CPUTarget != 0 {
 		if nc.Workers.CPUTarget < 0 || nc.Workers.CPUTarget > 100 {

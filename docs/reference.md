@@ -2894,3 +2894,29 @@ It logs each archived session ID. The normal archive retains history and can
 be restored; restoring records owner use and prevents immediate re-archiving.
 Session retention also preserves pins and sessions with use or activity newer
 than its cutoff.
+
+Ended OpenCode and Codex worker sessions are deleted when their retained worker
+record is dropped. A dedicated background loop runs at daemon startup and on the
+worker cleanup interval, independently of link setup and worker health checks.
+Only one deletion pass runs at a time. Each pass attempts at most ten eligible
+rows within a two-minute budget, continuing after the last attempted row on the
+next pass. They remain
+available for resume until then. Codex uses `codex delete --force <thread UUID>`
+to remove the thread through Codex, including its database entries. OpenCode
+starts a temporary private server against that worker's retained data folder and
+calls `DELETE /api/session/{id}`, then removes the private worker folder. No
+prompt or model call is made. If the harness cannot delete the session, the daemon
+keeps the record and retries at the next cleanup pass. Codex deletion and byte
+counting use the daemon's configured Codex home. A thread reported as not found
+is treated as already deleted. If Codex does not support the delete subcommand,
+or any harness deletion still fails seven days after the record became eligible for cleanup,
+the daemon drops the record and logs `worker.session.delete_skipped` with the
+reason. Remaining shared harness data is left in place in these cases. Safety refusals
+for live workers or invalid worker identities or data paths never expire.
+
+Set `workers.delete_sessions` to `false` in node.json to keep harness session data
+(default: true). For OpenCode this keeps the private worker folder even after its
+record is dropped. Normal owner, CTO and merger sessions are not worker records
+and are excluded. Cleanup logs the worker and native session IDs and bytes freed
+from private files; Codex rollout bytes are reported separately. Shared database
+free pages may remain allocated, so database file sizes may not shrink.
