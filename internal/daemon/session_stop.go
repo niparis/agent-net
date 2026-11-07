@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/agentfiles"
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -111,24 +113,34 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 			return no(fmt.Errorf("Claude could not stop %s: %w", name, err))
 		}
 	case "opencode":
-		service, err := ownerOpenCodeService()
+		service, err := d.ownerOpenCodeService()
 		if err != nil {
 			return no(fmt.Errorf("the OpenCode service is not running on %s", d.hostName()))
 		}
 		if info.NativeID == "" {
 			return no(errors.New("OpenCode session ID is missing"))
 		}
+		routes, err := d.discoverOpenCodeRoutes(ctx, service.URL, service.Password, "", service.identity)
+		if err != nil {
+			return no(fmt.Errorf("could not discover OpenCode routes: %w", err))
+		}
+		path, err := routes.Path(opencodeapi.Interrupt, info.NativeID)
+		if err != nil {
+			return no(err)
+		}
 		api := openCodeWorkerAPI(ctx, service.URL, service.Password)
 		directory := strings.ReplaceAll(url.QueryEscape(info.Cwd), "+", "%20")
-		_, status, err := api("POST", "/api/session/"+url.PathEscape(info.NativeID)+"/interrupt", nil, "x-opencode-directory", directory)
-		if err == nil && status == 404 {
-			_, status, err = api("POST", "/api/session/"+url.PathEscape(info.NativeID)+"/abort", nil, "x-opencode-directory", directory)
+		_, status, err := api(opencodeapi.Interrupt.Method(), path, nil, "x-opencode-directory", directory)
+		if err == nil && status == http.StatusNotFound {
+			if fallback, ok := routes.InterruptFallback(info.NativeID); ok {
+				_, status, err = api(opencodeapi.Interrupt.Method(), fallback, nil, "x-opencode-directory", directory)
+			}
 		}
 		if err != nil {
-			return no(errors.New("could not abort the OpenCode turn"))
+			return no(fmt.Errorf("could not interrupt the OpenCode turn: %w", err))
 		}
 		if status < 200 || status >= 300 {
-			return no(fmt.Errorf("OpenCode refused to abort the turn (HTTP %d)", status))
+			return no(routes.HTTPError(opencodeapi.Interrupt, status))
 		}
 		result.Note = name + ": turn aborted; the conversation stays in the service. An idle service session costs nothing."
 	case "pi":

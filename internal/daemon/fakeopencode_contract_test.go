@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -165,4 +166,27 @@ func TestFakeOpenCodePromptContract(t *testing.T) {
 		t.Fatalf("latest assistant: %+v, error: %v", latest, err)
 	}
 
+}
+
+func TestFakeOpenCodeRouteSets(t *testing.T) {
+	for _, tc := range []struct {
+		old                    bool
+		spec, interrupt, abort int
+	}{{false, 200, 200, 404}, {true, 404, 404, 200}} {
+		t.Run(fmt.Sprint(tc.old), func(t *testing.T) {
+			mux := http.NewServeMux()
+			fakeOpenCodeCapabilities(mux, tc.old, func(*http.Request) bool { return true }, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			for path, want := range map[string]int{"/openapi.json": tc.spec, "/api/session/s/interrupt": tc.interrupt, "/api/session/s/abort": tc.abort} {
+				method := "POST"
+				if path == "/openapi.json" {
+					method = "GET"
+				}
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+				if rec.Code != want {
+					t.Errorf("%s: %d, want %d", path, rec.Code, want)
+				}
+			}
+		})
+	}
 }

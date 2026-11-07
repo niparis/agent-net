@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
@@ -86,7 +87,14 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		}
 		req["model"] = selected
 	}
-	body, code, err := api("POST", "/api/session", req)
+	d.wmu.Lock()
+	base, pass, version, identity := w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity
+	d.wmu.Unlock()
+	createPath, err := d.openCodePath(ctx, base, pass, version, identity, opencodeapi.CreateSession, "")
+	if err != nil {
+		return err
+	}
+	body, code, err := api(opencodeapi.CreateSession.Method(), createPath, req)
 	if err != nil {
 		return fmt.Errorf("cannot create the worker session: %w", err)
 	}
@@ -134,12 +142,21 @@ func (opencodeLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		return errors.New("the connection details of the OpenCode worker are gone")
 	}
 	base, pass := "http://"+w.ref, string(password)
+	version, identity := d.openCodeVersion(), "adopt:"+w.id+":"+w.ref
+	infoPath, err := d.openCodePath(ctx, base, pass, version, identity, opencodeapi.Info, "")
+	if err != nil {
+		return err
+	}
 	api := openCodeWorkerAPI(ctx, base, pass)
-	if _, code, err := api("GET", "/api/info", nil); err != nil || code != http.StatusOK {
+	info, code, err := api(opencodeapi.Info.Method(), infoPath, nil)
+	if err != nil || code != http.StatusOK {
 		return fmt.Errorf("cannot reconnect to the OpenCode worker (HTTP %d): %v", code, err)
 	}
+	if v := parseOpenCodeInfoVersion(info); v != "" {
+		version = v
+	}
 	d.wmu.Lock()
-	w.apiBase, w.apiPass = base, pass
+	w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity = base, pass, version, identity
 	d.wmu.Unlock()
 	if err := writeWorkerSessionFile(w, w.nativeID); err != nil {
 		return err
@@ -151,7 +168,14 @@ func (opencodeLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 // loads its plugins. The plugin registers the session named in the worker's
 // session file, and the daemon waits until it has.
 func (d *Daemon) loadOpenCodeProject(ctx context.Context, w *worker, api opencodeAPI) error {
-	if _, code, err := api("GET", "/api/location", nil, "x-opencode-directory", strings.ReplaceAll(url.QueryEscape(w.path), "+", "%20")); err != nil || code != http.StatusOK {
+	d.wmu.Lock()
+	base, pass, version, identity := w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity
+	d.wmu.Unlock()
+	locPath, err := d.openCodePath(ctx, base, pass, version, identity, opencodeapi.Location, "")
+	if err != nil {
+		return err
+	}
+	if _, code, err := api(opencodeapi.Location.Method(), locPath, nil, "x-opencode-directory", strings.ReplaceAll(url.QueryEscape(w.path), "+", "%20")); err != nil || code != http.StatusOK {
 		return fmt.Errorf("cannot load the project in the worker (HTTP %d): %v", code, err)
 	}
 	// The plugin registers the session. If it does not, the plugin is not
@@ -212,15 +236,29 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 			return nil, err
 		}
 		base := "http://127.0.0.1:" + strconv.Itoa(port)
+		version := d.openCodeVersion()
+		identity := fmt.Sprintf("worker:%s:%d", w.id, attempt)
 		d.wmu.Lock()
-		w.apiBase, w.apiPass = base, password
+		w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity = base, password, version, identity
 		w.ref = "127.0.0.1:" + strconv.Itoa(port)
 		d.saveWorkerLocked(w)
 		d.wmu.Unlock()
 		api := openCodeWorkerAPI(ctx, base, password)
 		for {
-			if _, code, err := api("GET", "/api/info", nil); err == nil && code == http.StatusOK {
-				return api, nil
+			if routes, routeErr := d.discoverOpenCodeRoutes(ctx, base, password, version, identity); routeErr == nil {
+				infoPath, pathErr := routes.Path(opencodeapi.Info, "")
+				if pathErr != nil {
+					d.killGroup(w)
+					return nil, pathErr
+				}
+				if info, code, err := api(opencodeapi.Info.Method(), infoPath, nil); err == nil && code == http.StatusOK {
+					if v := parseOpenCodeInfoVersion(info); v != "" {
+						d.wmu.Lock()
+						w.apiVersion = v
+						d.wmu.Unlock()
+					}
+					return api, nil
+				}
 			}
 			select {
 			case <-ctx.Done():
@@ -296,17 +334,29 @@ func copyOpenCodeAuth(ctx context.Context, bin, data, state string) error {
 //
 // The context is the tokens of the latest assistant message (input plus cache
 // read and cache write), and the model's limit.context from GET /api/model.
-func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerStats {
-	if w.apiBase == "" || w.nativeID == "" {
+func (opencodeLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerStats {
+	var base, pass, version, identity, nativeID string
+	if d != nil {
+		d.wmu.Lock()
+		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
+		d.wmu.Unlock()
+	} else {
+		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
+	}
+	if base == "" || nativeID == "" {
 		return workerStats{}
 	}
-	get := func(path string, v any) bool {
-		req, err := http.NewRequestWithContext(ctx, "GET", w.apiBase+path, nil)
+	sessionPath, err := d.openCodePath(ctx, base, pass, version, identity, opencodeapi.GetSession, nativeID)
+	if err != nil {
+		return workerStats{}
+	}
+	get := func(method, path string, v any) bool {
+		req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
 		if err != nil {
 			return false
 		}
-		req.SetBasicAuth("opencode", w.apiPass)
-		resp, err := http.DefaultClient.Do(req)
+		req.SetBasicAuth("opencode", pass)
+		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
 		if err != nil {
 			return false
 		}
@@ -326,7 +376,7 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 			} `json:"model"`
 		} `json:"data"`
 	}
-	if !get("/api/session/"+w.nativeID, &r) {
+	if !get(opencodeapi.GetSession.Method(), sessionPath, &r) {
 		return workerStats{}
 	}
 	t := r.Data.Tokens
@@ -338,7 +388,7 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 	if r.Data.Model.ID != "" {
 		st.Model = r.Data.Model.ProviderID + "/" + r.Data.Model.ID
 	}
-	context := opencodeSessionContext(ctx, w.apiBase, w.apiPass, w.nativeID)
+	context := d.openCodeSessionContext(ctx, base, pass, version, identity, nativeID)
 	st.ContextTokens, st.ContextLimit = context.Tokens, context.Limit
 	return st
 }
@@ -356,14 +406,26 @@ type opencodeContextState struct {
 }
 
 func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) opencodeContextState {
+	return (*Daemon)(nil).openCodeSessionContext(ctx, base, pass, "", "", nativeID)
+}
+
+func (d *Daemon) openCodeSessionContext(ctx context.Context, base, pass, version, identity, nativeID string) opencodeContextState {
 	out := opencodeContextState{}
-	get := func(path string, v any) bool {
-		req, err := http.NewRequestWithContext(ctx, "GET", base+path, nil)
+	routes, err := d.discoverOpenCodeRoutes(ctx, base, pass, version, identity)
+	if err != nil {
+		return out
+	}
+	sessionPath, err := routes.Path(opencodeapi.GetSession, nativeID)
+	if err != nil {
+		return out
+	}
+	get := func(method, path string, v any) bool {
+		req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
 		if err != nil {
 			return false
 		}
 		req.SetBasicAuth("opencode", pass)
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
 		if err != nil {
 			return false
 		}
@@ -378,7 +440,7 @@ func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) op
 			} `json:"model"`
 		} `json:"data"`
 	}
-	if !get("/api/session/"+nativeID, &sess) {
+	if !get(opencodeapi.GetSession.Method(), sessionPath, &sess) {
 		return out
 	}
 	if sess.Data.Model.ID != "" {
@@ -394,7 +456,7 @@ func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) op
 			} `json:"tokens"`
 		} `json:"data"`
 	}
-	if get("/api/session/"+url.PathEscape(nativeID)+"/message?type=assistant&order=desc&limit=1", &msgs) {
+	if messagesPath, merr := routes.Path(opencodeapi.Messages, nativeID); merr == nil && get(opencodeapi.Messages.Method(), messagesPath+"?type=assistant&order=desc&limit=1", &msgs) {
 		for _, m := range msgs.Data {
 			if m.Type != "assistant" {
 				continue
@@ -415,7 +477,7 @@ func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) op
 				} `json:"limit"`
 			} `json:"data"`
 		}
-		if get("/api/model", &models) {
+		if modelsPath, merr := routes.Path(opencodeapi.Models, ""); merr == nil && get(opencodeapi.Models.Method(), modelsPath, &models) {
 			for _, m := range models.Data {
 				if m.ProviderID == sess.Data.Model.ProviderID && (m.ID == sess.Data.Model.ID || m.ModelID == sess.Data.Model.ID) {
 					out.Limit = int64(m.Limit.Context)
@@ -432,17 +494,33 @@ func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) op
 // messages then hold an "idle" entry with the error ({type, message}). The
 // same error is in the session.execution.failed event. Any failure to read it
 // gives "" (nothing known).
-func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) (string, bool) {
-	if w.apiBase == "" || w.nativeID == "" {
+func (opencodeLauncher) failure(ctx context.Context, d *Daemon, w *worker) (string, bool) {
+	var base, pass, version, identity, nativeID string
+	if d != nil {
+		d.wmu.Lock()
+		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
+		d.wmu.Unlock()
+	} else {
+		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
+	}
+	if base == "" || nativeID == "" {
 		return "", false
 	}
-	get := func(path string, v any) bool {
-		req, err := http.NewRequestWithContext(ctx, "GET", w.apiBase+path, nil)
+	routes, err := d.discoverOpenCodeRoutes(ctx, base, pass, version, identity)
+	if err != nil {
+		return "", false
+	}
+	sessionPath, err := routes.Path(opencodeapi.GetSession, nativeID)
+	if err != nil {
+		return "", false
+	}
+	get := func(method, path string, v any) bool {
+		req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
 		if err != nil {
 			return false
 		}
-		req.SetBasicAuth("opencode", w.apiPass)
-		resp, err := http.DefaultClient.Do(req)
+		req.SetBasicAuth("opencode", pass)
+		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
 		if err != nil {
 			return false
 		}
@@ -454,7 +532,7 @@ func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) (stri
 			Outcome string `json:"outcome"`
 		} `json:"data"`
 	}
-	if !get("/api/session/"+w.nativeID, &sess) || sess.Data.Outcome != "failed" {
+	if !get(opencodeapi.GetSession.Method(), sessionPath, &sess) || sess.Data.Outcome != "failed" {
 		return "", false
 	}
 	var msgs struct {
@@ -467,7 +545,7 @@ func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) (stri
 		} `json:"data"`
 	}
 	text, typ := "", ""
-	if get("/api/session/"+w.nativeID+"/message", &msgs) { // newest first
+	if messagesPath, merr := routes.Path(opencodeapi.Messages, nativeID); merr == nil && get(opencodeapi.Messages.Method(), messagesPath, &msgs) { // newest first
 		for _, m := range msgs.Data {
 			if m.Type == "idle" && m.Error != nil {
 				text, typ = m.Error.Message, m.Error.Type
@@ -589,7 +667,7 @@ func (d *Daemon) reconcileOpenCode(ctx context.Context) {
 	d.wmu.Unlock()
 	for _, w := range workers {
 		d.wmu.Lock()
-		base, pass, native := w.apiBase, w.apiPass, w.nativeID
+		base, pass, version, identity, native := w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
 		d.wmu.Unlock()
 		d.mu.Lock()
 		ls := d.sessions[key("opencode", native)]
@@ -600,7 +678,7 @@ func (d *Daemon) reconcileOpenCode(ctx context.Context) {
 		rev, status := ls.statusRevision, ls.info.Status
 		d.mu.Unlock()
 		check, cancel := context.WithTimeout(ctx, time.Second)
-		busy, known := openCodeSessionBusy(check, base, pass, native)
+		busy, known := d.openCodeSessionBusy(check, base, pass, version, identity, native)
 		cancel()
 		if !known {
 			continue
@@ -680,7 +758,7 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 	if len(sessions) == 0 {
 		return
 	}
-	service, err := ownerOpenCodeService()
+	service, err := d.ownerOpenCodeService()
 	if err != nil {
 		return
 	}
@@ -693,7 +771,7 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 			continue
 		}
 		check, cancel := context.WithTimeout(ctx, time.Second)
-		busy, known := openCodeSessionBusy(check, base, service.Password, native)
+		busy, known := d.openCodeSessionBusy(check, base, service.Password, "", service.identity, native)
 		if !known {
 			cancel()
 			return
@@ -718,7 +796,12 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 			cancel()
 			continue
 		}
-		req, err := http.NewRequestWithContext(check, "GET", base+"/api/session/"+url.PathEscape(native), nil)
+		sessionPath, err := d.openCodePath(check, base, service.Password, "", service.identity, opencodeapi.GetSession, native)
+		if err != nil {
+			cancel()
+			continue
+		}
+		req, err := http.NewRequestWithContext(check, opencodeapi.GetSession.Method(), base+sessionPath, nil)
 		if err != nil {
 			cancel()
 			continue
@@ -726,8 +809,7 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 		if service.Password != "" {
 			req.SetBasicAuth("opencode", service.Password)
 		}
-		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		resp, err := client.Do(req)
+		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
 		if err != nil {
 			cancel()
 			return

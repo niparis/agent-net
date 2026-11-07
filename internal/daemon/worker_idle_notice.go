@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -106,7 +106,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		return
 	}
 	w.idleNoticePending = true
-	generation, report, base, pass, noticeKey := w.idleNoticeGeneration, w.idleNoticeReport, w.apiBase, w.apiPass, w.idleNoticeKey
+	generation, report, base, pass, version, identity, noticeKey := w.idleNoticeGeneration, w.idleNoticeReport, w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.idleNoticeKey
 	noticeCtx, cancelNotice := context.WithCancel(ctx)
 	w.idleNoticeCancel = cancelNotice
 	d.wmu.Unlock()
@@ -114,7 +114,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		defer cancelNotice()
 		if harness == "opencode" {
 			readCtx, cancel := context.WithTimeout(noticeCtx, 3*time.Second)
-			report = openCodeLastAssistant(readCtx, base, pass, native)
+			report = d.openCodeLastAssistant(readCtx, base, pass, version, identity, native)
 			cancel()
 		}
 		if strings.TrimSpace(report) == "" {
@@ -158,15 +158,27 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 }
 
 func openCodeLastAssistant(ctx context.Context, base, pass, native string) string {
-	req, err := http.NewRequestWithContext(ctx, "GET", base+"/api/session/"+url.PathEscape(native)+"/message?type=assistant&limit=1", nil)
+	return (*Daemon)(nil).openCodeLastAssistant(ctx, base, pass, "", "", native)
+}
+
+func (d *Daemon) openCodeLastAssistant(ctx context.Context, base, pass, version, identity, native string) string {
+	text, _ := d.openCodeLastAssistantErr(ctx, base, pass, version, identity, native)
+	return text
+}
+
+func (d *Daemon) openCodeLastAssistantErr(ctx context.Context, base, pass, version, identity, native string) (string, error) {
+	path, err := d.openCodePath(ctx, base, pass, version, identity, opencodeapi.Messages, native)
 	if err != nil {
-		return ""
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, opencodeapi.Messages.Method(), strings.TrimRight(base, "/")+path+"?type=assistant&limit=1", nil)
+	if err != nil {
+		return "", err
 	}
 	req.SetBasicAuth("opencode", pass)
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.Do(req)
+	resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer resp.Body.Close()
 	var page struct {
@@ -179,7 +191,7 @@ func openCodeLastAssistant(ctx context.Context, base, pass, native string) strin
 		} `json:"data"`
 	}
 	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&page) != nil {
-		return ""
+		return "", nil
 	}
 	for _, message := range page.Data {
 		if message.Type != "assistant" {
@@ -191,7 +203,7 @@ func openCodeLastAssistant(ctx context.Context, base, pass, native string) strin
 				parts = append(parts, part.Text)
 			}
 		}
-		return strings.Join(parts, "\n")
+		return strings.Join(parts, "\n"), nil
 	}
-	return ""
+	return "", nil
 }

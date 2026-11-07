@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -283,6 +284,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	openCodeRoutes      opencodeapi.Cache
 	startedAt           time.Time
 	cloneProject        func(context.Context, string, string) error // test hook
 	files               fileState

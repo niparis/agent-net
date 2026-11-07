@@ -604,6 +604,8 @@ type NodeView struct {
 
 // HarnessInfo is one agent harness found on a machine.
 type HarnessInfo struct {
+	// MissingOperations lists capabilities absent from the running harness service.
+	MissingOperations []string `json:"missing_operations,omitempty"`
 	// DeliveryWarning is a failed harness transport check, empty when healthy or unknown.
 	DeliveryWarning string `json:"delivery_warning,omitempty"`
 	SignedIn        string `json:"signed_in,omitempty"` // "yes", "no", or empty (unknown).

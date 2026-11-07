@@ -100,6 +100,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("CODEX_HOME", codexHome)
 	// OpenCode status checks must never discover the machine's shared service.
 	os.Setenv("XDG_STATE_HOME", filepath.Join(fakes, "state"))
+	os.Setenv("XDG_DATA_HOME", filepath.Join(fakes, "data"))
 	// Test daemons must not find the machine's quota collector. It can start
 	// real harnesses that outlive its parent and write into a test's home.
 	bin := filepath.Join(fakes, "bin")

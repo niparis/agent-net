@@ -377,6 +377,10 @@ func TestSessionStartOpenCodeServiceFailuresKeepPasswordPrivate(t *testing.T) {
 			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected.Add(1) }))
 			defer target.Close()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/openapi.json" && failure != "redirect" {
+					http.NotFound(w, r)
+					return
+				}
 				if r.URL.Path == "/api/session" && failure == "prompt" {
 					fmt.Fprint(w, `{"data":{"id":"ses_owner"}}`)
 					return
@@ -635,6 +639,10 @@ func TestSessionResumeOpenCodeRegistered(t *testing.T) {
 	}
 	g.gw.Store().SetSessionOffline(n.d.NodeID(), id)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			http.NotFound(w, r)
+			return
+		}
 		if r.URL.Path == "/api/session/active" {
 			fmt.Fprint(w, `{"data":[]}`)
 			return

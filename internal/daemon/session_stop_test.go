@@ -92,6 +92,10 @@ func TestSessionStopTerminalNamedWithFolder(t *testing.T) {
 }
 
 func TestSessionStopOpenCodeService(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testSessionStopOpenCodeService)
+}
+
+func testSessionStopOpenCodeService(t *testing.T) {
 	for _, status := range []string{"busy", "idle"} {
 		t.Run(status, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -99,7 +103,9 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 			state := t.TempDir()
 			t.Setenv("XDG_STATE_HOME", state)
 			calls := make(chan string, 1)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mux := http.NewServeMux()
+			old := os.Getenv("FAKE_OC_OLD_ROUTES") != ""
+			fakeOpenCodeCapabilities(mux, old, func(*http.Request) bool { return true }, func(w http.ResponseWriter, r *http.Request) {
 				user, password, ok := r.BasicAuth()
 				if !ok || user != "opencode" || password != "test-owner-password" {
 					t.Errorf("missing service authentication")
@@ -109,7 +115,8 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 				}
 				calls <- r.Method + " " + r.URL.Path
 				fmt.Fprint(w, `{"interrupted":true}`)
-			}))
+			})
+			server := httptest.NewServer(mux)
 			defer server.Close()
 			writeOwnerOpenCodeService(t, state, server.URL)
 			raw := cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
@@ -118,13 +125,37 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 			}
 			select {
 			case got := <-calls:
-				if got != "POST /api/session/ses_owner/interrupt" {
+				action := "interrupt"
+				if old {
+					action = "abort"
+				}
+				if got != "POST /api/session/ses_owner/"+action {
 					t.Fatalf("interrupt %q", got)
 				}
 			default:
 				t.Fatal("no interrupt")
 			}
 		})
+	}
+}
+
+func TestSessionStopOpenCodeMissingInterruptRoute(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n, _, id := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "ses_owner", Status: "busy"}, nil, nil)
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			fmt.Fprint(w, `{"paths":{}}`)
+			return
+		}
+		t.Errorf("unexpected request %s", r.URL.Path)
+	}))
+	defer server.Close()
+	writeOwnerOpenCodeService(t, state, server.URL)
+	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
+	if err == nil || !strings.Contains(err.Error(), "has no interrupt route") {
+		t.Fatalf("missing route: %v", err)
 	}
 }
 
@@ -135,6 +166,10 @@ func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", state)
 	calls := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			fmt.Fprint(w, `{"paths":{"/api/session/{sessionID}/interrupt":{"post":{}}}}`)
+			return
+		}
 		calls <- r.Method + " " + r.URL.Path
 		if r.URL.Path == "/api/session/ses_owner/interrupt" {
 			http.NotFound(w, r)
@@ -159,6 +194,41 @@ func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	wantCalls := []string{"POST /api/session/ses_owner/interrupt", "POST /api/session/ses_owner/abort"}
 	if len(gotCalls) != 2 || gotCalls[0] != wantCalls[0] || gotCalls[1] != wantCalls[1] {
 		t.Fatalf("calls %v, want %v", gotCalls, wantCalls)
+	}
+}
+
+func TestSessionStopOpenCodeInterruptHTTPError(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			n, _, id := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "ses_owner", Status: "busy"}, nil, nil)
+			state := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", state)
+			calls := make(chan string, 3)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/openapi.json" {
+					fmt.Fprint(w, `{"paths":{"/api/session/{sessionID}/interrupt":{"post":{}}}}`)
+					return
+				}
+				calls <- r.URL.Path
+				w.WriteHeader(status)
+			}))
+			defer server.Close()
+			writeOwnerOpenCodeService(t, state, server.URL)
+			_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
+			want := fmt.Sprintf("OpenCode %s: interrupt failed (HTTP %d)", n.d.openCodeVersion(), status)
+			wantCalls := 1
+			if status == http.StatusNotFound {
+				want = "OpenCode " + n.d.openCodeVersion() + " has no interrupt route"
+				wantCalls = 2
+			}
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("want %q, got %v", want, err)
+			}
+			if len(calls) != wantCalls {
+				t.Fatalf("calls %v, want %d", calls, wantCalls)
+			}
+		})
 	}
 }
 

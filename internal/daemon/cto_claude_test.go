@@ -191,6 +191,10 @@ func TestClaudeCTOPrivateToolsAndSession(t *testing.T) {
 }
 
 func TestCTOHarnessConversations(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOHarnessConversations)
+}
+
+func testCTOHarnessConversations(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	sessions, _ := useFakeClaude(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -262,6 +266,10 @@ func TestCTOHarnessConversations(t *testing.T) {
 }
 
 func TestCTOEventsKeepTimelineAcrossHarnessSwitchesAndRestart(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOEventsKeepTimelineAcrossHarnessSwitchesAndRestart)
+}
+
+func testCTOEventsKeepTimelineAcrossHarnessSwitchesAndRestart(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	sessions, _ := useFakeClaude(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -617,6 +625,10 @@ if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" 
 }
 
 func TestCTOExtraBuiltinFailsStartup(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOExtraBuiltinFailsStartup)
+}
+
+func testCTOExtraBuiltinFailsStartup(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	t.Setenv("FAKE_CTO_EXTRA_TOOL", "Bash")
 	g := startGateway(t, t.TempDir(), "")
@@ -654,6 +666,10 @@ func TestClaudeCTORequiresToolsCapability(t *testing.T) {
 }
 
 func TestCTOOpenCodeMissingDenyFailsStartup(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOOpenCodeMissingDenyFailsStartup)
+}
+
+func testCTOOpenCodeMissingDenyFailsStartup(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	t.Setenv("FAKE_CTO_MISSING_DENY", "read")
 	g := startGateway(t, t.TempDir(), "")

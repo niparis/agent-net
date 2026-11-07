@@ -461,7 +461,7 @@ func (d *Daemon) proposalNotesLoop(ctx context.Context) {
 
 func (d *Daemon) deliverProposalNote(ctx context.Context) error {
 	d.cto.mu.Lock()
-	base, password, session := d.cto.base, d.cto.password, d.cto.session
+	base, password, version, identity, session := d.cto.base, d.cto.password, d.cto.version, d.cto.identity, d.cto.session
 	ref := d.claudeCTO.ref
 	d.cto.mu.Unlock()
 	idle := false
@@ -471,7 +471,7 @@ func (d *Daemon) deliverProposalNote(ctx context.Context) error {
 			idle = sf.Status == "idle"
 		}
 	} else if base != "" && session != "" {
-		busy, known := openCodeSessionBusy(ctx, base, password, session)
+		busy, known := d.openCodeSessionBusy(ctx, base, password, version, identity, session)
 		idle = known && !busy
 	}
 	if !idle {

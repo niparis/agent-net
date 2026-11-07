@@ -55,6 +55,10 @@ func TestWorkerSessionCleanupRefusesLiveAndRetries(t *testing.T) {
 }
 
 func TestWorkerOpenCodeSessionCleanup(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testWorkerOpenCodeSessionCleanup)
+}
+
+func testWorkerOpenCodeSessionCleanup(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	root := t.TempDir()
 	dir := filepath.Join(root, "workers", "w_test")

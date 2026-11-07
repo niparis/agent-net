@@ -84,6 +84,7 @@ func (d *Daemon) refreshHarnessInventory(ctx context.Context) ([]protocol.Harnes
 	}
 	d.hmu.Unlock()
 	d.checkClaudeDelivery(list)
+	d.checkOpenCodeCapabilities(ctx, list)
 	d.hmu.Lock()
 	d.installed = list
 	d.hgen++

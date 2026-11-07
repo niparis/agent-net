@@ -239,7 +239,8 @@ type worker struct {
 	toolchainDirs []string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
-	apiBase, apiPass string
+	apiBase, apiPass        string
+	apiVersion, apiIdentity string
 	// discardStdout drops the standard output of the process: Pi's rpc mode
 	// writes its whole event stream there, which nobody reads.
 	discardStdout bool

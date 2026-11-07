@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 )
 
 type ctoPermission struct {
@@ -28,11 +30,14 @@ func (d *Daemon) checkOpenCodeCTOTools(ctx context.Context, info []byte) error {
 	if json.Unmarshal(info, &version) != nil || version.Version == "" {
 		version.Version = "(unknown)"
 	}
+	if version.Version != "(unknown)" {
+		d.cto.version = version.Version
+	}
 	if d.log != nil {
 		d.log.Printf("CTO OpenCode version: %s", version.Version)
 	}
 
-	raw, err := d.cto.api(ctx, "GET", "/api/agent", nil)
+	raw, err := d.ctoOp(ctx, opencodeapi.Agents, "", "", nil)
 	if err != nil {
 		return fmt.Errorf("CTO OpenCode: read effective permissions: %w", err)
 	}

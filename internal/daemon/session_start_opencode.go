@@ -13,32 +13,61 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 type openCodeService struct {
 	URL      string `json:"url"`
 	Password string `json:"password"`
+	identity string
+}
+
+func ownerOpenCodeServicePath(homeDir string) (string, error) {
+	state := os.Getenv("XDG_STATE_HOME")
+	if state == "" {
+		home := homeDir
+		if home == "" {
+			var err error
+			home, err = os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+		}
+		state = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(state, "opencode", "service.json"), nil
 }
 
 // Only the owner's loopback service may receive its password. Never include
 // service.json contents, HTTP response bodies or transport errors in notices.
 func ownerOpenCodeService() (openCodeService, error) {
-	var service openCodeService
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return service, err
-		}
-		state = filepath.Join(home, ".local", "state")
+	return ownerOpenCodeServiceForHome("")
+}
+
+func (d *Daemon) ownerOpenCodeService() (openCodeService, error) {
+	var home string
+	if d != nil {
+		home = d.cfg.HomeDir
 	}
-	data, err := os.ReadFile(filepath.Join(state, "opencode", "service.json"))
+	return ownerOpenCodeServiceForHome(home)
+}
+
+func ownerOpenCodeServiceForHome(homeDir string) (openCodeService, error) {
+	var service openCodeService
+	path, err := ownerOpenCodeServicePath(homeDir)
+	if err != nil {
+		return service, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return service, err
 	}
 	if len(data) > 16384 || json.Unmarshal(data, &service) != nil {
 		return service, errors.New("invalid OpenCode service record")
+	}
+	if stat, statErr := os.Stat(path); statErr == nil {
+		service.identity = fmt.Sprintf("%d/%d", stat.ModTime().UnixNano(), stat.Size())
 	}
 	u, err := url.Parse(service.URL)
 	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -69,7 +98,7 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 		}
 	}()
 	down := fmt.Errorf("the OpenCode service is not running on %s", d.cfg.Hostname)
-	service, err := ownerOpenCodeService()
+	service, err := d.ownerOpenCodeService()
 	if err != nil {
 		return protocol.StartedSession{}, down
 	}
@@ -92,13 +121,25 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 			return protocol.StartedSession{}, err
 		}
 	}
+	routes, err := d.discoverOpenCodeRoutes(ctx, service.URL, service.Password, "", service.identity)
+	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return protocol.StartedSession{}, down
+		}
+		return protocol.StartedSession{}, err
+	}
 	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
-	method, endpoint := "POST", "/api/session"
+	op, id := opencodeapi.CreateSession, ""
 	if resume {
-		method, endpoint = "GET", "/api/session/"+url.PathEscape(r.NativeID)
+		op, id = opencodeapi.GetSession, r.NativeID
 		request = nil
 	}
-	body, code, err := api(method, endpoint, request, "x-opencode-directory", directory)
+	endpoint, err := routes.Path(op, id)
+	if err != nil {
+		return protocol.StartedSession{}, err
+	}
+	body, code, err := api(op.Method(), endpoint, request, "x-opencode-directory", directory)
 	if err != nil {
 		return protocol.StartedSession{}, down
 	}
@@ -180,8 +221,13 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 				return
 			}
 			// OpenCode 2.2 queues user turns through /prompt, as for the CTO.
+			promptPath, err := routes.Path(opencodeapi.Prompt, r.NativeID)
+			if err != nil {
+				startErr = err
+				return
+			}
 			api := openCodeWorkerAPI(cctx, service.URL, service.Password)
-			_, status, err := api("POST", "/api/session/"+url.PathEscape(r.NativeID)+"/prompt", map[string]string{"text": message, "delivery": "queue"}, "x-opencode-directory", directory)
+			_, status, err := api(opencodeapi.Prompt.Method(), promptPath, map[string]string{"text": message, "delivery": "queue"}, "x-opencode-directory", directory)
 			if err != nil {
 				startErr = errors.New("could not send the first message to OpenCode")
 			} else if status < 200 || status >= 300 {

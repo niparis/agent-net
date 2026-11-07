@@ -42,6 +42,10 @@ func TestCTOOpenCodeEffectiveTools(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/openapi.json" {
+					http.NotFound(w, r)
+					return
+				}
 				agents := []any{map[string]any{"name": "cto", "permissions": tc.rules}}
 				if tc.extra != "" {
 					agents = append(agents, map[string]any{"name": tc.extra})
