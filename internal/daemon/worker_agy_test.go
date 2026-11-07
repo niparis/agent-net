@@ -948,3 +948,17 @@ func TestAgyUnfinishedCommitUsesTitle(t *testing.T) {
 		t.Fatalf("subject: %s", got)
 	}
 }
+
+// The result can arrive while the failure check observes process exit.
+func TestAgyFailureAfterResultAtExit(t *testing.T) {
+	c := &agyConn{}
+	failed := agyFailedAfterExit(c, func() bool {
+		c.mu.Lock()
+		c.completed = true
+		c.mu.Unlock()
+		return true
+	}, nil)
+	if failed {
+		t.Fatal("successful result was reported as a failed exit")
+	}
+}

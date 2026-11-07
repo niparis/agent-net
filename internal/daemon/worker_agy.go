@@ -531,16 +531,29 @@ func (agyLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, boo
 	if c == nil || starting {
 		return "", false
 	}
+	if agyFailedAfterExit(c, func() bool { return d.gone(w) }, exitErr) {
+		return cleanFailure("Antigravity exited without a successful result: " + d.agyLogTail(w)), false
+	}
+	c.mu.Lock()
+	failure := c.failure
+	c.mu.Unlock()
+	return failure, false
+}
+
+func agyFailedAfterExit(c *agyConn, gone func() bool, exitErr error) bool {
+	// The stream reader may finish during gone. Read its result afterward so
+	// an already completed turn is not mistaken for a failed exit.
+	exited := gone()
 	c.mu.Lock()
 	failure, completed := c.failure, c.completed
 	c.mu.Unlock()
 	if failure != "" {
-		return failure, false
+		return false
 	}
-	if d.gone(w) && (exitErr != nil || !completed) {
-		return cleanFailure("Antigravity exited without a successful result: " + d.agyLogTail(w)), false
+	if exited && (exitErr != nil || !completed) {
+		return true
 	}
-	return "", false
+	return false
 }
 
 func agyTurnFinished(d *Daemon, w *worker) bool {
