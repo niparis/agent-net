@@ -1105,6 +1105,10 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("delivery task backfill: %w", err)
 	}
+	if err := s.retireObsoleteNotices(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("retire obsolete notices: %w", err)
+	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
 		db.Close()
@@ -3190,6 +3194,9 @@ func (s *Store) logStep(event, id string, extra ...any) {
 
 // Pending returns undelivered messages for the node's online sessions, oldest first.
 func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Message, error) {
+	if err := s.retireObsoleteNotices(); err != nil {
+		return nil, err
+	}
 	if _, err := s.ExpireSessionAgentStarts(); err != nil {
 		return nil, err
 	}

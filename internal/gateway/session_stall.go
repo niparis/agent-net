@@ -22,6 +22,9 @@ func busyInitialActivity(status string, now int64) int64 {
 // checkSessionStalls runs on the gateway's minute tick. A poll of a harness is
 // not progress: only output, a turn boundary or a delivery acknowledgement is.
 func (s *Store) checkSessionStalls() error {
+	if err := s.retireObsoleteNotices(); err != nil {
+		return err
+	}
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
 		return err
