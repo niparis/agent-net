@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 0 sessions, 0 online · 0 busy                                  updated 00:00:00
+  Quotas    [ Workers log ]
+╭─Workers log──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ▸ 01-01 00:00 gpt-6-luna:xhigh     -        Agent One    Secret check: sk- false match inside words                                                     done │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Title       Secret check: sk- false match inside words                                                                                                       │
+│ Caller      Agent One (caller-machine)                                                                                                                       │
+│ Model       codex · gpt-6-luna · xhigh                                                                                                                       │
+│ Where       test-machine / demo                                                                                                                              │
+│ Run time    2m0s                                                                                                                                             │
+│                                                                                                                                                              │
+│ simple  D 2.05  ·  judged by deepseek-v4.1-flash                                                                                                             │
+│                                                                                                                                                              │
+│ Reasoning     2  Check substring boundaries.                                                                                                                 │
+│ Scope         2  One secret matcher.                                                                                                                         │
+│ Coupling      3  Shared validation path.                                                                                                                     │
+│ Uncertainty   2  Known false match.                                                                                                                          │
+│ Verification  1  Focused unit tests.                                                                                                                         │
+│ Risk          2  Preserve valid detections.                                                                                                                  │
+│                                                                                                                                                              │
+│ Chosen      codex gpt-6-luna:xhigh - 23.3 (good enough)                                                                                                      │
+│ Pace        codex 0% ahead of pace (week, 33% used at 33% elapsed)                                                                                           │
+│ Rotation    weight 0.85                                                                                                                                      │
+│ Not picked  skipped sonnet claude: protected provider (anthropic), saved for your orchestrator                                                               │
+│ Recent      simple starts: luna codex 4, deepseek opencode 3, terra-low 2, terra medium codex 1 (last 10)                                                    │
+│ Not picked  sonnet claude - its max is hard                                                                                                                  │
+│ Not picked  deepseek opencode - kept for harder work                                                                                                         │
+│ ↓ 8 more lines                                                                                                                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│ c: open the CTO                                                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+tab Quotas  ↑↓ select run  → details  ? help  q quit

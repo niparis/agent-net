@@ -122,12 +122,12 @@ const (
 
 var keyBindings = []keyBinding{
 	bind(contextWorkersLog, "tab", "workers log", "Quotas", 0),
-	bind(contextWorkersLog, "up|k", "up", "select run", 1),
-	bind(contextWorkersLog, "down|j", "down", "select run", 1),
-	bind(contextWorkersLog, "pgup", "page up", "ten runs up", 2),
-	bind(contextWorkersLog, "pgdown", "page down", "ten runs down", 2),
-	bind(contextWorkersLog, "left|h", "scroll details up", "scroll details up", 3),
-	bind(contextWorkersLog, "right|l", "scroll details down", "scroll details down", 3),
+	withHelp(bind(contextWorkersLog, "up|k", "up", "select run or scroll details", 1), "Select a run, or scroll details when the details pane is focused."),
+	withHelp(bind(contextWorkersLog, "down|j", "down", "select run or scroll details", 1), "Select a run, or scroll details when the details pane is focused."),
+	bind(contextWorkersLog, "pgup", "page up", "page up", 2),
+	bind(contextWorkersLog, "pgdown", "page down", "page down", 2),
+	bind(contextWorkersLog, "left|h", "focus runs", "focus runs", 3),
+	bind(contextWorkersLog, "right|l", "focus details", "focus details", 3),
 	bind(contextWorkersLog, "?", "help", "help", 4),
 	bind(contextWorkersLog, "q|ctrl+c", "quit", "quit", 5),
 	bind(contextDelivery, "up|k", "up", "select change", 1),

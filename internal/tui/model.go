@@ -47,6 +47,7 @@ type openMsg struct {
 type Model struct {
 	archive                             *sessionsArchiveForm
 	workerLogDetail                     int
+	workerLogDetailsFocus               bool
 	workersLog                          bool
 	workerLogRow                        int
 	delivery                            deliveryState

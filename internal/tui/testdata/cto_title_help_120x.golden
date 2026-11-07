@@ -88,8 +88,8 @@ Legend ────────────────────────�
 
  Workers log
   tab                    Quotas
-  pgup                   ten runs up
-  pgdown                 ten runs down
+  pgup                   page up
+  pgdown                 page down
 
  Messages
   left/right             select the previous or next message

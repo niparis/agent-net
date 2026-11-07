@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+  Quotas    [ Workers log ]
+╭─Workers log──────────────────────────────────────────────────────────────────╮
+│ ▸ 22:13 test-model norm owner     Review worker history and difficu… running │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Difficulty details───────────────────────────────────────────────────────────╮
+│ Title       Review worker history and difficulty scores                      │
+│ Model       codex · test-model · high                                        │
+│ normal  D 2.10  ·  judged by judge                                           │
+│                                                                              │
+│ Reasoning     3  Join stored runs and current sessions.                      │
+│ Scope         2  One read method and one sub-tab.                            │
+│ Coupling      2  Operator gate and TUI refresh.                              │
+│ Uncertainty   1  Known table schema.                                         │
+│ Verification  2  Gateway and TUI tests.                                      │
+│ Risk          1  Read only history.                                          │
+│ ↓ 5 more lines                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+tab Quotas  ↑↓ select run  → details  ? help  q quit
