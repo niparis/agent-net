@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop  left/right cell  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  ? help  q quit

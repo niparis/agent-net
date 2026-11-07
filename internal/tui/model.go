@@ -469,6 +469,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case sessionsArchiveMsg:
 		return m.sessionsArchiveResult(msg)
+	case sessionPinMsg:
+		return m.sessionPinResult(msg)
 	case tea.MouseMsg:
 		return m.graphMouse(msg), nil
 	case tea.PasteMsg:
@@ -1495,6 +1497,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.tab == sessionsTab && m.focus == focusSessions {
 			return m.toggleHiddenSession()
 		}
+	case "pin":
+		return m.toggleSessionPin()
 	case "help":
 		m.openHelp()
 	case "details":
@@ -1696,10 +1700,11 @@ func (m Model) feedItemAt(i int) *feedItem {
 
 // ---- the list of sessions ----
 
-// group is the sessions of one machine.
+// group is the sessions of one machine, or the Mine section above them.
 type group struct {
 	nodeID string
 	host   string
+	mine   bool
 	agents []protocol.AgentView
 	// hidden is how many sessions the active-only filter hides on this
 	// machine. It is 0 when the filter is off.
@@ -1757,9 +1762,66 @@ func matches(a protocol.AgentView, filter string) bool {
 	return true
 }
 
+// The Mine section is the owner's own short list: the sessions pinned for it,
+// then the sessions it used in the last week, newest use first. It shows in
+// both views and keeps offline and idle rows the machine groups would hide.
+const mineWindow = 7 * 24 * time.Hour
+
+func (m Model) mineEligible(a protocol.AgentView) bool {
+	if protocol.IsOwner(a.Harness) || a.Harness == "bot" {
+		return false
+	}
+	if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
+		return false
+	}
+	if isJunkSession(a) && !m.showJunk() {
+		return false
+	}
+	if a.Worker != nil && !a.Online {
+		return false
+	}
+	return matches(a, m.filter)
+}
+
+func (m Model) mineAgents() []protocol.AgentView {
+	now := m.now()
+	var pinned, used []protocol.AgentView
+	for _, a := range m.snap.Agents {
+		if !m.mineEligible(a) {
+			continue
+		}
+		switch {
+		case a.PinnedAt > 0:
+			pinned = append(pinned, a)
+		case a.OwnerUsedAt > 0:
+			if age := now.Sub(time.Unix(a.OwnerUsedAt, 0)); age >= 0 && age <= mineWindow {
+				used = append(used, a)
+			}
+		}
+	}
+	sort.SliceStable(pinned, func(i, j int) bool {
+		if pinned[i].PinnedAt != pinned[j].PinnedAt {
+			return pinned[i].PinnedAt < pinned[j].PinnedAt // pin order
+		}
+		return pinned[i].SessionID < pinned[j].SessionID
+	})
+	sort.SliceStable(used, func(i, j int) bool {
+		if used[i].OwnerUsedAt != used[j].OwnerUsedAt {
+			return used[i].OwnerUsedAt > used[j].OwnerUsedAt
+		}
+		return used[i].SessionID < used[j].SessionID
+	})
+	return append(pinned, used...)
+}
+
 // groups returns the sessions that pass the filter and the switches, grouped
 // by machine, with activity bands kept stable between refreshes.
 func (m Model) groups() []group {
+	mine := m.mineAgents()
+	inMine := make(map[string]bool, len(mine))
+	for _, a := range mine {
+		inMine[a.SessionID] = true
+	}
 	latest := map[string]protocol.AgentView{}
 	online := map[string]bool{}
 	key := func(a protocol.AgentView) string {
@@ -1788,6 +1850,9 @@ func (m Model) groups() []group {
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
 			continue // the owner is a sender, not a row
+		}
+		if inMine[a.SessionID] {
+			continue // already at the top under Mine
 		}
 		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
 			continue
@@ -1868,6 +1933,9 @@ func (m Model) groups() []group {
 		out = append(out, *g)
 	}
 	out = m.nestWorkers(out, nest)
+	if len(mine) > 0 {
+		out = append([]group{{nodeID: "mine", host: "Mine", mine: true, agents: mine}}, out...)
+	}
 	if len(bots.agents) > 0 {
 		sort.Slice(bots.agents, func(i, j int) bool { return bots.agents[i].Profile.Name < bots.agents[j].Profile.Name })
 		out = append(out, bots)
@@ -2125,7 +2193,7 @@ func (m Model) tableRows() []tableRow {
 	for _, g := range m.groups() {
 		rows = append(rows, tableRow{header: true, g: g})
 		for _, a := range g.agents {
-			rows = append(rows, tableRow{agent: a, mark: g.marks[a.SessionID]})
+			rows = append(rows, tableRow{agent: a, mark: g.marks[a.SessionID], g: g})
 		}
 	}
 	return rows
