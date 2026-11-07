@@ -99,6 +99,23 @@ CREATE TABLE IF NOT EXISTS workers (
 			return nil, err
 		}
 	}
+	for _, col := range []string{"retain_until", "dirty_logged_at", "retain_head"} {
+		var has int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cleanup_worktrees') WHERE name=?`, col).Scan(&has); err != nil {
+			db.Close()
+			return nil, err
+		}
+		if has == 0 {
+			spec := ` INTEGER NOT NULL DEFAULT 0`
+			if col == "retain_head" {
+				spec = ` TEXT NOT NULL DEFAULT ''`
+			}
+			if _, err := db.Exec(`ALTER TABLE cleanup_worktrees ADD COLUMN ` + col + spec); err != nil {
+				db.Close()
+				return nil, err
+			}
+		}
+	}
 	// harness_ref is what a harness needs to find its worker again: the
 	// background session ID of a Claude worker, the address of a Codex one.
 	// A table from an older version does not have it.

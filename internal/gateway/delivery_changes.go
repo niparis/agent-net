@@ -634,6 +634,10 @@ func (s *Store) ListChanges(q protocol.ChangeListRequest) (protocol.ChangeListRe
 		where += ` AND project = ?`
 		args = append(args, q.Project)
 	}
+	if q.Branch != "" {
+		where += ` AND (branch = ? OR EXISTS (SELECT 1 FROM delivery_revisions r WHERE r.change_id=delivery_changes.id AND r.branch=?))`
+		args = append(args, q.Branch, q.Branch)
+	}
 	if q.Caller != "" {
 		where += ` AND caller = ?`
 		args = append(args, q.Caller)
@@ -675,7 +679,7 @@ func (s *Store) ListChanges(q protocol.ChangeListRequest) (protocol.ChangeListRe
 	if err != nil {
 		return protocol.ChangeListResult{}, err
 	}
-	out := protocol.ChangeListResult{Changes: []protocol.ChangeView{}}
+	out := protocol.ChangeListResult{Changes: []protocol.ChangeView{}, Branch: q.Branch}
 	if len(changes) > limit {
 		changes = changes[:limit]
 		out.Next = changes[limit-1].ID

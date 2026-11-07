@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,12 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 		}
 		for _, row := range rows {
 			row.DefaultBranch = p.DefaultBranch
+			if err := d.cleanupChange(ctx, p.Name, &row); err != nil {
+				if d.log != nil {
+					d.Logf("worker.worktree_cleanup path=%q change_error=%v", row.Path, err)
+				}
+				continue
+			}
 			if err := d.cleanupWorktree(ctx, row, now); err != nil && d.log != nil {
 				d.Logf("worker.worktree_cleanup path=%q error=%v", row.Path, err)
 			}
@@ -79,8 +86,10 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 }
 
 type cleanupWorktree struct {
-	ID, Project, Path, Branch, Harness, DefaultBranch string
-	EndedAt                                           time.Time
+	ID, Project, Path, Branch, Harness, DefaultBranch  string
+	EndedAt, ChangeEndedAt, RetainUntil, DirtyLoggedAt time.Time
+	ChangeState, MergedCommit, RetainHead              string
+	ChangeChecked                                      bool
 }
 
 // cleanupBranch verifies a recorded worker branch without depending on the
@@ -104,7 +113,7 @@ func cleanupBranch(branch, id string) bool {
 
 // cleanupWorktree never removes a worktree with uncommitted files or a branch
 // containing commits absent from the project default branch.
-func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.Time) error {
+func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now time.Time) error {
 	if w.EndedAt.IsZero() {
 		return nil
 	}
@@ -183,6 +192,15 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.
 			return err
 		}
 		if status != "" {
+			if d.log != nil && (w.DirtyLoggedAt.IsZero() || now.Sub(w.DirtyLoggedAt) >= 24*time.Hour) {
+				d.Logf("worker.worktree_cleanup path=%q dirty=true", w.Path)
+				if d.st != nil {
+					_, err = d.st.db.Exec(`UPDATE cleanup_worktrees SET dirty_logged_at=? WHERE worker_id=? AND ended_at=?`, now.UnixNano(), w.ID, w.EndedAt.UnixNano())
+					if err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		}
 	}
@@ -209,6 +227,9 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.
 	if err != nil {
 		return err
 	}
+	if w.RetainHead != "" && head != w.RetainHead {
+		return nil
+	}
 	defaultBranch := w.DefaultBranch
 	if defaultBranch == "" {
 		if ref, err := gitOut(ctx, w.Project, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil && strings.HasPrefix(ref, "refs/remotes/origin/") {
@@ -233,8 +254,70 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.
 	if err != nil {
 		return err
 	}
-	if unique != "" {
+	reason := "merged"
+	if w.ChangeState != "" && w.ChangeState != protocol.ChangeMerged && w.ChangeState != protocol.ChangeDone && w.ChangeState != protocol.ChangeStopped {
 		return nil
+	}
+	retainUntil := w.RetainUntil
+	if w.ChangeState != "" {
+		switch w.ChangeState {
+		case protocol.ChangeMerged, protocol.ChangeDone:
+			if w.MergedCommit == "" || w.ChangeEndedAt.IsZero() {
+				return nil
+			}
+			if _, err := gitOut(ctx, w.Project, "merge-base", "--is-ancestor", w.MergedCommit, defaultRef); err != nil {
+				return nil
+			}
+		case protocol.ChangeStopped:
+			if w.ChangeEndedAt.IsZero() || now.Sub(w.ChangeEndedAt) <= 3*24*time.Hour {
+				return nil
+			}
+			reason = "closed"
+		default:
+			return nil
+		}
+		if deadline := w.ChangeEndedAt.Add(30 * 24 * time.Hour); deadline.After(retainUntil) {
+			retainUntil = deadline
+		}
+	} else if retainUntil.IsZero() && unique != "" {
+		if !w.ChangeChecked || now.Sub(w.EndedAt) <= 14*24*time.Hour {
+			return nil
+		}
+		// A worker record or symbolic ref may still name this branch.
+		if d.st != nil {
+			var references int
+			if err := d.st.db.QueryRow(`SELECT count(*) FROM workers WHERE id<>? AND base=?`, w.ID, w.Branch).Scan(&references); err != nil {
+				return err
+			}
+			if references != 0 {
+				return nil
+			}
+		}
+		symrefs, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(symref)")
+		if err != nil {
+			return err
+		}
+		for _, ref := range strings.Split(symrefs, "\n") {
+			if ref == branchRef {
+				return nil
+			}
+		}
+		// Keep commits referenced by another branch or remote.
+		others, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(refname)", "--contains", head, "refs/heads/", "refs/remotes/")
+		if err != nil {
+			return err
+		}
+		for _, ref := range strings.Split(others, "\n") {
+			if ref != "" && ref != branchRef {
+				return nil
+			}
+		}
+		reason = "stale"
+	}
+	if !retainUntil.IsZero() && d.st != nil {
+		if _, err := d.st.db.Exec(`UPDATE cleanup_worktrees SET retain_until=?,retain_head=? WHERE worker_id=? AND ended_at=?`, retainUntil.UnixNano(), head, w.ID, w.EndedAt.UnixNano()); err != nil {
+			return err
+		}
 	}
 	var size int64
 	_ = filepath.WalkDir(w.Path, func(_ string, e os.DirEntry, err error) error {
@@ -255,6 +338,12 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.
 			d.Logf("worker.worktree_cleanup path=%q trust_error=%v", w.Path, err)
 		}
 	}
+	if !missing && d.log != nil {
+		d.Logf("worker.worktree_cleanup path=%q branch=%q reason=%s freed=%d", w.Path, w.Branch, reason, size)
+	}
+	if !retainUntil.IsZero() && now.Before(retainUntil) {
+		return nil
+	}
 	if _, err := gitOut(ctx, w.Project, "update-ref", "-d", branchRef, head); err != nil {
 		return err
 	}
@@ -263,8 +352,31 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.
 			return err
 		}
 	}
-	if d.log != nil {
-		d.Logf("worker.worktree_cleanup path=%q branch=%q freed=%d", w.Path, w.Branch, size)
+	return nil
+}
+
+// cleanupChange finds every change that has used the branch. Multiple matches
+// are kept until all references can be resolved safely.
+func (d *Daemon) cleanupChange(ctx context.Context, project string, w *cleanupWorktree) error {
+	q := protocol.ChangeListRequest{Project: project, Branch: w.Branch, State: protocol.ChangeListAny, Limit: 100}
+	var page protocol.ChangeListResult
+	if err := d.deliveryCall(ctx, protocol.FrameChangeList, q, &page); err != nil {
+		return err
+	}
+	if page.Branch != w.Branch {
+		return fmt.Errorf("gateway does not support branch lookup")
+	}
+	w.ChangeChecked = true
+	if len(page.Changes) > 1 || page.Next != "" {
+		w.ChangeState = protocol.ChangeOpen
+		return nil
+	}
+	if len(page.Changes) == 1 {
+		c := page.Changes[0].Change
+		w.ChangeState, w.MergedCommit = c.State, c.MergedCommit
+		if c.UpdatedAt != 0 {
+			w.ChangeEndedAt = time.Unix(c.UpdatedAt, 0)
+		}
 	}
 	return nil
 }

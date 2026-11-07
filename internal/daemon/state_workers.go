@@ -118,7 +118,7 @@ func (s *state) saveWorker(w workerRow) error {
 }
 
 func (s *state) cleanupWorktrees(project string) ([]cleanupWorktree, error) {
-	rows, err := s.db.Query(`SELECT worker_id,project,path,branch,ended_at,harness FROM cleanup_worktrees WHERE project=?`, project)
+	rows, err := s.db.Query(`SELECT worker_id,project,path,branch,ended_at,harness,retain_until,dirty_logged_at,retain_head FROM cleanup_worktrees WHERE project=?`, project)
 	if err != nil {
 		return nil, err
 	}
@@ -126,11 +126,17 @@ func (s *state) cleanupWorktrees(project string) ([]cleanupWorktree, error) {
 	var out []cleanupWorktree
 	for rows.Next() {
 		var w cleanupWorktree
-		var ended int64
-		if err := rows.Scan(&w.ID, &w.Project, &w.Path, &w.Branch, &ended, &w.Harness); err != nil {
+		var ended, retain, dirty int64
+		if err := rows.Scan(&w.ID, &w.Project, &w.Path, &w.Branch, &ended, &w.Harness, &retain, &dirty, &w.RetainHead); err != nil {
 			return nil, err
 		}
 		w.EndedAt = time.Unix(0, ended)
+		if retain != 0 {
+			w.RetainUntil = time.Unix(0, retain)
+		}
+		if dirty != 0 {
+			w.DirtyLoggedAt = time.Unix(0, dirty)
+		}
 		out = append(out, w)
 	}
 	return out, rows.Err()
