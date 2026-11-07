@@ -456,8 +456,8 @@ func (d *Daemon) sessionResumeLocal(ctx context.Context, sessionID string) (prot
 }
 
 func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, pane string) (protocol.StartedSession, error) {
-	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi") {
-		return protocol.StartedSession{}, errors.New("resume works for Claude and Pi for now")
+	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex") {
+		return protocol.StartedSession{}, errors.New("Cannot resume this conversation here. Open it in the harness directly.")
 	}
 	if a.Online {
 		return protocol.StartedSession{}, errors.New("session is already online")
@@ -467,7 +467,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
 	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: firstNonEmpty(a.Profile.Name, a.Title, a.NativeID), Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
-	if a.Harness == "pi" {
+	if a.Harness == "pi" || a.Harness == "opencode" || a.Harness == "codex" {
 		return d.launchOwnerPi(r, "", a.NativeID, socket, pane, false)
 	}
 	bin, err := d.harnessBinary("claude")

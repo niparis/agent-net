@@ -63,9 +63,9 @@ func (m Model) startEnterID(id string) (Model, tea.Cmd) {
 	case a.Harness == "cto":
 		return m.openCTO(a.SessionID)
 	}
-	if !a.Online && a.Harness != "opencode" && a.Harness != "codex" {
-		if a.Harness != "claude" && a.Harness != "pi" {
-			m.fail("resume works for Claude and Pi for now")
+	if !a.Online {
+		if a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex" {
+			m.fail("This harness cannot resume here. Open its conversation in the harness directly.")
 			return m, nil
 		}
 		if m.now().Sub(time.Unix(a.LastSeen, 0)) > time.Hour {
