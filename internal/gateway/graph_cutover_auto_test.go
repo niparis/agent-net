@@ -11,13 +11,36 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-func autoCutoverGateway(t *testing.T, now time.Time) (*Gateway, *bytes.Buffer) {
+// Background maintenance can log after the cutover becomes visible in the DB.
+type cutoverLogBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *cutoverLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+func (b *cutoverLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+func (b *cutoverLogBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
+func autoCutoverGateway(t *testing.T, now time.Time) (*Gateway, *cutoverLogBuffer) {
 	t.Helper()
-	logs := &bytes.Buffer{}
+	logs := &cutoverLogBuffer{}
 	g, err := New(Options{
 		DataDir: filepath.Join(t.TempDir(), "gateway"),
 		Version: "v0.4.145",
