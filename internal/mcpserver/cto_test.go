@@ -89,7 +89,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	}
 	wantEnums := map[string]map[string][]string{
 		"graph_change": {
-			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone"},
+			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove"},
 			"mode":   {"advisor", "arbiter", "owner"},
 			"rule":   {"normal", "auto", "ask", "never"},
 		},

@@ -36,6 +36,11 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("edge_remove", "Remove a graph edge.", map[string]ctoField{"from": {typ: "graph_endpoint"}, "to": {typ: "graph_endpoint"}, "kind": en("Kind and direction.", ctoEdgeKinds...)})
 	add("graph_undo", "Undo a graph change.", map[string]ctoField{"id": n("ID; omit for latest.")})
 	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", ctoNodeSettings...), "value": s("Empty clears.")})
+	add("team_create", "Create a team.", map[string]ctoField{"name": s("Team name."), "purpose": s("Team purpose.")})
+	add("team_rename", "Rename a team.", map[string]ctoField{"team": s("Team name or ID."), "name": s("New team name.")})
+	add("team_archive", "Archive a team.", map[string]ctoField{"team": s("Team name or ID.")})
+	add("team_member_add", "Add a member to a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})
+	add("team_member_remove", "Remove a member from a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})
 
 	startFields := map[string]ctoField{"agent_id": s("Lasting Agent; omit for Repo owner."), "project": s("Project."), "path": s("Path."), "node_id": s("Machine."), "harness": harness, "model": model, "folder": en("Folder.", "project", "worktree"), "branch": s("Branch."), "first_message": s("First message."), "create": b("Create.")}
 	add("session_start", "Start an owner session.", startFields)

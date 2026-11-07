@@ -83,8 +83,11 @@ var ctoTools = map[string]ctoToolDef{
 	"graph_change": {
 		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Repo and agent create, archive, tombstone and their undo always require owner approval.",
 		fields: map[string]ctoField{
-			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone"}},
+			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove"}},
 			"ref":     {typ: "graph_ref", desc: "Typed target."},
+			"member":  {typ: "graph_ref", desc: "Member ref (agent or repo)."},
+			"team":    {typ: "string", desc: "Team name or ID."},
+			"purpose": {typ: "string", desc: "Team purpose."},
 			"node":    {typ: "string", desc: "Node."},
 			"attr":    {typ: "string", desc: "Attribute.", enum: ctoCharterAttrs},
 			"value":   {typ: "string", desc: "Value; empty clears."},

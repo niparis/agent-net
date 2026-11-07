@@ -418,6 +418,17 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, tooOldGateway(err)
 		}
 		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, nil
+	case "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove":
+		tw, err := d.resolveTeamWrite(ctx, name, raw)
+		if err != nil {
+			return nil, err
+		}
+		b, err := json.Marshal(tw)
+		if err != nil {
+			return nil, err
+		}
+		res, _, err := lc.dispatchOwner(ctx, protocol.OpTeamWrite, b)
+		return res, err
 	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set", "repo_create", "repo_archive", "agent_create", "agent_tombstone":
 		delete(args, "by")
 		if name == "repo_create" || name == "repo_archive" || name == "agent_create" || name == "agent_tombstone" {

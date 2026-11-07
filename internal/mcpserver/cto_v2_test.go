@@ -150,6 +150,7 @@ func TestCTOV2OutputsMatchCatalogSchemas(t *testing.T) {
 func TestCTOV2EveryActionValidates(t *testing.T) {
 	cases := []struct{ tool, args string }{
 		{"graph_change", `{"action":"charter_set"}`}, {"graph_change", `{"action":"node_add"}`}, {"graph_change", `{"action":"node_remove"}`}, {"graph_change", `{"action":"edge_set"}`}, {"graph_change", `{"action":"edge_remove"}`}, {"graph_change", `{"action":"settings_set"}`}, {"graph_change", `{"action":"undo"}`},
+		{"graph_change", `{"action":"team_create","name":"team"}`}, {"graph_change", `{"action":"team_rename","team":"team","name":"new"}`}, {"graph_change", `{"action":"team_archive","team":"team"}`}, {"graph_change", `{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"}}`}, {"graph_change", `{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"}}`},
 		{"session_change", `{"action":"rename"}`}, {"session_change", `{"action":"trust"}`}, {"session_change", `{"action":"policy"}`}, {"session_change", `{"action":"session_start","project":"example"}`},
 		{"worker_change", `{"action":"start","project":"example","task":"work","touches":["docs"]}`}, {"worker_change", `{"action":"stop"}`},
 	}
@@ -194,6 +195,11 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 		{"graph_change", map[string]any{"action": "edge_set", "from": "a", "to": "b", "kind": "depends", "mode": "advisor", "rule": "normal"}},
 		{"graph_change", map[string]any{"action": "edge_remove", "from": "a", "to": "b", "kind": "depends"}},
 		{"graph_change", map[string]any{"action": "settings_set", "node": "a", "setting": "autonomy", "value": "owner"}}, {"graph_change", map[string]any{"action": "undo"}},
+		{"graph_change", map[string]any{"action": "team_create", "name": "t", "purpose": "p"}},
+		{"graph_change", map[string]any{"action": "team_rename", "team": "t", "name": "new"}},
+		{"graph_change", map[string]any{"action": "team_archive", "team": "t"}},
+		{"graph_change", map[string]any{"action": "team_member_add", "team": "t", "member": map[string]any{"kind": "agent", "id": "a"}}},
+		{"graph_change", map[string]any{"action": "team_member_remove", "team": "t", "member": map[string]any{"kind": "agent", "id": "a"}}},
 		{"session_change", map[string]any{"action": "rename", "session_id": "s", "name": "x"}}, {"session_change", map[string]any{"action": "trust", "session_id": "s", "on": true}},
 		{"session_change", map[string]any{"action": "policy", "session_id": "s", "scope": "session", "dry_run": true}}, {"session_change", map[string]any{"action": "session_start", "project": "p"}},
 		{"worker_change", map[string]any{"action": "start", "project": "p", "task": "t", "touches": []string{"docs"}}}, {"worker_change", map[string]any{"action": "stop", "session": "w"}},
