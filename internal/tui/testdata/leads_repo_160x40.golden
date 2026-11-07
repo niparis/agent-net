@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 6 nodes, 5 edges                                                  updated 14:05
+repo cogforge  autonomy: off
+Tools: 0 skills, 0 MCP servers · t open
+owner: agent api-architect
+no purpose set
+○ no live sessions
+4/3 over max
+accept, test, review, merge, release, verify: caller
+governed by: agent api-architect (-)
+
+IN 0                                                          OUT 2
+                                                              ──▶ repo shop depends
+                                                              ──▶ team Alpha member_of
+Card ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+no charter set
+Rules ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+tests_before_merge suite                  default
+merge_authority    full                   default
+worker_sandbox     sandboxed              default
+judge_consumers    charter                default
+deploy_rule        brief                  default
+autonomy           off                    default
+
+
+
+
+
+
+
+
+RECENT  no changes yet
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│ c: open the CTO                                                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+enter sessions  t tools  l lead  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

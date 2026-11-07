@@ -28,13 +28,13 @@ Keys · all screens ────────────────────
   p                      pin or unpin the selected session so it stays at the top of Mine
   d                      show or hide the selected session details
   ◐                      runs in the background: no terminal is attached
+  ★                      repo or team lead; dim when no lead session is live
 
  Graph
   d                      delivery
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
-  shift+arrows           pan
   more below
 
 up/down scroll  ? this screen  esc close

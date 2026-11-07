@@ -207,6 +207,9 @@ func (m Model) renderView() string {
 			// The New session form replaces the Graph card too, so n on the
 			// card keeps the Graph tab and Esc returns to the card.
 			out = append(out, m.mainView(w, contentHeight)...)
+		case m.mode == modeLeadPicker:
+			out = append(out, m.titleLine(w))
+			out = append(out, m.leadPickerView(w, contentHeight-1)...)
 		case m.mode == modeTeams:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.teamsView(w, contentHeight-1)...)
@@ -1121,7 +1124,7 @@ func (m Model) sessionsTable(w, n int) []string {
 			if g.mine {
 				name += m.mineMachineSuffix(a)
 			}
-			nameWant = max(nameWant, utf8.RuneCountInString(name))
+			nameWant = max(nameWant, ansi.StringWidth(name)-leadWidth(a))
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 		}
 	}
@@ -1265,7 +1268,7 @@ func (m Model) sessionsTable(w, n int) []string {
 // session count and how many the active filter hides.
 func (m Model) groupLine(g group, w int) string {
 	if g.mine {
-		head := " " + sBold.Render("Mine") + " " + sDim.Render(fmt.Sprintf("%d ", len(g.agents)))
+		head := " " + sBold.Render("Mine") + " " + sDim.Render(fmt.Sprintf("%d ", len(g.agents))) + m.groupRepoLimits(g)
 		rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
 		return clip(head+sDim.Render(rule), w)
 	}
@@ -1286,8 +1289,28 @@ func (m Model) groupLine(g group, w int) string {
 	} else {
 		head += " "
 	}
+	head += m.groupRepoLimits(g)
 	rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
 	return clip(head+sDim.Render(rule), w)
+}
+
+func (m Model) groupRepoLimits(g group) string {
+	seen := map[string]bool{}
+	var out string
+	for _, a := range g.agents {
+		project := m.agentProjectName(a)
+		if a.RepoMaxAgents <= 0 || seen[project] {
+			continue
+		}
+		seen[project] = true
+		label := project + " " + repoLimitText(a.RepoAgentCount, a.RepoMaxAgents) + " "
+		if a.RepoAgentCount > a.RepoMaxAgents {
+			out += sBad.Render(label)
+		} else {
+			out += sDim.Render(label)
+		}
+	}
+	return out
 }
 
 // usageCells writes the CPU and RAM cells of a session. They merge into one
@@ -1664,6 +1687,13 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 		name = m.ctoTitle()
 	}
 	mark := modeMark(a)
+	lead := ""
+	if leadWidth(a) > 0 {
+		lead = "★ "
+		if !m.leadLive(a) {
+			lead = sDim.Render(lead)
+		}
+	}
 	pin := ""
 	if a.PinnedAt > 0 {
 		pin = "▪ "
@@ -1672,11 +1702,42 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 	if mk.host != "" {
 		suffix = " @" + sanitize(mk.host)
 	}
-	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(pin) - utf8.RuneCountInString(mark) - utf8.RuneCountInString(suffix)
+	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(pin) - utf8.RuneCountInString(mark) - leadWidth(a) - utf8.RuneCountInString(suffix)
 	if room >= 4 && utf8.RuneCountInString(name) > room {
 		name = ansi.Truncate(name, room, "…")
 	}
-	return mk.prefix + pin + mark + name + suffix
+	return mk.prefix + pin + mark + lead + name + suffix
+}
+
+func (m Model) leadLive(a protocol.AgentView) bool {
+	if a.Online {
+		return true
+	}
+	if a.AgentID != "" {
+		for _, other := range m.snap.Agents {
+			if other.AgentID == a.AgentID && other.Online {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func leadWidth(a protocol.AgentView) int {
+	if a.RepoLead || a.TeamLead {
+		return 2
+	}
+	return 0
+}
+
+func repoLimitText(count, maxAgents int) string {
+	if maxAgents <= 0 {
+		return ""
+	}
+	if count > maxAgents {
+		return fmt.Sprintf("%d/%d over max", count, maxAgents)
+	}
+	return fmt.Sprintf("%d/%d agents", count, maxAgents)
 }
 
 // plural writes a count and a noun: "1 session", "3 sessions".

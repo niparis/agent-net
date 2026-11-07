@@ -304,6 +304,10 @@ func (m Model) teamMenuKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	team, ok := m.currentTeam()
 	switch key {
+	case "lead":
+		if ok {
+			return m.startLeadPicker(protocol.GraphRef{Kind: "team", ID: team.ID}, team.Name), nil
+		}
 	case "show team":
 		if !ok {
 			m.fail("No team yet. Press c to make one.")

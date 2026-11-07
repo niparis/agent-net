@@ -112,6 +112,12 @@ func (m Model) mapKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case actQuit:
 		m.quitting = true
 		return m, tea.Quit
+	case "lead":
+		if node, ok := m.mapNode(m.mp.selected); ok && node.Ref != nil && node.Ref.Kind == "repo" {
+			return m.startLeadPicker(*node.Ref, m.graphName(node.Name)), nil
+		}
+		m.fail("Select a repo first.")
+		return m, nil
 	case "node tools":
 		return m.startNodeTools(m.mp.selected)
 	case "autonomy":
