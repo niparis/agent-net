@@ -43,12 +43,14 @@ func TestCTOLeadSetProposal(t *testing.T) {
 func TestCTOSessionLeadSetProposal(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
-	cli := cliClient(t, n)
 	eventually(t, "owner", func() bool { return n.d.ownerSessionID() != "" })
 	if _, err := g.gw.Store().AddProjects(n.d.cfg.NodeID, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "demo", Path: "/work/demo"}}}); err != nil {
 		t.Fatal(err)
 	}
 	waitGraphCutover(t, g)
+	if err := n.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	sid, err := g.gw.Store().UpsertSession(n.d.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "lead-session", Repo: protocol.RepoInfo{Project: "demo"}})
 	if err != nil {
 		t.Fatal(err)
@@ -58,11 +60,7 @@ func TestCTOSessionLeadSetProposal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proposal, ok := result.(string)
-	if !ok || !strings.HasPrefix(proposal, "proposal p_") {
-		t.Fatalf("not proposed: %v", result)
-	}
-	cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: strings.Fields(proposal)[1], Action: "a"})
+	assertCTOImmediate(t, result)
 	graph, err := g.gw.Store().GraphForRef(&protocol.GraphRef{Kind: "repo", ID: "demo"})
 	if err != nil || len(graph.Nodes) != 1 || graph.Nodes[0].Lead == nil || *graph.Nodes[0].Lead != (protocol.GraphRef{Kind: "session", ID: sid}) {
 		t.Fatalf("lead: %+v %v", graph, err)
