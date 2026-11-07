@@ -19,6 +19,7 @@ import (
 type openCodeService struct {
 	URL      string `json:"url"`
 	Password string `json:"password"`
+	identity string
 }
 
 // Only the owner's loopback service may receive its password. Never include
@@ -33,12 +34,16 @@ func ownerOpenCodeService() (openCodeService, error) {
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	data, err := os.ReadFile(filepath.Join(state, "opencode", "service.json"))
+	path := filepath.Join(state, "opencode", "service.json")
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return service, err
 	}
 	if len(data) > 16384 || json.Unmarshal(data, &service) != nil {
 		return service, errors.New("invalid OpenCode service record")
+	}
+	if stat, statErr := os.Stat(path); statErr == nil {
+		service.identity = fmt.Sprintf("%d/%d", stat.ModTime().UnixNano(), stat.Size())
 	}
 	u, err := url.Parse(service.URL)
 	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {

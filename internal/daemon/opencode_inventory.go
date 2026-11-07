@@ -5,11 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func checkOpenCodeCapabilities(ctx context.Context, list []protocol.HarnessInfo) {
+func (d *Daemon) checkOpenCodeCapabilities(ctx context.Context, list []protocol.HarnessInfo) {
 	service, err := ownerOpenCodeService()
 	if err != nil {
 		return
@@ -18,7 +17,7 @@ func checkOpenCodeCapabilities(ctx context.Context, list []protocol.HarnessInfo)
 		if list[i].Name != "opencode" {
 			continue
 		}
-		routes, err := opencodeapi.Discover(ctx, &http.Client{Timeout: 10 * time.Second}, service.URL, service.Password, list[i].Version)
+		routes, err := d.openCodeRoutes.Discover(ctx, &http.Client{Timeout: 10 * time.Second}, service.URL, service.Password, list[i].Version, service.identity)
 		if err != nil {
 			return
 		}

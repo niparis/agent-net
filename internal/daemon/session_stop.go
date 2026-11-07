@@ -129,7 +129,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 				break
 			}
 		}
-		routes, err := opencodeapi.Discover(ctx, &http.Client{Timeout: 10 * time.Second}, service.URL, service.Password, version)
+		routes, err := d.openCodeRoutes.Discover(ctx, &http.Client{Timeout: 10 * time.Second}, service.URL, service.Password, version, service.identity)
 		if err != nil {
 			return no(fmt.Errorf("could not discover OpenCode routes: %w", err))
 		}
