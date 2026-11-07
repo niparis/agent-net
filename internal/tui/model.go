@@ -2208,6 +2208,9 @@ func (m Model) tableRows() []tableRow {
 func (m *Model) fixScroll() {
 	rows := m.tableRows()
 	n := m.layout().sessions
+	if m.repoLimitsLine(max(m.width, 1)) != "" {
+		n = max(n-1, 1)
+	}
 	sel := -1
 	for i, r := range rows {
 		if !r.header && r.agent.SessionID == m.selected {

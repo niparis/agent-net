@@ -19,8 +19,19 @@ func TestLeadAndRepoLimitDisplay(t *testing.T) {
 	if got := ansi.Strip(m.nameText(a, treeMark{}, 30)); !strings.Contains(got, "★ ") {
 		t.Fatalf("lead mark missing: %q", got)
 	}
-	if got := ansi.Strip(m.groupLine(group{host: "host", agents: []protocol.AgentView{a}}, 80)); !strings.Contains(got, "4/3 over max") {
-		t.Fatalf("limit missing: %q", got)
+
+	a.Repo.Project = "zeta"
+	b := protocol.AgentView{RepoMaxAgents: 3, RepoAgentCount: 3}
+	b.Repo.Project = "alpha"
+	m.snap.Agents = []protocol.AgentView{b, a, a}
+	if got := ansi.Strip(m.repoLimitsLine(80)); got != "agents per repo: zeta 4/3 over max · alpha 3/3" {
+		t.Fatalf("limit line: %q", got)
+	}
+	if got := ansi.Strip(m.groupLine(group{host: "host", agents: []protocol.AgentView{a}}, 80)); strings.Contains(got, "4/3") {
+		t.Fatalf("limit on machine: %q", got)
+	}
+	if got := ansi.Strip(m.repoLimitsLine(32)); !strings.HasSuffix(got, "…") || !strings.Contains(got, "zeta 4/3") {
+		t.Fatalf("truncated limits: %q", got)
 	}
 }
 
@@ -31,7 +42,7 @@ func TestStartMaxPromptKeys(t *testing.T) {
 	base.sessionStart = protocol.StartedSession{Status: "started"}
 	change := &protocol.SettingsChange{Key: "max_agents", Level: "repo", Scope: "garden", Value: []byte("4"), Expect: []byte("3")}
 	m, _ = m.onSessionStarted(sessionStartedMsg{req: protocol.SessionStartRequest{Project: "garden"}, res: protocol.StartedSession{Status: "failed", Error: "garden already has 3 agents (max 3). Stop one, or raise the max to 4.", SuggestedChange: change}})
-	if m.sessionPending == nil || !strings.Contains(m.testView(), "y raise the max to 4 and start") {
+	if m.sessionPending == nil || !strings.Contains(m.testView(), "y raise the max to 4 and start · esc cancel") {
 		t.Fatal("missing max prompt")
 	}
 	cancelled, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -128,4 +139,26 @@ func TestLeadPickerAndRepoCardGoldens(t *testing.T) {
 		m = m.startLeadPicker(protocol.GraphRef{Kind: "repo", ID: "cogforge"}, "cogforge")
 		golden(t, fmt.Sprintf("leads_picker_%dx%d", size.w, size.h), m.testView())
 	}
+}
+
+func TestRepoLimitCardLabel(t *testing.T) {
+	if got := repoLimitCardText(4, 3); got != "agents 4/3 · over max" {
+		t.Fatal(got)
+	}
+	if got := repoLimitCardText(3, 3); got != "agents 3/3" {
+		t.Fatal(got)
+	}
+}
+
+func TestRepoLimitsTruncateAt80Golden(t *testing.T) {
+	m, _ := workerModel(80, 24)
+	for i := range m.snap.Agents {
+		if i < 4 {
+			m.snap.Agents[i].RepoMaxAgents = 3
+			m.snap.Agents[i].RepoAgentCount = 3
+			m.snap.Agents[i].Repo.Project = fmt.Sprintf("project-with-long-name-%d", i)
+		}
+	}
+	m.snap.Agents[3].RepoAgentCount = 4
+	golden(t, "leads_limits_truncated_80x24", m.testView())
 }

@@ -482,7 +482,7 @@ func (m Model) mapFocusView(w, h int) []string {
 		}
 		head = append(head, strings.Join(shown, "")+" "+sDim.Render(text))
 	}
-	if limit := repoLimitText(node.AgentCount, node.MaxAgents); limit != "" {
+	if limit := repoLimitCardText(node.AgentCount, node.MaxAgents); limit != "" {
 		if node.OverMax || node.AgentCount > node.MaxAgents {
 			head = append(head, sBad.Render(limit))
 		} else {

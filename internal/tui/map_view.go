@@ -82,7 +82,7 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 			add(sDim.Render("  no locations"))
 		}
 		add(section("Live sessions", width))
-		if limit := repoLimitText(node.AgentCount, node.MaxAgents); limit != "" {
+		if limit := repoLimitCardText(node.AgentCount, node.MaxAgents); limit != "" {
 			if node.OverMax || node.AgentCount > node.MaxAgents {
 				add(sBad.Render("  " + limit))
 			} else {

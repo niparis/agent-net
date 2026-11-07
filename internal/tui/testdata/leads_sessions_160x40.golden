@@ -4,8 +4,9 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                                                            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+agents per repo: tenebrae 4/3 over max · strategies 3/3
   NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK
- Mac (here) 4 sessions tenebrae 4/3 over max strategies 3/3 agents ─────────────────────────────────────────────────────────────────────────── view: active  (v)
+ Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── view: active  (v)
 ▸ ↳ tenebrae         worker tenebrae   opencode · haiku-4-5     busy       ?     ?
   tenebrae-53        agent  tenebrae   claude · opus-5-5        busy       ?     ?
   ◐ ★ strategies     agent  strategies claude · sonnet-5-5      idle       ?     ? backtest v2
@@ -13,7 +14,6 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ◐ ci-runner        agent  agent-net  pi · gpt-6               idle       ?     ?
   scratch            agent  -          pi                       shell      ?     ?
-
 
 
 

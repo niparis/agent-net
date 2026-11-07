@@ -1196,7 +1196,11 @@ func (m Model) sessionsTable(w, n int) []string {
 			head += cell(label, c.width)
 		}
 	}
-	out := []string{sDim.Render(clip(head, w))}
+	var out []string
+	if limits := m.repoLimitsLine(w); limits != "" {
+		out = append(out, limits)
+	}
+	out = append(out, sDim.Render(clip(head, w)))
 	rows := m.tableRows()
 	if !m.haveData {
 		msg := "  waiting for the daemon..."
@@ -1268,7 +1272,7 @@ func (m Model) sessionsTable(w, n int) []string {
 // session count and how many the active filter hides.
 func (m Model) groupLine(g group, w int) string {
 	if g.mine {
-		head := " " + sBold.Render("Mine") + " " + sDim.Render(fmt.Sprintf("%d ", len(g.agents))) + m.groupRepoLimits(g)
+		head := " " + sBold.Render("Mine") + " " + sDim.Render(fmt.Sprintf("%d ", len(g.agents)))
 		rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
 		return clip(head+sDim.Render(rule), w)
 	}
@@ -1289,28 +1293,53 @@ func (m Model) groupLine(g group, w int) string {
 	} else {
 		head += " "
 	}
-	head += m.groupRepoLimits(g)
 	rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
 	return clip(head+sDim.Render(rule), w)
 }
 
-func (m Model) groupRepoLimits(g group) string {
-	seen := map[string]bool{}
-	var out string
-	for _, a := range g.agents {
-		project := m.agentProjectName(a)
-		if a.RepoMaxAgents <= 0 || seen[project] {
+// repoLimitsLine shows network-wide counts once, above the session table.
+func (m Model) repoLimitsLine(w int) string {
+	type limit struct {
+		name       string
+		count, max int
+	}
+	byRepo := map[string]limit{}
+	for _, a := range m.snap.Agents {
+		if a.RepoMaxAgents <= 0 {
 			continue
 		}
-		seen[project] = true
-		label := project + " " + repoLimitText(a.RepoAgentCount, a.RepoMaxAgents) + " "
-		if a.RepoAgentCount > a.RepoMaxAgents {
-			out += sBad.Render(label)
+		name := m.agentProjectName(a)
+		key := firstNonEmpty(a.RepoContext, firstNonEmpty(a.Repo.Project, name))
+		byRepo[key] = limit{name: name, count: a.RepoAgentCount, max: a.RepoMaxAgents}
+	}
+	if len(byRepo) == 0 {
+		return ""
+	}
+	limits := make([]limit, 0, len(byRepo))
+	for _, l := range byRepo {
+		limits = append(limits, l)
+	}
+	sort.Slice(limits, func(i, j int) bool {
+		a, b := limits[i], limits[j]
+		if (a.count > a.max) != (b.count > b.max) {
+			return a.count > a.max
+		}
+		return a.name < b.name
+	})
+	line := sDim.Render("agents per repo: ")
+	for i, l := range limits {
+		if i > 0 {
+			line += sDim.Render(" · ")
+		}
+		line += sDim.Render(sanitize(l.name) + " ")
+		count := fmt.Sprintf("%d/%d", l.count, l.max)
+		if l.count > l.max {
+			line += sBad.Render(count + " over max")
 		} else {
-			out += sDim.Render(label)
+			line += sDim.Render(count)
 		}
 	}
-	return out
+	return ansi.Truncate(line, w, "…")
 }
 
 // usageCells writes the CPU and RAM cells of a session. They merge into one
@@ -1730,14 +1759,15 @@ func leadWidth(a protocol.AgentView) int {
 	return 0
 }
 
-func repoLimitText(count, maxAgents int) string {
+func repoLimitCardText(count, maxAgents int) string {
 	if maxAgents <= 0 {
 		return ""
 	}
+	text := fmt.Sprintf("agents %d/%d", count, maxAgents)
 	if count > maxAgents {
-		return fmt.Sprintf("%d/%d over max", count, maxAgents)
+		text += " · over max"
 	}
-	return fmt.Sprintf("%d/%d agents", count, maxAgents)
+	return text
 }
 
 // plural writes a count and a noun: "1 session", "3 sessions".

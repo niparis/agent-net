@@ -21,7 +21,7 @@ func (m Model) noticeLine(w int) (string, bool) {
 		var line string
 		switch a.kind {
 		case askRaiseMax:
-			line = confirmLineWithHint(sanitize(a.display), "y raise the max to "+string(a.change.Value)+" and start", w)
+			line = confirmLineWithHint(sanitize(a.display), "y raise the max to "+string(a.change.Value)+" and start · esc cancel", w)
 		case askCreateFolder:
 			line = confirmName("Create ", sanitize(a.display), " on "+sanitize(a.host)+" and run git init?", w)
 		case askTrustClaude:

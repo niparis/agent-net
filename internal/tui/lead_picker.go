@@ -107,7 +107,7 @@ func (m Model) leadPickerKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) leadPickerView(w, rows int) []string {
 	p := m.leadPicker
 	out := []string{section("Lead for "+sanitize(p.name), w)}
-	visible := max(rows-4, 1)
+	visible := max(rows-1, 1)
 	start := max(0, p.index-visible+1)
 	for i := start; i < len(p.choices) && i < start+visible; i++ {
 		c := p.choices[i]
@@ -117,7 +117,6 @@ func (m Model) leadPickerView(w, rows int) []string {
 		}
 		out = append(out, clip(mark+sanitize(c.name), w))
 	}
-	out = append(out, "", sDim.Render(clip("  up/down select · enter save · esc cancel", w)))
 	for len(out) < rows {
 		out = append(out, "")
 	}
