@@ -24,14 +24,17 @@ func (m Model) rankedSessions() []protocol.AgentView {
 
 // rankSessions matches a query against the name, project, folder, machine and
 // task of each session. A name that equals the query comes first, then a name
-// that starts with it, then the rest by most recent activity. A later change
-// can add owner-use weighting here.
+// that starts with it, then the rest by the owner's use: pinned sessions, the
+// owner-use score, its last use, and finally the last activity.
 func rankSessions(query string, agents []protocol.AgentView, now time.Time) []protocol.AgentView {
 	q := strings.TrimSpace(query)
 	type ranked struct {
-		agent    protocol.AgentView
-		nameRank int
-		activity int64
+		agent       protocol.AgentView
+		nameRank    int
+		pinned      bool
+		ownerUses   int
+		ownerUsedAt int64
+		activity    int64
 	}
 	var rows []ranked
 	for _, a := range agents {
@@ -48,11 +51,27 @@ func rankSessions(query string, agents []protocol.AgentView, now time.Time) []pr
 		if !sessionMatches(a, q) {
 			continue
 		}
-		rows = append(rows, ranked{agent: a, nameRank: nameMatchRank(a, q), activity: sessionActivity(a)})
+		rows = append(rows, ranked{
+			agent:       a,
+			nameRank:    nameMatchRank(a, q),
+			pinned:      a.PinnedAt > 0,
+			ownerUses:   a.OwnerUses,
+			ownerUsedAt: a.OwnerUsedAt,
+			activity:    sessionActivity(a),
+		})
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].nameRank != rows[j].nameRank {
 			return rows[i].nameRank < rows[j].nameRank
+		}
+		if rows[i].pinned != rows[j].pinned {
+			return rows[i].pinned
+		}
+		if rows[i].ownerUses != rows[j].ownerUses {
+			return rows[i].ownerUses > rows[j].ownerUses
+		}
+		if rows[i].ownerUsedAt != rows[j].ownerUsedAt {
+			return rows[i].ownerUsedAt > rows[j].ownerUsedAt
 		}
 		if rows[i].activity != rows[j].activity {
 			return rows[i].activity > rows[j].activity

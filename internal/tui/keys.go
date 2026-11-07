@@ -170,6 +170,7 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextSessions, "v", "cycle view", "view", -1), "cycle the view: active (default) or all, which includes offline sessions"),
 	withHelp(bind(contextSessions, "H", "show hidden", "show hidden", -1), "show or hide sessions hidden with h, and temp-folder sessions in the all view"),
 	withHelp(bind(contextSessions, "a", "archive offline", "archive offline...", -1), "in the offline view, preview and archive offline sessions, or show archived and restore"),
+	withHelp(bind(contextSessions, "p", "pin", "pin", -1), "pin or unpin the selected session so it stays at the top of Mine"),
 	bind(contextSessions, "R", "refresh", "refresh", -1),
 	withHelp(bind(contextSessions, "d", "details", "details", -1), "show or hide the selected session details"),
 	bind(contextSessions, "/", "filter", "filter", -1),

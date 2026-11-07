@@ -31,6 +31,8 @@
                          sessions in the all view
   a                      in the offline view, preview and archive offline
                          sessions, or show archived and restore
+  p                      pin or unpin the selected session so it stays at the
+                         top of Mine
   d                      show or hide the selected session details
   ◐                      runs in the background: no terminal is attached
 
