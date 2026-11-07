@@ -3,8 +3,6 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"strings"
 	"unicode"
 
@@ -41,7 +39,17 @@ func (s *Store) Teams() ([]protocol.Team, error) {
 
 // WriteTeam validates authority, endpoints and expected values in the write
 // transaction. This step changes no settings, routing or delivery revisions.
-func (s *Store) WriteTeam(q protocol.TeamWrite, actor string, dryRun ...bool) error {
+func (s *Store) WriteTeam(q protocol.TeamWrite, actor string) error {
+	return s.writeTeam(q, actor, false)
+}
+
+// ValidateTeam runs all checks and validations of WriteTeam inside a transaction
+// that is rolled back without committing changes.
+func (s *Store) ValidateTeam(q protocol.TeamWrite, actor string) error {
+	return s.writeTeam(q, actor, true)
+}
+
+func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error {
 	if err := s.requireGraphRefs(); err != nil {
 		return err
 	}
@@ -143,7 +151,7 @@ func (s *Store) WriteTeam(q protocol.TeamWrite, actor string, dryRun ...bool) er
 	if q.Member != nil && q.Action == "membership" {
 		kind, id = q.Member.Kind, q.Member.ID
 	}
-	if len(dryRun) > 0 && dryRun[0] {
+	if dryRun {
 		return nil
 	}
 	if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?,?,?,?)`, q.Action, q.ID, oldTeam, kind, id, oldValue, newValue, now, actor); err != nil {
@@ -152,135 +160,23 @@ func (s *Store) WriteTeam(q protocol.TeamWrite, actor string, dryRun ...bool) er
 	return tx.Commit()
 }
 
-func (s *Store) resolveTeamWrite(action string, raw json.RawMessage) (protocol.TeamWrite, error) {
-	var fields map[string]json.RawMessage
-	if len(raw) > 0 && json.Unmarshal(raw, &fields) != nil {
-		return protocol.TeamWrite{}, errors.New("bad team action arguments")
+// Team looks up an active team by id or name.
+func (s *Store) Team(selector string) (id, name string, err error) {
+	selector = strings.TrimSpace(selector)
+	err = s.db.QueryRow(`SELECT id, name FROM teams WHERE (id=? OR name=?) AND active=1`, selector, selector).Scan(&id, &name)
+	if err == sql.ErrNoRows {
+		return "", "", reject("unknown Team")
 	}
-	str := func(key string) string {
-		var v string
-		_ = json.Unmarshal(fields[key], &v)
-		return strings.TrimSpace(v)
+	return id, name, err
+}
+
+// MemberTeam returns the current team ID of a member, or "" if none.
+func (s *Store) MemberTeam(ref protocol.GraphRef) (teamID string, err error) {
+	err = s.db.QueryRow(`SELECT team_id FROM team_members WHERE member_kind=? AND member_id=?`, ref.Kind, ref.ID).Scan(&teamID)
+	if err == sql.ErrNoRows {
+		return "", nil
 	}
-	graphMember := func() (*protocol.GraphRef, error) {
-		var ref protocol.GraphRef
-		if rawRef, ok := fields["member"]; ok && len(rawRef) > 0 && string(rawRef) != "null" {
-			if err := json.Unmarshal(rawRef, &ref); err == nil && ref.Kind != "" && ref.ID != "" {
-				return &ref, nil
-			}
-		}
-		if rawRef, ok := fields["ref"]; ok && len(rawRef) > 0 && string(rawRef) != "null" {
-			if err := json.Unmarshal(rawRef, &ref); err == nil && ref.Kind != "" && ref.ID != "" {
-				return &ref, nil
-			}
-		}
-		return nil, errors.New("team member ref required")
-	}
-	switch action {
-	case "team_create":
-		name := str("name")
-		if name == "" {
-			return protocol.TeamWrite{}, errors.New("team name required")
-		}
-		return protocol.TeamWrite{
-			Action:  "create",
-			ID:      name,
-			Name:    name,
-			Purpose: str("purpose"),
-		}, nil
-	case "team_rename":
-		teamSel := str("team")
-		newName := str("name")
-		if teamSel == "" || newName == "" {
-			return protocol.TeamWrite{}, errors.New("team and new name required")
-		}
-		var id, currentName string
-		err := s.db.QueryRow(`SELECT id, name FROM teams WHERE (id=? OR name=?) AND active=1`, teamSel, teamSel).Scan(&id, &currentName)
-		if err == sql.ErrNoRows {
-			return protocol.TeamWrite{}, reject("unknown Team")
-		}
-		if err != nil {
-			return protocol.TeamWrite{}, err
-		}
-		return protocol.TeamWrite{
-			Action:     "rename",
-			ID:         id,
-			Name:       newName,
-			ExpectName: currentName,
-		}, nil
-	case "team_archive":
-		teamSel := str("team")
-		if teamSel == "" {
-			return protocol.TeamWrite{}, errors.New("team required")
-		}
-		var id string
-		err := s.db.QueryRow(`SELECT id FROM teams WHERE (id=? OR name=?) AND active=1`, teamSel, teamSel).Scan(&id)
-		if err == sql.ErrNoRows {
-			return protocol.TeamWrite{}, reject("unknown Team")
-		}
-		if err != nil {
-			return protocol.TeamWrite{}, err
-		}
-		return protocol.TeamWrite{
-			Action: "archive",
-			ID:     id,
-		}, nil
-	case "team_member_add":
-		teamSel := str("team")
-		member, err := graphMember()
-		if err != nil {
-			return protocol.TeamWrite{}, err
-		}
-		var id string
-		err = s.db.QueryRow(`SELECT id FROM teams WHERE (id=? OR name=?) AND active=1`, teamSel, teamSel).Scan(&id)
-		if err == sql.ErrNoRows {
-			return protocol.TeamWrite{}, reject("unknown Team")
-		}
-		if err != nil {
-			return protocol.TeamWrite{}, err
-		}
-		var oldTeam string
-		err = s.db.QueryRow(`SELECT team_id FROM team_members WHERE member_kind=? AND member_id=?`, member.Kind, member.ID).Scan(&oldTeam)
-		if err != nil && err != sql.ErrNoRows {
-			return protocol.TeamWrite{}, err
-		}
-		return protocol.TeamWrite{
-			Action:     "membership",
-			ID:         id,
-			Member:     member,
-			ExpectTeam: oldTeam,
-		}, nil
-	case "team_member_remove":
-		teamSel := str("team")
-		member, err := graphMember()
-		if err != nil {
-			return protocol.TeamWrite{}, err
-		}
-		var id string
-		err = s.db.QueryRow(`SELECT id FROM teams WHERE (id=? OR name=?) AND active=1`, teamSel, teamSel).Scan(&id)
-		if err == sql.ErrNoRows {
-			return protocol.TeamWrite{}, reject("unknown Team")
-		}
-		if err != nil {
-			return protocol.TeamWrite{}, err
-		}
-		var oldTeam string
-		err = s.db.QueryRow(`SELECT team_id FROM team_members WHERE member_kind=? AND member_id=?`, member.Kind, member.ID).Scan(&oldTeam)
-		if err != nil && err != sql.ErrNoRows {
-			return protocol.TeamWrite{}, err
-		}
-		if oldTeam != id {
-			return protocol.TeamWrite{}, reject("member is not in team")
-		}
-		return protocol.TeamWrite{
-			Action:     "membership",
-			ID:         "",
-			Member:     member,
-			ExpectTeam: oldTeam,
-		}, nil
-	default:
-		return protocol.TeamWrite{}, fmt.Errorf("unknown team action %q", action)
-	}
+	return teamID, err
 }
 
 func liveTeamMember(tx *sql.Tx, ref protocol.GraphRef) error {
