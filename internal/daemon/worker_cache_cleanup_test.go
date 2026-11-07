@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -311,5 +312,39 @@ func TestDiskWarningHysteresis(t *testing.T) {
 	}
 	if len(createdItems) != 2 {
 		t.Fatalf("expected 2 created items after re-crossing 85%%, got %d", len(createdItems))
+	}
+}
+
+func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+
+	cacheDir := n.d.workerGoCacheDir()
+	tmpDir := n.d.workerGoTmpDir()
+
+	if cacheDir == "" || cacheDir == "/tmp/agent-net-gocache" {
+		t.Fatalf("default test daemon workerGoCacheDir = %q, want inside test temp dir", cacheDir)
+	}
+	if tmpDir == "" || tmpDir == "/tmp/agent-net-gotmp" {
+		t.Fatalf("default test daemon workerGoTmpDir = %q, want inside test temp dir", tmpDir)
+	}
+
+	tempRoot := os.TempDir()
+	if !strings.HasPrefix(cacheDir, tempRoot) {
+		t.Fatalf("workerGoCacheDir %q is not inside temp dir %q", cacheDir, tempRoot)
+	}
+	if !strings.HasPrefix(tmpDir, tempRoot) {
+		t.Fatalf("workerGoTmpDir %q is not inside temp dir %q", tmpDir, tempRoot)
+	}
+
+	w := startWorkerNode(t, g, shortSet, nil)
+	wCache := w.d.workerGoCacheDir()
+	wTmp := w.d.workerGoTmpDir()
+	if wCache == "" || wCache == "/tmp/agent-net-gocache" || !strings.HasPrefix(wCache, tempRoot) {
+		t.Fatalf("default test workerNode workerGoCacheDir = %q, want inside temp dir", wCache)
+	}
+	if wTmp == "" || wTmp == "/tmp/agent-net-gotmp" || !strings.HasPrefix(wTmp, tempRoot) {
+		t.Fatalf("default test workerNode workerGoTmpDir = %q, want inside temp dir", wTmp)
 	}
 }

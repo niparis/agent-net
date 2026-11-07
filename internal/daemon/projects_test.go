@@ -290,6 +290,7 @@ func TestProjectAddAgainstOldGatewayIsAClearError(t *testing.T) {
 	base := codeDir(t)
 	url, _ := fakeOldGateway(t)
 	cfg := Config{GatewayURL: url, NodeID: "n_old", Token: "t", Hostname: "newbox", StateDir: seededStateDir(t),
+		WorkerGoCache: t.TempDir(), WorkerGoTmp: t.TempDir(),
 		SocketPath: filepath.Join(shortDir(t), "d.sock"), BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond}
 	d, err := New(cfg)
 	if err != nil {

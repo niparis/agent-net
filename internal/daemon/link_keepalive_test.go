@@ -139,6 +139,7 @@ func startKeepaliveDaemon(t *testing.T, peer *keepaliveGateway) *Daemon {
 	d, err := New(Config{
 		GatewayURL: srv.URL, NodeID: "n_test", Token: "test-token", Hostname: "test-host",
 		StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"),
+		WorkerGoCache: t.TempDir(), WorkerGoTmp: t.TempDir(),
 		ClaudeSessionsDir: t.TempDir(), PiSessionsDir: t.TempDir(),
 		BackoffMin: 40 * time.Millisecond, BackoffMax: 80 * time.Millisecond,
 		KeepalivePingInterval: 40 * time.Millisecond, KeepaliveTimeout: 300 * time.Millisecond,

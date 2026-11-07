@@ -280,8 +280,10 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	sock := filepath.Join(shortDir(t), "d.sock")
 	cfg := Config{testStopCTOOnExit: true, testNoDifficulty: true, GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
 		NodeConfigDir: cfgDir, Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: sock,
-		HomeDir:  t.TempDir(),
-		EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
+		HomeDir:       t.TempDir(),
+		WorkerGoCache: t.TempDir(),
+		WorkerGoTmp:   t.TempDir(),
+		EnterSSH:      nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
 		ClaudeDiscoveryGrace: 100 * time.Millisecond, PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger,
 		// The helper sessions live in the test's own temporary folders. A
