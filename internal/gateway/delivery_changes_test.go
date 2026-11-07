@@ -733,3 +733,16 @@ func TestChangeReviewReasonSurvivesOfflineOwner(t *testing.T) {
 		}
 	}
 }
+
+func TestChangeListBranchIncludesRevisions(t *testing.T) {
+	r := newDeliveryRig(t)
+	q := r.workerSubmit("old-branch", commitA)
+	id := r.submit(r.a, q).Change.Change.ID
+	if _, err := r.s.db.Exec(`UPDATE delivery_changes SET branch='new-branch' WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	got := r.list(protocol.ChangeListRequest{Project: q.Project, State: protocol.ChangeListAny, Branch: "old-branch"})
+	if len(got.Changes) != 1 || got.Changes[0].Change.ID != id {
+		t.Fatalf("branch lookup: %+v", got)
+	}
+}

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -597,5 +598,126 @@ func TestCleanupBranchValidatesRecordedPrefix(t *testing.T) {
 		if got := cleanupBranch(tc.branch, "w_1"); got != tc.want {
 			t.Errorf("%q: %v", tc.branch, got)
 		}
+	}
+}
+
+func TestCleanupWorktreeDeliveryRetention(t *testing.T) {
+	project := newRepo(t, "project")
+	stateDir := t.TempDir()
+	dir := filepath.Join(stateDir, "worktrees", "w_delivery")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_delivery", dir)
+	if err := os.WriteFile(filepath.Join(dir, "unique"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "unique")
+	gitIn(t, dir, "commit", "-q", "-m", "unique")
+	st, err := openState(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	now := time.Now()
+	w := cleanupWorktree{ID: "w_delivery", Project: project, Path: dir, Branch: "agent-net/w_delivery", EndedAt: now.Add(-4 * 24 * time.Hour), ChangeState: protocol.ChangeStopped, ChangeEndedAt: now.Add(-4 * 24 * time.Hour)}
+	if _, err = st.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at) VALUES(?,?,?,?,?)`, w.ID, w.Project, w.Path, w.Branch, w.EndedAt.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{StateDir: stateDir}, st: st, workers: map[string]*worker{}}
+	if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("closed worktree remains: %v", err)
+	}
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/"+w.Branch); err != nil {
+		t.Fatalf("branch not retained: %v", err)
+	}
+	rows, err := st.cleanupWorktrees(project)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("ledger: %+v %v", rows, err)
+	}
+	rows[0].ChangeState, rows[0].ChangeEndedAt = w.ChangeState, w.ChangeEndedAt
+	if err := d.cleanupWorktree(context.Background(), rows[0], now.Add(26*24*time.Hour-time.Nanosecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/"+w.Branch); err != nil {
+		t.Fatalf("branch deleted before deadline: %v", err)
+	}
+	if err := d.cleanupWorktree(context.Background(), rows[0], now.Add(26*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/"+w.Branch); err == nil {
+		t.Fatal("expired branch remains")
+	}
+}
+
+func TestCleanupWorktreeDeliveryRules(t *testing.T) {
+	now := time.Unix(1800000000, 0)
+	for _, tc := range []struct {
+		name, state                        string
+		age                                time.Duration
+		checked, dirty, merged, wantRemove bool
+	}{
+		{"closed before three days", protocol.ChangeStopped, 3 * 24 * time.Hour, true, false, false, false},
+		{"closed after three days", protocol.ChangeStopped, 3*24*time.Hour + time.Second, true, false, false, true},
+		{"orphan before fourteen days", "", 14 * 24 * time.Hour, true, false, false, false},
+		{"orphan after fourteen days", "", 14*24*time.Hour + time.Second, true, false, false, true},
+		{"unknown gateway", "", 20 * 24 * time.Hour, false, false, false, false},
+		{"merged commit on default", protocol.ChangeMerged, time.Hour, true, false, true, true},
+		{"merged commit absent", protocol.ChangeDone, time.Hour, true, false, false, false},
+		{"dirty closed", protocol.ChangeStopped, 4 * 24 * time.Hour, true, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			project := newRepo(t, "project")
+			stateDir := t.TempDir()
+			dir := filepath.Join(stateDir, "worktrees", "w_rules")
+			if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+				t.Fatal(err)
+			}
+			gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_rules", dir)
+			defaultCommit, err := gitOut(context.Background(), project, "rev-parse", "HEAD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "unique"), []byte("x"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			gitIn(t, dir, "add", "unique")
+			gitIn(t, dir, "commit", "-q", "-m", "unique")
+			if tc.dirty {
+				if err := os.WriteFile(filepath.Join(dir, "dirty"), []byte("x"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			w := cleanupWorktree{ID: "w_rules", Project: project, Path: dir, Branch: "agent-net/w_rules", EndedAt: now.Add(-tc.age), ChangeState: tc.state, ChangeEndedAt: now.Add(-tc.age), ChangeChecked: tc.checked}
+			if tc.merged {
+				w.MergedCommit = defaultCommit
+			} else if tc.state == protocol.ChangeDone {
+				w.MergedCommit, err = gitOut(context.Background(), dir, "rev-parse", "HEAD")
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			d := &Daemon{cfg: Config{StateDir: stateDir}, workers: map[string]*worker{}}
+			if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+				t.Fatal(err)
+			}
+			_, err = os.Stat(dir)
+			if removed := os.IsNotExist(err); removed != tc.wantRemove {
+				t.Fatalf("removed=%v, error=%v", removed, err)
+			}
+		})
+	}
+}
+
+func TestCleanupChangeRejectsOldGateway(t *testing.T) {
+	d := &Daemon{cfg: Config{testGatewayCall: func(context.Context, string, any) (json.RawMessage, bool, error) {
+		return json.RawMessage(`{"changes":[]}`), true, nil
+	}}}
+	w := cleanupWorktree{Branch: "agent-net/w_old"}
+	if err := d.cleanupChange(context.Background(), "project", &w); err == nil {
+		t.Fatal("old gateway accepted as branch lookup")
 	}
 }

@@ -1539,8 +1539,10 @@ type ChangeGetRequest struct {
 
 // ChangeListRequest is change.list. State is a change state, ChangeListActive
 // (the default when empty) or ChangeListAny. Caller keeps the changes whose
-// caller is that session. After is the last change ID of the previous page.
+// caller is that session. Branch matches current and historical revision branches.
+// After is the last change ID of the previous page.
 type ChangeListRequest struct {
+	Branch  string `json:"branch,omitempty"`
 	Project string `json:"project,omitempty"`
 	State   string `json:"state,omitempty"`
 	Caller  string `json:"caller_session_id,omitempty"`
@@ -1549,8 +1551,9 @@ type ChangeListRequest struct {
 }
 
 // ChangeListResult answers change.list, newest change first. Next is the
-// After of the next page, empty on the last.
+// After of the next page, empty on the last. Branch echoes the branch filter.
 type ChangeListResult struct {
+	Branch  string       `json:"branch,omitempty"`
 	Changes []ChangeView `json:"changes"`
 	Next    string       `json:"next,omitempty"`
 }
