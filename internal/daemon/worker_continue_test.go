@@ -30,13 +30,13 @@ func TestStoppedWorkerKeepsUnfinishedWork(t *testing.T) {
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 	n := w.waitNotice(t, 1)[0]
-	for _, want := range []string{"status: stopped", "unfinished changes were saved as a commit on branch " + res.Branch} {
+	for _, want := range []string{"status: stopped", "left uncommitted changes; committed as WIP ", ": 1 files"} {
 		if !strings.Contains(n.Body, want) {
 			t.Errorf("notice lacks %q:\n%s", want, n.Body)
 		}
 	}
 	subject := gitOutT(t, repo, "log", "-1", "--format=%s", res.Branch)
-	if want := "agent-net: unfinished work of worker " + workerIDOf(res) + " (stopped)"; subject != want {
+	if want := "WIP: uncommitted changes at worker end (stopped)"; subject != want {
 		t.Errorf("commit subject %q, want %q", subject, want)
 	}
 	if got := gitOutT(t, repo, "show", res.Branch+":half.txt"); got != "half" {
@@ -45,6 +45,10 @@ func TestStoppedWorkerKeepsUnfinishedWork(t *testing.T) {
 	if st := gitOutT(t, res.Worktree, "status", "--porcelain"); st != "" {
 		t.Errorf("worktree still has changes: %s", st)
 	}
+	eventually(t, "successful end drops the worker state directory", func() bool {
+		_, err := os.Stat(filepath.Join(w.cfg.StateDir, "workers", workerIDOf(res)))
+		return os.IsNotExist(err)
+	})
 }
 
 // A worker lost while the daemon was down: the new daemon commits its changes.
@@ -66,10 +70,10 @@ func TestLostWorkerKeepsUnfinishedWork(t *testing.T) {
 	w.cli = cliClient(t, w.node)
 	w.workerStopped(t, g, protocol.StopLost)
 	n := w.waitNotice(t, 1)[0]
-	if !strings.Contains(n.Body, "unfinished changes were saved as a commit on branch "+res.Branch) {
+	if !strings.Contains(n.Body, "left uncommitted changes; committed as WIP ") {
 		t.Errorf("notice: %s", n.Body)
 	}
-	if subject := gitOutT(t, repo, "log", "-1", "--format=%s", res.Branch); subject != "agent-net: unfinished work of worker "+workerIDOf(res)+" (lost)" {
+	if subject := gitOutT(t, repo, "log", "-1", "--format=%s", res.Branch); subject != "WIP: uncommitted changes at worker end (lost)" {
 		t.Errorf("commit subject %q", subject)
 	}
 }
@@ -394,7 +398,7 @@ func TestUnrestorableAdoptedWorkerSavesChanges(t *testing.T) {
 			w.node.restart()
 			w.cli = cliClient(t, w.node)
 			n := w.waitNotice(t, 1)[0]
-			for _, want := range []string{"status: lost after daemon restart", "unfinished changes were saved as a commit on branch " + res.Branch} {
+			for _, want := range []string{"status: lost after daemon restart", "left uncommitted changes; committed as WIP ", ": 1 files"} {
 				if !strings.Contains(n.Body, want) {
 					t.Errorf("notice lacks %q: %s", want, n.Body)
 				}

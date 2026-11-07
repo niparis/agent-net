@@ -100,20 +100,36 @@ func TestCompleteHandbackWithNothingToCommit(t *testing.T) {
 	}
 }
 
-func TestPartialHandbackDoesNotCommit(t *testing.T) {
+func TestPartialHandbackCommitsWIP(t *testing.T) {
 	c, repo := handbackCommitNode(t)
-	base := gitOutT(t, repo, "rev-parse", "HEAD")
 	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Title: "Half done",
 		Task: "FAKE:dirty FAKE:partial FAKE:handback", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	n := c.waitNotice(t, 1)[0]
-	if got := gitOutT(t, repo, "rev-parse", res.Branch); got != base {
-		t.Errorf("a partial hand-back was committed: %s", gitOutT(t, repo, "log", "-1", "--format=%B", res.Branch))
+	if subject := gitOutT(t, repo, "log", "-1", "--format=%s", res.Branch); subject != "WIP: uncommitted changes at worker end (handback)" {
+		t.Fatalf("partial hand-back commit subject: %q", subject)
 	}
-	if st := gitOutT(t, res.Worktree, "status", "--porcelain"); !strings.Contains(st, "dirty.txt") {
-		t.Errorf("the uncommitted work is gone: %q", st)
+	wipHead := gitOutT(t, repo, "rev-parse", res.Branch)
+	if got := gitOutT(t, repo, "show", res.Branch+":dirty.txt"); got != "dirty" {
+		t.Fatalf("the WIP commit lost dirty.txt: %q", got)
 	}
-	if strings.Contains(n.Body, "the daemon committed") || strings.Contains(n.Body, "unfinished changes were saved") {
-		t.Errorf("notice:\n%s", n.Body)
+	if got, err := os.ReadFile(filepath.Join(res.Worktree, "dirty.txt")); err != nil || string(got) != "dirty\n" {
+		t.Fatalf("worktree content: %q %v", got, err)
+	}
+	if st := gitOutT(t, res.Worktree, "status", "--porcelain"); st != "" {
+		t.Fatalf("worktree is not clean after the WIP commit: %q", st)
+	}
+	if !strings.Contains(n.Body, "left uncommitted changes; committed as WIP ") {
+		t.Fatalf("notice does not describe the WIP commit:\n%s", n.Body)
+	}
+	next, err := c.startDefault(protocol.WorkerStartRequest{Continue: res.SessionID, Task: "FAKE:ignore"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOutT(t, repo, "rev-parse", next.Branch); got != wipHead {
+		t.Fatalf("continued branch starts at %s, want WIP commit %s", got, wipHead)
+	}
+	if got, err := os.ReadFile(filepath.Join(next.Worktree, "dirty.txt")); err != nil || string(got) != "dirty\n" {
+		t.Fatalf("continued worktree lost dirty.txt: %q %v", got, err)
 	}
 }
 
@@ -179,7 +195,7 @@ func TestContinueKeepsWorkWithSaveUnfinishedOff(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(res.Worktree, "dirty.txt")); err != nil || string(got) != "dirty\n" {
 		t.Errorf("the uncommitted work is not in the new worktree: %q %v", got, err)
 	}
-	want := "agent-net: unfinished work of worker " + workerIDOf(old) + " (handback)"
+	want := "WIP: uncommitted changes at worker end (handback)"
 	if subject := gitOutT(t, repo, "log", "-1", "--format=%s", old.Branch); subject != want {
 		t.Errorf("subject %q, want %q", subject, want)
 	}

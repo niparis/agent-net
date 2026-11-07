@@ -1088,13 +1088,6 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	if !done || !hasEvidence {
 		d.captureWorkerEvidence(w, nil)
 	}
-	if !done && reason != protocol.StopHandback && reason != protocol.StopStartFails {
-		if harness == "agy" && w.title != "" {
-			d.saveWorkerChanges(w, strings.TrimSpace(strings.SplitN(w.title, "\n", 2)[0]), reason, true)
-		} else {
-			d.saveUnfinished(w, reason)
-		}
-	}
 	d.wmu.Lock()
 	row := d.rowLocked(w, reason)
 	row.Resumable = resumable
@@ -1112,8 +1105,31 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	d.rememberEnded(w, endStatus, endNote, time.Now())
 	ran := time.Since(started)
 	return d.queueWorkerEnd(func() {
+		result := workerEndCommitResult{}
+		if w.worktree != "" {
+			unlock := d.lockWorktree(w.worktree)
+			if harness == "agy" {
+				result = d.saveAgyWorkerEnd(w, reason)
+			} else {
+				result = commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
+			}
+			unlock()
+		}
+		if result.Failed != "" {
+			d.Logf("worker %s: end WIP commit: %s", id, result.Failed)
+		}
+		if result.Skipped == "git operation in progress" {
+			d.wmu.Lock()
+			w.leftAsIs = true
+			d.wmu.Unlock()
+		}
+		wipDetail := result.noticeDetail()
+		if result.Legacy && result.SHA != "" {
+			wipDetail = "" // Saved carries Antigravity's historical notice text.
+		}
 		if sendNotice {
 			n := d.notice(w, status, note, stats)
+			n.WIPDetail = wipDetail
 			// Time waiting behind another notice is not worker run time.
 			n.RunTime = ran
 			if _, err := d.sendNotice(context.Background(), w, n, ""); err != nil {
@@ -1126,7 +1142,8 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 		d.wmu.Lock()
 		delete(d.workers, w.id)
 		d.wmu.Unlock()
-		if dir != "" && !resumable {
+		keepDirtyWorktree := result.keepWorktree()
+		if dir != "" && !resumable && !keepDirtyWorktree {
 			os.RemoveAll(dir)
 		}
 		if resumable {
@@ -1718,7 +1735,7 @@ func (d *Daemon) adoptWorkers() {
 			r.EndedReason = protocol.StopLost
 			if r.DoneStatus == "" {
 				lost := &worker{runGeneration: r.RunGeneration, id: r.ID, worktree: r.Worktree, base: r.Base, project: r.Project, startedAt: r.StartedAt, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
-					owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
+					owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed, title: r.Title, branch: r.Branch}
 				r.Evidence = d.measureWorkerEvidence(context.Background(), lost, nil)
 				d.saveUnfinished(lost, protocol.StopLost)
 			}
