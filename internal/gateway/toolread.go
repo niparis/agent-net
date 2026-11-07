@@ -243,7 +243,7 @@ func delegationText(v *protocol.DelegationView) string {
 
 func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string) string) protocol.SessionRow {
 	row := protocol.SessionRow{
-		AgentID: a.AgentID, AgentName: a.AgentName, RepoLead: a.RepoLead, TeamLead: a.TeamLead,
+		AgentID: a.AgentID, AgentName: a.AgentName, RepoLead: a.RepoLead, RepoLeadExplicit: a.RepoLeadExplicit, TeamLead: a.TeamLead,
 		RepoMaxAgents: a.RepoMaxAgents, RepoAgentCount: a.RepoAgentCount, RepoOverMax: a.RepoOverMax,
 		ID:       a.SessionID,
 		Name:     a.Profile.Name,

@@ -15,7 +15,7 @@ import (
 
 func TestLeadAndRepoLimitDisplay(t *testing.T) {
 	m := Model{}
-	a := protocol.AgentView{RepoLead: true, Online: true, RepoMaxAgents: 3, RepoAgentCount: 4, RepoOverMax: true}
+	a := protocol.AgentView{RepoLead: true, RepoLeadExplicit: true, Online: true, RepoMaxAgents: 3, RepoAgentCount: 4, RepoOverMax: true}
 	if got := ansi.Strip(m.nameText(a, treeMark{}, 30)); !strings.Contains(got, "★ ") {
 		t.Fatalf("lead mark missing: %q", got)
 	}
@@ -33,6 +33,19 @@ func TestLeadAndRepoLimitDisplay(t *testing.T) {
 	if got := ansi.Strip(m.repoLimitsLine(32)); !strings.HasSuffix(got, "…") || !strings.Contains(got, "zeta 4/3") {
 		t.Fatalf("truncated limits: %q", got)
 	}
+}
+
+func TestOwnerDefaultLeadHasNoMarkOrWidthCost(t *testing.T) {
+	m := newModel(120, 34)
+	for i := range m.snap.Agents {
+		m.snap.Agents[i].RepoLead = true
+		m.snap.Agents[i].RepoLeadExplicit = false
+	}
+	got := m.testView()
+	if strings.Contains(got, "★") {
+		t.Fatalf("owner-default leads should not be marked:\n%s", got)
+	}
+	golden(t, "leads_owner_default_120x34", got)
 }
 
 func TestStartMaxPromptKeys(t *testing.T) {
@@ -97,6 +110,7 @@ func TestLeadLimitGoldens(t *testing.T) {
 		for i := range m.snap.Agents {
 			if m.snap.Agents[i].SessionID == "s_0000000000000002" {
 				m.snap.Agents[i].RepoLead = true
+				m.snap.Agents[i].RepoLeadExplicit = true
 				m.snap.Agents[i].RepoMaxAgents = 3
 				m.snap.Agents[i].RepoAgentCount = 3
 			}

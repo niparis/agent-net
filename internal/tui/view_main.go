@@ -1118,15 +1118,20 @@ func cellR(s string, w int) string {
 
 func (m Model) sessionsTable(w, n int) []string {
 	nameWant, projectWant := 0, 0
+	hasLeadMark := false
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
 			name := m.nameText(a, g.marks[a.SessionID], 1<<20)
 			if g.mine {
 				name += m.mineMachineSuffix(a)
 			}
-			nameWant = max(nameWant, ansi.StringWidth(name)-leadWidth(a))
+			nameWant = max(nameWant, ansi.StringWidth(name))
+			hasLeadMark = hasLeadMark || leadWidth(a) > 0
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 		}
+	}
+	if hasLeadMark {
+		nameWant = max(0, nameWant-2)
 	}
 	indicator := "view: " + m.sessionViewName()
 	if w > 80 {
@@ -1753,7 +1758,7 @@ func (m Model) leadLive(a protocol.AgentView) bool {
 }
 
 func leadWidth(a protocol.AgentView) int {
-	if a.RepoLead || a.TeamLead {
+	if a.RepoLeadExplicit || a.TeamLead {
 		return 2
 	}
 	return 0

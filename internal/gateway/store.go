@@ -2602,6 +2602,7 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
  COALESCE(s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id),0),
+	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id),
  EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),
  (SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)),
@@ -2621,7 +2622,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.StalledSince)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.StalledSince)
 	if err != nil {
 		return a, err
 	}
