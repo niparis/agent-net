@@ -2955,3 +2955,28 @@ record is dropped. Normal owner, CTO and merger sessions are not worker records
 and are excluded. Cleanup logs the worker and native session IDs and bytes freed
 from private files; Codex rollout bytes are reported separately. Shared database
 free pages may remain allocated, so database file sizes may not shrink.
+
+### Idle compaction of background Claude sessions
+
+See [decision 0078](decisions/0078-idle-compaction-for-background-sessions.md).
+
+The daemon checks once a minute for unattached background Claude sessions with
+an idle status. Settings exposes three live values: `sessions.idle_compaction`
+(default `true`), `sessions.idle_compaction_after` (default `"50m"`), and
+`sessions.idle_compaction_min_tokens` (default `200000`). The CTO can read and
+apply these advice settings immediately, without owner approval.
+
+Idle time starts at the latest session-file or transcript write. Context tokens
+are the latest assistant usage: input plus cache read plus cache creation.
+A running `claude attach <jobId>` process, found through `ps`, prevents automatic
+compaction. The daemon checks again before typing, excluding its own client.
+If the process scan fails it skips compaction.
+
+The daemon opens its own attach client in a pseudo-terminal, waits up to 30
+seconds for the prompt, sends `/compact` and Enter, then waits up to five minutes
+for a new `compact_boundary` transcript record. It closes and reaps the attach
+client and checks that the background process is alive. Each idle stretch gets
+one attempt, including failures; a later busy turn resets it. This guard resets
+when the daemon restarts. Logs record the outcome. After success the Sessions
+row says `compacted while idle HH:MM`, in your display time zone, until a new turn.
+The separate CTO compaction loop handles OpenCode, so it does not overlap.

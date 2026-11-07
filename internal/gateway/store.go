@@ -1065,7 +1065,7 @@ CREATE TRIGGER IF NOT EXISTS repo_lead_tombstone BEFORE UPDATE OF tombstone ON a
 `, `
 -- Durable places for bounded Repo session starts.
 CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TEXT NOT NULL,repo_id TEXT NOT NULL,harness TEXT NOT NULL,native_id TEXT NOT NULL DEFAULT '',expires_at INTEGER NOT NULL,PRIMARY KEY(node_id,ref));
-`, `SELECT 1 /* session close column */;`}
+`, `SELECT 1 /* session close column */;`, `SELECT 1 /* session idle compaction column */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1279,6 +1279,19 @@ func (s *Store) migrate() error {
 						tx.Rollback()
 						return err
 					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session idle compaction column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='idle_compacted_at'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN idle_compacted_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
 				}
 			}
 		}
@@ -1983,8 +1996,8 @@ func (s *Store) upsertSession(q interface {
 	lastActive := in.LastActive * int64(time.Second)
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
-		tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
 		-- A worker whose run is over stays ended. A late session sync from its
@@ -2007,7 +2020,7 @@ func (s *Store) upsertSession(q interface {
 		worker_title=excluded.worker_title,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded,
-		no_project=excluded.no_project,
+		no_project=excluded.no_project, idle_compacted_at=excluded.idle_compacted_at,
 		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN 0 WHEN sessions.online=0 THEN 1 ELSE sessions.worker_run_active END`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
@@ -2015,7 +2028,7 @@ func (s *Store) upsertSession(q interface {
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
 		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject),
 		max(in.HarnessActivity*int64(time.Second), busyInitialActivity(in.Status, now)),
-		in.HarnessActivity*int64(time.Second))
+		in.IdleCompactedAt, in.HarnessActivity*int64(time.Second))
 	if err != nil {
 		return "", false, err
 	}
@@ -2635,7 +2648,7 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),
  (SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)),
- s.owner_used_at, s.owner_uses, s.pinned_at,
+ s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at,
  COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0)
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
@@ -2651,7 +2664,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.StalledSince)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince)
 	if err != nil {
 		return a, err
 	}

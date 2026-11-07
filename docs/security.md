@@ -1532,3 +1532,10 @@ Team address, the gateway verifies that the recipient is still that lead before
 delivering. The gateway admits agent-net session starts against the Repo's `max_agents` setting and reserves
 places for concurrent starts. Terminal sessions and late registrations are
 never refused; they can put a Repo over its configured max.
+
+Idle Claude compaction types `/compact` only into an idle background session
+with a job ID after the configured idle time and context threshold. It excludes
+running `claude attach <jobId>` clients using the process list, checks again
+before typing, and skips compaction if that check fails. A client can still
+attach between the last check and the write. The daemon stops only its own
+attach client, not the background process. See decision 0078.
