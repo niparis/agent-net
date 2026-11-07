@@ -17,7 +17,6 @@ import (
 	"github.com/niparis/agent-net/internal/loginpath"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Worker hand-back, completion notices and worktrees (decision 0002, W10, W11
@@ -255,16 +254,216 @@ func first(a, b string) string {
 	return b
 }
 
-// saveUnfinished commits the uncommitted changes of a worker that ended with no
-// hand-back, on the worker's branch, so that finishWorktree keeps them in a
-// commit and a new worker can continue from them. It uses the repository's
-// author when there is one, and "agent-net" when not. It tells whether a
-// commit was made.
+// saveUnfinished commits lost worker changes during adoption, before any
+// notice reporting can fail. A clean worktree is an idempotent no-op.
 func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
-	if !d.SettingsSnapshot().Bool("delivery.save_unfinished", settings.Where{}) {
+	if w.worktree == "" {
 		return false
 	}
-	return d.saveWorkerChanges(w, unfinishedSubject(w.id, reason), reason, true)
+	unlock := d.lockWorktree(w.worktree)
+	defer unlock()
+	if w.harness == "agy" {
+		result := d.saveAgyWorkerEnd(w, reason)
+		return result.SHA != ""
+	}
+	result := commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
+	if result.Failed != "" {
+		d.Logf("worker %s: adoption WIP commit: %s", w.id, result.Failed)
+	}
+	return result.SHA != ""
+}
+
+type worktreeLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lockWorktree serializes git operations by path, including operations that
+// rebuild a worker value from a persisted row during daemon adoption.
+func (d *Daemon) lockWorktree(path string) func() {
+	if path == "" {
+		return func() {}
+	}
+	key, err := filepath.Abs(path)
+	if err != nil {
+		key = filepath.Clean(path)
+	} else {
+		key = filepath.Clean(key)
+	}
+	d.worktreeLocksMu.Lock()
+	if d.worktreeLocks == nil {
+		d.worktreeLocks = make(map[string]*worktreeLock)
+	}
+	lock := d.worktreeLocks[key]
+	if lock == nil {
+		lock = &worktreeLock{}
+		d.worktreeLocks[key] = lock
+	}
+	lock.refs++
+	d.worktreeLocksMu.Unlock()
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		d.worktreeLocksMu.Lock()
+		lock.refs--
+		if lock.refs == 0 && d.worktreeLocks[key] == lock {
+			delete(d.worktreeLocks, key)
+		}
+		d.worktreeLocksMu.Unlock()
+	}
+}
+
+type workerEndCommitResult struct {
+	SHA     string
+	Files   int
+	Skipped string
+	Failed  string
+	Legacy  bool // Agy keeps its historical title-based commit subject.
+}
+
+func workerCommitFileCount(ctx context.Context, dir, rev string) int {
+	files, err := gitOut(ctx, dir, "show", "--format=", "--name-only", rev)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, line := range strings.Split(files, "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func (r workerEndCommitResult) noticeDetail() string {
+	if r.Failed != "" {
+		if r.Legacy {
+			return "left uncommitted changes; unfinished work commit failed: " + r.Failed
+		}
+		return "left uncommitted changes; WIP commit failed: " + r.Failed
+	}
+	if r.Skipped == "git operation in progress" {
+		return ""
+	}
+	if r.SHA == "" {
+		if r.Skipped != "" {
+			return "left uncommitted changes; skipped: " + r.Skipped
+		}
+		return ""
+	}
+	kind := "WIP "
+	if r.Legacy {
+		kind = ""
+	}
+	detail := fmt.Sprintf("left uncommitted changes; committed as %s%s: %d files", kind, r.SHA, r.Files)
+	if r.Skipped != "" {
+		detail += "; skipped: " + r.Skipped
+	}
+	return detail
+}
+
+func (r workerEndCommitResult) keepWorktree() bool {
+	return r.Failed != "" || r.Skipped != ""
+}
+
+// commitWorkerEndWIP commits remaining work using a fixed daemon identity. It
+// shares stageWorkerLeftovers with hand-back commits so ignored and oversized
+// files follow the same filtering rules.
+func commitWorkerEndWIP(ctx context.Context, dir, branch, reason string) workerEndCommitResult {
+	status, err := gitOut(ctx, dir, "status", "--porcelain")
+	if err != nil {
+		return workerEndCommitResult{Failed: err.Error()}
+	}
+	if status == "" {
+		return workerEndCommitResult{}
+	}
+	if branch != "" {
+		current, err := gitOut(ctx, dir, "branch", "--show-current")
+		if err != nil || current != branch {
+			return workerEndCommitResult{Failed: "worktree is not on worker branch"}
+		}
+	}
+	if gitOperationInProgress(ctx, dir) {
+		return workerEndCommitResult{Skipped: "git operation in progress"}
+	}
+	indexPath, err := gitOut(ctx, dir, "rev-parse", "--git-path", "index")
+	if err != nil {
+		return workerEndCommitResult{Failed: err.Error()}
+	}
+	if !filepath.IsAbs(indexPath) {
+		indexPath = filepath.Join(dir, indexPath)
+	}
+	indexInfo, err := os.Stat(indexPath)
+	if err != nil {
+		return workerEndCommitResult{Failed: err.Error()}
+	}
+	indexBefore, err := os.ReadFile(indexPath)
+	if err != nil {
+		return workerEndCommitResult{Failed: err.Error()}
+	}
+	restoreIndex := func() {
+		_ = os.WriteFile(indexPath, indexBefore, indexInfo.Mode().Perm())
+	}
+	excluded, err := stageWorkerLeftovers(ctx, dir)
+	if err != nil {
+		restoreIndex()
+		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
+	}
+	staged, err := gitOut(ctx, dir, "diff", "--cached", "--name-only")
+	if err != nil {
+		restoreIndex()
+		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
+	}
+	if staged == "" {
+		return workerEndCommitResult{Skipped: excluded}
+	}
+	args := []string{"-c", "user.name=agent-net", "-c", "user.email=agent-net@localhost", "-c", "author.name=agent-net", "-c", "author.email=agent-net@localhost", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--no-verify", "-m", "WIP: uncommitted changes at worker end (" + reason + ")"}
+	if _, err := gitOut(ctx, dir, args...); err != nil {
+		restoreIndex()
+		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
+	}
+	sha, err := gitOut(ctx, dir, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
+	}
+	return workerEndCommitResult{SHA: sha, Files: workerCommitFileCount(ctx, dir, "HEAD"), Skipped: excluded}
+}
+
+// saveAgyWorkerEnd preserves Antigravity's historical title-based unfinished
+// commit while running it in the worker-end job.
+func (d *Daemon) saveAgyWorkerEnd(w *worker, reason string) workerEndCommitResult {
+	ctx := context.Background()
+	status, err := gitOut(ctx, w.worktree, "status", "--porcelain")
+	if err != nil {
+		return workerEndCommitResult{Failed: err.Error(), Legacy: true}
+	}
+	if status == "" {
+		return workerEndCommitResult{}
+	}
+	before := d.worktreeHead(w)
+	d.wmu.Lock()
+	subject := strings.TrimSpace(strings.SplitN(w.title, "\n", 2)[0])
+	d.wmu.Unlock()
+	if subject == "" {
+		subject = unfinishedSubject(w.id, reason)
+	}
+	if !d.saveWorkerChanges(w, subject, reason, true) {
+		d.wmu.Lock()
+		leftAsIs, excluded := w.leftAsIs, w.excludedLeftovers
+		d.wmu.Unlock()
+		if leftAsIs {
+			return workerEndCommitResult{Skipped: "git operation in progress", Legacy: true}
+		}
+		return workerEndCommitResult{Skipped: excluded, Failed: "could not commit Antigravity worker changes", Legacy: true}
+	}
+	sha := d.worktreeHead(w)
+	if sha == before {
+		return workerEndCommitResult{Failed: "Antigravity commit did not advance HEAD", Legacy: true}
+	}
+	d.wmu.Lock()
+	excluded := w.excludedLeftovers
+	d.wmu.Unlock()
+	return workerEndCommitResult{SHA: sha, Files: workerCommitFileCount(ctx, w.worktree, "HEAD"), Skipped: excluded, Legacy: true}
 }
 
 func (d *Daemon) saveWorkerChanges(w *worker, subject, reason string, unfinished bool) bool {
@@ -713,6 +912,21 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	complete := req.Status == protocol.StatusDone && req.IsComplete()
 	d.captureWorkerEvidence(w, &complete)
 	committed := d.commitAtHandback(w, req)
+	wipDetail := ""
+	if !complete && w.worktree != "" && w.harness != "agy" {
+		unlock := d.lockWorktree(w.worktree)
+		result := commitWorkerEndWIP(context.Background(), w.worktree, w.branch, "handback")
+		unlock()
+		wipDetail = result.noticeDetail()
+		if result.Failed != "" {
+			d.Logf("worker %s: end WIP commit: %s", w.id, result.Failed)
+		}
+		if result.Skipped == "git operation in progress" {
+			d.wmu.Lock()
+			w.leftAsIs = true
+			d.wmu.Unlock()
+		}
+	}
 	// A complete hand-back is a revision of a delivery change (delivery
 	// pipeline build step 1). A partial one records nothing.
 	changeID, deliveryProblem := "", ""
@@ -739,6 +953,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	}
 	n := d.notice(w, req.Status, note, st)
 	n.Committed = committed
+	n.WIPDetail = wipDetail
 	n.Change, n.DeliveryError = changeID, deliveryProblem
 	noticeKey := ""
 	if w.harness == "agy" {
@@ -807,8 +1022,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 // the hand-back names a real commit (delivery pipeline, decision 8). It is the
 // one path for every harness: a complete hand-back (status done, complete
 // yes) is committed with the worker's title as the subject and the usual
-// trailers. A partial one is left as it is, except for Antigravity, whose
-// worker never commits: its changes are kept as unfinished work, as before.
+// trailers. A partial one is handled by the ordered worker-end WIP commit.
 // Files matched by .gitignore are not added, and nothing is forced. A merge or
 // rebase in progress leaves the worktree as it is (saveWorkerChanges says so
 // in the notice). It returns the short hash of the commit it made, or "".
@@ -978,16 +1192,32 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	}
 	w := &worker{evidence: r.Evidence, id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
-		branch: r.Branch, base: r.Base}
+		branch: r.Branch, base: r.Base, title: r.Title}
 	status, note := d.noticeFor(protocol.StopLost)
-	// The new daemon committed the unfinished changes when it found the worker
-	// lost (adoptWorkers). The commit subject tells.
-	if w.worktree != "" {
-		if s, err := gitOut(ctx, w.worktree, "log", "-1", "--format=%s"); err == nil && s == unfinishedSubject(w.id, protocol.StopLost) {
-			w.unfinished = true
+	unlock := d.lockWorktree(w.worktree)
+	result := commitWorkerEndWIP(ctx, w.worktree, w.branch, protocol.StopLost)
+	unlock()
+	if result.Failed != "" {
+		d.Logf("worker %s: end WIP commit: %s", r.ID, result.Failed)
+	}
+	if result.SHA == "" && w.worktree != "" {
+		if subject, err := gitOut(ctx, w.worktree, "log", "-1", "--format=%s"); err == nil {
+			switch subject {
+			case unfinishedSubject(w.id, protocol.StopLost):
+				w.unfinished = true
+			case "WIP: uncommitted changes at worker end (lost)":
+				sha, _ := gitOut(ctx, w.worktree, "rev-parse", "--short", "HEAD")
+				result = workerEndCommitResult{SHA: sha, Files: workerCommitFileCount(ctx, w.worktree, "HEAD")}
+			default:
+				if w.harness == "agy" && strings.TrimSpace(subject) == strings.TrimSpace(w.title) {
+					w.unfinished = true
+				}
+			}
 		}
 	}
-	if _, err := d.sendNotice(ctx, w, d.notice(w, status, note, workerStats{}), ""); err != nil {
+	n := d.notice(w, status, note, workerStats{})
+	n.WIPDetail = result.noticeDetail()
+	if _, err := d.sendNotice(ctx, w, n, ""); err != nil {
 		d.Logf("worker %s: notice: %v", r.ID, err)
 	}
 	d.finishWorktree(w)
@@ -1180,7 +1410,7 @@ func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 					skip = true
 				}
 			}
-			skip = skip || (info.Mode()&0111 != 0 && bytes.IndexByte(buf, 0) >= 0)
+			skip = skip || bytes.IndexByte(buf, 0) >= 0
 		}
 		if skip {
 			// Reset also removes a file the worker had already staged.

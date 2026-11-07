@@ -179,7 +179,7 @@ func TestContinueKeepsWorkWithSaveUnfinishedOff(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(res.Worktree, "dirty.txt")); err != nil || string(got) != "dirty\n" {
 		t.Errorf("the uncommitted work is not in the new worktree: %q %v", got, err)
 	}
-	want := "agent-net: unfinished work of worker " + workerIDOf(old) + " (handback)"
+	want := "WIP: uncommitted changes at worker end (handback)"
 	if subject := gitOutT(t, repo, "log", "-1", "--format=%s", old.Branch); subject != want {
 		t.Errorf("subject %q, want %q", subject, want)
 	}
