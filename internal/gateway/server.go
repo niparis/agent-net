@@ -646,8 +646,8 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(4 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
 	nc := &nodeConn{id: nodeID, tokenHash: hashHex(token), ws: ws, cancel: cancel, dead: make(chan struct{}), health: health}
-	// After cutover a connection is not routable until its current binary has
-	// passed hello. A stored capability cannot authorize a downgraded binary.
+	// After cutover require a fresh hello before routing. Its capability
+	// controls Graph access, but older daemons can still connect and upgrade.
 	if on, err := g.store.graphRefsEnabled(); err != nil || on {
 		if err != nil {
 			g.machineAuthMu.Unlock()
@@ -748,7 +748,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 		if err := g.store.graphFrameAllowed(nc, h.Type); err != nil {
 			reply, _ := protocol.EncodeResult(h.ID, nil, err)
 			_ = nc.write(ctx, reply)
-			return
+			continue
 		}
 		if h.Type == "result" {
 			// Results to msg.deliver only say "accepted"; delivery.update has the outcome.
@@ -899,11 +899,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		nc.graphRefs.Store(supported)
-		if on, err := st.graphRefsEnabled(); err != nil {
-			return nil, err
-		} else if on && !nc.graphRefs.Load() {
-			return nil, reject("upgrade required: daemon lacks typed Graph support")
-		}
 		if err := st.SetNodeHello(nc.id, p.Hostname, p.Version); err != nil {
 			return nil, err
 		}

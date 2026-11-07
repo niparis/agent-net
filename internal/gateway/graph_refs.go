@@ -100,7 +100,18 @@ func (s *Store) graphFrameAllowed(nc *nodeConn, typ string) error {
 		return err
 	}
 	if !nc.graphRefs.Load() {
-		return reject("upgrade required: daemon must report typed Graph support in hello")
+		// Legacy and development daemons still need normal traffic, including
+		// upgrades. Do not let them use Graph operations whose identities may
+		// be ambiguous after the typed cutover.
+		for _, prefix := range []string{"graph.", "team.", "charter.", "edge.", "cto.graph_"} {
+			if strings.HasPrefix(typ, prefix) {
+				return reject("upgrade required: daemon must report typed Graph support in hello")
+			}
+		}
+		switch typ {
+		case "query.graph", "query.graph_talk", "node.add", "node.remove", "repo.create", "repo.archive", "agent.create", "agent.tombstone":
+			return reject("upgrade required: daemon must report typed Graph support in hello")
+		}
 	}
 	return nil
 }

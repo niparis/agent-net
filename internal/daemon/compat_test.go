@@ -194,40 +194,98 @@ func TestNewDaemonAgainstOldGateway(t *testing.T) {
 	}
 }
 
-// A stored capability does not authorize a downgraded daemon on a new link.
-func TestGraphRefsOldDaemonRefusedAfterCutover(t *testing.T) {
+// A downgraded connection can sync but cannot use Graph operations.
+func TestGraphRefsOldDaemonConnectsAfterCutover(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
-	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
-	defer cancel()
+	startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
 	waitGraphCutover(t, g)
-	hc, err := PinnedClient(n.cfg.CAPEM)
+	cfgDir := t.TempDir()
+	if _, err := Join(context.Background(), g.joinString(), cfgDir); err != nil {
+		t.Fatal(err)
+	}
+	cfg, ca, err := LoadNode(cfgDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, frame := range []string{
-		`{"type":"hello","id":"old","version":"v0.3.2","hostname":"oldbox"}`,
-		`{"type":"session.sync","id":"old","sessions":[]}`,
-	} {
-		ws, _, err := websocket.Dial(ctx, n.cfg.GatewayURL+"/v1/node", &websocket.DialOptions{HTTPClient: hc, HTTPHeader: http.Header{"Authorization": {"Bearer " + n.cfg.Token}}})
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	hc, err := PinnedClient(ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A new link must still identify itself before it can send other frames.
+	ws, _, err := websocket.Dial(ctx, cfg.GatewayURL+"/v1/node", &websocket.DialOptions{HTTPClient: hc, HTTPHeader: http.Header{"Authorization": {"Bearer " + cfg.Token}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ws.Write(ctx, websocket.MessageText, []byte(`{"type":"session.sync","id":"first","sessions":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, raw, err := ws.Read(ctx)
+	ws.CloseNow()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first protocol.Header
+	if err = json.Unmarshal(raw, &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.OK || !strings.Contains(string(raw), "upgrade required") {
+		t.Fatalf("non-hello accepted: %s", raw)
+	}
+	for _, version := range []string{"v0.3.2", "dev"} {
+		ws, _, err := websocket.Dial(ctx, cfg.GatewayURL+"/v1/node", &websocket.DialOptions{HTTPClient: hc, HTTPHeader: http.Header{"Authorization": {"Bearer " + cfg.Token}}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err = ws.Write(ctx, websocket.MessageText, []byte(frame)); err != nil {
-			ws.CloseNow()
-			t.Fatal(err)
+		for _, step := range []struct {
+			frame string
+			ok    bool
+		}{
+			{`{"type":"hello","id":"1","version":"` + version + `","hostname":"oldbox"}`, true},
+			{`{"type":"session.sync","id":"2","sessions":[]}`, true},
+			{`{"type":"graph.get","id":"3"}`, false},
+			{`{"type":"session.sync","id":"4","sessions":[]}`, true},
+		} {
+			if err = ws.Write(ctx, websocket.MessageText, []byte(step.frame)); err != nil {
+				t.Fatal(err)
+			}
+			var request protocol.Header
+			if err = json.Unmarshal([]byte(step.frame), &request); err != nil {
+				t.Fatal(err)
+			}
+			for {
+				_, raw, err := ws.Read(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var result protocol.Header
+				if err = json.Unmarshal(raw, &result); err != nil {
+					t.Fatal(err)
+				}
+				if result.ID != request.ID {
+					continue
+				}
+				if result.OK != step.ok || (!step.ok && !strings.Contains(string(raw), "upgrade required")) {
+					t.Fatalf("%s: unexpected response %s", version, raw)
+				}
+				break
+			}
 		}
-		_, raw, err := ws.Read(ctx)
 		ws.CloseNow()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var result protocol.Header
-		if err = json.Unmarshal(raw, &result); err != nil {
-			t.Fatal(err)
-		}
-		if result.OK || !strings.Contains(string(raw), "upgrade required") {
-			t.Fatalf("old daemon accepted: %s", raw)
-		}
+	}
+}
+
+func TestGraphRefsOlderNodesConnectAfterCutover(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
+	waitGraphCutover(t, g)
+	for _, version := range []string{"v0.1.0", "dev"} {
+		t.Run(version, func(t *testing.T) {
+			n := startUpNode(t, g, version, nil)
+			n.daemon().Stop()
+			n.start()
+			eventually(t, "node reconnected after cutover", func() bool { return n.daemon().Connected() })
+		})
 	}
 }

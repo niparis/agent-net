@@ -1444,11 +1444,12 @@ upgrades or removes that machine. The gateway takes a validated backup before
 enabling. If the enable fails, the backup stays, the gateway raises one Inbox
 item with the error, and the next machine hello or gateway start retries it.
 The minute timer raises the 24 hour blocker notice and never retries the
-enable. After cutover each new connection must pass its own typed-capable
-`hello` before it becomes available for routing. Old frames are refused with
-`upgrade required`. Legacy Graph string adapters remain available to upgraded
-daemons during the owner surface transition. Rollback requires restoring the
-pre-cutover backup.
+enable. After cutover each new connection must send its own `hello` before it
+becomes available for routing. Older and development daemons can connect and
+upgrade, but Graph operations require typed Graph capability on that connection
+and are refused with `upgrade required` otherwise. Legacy Graph string adapters
+remain available to upgraded daemons during the owner surface transition.
+Rollback requires restoring the pre-cutover backup.
 
 Explicit Agent selection at session start uses `session.agent.reserve`. The
 caller must name the owner pseudo-session on its authenticated machine. The
