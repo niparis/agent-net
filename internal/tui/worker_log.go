@@ -112,7 +112,7 @@ func (m Model) workersLogView(w, h int) []string {
 
 func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 	var detail []string
-	labels := []string{"Title", "Caller", "Model", "Where", "Run time", "Failure", "excluded"}
+	labels := []string{"Title", "Caller", "Model", "Where", "Run time", "Failure", "Not picked"}
 	labelWidth := 0
 	for _, label := range labels {
 		labelWidth = max(labelWidth, len(label))
@@ -144,8 +144,8 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 		if level == "" {
 			level = protocol.WorkerLevel(a)
 		}
-		levelText := workerDifficultyStyle(level).Render(level)
-		summary := levelText + "  D " + fmt.Sprintf("%.2f", a.D)
+		levelText := workerDifficultyStyle(level).Bold(true).Render(level)
+		summary := levelText + "  " + sBold.Render("D "+fmt.Sprintf("%.2f", a.D))
 		if a.JudgeModel != "" {
 			summary += sDim.Render("  ·  " + "judged by " + sanitize(a.JudgeModel[strings.LastIndex(a.JudgeModel, "/")+1:]))
 		}
@@ -161,7 +161,7 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 			nameWidth := len("Verification")
 			for _, d := range dimensions {
 				name := fmt.Sprintf("%-*s", nameWidth, d.name)
-				score := fmt.Sprintf("%d/5 %s", d.score, difficultyBar(d.score))
+				score := fmt.Sprintf("%d", d.score)
 				prefix := name + "  " + score + "  "
 				reason := strings.TrimSpace(a.Reasons[d.key])
 				if reason == "" {
@@ -169,7 +169,7 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 				}
 				for _, line := range wrapHanging(prefix, sanitize(reason), width) {
 					if strings.HasPrefix(line, prefix) {
-						detail = append(detail, sDim.Render(name)+"  "+sBold.Render(score)+"  "+strings.TrimPrefix(line, prefix))
+						detail = append(detail, sDim.Render(name)+"  "+workerAssessmentScoreStyle(d.score).Render(score)+"  "+strings.TrimPrefix(line, prefix))
 					} else {
 						detail = append(detail, line)
 					}
@@ -311,9 +311,15 @@ func workerDifficultyStyle(level string) lipgloss.Style {
 	}
 }
 
-func difficultyBar(score int) string {
-	score = min(max(score, 0), 5)
-	return strings.Repeat("#", score) + strings.Repeat(".", 5-score)
+func workerAssessmentScoreStyle(score int) lipgloss.Style {
+	switch {
+	case score <= 2:
+		return sDim.Bold(true)
+	case score >= 4:
+		return lipgloss.NewStyle().Foreground(roleWarning).Bold(true)
+	default:
+		return sBold
+	}
 }
 
 func wrapHanging(prefix, text string, width int) []string {
@@ -346,7 +352,8 @@ func workerPickerRows(note string) ([][2]string, bool) {
 	if !strings.HasSuffix(parts[0], ", good enough") {
 		return nil, false
 	}
-	rows := [][2]string{{"Chosen", note[:i] + " - score " + parts[0]}}
+	chosenScore, chosenReason, _ := strings.Cut(parts[0], ", ")
+	rows := [][2]string{{"Chosen", note[:i] + " - " + chosenScore + " (" + chosenReason + ")"}}
 	const rule = " (automatic picks may be at most one level below their max)"
 	footnote := false
 	for _, part := range parts[1:] {
@@ -357,14 +364,29 @@ func workerPickerRows(note string) ([][2]string, bool) {
 		switch {
 		case strings.Contains(part, " excluded: "):
 			p := strings.SplitN(part, " excluded: ", 2)
-			rows = append(rows, [2]string{"Excluded", p[0] + " - " + p[1]})
+			rows = append(rows, [2]string{"Not picked", p[0] + " - " + strings.TrimSpace(strings.SplitN(p[1], " (automatic picks", 2)[0])})
 		case strings.HasSuffix(part, " kept for harder work"):
-			rows = append(rows, [2]string{"Kept", strings.TrimSuffix(part, " kept for harder work") + " - for harder work"})
+			rows = append(rows, [2]string{"Not picked", strings.TrimSuffix(part, " kept for harder work") + " - kept for harder work"})
 		case strings.Contains(part, "rotation weight"):
 			rows = append(rows, [2]string{"Rotation", strings.TrimPrefix(part, "rotation ")})
+		case strings.Contains(part, "skipped ") && strings.Contains(part, "protected provider"):
+			rows = append(rows, [2]string{"Not picked", strings.TrimSpace(part)})
 		case strings.Contains(part, " starts"):
-			rows = append(rows, [2]string{"Recent", workerPickerRecent(part)})
+			label := "Recent"
+			prefix := "starts: "
+			if i := strings.Index(part, " of the last "); i >= 0 {
+				if j := strings.Index(part[i+len(" of the last "):], " starts"); j >= 0 {
+					period := strings.Fields(strings.TrimSpace(part[i+len(" of the last ") : i+len(" of the last ")+j]))
+					if len(period) > 1 {
+						prefix = strings.Join(period[1:], " ") + " starts: "
+					}
+				}
+			}
+			rows = append(rows, [2]string{label, prefix + workerPickerRecent(part)})
 		default:
+			if strings.Contains(part, "eligible for this task") {
+				continue
+			}
 			if !strings.Contains(part, "pace") && !strings.Contains(part, "track record") {
 				return nil, false
 			}
@@ -387,11 +409,15 @@ func workerPickerRecent(part string) string {
 	if !ok || !strings.HasSuffix(period, " starts") {
 		return part
 	}
+	periodCount := strings.Fields(strings.TrimSuffix(period, " starts"))
+	if len(periodCount) == 0 {
+		return part
+	}
 	for _, count := range strings.Split(counts, ", ") {
 		name, value, ok := strings.Cut(count, ": ")
 		if !ok || name == "" || value == "" || strings.Trim(value, "0123456789") != "" {
 			return part
 		}
 	}
-	return strings.ReplaceAll(counts, ": ", " ") + " (last " + period + ")"
+	return strings.ReplaceAll(counts, ": ", " ") + " (last " + periodCount[0] + ")"
 }

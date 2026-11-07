@@ -14,21 +14,21 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
+│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Title     Review worker history and difficulty scores                                                                │
-│ Caller    Agent One (caller-machine)                                                                                 │
-│ Model     codex · test-model · high                                                                                  │
-│ Where     test-machine / demo                                                                                        │
-│ Run time  2m0s                                                                                                       │
+│ Title       Review worker history and difficulty scores                                                              │
+│ Caller      Agent One (caller-machine)                                                                               │
+│ Model       codex · test-model · high                                                                                │
+│ Where       test-machine / demo                                                                                      │
+│ Run time    2m0s                                                                                                     │
 │                                                                                                                      │
 │ normal  D 1.20                                                                                                       │
 │ Judge error: judge timed out while evaluating the worker run; retry later                                            │
 │                                                                                                                      │
-│ Picker    difficulty R3 S2 C2 U1 V2 K1 · D 2.10 · normal -> codex test-model:high (34.5, good enough; eligible for   │
-│           this task and available on the chosen machine)                                                             │
+│ Chosen      difficulty R3 S2 C2 U1 V2 K1 · D 2.10 · normal -> codex test-model:high - 34.5 (good enough)             │
 │                                                                                                                      │
-│ Note      the worker ended after its hand-back; a message from you starts it again 1 automatic continue was sent.    │
+│ Note        the worker ended after its hand-back; a message from you starts it again 1 automatic continue was sent.  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

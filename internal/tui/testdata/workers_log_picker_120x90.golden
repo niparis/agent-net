@@ -39,38 +39,38 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Title     Secret check: sk- false match inside words                                                                 │
-│ Caller    Agent One (caller-machine)                                                                                 │
-│ Model     codex · gpt-6-luna · xhigh                                                                                 │
-│ Where     test-machine / demo                                                                                        │
-│ Run time  2m0s                                                                                                       │
+│ Title       Secret check: sk- false match inside words                                                               │
+│ Caller      Agent One (caller-machine)                                                                               │
+│ Model       codex · gpt-6-luna · xhigh                                                                               │
+│ Where       test-machine / demo                                                                                      │
+│ Run time    2m0s                                                                                                     │
 │                                                                                                                      │
 │ simple  D 2.05  ·  judged by deepseek-v4.1-flash                                                                     │
 │                                                                                                                      │
-│ Reasoning     2/5 ##...  Check substring boundaries.                                                                 │
-│ Scope         2/5 ##...  One secret matcher.                                                                         │
-│ Coupling      3/5 ###..  Shared validation path.                                                                     │
-│ Uncertainty   2/5 ##...  Known false match.                                                                          │
-│ Verification  1/5 #....  Focused unit tests.                                                                         │
-│ Risk          2/5 ##...  Preserve valid detections.                                                                  │
+│ Reasoning     2  Check substring boundaries.                                                                         │
+│ Scope         2  One secret matcher.                                                                                 │
+│ Coupling      3  Shared validation path.                                                                             │
+│ Uncertainty   2  Known false match.                                                                                  │
+│ Verification  1  Focused unit tests.                                                                                 │
+│ Risk          2  Preserve valid detections.                                                                          │
 │                                                                                                                      │
-│ Chosen    codex gpt-6-luna:xhigh - score 23.3, good enough                                                           │
-│ Pace      codex 0% ahead of pace (week, 33% used at 33% elapsed)                                                     │
-│ Rotation  weight 0.85                                                                                                │
-│ Recent    luna codex 4, deepseek opencode 3, terra-low 2, terra medium codex 1 (last 10 simple starts)               │
-│ Excluded  sonnet claude - its max is hard                                                                            │
-│ Kept      deepseek opencode - for harder work                                                                        │
-│ Excluded  terra codex - its max is hard                                                                              │
-│ Excluded  sol codex - its max is hard                                                                                │
-│ Excluded  terra max codex - its max is very_complex                                                                  │
-│ Kept      terra-low - for harder work                                                                                │
-│ Kept      terra medium codex - for harder work                                                                       │
-│           Automatic picks may be at most one level below their max.                                                  │
+│ Chosen      codex gpt-6-luna:xhigh - 23.3 (good enough)                                                              │
+│ Pace        codex 0% ahead of pace (week, 33% used at 33% elapsed)                                                   │
+│ Rotation    weight 0.85                                                                                              │
+│ Not picked  skipped sonnet claude: protected provider (anthropic), saved for your orchestrator                       │
+│ Recent      simple starts: luna codex 4, deepseek opencode 3, terra-low 2, terra medium codex 1 (last 10)            │
+│ Not picked  sonnet claude - its max is hard                                                                          │
+│ Not picked  deepseek opencode - kept for harder work                                                                 │
+│ Not picked  terra codex - its max is hard                                                                            │
+│ Not picked  sol codex - its max is hard                                                                              │
+│ Not picked  terra max codex - its max is very_complex                                                                │
+│ Not picked  terra-low - kept for harder work                                                                         │
+│ Not picked  terra medium codex - kept for harder work                                                                │
+│             Automatic picks may be at most one level below their max.                                                │
 │                                                                                                                      │
-│ Note      the worker ended after its hand-back; a message from you starts it again                                   │
+│ Note        the worker ended after its hand-back; a message from you starts it again                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

@@ -12,22 +12,22 @@
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Title     Review worker history and difficulty scores                                                                │
-│ Caller    Agent One (caller-machine)                                                                                 │
-│ Model     codex · test-model · high                                                                                  │
-│ Where     test-machine / demo                                                                                        │
-│ Run time  2m0s                                                                                                       │
+│ Title       Review worker history and difficulty scores                                                              │
+│ Caller      Agent One (caller-machine)                                                                               │
+│ Model       codex · test-model · high                                                                                │
+│ Where       test-machine / demo                                                                                      │
+│ Run time    2m0s                                                                                                     │
 │                                                                                                                      │
 │ normal  D 2.10  ·  judged by judge                                                                                   │
 │                                                                                                                      │
-│ Reasoning     3/5 ###..  Join stored runs and current sessions.                                                      │
-│ Scope         2/5 ##...  One read method and one sub-tab.                                                            │
-│ Coupling      2/5 ##...  Operator gate and TUI refresh.                                                              │
-│ Uncertainty   1/5 #....  Known table schema.                                                                         │
-│ Verification  2/5 ##...  Gateway and TUI tests.                                                                      │
-│ Risk          1/5 #....  Read only history.                                                                          │
+│ Reasoning     3  Join stored runs and current sessions.                                                              │
+│ Scope         2  One read method and one sub-tab.                                                                    │
+│ Coupling      2  Operator gate and TUI refresh.                                                                      │
+│ Uncertainty   1  Known table schema.                                                                                 │
+│ Verification  2  Gateway and TUI tests.                                                                              │
+│ Risk          1  Read only history.                                                                                  │
 │                                                                                                                      │
-│ Picker    codex test-model:high (34.5, good enough; eligible for this task and available on the chosen machine)      │
+│ Chosen      codex test-model:high - 34.5 (good enough)                                                               │
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮

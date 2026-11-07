@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+  Quotas    [ Workers log ]
+╭─Workers log──────────────────────────────────────────────────────────────────╮
+│   22:13 test-model norm owner     Review worker history and difficu… running │
+│ ▸ 22:11 test-model norm Agent One Review worker history and difficulty… done │
+│   22:10 test-model norm CTO       Review worker history and difficu… blocked │
+│   22:08 test-model norm Agent One Review worker history and difficul… failed │
+│   22:06 test-model norm CTO       Review worker history and diffi… timed out │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Difficulty details───────────────────────────────────────────────────────────╮
+│ Title       Review worker history and difficulty scores                      │
+│ Caller      Agent One (caller-machine)                                       │
+│ Model       codex · test-model · high                                        │
+│ Where       test-machine / demo                                              │
+│ Run time    2m0s                                                             │
+│                                                                              │
+│ normal  D 2.10  ·  judged by judge                                           │
+│                                                                              │
+│ Reasoning     3  Join stored runs and current sessions.                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+tab Quotas  ↑↓ select run  ←→ details  ? help  q quit
