@@ -147,6 +147,7 @@ type Model struct {
 	showOffline               bool
 	activeOnly                bool
 	hiddenSessions            map[string]bool
+	pendingStops              map[string]pendingStop
 	hiddenNodes               map[string]bool
 	showHiddenSessions        bool
 	showHiddenNodes           bool
@@ -254,6 +255,11 @@ func New(src Source) Model {
 // ---- messages ----
 
 type tickMsg struct{}
+
+type pendingStop struct {
+	verb string
+	at   time.Time
+}
 
 type fetchedMsg struct {
 	proposals   []protocol.CTOProposal
@@ -546,6 +552,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		m.expirePendingStops()
 		cmds := []tea.Cmd{m.nextTick()}
 		if m.tab == graphTab && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
 			m.graphTalkLoading = true
@@ -1021,6 +1028,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	}
 	m.problem, m.problemT = ProblemNone, ""
 	m.snap, m.haveData, m.lastOK = r.snap, true, r.at
+	m.prunePendingStops()
 	m.applyTimeZone()
 	if n := len(m.snap.Calibration.Quality.Agents); m.qualityAgent > n {
 		m.qualityAgent = 0
@@ -1065,6 +1073,40 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	m.rebuildConversations()
 	m.ensureSelection()
 	m.fixScroll()
+}
+
+func (m *Model) prunePendingStops() {
+	for id := range m.pendingStops {
+		found, done := false, false
+		for _, a := range m.snap.Agents {
+			if a.SessionID != id {
+				continue
+			}
+			found = true
+			done = !a.Online || strings.EqualFold(a.Status, "ended") || strings.EqualFold(a.Status, "offline")
+			break
+		}
+		if !found || done {
+			delete(m.pendingStops, id)
+		}
+	}
+}
+
+func (m *Model) expirePendingStops() {
+	for id, pending := range m.pendingStops {
+		if m.now().Sub(pending.at) < 30*time.Second {
+			continue
+		}
+		name := id
+		for _, a := range m.snap.Agents {
+			if a.SessionID == id {
+				name = rowName(a)
+				break
+			}
+		}
+		delete(m.pendingStops, id)
+		m.say("still running: " + name)
+	}
 }
 
 // applyUsage keeps the usage and counts of a refresh that asked for them. An

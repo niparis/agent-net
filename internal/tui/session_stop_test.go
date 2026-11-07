@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func (f *fakeSource) SessionStop(_ context.Context, id string) (string, error) {
@@ -50,6 +52,80 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 		if src.stopped != "s_0000000000000001" || m.notice.err || !strings.Contains(m.notice.text, "stays in the service") {
 			t.Fatalf("stop %q %+v", src.stopped, m.notice)
 		}
+	}
+}
+
+func TestStopShowsPendingRowBeforeReply(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m, _ := workerModel(size.w, size.h)
+		id := "s_0000000000000001"
+		for i := range m.snap.Agents {
+			if m.snap.Agents[i].SessionID == id {
+				m.snap.Agents[i].Mode = protocol.ModeBackground
+			}
+		}
+		m = selectID(m, id)
+		m, _ = press(m, keyRune("x"))
+		m, cmd := press(m, keyRune("y"))
+		if cmd == nil {
+			t.Fatal("confirm did not start stop")
+		}
+		view := ansi.Strip(m.testView())
+		if !strings.Contains(view, "stopping…") {
+			t.Fatalf("pending status missing before reply:\n%s", view)
+		}
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_stopping", m.testView())
+	}
+}
+
+func TestStopPendingClearsOnErrorSnapshotAndTimeout(t *testing.T) {
+	m, src := workerModel(120, 34)
+	id := "s_0000000000000001"
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == id {
+			m.snap.Agents[i].Mode = protocol.ModeBackground
+		}
+	}
+	m = selectID(m, id)
+	m, _ = press(m, keyRune("x"))
+	m, cmd := press(m, keyRune("y"))
+	src.actErr = fmt.Errorf("stop failed")
+	m = finish(t, m, cmd)
+	if !m.notice.err || strings.Contains(ansi.Strip(m.testView()), "stopping…") {
+		t.Fatalf("error did not restore row and show notice: %+v", m.notice)
+	}
+
+	src.actErr = nil
+	m, _ = press(m, keyRune("x"))
+	m, cmd = press(m, keyRune("y"))
+	_ = cmd
+	var remaining []protocol.AgentView
+	for _, a := range m.snap.Agents {
+		if a.SessionID != id {
+			remaining = append(remaining, a)
+		}
+	}
+	m.snap.Agents = remaining
+	m.applyFetch(fetchedMsg{snap: m.snap, at: t0})
+	if strings.Contains(ansi.Strip(m.testView()), "tenebrae-53") {
+		t.Fatal("session row survived snapshot removal")
+	}
+
+	m, src = workerModel(120, 34)
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == id {
+			m.snap.Agents[i].Mode = protocol.ModeBackground
+		}
+	}
+	m = selectID(m, id)
+	m, _ = press(m, keyRune("x"))
+	m, cmd = press(m, keyRune("y"))
+	_ = cmd
+	m.now = func() time.Time { return t0.Add(31 * time.Second) }
+	next, _ := m.update(tickMsg{})
+	m = next.(Model)
+	if strings.Contains(ansi.Strip(m.testView()), "stopping…") || !strings.Contains(m.notice.text, "still running:") {
+		t.Fatalf("timeout did not clear pending row and notify: %+v", m.notice)
 	}
 }
 

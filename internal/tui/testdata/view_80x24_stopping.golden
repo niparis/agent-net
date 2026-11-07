@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
+ Working (2)                                                             all (v)
+  ↳ tenebrae     Mac     tenebr… opencode · … busy          ?     ?
+▸ ◐ tenebrae-53  Mac     tenebr… claude · op… stopping…     ?     ?
+ Idle (4)
+  ◐ strategies   Mac     strate… claude · so… idle          ?     ? backtest v2
+  web            Mac     shop    opencode · … idle          ?     ?
+  ◐ ci-runner    build-… agent-… pi · gpt-6   idle          ?     ?
+  scratch        build-… -       pi           shell         ?     ?
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  Stopping...

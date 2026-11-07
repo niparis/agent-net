@@ -1145,6 +1145,9 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 		statusWidth = max(statusWidth, ansi.StringWidth(m.sessionStatusCell(a)))
 	}
+	for _, pending := range m.pendingStops {
+		statusWidth = max(statusWidth, ansi.StringWidth(pending.verb))
+	}
 	avail -= statusWidth - 6
 	var cols []column
 	if w <= 80 {
@@ -1473,7 +1476,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				v += " · " + model
 			}
 		case "STATUS":
-			if m.hiddenSessions[a.SessionID] && m.showHiddenSessions {
+			if pending, ok := m.pendingStops[a.SessionID]; ok {
+				v = pending.verb
+			} else if m.hiddenSessions[a.SessionID] && m.showHiddenSessions {
 				v = "hidden"
 			} else {
 				v = m.sessionStatusCell(a)
@@ -1540,6 +1545,8 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 	}
 	line := marker + strings.Join(parts, " ")
 	switch {
+	case m.pendingStops[a.SessionID].verb != "":
+		return sDim.Render(clip(stripStyles(line), w))
 	case selected:
 		return selectedRow(clip(line, w))
 	case m.hiddenSessions[a.SessionID]:
