@@ -211,31 +211,12 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		d.stopClaudeCTOLocked(reason)
 	}
 	d.cto.mu.Unlock()
-	adopt := func(sf claudeSessionFile, mode string) bool {
-		token, alive := procToken(sf.PID)
-		if !alive {
-			return false
-		}
-		d.cto.mu.Lock()
-		c.ref, c.session, c.model, c.token = sf.JobID, sf.SessionID, model, token
-		c.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
-		d.cto.mu.Unlock()
-		d.Logf("cto.start harness=claude mode=%s", mode)
-		d.scheduleCTOPresence()
-		if d.ctoCtx != nil {
-			d.goBackground(func() { d.monitorClaudeCTO(d.ctoCtx, sf.JobID, sf.PID, token) })
-		}
-		if id != "" && id != sf.SessionID && d.log != nil {
-			d.log.Printf("CTO Claude resumed as a copy: %s -> %s", id, sf.SessionID)
-		}
-		return true
-	}
 	// A daemon restart loses the in-memory job ref, but the private background
 	// session may still be alive. Bind it before launching another copy.
 	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && func() bool {
 		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, sf.JobID)
 		return !claudeJobEnded(status)
-	}() && adopt(sf, "adopted") {
+	}() && d.bindClaudeCTO(sf, model, id, "adopted") {
 		return nil
 	}
 	bin, err := d.harnessBinary("claude")
@@ -295,7 +276,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 			lower := strings.ToLower(detail)
 			return &claudeCTOJobFailure{detail: detail, recoverable: status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))}
 		}
-		if ok && !claudeJobEnded(status) && adopt(sf, "started") {
+		if ok && !claudeJobEnded(status) && d.bindClaudeCTO(sf, model, id, "started") {
 			return nil
 		}
 		select {
@@ -620,4 +601,57 @@ func claudeCTOTranscript(projects, id string) ([]json.RawMessage, error) {
 		out = append(out, b)
 	}
 	return out, sc.Err()
+}
+
+func (d *Daemon) bindClaudeCTO(sf claudeSessionFile, model, id, mode string) bool {
+	token, alive := procToken(sf.PID)
+	if !alive {
+		return false
+	}
+	d.cto.mu.Lock()
+	if mode == "adopted" && d.claudeCTO.root.Load() != nil {
+		d.cto.mu.Unlock()
+		return true
+	}
+	d.claudeCTO.ref, d.claudeCTO.session, d.claudeCTO.model, d.claudeCTO.token = sf.JobID, sf.SessionID, model, token
+	d.claudeCTO.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
+	d.cto.mu.Unlock()
+	d.Logf("cto.start harness=claude mode=%s", mode)
+	d.scheduleCTOPresence()
+	if d.ctoCtx != nil {
+		d.goBackground(func() { d.monitorClaudeCTO(d.ctoCtx, sf.JobID, sf.PID, token) })
+	}
+	if id != "" && id != sf.SessionID && d.log != nil {
+		d.log.Printf("CTO Claude resumed as a copy: %s -> %s", id, sf.SessionID)
+	}
+	return true
+}
+
+// adoptLiveClaudeCTO restores the process root before reconnecting MCP children.
+func (d *Daemon) adoptLiveClaudeCTO() bool {
+	if d.claudeCTO.starting.Load() {
+		return false
+	}
+	d.cto.mu.Lock()
+	bound := d.claudeCTO.root.Load() != nil
+	d.cto.mu.Unlock()
+	if bound {
+		return false
+	}
+	sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, filepath.Join(d.cfg.StateDir, "cto", "claude"), "")
+	if !ok {
+		return false
+	}
+	status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, sf.JobID)
+	if claudeJobEnded(status) {
+		return false
+	}
+	_, model, _, err := d.localCTOModelSettings()
+	if err != nil {
+		return false
+	}
+	if model == "" {
+		model = "opus"
+	}
+	return d.bindClaudeCTO(sf, model, "", "adopted")
 }

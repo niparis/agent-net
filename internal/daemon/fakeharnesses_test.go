@@ -452,7 +452,15 @@ func fakeClaudeMCP() {
 		wmu.Unlock()
 		sc := bufio.NewScanner(conn)
 		sc.Buffer(make([]byte, 0, 1<<16), 1<<20)
-		for sc.Scan() { // answers from the daemon are not needed
+		for sc.Scan() { // Record the hello result for restart and adoption tests.
+			if os.Getenv("FAKE_CLAUDE_MCP_CLIENT") == "cto-mcp" {
+				var response struct {
+					ID string `json:"id"`
+				}
+				if json.Unmarshal(sc.Bytes(), &response) == nil && response.ID == strconv.Itoa(next) {
+					os.WriteFile(filepath.Join(cwd, "fake-cto-hello.json"), append([]byte(nil), sc.Bytes()...), 0600)
+				}
+			}
 		}
 		return true
 	}
