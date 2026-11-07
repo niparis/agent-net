@@ -202,6 +202,74 @@ func TestWorkerCacheCleanupOffSwitch(t *testing.T) {
 	}
 }
 
+// Use a real link: testGatewayCall bypasses the mutex acquisition in call.
+func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
+	for _, clear := range []bool{false, true} {
+		name := "Raise"
+		if clear {
+			name = "Clear"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := startGateway(t, t.TempDir(), "")
+			n := startNodeCfg(t, g, nodeOpts{}, func(cfg *Config) {
+				cfg.testDiskPercent = func(string) (float64, bool) {
+					if clear {
+						return 70, true
+					}
+					return 90, true
+				}
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if clear {
+				raw, err := n.d.call(ctx, "inbox.create", map[string]string{
+					"session_id": n.cfg.NodeID, "kind": "check", "text": "Disk space low on " + n.d.hostName(),
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var res struct {
+					Item protocol.InboxItem `json:"item"`
+				}
+				if err := json.Unmarshal(raw, &res); err != nil || res.Item.ID == "" {
+					t.Fatalf("create warning: %s, %v", raw, err)
+				}
+				n.d.diskWarningActive = true
+				n.d.diskWarningItemID = res.Item.ID
+			}
+			done := make(chan error, 1)
+			go func() { done <- n.d.checkDiskWarning(ctx, time.Now()) }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-ctx.Done():
+				t.Fatal("checkDiskWarning did not return within 2 seconds")
+			}
+			// A subsequent gateway call must still work after either transition.
+			raw, err := n.d.call(ctx, "inbox.list", struct{}{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var res struct {
+				Items []protocol.InboxItem `json:"items"`
+			}
+			if err := json.Unmarshal(raw, &res); err != nil {
+				t.Fatal(err)
+			}
+			want := "open"
+			if clear {
+				want = "dismissed"
+			}
+			if len(res.Items) != 1 || res.Items[0].Status != want {
+				t.Fatalf("inbox after transition: %s, want one %s warning", raw, want)
+			}
+		})
+	}
+}
+
 func TestDiskWarningHysteresis(t *testing.T) {
 	var createdItems []map[string]any
 	var answeredItems []map[string]string

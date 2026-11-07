@@ -209,8 +209,21 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	if !ok {
 		return nil
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.diskWarnMu.Lock()
+	if d.diskWarningUpdating {
+		d.diskWarnMu.Unlock()
+		return nil
+	}
+	// Reserve the transition so concurrent checks cannot create duplicates.
+	d.diskWarningUpdating = true
+	active, itemID := d.diskWarningActive, d.diskWarningItemID
+	d.diskWarnMu.Unlock()
+	defer func() {
+		d.diskWarnMu.Lock()
+		d.diskWarningActive, d.diskWarningItemID = active, itemID
+		d.diskWarningUpdating = false
+		d.diskWarnMu.Unlock()
+	}()
 
 	const (
 		warnThreshold  = 85.0
@@ -218,15 +231,15 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	)
 
 	if pct >= warnThreshold {
-		if d.diskWarningActive {
+		if active {
 			return nil
 		}
-		if d.diskWarningItemID == "" {
+		if itemID == "" {
 			if items, err := d.fetchOpenInboxItems(ctx); err == nil {
 				for _, item := range items {
 					if item.Kind == "check" && strings.HasPrefix(item.Text, "Disk space low on "+d.hostName()) && item.Status == "open" {
-						d.diskWarningItemID = item.ID
-						d.diskWarningActive = true
+						itemID = item.ID
+						active = true
 						return nil
 					}
 				}
@@ -250,9 +263,9 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 			Item protocol.InboxItem `json:"item"`
 		}
 		if err := json.Unmarshal(raw, &res); err == nil && res.Item.ID != "" {
-			d.diskWarningItemID = res.Item.ID
+			itemID = res.Item.ID
 		}
-		d.diskWarningActive = true
+		active = true
 		if d.log != nil {
 			d.Logf("disk.warning raised: %.1f%% used", pct)
 		}
@@ -260,12 +273,10 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	}
 
 	if pct < clearThreshold {
-		if !d.diskWarningActive {
+		if !active {
 			return nil
 		}
-		itemID := d.diskWarningItemID
-		d.diskWarningActive = false
-		d.diskWarningItemID = ""
+		active = false
 		if itemID != "" {
 			_, _ = d.call(ctx, "inbox.answer", map[string]string{
 				"item_id": itemID,
@@ -283,6 +294,7 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 				}
 			}
 		}
+		itemID = ""
 		if d.log != nil {
 			d.Logf("disk.warning cleared: %.1f%% used", pct)
 		}
