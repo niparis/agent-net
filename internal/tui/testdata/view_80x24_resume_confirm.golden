@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
- Mac (here) 4 sessions ─────────────────────────────────────────────────────────
+ Mac (here) 4 sessions ────────────────────────────────────────────── active (v)
   ↳ tenebrae     worker tenebrae   opencode · haik… busy       ?     ?
 ▸ tenebrae       agent  tenebrae   claude · opus-5… ended 3h ago
   ◐ strategies   agent  strategies claude · sonnet… idle       ?     ? backtest…

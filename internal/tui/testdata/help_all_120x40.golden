@@ -5,6 +5,7 @@ Keys · all screens ────────────────────
   arrows, j/k            move
   esc                    back; first clears a filter you typed
   /                      filter or search
+  ctrl+p                 find a session by name, project, folder, machine or task
   R                      refresh
   c                      open the CTO session
   C                      focus the CTO box
@@ -21,7 +22,8 @@ Keys · all screens ────────────────────
   h                      hide or unhide the selected session
   left, right            move between session actions
   space                  cycle the request rule: normal, ask, auto
-  v                      cycle the view: active only, all, all with offline, all with offline and hidden
+  v                      cycle the view: active (default) or all, which includes offline sessions
+  H                      show or hide sessions hidden with h, and temp-folder sessions in the all view
   a                      in the offline view, preview and archive offline sessions, or show archived and restore
   d                      show or hide the selected session details
   ◐                      runs in the background: no terminal is attached
@@ -33,8 +35,6 @@ Keys · all screens ────────────────────
   -                      zoom out
   shift+arrows           pan
   , .                    select a linked neighbour
-  n                      start a session in this project
-  enter                  open the selected agent card
   more below
 
 up/down scroll  ? this screen  esc close

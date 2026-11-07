@@ -2,7 +2,7 @@
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   no machines yet                                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   PROJECT   MODEL                    STATUS   CPU   RAM TASK                    view: all  (v)
+  NAME               TYPE   PROJECT   MODEL                    STATUS   CPU   RAM TASK                 view: active  (v)
   waiting for the daemon...
 
 

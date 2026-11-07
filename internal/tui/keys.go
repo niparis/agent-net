@@ -55,6 +55,7 @@ const (
 	contextHelp            keyContext = "help"
 	contextConfirm         keyContext = "confirmations"
 	contextForm            keyContext = "forms"
+	contextFinder          keyContext = "session finder"
 )
 
 var allKeyContexts = []keyContext{
@@ -62,7 +63,7 @@ var allKeyContexts = []keyContext{
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard, contextTeams,
 	contextTools, contextToolsFilter, contextToolsCosts, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
-	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm,
+	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm, contextFinder,
 }
 
 func bind(context keyContext, keys string, action actionID, label string, priority int) keyBinding {
@@ -89,6 +90,7 @@ var globalHelpRows = []struct{ keys, help string }{
 	{"arrows, j/k", "move"},
 	{"esc", "back; first clears a filter you typed"},
 	{"/", "filter or search"},
+	{"ctrl+p", "find a session by name, project, folder, machine or task"},
 	{"R", "refresh"},
 	{"c", "open the CTO session"},
 	{"C", "focus the CTO box"},
@@ -100,7 +102,7 @@ var globalHelpRows = []struct{ keys, help string }{
 // one unless the binding is marked local and so means something different.
 var globalSameKeys = []string{
 	"1", "2", "3", "4", "5", "6", "7", "enter", "up", "down", "left", "right", "j", "k",
-	"esc", "/", "R", "c", "C", "?", "q", "ctrl+c",
+	"esc", "/", "R", "c", "C", "?", "q", "ctrl+c", "ctrl+p",
 }
 
 const (
@@ -149,6 +151,7 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "8", "delivery tab", "Delivery", -1),
 	withHelp(bind(contextGlobal, "c", "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
+	withHelp(bind(contextGlobal, "ctrl+p", "find session", "find session", -1), "find a session by name, project, folder, machine or task"),
 	bind(contextGlobal, "ctrl+c", actQuit, "quit", -1),
 	withHelp(bind(contextSessions, "q", actQuit, "quit", 0), "quit"),
 	withHelp(bind(contextSessions, "up|k", actUp, "select", 1), "move the selection"),
@@ -164,7 +167,8 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextSessions, "h", "hide", "hide", -1), "hide or unhide the selected session"),
 	withLocal(withHelp(bind(contextSessions, "left|right", "cell", "cell", 1), "move between session actions")),
 	withHelp(bind(contextSessions, "space", "change cell", "change", 1), "cycle the request rule: normal, ask, auto"),
-	withHelp(bind(contextSessions, "v", "cycle view", "view", -1), "cycle the view: active only, all, all with offline, all with offline and hidden"),
+	withHelp(bind(contextSessions, "v", "cycle view", "view", -1), "cycle the view: active (default) or all, which includes offline sessions"),
+	withHelp(bind(contextSessions, "H", "show hidden", "show hidden", -1), "show or hide sessions hidden with h, and temp-folder sessions in the all view"),
 	withHelp(bind(contextSessions, "a", "archive offline", "archive offline...", -1), "in the offline view, preview and archive offline sessions, or show archived and restore"),
 	bind(contextSessions, "R", "refresh", "refresh", -1),
 	withHelp(bind(contextSessions, "d", "details", "details", -1), "show or hide the selected session details"),
@@ -423,6 +427,13 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextForm, "left", "previous choice", "change choice", 1), "change the choice"),
 	withHelp(bind(contextForm, "right", "next choice", "change choice", 1), "change the choice"),
 	bind(contextForm, "space", "toggle", "toggle", 1),
+	bind(contextFinder, "enter", "open", "open", 1),
+	bind(contextFinder, "esc", "close", "close", 1),
+	bind(contextFinder, "up", actUp, "select", 1),
+	bind(contextFinder, "down", actDown, "select", 1),
+	bind(contextFinder, "pgup", actPageUp, "page", 1),
+	bind(contextFinder, "pgdown", actPageDown, "page", 1),
+	bind(contextFinder, "backspace|ctrl+h", "delete text", "delete", 1),
 }
 
 // normalizeKey normalizes terminal key messages across legacy, modifyOtherKeys,

@@ -14,12 +14,12 @@ Keys · Tools ──────────────────────
   arrows, j/k            move
   esc                    back; first clears a filter you typed
   /                      filter or search
+  ctrl+p                 find a session by name, project, folder, machine or task
   R                      refresh
   c                      open the CTO session
   C                      focus the CTO box
   ?                      help
   q, ctrl+c              quit
-
 
 
 

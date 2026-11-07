@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           TYPE   PROJECT   MODEL            STATUS   CPU   RAM TASK
- Mac (here) 1 session ──────────────────────────────────────────────────────────
+ Mac (here) 1 session ─────────────────────────────────────────────── active (v)
   ↳ blocked-wor… worker -         opencode         busy       ?     ?
 
 

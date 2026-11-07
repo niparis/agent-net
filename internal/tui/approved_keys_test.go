@@ -122,13 +122,16 @@ func TestApprovedOverlayCloseKeys(t *testing.T) {
 
 func TestApprovedSessionsAndHeldKeys(t *testing.T) {
 	m := newModel(120, 34)
-	m = keys(m, "v", "v", "v")
-	if !m.activeOnly {
-		t.Fatal("v did not reach active only")
+	if !m.activeOnly || m.sessionViewName() != "active" {
+		t.Fatalf("the default view is %q", m.sessionViewName())
 	}
 	m = keys(m, "v")
-	if m.activeOnly {
-		t.Fatal("v did not leave active only")
+	if m.activeOnly || m.sessionViewName() != "all" {
+		t.Fatalf("v did not show all: %q", m.sessionViewName())
+	}
+	m = keys(m, "v")
+	if !m.activeOnly || m.sessionViewName() != "active" {
+		t.Fatalf("v did not return to active: %q", m.sessionViewName())
 	}
 	src := &heldTestSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
 	src.snap.Held = []protocol.Message{{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"}}

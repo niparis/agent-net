@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           TYPE   PROJECT   MODEL            STATUS   CPU   RAM TASK
- Mac (here) 2 sessions ─────────────────────────────────────────────────────────
+ Mac (here) 2 sessions ───────────────────────────────────────────────── all (v)
 ▸ ↳ backtest-a   worker -         opencode · haik… idle       ?     ? probe
   ↳ backtest-b   worker -         opencode · haik… idle       ?     ? probe
  build-vm 1 session ────────────────────────────────────────────────────────────

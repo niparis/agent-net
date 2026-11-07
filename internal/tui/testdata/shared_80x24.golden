@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
- Mac (here) 5 sessions ─────────────────────────────────────────────────────────
+ Mac (here) 5 sessions ────────────────────────────────────────────── active (v)
 ▸ api            agent  -          opencode         busy   shared
   tenebrae-53    agent  tenebrae   claude · opus-5… busy     38%  1.2G
   docs           agent  -          opencode         idle   shared
@@ -14,8 +14,8 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ◐ ci-runner    agent  agent-net  pi · gpt-6       idle      5%  300M
   scratch        agent  -          pi               shell    <1%   80M
- old-box 1 session ─────────────────────────────────────────────────────────────
-  old-session    agent  old        claude           ended 1d ago
+
+
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

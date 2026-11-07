@@ -213,7 +213,8 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	for i := range snap.Agents {
 		if snap.Agents[i].Profile.Name == "web" {
 			snap.Agents[i].Status = "idle"
-			snap.Agents[i].LastSeen = t0.Add(-2 * time.Hour).Unix()
+			snap.Agents[i].LastSeen = t0.Add(-25 * time.Hour).Unix()
+			snap.Agents[i].LastActive = t0.Add(-25 * time.Hour).Unix()
 		}
 	}
 	src := &fakeSource{snap: snap, events: fakeEvents(), usage: fakeUsage(), counts: fakeCounts()}
@@ -221,17 +222,25 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = settle(refresh(m, src))
-	if !m.idleLong(snap.Agents[2]) {
+	if !m.idleLong(snap.Agents[2]) || !m.quietInActive(snap.Agents[2]) {
 		t.Fatal("web is not quiet by the rule")
 	}
-	if !strings.Contains(strings.Join(names(m), ","), "web") {
-		t.Fatal("the active filter is on by default")
-	}
-	m = keys(m, "v", "v", "v")
 	if strings.Contains(strings.Join(names(m), ","), "web") {
-		t.Fatalf("web was not hidden: %v", names(m))
+		t.Fatal("the default active view kept a session quiet for a day")
+	}
+	m = keys(m, "v")
+	if !strings.Contains(strings.Join(names(m), ","), "web") {
+		t.Fatalf("all did not show the quiet session: %v", names(m))
 	}
 	v := m.testView()
+	if !strings.Contains(v, "view: all") {
+		t.Fatalf("the header does not show the view:\n%s", v)
+	}
+	if !strings.Contains(v, "3 sessions") {
+		t.Fatalf("the machine heading does not list all sessions:\n%s", v)
+	}
+	m = keys(m, "v")
+	v = m.testView()
 	if !strings.Contains(v, "view: active") {
 		t.Fatalf("the header does not show the view:\n%s", v)
 	}
@@ -251,7 +260,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 }
 
 func TestActiveFilterCombinesWithTheTextFilterInTheHeader(t *testing.T) {
-	m := keys(newModel(120, 34), "v", "v", "v", "/", "t", "e", "enter")
+	m := keys(newModel(120, 34), "/", "t", "e", "enter")
 	v := m.testView()
 	if !strings.Contains(v, "view: active") || !strings.Contains(v, "filter: /te") {
 		t.Fatalf("the view and the text filter are not listed together:\n%s", v)

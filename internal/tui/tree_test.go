@@ -43,6 +43,7 @@ func treeModel(w, h int, snap Snapshot) Model {
 	src := &fakeSource{snap: snap, events: fakeEvents()}
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m.activeOnly, m.showOffline = false, true // the fixtures include ended sessions
 	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
 	return settle(refresh(m, src))
 }

@@ -157,6 +157,23 @@ func (m Model) renderView() string {
 		return ""
 	}
 	w, h := max(m.width, 40), max(m.height, 10)
+	if m.finder {
+		background := m
+		background.finder = false
+		background.tab = sessionsTab
+		lines := strings.Split(background.renderView(), "\n")
+		box := m.finderView(max(40, w-8))
+		y := max(0, (h-len(box))/2)
+		x := max(0, (w-ansi.StringWidth(box[0]))/2)
+		for i, line := range box {
+			if y+i >= len(lines) {
+				break
+			}
+			right := x + ansi.StringWidth(line)
+			lines[y+i] = padStyled(ansi.Cut(lines[y+i], 0, x), x) + line + ansi.Cut(lines[y+i], right, w)
+		}
+		return strings.Join(lines, "\n")
+	}
 	keyRows := 1
 	if m.tab == toolsTab && !m.help && !m.mapOn && m.focus != focusCTO {
 		keyRows = len(m.toolsKeyLines(w))
@@ -165,6 +182,8 @@ func (m Model) renderView() string {
 	add := func(s string) { out = append(out, s) }
 
 	switch {
+	case m.finder:
+		out = append(out, m.finderView(w)...)
 	case m.proposalConfirm:
 		out = append(out, m.proposalConfirmView(w)...)
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:
@@ -358,15 +377,14 @@ var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(
 
 // sessionViewName is the view the v key selected.
 func (m Model) sessionViewName() string {
-	switch {
-	case m.activeOnly:
-		return "active"
-	case m.showHiddenSessions:
-		return "offline+hidden"
-	case m.showOffline:
-		return "offline"
+	name := "active"
+	if !m.activeOnly {
+		name = "all"
 	}
-	return "all"
+	if m.showHiddenSessions {
+		name += "+hidden"
+	}
+	return name
 }
 
 func (m Model) titleLine(w int) string {
@@ -1109,7 +1127,7 @@ func (m Model) sessionsTable(w, n int) []string {
 		indicator = ""
 	}
 	avail := w - 2
-	if indicator != "" {
+	if indicator != "" && w > 80 {
 		avail -= ansi.StringWidth(indicator) + 2
 	}
 	statusWidth := 6
@@ -1146,6 +1164,7 @@ func (m Model) sessionsTable(w, n int) []string {
 			}
 		}
 	}
+
 	for i := range cols {
 		if cols[i].name == "PROJECT" && m.sessionCell == 3 {
 			cols[i].name = "AGENT"
@@ -1169,7 +1188,9 @@ func (m Model) sessionsTable(w, n int) []string {
 			head += cell(label, c.width)
 		}
 	}
-	head = padStyled(head, max(0, w-ansi.StringWidth(indicator))) + indicator
+	if indicator != "" {
+		head = padStyled(head, max(0, w-ansi.StringWidth(indicator))) + indicator
+	}
 	out := []string{sDim.Render(clip(head, w))}
 	rows := m.tableRows()
 	if !m.haveData {
@@ -1184,9 +1205,9 @@ func (m Model) sessionsTable(w, n int) []string {
 		case m.filter != "":
 			msg = "  no session matches the filter"
 		case m.activeOnly:
-			msg = "  no active sessions (a shows the quiet ones)"
-		case !m.showOffline:
-			msg = "  no sessions in this view (type / to find ended sessions; o shows offline)"
+			msg = "  no active sessions (v shows all, ctrl+p finds any)"
+		default:
+			msg = "  no sessions (H shows hidden, a archives offline)"
 		}
 		out = append(out, sDim.Render(msg))
 	}
@@ -1213,6 +1234,15 @@ func (m Model) sessionsTable(w, n int) []string {
 		} else {
 			out = append(out, m.sessionLine(r.agent, r.mark, cols, w, visibleIndex))
 			visibleIndex++
+		}
+	}
+	if w <= 80 {
+		for i, line := range out {
+			if strings.Contains(ansi.Strip(line), "─") {
+				label := " " + m.sessionViewName() + " (v)"
+				out[i] = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(label))) + sDim.Render(label)
+				break
+			}
 		}
 	}
 	// A table with fewer rows than room keeps its height.

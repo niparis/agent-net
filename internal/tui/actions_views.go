@@ -2,18 +2,11 @@ package tui
 
 import tea "charm.land/bubbletea/v2"
 
-// cycleSessionView moves through the four session views with one key.
+// cycleSessionView moves between the two session views with one key: active,
+// then all with the offline sessions.
 func (m *Model) cycleSessionView() {
-	switch {
-	case m.activeOnly:
-		m.activeOnly, m.showOffline, m.showHiddenSessions = false, false, false
-	case !m.showOffline:
-		m.showOffline, m.showHiddenSessions = true, false
-	case !m.showHiddenSessions:
-		m.showHiddenSessions = true
-	default:
-		m.activeOnly, m.showOffline, m.showHiddenSessions = true, false, false
-	}
+	m.activeOnly = !m.activeOnly
+	m.showOffline = !m.activeOnly
 }
 
 // cycleMessageFilter moves through the three Messages filters with one key.

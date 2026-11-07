@@ -177,6 +177,9 @@ func (m Model) hints() []hint {
 // An action result takes the whole line while it is shown, so the screen keeps
 // its height and nothing above moves.
 func (m Model) helpLine(w int) string {
+	if m.finder {
+		return clip(keyHints("type", "to search", "up/down", "select", "enter", "open", "esc", "close"), w)
+	}
 	if m.archive != nil {
 		return clip(m.sessionsArchiveHints(), w)
 	}
@@ -368,6 +371,8 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextConfirm)
 	case m.mode != modeNormal:
 		return m.helpContextSection(contextForm)
+	case m.finder:
+		return m.helpContextSection(contextFinder)
 	case m.qualityDetail && m.tab == quotasTab:
 		return m.helpContextSection(contextQualityDetails)
 	case m.focus == focusCTO && m.cto != nil:
@@ -441,7 +446,7 @@ func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
 		contextBody, contextApps, contextQualityDetails, contextProposalDetail, contextProposalHistory,
 		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd, contextToolsDiscard, contextToolsFilter, contextToolsCosts,
-		contextCTO, contextHelp, contextConfirm, contextForm, contextTeams,
+		contextCTO, contextHelp, contextConfirm, contextForm, contextTeams, contextFinder,
 	}
 }
 
@@ -502,6 +507,8 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 		return "Forms"
 	case contextTeams:
 		return "Teams"
+	case contextFinder:
+		return "Session finder"
 	}
 	return strings.ReplaceAll(string(context), "CTO", m.ctoTitle())
 }
