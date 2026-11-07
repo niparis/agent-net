@@ -2827,3 +2827,42 @@ Space adds or removes the selected Repo or Agent, and `a` archives a Team with
 no members. A gateway refusal shows in the result line at the bottom. When
 the typed Graph cutover is not enabled, the screen says so instead of hiding
 Teams. Teams enforce nothing: these actions change labels and membership only.
+
+### Owner session use and pins
+
+Session snapshots include `owner_used_at` and `pinned_at` as Unix seconds and
+`owner_uses` as an integer. Zero or an omitted field means no recorded use,
+score, or pin. The score increases on each recorded interaction, up to one
+million, and halves for each full day since the preceding interaction. Reads
+also apply that decay, so old scores fall to zero even without another event.
+The timestamp is kept even after the score reaches zero.
+
+The owner-only operator call `session_pin` takes `session_id` and `pinned`
+(a boolean). It sets or clears the pin; repeating a pin keeps its original
+time. The daemon forwards it as the gateway call `session.pin` with its owner
+session. This call is available through the same Source `Call` interface as
+`sessions_archive`, and refuses agent clients and commands inside an agent
+session. Pins and use fields are visible in ordinary session snapshots.
+
+Use is recorded when the owner opens or resumes a session, sends a message
+from the owner session, or restores an archived record. Message retries with
+the same idempotency key count once. Pi counts only input marked interactive;
+RPC and extension input do not count. Claude Code counts prompts seen by its
+optional policy hook, except agent-net cross-session deliveries. OpenCode and
+Codex do not provide a reliable human-input distinction in these paths, so
+their prompts do not count. Recording a prompt or open needs a reachable local
+daemon and gateway; these events are not queued if either is unavailable.
+
+The gateway checks hourly for offline sessions to archive, starting one hour
+after startup to give daemons time to reconnect. Session retention waits for
+that first archive pass; other retention checks still run at startup. It
+archives sessions in system temporary folders, including `/tmp` and
+`/var/folders`, regardless of their last activity. It also archives other
+sessions when neither owner use nor activity occurred in seven days. The
+activity check uses the latest of creation, last report, and last activity.
+It never automatically archives online or pinned sessions, sessions used by
+the owner in the last seven days, the owner, CTO, bots, or registered mergers.
+It logs each archived session ID. The normal archive retains history and can
+be restored; restoring records owner use and prevents immediate re-archiving.
+Session retention also preserves pins and sessions with use or activity newer
+than its cutoff.

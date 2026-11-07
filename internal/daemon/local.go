@@ -844,6 +844,16 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		lc.mu.Unlock()
 		return nil, nil
 
+	case "owner_prompt":
+		if ls == nil || ls.conn != lc || d.infoOf(ls).Harness != "pi" {
+			return nil, errors.New("only a bound Pi plugin reports owner input")
+		}
+		sid := d.currentSessionID(ls)
+		if sid == "" {
+			return nil, nil
+		}
+		return d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true})
+
 	case "harness_activity":
 		if ls == nil || ls.conn != lc {
 			return nil, errors.New("only plugin clients report harness activity")

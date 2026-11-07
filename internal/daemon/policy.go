@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,10 +187,23 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	}
 	if client == "cli" && p.Harness == "claude" {
 		_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
+		if isHumanClaudePrompt(p.Prompt) {
+			_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true})
+		}
 	}
 	got, ok := d.policyOf(ctx, sid)
 	if !ok {
 		return protocol.PolicyResult{}, nil
 	}
 	return d.policyResult(d.infoOf(ls).Harness, got), nil
+}
+
+// Claude inbox deliveries have a cross-session wrapper; never count them as typing.
+func isHumanClaudePrompt(prompt string) bool {
+	prompt = strings.TrimSpace(prompt)
+	return prompt != "" && !strings.HasPrefix(prompt, "<cross-session-message")
+}
+
+func (d *Daemon) recordOwnerOpen(ctx context.Context, id string) {
+	_, _ = d.call(ctx, "session.owner_use", map[string]any{"owner": d.ownerSessionID(), "session_id": id})
 }

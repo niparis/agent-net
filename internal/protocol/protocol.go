@@ -156,7 +156,10 @@ type SessionInfo struct {
 	// ended, a message was sent or received, a task was announced, or a wait
 	// started. It is not the time the daemon last saw the session alive.
 	// Empty from an older daemon.
-	LastActive int64 `json:"last_active,omitempty"`
+	LastActive  int64 `json:"last_active,omitempty"`
+	OwnerUsedAt int64 `json:"owner_used_at,omitempty"`
+	OwnerUses   int   `json:"owner_uses,omitempty"`
+	PinnedAt    int64 `json:"pinned_at,omitempty"`
 	// HarnessActivity is the last observed output, state change or delivery acknowledgement.
 	HarnessActivity int64 `json:"harness_activity,omitempty"`
 }
@@ -302,7 +305,10 @@ type AgentView struct {
 	LastSeen           int64            `json:"last_seen"`
 	// LastActive is when the session last did something, in Unix seconds.
 	// It is not when its daemon last reported it. 0 from an older gateway.
-	LastActive int64 `json:"last_active,omitempty"`
+	LastActive  int64 `json:"last_active,omitempty"`
+	OwnerUsedAt int64 `json:"owner_used_at,omitempty"`
+	OwnerUses   int   `json:"owner_uses,omitempty"`
+	PinnedAt    int64 `json:"pinned_at,omitempty"`
 	// StalledSince is the time of the last observed harness activity during a stall.
 	StalledSince int64 `json:"stalled_since,omitempty"`
 	// TaskStarted is when the announced task last changed, in Unix seconds. It
