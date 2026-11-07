@@ -36,7 +36,7 @@ func TestWorkerDefaultsToAWorktreeInARepository(t *testing.T) {
 		t.Errorf("the notice does not end with the learning line:\n%s", n.Body)
 	}
 	if !strings.Contains(n.Body, protocol.ChecklistMarker) || !strings.Contains(n.Body, "read the diff in "+res.Worktree) ||
-		!strings.Contains(n.Body, "run the project's tests there") {
+		!strings.Contains(n.Body, "The test step owns test suites.") {
 		t.Errorf("the notice has no checklist:\n%s", n.Body)
 	}
 }
