@@ -541,6 +541,8 @@ func (agyLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, boo
 }
 
 func agyFailedAfterExit(c *agyConn, gone func() bool, exitErr error) bool {
+	// The stream reader may finish during gone. Read its result afterward so
+	// an already completed turn is not mistaken for a failed exit.
 	exited := gone()
 	c.mu.Lock()
 	failure, completed := c.failure, c.completed
