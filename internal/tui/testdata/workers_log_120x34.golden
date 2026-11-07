@@ -1,17 +1,13 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 6 sessions, 5 online · 1 busy  00:00:00
   Quotas    [ Workers log ]
 ╭─Workers log──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│   11-14 22:13 test-model:high      normal   owner        Review worker history and difficulty scores         running │
-│ ▸ 11-14 22:11 test-model:high      normal   Agent One    Review worker history and difficulty scores            done │
-│   11-14 22:10 test-model:high      normal   CTO          Review worker history and difficulty scores         blocked │
-│   11-14 22:08 test-model:high      normal   Agent One    Review worker history and difficulty scores          failed │
-│   11-14 22:06 test-model:high      normal   CTO          Review worker history and difficulty scores       timed out │
-│   11-14 22:05 test-model:high      normal   -            Review worker history and difficulty scores         stopped │
+│ ▸ 11-14 22:13 test-model:high      normal   owner        Review worker history and difficulty scores         running │
+│                                                                                                                      │
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Title       Review worker history and difficulty scores                                                              │
-│ Caller      Agent One (caller-machine)                                                                               │
+│ Caller      owner (test-machine)                                                                                     │
 │ Model       codex · test-model · high                                                                                │
 │ Where       test-machine / demo                                                                                      │
 │ Run time    2m0s                                                                                                     │
@@ -24,6 +20,10 @@
 │ Uncertainty   1  Known table schema.                                                                                 │
 │ Verification  2  Gateway and TUI tests.                                                                              │
 │ Risk          1  Read only history.                                                                                  │
+│                                                                                                                      │
+│ Chosen      codex test-model:high - 34.5 (good enough)                                                               │
+│                                                                                                                      │
+│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab Quotas  ↑↓ select run  ←→ details  ? help  q quit
+tab Quotas  ↑↓ select run  → details  ? help  q quit

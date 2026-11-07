@@ -7,14 +7,6 @@
 │   11-14 22:08 test-model:high      normal   Agent One    Review worker history and difficulty scores          failed │
 │   11-14 22:06 test-model:high      normal   CTO          Review worker history and difficulty scores       timed out │
 │   11-14 22:05 test-model:high      normal   -            Review worker history and difficulty scores         stopped │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Difficulty details───────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Title       Review worker history and difficulty scores                                                              │
@@ -29,6 +21,14 @@
 │ Chosen      difficulty R3 S2 C2 U1 V2 K1 · D 2.10 · normal -> codex test-model:high - 34.5 (good enough)             │
 │                                                                                                                      │
 │ Note        the worker ended after its hand-back; a message from you starts it again 1 automatic continue was sent.  │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -37,4 +37,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab Quotas  ↑↓ select run  ←→ details  ? help  q quit
+tab Quotas  ↑↓ select run  → details  ? help  q quit

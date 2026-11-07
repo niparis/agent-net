@@ -13,19 +13,36 @@ import (
 
 func (m Model) workersLogKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	before := m.workerLogRow
+	const detailPage = 8
 	switch keyAction(contextWorkersLog, k.String()) {
+	case "focus runs":
+		m.workerLogDetailsFocus = false
+	case "focus details":
+		m.workerLogDetailsFocus = true
 	case "up":
-		m.workerLogRow = max(m.workerLogRow-1, 0)
+		if m.workerLogDetailsFocus {
+			m.workerLogDetail = max(m.workerLogDetail-1, 0)
+		} else {
+			m.workerLogRow = max(m.workerLogRow-1, 0)
+		}
 	case "down":
-		m.workerLogRow = min(m.workerLogRow+1, max(len(m.snap.WorkerLog)-1, 0))
+		if m.workerLogDetailsFocus {
+			m.workerLogDetail++
+		} else {
+			m.workerLogRow = min(m.workerLogRow+1, max(len(m.snap.WorkerLog)-1, 0))
+		}
 	case "page up":
-		m.workerLogRow = max(m.workerLogRow-10, 0)
+		if m.workerLogDetailsFocus {
+			m.workerLogDetail = max(m.workerLogDetail-detailPage, 0)
+		} else {
+			m.workerLogRow = max(m.workerLogRow-10, 0)
+		}
 	case "page down":
-		m.workerLogRow = min(m.workerLogRow+10, max(len(m.snap.WorkerLog)-1, 0))
-	case "scroll details up":
-		m.workerLogDetail = max(m.workerLogDetail-1, 0)
-	case "scroll details down":
-		m.workerLogDetail++
+		if m.workerLogDetailsFocus {
+			m.workerLogDetail += detailPage
+		} else {
+			m.workerLogRow = min(m.workerLogRow+10, max(len(m.snap.WorkerLog)-1, 0))
+		}
 	case "help":
 		m.openHelp()
 	case "quit":
@@ -98,16 +115,73 @@ func (m Model) workersLogView(w, h int) []string {
 		list = append(list, sDim.Render("No worker runs"))
 	}
 	detail := []string{sDim.Render("Select a worker run")}
+	hasAssessment := false
 	if len(m.snap.WorkerLog) > 0 {
 		r := m.snap.WorkerLog[selected]
+		hasAssessment = r.Assessment != nil
 		detail = workerLogDetails(r, inner)
 	}
 	available := max(h-6, 0)
-	dh := min(len(detail), max(available*2/3, 0))
-	lh := max(available-dh, 0)
+	lh := min(min(max(len(list), 3), 8), available)
+	dh := max(available-lh, 0)
+	if dh <= 11 && hasAssessment {
+		detail = workerLogAssessmentFirst(detail)
+	}
 	out = append(out, panel("Workers log", messageFit(list, lh, selected), w, roleAccent)...)
-	out = append(out, panel("Difficulty details", messageFit(detail, dh, min(max(dh-1, 0)+m.workerLogDetail, max(len(detail)-1, 0))), w, roleAccent)...)
+	out = append(out, panel("Difficulty details", workerLogDetailsFit(detail, dh, m.workerLogDetail, inner), w, roleAccent)...)
 	return out
+}
+
+func workerLogAssessmentFirst(lines []string) []string {
+	separator := -1
+	for i, line := range lines {
+		if ansi.Strip(line) == "" {
+			separator = i
+			break
+		}
+	}
+	if separator < 0 || separator == len(lines)-1 {
+		return lines
+	}
+	var primary, secondary []string
+	for _, line := range lines[:separator] {
+		plain := ansi.Strip(line)
+		if strings.HasPrefix(plain, "Title ") || strings.HasPrefix(plain, "Model ") {
+			primary = append(primary, line)
+		} else {
+			secondary = append(secondary, line)
+		}
+	}
+	return append(append(primary, lines[separator+1:]...), secondary...)
+}
+
+func workerLogDetailsFit(lines []string, height, offset, width int) []string {
+	height = max(height, 0)
+	if len(lines) <= height {
+		return messageFit(lines, height, 0)
+	}
+	if height == 0 {
+		return nil
+	}
+	if height == 1 {
+		return []string{sDim.Render(clip(fmt.Sprintf("↓ %d more lines", len(lines)), width))}
+	}
+	visibleHeight := height - 1
+	start := min(max(offset, 0), max(len(lines)-visibleHeight, 0))
+	end := min(start+visibleHeight, len(lines))
+	visible := append([]string(nil), lines[start:end]...)
+	more := len(lines) - end
+	cue := ""
+	if more > 0 {
+		cue = fmt.Sprintf("↓ %d more lines", more)
+	} else if start > 0 {
+		cue = fmt.Sprintf("↑ %d lines above", start)
+	}
+	visible = append(visible, sDim.Render(clip(cue, width)))
+	for len(visible) < height {
+		visible = append(visible, "")
+	}
+	return visible
 }
 
 func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {

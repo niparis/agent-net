@@ -95,7 +95,10 @@ func (m Model) hints() []hint {
 	case m.tab == deliveryTab:
 		return m.deliveryHints()
 	case m.tab == quotasTab && m.workersLog:
-		return []hint{{key: "tab", label: "Quotas"}, {key: "↑↓", label: "select run"}, {key: "←→", label: "details"}, sessionHelp, sessionQuit}
+		if m.workerLogDetailsFocus {
+			return []hint{{key: "tab", label: "Quotas"}, {key: "↑↓", label: "scroll details"}, {key: "←", label: "runs"}, sessionHelp, sessionQuit}
+		}
+		return []hint{{key: "tab", label: "Quotas"}, {key: "↑↓", label: "select run"}, {key: "→", label: "details"}, sessionHelp, sessionQuit}
 	case m.tab == quotasTab:
 		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "quality details"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == settingsTab:

@@ -429,6 +429,9 @@ func (m Model) deliveryDetailLoaded(msg deliveryDetailMsg) Model {
 // nextQuotasSubtab toggles the quota views.
 func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 	m.workersLog = !m.workersLog
+	if !m.workersLog {
+		m.workerLogDetailsFocus = false
+	}
 	return m, nil
 }
 
