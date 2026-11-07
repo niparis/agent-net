@@ -2865,13 +2865,13 @@ instead of hiding Teams.
 ### Leads and agent counts
 
 The owner operator `lead_set` takes a typed `ref` for a Repo or Team and a
-`lead` Agent ref. Omit `lead` to clear it. The CTO can propose the same action
+`lead` Agent or session ref. A session lead records its Agent as the fallback. Omit `lead` to clear it. The CTO can propose the same action
 with `graph_change`; approval is required. A Repo defaults to its owner Agent
 until explicitly set or cleared. A Repo lead must own the Repo or have a
-session recorded there. A Team lead is its owner Agent.
+session recorded there. A Team lead can be an Agent or a session.
 
 For messages to a non-lead session from outside its Repo or Team crew, the
-gateway redirects to a live lead and adds a note to the message and receipt.
+gateway redirects to the selected session when online, otherwise to a live session of its Agent, and adds a note to the message and receipt.
 The owner and CTO are exempt, as are workers messaging their caller. If there is
 no lead or no live lead session, the original target receives the message and
 the receipt says why. Use `repo:<name>` or `team:<name>` to address a live lead

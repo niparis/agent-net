@@ -30,3 +30,9 @@ original target in the message and the sender's receipt. Without a lead or a
 live lead session, deliver to the original target and report that in the
 receipt. `repo:<name>` and `team:<name>` address a live lead directly. Team
 membership does not grant authority, change settings, or change request rules.
+
+## Session leads
+
+A Repo or Team lead may name one session. The lead's Agent is recorded too.
+Messages go to that session while it is online, and otherwise fall back to a
+live session of the Agent. The session lead flag marks only the chosen session.

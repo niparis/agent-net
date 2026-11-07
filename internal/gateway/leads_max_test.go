@@ -107,3 +107,82 @@ func TestLeadAgentCannotBeTombstoned(t *testing.T) {
 		t.Fatal("tombstoned a repo lead")
 	}
 }
+
+func TestSessionLeadSetRepo(t *testing.T) {
+	s := teamStore(t)
+	var sid string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='demo'`).Scan(&sid); err != nil {
+		t.Fatal(err)
+	}
+	ref := protocol.GraphRef{Kind: "repo", ID: "demo"}
+	lead := protocol.GraphRef{Kind: "session", ID: sid}
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: ref, Lead: &lead}, "owner", false); err != nil {
+		t.Fatalf("set session lead: %v", err)
+	}
+	g, err := s.GraphForRef(&ref)
+	if err != nil || len(g.Nodes) != 1 || g.Nodes[0].Lead == nil || *g.Nodes[0].Lead != lead {
+		t.Fatalf("lead: %+v %v", g, err)
+	}
+}
+
+func TestSessionLeadRoutingAndViews(t *testing.T) {
+	s := teamStore(t)
+	var first, node, outsider string
+	if err := s.db.QueryRow(`SELECT id,node_id FROM sessions WHERE repo_id='demo'`).Scan(&first, &node); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&outsider); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "second-lead", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lead := protocol.GraphRef{Kind: "session", ID: first}
+	for _, kind := range []string{"repo", "team"} {
+		if kind == "team" {
+			teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha"})
+		}
+		id := "demo"
+		if kind == "team" {
+			id = "alpha"
+		}
+		if err := s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: kind, ID: id}, Lead: &lead}, "owner", false); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.ResolveLeadAddress(kind + ":" + id)
+		if err != nil || got != first {
+			t.Fatalf("%s lead: %q %v", kind, got, err)
+		}
+	}
+	for _, addr := range []string{"repo:demo", "team:alpha"} {
+		m, _, _, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: first, LeadAddress: addr, Body: "addressed"})
+		if err != nil || m.To != first {
+			t.Fatalf("address %s: %+v %v", addr, m, err)
+		}
+		if _, _, _, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: second, LeadAddress: addr, Body: "forged"}); err == nil {
+			t.Fatalf("%s accepted alternate while lead online", addr)
+		}
+	}
+	a, _, err := s.Agent(first)
+	if err != nil || !a.RepoLead {
+		t.Fatalf("lead view: %+v %v", a, err)
+	}
+	a, _, err = s.Agent(second)
+	if err != nil || a.RepoLead {
+		t.Fatalf("other view: %+v %v", a, err)
+	}
+	m, _, _, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: second, Body: "hello"})
+	if err != nil || m.To != first {
+		t.Fatalf("redirect: %+v %v", m, err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, first); err != nil {
+		t.Fatal(err)
+	}
+	for _, addr := range []string{"repo:demo", "team:alpha"} {
+		got, err := s.ResolveLeadAddress(addr)
+		if err != nil || got != second {
+			t.Fatalf("fallback %s: %q %v", addr, got, err)
+		}
+	}
+}

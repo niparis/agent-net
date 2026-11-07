@@ -16,20 +16,20 @@ type leadDB interface {
 const repoLeadExpr = `CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END`
 
 func repoLeadQuery(where string) string {
-	return `SELECT id,display_name,` + repoLeadExpr + ` FROM repos WHERE ` + where
+	return `SELECT id,display_name,` + repoLeadExpr + `,(SELECT lead_session FROM repo_leads WHERE repo_id=repos.id) FROM repos WHERE ` + where
 }
 func repoLeadRows(db leadDB, where string, args ...any) (*sql.Rows, error) {
 	return db.Query(repoLeadQuery(where), args...)
 }
 func teamLeadRows(db leadDB, name string) (*sql.Rows, error) {
-	return db.Query(`SELECT id,owner_agent_id FROM teams WHERE (id=? OR name=? COLLATE NOCASE) AND active=1`, name, name)
+	return db.Query(`SELECT id,owner_agent_id,lead_session FROM teams WHERE (id=? OR name=? COLLATE NOCASE) AND active=1`, name, name)
 }
-func liveLeadSession(db leadDB, agent, repo string, withName bool) *sql.Row {
+func liveLeadSession(db leadDB, agent, repo, preferred string, withName bool) *sql.Row {
 	selectPart, join := "s.id", ""
 	if withName {
 		selectPart, join = "s.id,a.display_name", " JOIN agents a ON a.id=s.agent_id"
 	}
-	return db.QueryRow(`SELECT `+selectPart+` FROM sessions s`+join+` WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') ORDER BY CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, repo)
+	return db.QueryRow(`SELECT `+selectPart+` FROM sessions s`+join+` WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') ORDER BY CASE WHEN s.id=? THEN 0 ELSE 1 END,CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, preferred, repo)
 }
 
 // routeLead runs in the message transaction after the original reply has been
@@ -60,28 +60,28 @@ func routeLead(tx *sql.Tx, m *protocol.Message) (string, error) {
 	if agent == "" {
 		return "", nil
 	}
-	var repoLead sql.NullString
+	var repoLead, repoSession sql.NullString
 	var repoName string
 	if repo != "" {
 		var repoID string
-		err = tx.QueryRow(repoLeadQuery(`id=?`), repo).Scan(&repoID, &repoName, &repoLead)
+		err = tx.QueryRow(repoLeadQuery(`id=?`), repo).Scan(&repoID, &repoName, &repoLead, &repoSession)
 		if err != nil && err != sql.ErrNoRows {
 			return "", err
 		}
 	}
-	try := func(lead sql.NullString, scope, inRepo string) (string, bool, error) {
-		if !lead.Valid || lead.String == "" || lead.String == agent {
+	try := func(lead, preferred sql.NullString, scope, inRepo string) (string, bool, error) {
+		if !lead.Valid || lead.String == "" || (lead.String == agent && (!preferred.Valid || preferred.String == m.To)) {
 			return "", false, nil
 		}
 		var id, name string
-		err := liveLeadSession(tx, lead.String, inRepo, true).Scan(&id, &name)
+		err := liveLeadSession(tx, lead.String, inRepo, preferred.String, true).Scan(&id, &name)
 		if err == sql.ErrNoRows {
 			return "Lead has no live session; delivered as addressed.", true, nil
 		}
 		if err != nil {
 			return "", false, err
 		}
-		if id == m.From {
+		if id == m.From || id == m.To {
 			return "", true, nil
 		}
 		note := fmt.Sprintf("Redirected to %s (lead of %s); originally sent to %s.", name, scope, targetName)
@@ -89,16 +89,16 @@ func routeLead(tx *sql.Tx, m *protocol.Message) (string, error) {
 		m.Body = note + "\n" + m.Body
 		return note, true, nil
 	}
-	if repo != "" && senderRepo != repo && repoLead.Valid && repoLead.String != agent {
-		note, done, e := try(repoLead, repoName, repo)
+	if repo != "" && senderRepo != repo && repoLead.Valid && (repoLead.String != agent || (repoSession.Valid && repoSession.String != m.To)) {
+		note, done, e := try(repoLead, repoSession, repoName, repo)
 		if done || e != nil {
 			return note, e
 		}
 	}
 	// The target's repo team is the session context; otherwise use its Agent team.
 	var teamID, teamName string
-	var teamLead sql.NullString
-	err = tx.QueryRow(`SELECT t.id,t.name,t.owner_agent_id FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=?) OR (tm.member_kind='agent' AND tm.member_id=?)) ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &teamLead)
+	var teamLead, teamSession sql.NullString
+	err = tx.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.lead_session FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=?) OR (tm.member_kind='agent' AND tm.member_id=?)) ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &teamLead, &teamSession)
 	if err != nil && err != sql.ErrNoRows {
 		return "", err
 	}
@@ -109,7 +109,7 @@ func routeLead(tx *sql.Tx, m *protocol.Message) (string, error) {
 			return "", err
 		}
 		if !inCrew {
-			note, done, e := try(teamLead, teamName, "")
+			note, done, e := try(teamLead, teamSession, teamName, "")
 			if done || e != nil {
 				return note, e
 			}
@@ -142,14 +142,14 @@ func (s *Store) ResolveLeadAddress(address string) (string, error) {
 		return "", err
 	}
 	var id string
-	var lead sql.NullString
+	var lead, preferred sql.NullString
 	count := 0
 	for rows.Next() {
 		var repoName string
 		if kind == "team" {
-			err = rows.Scan(&id, &lead)
+			err = rows.Scan(&id, &lead, &preferred)
 		} else {
-			err = rows.Scan(&id, &repoName, &lead)
+			err = rows.Scan(&id, &repoName, &lead, &preferred)
 		}
 		if err != nil {
 			rows.Close()
@@ -172,7 +172,7 @@ func (s *Store) ResolveLeadAddress(address string) (string, error) {
 		return "", reject("%s %s has no lead", kind, name)
 	}
 	var session string
-	err = liveLeadSession(s.db, lead.String, id, false).Scan(&session)
+	err = liveLeadSession(s.db, lead.String, id, preferred.String, false).Scan(&session)
 	if err == sql.ErrNoRows {
 		return "", reject("%s %s lead has no live session", kind, name)
 	}
@@ -197,14 +197,14 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string) error {
 	if err != nil {
 		return err
 	}
-	var lead sql.NullString
+	var lead, preferred sql.NullString
 	count := 0
 	for rows.Next() {
 		var id, repoName string
 		if kind == "team" {
-			err = rows.Scan(&id, &lead)
+			err = rows.Scan(&id, &lead, &preferred)
 		} else {
-			err = rows.Scan(&id, &repoName, &lead)
+			err = rows.Scan(&id, &repoName, &lead, &preferred)
 		}
 		if err != nil {
 			rows.Close()
@@ -219,7 +219,7 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string) error {
 	}
 	var match bool
 	if count == 1 && lead.Valid {
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND agent_id=? AND online=1 AND worker='' AND harness NOT IN ('owner','cto'))`, recipient, lead.String).Scan(&match)
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND agent_id=? AND online=1 AND worker='' AND harness NOT IN ('owner','cto') AND (id=? OR NOT EXISTS(SELECT 1 FROM sessions WHERE id=? AND agent_id=? AND online=1 AND worker='' AND harness NOT IN ('owner','cto'))))`, recipient, lead.String, preferred.String, preferred.String, lead.String).Scan(&match)
 		if err != nil {
 			return err
 		}

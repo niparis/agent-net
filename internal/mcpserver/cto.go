@@ -348,6 +348,9 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 			if name == "agent_graph_read" || name == "graph_change" || name == "lead_set" {
 				ref["properties"].(map[string]any)["kind"].(map[string]any)["enum"] = []string{"repo", "agent", "team", "special"}
 			}
+			if k == "lead" && (name == "lead_set" || name == "graph_change") {
+				ref["properties"].(map[string]any)["kind"].(map[string]any)["enum"] = []string{"agent", "session"}
+			}
 			prop = ref
 			if f.typ == "graph_endpoint" {
 				prop = map[string]any{"anyOf": []any{map[string]any{"type": "string"}, ref}}

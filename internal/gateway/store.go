@@ -1065,7 +1065,10 @@ CREATE TRIGGER IF NOT EXISTS repo_lead_tombstone BEFORE UPDATE OF tombstone ON a
 `, `
 -- Durable places for bounded Repo session starts.
 CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TEXT NOT NULL,repo_id TEXT NOT NULL,harness TEXT NOT NULL,native_id TEXT NOT NULL DEFAULT '',expires_at INTEGER NOT NULL,PRIMARY KEY(node_id,ref));
-`, `SELECT 1 /* session close column */;`}
+`, `SELECT 1 /* session close column */;`, `
+ALTER TABLE repo_leads ADD COLUMN lead_session TEXT;
+ALTER TABLE teams ADD COLUMN lead_session TEXT;
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -2630,9 +2633,9 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
- COALESCE(s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id),0),
-	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id),
- EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
+ COALESCE((COALESCE((SELECT lead_session FROM repo_leads WHERE repo_id=s.repo_id),s.id)=s.id) AND s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id),0),
+	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (rl.lead_session IS NULL OR rl.lead_session=s.id)),
+ EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (t.lead_session IS NULL OR t.lead_session=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),
  (SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)),
  s.owner_used_at, s.owner_uses, s.pinned_at,
