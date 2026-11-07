@@ -1,4 +1,5 @@
-Quality analysis · details   j/k scroll · esc back
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+  Quotas      Workers log    [ Quality ]
 agent ◂ all agents ▸
 MODEL         MY TIME / TASK  THIS WEEK  NEEDED HELP     LATE BUGS  RATING
 ─── simple · 9 tasks ───────────────────────────────────────────────────────────
@@ -18,7 +19,6 @@ MODEL         MY TIME / TASK  THIS WEEK  NEEDED HELP     LATE BUGS  RATING
 
 
 
-
 NEEDED HELP: share of tasks with at least one nudge or fix. LATE BUGS: bugs
 found after the hand-back, with the worst severity (1 to 4).
-up/down scroll  pgup/pgdown page  esc back
+up/down scroll  pgup/pgdown page  left/right agent  tab sub tab

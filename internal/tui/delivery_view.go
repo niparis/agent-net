@@ -442,9 +442,11 @@ func deliveryVerb(step string) string {
 
 // quotasSubtabs is the line under the title: the three sub-tabs of Quotas.
 func (m Model) quotasSubtabs(w int) string {
-	labels := []string{"Quotas", "Workers log"}
+	labels := []string{"Quotas", "Workers log", "Quality"}
 	active := 0
 	switch {
+	case m.qualityDetail:
+		active = 2
 	case m.workersLog:
 		active = 1
 	}

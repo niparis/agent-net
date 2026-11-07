@@ -33,8 +33,8 @@ func TestQualityDetailsOpenClose(t *testing.T) {
 		t.Fatal("d did not open details")
 	}
 	m = keys(m, "esc")
-	if m.qualityDetail {
-		t.Fatal("esc did not close details")
+	if !m.qualityDetail {
+		t.Fatal("esc left Quality sub tab")
 	}
 }
 
@@ -47,12 +47,13 @@ func TestQualityNewScreenGoldens(t *testing.T) {
 			Models: []protocol.QualityFamily{{Family: "sol medium", Tasks: 10, TasksWeek: 3, Headache: 5}, {Family: "terra high", Tasks: 26, TasksWeek: 7, Headache: 9, LateDefects: 2, WorstSeverity: 3}, {Family: "terra max", Tasks: 6, TasksWeek: 2, Headache: 4}}},
 		{Difficulty: "very_complex", Tasks: 5, Families: []protocol.QualityFamily{{Family: "terra", Tasks: 5, TasksWeek: 2, Headache: 7}}},
 	}}
-	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+	for _, size := range [][2]int{{120, 34}, {80, 24}, {160, 40}} {
 		m := newModel(size[0], size[1])
 		m.tab = quotasTab
 		m.snap.Calibration.Quality = q
 		m.snap.Nodes = []protocol.NodeView{{NodeID: m.snap.NodeID, Hostname: "workstation", QualityPicks: map[string]string{"normal": "sol", "hard": "terra"}, QualityPickModels: map[string]string{"normal": "sol", "hard": "terra high"}, QualityPickReasons: map[string]string{"normal": "codex 5% ahead of pace"}}}
 		golden(t, fmt.Sprintf("quality_overview_%dx%d", size[0], size[1]), strings.Join(m.calibrationView(size[0]), "\n"))
+		golden(t, fmt.Sprintf("quality_quotas_%dx%d", size[0], size[1]), m.testView())
 		m.qualityDetail = true
 		golden(t, fmt.Sprintf("quality_details_%dx%d", size[0], size[1]), m.testView())
 	}
@@ -207,5 +208,30 @@ func TestQualityDetailsRendersOneTable(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Errorf("the unified table is missing %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestQuotaSubtabCycle(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m = keys(m, "tab")
+	if !m.workersLog {
+		t.Fatal("expected Workers log")
+	}
+	m = keys(m, "tab")
+	if !m.qualityDetail || m.workersLog {
+		t.Fatal("expected Quality")
+	}
+	m = keys(m, "tab")
+	if m.qualityDetail || m.workersLog {
+		t.Fatal("expected Quotas")
+	}
+	m = keys(m, "shift+tab")
+	if !m.qualityDetail {
+		t.Fatal("expected reverse Quality")
+	}
+	m = keys(m, "shift+tab")
+	if !m.workersLog {
+		t.Fatal("expected reverse Workers log")
 	}
 }

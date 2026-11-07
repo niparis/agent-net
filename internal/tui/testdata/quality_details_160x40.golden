@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 1 busy                                             updated 14:05:00
+  Quotas      Workers log    [ Quality ]
+agent ◂ all agents ▸
+MODEL         MY TIME / TASK  THIS WEEK  TASKS  NEEDED HELP     LATE BUGS  RATING
+─── simple · 9 tasks ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  luna           1 min █████          3      9           0%             -       -
+─── normal · 196 tasks · picker: ▸ sol (codex 5% ahead of pace) ────────────────────────────────────────────────────────────────────────────────────────────────
+  deepseek       8 min ████░         25     87           0%             -       -
+  terra          9 min █████         18     60          35%    1, worst 3     4.5
+  luna           2 min █░░░░          6     24           0%             -       -
+▸ sol            4 min ██░░░          4     19          26%             -     4.5
+  opus           0 min ░░░░░          1      6           0%             -       -
+─── hard · 42 tasks · picker: ▸ terra high ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+▸ terra high     9 min █████          7     26           0%    2, worst 3       -
+  sol medium     5 min ███░░          3     10           0%             -       -
+  terra max      4 min ██░░░          2      6           0%             -       -
+─── very complex · 5 tasks ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  terra          7 min █████          2      5           0%             -       -
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+NEEDED HELP: share of tasks with at least one nudge or fix. LATE BUGS: bugs found after the hand-back, with the worst severity (1 to 4).
+up/down scroll  pgup/pgdown page  left/right agent  tab sub tab

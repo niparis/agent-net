@@ -559,8 +559,8 @@ func TestDeliverySubtabCycle(t *testing.T) {
 		t.Fatal("workers log did not open")
 	}
 	m, _ = m.nextQuotasSubtab()
-	if m.workersLog {
-		t.Fatal("quotas did not open")
+	if !m.qualityDetail || m.workersLog {
+		t.Fatal("Quality did not open")
 	}
 	next, cmd := m.Update(tea.KeyPressMsg{Text: "8", Code: '8'})
 	m = next.(Model)

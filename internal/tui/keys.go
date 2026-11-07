@@ -121,7 +121,7 @@ const (
 )
 
 var keyBindings = []keyBinding{
-	bind(contextWorkersLog, "tab", "workers log", "Quotas", 0),
+	bind(contextWorkersLog, "tab|shift+tab", "workers log", "sub tab", 0),
 	withHelp(bind(contextWorkersLog, "up|k", "up", "select run or scroll details", 1), "Select a run, or scroll details when the details pane is focused."),
 	withHelp(bind(contextWorkersLog, "down|j", "down", "select run or scroll details", 1), "Select a run, or scroll details when the details pane is focused."),
 	bind(contextWorkersLog, "pgup", "page up", "page up", 2),
@@ -140,7 +140,7 @@ var keyBindings = []keyBinding{
 	bind(contextDelivery, "R", "refresh", "refresh", 2),
 	bind(contextDelivery, "?", "help", "help", 4),
 	bind(contextDelivery, "q|ctrl+c", "quit", "quit", 5),
-	bind(contextQuotas, "tab", "workers log", "Quotas / Workers log", 0),
+	bind(contextQuotas, "tab|shift+tab", "workers log", "Quotas / Workers log / Quality", 0),
 	bind(contextGlobal, "1", "sessions tab", "Sessions", -1),
 	bind(contextGlobal, "2", "graph tab", "Graph", -1),
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),
@@ -273,9 +273,9 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextQuotas, "p", "protect", "protect", 1), "protect or unprotect this subscription"),
 	withHelp(bind(contextQuotas, "f", "floor", "floor", 1), "set worker quota floor (0-95%)"),
 	withHelp(bind(contextQuotas, "s", "show unset", "show unset", 2), "show or hide subscriptions that are not set up"),
-	withHelp(bind(contextQuotas, "d", "quality details", "quality details", 1), "open Quality details"),
+	withHelp(bind(contextQuotas, "d", "quality details", "Quality", 1), "jump to Quality sub tab"),
 	bind(contextQuotas, "R", "refresh", "refresh", 2),
-	bind(contextQualityDetails, "esc", actClose, "back", 1),
+	bind(contextQualityDetails, "tab|shift+tab", "sub tab", "sub tab", 1),
 	bind(contextQualityDetails, "?", "help", "help", 1),
 	bind(contextQualityDetails, "up|k", actUp, "scroll", 1),
 	bind(contextQualityDetails, "down|j", actDown, "scroll", 1),
