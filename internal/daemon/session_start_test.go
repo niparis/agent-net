@@ -615,3 +615,67 @@ func TestSessionStartAgentFailureReportsAndNextStarts(t *testing.T) {
 		t.Fatalf("duplicate Inbox: %+v %v", items, err)
 	}
 }
+
+func TestSessionResumeOpenCodeRegistered(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "opencode")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newRepo(t, "shop")
+	n.register(t, repo)
+	native := "ses_resume"
+	id, err := g.gw.Store().UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "opencode", NativeID: native, Cwd: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.gw.Store().SetSessionOffline(n.d.NodeID(), id)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session/active" {
+			fmt.Fprint(w, `{"data":[]}`)
+			return
+		}
+		if r.Method != "GET" || r.URL.Path != "/api/session/"+native || r.Header.Get("x-opencode-directory") != strings.ReplaceAll(url.QueryEscape(repo), "+", "%20") {
+			t.Errorf("unexpected load: %s %s", r.Method, r.URL)
+			http.NotFound(w, r)
+			return
+		}
+		helloOpenCode(t, n.node, native, repo)
+		fmt.Fprintf(w, `{"data":{"id":%q}}`, native)
+	}))
+	defer server.Close()
+	writeOwnerOpenCodeService(t, state, server.URL)
+	var r protocol.StartedSession
+	mustJSON(t, n.cli.mustCall("session_resume", map[string]string{"session_id": id}), &r)
+	eventually(t, "resume registered", func() bool {
+		mustJSON(t, n.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		return r.Status == "started"
+	})
+	a := n.agentOf(t, r.SessionID)
+	if a == nil || !a.Online || a.NativeID != native {
+		t.Fatalf("not online: %+v", a)
+	}
+}
+func TestSessionResumeCodexRegistered(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond; c.HarnessPaths = bins })
+	repo := newRepo(t, "shop")
+	n.register(t, repo)
+	native := "thread_resume"
+	id, err := g.gw.Store().UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "codex", NativeID: native, Cwd: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.gw.Store().SetSessionOffline(n.d.NodeID(), id)
+	var r protocol.StartedSession
+	mustJSON(t, n.cli.mustCall("session_resume", map[string]string{"session_id": id}), &r)
+	a := n.agentOf(t, r.SessionID)
+	if a == nil || !a.Online || a.NativeID != native {
+		t.Fatalf("not online: %+v", a)
+	}
+	if r.EnterPlan == nil || r.EnterPlan.Env["CODEX_HOME"] != f.home {
+		t.Fatalf("home missing: %+v", r.EnterPlan)
+	}
+}

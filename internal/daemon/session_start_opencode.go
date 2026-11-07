@@ -55,6 +55,14 @@ func ownerOpenCodeService() (openCodeService, error) {
 // relayed says the owner approved the start from another machine; see
 // launchOwnerClaude.
 func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed bool) (result protocol.StartedSession, startErr error) {
+	return d.startOwnerOpenCode(ctx, r, message, socket, pane, notify, relayed, false)
+}
+
+func (d *Daemon) resumeOwnerOpenCode(ctx context.Context, r protocol.StartedSession, socket, pane string) (protocol.StartedSession, error) {
+	return d.startOwnerOpenCode(ctx, r, "", socket, pane, false, false, true)
+}
+
+func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed, resume bool) (result protocol.StartedSession, startErr error) {
 	defer func() {
 		if startErr != nil {
 			d.failStartAgent(r)
@@ -85,7 +93,12 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		}
 	}
 	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
-	body, code, err := api("POST", "/api/session", request, "x-opencode-directory", directory)
+	method, endpoint := "POST", "/api/session"
+	if resume {
+		method, endpoint = "GET", "/api/session/"+url.PathEscape(r.NativeID)
+		request = nil
+	}
+	body, code, err := api(method, endpoint, request, "x-opencode-directory", directory)
 	if err != nil {
 		return protocol.StartedSession{}, down
 	}

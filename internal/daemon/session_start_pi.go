@@ -10,10 +10,7 @@ import (
 )
 
 func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socket, pane string, notify bool) (protocol.StartedSession, error) {
-	if r.Harness == "" {
-		r.Harness = "pi"
-	}
-	bin, err := d.harnessBinary(r.Harness)
+	bin, err := d.harnessBinary("pi")
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
@@ -36,15 +33,12 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 	} else {
 		r.NativeID = resume
 		piArgs = []string{bin, "--session", resume}
-		if r.Harness == "codex" {
-			piArgs = []string{bin, "resume", resume}
-		}
 	}
 	timeout := d.workerSettings("").StartTimeout
 	plan := protocol.EnterPlan{Argv: piArgs, Dir: r.Path, Host: r.Hostname}
-	opened := d.openInHerdr(r.Harness+":"+r.NativeID, r.Project, socket, pane, plan)
+	opened := d.openInHerdr("pi:"+r.NativeID, r.Project, socket, pane, plan)
 	if !opened.OpenedHerdr {
-		return protocol.StartedSession{}, fmt.Errorf("cannot start %s in herdr on %s: %s", r.Harness, d.hostName(), opened.Note)
+		return protocol.StartedSession{}, fmt.Errorf("cannot start Pi in herdr on %s: %s", d.hostName(), opened.Note)
 	}
 	r.EnterPlan = &opened
 	d.mu.Lock()
@@ -64,7 +58,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		var startErr error
 		for r.SessionID == "" {
 			d.mu.Lock()
-			if ls := d.sessions[key(r.Harness, r.NativeID)]; ls != nil {
+			if ls := d.sessions[key("pi", r.NativeID)]; ls != nil {
 				r.SessionID = ls.sessionID
 			}
 			d.mu.Unlock()
@@ -73,7 +67,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 			}
 			select {
 			case <-cctx.Done():
-				startErr = fmt.Errorf("the daemon did not register the %s session: %w", r.Harness, cctx.Err())
+				startErr = fmt.Errorf("the daemon did not register the Pi session: %w", cctx.Err())
 			case <-ticker.C:
 			}
 			if startErr != nil {
