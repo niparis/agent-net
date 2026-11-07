@@ -151,15 +151,15 @@ func (m Model) hints() []hint {
 			return []hint{{key: "left/right", label: "cell"}, {key: "enter", label: "delegation policy"}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
 		}
 	}
-	cell := bindingHint(contextSessions, "cell")
-	cell.key = "left/right"
-	// The Enter hint now carries the way back, so at 80 columns the cell hint
-	// goes first and help and quit stay.
-	cell.prio = 3
-	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), cell, sessionHelp, sessionQuit}
+	pin := bindingHint(contextSessions, "pin")
+	pin.prio = 1
+	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), pin, sessionHelp, sessionQuit}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
+		}
+		if a.PinnedAt > 0 {
+			hs[4].label = "unpin"
 		}
 		if a.Harness == "bot" {
 			hs[1].label = "messages"

@@ -1115,7 +1115,11 @@ func (m Model) sessionsTable(w, n int) []string {
 	nameWant, projectWant := 0, 0
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
-			nameWant = max(nameWant, utf8.RuneCountInString(m.nameText(a, g.marks[a.SessionID], 1<<20)))
+			name := m.nameText(a, g.marks[a.SessionID], 1<<20)
+			if g.mine {
+				name += m.mineMachineSuffix(a)
+			}
+			nameWant = max(nameWant, utf8.RuneCountInString(name))
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 		}
 	}
@@ -1138,6 +1142,9 @@ func (m Model) sessionsTable(w, n int) []string {
 		if a.StalledSince > 0 && a.Worker == nil {
 			statusWidth = max(statusWidth, min(18, len(m.statusCell(a))))
 		}
+	}
+	for _, a := range m.mineAgents() {
+		statusWidth = max(statusWidth, ansi.StringWidth(m.mineStatusCell(a)))
 	}
 	avail -= statusWidth - 6
 	var cols []column
@@ -1232,13 +1239,14 @@ func (m Model) sessionsTable(w, n int) []string {
 		if r.header {
 			out = append(out, m.groupLine(r.g, w))
 		} else {
-			out = append(out, m.sessionLine(r.agent, r.mark, cols, w, visibleIndex))
+			out = append(out, m.sessionLine(r.agent, r.mark, cols, w, visibleIndex, r.g.mine))
 			visibleIndex++
 		}
 	}
 	if w <= 80 {
 		for i, line := range out {
-			if strings.Contains(ansi.Strip(line), "─") {
+			plain := ansi.Strip(line)
+			if strings.Contains(plain, "─") && !strings.HasPrefix(plain, " Mine ") {
 				label := " " + m.sessionViewName() + " (v)"
 				out[i] = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(label))) + sDim.Render(label)
 				break
@@ -1255,6 +1263,11 @@ func (m Model) sessionsTable(w, n int) []string {
 // groupLine is the heading of one machine: its name, bold, a light rule, the
 // session count and how many the active filter hides.
 func (m Model) groupLine(g group, w int) string {
+	if g.mine {
+		head := " " + sBold.Render("Mine") + " " + sDim.Render(fmt.Sprintf("%d ", len(g.agents)))
+		rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
+		return clip(head+sDim.Render(rule), w)
+	}
 	name := g.host
 	if g.nodeID == m.snap.NodeID && g.nodeID != "" {
 		name += " (here)"
@@ -1352,7 +1365,7 @@ func (m Model) pendingTask(a protocol.AgentView, width int) string {
 	return strings.TrimSpace(cellDots(prefix, width-ansi.StringWidth(suffix))) + suffix
 }
 
-func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int) string {
+func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int, mine bool) string {
 	selected := a.SessionID == m.selected && m.selIdx == visibleIndex
 	marker := "  "
 	if selected {
@@ -1395,7 +1408,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 	var parts []string
 	for _, c := range cols {
 		if v, ok := uc[c.name]; ok {
-			if v != "\x00" {
+			// A Mine row keeps the CPU and RAM columns even when the row is
+			// offline, so every row lines up.
+			if mine && v == "\x00" {
+				parts = append(parts, cell("", c.width))
+			} else if v != "\x00" {
 				parts = append(parts, v)
 			}
 			continue
@@ -1403,7 +1420,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		var v string
 		switch c.name {
 		case "NAME":
-			v = m.nameText(a, mk, c.width)
+			if mine {
+				v = m.mineNameCell(a, mk, c.width)
+			} else {
+				v = m.nameText(a, mk, c.width)
+			}
 		case "TYPE":
 			v = protocol.SessionType(a.Harness, a.Worker, a.Type)
 		case "AGENT":
@@ -1418,6 +1439,8 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		case "STATUS":
 			if m.hiddenSessions[a.SessionID] && m.showHiddenSessions {
 				v = "hidden"
+			} else if mine {
+				v = m.mineStatusCell(a)
 			} else {
 				v = m.statusCell(a)
 			}
@@ -1438,8 +1461,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			if delivery := m.sessionTaskText(a); delivery != "" {
 				v = delivery
 			}
+			if mine && !a.Online {
+				v = offlineAge(m.now(), a.LastSeen)
+			}
 		}
-		if c.name == "STATUS" && (!a.Online || a.Status == protocol.StatusDormant) {
+		if !mine && c.name == "STATUS" && (!a.Online || a.Status == protocol.StatusDormant) {
 			width := c.width
 			for _, other := range cols {
 				if other.name == "CPU" || other.name == "RAM" {
@@ -1456,7 +1482,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
 		}
-		if c.name == "TASK" || c.name == "NAME" || c.name == "PROJECT" || c.name == "AGENT" || c.name == "MODEL" {
+		if c.name == "NAME" && mine {
+			// mineNameCell has already fitted the name and padded the cell.
+		} else if c.name == "TASK" || c.name == "NAME" || c.name == "PROJECT" || c.name == "AGENT" || c.name == "MODEL" {
 			v = cellDots(v, c.width)
 		} else {
 			v = cell(v, c.width)
@@ -1509,6 +1537,96 @@ func rowName(a protocol.AgentView) string {
 	return shortID(a.SessionID)
 }
 
+// multiMachine says whether the network has more than one machine, so a Mine
+// row names the machine it runs on.
+func (m Model) multiMachine() bool {
+	nodes := map[string]bool{}
+	for _, n := range m.snap.Nodes {
+		if n.NodeID != "" {
+			nodes[n.NodeID] = true
+		}
+	}
+	for _, a := range m.snap.Agents {
+		if a.NodeID != "" {
+			nodes[a.NodeID] = true
+		}
+	}
+	return len(nodes) > 1
+}
+
+func (m Model) mineMachineSuffix(a protocol.AgentView) string {
+	if !m.multiMachine() {
+		return ""
+	}
+	machine := sanitize(m.nodeName(a.NodeID, a.Hostname))
+	if machine == "" {
+		return ""
+	}
+	return " · " + machine
+}
+
+// mineNameCell fits a Mine row's NAME cell. The session name gives way first,
+// then the dim machine suffix, so the other columns stay aligned.
+func (m Model) mineNameCell(a protocol.AgentView, mk treeMark, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	name := m.nameText(a, mk, 1<<20)
+	suffix := m.mineMachineSuffix(a)
+	if suffix != "" {
+		if ansi.StringWidth(suffix) > max(w-4, 0) {
+			suffix = ansi.Truncate(suffix, max(w-4, 0), "…")
+		}
+		room := w - ansi.StringWidth(suffix)
+		if room < 4 {
+			suffix, room = "", w
+		}
+		if ansi.StringWidth(name) > room {
+			name = ansi.Truncate(name, room, "…")
+		}
+	} else if ansi.StringWidth(name) > w {
+		name = ansi.Truncate(name, w, "…")
+	}
+	pad := w - ansi.StringWidth(name) - ansi.StringWidth(suffix)
+	return name + sDim.Render(suffix) + strings.Repeat(" ", max(pad, 0))
+}
+
+// mineStatusCell is the short STATUS text of a Mine row. The age of an offline
+// session moves to TASK, so every state fits the STATUS column.
+func (m Model) mineStatusCell(a protocol.AgentView) string {
+	switch {
+	case a.Worker == nil && a.StalledSince > 0:
+		return "stalled"
+	case !a.Online:
+		return "offline"
+	case a.Status == protocol.StatusDormant:
+		return "dormant"
+	}
+	if s := waitingStatus(a); s != "" {
+		return s
+	}
+	if a.Status == "idle" && len(a.Pending) > 0 {
+		for _, p := range a.Pending {
+			if !p.Outgoing {
+				return "owes"
+			}
+		}
+		return "wait"
+	}
+	return statusShort(a.Status)
+}
+
+func offlineAge(now time.Time, lastSeen int64) string {
+	if lastSeen <= 0 {
+		return "no report"
+	}
+	age := needsAge(now, lastSeen)
+	if age == "now" {
+		return "just now"
+	}
+	return age + " ago"
+}
+
 // taskText is the TASK cell: the task the session announced. A worker without
 // an announcement shows the first line of the task its owner gave it. Any
 // other session falls back to its harness title when that says something the
@@ -1545,15 +1663,19 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 		name = m.ctoTitle()
 	}
 	mark := modeMark(a)
+	pin := ""
+	if a.PinnedAt > 0 {
+		pin = "▪ "
+	}
 	suffix := ""
 	if mk.host != "" {
 		suffix = " @" + sanitize(mk.host)
 	}
-	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(mark) - utf8.RuneCountInString(suffix)
+	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(pin) - utf8.RuneCountInString(mark) - utf8.RuneCountInString(suffix)
 	if room >= 4 && utf8.RuneCountInString(name) > room {
 		name = ansi.Truncate(name, room, "…")
 	}
-	return mk.prefix + mark + name + suffix
+	return mk.prefix + pin + mark + name + suffix
 }
 
 // plural writes a count and a noun: "1 session", "3 sessions".
