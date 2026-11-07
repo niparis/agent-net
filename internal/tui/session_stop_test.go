@@ -28,7 +28,10 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 		// The key line changes; every other row stays put.
 		joined := strings.Join(strings.Fields(view), " ")
 		name := "tenebrae-53"
-		want := strings.Join(strings.Fields("Stop "+name+"? Conversation kept.  enter/y: stop · esc/n: keep"), " ")
+		if size.w == 80 {
+			name = "tenebrae-…"
+		}
+		want := strings.Join(strings.Fields("End "+name+" in your terminal? Conversation kept.  enter/y: stop · esc/n: keep"), " ")
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing confirm %q:\n%s", want, view)
 		}
@@ -60,10 +63,10 @@ func TestStopOwnerSessionCancelAndRefusal(t *testing.T) {
 			t.Fatalf("cancel: mode %v stopped %q", cancelled.mode, src.stopped)
 		}
 	}
-	src.actErr = fmt.Errorf("tenebrae-53 runs in your terminal on Mac: end it there")
+	src.actErr = fmt.Errorf("session process no longer matches its registered process")
 	m, cmd := press(m, tea.KeyPressMsg{Text: "y", Code: []rune("y")[0]})
 	m = finish(t, m, cmd)
-	if !m.notice.err || m.notice.text != "Not stopped: tenebrae-53 runs in your terminal on Mac: end it there" {
+	if !m.notice.err || m.notice.text != "Not stopped: session process no longer matches its registered process" {
 		t.Fatalf("refusal: %+v", m.notice)
 	}
 }
@@ -90,17 +93,26 @@ func TestStopExitedClaudeConfirmation(t *testing.T) {
 }
 
 func TestOpenCodeCloseConfirm(t *testing.T) {
-	m, _ := workerModel(120, 34)
-	id := "s_0000000000000001"
-	for i := range m.snap.Agents {
-		if m.snap.Agents[i].SessionID == id {
-			m.snap.Agents[i].Harness = "opencode"
-		}
-	}
-	m = selectID(m, id)
-	m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: 'x'})
-	view := ansi.Strip(m.testView())
-	if !strings.Contains(view, "Close ") || !strings.Contains(view, "enter/y: close") {
-		t.Fatal(view)
+	for _, mode := range []string{"", "background", "foreground"} {
+		t.Run(mode, func(t *testing.T) {
+			m, _ := workerModel(120, 34)
+			id := "s_0000000000000001"
+			for i := range m.snap.Agents {
+				if m.snap.Agents[i].SessionID == id {
+					m.snap.Agents[i].Harness = "opencode"
+					m.snap.Agents[i].Mode = mode
+				}
+			}
+			m = selectID(m, id)
+			m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: 'x'})
+			view := ansi.Strip(m.testView())
+			if mode == "foreground" {
+				if !m.confirmTerminal || m.confirmClose || !strings.Contains(view, "End ") || !strings.Contains(view, "in your terminal? Conversation kept.") {
+					t.Fatal(view)
+				}
+			} else if !m.confirmClose || m.confirmTerminal || !strings.Contains(view, "Close ") || !strings.Contains(view, "enter/y: close") {
+				t.Fatal(view)
+			}
+		})
 	}
 }

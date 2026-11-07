@@ -1130,14 +1130,16 @@ it. This gives the owner nothing beyond an ssh to that machine.
 
 `session_stop` accepts a session ID on this machine or, through the gateway,
 on another machine. It runs `claude stop`
-only when the Claude adapter identifies a background job. For OpenCode it
-aborts the turn through the owner's authenticated loopback service and keeps
-the conversation in that service. For Pi it queries only `tmux -L agent-net`,
-matches the session process or its parent to a pane, and kills that window.
-It never signals an owner's process, kills a visible terminal, or uses the
-process's tmux socket to decide what it may stop. Interactive Claude, Codex
-and Pi sessions in the owner's terminal are refused. Worker stops keep their
-existing authority checks and stop rules. No agent tool exposes owner stops.
+only when the Claude adapter identifies a background job. For shared-service
+OpenCode it aborts a busy turn through the owner's authenticated loopback
+service, then closes the session and keeps its conversation for reopening.
+If the service lookup fails, it reports an error without signalling a process.
+For Pi it keeps the herdr server stop path.
+Terminal sessions close their matching herdr pane or receive SIGTERM at the
+registered harness PID, then SIGKILL after five seconds if still running.
+The daemon checks the process start token before each signal. It never signals
+the parent shell or terminal app. Conversations stay on disk for resume.
+Worker stops keep their existing authority checks and stop rules. No agent tool exposes owner stops.
 
 Starts are limited to Claude, OpenCode and Pi in the background, and Codex as
 an enter plan, in a project folder known on the local machine or on another

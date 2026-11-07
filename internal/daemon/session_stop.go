@@ -10,15 +10,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// sessionStop is owner-gated by dispatchOperator. It never signals processes
-// or kills a terminal: only the harness's background home may end a session.
+// sessionStop is owner-gated by dispatchOperator. Terminal sessions are ended
+// through herdr or by signalling only their registered harness process.
 // A session on another machine is relayed through the gateway.
 func (d *Daemon) sessionStop(ctx context.Context, id string) (protocol.SessionStopResult, error) {
 	no := func(err error) (protocol.SessionStopResult, error) { return protocol.SessionStopResult{}, err }
@@ -77,11 +77,38 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		name = cleanLine(info.NativeID)
 	}
 	result := protocol.SessionStopResult{Note: "Stopped " + name + ". The conversation is kept."}
-	displayName := name
-	if folder := firstNonEmpty(info.Cwd, info.Repo.Worktree, info.Repo.Root); folder != "" {
-		displayName = fmt.Sprintf("%s (%s)", name, agentfiles.DisplayPath(folder))
+	terminalStop := func() (protocol.SessionStopResult, error) {
+		d.mu.Lock()
+		token := ls.stopToken
+		d.mu.Unlock()
+		current, live := procToken(info.PID)
+		if info.PID <= 1 || token == "" || !live || current != token {
+			return no(errors.New("session process no longer matches its registered process"))
+		}
+		d.markOwnerStop(ls, true)
+		fail := func(err error) (protocol.SessionStopResult, error) { d.markOwnerStop(ls, false); return no(err) }
+		if h, found := findHerdrPane(info.PID); found {
+			bin := d.herdrBinary(h.bin)
+			if bin != "" {
+				panes, err := d.herdrPanes(bin, h.socket)
+				if err != nil {
+					return fail(err)
+				}
+				for _, pane := range panes {
+					if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(info.PID)) {
+						if _, err := d.herdrRun(bin, h.socket, "pane", "close", pane.PaneID); err != nil {
+							return fail(err)
+						}
+						return result, nil
+					}
+				}
+			}
+		}
+		if err := stopSessionProcess(ctx, info.PID, token, 5*time.Second); err != nil {
+			return fail(err)
+		}
+		return result, nil
 	}
-	terminal := fmt.Errorf("%s runs in your terminal on %s: end it there", displayName, d.hostName())
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	switch info.Harness {
@@ -91,11 +118,11 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		defer d.claudeStartMu.Unlock()
 		p, ok := d.adapters["claude"].(EnterRefProvider)
 		if !ok {
-			return no(terminal)
+			return terminalStop()
 		}
 		kind, job := p.EnterRef(info.NativeID)
 		if kind != "bg" {
-			return no(terminal)
+			return terminalStop()
 		}
 		if job == "" && len(info.NativeID) >= 8 {
 			job = info.NativeID[:8]
@@ -113,11 +140,14 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 			return no(fmt.Errorf("Claude could not stop %s: %w", name, err))
 		}
 	case "opencode":
+		if info.Mode == protocol.ModeForeground {
+			return terminalStop()
+		}
+		service, err := d.ownerOpenCodeService()
+		if err != nil {
+			return no(fmt.Errorf("the OpenCode service is not running on %s", d.hostName()))
+		}
 		if info.Status == "busy" {
-			service, err := d.ownerOpenCodeService()
-			if err != nil {
-				return no(fmt.Errorf("the OpenCode service is not running on %s", d.hostName()))
-			}
 			if info.NativeID == "" {
 				return no(errors.New("OpenCode session ID is missing"))
 			}
@@ -160,24 +190,24 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 			fromServer = found
 		}
 		if !found {
-			return no(terminal)
+			return terminalStop()
 		}
 		bin := d.herdrBinary(h.bin)
 		if bin == "" {
-			return no(terminal)
+			return terminalStop()
 		}
 		var panes []herdrPaneInfo
 		if fromServer {
 			var ok bool
 			panes, h.socket, ok = d.herdrPanesFromServer(bin, h)
 			if !ok {
-				return no(terminal)
+				return terminalStop()
 			}
 		} else {
 			var err error
 			panes, err = d.herdrPanes(bin, h.socket)
 			if err != nil {
-				return no(terminal)
+				return terminalStop()
 			}
 		}
 		for _, pane := range panes {
@@ -190,9 +220,9 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 				return result, nil
 			}
 		}
-		return no(terminal)
+		return terminalStop()
 	default:
-		return no(terminal)
+		return terminalStop()
 	}
 	return result, nil
 }
@@ -203,4 +233,35 @@ func (d *Daemon) markOwnerStop(ls *localSession, stopped bool) {
 	d.mu.Lock()
 	ls.ownerStopped = stopped
 	d.mu.Unlock()
+}
+
+// stopSessionProcess never signals a parent shell or a process that replaced
+// the registered harness. Recheck identity before escalation as well.
+func stopSessionProcess(ctx context.Context, pid int, token string, grace time.Duration) error {
+	matches := func() bool { now, live := procToken(pid); return pid > 1 && token != "" && live && now == token }
+	if !matches() {
+		return errors.New("session process no longer matches its registered process")
+	}
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		return err
+	}
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if !matches() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		case <-timer.C:
+			if matches() {
+				return syscall.Kill(pid, syscall.SIGKILL)
+			}
+			return nil
+		}
+	}
 }

@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -56,38 +59,52 @@ func TestSessionStopClaudeBackground(t *testing.T) {
 	}
 }
 
-func TestSessionStopTerminalRefusal(t *testing.T) {
-	t.Parallel()
-	for _, h := range []string{"claude", "codex", "pi"} {
+func TestSessionStopTerminal(t *testing.T) {
+	for _, h := range []string{"claude", "codex", "pi", "opencode"} {
 		t.Run(h, func(t *testing.T) {
+			pid, _ := startSleeper(t)
 			g := startGateway(t, t.TempDir(), "")
-			n, _, id := enterNode(t, g, h, protocol.SessionInfo{NativeID: "terminal", Name: "shop", PID: 1, Status: "idle", Mode: protocol.ModeForeground}, nil, nil)
-			_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
-			want := "shop runs in your terminal on " + n.d.hostName() + ": end it there"
-			if err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("want %q, got %v", want, err)
+			n, _, id := enterNode(t, g, h, protocol.SessionInfo{NativeID: "terminal", Name: "shop", PID: pid, Status: "idle", Mode: protocol.ModeForeground}, nil, nil)
+			res, err := n.d.sessionStopLocal(context.Background(), id)
+			if err != nil {
+				t.Fatal(err)
 			}
+			if res.Note != "Stopped shop. The conversation is kept." {
+				t.Fatal(res.Note)
+			}
+			eventually(t, "harness ended", func() bool { _, live := procToken(pid); return !live })
 		})
 	}
 }
 
-func TestSessionStopTerminalNamedWithFolder(t *testing.T) {
+func TestSessionStopChangedPID(t *testing.T) {
+	pid, _ := startSleeper(t)
 	g := startGateway(t, t.TempDir(), "")
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	cwd := filepath.Join(home, "code", "niparis", "video")
-	n, _, id := enterNode(t, g, "claude", protocol.SessionInfo{
-		NativeID: "b0e105f0-ab2e-45e8-bf38-e3608761c8e9",
-		Cwd:      cwd,
-		Repo:     protocol.RepoInfo{Project: "video"},
-		PID:      1,
-		Status:   "idle",
-		Mode:     protocol.ModeForeground,
-	}, nil, nil)
-	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
-	want := "video (~/code/niparis/video) runs in your terminal on " + n.d.hostName() + ": end it there"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("want %q, got %v", want, err)
+	n, _, id := enterNode(t, g, "claude", protocol.SessionInfo{NativeID: "terminal", PID: pid}, nil, nil)
+	ls := n.d.sessionByID(id)
+	n.d.mu.Lock()
+	ls.stopToken = "different run"
+	n.d.mu.Unlock()
+	if _, err := n.d.sessionStopLocal(context.Background(), id); err == nil {
+		t.Fatal("accepted changed PID")
+	}
+	if _, live := procToken(pid); !live {
+		t.Fatal("signalled changed PID")
+	}
+}
+
+func TestSessionStopTerminalHerdr(t *testing.T) {
+	f := newFakeHerdr(t)
+	pid := f.session(t, "pane-1")
+	f.panes(t, `{"pane_id":"pane-1"}`)
+	f.holds(t, "pane-1", pid)
+	g := startGateway(t, t.TempDir(), "")
+	n, _, id := enterNode(t, g, "claude", protocol.SessionInfo{NativeID: "terminal", PID: pid}, nil, nil)
+	if _, err := n.d.sessionStopLocal(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.calls(t), "pane close pane-1") {
+		t.Fatal(f.calls(t))
 	}
 }
 
@@ -251,5 +268,63 @@ func TestSessionStopUnknownSession(t *testing.T) {
 	}
 }
 
-// A session in the owner's default tmux server must never be stopped, even
-// though Enter could attach its pane. Only the private host may be queried.
+func TestSessionStopEscalates(t *testing.T) {
+	ready := filepath.Join(t.TempDir(), "ready")
+	cmd := exec.Command("sh", "-c", "trap '' TERM; : > "+shellQuote(ready)+"; while :; do read line; done")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { stdin.Close(); cmd.Process.Kill(); cmd.Wait() }()
+	eventually(t, "trap installed", func() bool { _, err := os.Stat(ready); return err == nil })
+	token, _ := procToken(cmd.Process.Pid)
+	if err := stopSessionProcess(context.Background(), cmd.Process.Pid, token, 80*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "killed harness", func() bool { _, live := procToken(cmd.Process.Pid); return !live })
+}
+
+func TestSessionStopSignalTERM(t *testing.T) {
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	token, _ := procToken(cmd.Process.Pid)
+	if err := stopSessionProcess(context.Background(), cmd.Process.Pid, token, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.Wait()
+	if err == nil {
+		t.Fatal("expected signal exit")
+	}
+	status := cmd.ProcessState.Sys().(syscall.WaitStatus)
+	if !status.Signaled() || status.Signal() != syscall.SIGTERM {
+		t.Fatalf("exit: %v", status)
+	}
+}
+
+func TestSessionStopOpenCodeMissingServiceDoesNotSignal(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	for _, mode := range []string{"", protocol.ModeBackground} {
+		t.Run(mode, func(t *testing.T) {
+			pid, _ := startSleeper(t)
+			ls := &localSession{sessionID: "s_service", info: protocol.SessionInfo{
+				Harness: "opencode", NativeID: "service", PID: pid, Mode: mode,
+			}}
+			d := &Daemon{cfg: Config{Hostname: "test-host"}, sessions: map[string]*localSession{"service": ls}}
+			_, err := d.sessionStopLocal(context.Background(), ls.sessionID)
+			_, live := procToken(pid)
+			if !live {
+				t.Error("shared service process was signalled")
+			}
+			want := "the OpenCode service is not running on " + d.hostName()
+			if err == nil || err.Error() != want {
+				t.Fatalf("want %q, got %v", want, err)
+			}
+		})
+	}
+}

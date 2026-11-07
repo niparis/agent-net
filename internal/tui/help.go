@@ -252,6 +252,9 @@ func (m Model) helpLine(w int) string {
 			if m.confirmClose {
 				return clip(sBold.Render(confirmNameWithHint("Close ", m.confirmName, "? Conversation kept.", "enter/y: close · esc/n: keep", w)), w)
 			}
+			if m.confirmTerminal {
+				return clip(sBold.Render(confirmNameWithHint("End ", m.confirmName, " in your terminal? Conversation kept.", stopConfirmHint, w)), w)
+			}
 			return clip(sBold.Render(confirmNameWithHint("Stop ", m.confirmName, "? Conversation kept.", stopConfirmHint, w)), w)
 		}
 		return clip(sBold.Render(confirmName("Stop worker ", m.confirmName, "?", w)), w)
