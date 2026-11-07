@@ -100,9 +100,12 @@ func (g *Gateway) RunGraphCutover(ctx context.Context) {
 		case <-g.appsDone:
 			return
 		case <-ticker.C:
-			if err := g.checkGraphCutoverStale(); err != nil {
-				g.logLine("error", "where", "graph cutover deadline", "err", err)
-			}
+			func() {
+				defer g.slowLoop("graph_cutover", time.Now())
+				if err := g.checkGraphCutoverStale(); err != nil {
+					g.logLine("error", "where", "graph cutover deadline", "err", err)
+				}
+			}()
 		}
 	}
 }
@@ -137,6 +140,7 @@ func (g *Gateway) triggerGraphCutover(ctx context.Context) {
 }
 
 func (g *Gateway) checkGraphCutover(ctx context.Context) {
+	defer g.slowLoop("graph_cutover_check", time.Now())
 	g.graphCutoverCheckMu.Lock()
 	defer g.graphCutoverCheckMu.Unlock()
 	on, err := g.store.graphRefsEnabled()

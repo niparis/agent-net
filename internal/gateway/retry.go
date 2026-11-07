@@ -45,25 +45,28 @@ func (g *Gateway) RunRetries(ctx context.Context) {
 		case <-g.appsDone:
 			return
 		case <-t.C:
-			rows, err := g.store.db.Query(`SELECT message_id FROM delivery_retries WHERE next_at <= ?`, g.store.now().UnixNano())
-			if err != nil {
-				g.logLine("error", "where", "retry query", "err", err)
-				continue
-			}
-			var ids []string
-			for rows.Next() {
-				var id string
-				if rows.Scan(&id) == nil {
-					ids = append(ids, id)
+			func() {
+				defer g.slowLoop("retries", time.Now())
+				rows, err := g.store.db.Query(`SELECT message_id FROM delivery_retries WHERE next_at <= ?`, g.store.now().UnixNano())
+				if err != nil {
+					g.logLine("error", "where", "retry query", "err", err)
+					return
 				}
-			}
-			rows.Close()
-			for _, id := range ids {
-				m, ok, err := g.store.Message(id)
-				if err == nil && ok && m.ExpiresAt.After(g.store.now()) {
-					g.dispatch(ctx, m)
+				var ids []string
+				for rows.Next() {
+					var id string
+					if rows.Scan(&id) == nil {
+						ids = append(ids, id)
+					}
 				}
-			}
+				rows.Close()
+				for _, id := range ids {
+					m, ok, err := g.store.Message(id)
+					if err == nil && ok && m.ExpiresAt.After(g.store.now()) {
+						g.dispatch(ctx, m)
+					}
+				}
+			}()
 		}
 	}
 }

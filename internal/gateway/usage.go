@@ -255,6 +255,7 @@ func isRelay(typ string) bool {
 // serveRelay answers a relayed request. It runs in its own goroutine because
 // it waits for another node while this node's read loop must keep going.
 func (g *Gateway) serveRelay(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
+	defer g.slowRequest(h.Type, nc.id, time.Now())
 	var data json.RawMessage
 	var err error
 	if h.Type == "query.machine_log" {

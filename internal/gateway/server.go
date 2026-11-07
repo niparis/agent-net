@@ -110,13 +110,14 @@ type Gateway struct {
 	// onStandingPlan is a test hook, called before each standing-choice plan.
 	onStandingPlan func(item string, projects []string)
 	// importMu serializes MCP imports, so two applies cannot race on a name.
-	importMu sync.Mutex
-	skills   *skillStore
-	ca       *authority
-	cert     tls.Certificate
-	fp       string
-	pin      string
-	logger   *log.Logger
+	importMu         sync.Mutex
+	skills           *skillStore
+	ca               *authority
+	cert             tls.Certificate
+	fp               string
+	pin              string
+	logger           *log.Logger
+	stepDispatchRuns atomic.Int64
 	// adminToken guards /v1/admin. It is new on every start and is written
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
@@ -409,64 +410,74 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 		case <-g.appsDone:
 			return
 		case <-agentStarts.C:
-			nodes, err := g.store.ExpireSessionAgentStarts()
-			if err != nil {
-				g.logLine("error", "where", "expire Agent starts", "err", err)
-			}
-			for _, node := range nodes {
-				g.dispatchPending(ctx, node, false)
-			}
+			func() {
+				defer g.slowLoop("agent_starts", time.Now())
+				nodes, err := g.store.ExpireSessionAgentStarts()
+				if err != nil {
+					g.logLine("error", "where", "expire Agent starts", "err", err)
+				}
+				for _, node := range nodes {
+					g.dispatchPending(ctx, node, false)
+				}
+			}()
 		case <-appsCleanup.C:
-			now := g.store.now()
-			if err := g.store.DeleteExpiredTokens(now); err != nil {
-				g.logLine("error", "where", "app token cleanup", "err", err)
-			}
-			if err := g.store.CleanupOAuth(now); err != nil {
-				g.logLine("error", "where", "oauth cleanup", "err", err)
-			}
+			func() {
+				defer g.slowLoop("apps_cleanup", time.Now())
+				now := g.store.now()
+				if err := g.store.DeleteExpiredTokens(now); err != nil {
+					g.logLine("error", "where", "app token cleanup", "err", err)
+				}
+				if err := g.store.CleanupOAuth(now); err != nil {
+					g.logLine("error", "where", "oauth cleanup", "err", err)
+				}
+			}()
 		case <-t.C:
-			if err := g.store.checkSessionStalls(); err != nil {
-				g.logLine("error", "where", "session stalls", "err", err)
-			}
-			if err := g.store.samplePendingStalls(); err != nil {
-				g.logLine("error", "where", "pending sample", "err", err)
-			}
-			reminders, err := g.store.remindPending()
-			if err != nil {
-				g.logLine("error", "where", "pending reminders", "err", err)
-			}
-			for _, m := range reminders {
-				g.dispatch(ctx, m)
-			}
-			checks, err := g.store.checkIdle()
-			if err != nil {
-				g.logLine("error", "where", "idle checks", "err", err)
-			}
-			for _, m := range checks {
-				g.dispatch(ctx, m)
-			}
-			startNotices, err := g.store.ExpireStarts(0, 0)
-			if err != nil {
-				g.logLine("error", "where", "expire starts", "err", err)
-			}
-			for _, m := range startNotices {
-				g.dispatch(ctx, m)
-			}
-			// Expire writes one log line per message.
-			if n, err := g.store.Expire(); err != nil {
-				g.logLine("error", "where", "expiry", "err", err)
-			} else if n > 0 {
-				g.mu.Lock()
-				nodes := make([]string, 0, len(g.conns))
-				for id := range g.conns {
-					nodes = append(nodes, id)
+			func() {
+				defer g.slowLoop("expiry", time.Now())
+				g.logStepDispatchCount()
+				if err := g.store.checkSessionStalls(); err != nil {
+					g.logLine("error", "where", "session stalls", "err", err)
 				}
-				g.mu.Unlock()
-				for _, id := range nodes {
-					g.dispatchPending(ctx, id, false)
+				if err := g.store.samplePendingStalls(); err != nil {
+					g.logLine("error", "where", "pending sample", "err", err)
 				}
-			}
-			g.dispatchStepTasks(ctx)
+				reminders, err := g.store.remindPending()
+				if err != nil {
+					g.logLine("error", "where", "pending reminders", "err", err)
+				}
+				for _, m := range reminders {
+					g.dispatch(ctx, m)
+				}
+				checks, err := g.store.checkIdle()
+				if err != nil {
+					g.logLine("error", "where", "idle checks", "err", err)
+				}
+				for _, m := range checks {
+					g.dispatch(ctx, m)
+				}
+				startNotices, err := g.store.ExpireStarts(0, 0)
+				if err != nil {
+					g.logLine("error", "where", "expire starts", "err", err)
+				}
+				for _, m := range startNotices {
+					g.dispatch(ctx, m)
+				}
+				// Expire writes one log line per message.
+				if n, err := g.store.Expire(); err != nil {
+					g.logLine("error", "where", "expiry", "err", err)
+				} else if n > 0 {
+					g.mu.Lock()
+					nodes := make([]string, 0, len(g.conns))
+					for id := range g.conns {
+						nodes = append(nodes, id)
+					}
+					g.mu.Unlock()
+					for _, id := range nodes {
+						g.dispatchPending(ctx, id, false)
+					}
+				}
+				g.dispatchStepTasks(ctx)
+			}()
 		}
 	}
 }
@@ -477,9 +488,12 @@ func (g *Gateway) RunLearning(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
-		if err := g.store.ProcessLearnedContext(ctx); err != nil && ctx.Err() == nil {
-			g.logLine("error", "where", "learned suggestions", "err", err)
-		}
+		func() {
+			defer g.slowLoop("learning", time.Now())
+			if err := g.store.ProcessLearnedContext(ctx); err != nil && ctx.Err() == nil {
+				g.logLine("error", "where", "learned suggestions", "err", err)
+			}
+		}()
 		select {
 		case <-ctx.Done():
 			return
@@ -516,29 +530,32 @@ func (g *Gateway) RunRetention(ctx context.Context) {
 	defer t.Stop()
 	first := true
 	for {
-		// At startup all sessions are marked offline until their daemons
-		// reconnect. Wait for the first maintenance interval before archiving.
-		retention := g.opts.Retention
-		if first {
-			// Preserve offline records until the archive has had its first pass.
-			retention.Sessions = 0
-		} else {
-			g.autoArchiveSessions()
-		}
-		first = false
-		if _, err := g.pruneWithRetention(ctx, retention); err != nil {
-			g.logLine("error", "where", "retention", "err", err)
-		}
-		// A vacuum rewrites gateway.db. It runs at most once a week and only
-		// when deleted rows left more than a fifth of the file free. It never
-		// deletes messages.
-		before, after, ran, err := g.store.MaybeVacuum(g.store.now())
-		if err != nil {
-			g.logLine("error", "where", "vacuum", "err", err)
-		} else if ran {
-			g.logLine("db.vacuum", "before", before, "after", after)
-		}
-		g.sweepTransfersNow()
+		func() {
+			defer g.slowLoop("retention", time.Now())
+			// At startup all sessions are marked offline until their daemons
+			// reconnect. Wait for the first maintenance interval before archiving.
+			retention := g.opts.Retention
+			if first {
+				// Preserve offline records until the archive has had its first pass.
+				retention.Sessions = 0
+			} else {
+				g.autoArchiveSessions()
+			}
+			first = false
+			if _, err := g.pruneWithRetention(ctx, retention); err != nil {
+				g.logLine("error", "where", "retention", "err", err)
+			}
+			// A vacuum rewrites gateway.db. It runs at most once a week and only
+			// when deleted rows left more than a fifth of the file free. It never
+			// deletes messages.
+			before, after, ran, err := g.store.MaybeVacuum(g.store.now())
+			if err != nil {
+				g.logLine("error", "where", "vacuum", "err", err)
+			} else if ran {
+				g.logLine("db.vacuum", "before", before, "after", after)
+			}
+			g.sweepTransfersNow()
+		}()
 		select {
 		case <-ctx.Done():
 			return
@@ -810,6 +827,7 @@ func (g *Gateway) msgSendMayResume(raw []byte) bool {
 
 // answer handles one frame and writes its result. A link error ends the loop.
 func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) error {
+	defer g.slowRequest(h.Type, nc.id, time.Now())
 	data, err := g.handle(ctx, nc, h.Type, raw)
 	var reply []byte
 	var eerr error

@@ -30,6 +30,7 @@ func (g *Gateway) CheckExposureWithAddrs(listenAddr string, ifaceAddrs func() ([
 
 // CheckExposure checks if the gateway's listen address is reachable on any public IP.
 func (g *Gateway) CheckExposure(listenAddr string) {
+	defer g.slowLoop("exposure", time.Now())
 	g.CheckExposureWithAddrs(listenAddr, net.InterfaceAddrs)
 }
 

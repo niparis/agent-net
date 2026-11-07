@@ -99,7 +99,10 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 	defer ticker.Stop()
 	for {
 		var text string
-		err = w.g.store.db.QueryRow(`SELECT body FROM messages WHERE sender=? AND recipient=? AND parent_id=? AND body LIKE '[agent-net worker notice]%' ORDER BY created_at DESC LIMIT 1`, started.SessionID, owner.SessionID, m.ID).Scan(&text)
+		func() {
+			defer w.g.slowLoop("learned_phrase_poll", time.Now())
+			err = w.g.store.db.QueryRow(`SELECT body FROM messages WHERE sender=? AND recipient=? AND parent_id=? AND body LIKE '[agent-net worker notice]%' ORDER BY created_at DESC LIMIT 1`, started.SessionID, owner.SessionID, m.ID).Scan(&text)
+		}()
 		if err != nil && err != sql.ErrNoRows {
 			return "", err
 		}
