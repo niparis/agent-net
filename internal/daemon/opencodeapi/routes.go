@@ -102,7 +102,7 @@ func Discover(ctx context.Context, client *http.Client, base, password, version 
 	if resp.StatusCode != http.StatusOK {
 		return Routes{}, fmt.Errorf("OpenCode OpenAPI HTTP %d", resp.StatusCode)
 	}
-	return Detect(io.LimitReader(resp.Body, 8<<20), version)
+	return Detect(resp.Body, version)
 }
 
 // Cache retains successful discovery for each service lifetime and version.
