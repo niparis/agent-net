@@ -482,6 +482,13 @@ func (m Model) mapFocusView(w, h int) []string {
 		}
 		head = append(head, strings.Join(shown, "")+" "+sDim.Render(text))
 	}
+	if limit := repoLimitCardText(node.AgentCount, node.MaxAgents); limit != "" {
+		if node.OverMax || node.AgentCount > node.MaxAgents {
+			head = append(head, sBad.Render(limit))
+		} else {
+			head = append(head, sDim.Render(limit))
+		}
+	}
 	for _, line := range m.graphDeliveryOwners(node.Name) {
 		head = append(head, sDim.Render(clip(line, w)))
 	}

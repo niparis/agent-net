@@ -52,6 +52,7 @@ func (m Model) hints() []hint {
 			bindingHint(contextTeams, "rename team"),
 			bindingHint(contextTeams, "archive team"),
 			bindingHint(contextTeams, "member"),
+			bindingHint(contextTeams, "lead"),
 			bindingHint(contextTeams, "back"),
 			bindingHint(contextTeams, "help"),
 		}
@@ -74,7 +75,11 @@ func (m Model) hints() []hint {
 			return []hint{bindingHint(contextApps, "public"), bindingHint(contextApps, "url"), bindingHint(contextApps, "add"), bindingHint(contextApps, "revoke"), bindingHint(contextApps, "back")}
 		}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools"), bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit)}
+		hs := []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools")}
+		if node, ok := m.mapNode(m.mp.selected); ok && node.Ref != nil && node.Ref.Kind == "repo" {
+			hs = append(hs, bindingHint(contextCard, "lead"))
+		}
+		return append(hs, bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit))
 	case m.open != nil:
 		return []hint{bindingPairHint(contextBody, actUp, actDown), bindingHint(contextBody, actClose), bindingHint(contextBody, actQuit)}
 	case m.focus == focusCTO:
@@ -215,6 +220,8 @@ func (m Model) helpLine(w int) string {
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
 	case modeSessionForm:
 		return sDim.Render(clip("up/down field · left/right change · enter start · esc cancel", w))
+	case modeLeadPicker:
+		return sDim.Render(clip("up/down select · enter save · esc cancel", w))
 	case modeTeamForm:
 		return sDim.Render(clip("up/down field · enter saves or moves on · esc cancels", w))
 	case modeQuotaConfirm:
@@ -339,6 +346,7 @@ func (m Model) helpSectionContent(section helpSection, w int) []string {
 	}
 	if section.title == "Sessions" {
 		out = append(out, m.helpRow("◐", "runs in the background: no terminal is attached", w)...)
+		out = append(out, m.helpRow("★", "repo or team lead; dim when no lead session is live", w)...)
 	}
 	if section.title == "Graph" {
 		out = append(out, "")

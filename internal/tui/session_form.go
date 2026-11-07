@@ -923,6 +923,13 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 		m.notice = notice{}
 		return m, nil
 	}
+	if r.res.Status == "failed" && r.res.SuggestedChange != nil && r.res.SuggestedChange.Key == "max_agents" {
+		message, _, _ := strings.Cut(r.res.Error, " Stop one,")
+		m.mode = modeNormal
+		m.sessionPending = &sessionAsk{kind: askRaiseMax, req: r.req, display: message, change: r.res.SuggestedChange}
+		m.notice = notice{}
+		return m, nil
+	}
 	if r.res.Status == "failed" {
 		m.fail(firstNonEmpty(sanitize(r.res.Error), "The session did not start."))
 		return m, refresh()

@@ -14,6 +14,7 @@ Keys · Sessions ─────────────────────
   p                      pin or unpin the selected session so it stays at the top of Mine
   d                      show or hide the selected session details
   ◐                      runs in the background: no terminal is attached
+  ★                      repo or team lead; dim when no lead session is live
 
  Global keys
   1-8                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox, Delivery
@@ -27,7 +28,6 @@ Keys · Sessions ─────────────────────
   C                      focus the CTO box
   ?                      help
   q, ctrl+c              quit
-
 
 
 

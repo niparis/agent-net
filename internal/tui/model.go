@@ -176,6 +176,7 @@ type Model struct {
 	composeTo      string          // session ID the message goes to
 	composeName    string
 	sform          sessionForm
+	leadPicker     leadPicker
 	sessionPending *sessionAsk // the create or trust question of a start
 	confirmID      string      // session the stop question is about
 	confirmOwner   bool        // owner session rather than a worker
@@ -1153,6 +1154,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.settingUndoKey(k)
 	case modeIntegrations:
 		return m.integrationsKey(k)
+	case modeLeadPicker:
+		return m.leadPickerKey(k)
 	case modeTeams:
 		return m.teamMenuKey(k)
 	case modeTeamForm:
@@ -2205,6 +2208,9 @@ func (m Model) tableRows() []tableRow {
 func (m *Model) fixScroll() {
 	rows := m.tableRows()
 	n := m.layout().sessions
+	if m.repoLimitsLine(max(m.width, 1)) != "" {
+		n = max(n-1, 1)
+	}
 	sel := -1
 	for i, r := range rows {
 		if !r.header && r.agent.SessionID == m.selected {

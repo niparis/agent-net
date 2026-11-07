@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,7 @@ type sessionAskKind int
 const (
 	askCreateFolder sessionAskKind = iota
 	askTrustClaude
+	askRaiseMax
 )
 
 // sessionAsk is the one extra question of a start: create a missing folder, or
@@ -34,12 +36,15 @@ type sessionAsk struct {
 	req     protocol.SessionStartRequest
 	display string // the folder as the owner typed or sees it
 	host    string
+	change  *protocol.SettingsChange
 }
 
 func (a sessionAsk) question() string {
 	switch a.kind {
 	case askCreateFolder:
 		return "Create " + a.display + " on " + a.host + " and run git init?"
+	case askRaiseMax:
+		return a.display
 	case askTrustClaude:
 		return "Trust " + a.display + " for Claude Code?"
 	}
@@ -333,6 +338,35 @@ func insideFolderTUI(root, path string) bool {
 
 // sessionPendingKey answers the one question a start is waiting on.
 func (m Model) sessionPendingKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.sessionPending.kind == askRaiseMax {
+		switch k.String() {
+		case "esc":
+			m.sessionPending = nil
+			m.say("Start cancelled.")
+			return m, nil
+		case "y":
+			ask := *m.sessionPending
+			m.sessionPending = nil
+			m.mode = modeNormal
+			src, ok := m.src.(inboxCaller)
+			if !ok {
+				m.fail("Settings unavailable.")
+				return m, nil
+			}
+			start := m.sessionStartCmd(ask.req)
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				_, err := src.Call(ctx, "settings_write", protocol.SettingsWrite{Changes: []protocol.SettingsChange{*ask.change}, Reason: "Raise max agents and start"})
+				if err != nil {
+					return sessionStartedMsg{req: ask.req, err: err}
+				}
+				return start()
+			}
+		default:
+			return m, nil
+		}
+	}
 	yes, no := confirmAnswer(k)
 	if !yes && !no {
 		return m, nil

@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+repo cogforge  autonomy: off
+Tools: 0 skills, 0 MCP servers · t open
+owner: agent api-architect
+no purpose set
+○ no live sessions
+agents 4/3 · over max
+accept, test, review, merge, release, verify: caller
+governed by: agent api-architect (-)
+
+IN 0                                     OUT 2
+                                         ──▶ repo shop depends
+                                         ──▶ team Alpha member_of
+Card 1-4/9  ctrl+u/d scroll ────────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────
+no charter set
+Rules ──────────────────────────────────────────────────────────────────────────
+tests_before_merge suite                  default
+RECENT  no changes yet
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter sessions  t tools  l lead  esc Graph  ctrl+u/ctrl+d scroll  ? help  q quit

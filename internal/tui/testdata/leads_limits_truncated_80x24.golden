@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+agents per repo: project-with-long-name-3 4/3 over max · project-with-long-name…
+  NAME           TYPE   PROJECT         MODEL            STATUS   CPU   RAM TASK
+ Mac (here) 4 sessions ────────────────────────────────────────────── active (v)
+▸ ↳ tenebrae     worker tenebrae        opencode · haik… busy       ?     ?
+  tenebrae-53    agent  project-with-l… claude · opus-5… busy       ?     ?
+  ◐ strategies   agent  project-with-l… claude · sonnet… idle       ?     ? bac…
+  web            agent  project-with-l… opencode · sonn… idle       ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────
+  ◐ ci-runner    agent  project-with-l… pi · gpt-6       idle       ?     ?
+  scratch        agent  -               pi               shell      ?     ?
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  ? help  q quit

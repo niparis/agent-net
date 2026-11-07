@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+agents per repo: tenebrae 4/3 over max · strategies 3/3
+  NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
+ Mac (here) 4 sessions ────────────────────────────────────────────── active (v)
+▸ ↳ tenebrae     worker tenebrae   opencode · haik… busy       ?     ?
+  tenebrae-53    agent  tenebrae   claude · opus-5… busy       ?     ?
+  ◐ ★ strategies agent  strategies claude · sonnet… idle       ?     ? backtest…
+  web            agent  shop       opencode · sonn… idle       ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────
+  ◐ ci-runner    agent  agent-net  pi · gpt-6       idle       ?     ?
+  scratch        agent  -          pi               shell      ?     ?
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+garden already has 3 agents (max 3…  y raise the max to 4 and start · esc cancel

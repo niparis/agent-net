@@ -207,6 +207,9 @@ func (m Model) renderView() string {
 			// The New session form replaces the Graph card too, so n on the
 			// card keeps the Graph tab and Esc returns to the card.
 			out = append(out, m.mainView(w, contentHeight)...)
+		case m.mode == modeLeadPicker:
+			out = append(out, m.titleLine(w))
+			out = append(out, m.leadPickerView(w, contentHeight-1)...)
 		case m.mode == modeTeams:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.teamsView(w, contentHeight-1)...)
@@ -1121,7 +1124,7 @@ func (m Model) sessionsTable(w, n int) []string {
 			if g.mine {
 				name += m.mineMachineSuffix(a)
 			}
-			nameWant = max(nameWant, utf8.RuneCountInString(name))
+			nameWant = max(nameWant, ansi.StringWidth(name)-leadWidth(a))
 			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 		}
 	}
@@ -1193,7 +1196,11 @@ func (m Model) sessionsTable(w, n int) []string {
 			head += cell(label, c.width)
 		}
 	}
-	out := []string{sDim.Render(clip(head, w))}
+	var out []string
+	if limits := m.repoLimitsLine(w); limits != "" {
+		out = append(out, limits)
+	}
+	out = append(out, sDim.Render(clip(head, w)))
 	rows := m.tableRows()
 	if !m.haveData {
 		msg := "  waiting for the daemon..."
@@ -1288,6 +1295,51 @@ func (m Model) groupLine(g group, w int) string {
 	}
 	rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
 	return clip(head+sDim.Render(rule), w)
+}
+
+// repoLimitsLine shows network-wide counts once, above the session table.
+func (m Model) repoLimitsLine(w int) string {
+	type limit struct {
+		name       string
+		count, max int
+	}
+	byRepo := map[string]limit{}
+	for _, a := range m.snap.Agents {
+		if a.RepoMaxAgents <= 0 {
+			continue
+		}
+		name := m.agentProjectName(a)
+		key := firstNonEmpty(a.RepoContext, firstNonEmpty(a.Repo.Project, name))
+		byRepo[key] = limit{name: name, count: a.RepoAgentCount, max: a.RepoMaxAgents}
+	}
+	if len(byRepo) == 0 {
+		return ""
+	}
+	limits := make([]limit, 0, len(byRepo))
+	for _, l := range byRepo {
+		limits = append(limits, l)
+	}
+	sort.Slice(limits, func(i, j int) bool {
+		a, b := limits[i], limits[j]
+		if (a.count > a.max) != (b.count > b.max) {
+			return a.count > a.max
+		}
+		return a.name < b.name
+	})
+	line := sDim.Render("agents per repo: ")
+	for i, l := range limits {
+		if i > 0 {
+			line += sDim.Render(" · ")
+		}
+		line += sDim.Render(sanitize(l.name) + " ")
+		count := fmt.Sprintf("%d/%d", l.count, l.max)
+		if l.count > l.max {
+			line += sBad.Render(count + " over max")
+		} else {
+			line += sDim.Render(count)
+		}
+	}
+	return ansi.Truncate(line, w, "…")
 }
 
 // usageCells writes the CPU and RAM cells of a session. They merge into one
@@ -1664,6 +1716,13 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 		name = m.ctoTitle()
 	}
 	mark := modeMark(a)
+	lead := ""
+	if leadWidth(a) > 0 {
+		lead = "★ "
+		if !m.leadLive(a) {
+			lead = sDim.Render(lead)
+		}
+	}
 	pin := ""
 	if a.PinnedAt > 0 {
 		pin = "▪ "
@@ -1672,11 +1731,43 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 	if mk.host != "" {
 		suffix = " @" + sanitize(mk.host)
 	}
-	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(pin) - utf8.RuneCountInString(mark) - utf8.RuneCountInString(suffix)
+	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(pin) - utf8.RuneCountInString(mark) - leadWidth(a) - utf8.RuneCountInString(suffix)
 	if room >= 4 && utf8.RuneCountInString(name) > room {
 		name = ansi.Truncate(name, room, "…")
 	}
-	return mk.prefix + pin + mark + name + suffix
+	return mk.prefix + pin + mark + lead + name + suffix
+}
+
+func (m Model) leadLive(a protocol.AgentView) bool {
+	if a.Online {
+		return true
+	}
+	if a.AgentID != "" {
+		for _, other := range m.snap.Agents {
+			if other.AgentID == a.AgentID && other.Online {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func leadWidth(a protocol.AgentView) int {
+	if a.RepoLead || a.TeamLead {
+		return 2
+	}
+	return 0
+}
+
+func repoLimitCardText(count, maxAgents int) string {
+	if maxAgents <= 0 {
+		return ""
+	}
+	text := fmt.Sprintf("agents %d/%d", count, maxAgents)
+	if count > maxAgents {
+		text += " · over max"
+	}
+	return text
 }
 
 // plural writes a count and a noun: "1 session", "3 sessions".
