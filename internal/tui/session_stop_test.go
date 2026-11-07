@@ -88,3 +88,19 @@ func TestStopExitedClaudeConfirmation(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeCloseConfirm(t *testing.T) {
+	m, _ := workerModel(120, 34)
+	id := "s_0000000000000001"
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == id {
+			m.snap.Agents[i].Harness = "opencode"
+		}
+	}
+	m = selectID(m, id)
+	m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: 'x'})
+	view := ansi.Strip(m.testView())
+	if !strings.Contains(view, "Close ") || !strings.Contains(view, "enter/y: close") {
+		t.Fatal(view)
+	}
+}

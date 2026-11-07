@@ -333,12 +333,13 @@ func (lc *localConn) delivered(raw json.RawMessage) any {
 }
 
 type helloParams struct {
-	Client   string `json:"client"`
-	TUI      bool   `json:"tui"`
-	Harness  string `json:"harness"`
-	NativeID string `json:"native_id"`
-	Cwd      string `json:"cwd"`
-	Status   string `json:"status"`
+	OpenCodeActivity int64  `json:"opencode_activity"`
+	Client           string `json:"client"`
+	TUI              bool   `json:"tui"`
+	Harness          string `json:"harness"`
+	NativeID         string `json:"native_id"`
+	Cwd              string `json:"cwd"`
+	Status           string `json:"status"`
 	// Mode and Model are optional. A plugin says whether a person has the
 	// session open (foreground, background or unknown) and which model it runs.
 	Mode  string `json:"mode"`
@@ -526,7 +527,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		}
 		repo, noProject := d.sessionRepo(p.Cwd, true)
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
-			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: title,
+			OpenCodeActivity: p.OpenCodeActivity, Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: title,
 			Status: status, Delivery: "plugin", Repo: repo, NoProject: noProject,
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
 		k := key(p.Client, p.NativeID)
@@ -820,6 +821,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if statusActivity {
 			if p.Status == "busy" {
 				ls.ownerStopped = false
+				if ls.info.Harness == "opencode" {
+					ls.info.OpenCodeActivity = activeAt.UnixMilli()
+				}
 			}
 			ls.harnessActivity = activeAt
 			d.recordActivityLocked(ls, activeAt)

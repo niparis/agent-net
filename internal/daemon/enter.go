@@ -308,10 +308,22 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 		return plan, nil
 	case "opencode":
+		reopen := func() error {
+			if _, err := d.call(ctx, "session.remove", protocol.SessionRemove{SessionID: q.SessionID, Reopen: true}); err != nil {
+				return err
+			}
+			if ls := d.sessionByID(q.SessionID); ls != nil {
+				d.pushSession(ls)
+			}
+			return nil
+		}
 		var herdrNote string
 		if w == nil { // a TUI the owner started in a herdr pane is the screen to show
 			if p, ok := d.herdrPlan(info, q, plan, name, viaGateway); ok {
 				if len(p.Argv) > 0 {
+					if err := reopen(); err != nil {
+						return no("could not reopen session: %v", err)
+					}
 					return p, nil
 				}
 				// The pane has closed, or herdr cannot attach it. The session
@@ -332,6 +344,9 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 					return no("%s It also has no OpenCode session ID to open it with", herdrNote)
 				}
 				return no("%s has no OpenCode session ID to open it with", name)
+			}
+			if err := reopen(); err != nil {
+				return no("could not reopen session: %v", err)
 			}
 			plan.Argv = []string{bin, "--session", info.NativeID}
 			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)

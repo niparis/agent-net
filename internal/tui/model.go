@@ -179,9 +179,10 @@ type Model struct {
 	leadPicker     leadPicker
 	sessionPending *sessionAsk // the create or trust question of a start
 	confirmID      string      // session the stop question is about
-	confirmOwner   bool        // owner session rather than a worker
-	confirmDefect  bool        // confirm reporting a defect found later
-	confirmMachine string      // machine_remove or machine_rotate
+	confirmClose   bool
+	confirmOwner   bool   // owner session rather than a worker
+	confirmDefect  bool   // confirm reporting a defect found later
+	confirmMachine string // machine_remove or machine_rotate
 	confirmName    string
 	defect         textinput.Model // the one-line defect note
 	defectSeverity textinput.Model // the 1 to 4 severity prompt

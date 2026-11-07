@@ -120,11 +120,18 @@ func testSessionStopOpenCodeService(t *testing.T) {
 			defer server.Close()
 			writeOwnerOpenCodeService(t, state, server.URL)
 			raw := cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
-			if !strings.Contains(string(raw), "stays in the service") {
+			if !strings.Contains(string(raw), "Closed shop space. The conversation is kept; press v to see ended sessions and Enter to reopen it.") {
 				t.Fatalf("result %s", raw)
+			}
+			view, err := n.d.agentView(context.Background(), id)
+			if err != nil || view.Online {
+				t.Fatalf("closed session: %+v %v", view, err)
 			}
 			select {
 			case got := <-calls:
+				if status == "idle" {
+					t.Fatal("idle session was interrupted")
+				}
 				action := "interrupt"
 				if old {
 					action = "abort"
@@ -133,7 +140,9 @@ func testSessionStopOpenCodeService(t *testing.T) {
 					t.Fatalf("interrupt %q", got)
 				}
 			default:
-				t.Fatal("no interrupt")
+				if status == "busy" {
+					t.Fatal("no interrupt")
+				}
 			}
 		})
 	}
@@ -184,7 +193,7 @@ func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	defer server.Close()
 	writeOwnerOpenCodeService(t, state, server.URL)
 	raw := cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
-	if !strings.Contains(string(raw), "stays in the service") {
+	if !strings.Contains(string(raw), "Closed shop space. The conversation is kept; press v to see ended sessions and Enter to reopen it.") {
 		t.Fatalf("result %s", raw)
 	}
 	var gotCalls []string

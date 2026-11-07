@@ -186,6 +186,7 @@ func (m Model) startConfirm() (Model, tea.Cmd) {
 		m.mode = modeConfirm
 		m.confirmID = a.SessionID
 		m.confirmOwner = a.Worker == nil
+		m.confirmClose = m.confirmOwner && a.Harness == "opencode"
 		m.confirmName = sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
 		if m.confirmOwner {
 			m.confirmName = sanitize(dashIfEmpty(a.Profile.Name))

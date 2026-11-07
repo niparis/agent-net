@@ -140,7 +140,14 @@ func TestEnterOpenCodeSessionAndWorker(t *testing.T) {
 	bins := fakeBin(t, "opencode")
 	cwd := t.TempDir()
 	n, _, id := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "ses_1", PID: 1, Cwd: cwd, Name: "oc", Status: "idle"}, bins, nil)
+	if err := g.gw.Store().SetSessionClosed(n.d.NodeID(), id, true); err != nil {
+		t.Fatal(err)
+	}
 	p := enterOf(t, n, id, "")
+	view, err := n.d.agentView(context.Background(), id)
+	if err != nil || !view.Online {
+		t.Fatalf("resume: %+v %v", view, err)
+	}
 	if want := []string{bins["opencode"], "--session", "ses_1"}; !reflect.DeepEqual(p.Argv, want) || p.Dir != cwd || len(p.Env) != 0 {
 		t.Fatalf("plain session: %+v", p)
 	}

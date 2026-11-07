@@ -1384,6 +1384,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad session.remove")
 		}
+		if p.Closed || p.Reopen {
+			return nil, st.SetSessionClosed(nc.id, p.SessionID, p.Closed)
+		}
 		if p.Lost {
 			return nil, st.SetSessionLost(nc.id, p.SessionID)
 		}

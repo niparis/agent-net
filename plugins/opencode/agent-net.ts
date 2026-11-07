@@ -356,6 +356,7 @@ class SessionLink {
   model: string | undefined;
   name: string | undefined;
   lastActive = Date.now();
+  presenceActivity = this.lastActive;
   private dormantTimer: NodeJS.Timeout | undefined;
   private lastProgress = 0;
 
@@ -434,6 +435,7 @@ class SessionLink {
   setStatus(next: "idle" | "busy") {
     const before = this.status;
     this.base = next;
+    if (next === "busy") this.presenceActivity = Date.now();
     this.dormant = false;
     this.lastActive = Date.now();
     this.armDormancy();
@@ -547,6 +549,7 @@ class SessionLink {
         client: "opencode",
         harness: "opencode",
         native_id: this.sessionID,
+        opencode_activity: this.presenceActivity,
         cwd: this.cwd,
         // Hello says idle or busy, which every daemon accepts. A dormant
         // session says so right after, and an older daemon that does not know
@@ -1088,7 +1091,7 @@ function hub(): Hub {
     h.released = new Map();
     for (const [id, entry] of h.links ?? []) {
       try {
-        h.released.set(id, Number(entry.link?.lastActive) || Date.now());
+        h.released.set(id, Number(entry.link?.presenceActivity ?? entry.link?.lastActive) || Date.now());
         entry.link?.stop?.();
       } catch {}
     }
@@ -1222,7 +1225,10 @@ export default {
       const link = new SessionLink(sessionID, found.cwd, deliver, sessionText, (l) => dropLink(l.sessionID));
       link.model = found.model;
       link.name = sessionName(found.cwd, found.title);
-      if (activeAt !== undefined) link.lastActive = activeAt;
+      if (activeAt !== undefined) {
+        link.lastActive = activeAt;
+        link.presenceActivity = activeAt;
+      }
       h.links.set(sessionID, { link, owner: me });
       h.released.delete(sessionID);
       link.start();
