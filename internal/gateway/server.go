@@ -776,7 +776,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveWorker(ctx, nc, h, raw)
 			continue
 		}
-		if isSessionRelay(h.Type) {
+		if isSessionRelay(h.Type) || h.Type == protocol.FrameProjectChange {
 			// The target machine may ask this gateway a question while it acts,
 			// so the relay must not run in this node's read loop.
 			go g.answer(ctx, nc, h, raw)
@@ -1248,6 +1248,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return map[string]any{"projects": ps}, nil
+
+	case protocol.FrameProjectChange:
+		return g.handleProjectChange(ctx, nc, raw)
 
 	case "project.add":
 		p, err := decode[protocol.ProjectAdd](raw)

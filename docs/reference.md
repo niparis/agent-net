@@ -400,7 +400,7 @@ are proposals. The CTO has one action tool per area:
 | `mcp_change` | `action: add`, `remove`, `test` or `enable` |
 | `mcp_call` | one call on a shared MCP server |
 | `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite` or `onboarding` |
-| `project_change` | `action: add`, `remove`, `display` or `create`; `remove` takes `name` or `path` and optional `node_id` |
+| `project_change` | `action: add`, `remove`, `display` or `create`; `add`, `remove` and `create` accept optional `node_id` (machine name or node ID); `remove` takes `name` or `path` |
 | `cto_new` | a new conversation for the active harness |
 
 For team delivery, use `to_set: {"team": "finance"}` with the team name or ID. The CTO and advisors can send to online sessions of member agents and the linked agents of member repos. The result lists recipients and members missed because they have no online session or a repo has no linked agent. Additional `to_set` filters narrow the recipients. `as_owner: true` creates an owner approval proposal for each recipient. Teams grant no authority. The CTO can list teams and membership with `agent_graph_read` using `typed: true`.
@@ -2531,6 +2531,8 @@ current PATH. A daemon upgrade adds PATH to older service files.
 The CTO can propose `session_change` with action `session_start`, using `project` or `path`, `node_id`, `harness`, `model`, `folder`, `branch`, `first_message` and optional `create`. It can propose `project_change` with action `create` and a `path` plus the same start options. The owner approves a pending project creation in the CTO approval dialog. Plain text in chat does not approve a proposal. The Inbox remains available for proposal decisions. Creating a project authorizes the missing folder and a git repository when the owner approves. A session start creates a missing folder only when `create` is true.
 
 The CTO recipe uses the separately supplied `projects_layout` scan to choose a machine, root and group. It reads owner placement answers from `cto_placement_memory` and saves corrections or group answers there for later. Without an owner choice or learned default, the recipe chooses Claude and `claude-opus-5-5`. The CTO confirms the proposed placement in one line before the owner answers. Once the session is registered, the CTO can report that it is ready in Sessions, tab 1.
+
+The CTO can propose `project_change` with action `add`, using `paths` or `dir` with `scan: true`, and optional `node_id` (machine host name or node ID). The selected machine's daemon checks and registers the folders after owner approval. A scan can use `depth` and `dry_run`. Omit `node_id` to register on the CTO's machine. Add and remove requests for another machine are relayed through the gateway to that machine's daemon, as with create. The target must be online. Paths beginning with `~` are expanded there.
 
 The CTO can propose `project_change` with action `remove`, a project `name` or `path`, and optional `node_id` (machine host name or node ID). Use `node_id`, as with create, to remove a registration on another machine. Omit it to remove from the CTO's machine. The owner must approve the proposal. Only the registration is removed; the project folder stays in place.
 
