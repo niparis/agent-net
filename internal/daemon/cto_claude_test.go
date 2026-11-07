@@ -675,3 +675,22 @@ func TestClaudeCTOCapabilitiesWithoutVersionGate(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeCTOAdoptReleasedJob(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	n.d.cto.mu.Lock()
+	root := n.d.claudeCTO.root.Load()
+	n.d.claudeCTO.root.Store(nil)
+	n.d.claudeCTO.ref = ""
+	n.d.cto.mu.Unlock()
+	if !n.d.adoptLiveClaudeCTO() || !n.d.isCTOPeer(root.pid) {
+		t.Fatal("released job was not adopted")
+	}
+}

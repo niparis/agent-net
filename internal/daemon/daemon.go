@@ -567,6 +567,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	if d.cfg.RefreshAgentFiles != nil {
 		d.cfg.RefreshAgentFiles(d.Logf, d.SettingsSnapshot())
 	}
+	d.adoptLiveClaudeCTO()
 	d.mcp.start(ctx)
 	ln, err := listenLocal(d, d.cfg.SocketPath)
 	if err != nil {

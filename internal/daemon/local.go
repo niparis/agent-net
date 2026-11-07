@@ -377,6 +377,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 	}
 	switch p.Client {
 	case "cto-mcp":
+		if !d.isCTOPeer(pid) && !d.claudeCTO.starting.Load() {
+			d.adoptLiveClaudeCTO()
+		}
 		// Claude may start its MCP child before --bg returns its session id.
 		// Wait for the launcher to establish the process-tree root.
 		deadline := time.NewTimer(15 * time.Second)

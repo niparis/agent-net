@@ -315,7 +315,7 @@ state. The daemon passes a private MCP configuration with `--mcp-config` and
 ordinary agent-net MCP tools are not registered for this session.
 Claude starts with `--tools ""` and `--setting-sources ""`. Private settings
 disable all hooks and enable no plugins.
-Before starting Claude, the daemon adopts a live `agent-net-cto` background job
+At daemon start, on cto-mcp hello, and before starting Claude, the daemon adopts a live `agent-net-cto` background job
 in that private directory if one exists. When Claude resumes a conversation as
 a copy, the daemon saves the copy's session ID and moves its action lines to
 that ID. Concurrent `session_enter` calls on the CTO session share one start; each
