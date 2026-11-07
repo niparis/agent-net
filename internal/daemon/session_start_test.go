@@ -643,6 +643,11 @@ func TestSessionResumeOpenCodeRegistered(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
+		if r.URL.Path == "/api/location" {
+			// An empty daemon also boots shared-service plugin discovery.
+			fmt.Fprint(w, `{"data":{}}`)
+			return
+		}
 		if r.URL.Path == "/api/session/active" {
 			fmt.Fprint(w, `{"data":[]}`)
 			return

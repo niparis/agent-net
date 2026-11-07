@@ -41,6 +41,7 @@ import (
 //	FAKE_OC_EXIT=1         exit at once
 //	FAKE_OC_IGNORE_TERM=1  ignore SIGTERM
 //	FAKE_OC_WRONG_SESSION=1  say hello with another session ID than the API gave
+//	FAKE_OC_REQUIRE_LOCATION=1  reload the plugin context before reconnecting
 
 // fakeOCFailed is set when the fake gets a message with FAKE:modelfail: the
 // session then reports a failed run, as OpenCode 2.2 does when the provider
@@ -618,6 +619,11 @@ func fakeOCPluginTracked(client, sessionID, cwd string, location *atomic.Int64, 
 }
 
 func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, previous int64, turn func(string)) int64 {
+	// Model an unloaded plugin context: only a location request boots it again.
+	if os.Getenv("FAKE_OC_REQUIRE_LOCATION") != "" && location.Load() <= previous {
+		return previous
+	}
+
 	c, err := net.Dial("unix", os.Getenv("AGENT_NET_SOCKET"))
 	if err != nil {
 		return previous
