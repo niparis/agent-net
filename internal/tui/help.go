@@ -158,26 +158,20 @@ func (m Model) hints() []hint {
 	}
 	pin := bindingHint(contextSessions, "pin")
 	pin.prio = 1
-	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), bindingHint(contextSessions, "new session"), pin, bindingPairHint(contextSessions, "toggle tree", "toggle all trees"), sessionHelp, sessionQuit}
+	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), {key: "x", label: "stop or remove", prio: 1}, {key: "X", label: "remove all offline", prio: 2}, pin, sessionHelp, sessionQuit}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
 		}
 		if a.PinnedAt > 0 {
-			hs[4].label = "unpin"
+			hs[5].label = "unpin"
 		}
-		if a.Harness == "bot" {
+		if a.Harness == "bot" && a.Online {
 			hs[1].label = "messages"
 			hs[3] = hint{key: "x", label: "revoke", prio: 1}
 		}
-		if a.Worker != nil {
-			hs[3] = bindingHint(contextSessions, "stop worker")
-			hs[3].prio = 1
-		}
 	}
-	if a, selected := m.selectedAgent(); m.showOffline && (!selected || !a.Online) {
-		hs = append([]hint{{key: "a", label: "archive offline...", prio: 1}}, hs...)
-	}
+
 	return hs
 }
 
@@ -247,6 +241,12 @@ func (m Model) helpLine(w int) string {
 		}
 		if m.confirmDefect {
 			return clip(sBold.Render(confirmName(fmt.Sprintf("Report a severity %d defect found later on ", m.defectLevel), m.defectName, "?", w)), w)
+		}
+		if len(m.removeIDs) > 0 {
+			if m.removeAll {
+				return clip(sBold.Render(fmt.Sprintf("Remove all %d offline sessions shown? Conversations stay on disk.", len(m.removeIDs))), w)
+			}
+			return clip(sBold.Render("Remove "+clip(m.confirmName, max(0, w-len("Remove ")-len(" from agent-net for good? The conversation stays on disk.")))+" from agent-net for good? The conversation stays on disk."), w)
 		}
 		if m.confirmOwner {
 			if m.confirmClose {

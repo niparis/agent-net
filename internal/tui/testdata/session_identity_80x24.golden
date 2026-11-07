@@ -21,4 +21,4 @@ Selected session ─────────────────────
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  n new  p pin  z/Z tree  ? help  q quit
+up/down select  enter open  m msg  x stop or remove  p pin  q quit

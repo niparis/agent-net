@@ -39,7 +39,7 @@ func TestKeyLineHasBoundedHintsOnEveryTab(t *testing.T) {
 
 func TestKeyLineContentPerTab(t *testing.T) {
 	for _, tc := range []struct{ name, key, want string }{
-		{"Sessions", "1", "up/down select  enter open (ctrl+] back)  m msg  n new  p pin  z/Z tree  ? help  q quit"},
+		{"Sessions", "1", "up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit"},
 		{"Messages", "4", "up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  d Quality  c CTO  ? help  q quit"},
 		{"Graph", "2", "1-8 tabs  c CTO  ? help  q quit"},

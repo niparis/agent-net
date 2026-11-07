@@ -45,6 +45,8 @@ type openMsg struct {
 // reads it.
 type Model struct {
 	archive                             *sessionsArchiveForm
+	removeIDs                           []string
+	removeAll                           bool
 	workerLogDetail                     int
 	workerLogDetailsFocus               bool
 	workersLog                          bool
@@ -470,6 +472,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case removeSessionsMsg:
+		return m.removeSessionsResult(msg)
 	case sessionsArchiveMsg:
 		return m.sessionsArchiveResult(msg)
 	case sessionPinMsg:
@@ -1494,12 +1498,14 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.cycleMessageFilter()
 		}
 	case "stop worker":
-		if a, ok := m.selectedAgent(); ok && a.Harness == "bot" {
+		if a, ok := m.selectedAgent(); ok && a.Harness == "bot" && (a.Online || m.tab != sessionsTab) {
 			m.mode = modeApps
 			m.apps = appsForm{stage: "confirm", apps: []connectedApp{{ID: a.NodeID, Name: a.Profile.Name, Kind: "bot"}}}
 			return m, m.appsCall("apps.public.status", struct{}{})
 		}
 		return m.startConfirm()
+	case "remove offline":
+		return m.startRemoveOffline()
 	case "hide":
 		if m.tab == sessionsTab && m.focus == focusSessions {
 			return m.toggleHiddenSession()

@@ -180,6 +180,12 @@ func (m Model) startConfirm() (Model, tea.Cmd) {
 	switch {
 	case !ok:
 		m.fail("Nothing is selected: pick a session first.")
+	case !a.Online && m.tab == sessionsTab:
+		m.removeIDs = []string{a.SessionID}
+		m.removeAll = false
+		m.confirmName = sanitize(dashIfEmpty(a.Profile.Name))
+		m.mode = modeConfirm
+		m.notice = notice{}
 	case !a.Online && a.Worker == nil:
 		m.fail("That session is offline already.")
 	default:
@@ -202,6 +208,12 @@ func (m Model) confirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case yes:
 		m.mode = modeNormal
+		if len(m.removeIDs) > 0 {
+			ids, name, all := m.removeIDs, m.confirmName, m.removeAll
+			m.removeIDs = nil
+			m.say("Removing...")
+			return m, m.removeSessionsCmd(ids, name, all)
+		}
 		if m.confirmMachine != "" {
 			action, id, name := m.confirmMachine, m.confirmID, m.confirmName
 			m.confirmMachine = ""
@@ -231,6 +243,11 @@ func (m Model) confirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.stopCmd(m.confirmID, m.confirmName)
 	case no:
 		m.mode = modeNormal
+		if len(m.removeIDs) > 0 {
+			m.removeIDs = nil
+			m.say("Not removed.")
+			return m, nil
+		}
 		if m.confirmMachine != "" {
 			m.confirmMachine = ""
 			m.say("Machine action cancelled.")
