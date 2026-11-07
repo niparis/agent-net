@@ -9,7 +9,7 @@ import (
 )
 
 func (d *Daemon) checkOpenCodeCapabilities(ctx context.Context, list []protocol.HarnessInfo) {
-	service, err := ownerOpenCodeService()
+	service, err := d.ownerOpenCodeService()
 	if err != nil {
 		return
 	}

@@ -680,7 +680,7 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 	if len(sessions) == 0 {
 		return
 	}
-	service, err := ownerOpenCodeService()
+	service, err := d.ownerOpenCodeService()
 	if err != nil {
 		return
 	}

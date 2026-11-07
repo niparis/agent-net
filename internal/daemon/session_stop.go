@@ -114,7 +114,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 			return no(fmt.Errorf("Claude could not stop %s: %w", name, err))
 		}
 	case "opencode":
-		service, err := ownerOpenCodeService()
+		service, err := d.ownerOpenCodeService()
 		if err != nil {
 			return no(fmt.Errorf("the OpenCode service is not running on %s", d.hostName()))
 		}

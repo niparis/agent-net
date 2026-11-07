@@ -22,19 +22,42 @@ type openCodeService struct {
 	identity string
 }
 
-// Only the owner's loopback service may receive its password. Never include
-// service.json contents, HTTP response bodies or transport errors in notices.
-func ownerOpenCodeService() (openCodeService, error) {
-	var service openCodeService
+func ownerOpenCodeServicePath(homeDir string) (string, error) {
 	state := os.Getenv("XDG_STATE_HOME")
 	if state == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return service, err
+		home := homeDir
+		if home == "" {
+			var err error
+			home, err = os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	path := filepath.Join(state, "opencode", "service.json")
+	return filepath.Join(state, "opencode", "service.json"), nil
+}
+
+// Only the owner's loopback service may receive its password. Never include
+// service.json contents, HTTP response bodies or transport errors in notices.
+func ownerOpenCodeService() (openCodeService, error) {
+	return ownerOpenCodeServiceForHome("")
+}
+
+func (d *Daemon) ownerOpenCodeService() (openCodeService, error) {
+	var home string
+	if d != nil {
+		home = d.cfg.HomeDir
+	}
+	return ownerOpenCodeServiceForHome(home)
+}
+
+func ownerOpenCodeServiceForHome(homeDir string) (openCodeService, error) {
+	var service openCodeService
+	path, err := ownerOpenCodeServicePath(homeDir)
+	if err != nil {
+		return service, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return service, err
@@ -74,7 +97,7 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 		}
 	}()
 	down := fmt.Errorf("the OpenCode service is not running on %s", d.cfg.Hostname)
-	service, err := ownerOpenCodeService()
+	service, err := d.ownerOpenCodeService()
 	if err != nil {
 		return protocol.StartedSession{}, down
 	}
