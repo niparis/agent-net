@@ -1105,10 +1105,10 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 					reminderNote = fmt.Sprintf("\nready since %s, not claimed", readySinceStr)
 				}
 				body = fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
-					header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String(), protocol.NeutralizeMarkers(displayOwner),
+					header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String()+"\n"+s.stepContract(c.Project, t.ref.Step), protocol.NeutralizeMarkers(displayOwner),
 					protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(d.pipeline.ReportFields(t.ref), ", "))
 			}
-			notices = append(notices, notice{targets: group, body: body, line: line, isReminder: t.isReminder})
+			notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContract(c.Project, t.ref.Step), isReminder: t.isReminder})
 			continue
 		}
 		isReminder := false
@@ -1156,9 +1156,9 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			reminderNote = fmt.Sprintf("\nready since %s, not claimed", readySinceStr)
 		}
 		body := fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nsteps: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields:\n%s\nClaim and report each step in order: %s.",
-			header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, steps, protocol.NeutralizeMarkers(displayOwner),
+			header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, steps+"\n"+s.stepContracts(c.Project, run), protocol.NeutralizeMarkers(displayOwner),
 			protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(fields, "\n"), order)
-		notices = append(notices, notice{targets: group, body: body, line: line, order: order, isReminder: isReminder})
+		notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContracts(c.Project, run), order: order, isReminder: isReminder})
 	}
 	if len(notices) == 0 {
 		return protocol.Message{}, nil
@@ -1661,4 +1661,19 @@ func (s *Store) ClaimStep(machine string, q protocol.StepClaimRequest) (protocol
 		return protocol.StepClaimResult{}, err
 	}
 	return protocol.StepClaimResult{Claimed: true, SessionID: q.SessionID}, nil
+}
+
+func (s *Store) stepContract(project, step string) string {
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return "contract: unavailable"
+	}
+	return "contract:\n  " + strings.ReplaceAll(protocol.NeutralizeMarkers(snap.String("delivery.contract."+step, settings.Where{Repo: project})), "\n", "\n  ")
+}
+func (s *Store) stepContracts(project string, refs []protocol.StepRef) string {
+	var lines []string
+	for _, ref := range refs {
+		lines = append(lines, "step: "+ref.String()+"\n"+s.stepContract(project, ref.Step))
+	}
+	return strings.Join(lines, "\n")
 }

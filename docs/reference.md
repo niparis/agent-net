@@ -2987,3 +2987,15 @@ one attempt, including failures; a later busy turn resets it. This guard resets
 when the daemon restarts. Logs record the outcome. After success the Sessions
 row says `compacted while idle HH:MM`, in your display time zone, until a new turn.
 The separate CTO compaction loop handles OpenCode, so it does not overlap.
+
+### Delivery step contracts
+
+`delivery.contract.accept`, `.review`, `.test`, `.approve`, `.merge`, `.release`,
+`.deploy` and `.verify` are live advice text settings. Each has a network default
+and an optional project override. The owner can edit them in the TUI Settings tab;
+the CTO can read and set them through the settings tools. Changes apply to the
+next task without restarting sessions.
+
+Step task messages and reminders include a `contract:` block directly after the
+step line. Batched tasks include each step's contract. Worker hand-back notices
+name `delivery.contract.test` as the test scope for worker briefs.

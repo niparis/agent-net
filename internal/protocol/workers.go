@@ -990,6 +990,7 @@ func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Sn
 		where = "the diff in " + worktree
 	}
 	line := ChecklistMarker + " " + strings.ReplaceAll(snap.String("delivery.caller_review_and_merge", settings.Where{}), "{{where}}", NeutralizeMarkers(where))
+	line += "\nTest scope: delivery.contract.test (the test step owns suites and CI)."
 	if learned {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}

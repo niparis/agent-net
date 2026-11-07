@@ -283,7 +283,7 @@ settings:
     type: text
     levels: [network]
     slots: [where]
-    default: "Before you tell your user it is done: read {{where}}, run the project's tests there, then report what you checked. Merge only if your user asked."
+    default: "Before you tell your user it is done: read {{where}}, follow the accept contract, then report what you checked. The test step owns test suites. Merge only if your user asked."
     live: true
   - key: delivery.worker_branch_prefix
     rows: [133]
@@ -882,6 +882,62 @@ settings:
     levels: [network]
     slots: [handback]
     default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above, including the rule to announce your task, and finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers."
+    live: true
+  - key: delivery.contract.accept
+    description: Contract for the accept step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Read the diff. Check it does what the brief and the owner's own words asked, and adds no limit or check the owner did not ask for. When the change is about something the owner sees, try the real behaviour read-only. Do not run test suites: the test step owns tests. Pass, or fail with concrete findings for the author."
+    live: true
+  - key: delivery.contract.review
+    description: Contract for the review step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Read the full diff for defects, security problems and unasked limits. Report findings with file and line. Do not run test suites."
+    live: true
+  - key: delivery.contract.test
+    description: Contract for the test step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Merge onto the current default branch in your own worktree. Resolve conflicts yourself, keeping the intent of both sides, and list each resolution. Run the full changed packages and CI. Fail only for real test or CI failures, with the failing test names."
+    live: true
+  - key: delivery.contract.approve
+    description: Contract for the approve step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Check the change and evidence against the owner's instructions. Pass, fail with concrete reasons, or needs_owner when the decision belongs to the owner."
+    live: true
+  - key: delivery.contract.merge
+    description: Contract for the merge step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Fast-forward the default branch to the exact commit that passed CI. Never force-push."
+    live: true
+  - key: delivery.contract.release
+    description: Contract for the release step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Release the merged commit with the repository's release steps and record the tag."
+    live: true
+  - key: delivery.contract.deploy
+    description: Contract for the deploy step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Deploy the released commit with the repository's deployment steps and record what was deployed."
+    live: true
+  - key: delivery.contract.verify
+    description: Contract for the verify step.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Check the change works in the real setup, the way the owner will use it. Pass, fail with what is wrong, or needs_owner when only the owner can check."
     live: true
 ledger:
   - {row: 1, code: "guidance is always synced at startup"}
