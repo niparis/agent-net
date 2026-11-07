@@ -177,11 +177,13 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 		if r.OwnerAgentID != nil {
 			n.Owner = &protocol.GraphRef{Kind: "agent", ID: *r.OwnerAgentID}
 		}
-		var lead sql.NullString
-		if err := s.db.QueryRow(`SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END FROM repos WHERE id=?`, r.ID).Scan(&lead); err != nil {
+		var lead, session sql.NullString
+		if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM repo_leads WHERE repo_id=repos.id), CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END FROM repos WHERE id=?`, r.ID).Scan(&session, &lead); err != nil {
 			return g, err
 		}
-		if lead.Valid {
+		if session.Valid {
+			n.Lead = &protocol.GraphRef{Kind: "session", ID: session.String}
+		} else if lead.Valid {
 			n.Lead = &protocol.GraphRef{Kind: "agent", ID: lead.String}
 		}
 		limit, err := s.RepoAgentLimit(r.ID)

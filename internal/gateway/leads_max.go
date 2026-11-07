@@ -45,18 +45,31 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		return err
 	}
 	defer tx.Rollback()
+	var old sql.NullString
+	var lead, session any
 	if q.Lead != nil {
-		if q.Lead.Kind != "agent" {
-			return reject("lead must be an Agent")
+		switch q.Lead.Kind {
+		case "session":
+			var agent, repo string
+			err = tx.QueryRow(`SELECT COALESCE(agent_id,''),COALESCE(repo_id,'') FROM sessions WHERE id=?`, q.Lead.ID).Scan(&agent, &repo)
+			if err == sql.ErrNoRows || agent == "" {
+				return reject("session has no Agent")
+			}
+			if err != nil {
+				return err
+			}
+			if q.Ref.Kind == "repo" && repo != q.Ref.ID {
+				return reject("session is not in this Repo")
+			}
+			lead, session = agent, q.Lead.ID
+		case "agent":
+			lead = q.Lead.ID
+		default:
+			return reject("lead must be an Agent or session")
 		}
-		if err = liveTeamMember(tx, *q.Lead); err != nil {
+		if err = liveTeamMember(tx, protocol.GraphRef{Kind: "agent", ID: lead.(string)}); err != nil {
 			return err
 		}
-	}
-	var old sql.NullString
-	var lead any
-	if q.Lead != nil {
-		lead = q.Lead.ID
 	}
 	now := s.now().UnixNano()
 	switch q.Ref.Kind {
@@ -70,7 +83,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		}
 		if q.Lead != nil {
 			var belongs bool
-			err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND owner_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, q.Ref.ID, q.Lead.ID, q.Ref.ID, q.Lead.ID).Scan(&belongs)
+			err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND owner_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, q.Ref.ID, lead, q.Ref.ID, lead).Scan(&belongs)
 			if err != nil {
 				return err
 			}
@@ -78,7 +91,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 				return reject("lead Agent has no session in this Repo")
 			}
 		}
-		_, err = tx.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id`, q.Ref.ID, lead)
+		_, err = tx.Exec(`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES(?,?,?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id,lead_session=excluded.lead_session`, q.Ref.ID, lead, session)
 	case "team":
 		err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, q.Ref.ID).Scan(&old)
 		if err == sql.ErrNoRows {
@@ -87,7 +100,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(`UPDATE teams SET owner_agent_id=?,updated_at=? WHERE id=?`, lead, now, q.Ref.ID)
+		_, err = tx.Exec(`UPDATE teams SET owner_agent_id=?,lead_session=?,updated_at=? WHERE id=?`, lead, session, now, q.Ref.ID)
 	}
 	if err != nil {
 		return err

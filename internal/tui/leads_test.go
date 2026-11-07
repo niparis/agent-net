@@ -176,3 +176,37 @@ func TestRepoLimitsTruncateAt80Golden(t *testing.T) {
 	m.snap.Agents[3].RepoAgentCount = 4
 	golden(t, "leads_limits_truncated_80x24", m.testView())
 }
+
+func TestSessionLeadPickerAndMark(t *testing.T) {
+	m, base := workerModel(120, 34)
+	src := &leadTestSource{fakeSource: base}
+	m.src = src
+	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
+	m.mp.full = protocol.GraphView{Nodes: []protocol.Node{{Name: "demo", Ref: &repo}}}
+	m.snap.Agents = []protocol.AgentView{{AgentID: "agent", AgentName: "Agent", SessionID: "session1", RepoContext: "demo", Online: true, RepoLead: true, RepoLeadExplicit: true}, {AgentID: "agent", AgentName: "Agent", SessionID: "session2", RepoContext: "demo", Online: true}}
+	m = m.startLeadPicker(repo, "demo")
+	found := false
+	for i, c := range m.leadPicker.choices {
+		if c.ref != nil && c.ref.Kind == "session" && c.ref.ID == "session1" {
+			m.leadPicker.index = i
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("session missing from picker")
+	}
+	_, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("missing save")
+	}
+	cmd()
+	if src.lead.Lead == nil || *src.lead.Lead != (protocol.GraphRef{Kind: "session", ID: "session1"}) {
+		t.Fatalf("lead: %+v", src.lead)
+	}
+	for i, a := range m.snap.Agents {
+		marked := strings.Contains(ansi.Strip(m.nameText(a, treeMark{}, 30)), "★")
+		if marked != (i == 0) {
+			t.Fatalf("session %d marked=%v", i, marked)
+		}
+	}
+}

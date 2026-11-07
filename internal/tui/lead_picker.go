@@ -52,6 +52,21 @@ func (m Model) startLeadPicker(target protocol.GraphRef, name string) Model {
 			}
 		}
 	}
+	for _, a := range m.snap.Agents {
+		allowed := target.Kind == "repo" && (a.RepoContext == target.ID || a.Repo.Project == target.ID)
+		if target.Kind == "team" {
+			allowed = eligible[a.AgentID]
+			for _, e := range m.mp.full.Edges {
+				if e.Kind == "member_of" && e.FromRef != nil && e.FromRef.Kind == "repo" && e.ToRef != nil && *e.ToRef == target && (a.RepoContext == e.FromRef.ID || a.Repo.Project == e.FromRef.ID) {
+					allowed = true
+				}
+			}
+		}
+		if allowed && a.AgentID != "" && a.SessionID != "" {
+			ref := protocol.GraphRef{Kind: "session", ID: a.SessionID}
+			p.choices = append(p.choices, leadChoice{name: a.AgentName + " / " + a.SessionID, ref: &ref})
+		}
+	}
 	for _, n := range m.mp.full.Nodes {
 		if n.Ref != nil && n.Ref.Kind == "agent" && eligible[n.Ref.ID] && (n.Active == nil || *n.Active) {
 			ref := *n.Ref

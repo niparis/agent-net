@@ -278,7 +278,15 @@ func (s *Store) teamGraph() (protocol.Graph, error) {
 	}
 	for _, t := range teams {
 		active := t.Active
-		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: t.Owner, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, CreatedAt: t.CreatedAt})
+		lead := t.Owner
+		var session sql.NullString
+		if err := s.db.QueryRow(`SELECT lead_session FROM teams WHERE id=?`, t.ID).Scan(&session); err != nil {
+			return g, err
+		}
+		if session.Valid {
+			lead = &protocol.GraphRef{Kind: "session", ID: session.String}
+		}
+		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: lead, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, CreatedAt: t.CreatedAt})
 	}
 	rows, err := s.db.Query(`SELECT member_kind,member_id,team_id FROM team_members ORDER BY member_kind,member_id`)
 	if err != nil {
