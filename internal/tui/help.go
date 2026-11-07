@@ -202,7 +202,7 @@ func (m Model) helpLine(w int) string {
 	}
 
 	if m.filtering {
-		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
+		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears and leaves"), w)
 	}
 	if m.focus == focusCTO && m.cto != nil && m.cto.settingsForm != nil {
 		if m.cto.settingsForm.err != "" {

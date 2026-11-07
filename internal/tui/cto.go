@@ -397,7 +397,12 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	}
 	c.polling = false
 	if r.err != nil {
-		c.err = sanitize(r.err.Error())
+		message := sanitize(r.err.Error())
+		if !c.historyLoaded && strings.Contains(message, "CTO session is not registered") {
+			c.err = ""
+			return
+		}
+		c.err = message
 		return
 	}
 	c.err = ""

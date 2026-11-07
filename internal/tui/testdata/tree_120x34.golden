@@ -4,11 +4,11 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                             TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK     view: all  (v)
- Mac (here) 7 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+  NAME                             TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK
+ Mac (here) 7 sessions ────────────────────────────────────────────────────────────────────────────────── view: all  (v)
   ↳ tenebrae                       worker tenebrae   opencode · haiku-4-5     busy       ?     ?
   tenebrae-53                      agent  tenebrae   claude · opus-5-5        busy       ?     ?
-  ◐ strategies                     agent  strategies claude · sonnet-5-5      idle       ?     ? backte…
+  ◐ strategies                     agent  strategies claude · sonnet-5-5      idle       ?     ? backtest v2
   ├─ backtest-a                    worker -          opencode · haiku-4-5     idle       ?     ? probe
 ▸ ├─ backtest-b                    worker -          opencode · haiku-4-5     idle       ?     ? probe
   └─ backtest-on-a-remo… @build-vm worker -          opencode · haiku-4-5     idle       ?     ? probe

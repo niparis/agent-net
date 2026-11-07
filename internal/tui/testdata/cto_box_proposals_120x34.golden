@@ -5,8 +5,8 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 2 waiting in Inbox (7)
-  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                view: active  (v)
- Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK
+ Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────── view: active  (v)
 ▸ tenebrae-53        agent  tenebrae   claude · opus-5-5        busy     38%  1.2G
   Atlas              cto    -          cto                      idle       ?     ?
   ◐ strategies       agent  strategies claude · sonnet-5-5      idle    240%  4.6G backtest v2

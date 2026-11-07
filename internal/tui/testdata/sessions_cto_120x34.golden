@@ -4,8 +4,8 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   PROJECT   MODEL                    STATUS   CPU   RAM TASK                 view: active  (v)
- Mac (here) 1 session ──────────────────────────────────────────────────────────────────────────────────────────────────
+  NAME               TYPE   PROJECT   MODEL                    STATUS   CPU   RAM TASK
+ Mac (here) 1 session ──────────────────────────────────────────────────────────────────────────────── view: active  (v)
 ▸ Atlas              cto    -         cto                      idle       ?     ?
 
 

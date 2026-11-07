@@ -4,8 +4,8 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   top: ci-runner 5%    no claude · no opencode                                   │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                  TYPE   PROJECT    MODEL                    STATUS    CPU   RAM TASK                                                       view: all  (v)
- Mine 4 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  NAME                  TYPE   PROJECT    MODEL                    STATUS    CPU   RAM TASK
+ Mine 4 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── view: all  (v)
 ▸ ▪ ◐ strategies · Mac  agent  strategies claude · sonnet-5-5      idle     240%  4.6G backtest v2
   ▪ web · Mac           agent  shop       opencode · sonnet-5      idle        ?     ?
   tenebrae-53 · Mac     agent  tenebrae   claude · opus-5-5        busy      38%  1.2G

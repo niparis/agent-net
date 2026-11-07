@@ -456,6 +456,11 @@ func TestTaskColumnTakesTheRoomAndCutsWithDots(t *testing.T) {
 	if task.width < 20 {
 		t.Fatalf("TASK is only %d wide: %+v", task.width, cols)
 	}
+	for _, c := range columnsNarrow(78, 14, 12) {
+		if c.name == "MODEL" && c.width < 16 {
+			t.Fatalf("narrow MODEL is only %d wide", c.width)
+		}
+	}
 	got := cellDots("deploy the new routes", 12)
 	if got != "deploy the …" {
 		t.Fatalf("cellDots = %q", got)
