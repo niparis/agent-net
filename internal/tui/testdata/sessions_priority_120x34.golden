@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (1) 8 Delivery │ 26 online · 1 busy · 1 needs you
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● build cpu ? mem ? disk ?                                                                                          │
+│  ● desk  cpu ? mem ? disk ?                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME               MACHINE      PROJECT   MODEL                    STATUS      CPU   RAM TASK
+ Needs you (1)                                                                                        Inbox: 1 to decide
+▸ video              desk         -         claude · opus            needs you     ?     ? Combine the recorded demos
+ Working (3)
+  ★ demo lead        desk         demo      claude · gpt-6.1-sol     idle          ?     ? Review the next change
+  ├─ worker          build        -         codex · gpt-6.1-sol      busy          ?     ? Review the next change
+  └─ merger          desk         demo      claude · gpt-6.1-sol     idle          ?     ? Review the next change
+ Idle (22)
+  ★ pinned           desk         -         claude · gpt-6.1-sol     idle          ?     ? Review the next change
+  21 more idle · v to show
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  n new  p pin  z/Z tree  ? help  q quit

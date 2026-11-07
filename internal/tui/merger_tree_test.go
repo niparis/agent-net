@@ -25,6 +25,7 @@ func mergerFixture() Snapshot {
 			a.LastActive, a.LastSeen = t0.Add(-1*time.Minute).Unix(), t0.Add(-1*time.Minute).Unix()
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/agent-net", Worktree: "/Users/n/code/agent-net", Project: "agent-net", Branch: "main"}
 			a.Profile.Project = "agent-net"
+			a.RepoLeadExplicit = true
 		}),
 		agent(mergerWorkerID, "n_mac", "Mac", "opencode", "fix-login", func(a *protocol.AgentView) {
 			a.Mode, a.Model = protocol.ModeBackground, "anthropic/claude-haiku-4-5"
@@ -45,7 +46,7 @@ func TestMergerHangsUnderProjectAgent(t *testing.T) {
 	m := treeModel(120, 34, mergerFixture())
 	names := func() []string {
 		var out []string
-		for _, a := range m.groups()[0].agents {
+		for _, a := range m.visible() {
 			out = append(out, a.Profile.Name)
 		}
 		return out
@@ -61,14 +62,19 @@ func TestMergerHangsUnderProjectAgent(t *testing.T) {
 	if got := order[at+2]; got != "agent-net merger" {
 		t.Fatalf("merger is not after the worker: %q in %v", got, order)
 	}
-	marks := m.groups()[0].marks
+	marks := map[string]treeMark{}
+	for _, g := range m.groups() {
+		for id, mk := range g.marks {
+			marks[id] = mk
+		}
+	}
 	if marks[mergerWorkerID].prefix != "├─ " {
 		t.Errorf("worker prefix %q", marks[mergerWorkerID].prefix)
 	}
 	if marks[mergerID].prefix != "└─ " {
 		t.Errorf("merger prefix %q, want the last child glyph", marks[mergerID].prefix)
 	}
-	// The TYPE column still says merger, and the row hangs with its parent.
+	// The dim role tag follows the name, with the tree glyph intact.
 	var row string
 	for _, l := range lines(selectID(m, mergerID).testView()) {
 		if strings.Contains(l, "agent-net merger") {
@@ -79,56 +85,19 @@ func TestMergerHangsUnderProjectAgent(t *testing.T) {
 		t.Errorf("merger row has no tree glyph: %q", row)
 	}
 	if !strings.Contains(row, " merger ") || !strings.Contains(row, "merger") {
-		t.Errorf("merger TYPE column: %q", row)
+		t.Errorf("merger role tag: %q", row)
 	}
 }
 
-func TestMergerParentIsDeliveryCaller(t *testing.T) {
-	// Two agent sessions of the project. The older one is the caller of the
-	// open change, so the merger hangs under it.
-	snap := mergerFixture()
-	snap.Agents = append(snap.Agents, agent(secondMainID, "n_mac", "Mac", "claude", "agent-net-old", func(a *protocol.AgentView) {
-		a.LastActive, a.LastSeen = t0.Add(-20*time.Minute).Unix(), t0.Add(-20*time.Minute).Unix()
-		a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
-	}))
-	m := treeModel(120, 34, snap)
-	m.delivery.changes = []deliveryChange{
-		{ID: "ch_old", Repo: "agent-net", State: "open", Caller: secondMainID, Waiting: time.Minute},
-		{ID: "ch_new", Repo: "agent-net", State: "open", Caller: mainID, Waiting: 2 * time.Minute},
-		{ID: "ch_other", Repo: "tenebrae", State: "open", Caller: mainID, Waiting: time.Second},
+func TestMergerExplicitLeadWinsDeliveryCaller(t *testing.T) {
+	m := treeModel(120, 34, mergerFixture())
+	m.delivery.changes = []deliveryChange{{Repo: "agent-net", Caller: secondMainID, State: "open"}}
+	shown := map[string]protocol.AgentView{}
+	for _, a := range m.snap.Agents {
+		shown[a.SessionID] = a
 	}
-	g := m.groups()[0]
-	var order []string
-	for _, a := range g.agents {
-		order = append(order, a.SessionID)
-	}
-	p := indexOfID(order, secondMainID)
-	if p < 0 || p+1 >= len(order) || order[p+1] != mergerID {
-		t.Fatalf("merger not under the delivery caller: %v", order)
-	}
-	if g.marks[mergerID].prefix != "└─ " {
-		t.Errorf("merger prefix %q", g.marks[mergerID].prefix)
-	}
-	if got := len(g.marks[mainID].prefix) + len(g.marks[secondMainID].prefix); got != 0 {
-		t.Errorf("a main agent has a mark: %+v", g.marks)
-	}
-}
-
-func TestMergerParentFallsBackToStableID(t *testing.T) {
-	snap := mergerFixture()
-	snap.Agents = append(snap.Agents, agent(secondMainID, "n_mac", "Mac", "claude", "agent-net-old", func(a *protocol.AgentView) {
-		a.LastActive, a.LastSeen = t0.Unix(), t0.Unix()
-		a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
-	}))
-	m := treeModel(120, 34, snap) // no delivery data loaded
-	g := m.groups()[0]
-	var order []string
-	for _, a := range g.agents {
-		order = append(order, a.SessionID)
-	}
-	p := indexOfID(order, mainID)
-	if p < 0 || p+2 >= len(order) || order[p+2] != mergerID {
-		t.Fatalf("merger not under the stable parent: %v", order)
+	if got := m.mergerParent(shown[mergerID], shown); got != mainID {
+		t.Fatalf("parent %s", got)
 	}
 }
 
@@ -139,7 +108,12 @@ func TestMergerWithoutShownParentStaysTopLevel(t *testing.T) {
 		a.Repo.Project, a.Profile.Project = "no-agent-here", "no-agent-here"
 	}))
 	m := treeModel(120, 34, snap)
-	g := m.groups()[0]
+	g := group{}
+	for _, band := range m.groups() {
+		if indexOfID(agentIDs(band.agents), mergerID) >= 0 {
+			g = band
+		}
+	}
 	if mk, ok := g.marks[mergerID]; ok && mk.prefix != "" {
 		t.Errorf("lone merger got a mark: %+v", mk)
 	}
@@ -154,25 +128,12 @@ func TestMergerWithoutShownParentStaysTopLevel(t *testing.T) {
 	}
 }
 
-func TestMergerFilterHidesParentStaysTopLevel(t *testing.T) {
+func TestMergerFilterKeepsWholeTree(t *testing.T) {
 	m := treeModel(120, 34, mergerFixture())
 	m.filter = "merger"
-	m.ensureSelection()
-	var g *group
-	all := m.groups()
-	for i := range all {
-		if all[i].nodeID == "n_mac" {
-			g = &all[i]
-		}
-	}
-	if g == nil {
-		t.Fatal("no Mac group")
-	}
-	if len(g.agents) != 1 || g.agents[0].SessionID != mergerID {
-		t.Fatalf("filtered rows: %+v", g.agents)
-	}
-	if mk, ok := g.marks[mergerID]; ok && mk.prefix != "" {
-		t.Errorf("a merger whose parent the filter hides got a mark: %+v", mk)
+	got := ids(m)
+	if indexOfID(got, mainID) < 0 || indexOfID(got, mergerID) < 0 || indexOfID(got, mergerWorkerID) < 0 {
+		t.Fatalf("filter split tree: %v", got)
 	}
 }
 

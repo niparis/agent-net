@@ -4,12 +4,12 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                           TYPE   PROJECT   MODEL                    STATUS   CPU   RAM TASK
- Mac (here) 2 sessions ────────────────────────────────────────────────────────────────────────────────── view: all  (v)
-▸ ↳ backtest-a                   worker -         opencode · haiku-4-5     idle       ?     ? probe
-  ↳ backtest-b                   worker -         opencode · haiku-4-5     idle       ?     ? probe
- build-vm 1 session ────────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ backtest-on-a-remote-machine worker -         opencode · haiku-4-5     idle       ?     ? probe
+  NAME                            MACHINE      PROJECT    MODEL                 STATUS    CPU   RAM TASK
+ Idle (4)                                                                                                 view: all  (v)
+▸ ◐ strategies                    Mac          strategies claude · sonnet-5-5   idle        ?     ? backtest v2
+  ├─ backtest-a                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
+  ├─ backtest-b                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
+  └─ backtest-on-a-remote-machine build-vm     -          opencode · haiku-4-5  idle        ?     ? probe
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  n new  p pin  z/Z tree  ? help  q quit

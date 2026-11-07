@@ -4,21 +4,21 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   PROJECT    MODEL         STATUS   CPU   RAM TASK
- Mac (here) 6 sessions ───────────────────────────────────────────────── all (v)
-  tenebrae-53    agent  tenebrae   claude · opu… busy       ?     ?
-  ◐ strategies   agent  strategies claude · son… idle       ?     ? backtest v2
-  agent-net      agent  agent-net  claude        idle       ?     ? test ch_ed5f
-  ├─ fix-login   worker agent-net  opencode · h… idle       ?     ?
-▸ └─ agent-net … merger agent-net  claude        idle       ?     ?
-  web            agent  shop       opencode · s… idle       ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ◐ ci-runner    agent  agent-net  pi · gpt-6    idle       ?     ?
-  scratch        agent  -          pi            shell      ?     ?
- old-box 1 session ─────────────────────────────────────────────────────────────
-  old-session    agent  old        claude        ended 1d ago
+  NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
+ Working (1)                                                             all (v)
+  tenebrae-53    Mac     tenebrae  claude · op… busy        ?     ?
+ Idle (8)
+  ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
+  ★ agent-net    Mac     agent-net claude       idle        ?     ? test ch_ed5f
+  ├─ fix-login   Mac     agent-net opencode · … idle        ?     ?
+▸ └─ age… merger Mac     agent-net claude       idle        ?     ?
+  web            Mac     shop      opencode · … idle        ?     ?
+  ◐ ci-runner    build-… agent-net pi · gpt-6   idle        ?     ?
+  scratch        build-… -         pi           shell       ?     ?
+  old-session    old-box old       claude       offline             1d ago
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  n new  p pin  ? help  q quit
+up/down select  enter open  m msg  n new  p pin  z/Z tree  ? help  q quit

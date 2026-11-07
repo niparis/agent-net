@@ -52,7 +52,7 @@ func TestOrderFreezeAndSelection(t *testing.T) {
 	selected := m.selected
 	snap.Agents[1].Status = "busy"
 	m = refresh(m, &fakeSource{snap: snap})
-	if got := strings.Join(names(m), ","); got != "first,second" {
+	if got := strings.Join(names(m), ","); got != "second,first" {
 		t.Fatalf("order during freeze: %s", got)
 	}
 	now = now.Add(3 * time.Second)
@@ -100,7 +100,7 @@ func TestNewBusySessionDoesNotMoveRowsDuringFreeze(t *testing.T) {
 	m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	snap.Agents = append(snap.Agents, agent("second", "n_mac", "Mac", "claude", "second", func(a *protocol.AgentView) { a.Status = "busy" }))
 	m = refresh(m, &fakeSource{snap: snap})
-	if got := strings.Join(names(m), ","); got != "first,second" {
+	if got := strings.Join(names(m), ","); got != "second,first" {
 		t.Fatalf("frozen order: %s", got)
 	}
 }
@@ -166,6 +166,7 @@ func TestSessionSelectionFollowsActivityOrderDuringFreeze(t *testing.T) {
 	src := &fakeSource{snap: snap, events: fakeEvents()}
 	now := t0
 	m := New(src)
+	m.activeOnly = false
 	m.loc, m.now = time.UTC, func() time.Time { return now }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
@@ -196,10 +197,10 @@ func TestSessionSelectionFollowsActivityOrderDuringFreeze(t *testing.T) {
 
 	now = now.Add(3 * time.Second)
 	m = refresh(m, src)
-	if got := strings.Join(orderedTableNames(m), ","); got != "recent,waiting" {
+	if got := strings.Join(orderedTableNames(m), ","); got != "waiting,recent" {
 		t.Fatalf("order did not update after freeze: %s", got)
 	}
-	if m.selected != "recent-session" || m.selIdx != 0 {
+	if m.selected != "recent-session" || m.selIdx != 1 {
 		t.Fatalf("post-freeze selection is %q at %d, want the moved table row", m.selected, m.selIdx)
 	}
 }

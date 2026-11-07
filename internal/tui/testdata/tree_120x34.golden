@@ -4,20 +4,20 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                             TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK
- Mac (here) 7 sessions ────────────────────────────────────────────────────────────────────────────────── view: all  (v)
-  ↳ tenebrae                       worker tenebrae   opencode · haiku-4-5     busy       ?     ?
-  tenebrae-53                      agent  tenebrae   claude · opus-5-5        busy       ?     ?
-  ◐ strategies                     agent  strategies claude · sonnet-5-5      idle       ?     ? backtest v2
-  ├─ backtest-a                    worker -          opencode · haiku-4-5     idle       ?     ? probe
-▸ ├─ backtest-b                    worker -          opencode · haiku-4-5     idle       ?     ? probe
-  └─ backtest-on-a-remo… @build-vm worker -          opencode · haiku-4-5     idle       ?     ? probe
-  web                              agent  shop       opencode · sonnet-5      idle       ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ◐ ci-runner                      agent  agent-net  pi · gpt-6               idle       ?     ?
-  scratch                          agent  -          pi                       shell      ?     ?
- old-box 1 session ─────────────────────────────────────────────────────────────────────────────────────────────────────
-  old-session                      agent  old        claude                   ended 1d ago
+  NAME                            MACHINE      PROJECT    MODEL                 STATUS    CPU   RAM TASK
+ Working (2)                                                                                              view: all  (v)
+  ↳ tenebrae                      Mac          tenebrae   opencode · haiku-4-5  busy        ?     ?
+  tenebrae-53                     Mac          tenebrae   claude · opus-5-5     busy        ?     ?
+ Idle (8)
+  ◐ strategies                    Mac          strategies claude · sonnet-5-5   idle        ?     ? backtest v2
+  ├─ backtest-a                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
+▸ ├─ backtest-b                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
+  └─ backtest-on-a-remote-machine build-vm     -          opencode · haiku-4-5  idle        ?     ? probe
+  web                             Mac          shop       opencode · sonnet-5   idle        ?     ?
+  ◐ ci-runner                     build-vm     agent-net  pi · gpt-6            idle        ?     ?
+  scratch                         build-vm     -          pi                    shell       ?     ?
+  old-session                     old-box      old        claude                offline             1d ago
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  z/Z tree  ? help  q quit

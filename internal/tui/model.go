@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -136,6 +135,7 @@ type Model struct {
 	convDetailLoading map[string]bool
 
 	// What the person chose.
+	collapsedTrees            map[string]bool
 	sessionOrder              map[string]sessionOrder
 	sessionNext, sessionFront int64
 	orderFrozenUntil          time.Time
@@ -1540,6 +1540,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.activeOnly = !m.activeOnly
 		m.ensureSelection()
 		m.fixScroll()
+	case "toggle tree":
+		m.toggleSessionTrees(false)
+	case "toggle all trees":
+		m.toggleSessionTrees(true)
 	case "cycle view":
 		m.cycleSessionView()
 		m.ensureSelection()
@@ -1707,22 +1711,21 @@ func (m Model) feedItemAt(i int) *feedItem {
 
 // ---- the list of sessions ----
 
-// group is the sessions of one machine, or the Mine section above them.
+// group is one urgency band of complete session trees.
 type group struct {
-	nodeID string
 	host   string
-	mine   bool
 	agents []protocol.AgentView
-	// hidden is how many sessions the active-only filter hides on this
-	// machine. It is 0 when the filter is off.
+	// hidden counts idle sessions folded out of the active view.
 	hidden int
+	total  int
+	first  bool
 	// marks says how a worker row is drawn, by session ID. A session with no
 	// mark is a plain row.
 	marks map[string]treeMark
 }
 
 // idleAfter is how long a session may sit idle before the screen calls it
-// quiet: dim on every screen, and hidden by the active-only filter.
+// quiet: dim on every screen. Idle folding does not depend on its age.
 const idleAfter = time.Hour
 
 // idleLong tells whether a session is idle and has had no activity for more
@@ -1734,21 +1737,13 @@ func (m Model) idleLong(a protocol.AgentView) bool {
 	return m.now().Sub(time.Unix(a.LastSeen, 0)) > idleAfter
 }
 
-// quietInActive is the active view's rule: it hides an idle session only after
-// a whole day without activity. The owner-use change replaces this rule.
-func (m Model) quietInActive(a protocol.AgentView) bool {
-	if !a.Online || a.Status != "idle" || sessionActivity(a) == 0 {
-		return false
-	}
-	return m.now().Sub(time.Unix(sessionActivity(a), 0)) > 24*time.Hour
-}
-
 // treeMark is how a nested row hangs under the session it belongs to: a
 // worker under the session that started it, or a project's merger under that
 // project's main agent.
 type treeMark struct {
-	prefix string // the tree glyphs before the name: "├─ ", "│  └─ ", or "↳ " for a lone worker
-	host   string // the row's machine, when it differs from the group's
+	prefix  string // the tree glyphs before the name: "├─ ", "│  └─ ", or "↳ " for a lone worker
+	root    string
+	summary string
 }
 
 // matches tells whether an agent passes the filter: every word must appear in
@@ -1769,293 +1764,237 @@ func matches(a protocol.AgentView, filter string) bool {
 	return true
 }
 
-// The Mine section is the owner's own short list: the sessions pinned for it,
-// then the sessions it used in the last week, newest use first. It shows in
-// both views and keeps offline and idle rows the machine groups would hide.
-const mineWindow = 7 * 24 * time.Hour
+// groups builds complete trees before assigning their most urgent member's band.
+func (m Model) groups() []group { return m.sessionGroups(true) }
 
-func (m Model) mineEligible(a protocol.AgentView) bool {
-	if protocol.IsOwner(a.Harness) || a.Harness == "bot" {
-		return false
-	}
-	if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
-		return false
-	}
-	if isJunkSession(a) && !m.showJunk() {
-		return false
-	}
-	if a.Worker != nil && !a.Online {
-		return false
-	}
-	return matches(a, m.filter)
-}
-
-func (m Model) mineAgents() []protocol.AgentView {
-	now := m.now()
-	var pinned, used []protocol.AgentView
+func (m Model) sessionGroups(collapse bool) []group {
+	shown := map[string]protocol.AgentView{}
+	eligible := map[string]bool{}
 	for _, a := range m.snap.Agents {
-		if !m.mineEligible(a) {
+		if protocol.IsOwner(a.Harness) || m.hiddenSessions[a.SessionID] && !m.showHiddenSessions || isJunkSession(a) && !m.showJunk() {
 			continue
 		}
-		switch {
-		case a.PinnedAt > 0:
-			pinned = append(pinned, a)
-		case a.OwnerUsedAt > 0:
-			if age := now.Sub(time.Unix(a.OwnerUsedAt, 0)); age >= 0 && age <= mineWindow {
-				used = append(used, a)
-			}
-		}
-	}
-	sort.SliceStable(pinned, func(i, j int) bool {
-		if pinned[i].PinnedAt != pinned[j].PinnedAt {
-			return pinned[i].PinnedAt < pinned[j].PinnedAt // pin order
-		}
-		return pinned[i].SessionID < pinned[j].SessionID
-	})
-	sort.SliceStable(used, func(i, j int) bool {
-		if used[i].OwnerUsedAt != used[j].OwnerUsedAt {
-			return used[i].OwnerUsedAt > used[j].OwnerUsedAt
-		}
-		return used[i].SessionID < used[j].SessionID
-	})
-	return append(pinned, used...)
-}
-
-// groups returns the sessions that pass the filter and the switches, grouped
-// by machine, with activity bands kept stable between refreshes.
-func (m Model) groups() []group {
-	mine := m.mineAgents()
-	inMine := make(map[string]bool, len(mine))
-	for _, a := range mine {
-		inMine[a.SessionID] = true
-	}
-	latest := map[string]protocol.AgentView{}
-	online := map[string]bool{}
-	key := func(a protocol.AgentView) string {
-		return a.NodeID + "\n" + firstNonEmpty(a.Repo.Project, firstNonEmpty(a.Repo.Root, a.Cwd))
-	}
-	for _, a := range m.snap.Agents {
-		if protocol.IsOwner(a.Harness) || a.Harness == "bot" || a.Worker != nil || m.hiddenSessions[a.SessionID] {
-			continue
-		}
-		if isJunkSession(a) && !m.showJunk() {
-			continue
-		}
-		k := key(a)
-		if a.Online && a.Status != protocol.StatusDormant {
-			online[k] = true
-			continue
-		}
-		if a.LastSeen > 0 && m.now().Sub(time.Unix(a.LastSeen, 0)) <= 7*24*time.Hour && a.LastSeen > latest[k].LastSeen {
-			latest[k] = a
-		}
-	}
-	by := map[string]*group{}
-	bots := group{nodeID: "bots", host: "Bots"}
-	var order []*group
-	nest := false // any worker or merger on screen
-	for _, a := range m.snap.Agents {
-		if protocol.IsOwner(a.Harness) {
-			continue // the owner is a sender, not a row
-		}
-		if inMine[a.SessionID] {
-			continue // already at the top under Mine
-		}
-		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
-			continue
-		}
-		if isJunkSession(a) && !m.showJunk() {
-			continue
-		}
-		// Dormant sessions are reachable but quiet: hidden with the offline ones.
-		if a.StalledSince == 0 && (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline && strings.TrimSpace(m.filter) == "" && (m.activeOnly || online[key(a)] || latest[key(a)].SessionID != a.SessionID) {
-			continue
-		}
-		// A worker that ended is not a row, even when offline sessions are
-		// shown: it is offline until its owner's next message starts it again.
 		if a.Worker != nil && !a.Online {
 			continue
 		}
-		if !matches(a, m.filter) {
-			continue
+		shown[a.SessionID] = a
+		eligible[a.SessionID] = a.Online && a.Status != protocol.StatusDormant || m.showOffline || strings.TrimSpace(m.filter) != "" || a.StalledSince > 0 || m.sessionNeedsOwner(a)
+	}
+	parents := map[string]string{}
+	for id, a := range shown {
+		parent := ""
+		if isMerger(a) {
+			parent = m.mergerParent(a, shown)
+		} else if a.Worker != nil {
+			parent = a.Worker.Owner
 		}
-		if a.Harness == "bot" {
-			bots.agents = append(bots.agents, a)
-			continue
-		}
-		g := by[a.NodeID]
-		if g == nil {
-			g = &group{nodeID: a.NodeID, host: m.nodeName(a.NodeID, a.Hostname)}
-			by[a.NodeID] = g
-			order = append(order, g)
-		}
-		if m.activeOnly && m.quietInActive(a) {
-			g.hidden++
-			continue
-		}
-		g.agents = append(g.agents, a)
-		if a.Worker != nil || isMerger(a) {
-			nest = true
+		if _, ok := shown[parent]; ok && parent != id {
+			parents[id] = parent
 		}
 	}
-	sort.Slice(order, func(i, j int) bool {
-		if hi, hj := order[i].nodeID == m.snap.NodeID, order[j].nodeID == m.snap.NodeID; hi != hj {
-			return hi // this machine first
-		}
-		a, b := strings.ToLower(order[i].host), strings.ToLower(order[j].host)
-		if a != b {
-			return a < b
-		}
-		return order[i].nodeID < order[j].nodeID
-	})
-	out := make([]group, 0, len(order))
-	for _, g := range order {
-		sort.SliceStable(g.agents, func(i, j int) bool {
-			a, b := g.agents[i], g.agents[j]
-			if m.now().Before(m.orderFrozenUntil) {
-				ia, oka := m.frozenOrder[a.SessionID]
-				ib, okb := m.frozenOrder[b.SessionID]
-				if oka != okb {
-					return oka
-				}
-				if oka && ia != ib {
-					return ia < ib
-				}
+	// Invalid caller cycles stay at the top level.
+	invalid := map[string]bool{}
+	for id := range parents {
+		seen := map[string]bool{id: true}
+		for p := parents[id]; p != ""; p = parents[p] {
+			if seen[p] {
+				invalid[id] = true
+				break
 			}
-			oa, oka := m.sessionOrder[a.SessionID]
-			ob, okb := m.sessionOrder[b.SessionID]
-			if oka && okb {
-				if oa.band != ob.band {
-					return oa.band < ob.band
-				}
-				if !oa.activity.Equal(ob.activity) {
-					return oa.activity.After(ob.activity)
-				}
-				if oa.rank != ob.rank {
-					return oa.rank < ob.rank
-				}
+			seen[p] = true
+		}
+	}
+	for id := range invalid {
+		delete(parents, id)
+	}
+	// Keep quiet ancestors when an eligible descendant needs their context.
+	kept := map[string]bool{}
+	for id, ok := range eligible {
+		if ok {
+			for p := id; p != "" && !kept[p]; p = parents[p] {
+				kept[p] = true
 			}
-			return a.SessionID < b.SessionID
+		}
+	}
+	for id := range shown {
+		if !kept[id] {
+			delete(shown, id)
+		}
+	}
+	children := map[string][]protocol.AgentView{}
+	var roots []protocol.AgentView
+	for id, a := range shown {
+		if p := parents[id]; p != "" {
+			children[p] = append(children[p], a)
+		} else {
+			roots = append(roots, a)
+		}
+	}
+	less := func(a, b protocol.AgentView) bool {
+		if (a.PinnedAt > 0) != (b.PinnedAt > 0) {
+			return a.PinnedAt > 0
+		}
+		if a.PinnedAt > 0 && a.PinnedAt != b.PinnedAt {
+			return a.PinnedAt < b.PinnedAt
+		}
+		if m.now().Before(m.orderFrozenUntil) {
+			ia, oka := m.frozenOrder[a.SessionID]
+			ib, okb := m.frozenOrder[b.SessionID]
+			if oka != okb {
+				return oka
+			}
+			if oka && ia != ib {
+				return ia < ib
+			}
+		}
+		oa, oka := m.sessionOrder[a.SessionID]
+		ob, okb := m.sessionOrder[b.SessionID]
+		if oka && okb {
+			if oa.band != ob.band {
+				return oa.band < ob.band
+			}
+			if !oa.activity.Equal(ob.activity) {
+				return oa.activity.After(ob.activity)
+			}
+			if oa.rank != ob.rank {
+				return oa.rank < ob.rank
+			}
+		}
+		return a.SessionID < b.SessionID
+	}
+	sort.SliceStable(roots, func(i, j int) bool { return less(roots[i], roots[j]) })
+	for _, cs := range children {
+		sort.Slice(cs, func(i, j int) bool {
+			if isMerger(cs[i]) != isMerger(cs[j]) {
+				return !isMerger(cs[i])
+			}
+			if cs[i].Worker != nil && cs[j].Worker != nil && cs[i].Worker.StartedAt != cs[j].Worker.StartedAt {
+				return cs[i].Worker.StartedAt < cs[j].Worker.StartedAt
+			}
+			return cs[i].SessionID < cs[j].SessionID
 		})
-		out = append(out, *g)
 	}
-	out = m.nestWorkers(out, nest)
-	if len(mine) > 0 {
-		out = append([]group{{nodeID: "mine", host: "Mine", mine: true, agents: mine}}, out...)
+	bands := []group{{host: "Needs you"}, {host: "Working"}, {host: "Idle"}}
+	for i := range bands {
+		bands[i].marks = map[string]treeMark{}
 	}
-	if len(bots.agents) > 0 {
-		sort.Slice(bots.agents, func(i, j int) bool { return bots.agents[i].Profile.Name < bots.agents[j].Profile.Name })
-		out = append(out, bots)
+	for _, root := range roots {
+		var tree []protocol.AgentView
+		marks := map[string]treeMark{}
+		band, busy := 2, 0
+		matched, pinned := false, false
+		var walk func(protocol.AgentView, string)
+		walk = func(a protocol.AgentView, prefix string) {
+			tree = append(tree, a)
+			matched = matched || matches(a, m.filter)
+			pinned = pinned || a.PinnedAt > 0
+			if m.sessionNeedsOwner(a) {
+				band = 0
+			} else if a.Online && a.Status == "busy" {
+				band = min(band, 1)
+			}
+			if a.Online && a.Status == "busy" {
+				busy++
+			}
+			cs := children[a.SessionID]
+			for i, c := range cs {
+				glyph, next := "├─ ", prefix+"│  "
+				if i == len(cs)-1 {
+					glyph, next = "└─ ", prefix+"   "
+				}
+				marks[c.SessionID] = treeMark{prefix: prefix + glyph, root: root.SessionID}
+				walk(c, next)
+			}
+		}
+		if root.Worker != nil && !isMerger(root) {
+			marks[root.SessionID] = treeMark{prefix: "↳ "}
+		}
+		walk(root, "")
+		if !matched {
+			continue
+		}
+		g := &bands[band]
+		g.total += len(tree)
+		if band == 2 && m.activeOnly && m.filter == "" && !pinned {
+			g.hidden += len(tree)
+			continue
+		}
+		if collapse && m.collapsedTrees[root.SessionID] && len(tree) > 1 {
+			childBusy := busy
+			if root.Online && root.Status == "busy" {
+				childBusy--
+			}
+			marks[root.SessionID] = treeMark{summary: fmt.Sprintf("+%d (%d busy)", len(tree)-1, childBusy)}
+			tree = tree[:1]
+		}
+		g.agents = append(g.agents, tree...)
+		for id, mk := range marks {
+			g.marks[id] = mk
+		}
+	}
+	var out []group
+	for _, g := range bands {
+		if g.total > 0 {
+			g.first = len(out) == 0
+			out = append(out, g)
+		}
 	}
 	return out
 }
 
-// nestWorkers moves each worker under the session that started it, and each
-// merger under its project's main agent, in that session's machine group.
-// Workers sort by start time and the merger comes after them, so a project
-// reads as its agent, its workers, then its merger. A worker whose caller is
-// not on screen (the owner, or a session hidden by the filter or the offline
-// switch) stays in its own group and gets a lone marker. A worker is a root
-// too when its chain of callers loops. A merger without a main agent on screen
-// is a plain top-level row.
-func (m Model) nestWorkers(groups []group, nest bool) []group {
-	if !nest {
-		return groups
+func (m Model) sessionNeedsOwner(a protocol.AgentView) bool {
+	if a.Status == "needs you" || a.Status == "needs_you" || a.Worker == nil && a.Waiting != nil {
+		return true
 	}
-	shown := map[string]protocol.AgentView{}
+	for _, item := range m.inboxItems {
+		if item.SessionID == a.SessionID && item.Status == "open" && (item.Kind == "question" || item.Kind == "approval") {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) toggleSessionTrees(all bool) {
+	if m.collapsedTrees == nil {
+		m.collapsedTrees = map[string]bool{}
+	}
+	groups := m.sessionGroups(false)
+	roots := map[string]bool{}
+	selectedRoot := m.selected
 	for _, g := range groups {
-		for _, a := range g.agents {
-			shown[a.SessionID] = a
-		}
-	}
-	parentOf := func(a protocol.AgentView) string {
-		if a.Worker == nil {
-			if isMerger(a) {
-				return m.mergerParent(a, shown)
-			}
-			return ""
-		}
-		if _, ok := shown[a.Worker.Owner]; !ok || a.Worker.Owner == a.SessionID {
-			return ""
-		}
-		// Walk up: a loop of callers has no root, so none of it is nested.
-		id := a.Worker.Owner
-		for range shown {
-			p, ok := shown[id]
-			if !ok || p.Worker == nil {
-				return a.Worker.Owner
-			}
-			if p.Worker.Owner == a.SessionID {
-				return ""
-			}
-			id = p.Worker.Owner
-		}
-		return ""
-	}
-	// childStart orders children: workers by the time they started, a merger
-	// after all of them.
-	childStart := func(a protocol.AgentView) int64 {
-		if a.Worker != nil {
-			return a.Worker.StartedAt
-		}
-		if isMerger(a) {
-			return math.MaxInt64
-		}
-		return 0
-	}
-	children := map[string][]protocol.AgentView{}
-	for _, a := range shown {
-		if p := parentOf(a); p != "" {
-			children[p] = append(children[p], a)
-		}
-	}
-	for _, c := range children {
-		sort.Slice(c, func(i, j int) bool {
-			if si, sj := childStart(c[i]), childStart(c[j]); si != sj {
-				return si < sj
-			}
-			return c[i].SessionID < c[j].SessionID
-		})
-	}
-	out := make([]group, 0, len(groups))
-	for _, g := range groups {
-		ng := group{nodeID: g.nodeID, host: g.host, hidden: g.hidden, marks: map[string]treeMark{}}
-		var walk func(a protocol.AgentView, lead string)
-		walk = func(a protocol.AgentView, lead string) {
-			ng.agents = append(ng.agents, a)
-			cs := children[a.SessionID]
-			for i, c := range cs {
-				glyph, next := "├─ ", lead+"│  "
-				if i == len(cs)-1 {
-					glyph, next = "└─ ", lead+"   "
+		for id, mk := range g.marks {
+			if mk.root != "" {
+				roots[mk.root] = true
+				if id == m.selected {
+					selectedRoot = mk.root
 				}
-				mk := treeMark{prefix: lead + glyph}
-				if c.NodeID != g.nodeID {
-					mk.host = m.nodeName(c.NodeID, c.Hostname)
-				}
-				ng.marks[c.SessionID] = mk
-				walk(c, next)
 			}
-		}
-		for _, a := range g.agents {
-			if parentOf(a) != "" {
-				continue
-			}
-			if a.Worker != nil {
-				ng.marks[a.SessionID] = treeMark{prefix: "↳ "}
-			}
-			walk(a, "")
-		}
-		if len(ng.agents) > 0 || ng.hidden > 0 { // a machine whose sessions all hang under others or are hidden still shows its heading
-			out = append(out, ng)
 		}
 	}
-	return out
+	if all {
+		collapse := false
+		for id := range roots {
+			if !m.collapsedTrees[id] {
+				collapse = true
+			}
+		}
+		for id := range roots {
+			m.collapsedTrees[id] = collapse
+		}
+		if collapse && roots[selectedRoot] {
+			m.selected = selectedRoot
+		}
+	} else if roots[selectedRoot] {
+		m.collapsedTrees[selectedRoot] = !m.collapsedTrees[selectedRoot]
+		m.selected = selectedRoot
+	}
+	m.ensureSelection()
+	m.fixScroll()
 }
 
 // isMerger tells whether a session is a project's merger.
 func isMerger(a protocol.AgentView) bool {
-	return protocol.SessionType(a.Harness, a.Worker, a.Type) == "merger"
+	return a.Type == "merger"
 }
 
 // projectOf is the project a session belongs to, as the session list names it.
@@ -2063,62 +2002,23 @@ func projectOf(a protocol.AgentView) string {
 	return firstNonEmpty(a.Repo.Project, a.Profile.Project)
 }
 
-// mergerParent finds the main agent a merger belongs to: a plain agent session
-// of the same project on the same machine, on screen. When several match, the
-// caller of the newest open or recent delivery change for the project wins, as
-// that is the session that sends the merger work. Without delivery data, the
-// lowest session ID wins so activity cannot change the parent.
+// mergerParent prefers the explicit online repo lead, then the starter.
 func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
-	project := projectOf(a)
-	if project == "" {
-		return ""
-	}
-	ids := make([]string, 0, len(shown))
-	for id := range shown {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	caller := m.deliveryCaller(project)
 	best := ""
-	for _, id := range ids {
-		c, ok := shown[id]
-		if !ok || c.SessionID == a.SessionID || c.NodeID != a.NodeID {
-			continue
-		}
-		if c.Worker != nil || protocol.SessionType(c.Harness, c.Worker, c.Type) != "agent" {
-			continue
-		}
-		if projectOf(c) != project {
-			continue
-		}
-		if caller != "" && c.SessionID == caller {
-			return c.SessionID
-		}
-		if best == "" {
-			best = c.SessionID
+	for id, c := range shown {
+		if id != a.SessionID && c.Online && c.RepoLeadExplicit && projectOf(a) != "" && projectOf(c) == projectOf(a) && (best == "" || id < best) {
+			best = id
 		}
 	}
-	return best
-}
-
-// deliveryCaller is the caller of the newest open or recent change for a
-// project, when the delivery view has loaded any. Open changes win over the
-// rest; the shortest wait is the most recent activity. It is empty when there
-// is no such data, and the caller then falls back to activity.
-func (m Model) deliveryCaller(project string) string {
-	best, bestOpen := "", false
-	var bestWait time.Duration
-	found := false
-	for _, ch := range m.delivery.changes {
-		if ch.Repo != project || ch.Caller == "" {
-			continue
-		}
-		open := ch.State == "open"
-		if !found || (open && !bestOpen) || (open == bestOpen && ch.Waiting < bestWait) {
-			best, bestOpen, bestWait, found = ch.Caller, open, ch.Waiting, true
+	if best != "" {
+		return best
+	}
+	if a.Worker != nil {
+		if _, ok := shown[a.Worker.Owner]; ok && a.Worker.Owner != a.SessionID {
+			return a.Worker.Owner
 		}
 	}
-	return best
+	return ""
 }
 
 // visible is the selection order: every table row.
@@ -2187,12 +2087,13 @@ func (m Model) agentByID(id string) (protocol.AgentView, bool) {
 	return protocol.AgentView{}, false
 }
 
-// tableRow is one line of the sessions table: a machine heading or a session.
+// tableRow is an urgency heading, a session or the folded idle count.
 type tableRow struct {
 	header bool
 	g      group
 	agent  protocol.AgentView
 	mark   treeMark // how a worker hangs under its caller
+	fold   bool
 }
 
 func (m Model) tableRows() []tableRow {
@@ -2201,6 +2102,9 @@ func (m Model) tableRows() []tableRow {
 		rows = append(rows, tableRow{header: true, g: g})
 		for _, a := range g.agents {
 			rows = append(rows, tableRow{agent: a, mark: g.marks[a.SessionID], g: g})
+		}
+		if g.hidden > 0 {
+			rows = append(rows, tableRow{fold: true, g: g})
 		}
 	}
 	return rows
@@ -2215,7 +2119,7 @@ func (m *Model) fixScroll() {
 	}
 	sel := -1
 	for i, r := range rows {
-		if !r.header && r.agent.SessionID == m.selected {
+		if !r.header && !r.fold && r.agent.SessionID == m.selected {
 			sel = i
 		}
 	}
@@ -2225,7 +2129,7 @@ func (m *Model) fixScroll() {
 	}
 	if sel < m.tableTop {
 		m.tableTop = sel
-		// Show the machine heading above the first session of a machine.
+		// Show the group heading above its first session.
 		if sel > 0 && rows[sel-1].header {
 			m.tableTop = sel - 1
 		}
@@ -2319,7 +2223,12 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		for _, a := range m.snap.Agents {
 			if strings.EqualFold(q.Select, a.SessionID) || q.Select != "" && (strings.EqualFold(q.Select, a.Profile.Name) || strings.EqualFold(q.Select, a.Repo.Project)) {
 				m.selected = a.SessionID
-				if m.quietInActive(a) || isJunkSession(a) || !a.Online {
+				for _, g := range m.sessionGroups(false) {
+					if mk := g.marks[a.SessionID]; mk.root != "" {
+						delete(m.collapsedTrees, mk.root)
+					}
+				}
+				if a.Status != "busy" && !m.sessionNeedsOwner(a) || isJunkSession(a) || !a.Online {
 					m.activeOnly, m.showOffline = false, true
 				}
 				if isJunkSession(a) {

@@ -8,7 +8,7 @@ import (
 func TestOwnerColumnsAtEveryWidth(t *testing.T) {
 	for _, width := range []int{46, 62, 78, 118} {
 		cols := columns(width, 18)
-		want := []string{"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"}
+		want := []string{"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"}
 		if len(cols) != len(want) {
 			t.Fatalf("width %d: %v", width, cols)
 		}

@@ -63,6 +63,7 @@ func TestPendingDetail(t *testing.T) {
 func TestPendingTaskAndLayout(t *testing.T) {
 	for _, width := range []int{80, 120} {
 		m := newModel(width, 34)
+		m.activeOnly = false
 		before := m.sessionsTable(width, 12)
 		for i := range m.snap.Agents {
 			if m.snap.Agents[i].Profile.Name == "strategies" {
@@ -76,7 +77,7 @@ func TestPendingTaskAndLayout(t *testing.T) {
 		if width >= 120 && !strings.Contains(after[0], "MODEL") {
 			t.Fatalf("width %d: header lost RULE: %q", width, after[0])
 		}
-		if width == 80 && (!strings.Contains(after[0], "TYPE") || !strings.Contains(after[0], "PROJECT")) {
+		if width == 80 && (!strings.Contains(after[0], "MACHINE") || !strings.Contains(after[0], "PROJECT")) {
 			t.Fatalf("width %d: header lost AGENT or PROJECT: %q", width, after[0])
 		}
 		for i := range before {
@@ -97,6 +98,7 @@ func TestPendingTaskAndLayout(t *testing.T) {
 		}
 	}
 	m := newModel(120, 34)
+	m.activeOnly = false
 	a := protocol.AgentView{Online: true, Status: "idle", Pending: []protocol.PendingRequest{{PeerName: "alice", Since: t0.Add(-5 * time.Minute).Unix()}}}
 	if got := m.pendingTask(a, 50); got != "owes reply to alice · 5m" {
 		t.Fatalf("owed task: %q", got)

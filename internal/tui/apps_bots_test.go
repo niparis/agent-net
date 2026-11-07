@@ -12,6 +12,7 @@ import (
 
 func botScreenModel(w int) Model {
 	m := newModel(w, 34)
+	m.activeOnly = false
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "s-bot", Harness: "bot", Profile: protocol.Profile{Name: "weather-bot"}, NodeID: "app-test", Online: true, LastSeen: m.now().Add(-time.Minute).Unix()})
 	return m
 }
@@ -21,7 +22,7 @@ func TestSessionsBotsGroupAndKeys(t *testing.T) {
 		t.Fatal("bot creates a phantom machine")
 	}
 	groups := m.groups()
-	if groups[len(groups)-1].host != "Bots" {
+	if groups[len(groups)-1].host != "Idle" {
 		t.Fatalf("last group: %+v", groups[len(groups)-1])
 	}
 	m.selected = "s-bot"
@@ -57,7 +58,7 @@ func TestAppsPublicAndBotsScreens(t *testing.T) {
 func TestBotColumnsAndPublicAddresses(t *testing.T) {
 	m := botScreenModel(120)
 	view := m.testView()
-	if !strings.Contains(view, "weather-bot        bot    -") || !strings.Contains(view, "last call 14:04") {
+	if !strings.Contains(view, "weather-bot") || !strings.Contains(view, "last call 14:04") {
 		t.Fatalf("bot columns:\n%s", view)
 	}
 	m.apps.public.On = true

@@ -14,6 +14,7 @@ import (
 
 func hiddenModel(w, h int, src *fakeSource) Model {
 	m := New(src)
+	m.activeOnly = false
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
 	return settle(refresh(m, src))
@@ -93,7 +94,7 @@ func TestHideSessionKeyDoesNotTakeTheWorkerStopKey(t *testing.T) {
 		if !strings.Contains(line, "x stop") {
 			t.Errorf("worker row at width %d does not show x stop: %s", width, line)
 		}
-		if hints := strings.Split(line, "  "); len(hints) > 7 {
+		if hints := strings.Split(line, "  "); len(hints) > 8 {
 			t.Errorf("worker row at width %d has too many hints: %s", width, line)
 		}
 	}

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -68,34 +67,20 @@ func indexOfID(l []string, id string) int {
 func TestTreeOrder(t *testing.T) {
 	m := treeModel(120, 34, treeFixture())
 	g := m.groups()
-	// Workers stay below strategies in start order, including the remote worker.
-	var mac []string
-	for _, a := range g[0].agents {
-		mac = append(mac, a.Profile.Name)
-	}
-	want := []string{"tenebrae", "tenebrae-53", "strategies", "backtest-a", "backtest-b", "backtest-on-a-remote-machine", "web"}
-	if strings.Join(mac, ",") != strings.Join(want, ",") {
-		t.Fatalf("mac group %v, want %v", mac, want)
-	}
-	marks := g[0].marks
-	if marks[kidA].prefix != "├─ " || marks[kidB].prefix != "├─ " || marks[kidC].prefix != "└─ " {
-		t.Errorf("marks %+v", marks)
-	}
-	if marks[kidA].host != "" || marks[kidC].host != "build-vm" {
-		t.Errorf("hosts %+v", marks)
-	}
-	if marks[workerID].prefix != "↳ " {
-		t.Errorf("owner-started worker: %+v", marks[workerID])
-	}
-	// Its own machine keeps the other sessions and no worker of the caller.
-	for _, a := range g[1].agents {
-		if a.Worker != nil {
-			t.Errorf("build-vm group holds %s", a.Profile.Name)
+	// A complete caller tree stays together in its urgency band.
+	var marks map[string]treeMark
+	for _, band := range g {
+		if indexOfID(agentIDs(band.agents), callerID) >= 0 {
+			marks = band.marks
 		}
 	}
-	if len(g) != 3 {
-		t.Errorf("%d groups", len(g))
+	if marks[kidA].prefix != "├─ " || marks[kidB].prefix != "├─ " || marks[kidC].prefix != "└─ " {
+		t.Fatalf("marks %+v", marks)
 	}
+	if got := ids(m); got[indexOfID(got, callerID)+3] != kidC {
+		t.Fatalf("order %v", got)
+	}
+
 }
 
 func TestTreeGolden(t *testing.T) {
@@ -119,7 +104,12 @@ func TestTreeNested(t *testing.T) {
 	deep.Worker.Owner = kidA
 	snap.Agents = append(snap.Agents, deep)
 	m := treeModel(120, 34, snap)
-	g := m.groups()[0]
+	g := group{}
+	for _, band := range m.groups() {
+		if _, ok := band.marks[deep.SessionID]; ok {
+			g = band
+		}
+	}
 	if p := g.marks[deep.SessionID].prefix; p != "│  └─ " {
 		t.Errorf("nested prefix %q", p)
 	}

@@ -57,61 +57,15 @@ func countName(m Model, name string) int {
 	return n
 }
 
-// Pinned sessions come first in pin order, then the sessions used in the last
-// week, newest use first. The machine groups do not repeat them.
-func TestMineSectionPutsPinnedThenRecentlyUsedFirst(t *testing.T) {
+func TestSessionsHaveNoMineOrMachineGroups(t *testing.T) {
 	m, _ := mineModel(120, 34)
-	got := names(m)
-	want := []string{"strategies", "web", "tenebrae-53", "old-session"}
-	if len(got) < len(want) || strings.Join(got[:len(want)], ",") != strings.Join(want, ",") {
-		t.Fatalf("sessions start %v, want %v", got, want)
-	}
-	for _, name := range want {
-		if n := countName(m, name); n != 1 {
-			t.Errorf("%s appears %d times, want once: %v", name, n, got)
+	for _, g := range m.groups() {
+		if g.host != "Needs you" && g.host != "Working" && g.host != "Idle" {
+			t.Fatalf("unexpected group %s", g.host)
 		}
 	}
-	if countName(m, "ci-runner") != 1 || countName(m, "scratch") != 1 {
-		t.Fatalf("machine rows are missing after Mine: %v", got)
-	}
-}
-
-// Mine shows in both views, and the active view never hides its idle or
-// offline rows.
-func TestMineSectionShowsInBothViewsAndKeepsIdleAndOffline(t *testing.T) {
-	m, _ := mineModel(120, 34)
-	for i := range m.snap.Agents {
-		if m.snap.Agents[i].SessionID == "s_0000000000000003" { // web, idle for two days
-			m.snap.Agents[i].Status = "idle"
-			m.snap.Agents[i].LastActive = t0.Add(-48 * time.Hour).Unix()
-			m.snap.Agents[i].LastSeen = t0.Add(-48 * time.Hour).Unix()
-			m.snap.Agents[i].OwnerUsedAt = t0.Add(-time.Hour).Unix()
-		}
-	}
-	if !m.activeOnly {
-		t.Fatal("the model did not start in the active view")
-	}
-	for _, label := range []string{"active", "all"} {
-		view := ansi.Strip(m.testView())
-		if !strings.Contains(view, "Mine 4") {
-			t.Fatalf("%s view has no Mine count:\n%s", label, view)
-		}
-		for _, name := range []string{"strategies", "web", "tenebrae-53", "old-session"} {
-			if !strings.Contains(view, name) {
-				t.Errorf("%s view dropped %s from Mine:\n%s", label, name, view)
-			}
-		}
-		m = keys(m, "v")
-	}
-	if !m.activeOnly {
-		t.Fatal("v did not return to the active view")
-	}
-}
-
-// An empty Mine section leaves no header behind.
-func TestMineSectionHidesWhenEmpty(t *testing.T) {
-	if view := ansi.Strip(newModel(120, 34).testView()); strings.Contains(view, "Mine") {
-		t.Fatalf("no pins or use, but Mine is on screen:\n%s", view)
+	if strings.Contains(ansi.Strip(m.testView()), "Mine") {
+		t.Fatal("Mine remains")
 	}
 }
 
@@ -209,10 +163,10 @@ func TestPinKeyPinsAndUnpinsTheSelectedSession(t *testing.T) {
 	if a, ok := m.agentByID("s_0000000000000003"); !ok || a.PinnedAt == 0 {
 		t.Fatalf("web is not pinned: %+v", a)
 	}
-	if got := names(m); len(got) == 0 || got[0] != "web" {
-		t.Fatalf("the pinned session is not at the top of Mine: %v", got)
+	if got := names(m); indexOfID(got, "web") < 0 {
+		t.Fatalf("the pinned session is not visible: %v", got)
 	}
-	if view := ansi.Strip(m.testView()); !strings.Contains(view, "▪ web") {
+	if view := ansi.Strip(m.testView()); !strings.Contains(view, "★ web") {
 		t.Fatalf("the pinned row has no pin mark:\n%s", view)
 	}
 
@@ -223,7 +177,7 @@ func TestPinKeyPinsAndUnpinsTheSelectedSession(t *testing.T) {
 	if a, ok := m.agentByID("s_0000000000000003"); !ok || a.PinnedAt != 0 {
 		t.Fatalf("web is still pinned: %+v", a)
 	}
-	if strings.Contains(ansi.Strip(m.testView()), "▪ web") {
+	if strings.Contains(ansi.Strip(m.testView()), "★ web") {
 		t.Fatal("the pin mark stayed after unpinning")
 	}
 }
@@ -241,7 +195,7 @@ func TestPinKeyIsListedAndTheKeyLineFits(t *testing.T) {
 	if !strings.Contains(line, "p pin") {
 		t.Fatalf("key line has no pin: %q", line)
 	}
-	if hints := strings.Split(line, "  "); len(hints) > 7 {
+	if hints := strings.Split(line, "  "); len(hints) > 8 {
 		t.Fatalf("key line has %d hints: %q", len(hints), line)
 	}
 }
@@ -259,6 +213,7 @@ func TestMineSectionGoldens(t *testing.T) {
 // blank, and puts the age in TASK.
 func TestMineOfflineRowKeepsItsColumns(t *testing.T) {
 	m, _ := mineModel(80, 24)
+	m = keys(m, "v")
 	rows := m.sessionsTable(80, 24)
 	header := ""
 	for _, row := range rows {
@@ -276,7 +231,7 @@ func TestMineOfflineRowKeepsItsColumns(t *testing.T) {
 	found := false
 	for _, row := range rows {
 		plain := ansi.Strip(row)
-		if !strings.Contains(plain, "· old-box") {
+		if !strings.Contains(plain, "old-box") || strings.Contains(plain, "MACHINE") {
 			continue
 		}
 		found = true
@@ -313,7 +268,7 @@ func TestMineStatusLabelsFit(t *testing.T) {
 		{"ended", protocol.AgentView{Online: false, LastSeen: t0.Add(-25 * time.Hour).Unix()}, "offline"},
 	}
 	for _, tc := range cases {
-		got := m.mineStatusCell(tc.a)
+		got := m.sessionStatusCell(tc.a)
 		if got != tc.want {
 			t.Errorf("%s: STATUS %q, want %q", tc.name, got, tc.want)
 		}
@@ -323,51 +278,23 @@ func TestMineStatusLabelsFit(t *testing.T) {
 	}
 }
 
-// A Mine row names its machine when the network has more than one, and the
-// name gives way first at narrow widths.
-func TestMineRowsNameTheirMachine(t *testing.T) {
-	m, _ := mineModel(120, 34)
-	view := ansi.Strip(m.testView())
-	for _, want := range []string{"strategies · Mac", "web · Mac", "tenebrae-53 · Mac", "old-session · old-box"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("Mine does not show %q:\n%s", want, view)
+func TestSessionsMachineColumn(t *testing.T) {
+	for _, w := range []int{80, 120} {
+		m, _ := mineModel(w, 34)
+		m = keys(m, "v")
+		view := ansi.Strip(strings.Join(m.sessionsTable(w, 40), "\n"))
+		for _, want := range []string{"MACHINE", "Mac", "old-box"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("missing %s: %s", want, view)
+			}
 		}
-	}
-	for _, row := range lines(view) {
-		if ansi.StringWidth(row) > 120 {
-			t.Fatalf("row wraps at 120: %q", row)
+		if strings.Contains(view, "· Mac") || strings.Contains(view, "· old-box") {
+			t.Fatal("machine suffix remains")
 		}
-	}
-
-	m80, _ := mineModel(80, 24)
-	view80 := ansi.Strip(m80.testView())
-	if !strings.Contains(view80, "· Mac") || !strings.Contains(view80, "· old-box") {
-		t.Fatalf("80 columns dropped the machine names:\n%s", view80)
-	}
-	for _, row := range lines(view80) {
-		if ansi.StringWidth(row) > 80 {
-			t.Fatalf("row wraps at 80: %q", row)
+		for _, row := range lines(view) {
+			if ansi.StringWidth(row) > w {
+				t.Fatal("row wraps")
+			}
 		}
-	}
-}
-
-// One machine needs no suffix.
-func TestMineRowsSkipTheMachineWhenThereIsOnlyOne(t *testing.T) {
-	snap := Snapshot{
-		Connected: true, NodeID: "n_mac",
-		Nodes: []protocol.NodeView{{NodeID: "n_mac", Hostname: "Mac"}},
-		Agents: []protocol.AgentView{
-			agent("s_only", "n_mac", "Mac", "claude", "only", func(a *protocol.AgentView) {
-				a.PinnedAt = t0.Add(-time.Hour).Unix()
-			}),
-		},
-	}
-	src := &fakeSource{snap: snap}
-	m := New(src)
-	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
-	m = settle(refresh(m, src))
-	if view := ansi.Strip(m.testView()); strings.Contains(view, "· Mac") {
-		t.Fatalf("one machine still names the machine:\n%s", view)
 	}
 }

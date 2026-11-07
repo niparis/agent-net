@@ -9,8 +9,8 @@ import (
 )
 
 // The key line is a short list of the keys used most on the screen. The full
-// list lives in the help overlay; no line may grow past seven hints.
-func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
+// list lives in the help overlay; Sessions keeps eight hints with tree controls; other tabs keep seven.
+func TestKeyLineHasBoundedHintsOnEveryTab(t *testing.T) {
 	for _, tc := range []struct{ name, key string }{
 		{"Sessions", "1"}, {"Messages", "4"}, {"Quotas", "3"},
 		{"Graph", "2"},
@@ -18,7 +18,11 @@ func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
 		m := keys(newModel(120, 34), tc.key)
 		line := ansi.Strip(m.helpLine(120))
 		hints := strings.Split(line, "  ")
-		if len(hints) > 7 {
+		limit := 7
+		if tc.key == "1" {
+			limit = 8
+		}
+		if len(hints) > limit {
 			t.Errorf("%s: %d hints: %q", tc.name, len(hints), line)
 		}
 		if !strings.Contains(line, "? help") {
@@ -35,7 +39,7 @@ func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
 
 func TestKeyLineContentPerTab(t *testing.T) {
 	for _, tc := range []struct{ name, key, want string }{
-		{"Sessions", "1", "up/down select  enter open (ctrl+] back)  m msg  n new  p pin  ? help  q quit"},
+		{"Sessions", "1", "up/down select  enter open (ctrl+] back)  m msg  n new  p pin  z/Z tree  ? help  q quit"},
 		{"Messages", "4", "up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  d Quality  c CTO  ? help  q quit"},
 		{"Graph", "2", "1-8 tabs  c CTO  ? help  q quit"},

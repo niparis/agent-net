@@ -25,6 +25,7 @@ func sessionRow(t *testing.T, table, name string) string {
 func TestSessionsMarkBackgroundRuns(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := newModel(size[0], size[1])
+		m.activeOnly = false
 		table := ansi.Strip(strings.Join(m.sessionsTable(size[0], 12), "\n"))
 		for _, tc := range []struct {
 			name string

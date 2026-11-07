@@ -4,11 +4,11 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   PROJECT   MODEL            STATUS   CPU   RAM TASK
- Mac (here) 1 session · 2 hidden ──────────────────────────────────── active (v)
-  tenebrae-53    agent  tenebrae  claude · opus-5… busy       ?     ?
- build-vm 1 session · 1 hidden ─────────────────────────────────────────────────
-  scratch        agent  -         pi               shell      ?     ?
+  NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
+ Working (1)                                                          active (v)
+  tenebrae-53    Mac     tenebrae  claude · op… busy        ?     ?
+ Idle (4)
+  4 more idle · v to show
 
 
 

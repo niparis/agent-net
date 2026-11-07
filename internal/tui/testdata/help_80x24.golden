@@ -10,15 +10,15 @@ Keys · Sessions ─────────────────────
   h                      hide or unhide the selected session
   left, right            move between session actions
   space                  cycle the request rule: normal, ask, auto
+  z                      collapse or expand the selected tree; on a child, act
+                         on its lead
+  Z                      collapse or expand all session trees
   v                      cycle the view: active (default) or all, which includes
                          offline sessions
   H                      show or hide sessions hidden with h, and temp-folder
                          sessions in the all view
   a                      in the offline view, preview and archive offline
                          sessions, or show archived and restore
-  p                      pin or unpin the selected session so it stays at the
-                         top of Mine
-  d                      show or hide the selected session details
   more below
 
 up/down scroll  ? all screens  esc close

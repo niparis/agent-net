@@ -4,14 +4,14 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   top: ci-runner 5%    no claude · no opencode                                   │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK
- Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── view: active  (v)
-▸ tenebrae-53        agent  tenebrae   claude · opus-5-5        busy     38%  1.2G
-  ◐ strategies       agent  strategies claude · sonnet-5-5      idle    240%  4.6G backtest v2
-  web                agent  shop       opencode · sonnet-5      idle       ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ◐ ci-runner        agent  agent-net  pi · gpt-6               idle      5%  300M
-  scratch            agent  -          pi                       shell    <1%   80M
+  NAME               MACHINE      PROJECT   MODEL                    STATUS    CPU   RAM TASK
+ Working (1)                                                                                                                                   view: active  (v)
+▸ tenebrae-53        Mac          tenebrae  claude · opus-5-5        busy      38%  1.2G
+ Idle (4)
+  4 more idle · v to show
+
+
+
 
                                     ╭─Find session───────────────────────────────────────────────────────────────4 matches─╮
                                     │ › st▌                                                                                │
@@ -37,4 +37,4 @@
 │                                                                                                                                                              │
 │ c: open the CTO                                                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  n new  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  n new  p pin  z/Z tree  ? help  q quit

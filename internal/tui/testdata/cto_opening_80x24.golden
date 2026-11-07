@@ -4,15 +4,15 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G no claude · n… │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
- Mac (here) 4 sessions ────────────────────────────────────────────── active (v)
-▸ tenebrae-53    agent  tenebrae   claude · opus-5… busy     38%  1.2G
-  Atlas          cto    -          cto              idle       ?     ?
-  ◐ strategies   agent  strategies claude · sonnet… idle    240%  4.6G backtest…
-  web            agent  shop       opencode · sonn… idle       ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ◐ ci-runner    agent  agent-net  pi · gpt-6       idle      5%  300M
-  scratch        agent  -          pi               shell    <1%   80M
+  NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
+ Working (1)                                                          active (v)
+▸ tenebrae-53    Mac     tenebrae  claude · op… busy      38%  1.2G
+ Idle (5)
+  5 more idle · v to show
+
+
+
+
 
 
 

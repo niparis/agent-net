@@ -122,7 +122,7 @@ func TestModelIsAlwaysAColumn(t *testing.T) {
 func TestTableShowsTheNewColumnsAndNotTheMovedOnes(t *testing.T) {
 	m := newModel(120, 34)
 	out := m.testView()
-	for _, want := range []string{"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"} {
+	for _, want := range []string{"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing column %q", want)
 		}
@@ -174,18 +174,12 @@ func TestSessionsAreOrderedByActivityAndStay(t *testing.T) {
 	}
 }
 
-func TestMachinesAreThisOneFirstThenByName(t *testing.T) {
-	snap := fakeSnapshot()
-	snap.Nodes[0].Hostname = "zeta" // this machine, last by name
-	for i := range snap.Nodes {
-		if snap.Nodes[i].NodeID == "n_vm" {
-			snap.Nodes[i].Hostname = "alpha"
+func TestSessionsGroupsDoNotDependOnMachineOrder(t *testing.T) {
+	m := treeModel(120, 34, fakeSnapshot())
+	for _, g := range m.groups() {
+		if g.host != "Working" && g.host != "Idle" {
+			t.Fatalf("group %s", g.host)
 		}
-	}
-	m := treeModel(120, 34, snap)
-	gs := m.groups()
-	if len(gs) != 3 || gs[0].nodeID != "n_mac" || gs[1].nodeID != "n_vm" {
-		t.Fatalf("machine order %v, %v; want this machine, then alpha", gs[0].nodeID, gs[1].nodeID)
 	}
 }
 
@@ -197,11 +191,12 @@ func TestNewSessionAppearsAtTopOfItsBand(t *testing.T) {
 	}))
 	m = refresh(m, src)
 	// The busy session stays first; the new idle session leads its band.
+	m.activeOnly = false
 	var mac []string
-	for _, a := range m.groups()[0].agents {
+	for _, a := range m.visible() {
 		mac = append(mac, a.Profile.Name)
 	}
-	if strings.Join(mac, ",") != "tenebrae-53,just-started,strategies,web" {
+	if strings.Join(mac, ",") != "tenebrae-53,just-started,strategies,web,ci-runner,scratch" {
 		t.Fatalf("Mac group %v", mac)
 	}
 }
@@ -222,7 +217,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = settle(refresh(m, src))
-	if !m.idleLong(snap.Agents[2]) || !m.quietInActive(snap.Agents[2]) {
+	if !m.idleLong(snap.Agents[2]) {
 		t.Fatal("web is not quiet by the rule")
 	}
 	if strings.Contains(strings.Join(names(m), ","), "web") {
@@ -236,7 +231,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	if !strings.Contains(v, "view: all") {
 		t.Fatalf("the header does not show the view:\n%s", v)
 	}
-	if !strings.Contains(v, "3 sessions") {
+	if !strings.Contains(v, "Idle (") {
 		t.Fatalf("the machine heading does not list all sessions:\n%s", v)
 	}
 	m = keys(m, "v")
@@ -244,7 +239,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	if !strings.Contains(v, "view: active") {
 		t.Fatalf("the header does not show the view:\n%s", v)
 	}
-	if !strings.Contains(v, "2 sessions · 1 hidden") {
+	if !strings.Contains(v, "more idle · v to show") {
 		t.Fatalf("the machine heading does not say what is hidden:\n%s", v)
 	}
 	// It does not hide busy sessions, however old their last report.
@@ -276,6 +271,7 @@ func TestIdleSessionsAreDim(t *testing.T) {
 	}
 	src := &fakeSource{snap: snap, events: fakeEvents(), usage: fakeUsage(), counts: fakeCounts()}
 	m := New(src)
+	m.activeOnly = false
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = settle(refresh(m, src))
@@ -315,7 +311,7 @@ func TestSessionsTableAt80ShowsAgentProjectAndTask(t *testing.T) {
 	m := newModel(80, 24)
 	table := ansi.Strip(strings.Join(m.sessionsTable(80, 12), "\n"))
 	header := strings.Split(table, "\n")[0]
-	for _, want := range []string{"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"} {
+	for _, want := range []string{"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK"} {
 		if !strings.Contains(header, want) {
 			t.Errorf("80 column header is missing %q: %q", want, header)
 		}

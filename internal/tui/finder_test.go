@@ -238,7 +238,7 @@ func TestJunkSessionNeedsAllAndHidden(t *testing.T) {
 	}
 }
 
-func TestActiveViewKeepsIdleSessionsFromTheLastDay(t *testing.T) {
+func TestActiveViewFoldsIdleSessionsRegardlessOfAge(t *testing.T) {
 	snap := fakeSnapshot()
 	for i := range snap.Agents {
 		if snap.Agents[i].Profile.Name == "web" {
@@ -252,8 +252,8 @@ func TestActiveViewKeepsIdleSessionsFromTheLastDay(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = settle(refresh(m, src))
-	if !containsSession(m, "s_0000000000000003") {
-		t.Fatalf("a session active two hours ago was hidden: %v", names(m))
+	if containsSession(m, "s_0000000000000003") {
+		t.Fatalf("an unpinned idle session stayed visible: %v", names(m))
 	}
 
 	snap.Agents[2].LastSeen = t0.Add(-25 * time.Hour).Unix()
@@ -354,20 +354,6 @@ func TestSessionsViewGoldens(t *testing.T) {
 	}
 }
 
-func TestActiveViewUsesLastActivity(t *testing.T) {
-	m := New(nil)
-	m.now = func() time.Time { return t0 }
-	a := protocol.AgentView{Online: true, Status: "idle", LastSeen: t0.Unix(), LastActive: t0.Add(-25 * time.Hour).Unix()}
-	if !m.quietInActive(a) {
-		t.Fatal("recent machine report must not keep an inactive session visible")
-	}
-	a.LastSeen = t0.Add(-26 * time.Hour).Unix()
-	a.LastActive = t0.Add(-2 * time.Hour).Unix()
-	if m.quietInActive(a) {
-		t.Fatal("recent activity must keep session visible")
-	}
-}
-
 func TestFinderCompactOverlay(t *testing.T) {
 	m := newModel(80, 24)
 	m = send(m, ctrlP())
@@ -404,12 +390,12 @@ func TestFinderMatchEmphasisAndEmptyState(t *testing.T) {
 func TestNarrowViewLabelPreservesModelWidth(t *testing.T) {
 	m := newModel(80, 24)
 	view := ansi.Strip(m.renderView())
-	if !strings.Contains(view, "claude · opus-5") {
+	if !strings.Contains(view, "MODEL") || !strings.Contains(view, "claude ·") {
 		t.Fatal("view label shortened MODEL")
 	}
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "active (v)") && !strings.Contains(line, "─") {
-			t.Fatal("label must be on machine separator")
+		if strings.Contains(line, "active (v)") && !strings.Contains(line, "Working (") {
+			t.Fatal("label must be on the urgency heading")
 		}
 	}
 }

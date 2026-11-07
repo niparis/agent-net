@@ -435,6 +435,7 @@ func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
 		src := &fakeCTOSource{fakeSource: &fakeSource{snap: ctoSnapshot(), enterPlan: protocol.EnterPlan{Argv: []string{"fake-cto"}}}}
 		m := ctoPart8Model(80, 24, "Atlas", 0)
 		m.src = src
+		m.activeOnly = false
 		m.selected = ctoTestSession
 		m.ensureSelection()
 		next, cmd := m.startEnter()

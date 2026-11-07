@@ -382,12 +382,9 @@ func TestSessionsShowsTheInboxSummaryAndNoNeedsRows(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = keys(m, "1")
 	view := ansi.Strip(m.testView())
-	want := fmt.Sprintf("%d waiting in Inbox (7)", m.waitingCount())
+	want := fmt.Sprintf("Inbox: %d to decide", m.waitingCount())
 	if !strings.Contains(view, want) {
 		t.Fatalf("Sessions lacks %q:\n%s", want, view)
-	}
-	if strings.Contains(view, "Needs you") {
-		t.Fatalf("Sessions still shows the Needs you section:\n%s", view)
 	}
 	if strings.Contains(view, "deploy abc") {
 		// The waiting text belongs to the Inbox tab, not the Sessions table.

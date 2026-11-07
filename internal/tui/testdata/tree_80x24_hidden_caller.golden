@@ -4,12 +4,12 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           TYPE   PROJECT   MODEL            STATUS   CPU   RAM TASK
- Mac (here) 2 sessions ───────────────────────────────────────────────── all (v)
-▸ ↳ backtest-a   worker -         opencode · haik… idle       ?     ? probe
-  ↳ backtest-b   worker -         opencode · haik… idle       ?     ? probe
- build-vm 1 session ────────────────────────────────────────────────────────────
-  ↳ backtest-on… worker -         opencode · haik… idle       ?     ? probe
+  NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
+ Idle (4)                                                                all (v)
+▸ ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
+  ├─ backtest-a  Mac     -         opencode · … idle        ?     ? probe
+  ├─ backtest-b  Mac     -         opencode · … idle        ?     ? probe
+  └─ backtest-o… build-… -         opencode · … idle        ?     ? probe
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  ? help  q quit
+up/down select  enter open  m msg  n new  p pin  z/Z tree  ? help  q quit
