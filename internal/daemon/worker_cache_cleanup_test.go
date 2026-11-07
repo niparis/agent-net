@@ -347,4 +347,25 @@ func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
 	if wTmp == "" || wTmp == "/tmp/agent-net-gotmp" || !strings.HasPrefix(wTmp, tempRoot) {
 		t.Fatalf("default test workerNode workerGoTmpDir = %q, want inside temp dir", wTmp)
 	}
+
+	// A daemon built from a bare Config (no WorkerGoCache / WorkerGoTmp) falls back
+	// to the package-wide guard configured in TestMain (AGENT_NET_GOCACHE and AGENT_NET_GOTMPDIR).
+	bareDaemon, err := New(Config{StateDir: t.TempDir(), SocketPath: filepath.Join(shortDir(t), "d.sock")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bareCache := bareDaemon.workerGoCacheDir()
+	bareTmp := bareDaemon.workerGoTmpDir()
+	if bareCache == "" || bareCache == "/tmp/agent-net-gocache" {
+		t.Fatalf("bare daemon workerGoCacheDir = %q, want guarded temp dir", bareCache)
+	}
+	if bareTmp == "" || bareTmp == "/tmp/agent-net-gotmp" {
+		t.Fatalf("bare daemon workerGoTmpDir = %q, want guarded temp dir", bareTmp)
+	}
+	if !strings.HasPrefix(bareCache, tempRoot) {
+		t.Fatalf("bare daemon workerGoCacheDir %q is not inside temp dir %q", bareCache, tempRoot)
+	}
+	if !strings.HasPrefix(bareTmp, tempRoot) {
+		t.Fatalf("bare daemon workerGoTmpDir %q is not inside temp dir %q", bareTmp, tempRoot)
+	}
 }
