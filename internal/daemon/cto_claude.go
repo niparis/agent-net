@@ -609,6 +609,10 @@ func (d *Daemon) bindClaudeCTO(sf claudeSessionFile, model, id, mode string) boo
 		return false
 	}
 	d.cto.mu.Lock()
+	if mode == "adopted" && d.claudeCTO.root.Load() != nil {
+		d.cto.mu.Unlock()
+		return true
+	}
 	d.claudeCTO.ref, d.claudeCTO.session, d.claudeCTO.model, d.claudeCTO.token = sf.JobID, sf.SessionID, model, token
 	d.claudeCTO.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
 	d.cto.mu.Unlock()

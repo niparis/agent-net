@@ -694,3 +694,88 @@ func TestClaudeCTOAdoptReleasedJob(t *testing.T) {
 		t.Fatal("released job was not adopted")
 	}
 }
+
+func TestClaudeCTOAdoptionRestartHello(t *testing.T) {
+	for _, mode := range []string{"startup", "late", "ended"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+			g := startGateway(t, t.TempDir(), "")
+			n := startClaudeNode(t, g, shortSet)
+			ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+			defer cancel()
+			if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(n.cfg.StateDir, "cto", "claude")
+			marker := filepath.Join(dir, "fake-cto-hello.json")
+			eventually(t, "initial CTO hello", func() bool { _, err := os.Stat(marker); return err == nil })
+			root := n.d.claudeCTO.root.Load()
+			ref := n.d.claudeCTO.ref
+			n.d.cfg.testStopCTOOnExit = false
+			n.d.Stop()
+			os.Remove(marker)
+			sessionPath := filepath.Join(n.sessions, strconv.Itoa(root.pid)+".json")
+			raw, err := os.ReadFile(sessionPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "late" {
+				if err := os.Remove(sessionPath); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "ended" {
+				if err := os.WriteFile(filepath.Join(filepath.Dir(n.sessions), "jobs", ref, "state.json"), []byte(`{"state":"stopped"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			d, err := New(n.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := d.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			n.d = d
+			t.Cleanup(func() {
+				// End the surviving fake job even in the ended-state case.
+				d.cto.mu.Lock()
+				d.claudeCTO.ref = ref
+				d.stopClaudeCTOLocked()
+				d.cto.mu.Unlock()
+				d.Stop()
+			})
+			if mode == "startup" && !d.isCTOPeer(root.pid) {
+				t.Fatal("startup did not adopt live job")
+			}
+			if mode == "late" {
+				if err := os.WriteFile(sessionPath, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			eventually(t, "reconnected CTO hello", func() bool { _, err := os.Stat(marker); return err == nil })
+			response, err := os.ReadFile(marker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var reply struct {
+				Error json.RawMessage `json:"error"`
+			}
+			if err := json.Unmarshal(response, &reply); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "ended" {
+				if len(reply.Error) == 0 || string(reply.Error) == "null" || d.claudeCTO.root.Load() != nil {
+					t.Fatalf("ended job adopted: %s", response)
+				}
+			} else {
+				if len(reply.Error) != 0 && string(reply.Error) != "null" {
+					t.Fatalf("hello failed: %s", response)
+				}
+				if !d.ctoRunning() || !d.isCTOPeer(root.pid) || d.claudeCTO.ref != ref {
+					t.Fatal("CTO is not running after reconnect")
+				}
+			}
+		})
+	}
+}
