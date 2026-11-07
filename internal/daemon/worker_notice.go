@@ -260,8 +260,8 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 	if w.worktree == "" {
 		return false
 	}
-	w.worktreeMu.Lock()
-	defer w.worktreeMu.Unlock()
+	unlock := d.lockWorktree(w.worktree)
+	defer unlock()
 	if w.harness == "agy" {
 		result := d.saveAgyWorkerEnd(w, reason)
 		return result.SHA != ""
@@ -271,6 +271,46 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 		d.Logf("worker %s: adoption WIP commit: %s", w.id, result.Failed)
 	}
 	return result.SHA != ""
+}
+
+type worktreeLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lockWorktree serializes git operations by path, including operations that
+// rebuild a worker value from a persisted row during daemon adoption.
+func (d *Daemon) lockWorktree(path string) func() {
+	if path == "" {
+		return func() {}
+	}
+	key, err := filepath.Abs(path)
+	if err != nil {
+		key = filepath.Clean(path)
+	} else {
+		key = filepath.Clean(key)
+	}
+	d.worktreeLocksMu.Lock()
+	if d.worktreeLocks == nil {
+		d.worktreeLocks = make(map[string]*worktreeLock)
+	}
+	lock := d.worktreeLocks[key]
+	if lock == nil {
+		lock = &worktreeLock{}
+		d.worktreeLocks[key] = lock
+	}
+	lock.refs++
+	d.worktreeLocksMu.Unlock()
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		d.worktreeLocksMu.Lock()
+		lock.refs--
+		if lock.refs == 0 && d.worktreeLocks[key] == lock {
+			delete(d.worktreeLocks, key)
+		}
+		d.worktreeLocksMu.Unlock()
+	}
 }
 
 type workerEndCommitResult struct {
@@ -874,9 +914,9 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	committed := d.commitAtHandback(w, req)
 	wipDetail := ""
 	if !complete && w.worktree != "" && w.harness != "agy" {
-		w.worktreeMu.Lock()
+		unlock := d.lockWorktree(w.worktree)
 		result := commitWorkerEndWIP(context.Background(), w.worktree, w.branch, "handback")
-		w.worktreeMu.Unlock()
+		unlock()
 		wipDetail = result.noticeDetail()
 		if result.Failed != "" {
 			d.Logf("worker %s: end WIP commit: %s", w.id, result.Failed)
@@ -1154,9 +1194,9 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
 		branch: r.Branch, base: r.Base, title: r.Title}
 	status, note := d.noticeFor(protocol.StopLost)
-	w.worktreeMu.Lock()
+	unlock := d.lockWorktree(w.worktree)
 	result := commitWorkerEndWIP(ctx, w.worktree, w.branch, protocol.StopLost)
-	w.worktreeMu.Unlock()
+	unlock()
 	if result.Failed != "" {
 		d.Logf("worker %s: end WIP commit: %s", r.ID, result.Failed)
 	}

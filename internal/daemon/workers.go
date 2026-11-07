@@ -136,7 +136,6 @@ func (s WorkerSettings) filled() WorkerSettings {
 // worker is one running worker. Fields are guarded by Daemon.wmu.
 type worker struct {
 	runGeneration                                      int
-	worktreeMu                                         sync.Mutex
 	id, startRef, harness, project, path, model, owner string
 	// ownerName is the caller's name when the gateway knows it, for the
 	// commit trailers.
@@ -1096,13 +1095,13 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	return d.queueWorkerEnd(func() {
 		result := workerEndCommitResult{}
 		if w.worktree != "" {
-			w.worktreeMu.Lock()
+			unlock := d.lockWorktree(w.worktree)
 			if harness == "agy" {
 				result = d.saveAgyWorkerEnd(w, reason)
 			} else {
 				result = commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
 			}
-			w.worktreeMu.Unlock()
+			unlock()
 		}
 		if result.Failed != "" {
 			d.Logf("worker %s: end WIP commit: %s", id, result.Failed)

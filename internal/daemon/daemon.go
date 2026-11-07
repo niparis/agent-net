@@ -344,6 +344,8 @@ type Daemon struct {
 	bg              sync.WaitGroup
 	workerEndMu     sync.Mutex
 	workerEndTail   chan struct{}
+	worktreeLocksMu sync.Mutex
+	worktreeLocks   map[string]*worktreeLock
 	cancel          context.CancelFunc
 	workerStreamCtx context.Context
 	ln              *localServer
