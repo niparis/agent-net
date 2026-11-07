@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -119,6 +120,9 @@ func (s *Store) AddArchitect(name, actor string, validate ...bool) error {
 
 // RemoveArchitect removes an architect with no edges, recording cleared attributes.
 func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
+	if actor == "cto" {
+		return reject("owner approval required")
+	}
 	if s.graphRefsOn.Load() {
 		return s.GraphLifecycle("agent.tombstone", protocol.GraphLifecycleRequest{Ref: &protocol.GraphRef{Kind: "agent", ID: name}}, actor, len(validate) > 0 && validate[0])
 	}
@@ -334,6 +338,15 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 		if err != nil {
 			return err
 		}
+		if result.changed && actor == "cto" {
+			var old, next string
+			if err = tx.QueryRow(`SELECT COALESCE(old_value,''),COALESCE(new_value,'') FROM setting_history WHERE revision=? AND key=? AND level='repo' AND scope=? ORDER BY seq LIMIT 1`, result.Revision, storedKey, node).Scan(&old, &next); err != nil {
+				return err
+			}
+			if err = graphRecord(tx, "settings_revision", node, fmt.Sprintf("%s@%d", setting, result.Revision), old, next, actor, s.now().UnixNano()); err != nil {
+				return err
+			}
+		}
 		if len(validate) > 0 && validate[0] {
 			return nil
 		}
@@ -516,11 +529,159 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		return err
 	}
 
+	if typ == "settings_revision" {
+		i := strings.LastIndex(attr, "@")
+		if i < 0 {
+			return reject("invalid settings history")
+		}
+		rev, err := strconv.ParseInt(attr[i+1:], 10, 64)
+		if err != nil || rev <= 0 {
+			return reject("invalid settings history")
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		if err := tx.Rollback(); err != nil {
+			return err
+		}
+		result, err := s.UndoSettings(rev, actor)
+		if err != nil {
+			return err
+		}
+		if result.changed {
+			_, err = s.db.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('settings_revision',?,?,?,?,?,?,?)`, node, fmt.Sprintf("%s@%d", attr[:i], result.Revision), value, old, s.now().UnixNano(), actor, targetKind)
+		}
+		return err
+	}
 	if typ == "charter" && targetKind == "agent" && s.graphRefsOn.Load() {
 		typ = "agent_charter"
 	}
 	now := s.now().UnixNano()
 	switch typ {
+	case "lead":
+		if !actorAllowed(actor, "rule") {
+			return reject("only the owner or CTO may set a lead")
+		}
+		var current sql.NullString
+		var lead any
+		if old != "" {
+			ref := protocol.GraphRef{Kind: "agent", ID: old}
+			if err = liveTeamMember(tx, ref); err != nil {
+				return err
+			}
+			lead = old
+		}
+		switch targetKind {
+		case "repo":
+			err = tx.QueryRow(`SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, node).Scan(&current)
+			if err != nil {
+				return err
+			}
+			if current.String != value {
+				return reject("lead changed since that history entry")
+			}
+			if old != "" {
+				var belongs bool
+				if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND owner_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, node, old, node, old).Scan(&belongs); err != nil {
+					return err
+				}
+				if !belongs {
+					return reject("lead Agent has no session in this Repo")
+				}
+			}
+			if attr == "lead/default" {
+				_, err = tx.Exec(`DELETE FROM repo_leads WHERE repo_id=?`, node)
+			} else {
+				_, err = tx.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id`, node, lead)
+			}
+		case "team":
+			err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, node).Scan(&current)
+			if err != nil {
+				return err
+			}
+			if current.String != value {
+				return reject("lead changed since that history entry")
+			}
+			_, err = tx.Exec(`UPDATE teams SET owner_agent_id=?,updated_at=? WHERE id=?`, lead, now, node)
+		default:
+			return reject("invalid lead history")
+		}
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,'lead',?,?,?,?,?)`, node, value, old, now, actor, targetKind); err != nil {
+			return err
+		}
+		if targetKind == "team" {
+			if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES('lead',?,'','','',?,?,?,?)`, node, value, old, now, actor); err != nil {
+				return err
+			}
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		return tx.Commit()
+	case "team":
+		nextValue := old
+		teamID, oldTeam, memberKind, memberID := node, "", "", ""
+		if strings.HasPrefix(attr, "membership:") {
+			parts := strings.SplitN(attr, ":", 3)
+			if len(parts) != 3 {
+				return reject("bad Team history")
+			}
+			ref := protocol.GraphRef{Kind: parts[1], ID: parts[2]}
+			teamID, oldTeam, memberKind, memberID = old, value, parts[1], parts[2]
+			if _, err = writeTeamMember(tx, protocol.TeamWrite{Action: "membership", ID: old, Member: &ref, ExpectTeam: value}); err != nil {
+				return err
+			}
+		} else {
+			var current, after, before protocol.Team
+			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, node))
+			if err != nil {
+				return err
+			}
+			if err = json.Unmarshal([]byte(value), &after); err != nil {
+				return err
+			}
+			if current.Name != after.Name || current.Active != after.Active || current.Purpose != after.Purpose {
+				return reject("Team changed since that history entry")
+			}
+			if old == "" {
+				var count int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM team_members WHERE team_id=?`, node).Scan(&count); err != nil {
+					return err
+				}
+				if count != 0 {
+					return reject("remove or move Team members before archiving")
+				}
+				before = after
+				before.Active = false
+			} else if err = json.Unmarshal([]byte(old), &before); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(`UPDATE teams SET name=?,active=?,updated_at=? WHERE id=?`, before.Name, before.Active, now, node); err != nil {
+				return err
+			}
+			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, node))
+			if err != nil {
+				return err
+			}
+			b, err := json.Marshal(current)
+			if err != nil {
+				return err
+			}
+			nextValue = string(b)
+		}
+		if err = graphRecord(tx, "team", node, attr, value, nextValue, actor, now); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES('undo',?,?,?,?,?,?,?,?)`, teamID, oldTeam, memberKind, memberID, value, nextValue, now, actor); err != nil {
+			return err
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		return tx.Commit()
 	case "lifecycle":
 		if err = s.requireGraphRefs(); err != nil {
 			return err

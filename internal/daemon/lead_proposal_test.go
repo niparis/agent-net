@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -20,6 +19,9 @@ func TestCTOLeadSetProposal(t *testing.T) {
 	}
 	waitGraphCutover(t, g)
 	cli.mustCall("team_write", map[string]any{"action": "create", "team_id": "alpha", "name": "Alpha"})
+	if err := n.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	for _, kind := range []string{"repo", "team"} {
 		id := "demo"
 		if kind == "team" {
@@ -30,11 +32,7 @@ func TestCTOLeadSetProposal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s proposal: %v", kind, err)
 		}
-		proposal, ok := result.(string)
-		if !ok || !strings.HasPrefix(proposal, "proposal p_") {
-			t.Fatalf("not proposed: %v", result)
-		}
-		cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: strings.Fields(proposal)[1], Action: "a"})
+		assertCTOImmediate(t, result)
 		graph, err := g.gw.Store().GraphForRef(&protocol.GraphRef{Kind: kind, ID: id})
 		if err != nil || len(graph.Nodes) != 1 || graph.Nodes[0].Lead == nil || graph.Nodes[0].Lead.ID != "demo" {
 			t.Fatalf("%s: %+v %v", kind, graph, err)

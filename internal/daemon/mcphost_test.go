@@ -397,7 +397,7 @@ func TestMCPAdministrationIsOwnerOnlyForAgents(t *testing.T) {
 		t.Fatalf("agent mcp_test: %v", err)
 	}
 
-	const ownerOnly = "adding or removing a shared MCP server is owner-only: ask the owner to do it in the TUI, or the CTO can propose it with mcp_change"
+	const ownerOnly = "adding or removing a shared MCP server is owner-only: ask the owner to do it in the TUI, or ask the CTO to use mcp_change"
 	for method, params := range map[string]any{
 		"mcp_add":    protocol.MCPAdd{Server: stdioSpec("agent-fixture")},
 		"mcp_remove": protocol.MCPName{Name: "owner-fixture"},
@@ -416,7 +416,7 @@ func TestApprovedCTOMCPChangeCanAddServer(t *testing.T) {
 	server := map[string]any{"name": "cto-fixture", "transport": "stdio", "command": os.Args[0],
 		"args": []string{"-test.run=XXX"}, "env": []string{helperEnv, "GORACE"}}
 	args, _ := json.Marshal(map[string]any{"action": "add", "server": server})
-	value, err := n.d.runCTOToolRaw(context.Background(), "mcp_change", args)
+	value, err := legacyProposalFixture(context.Background(), n.d, "mcp_change", args)
 	if err != nil {
 		t.Fatalf("propose MCP add: %v", err)
 	}

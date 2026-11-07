@@ -1599,7 +1599,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if typ == "team.history" {
 			return st.TeamHistory(q.ID, 1000)
 		}
-		return map[string]bool{"ok": true}, st.WriteTeam(q, "owner")
+		return map[string]bool{"ok": true}, st.WriteTeam(q, graphActor(raw))
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {
@@ -2100,6 +2100,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			sid := p.SessionID
 			if sid == "" {
 				sid = nc.id
+			}
+			if cto, _ := st.CTOSessionID(); cto != "" && sid == cto {
+				ownerNode, err := st.SessionNode(cto)
+				if err != nil || ownerNode != nc.id {
+					return nil, reject("CTO session does not belong to this node")
+				}
+				nodeName = "cto"
 			}
 			item, err := st.CreateInboxItem(protocol.InboxItem{
 				Kind:           "check",

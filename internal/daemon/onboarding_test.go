@@ -31,11 +31,7 @@ func TestCTOOnboardingSharedAndOwnerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Steps = nil
-	if err := json.Unmarshal(owner.mustCall("onboarding_get", nil), &got); err != nil || got.Steps["see"] != "done" {
-		t.Fatalf("proposal reset progress before approval: %+v %v", got, err)
-	}
-	approveCTOToolResult(t, n1.d, value)
+	assertCTOImmediate(t, value)
 	got.Steps = nil
 	if err := json.Unmarshal(owner.mustCall("onboarding_get", nil), &got); err != nil || len(got.Steps) != 0 {
 		t.Fatalf("restart: %+v %v", got, err)

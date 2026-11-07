@@ -36,8 +36,8 @@ func TestCTOReadParitySources(t *testing.T) {
 	}
 	for _, name := range []string{"settings_change"} {
 		class, err := ctoClass(name, json.RawMessage(`{"area":"cto"}`))
-		if err != nil || class != ctoProposal {
-			t.Errorf("%s did not propose owner settings: %v", name, err)
+		if err != nil || class != ctoMinor {
+			t.Errorf("%s did not apply owner settings: %v", name, err)
 		}
 	}
 }

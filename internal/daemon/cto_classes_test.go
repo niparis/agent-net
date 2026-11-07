@@ -129,7 +129,7 @@ func TestCTOMessageOwnerRouting(t *testing.T) {
 			}
 			return "p_1", nil
 		}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return nil, nil })
-		if err != nil || asOwner && (proposed != 1 || ran != 0) || !asOwner && (proposed != 0 || ran != 1) {
+		if err != nil || proposed != 0 || ran != 1 {
 			t.Fatalf("owner=%t proposals=%d backend=%d err=%v", asOwner, proposed, ran, err)
 		}
 	}

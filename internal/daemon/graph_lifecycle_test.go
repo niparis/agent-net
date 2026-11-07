@@ -47,12 +47,15 @@ func TestCTOGraphLifecycleRequiresProposalEvenInWindow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.action, err)
 		}
-		proposal, ok := result.(string)
-		if !ok || !strings.HasPrefix(proposal, "proposal p_") {
-			t.Fatalf("%s applied without approval: %v", tc.action, result)
+		if tc.action == "repo_archive" || tc.action == "agent_tombstone" {
+			proposal, ok := result.(string)
+			if !ok || !strings.HasPrefix(proposal, "proposal p_") {
+				t.Fatalf("%s was not proposed: %v", tc.action, result)
+			}
+			cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: strings.Fields(proposal)[1], Action: "a"})
+		} else {
+			assertCTOImmediate(t, result)
 		}
-		id := strings.Fields(proposal)[1]
-		cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: id, Action: "a"})
 	}
 	var history []protocol.CTOGraphChange
 	if err := json.Unmarshal(cli.mustCall("cto_graph_history", nil), &history); err != nil || len(history) != 4 {
@@ -62,7 +65,5 @@ func TestCTOGraphLifecycleRequiresProposalEvenInWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, ok := result.(string); !ok || !strings.HasPrefix(s, "proposal p_") {
-		t.Fatalf("undo applied without approval: %v", result)
-	}
+	assertCTOImmediate(t, result)
 }

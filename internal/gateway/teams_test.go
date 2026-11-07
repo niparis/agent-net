@@ -102,7 +102,7 @@ func TestTeamGateAndOwnerValidation(t *testing.T) {
 	if err := s.loadGraphRefs(); err != nil {
 		t.Fatal(err)
 	}
-	for _, actor := range []string{"", "cto", "CTO (minor)", "peer"} {
+	for _, actor := range []string{"", "CTO (minor)", "peer"} {
 		if err := s.WriteTeam(q, actor); err == nil {
 			t.Fatalf("actor %q accepted", actor)
 		}

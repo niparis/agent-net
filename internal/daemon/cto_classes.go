@@ -15,20 +15,19 @@ type ctoToolClass string
 const (
 	ctoRead     ctoToolClass = "read"
 	ctoTalk     ctoToolClass = "talk"
+	ctoMinor    ctoToolClass = "minor"
 	ctoProposal ctoToolClass = "proposal"
 )
 
 // Every CTO entry point is listed here. Unknown tools and actions fail closed.
 // Reads must have an ordinary-agent source or be the CTO's own timeline.
-// message is not a CTO tool: it is the stored call of an as-owner send or
-// reply that agent_message_send or agent_message_reply proposes, and its class
-// marks that call a proposal.
+// message is a legacy stored call for an as-owner send or reply.
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:     "cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find projects_layout",
-		ctoTalk:     "message cto_placement_memory cto_ui_show proposal_ask agent_message_send agent_message_reply agent_owner_ask agent_learn",
-		ctoProposal: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive",
+		ctoRead:  "cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find projects_layout",
+		ctoTalk:  "message cto_placement_memory cto_ui_show proposal_ask agent_message_send agent_message_reply agent_owner_ask agent_learn",
+		ctoMinor: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive",
 	} {
 		for _, name := range strings.Fields(names) {
 			out[name] = class
@@ -76,6 +75,26 @@ var ctoChangeActions = map[string]map[string]string{
 		"invite": "invite", "onboarding": "onboarding_restart",
 	},
 	"project_change": {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
+}
+
+// Each routed mutation has an explicit authority class. Adding an action to
+// the tool schema without classifying it here fails closed.
+var ctoActionClasses = map[string]map[string]ctoToolClass{
+	"graph_change": {
+		"charter_set": ctoMinor, "node_add": ctoMinor, "node_remove": ctoProposal,
+		"edge_set": ctoMinor, "edge_remove": ctoMinor, "settings_set": ctoMinor,
+		"undo": ctoMinor, "repo_create": ctoMinor, "repo_archive": ctoProposal,
+		"agent_create": ctoMinor, "agent_tombstone": ctoProposal, "lead_set": ctoMinor,
+		"team_create": ctoMinor, "team_rename": ctoMinor, "team_archive": ctoMinor,
+		"team_member_add": ctoMinor, "team_member_remove": ctoMinor,
+	},
+	"session_change":  {"rename": ctoMinor, "trust": ctoMinor, "policy": ctoMinor, "session_start": ctoMinor, "merger_start": ctoMinor, "merger_stop": ctoMinor},
+	"worker_change":   {"start": ctoMinor, "stop": ctoMinor},
+	"answer":          {"held": ctoMinor, "inbox": ctoMinor, "outcome": ctoMinor},
+	"tools_change":    {"toggle": ctoMinor, "new_projects": ctoMinor, "plan": ctoMinor, "apply": ctoMinor, "undo": ctoMinor, "import": ctoMinor, "native_remove": ctoMinor},
+	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor},
+	"settings_change": {"values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ctoProposal, "machine_rotate": ctoProposal, "invite": ctoMinor, "onboarding": ctoMinor},
+	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
 }
 
 var ctoActions = map[string]map[string][]string{
@@ -163,8 +182,18 @@ func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
 		if value, ok := fields["as_owner"]; ok && json.Unmarshal(value, &asOwner) != nil {
 			return "", errors.New("as_owner must be boolean")
 		}
-		if asOwner {
-			return ctoProposal, nil
+	}
+	if _, routed := ctoChangeActions[name]; routed {
+		if _, classified := ctoActionClasses[name]; !classified {
+			return "", fmt.Errorf("unclassified CTO actions for %q", name)
+		}
+	}
+	if actions, ok := ctoActionClasses[name]; ok {
+		var action string
+		_ = json.Unmarshal(fields[field], &action)
+		class, ok = actions[action]
+		if !ok {
+			return "", fmt.Errorf("unclassified %s %s %q", name, field, action)
 		}
 	}
 	return class, nil
@@ -244,8 +273,7 @@ func routeCTOTool(ctx context.Context, name string, raw json.RawMessage, propose
 	return ProposalToolResult(id), nil
 }
 
-// Graph calls default to proposals; the daemon policy may apply a minor
-// change or use an owner window before falling back to the proposal route.
+// isCTOGraphTool identifies the merged graph entry point.
 func isCTOGraphTool(name string) bool {
 	return name == "graph_change"
 }

@@ -77,12 +77,8 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 			return nil, errors.New("as_owner is for the CTO session only; send a normal message instead")
 		}
 		if p.ToSet != nil {
-			if strings.TrimSpace(p.ToSet.Team) == "" {
-				return nil, errors.New("as_owner with to_set needs a team")
-			}
 			return d.sendSet(ctx, sid, p.ToSet, p.Body, kind, p.IdempotencyKey, true)
 		}
-		return d.sendAsOwner(ctx, p.To, p.Body, kind)
 	}
 	if p.ToSet != nil {
 		return d.sendSet(ctx, sid, p.ToSet, p.Body, kind, p.IdempotencyKey, false)
@@ -97,7 +93,10 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		address = p.To
 	}
 	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind, LeadAddress: address,
-		Body: p.Body, IdempotencyKey: p.IdempotencyKey})
+		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
+	if err == nil && sid == d.ctoSessionID() {
+		err = d.recordCTOSent(ctx, to, p.AsOwner)
+	}
 	if err != nil || !p.Receipt {
 		return data, err
 	}
@@ -125,10 +124,6 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 		if sid != d.ctoSessionID() {
 			return nil, errors.New("as_owner is for the CTO session only; reply normally instead")
 		}
-		if p.ReplyOutcome != (protocol.ReplyOutcome{}) {
-			return nil, errors.New("as_owner proposes a plain reply; leave out outcome, reason, redirect_to and recommendation")
-		}
-		return d.replyAsOwner(ctx, p.MessageID, p.Body)
 	}
 	p.ReplyOutcome, err = protocol.CleanOutcome(p.ReplyOutcome)
 	if err != nil {
@@ -145,86 +140,23 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 		return nil, err
 	}
 	data, err = d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From,
-		Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome})
+		Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
+	if err == nil && sid == d.ctoSessionID() {
+		err = d.recordCTOSent(ctx, parent.Message.From, p.AsOwner)
+	}
 	if err != nil || !p.Receipt {
 		return data, err
 	}
 	return d.receiptForSend(ctx, data, parent.Message.From), nil
 }
 
-// replyAsOwner stores an owner-reply proposal for the owner's decision. The
-// approved reply goes from the CTO session with the owner's approval.
-func (d *Daemon) replyAsOwner(ctx context.Context, messageID, body string) (any, error) {
-	data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: messageID})
-	if err != nil {
-		return nil, err
+func (d *Daemon) recordCTOSent(ctx context.Context, to string, asOwner bool) error {
+	voice := ""
+	if asOwner {
+		voice = " as owner"
 	}
-	var parent struct {
-		Message protocol.Message `json:"message"`
-	}
-	if err := json.Unmarshal(data, &parent); err != nil {
-		return nil, err
-	}
-	args, err := json.Marshal(map[string]any{
-		"action":     "reply",
-		"message_id": messageID,
-		"body":       body,
-		"as_owner":   true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	id, err := d.Propose(ctx, "message", "reply", args, "propose a reply from the owner")
-	if err != nil {
-		return nil, err
-	}
-	return messageReceipt{
-		MessageID: id,
-		To:        messageSessionRef{ID: parent.Message.From, Name: d.sessionName(ctx, parent.Message.From)},
-		State:     "proposed",
-	}, nil
-}
-
-// sendAsOwner stores an owner-send proposal for the owner's decision.
-func (d *Daemon) sendAsOwner(ctx context.Context, to, body, kind string) (any, error) {
-	return d.sendAsOwnerTeam(ctx, to, body, kind, "")
-}
-
-func (d *Daemon) sendAsOwnerTeam(ctx context.Context, to, body, kind, teamID string) (any, error) {
-	if strings.TrimSpace(to) == "" {
-		return nil, errors.New("as_owner needs to and body")
-	}
-	if kind != "" && kind != protocol.TypeRequest {
-		return nil, errors.New("as_owner proposes a request, not a notification")
-	}
-	target, err := d.resolveTo(ctx, to)
-	if err != nil {
-		return nil, err
-	}
-	// The CTO message proposal carries only the fields its concrete schema
-	// defines; a message type is always a request on that path.
-	fields := map[string]any{
-		"action":   "send",
-		"to":       target,
-		"body":     body,
-		"as_owner": true,
-	}
-	if teamID != "" {
-		fields["team_id"] = teamID
-	}
-	args, err := json.Marshal(fields)
-	if err != nil {
-		return nil, err
-	}
-	id, err := d.Propose(ctx, "message", "send", args, "propose a message from the owner")
-	if err != nil {
-		return nil, err
-	}
-	return messageReceipts{Sent: []messageReceipt{{
-		MessageID: id,
-		To:        messageSessionRef{ID: target, Name: d.sessionName(ctx, target)},
-		State:     "proposed",
-	}}}, nil
+	_, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": "CTO sent" + voice + " to " + d.sessionName(ctx, to)})
+	return err
 }
 
 // sendSet sends one message to every online session that matches the set.
@@ -261,7 +193,6 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 	}
 	out := messageReceipts{Sent: []messageReceipt{}}
 	var teamIDs map[string]bool
-	var teamID string
 	if strings.TrimSpace(set.Team) != "" {
 		raw, err := d.call(ctx, "graph.read", protocol.GraphRead{Typed: true})
 		if err != nil {
@@ -275,15 +206,6 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 		if err != nil {
 			return nil, err
 		}
-		for _, node := range graph.Graph.Nodes {
-			if node.Ref != nil && node.Ref.Kind == "team" && (strings.EqualFold(node.Ref.ID, strings.TrimSpace(set.Team)) || strings.EqualFold(node.Name, strings.TrimSpace(set.Team))) && (node.Active == nil || *node.Active) {
-				teamID = node.Ref.ID
-				break
-			}
-		}
-	}
-	if asOwner && kind != "" && kind != protocol.TypeRequest {
-		return nil, errors.New("as_owner proposes a request, not a notification")
 	}
 	if key == "" {
 		key = protocol.NewID("k")
@@ -295,22 +217,18 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 		}
 		seen[a.SessionID] = true
 		receipt := messageReceipt{To: messageSessionRef{ID: a.SessionID, Name: messageSessionName(a)}}
-		if asOwner {
-			proposed, err := d.sendAsOwnerTeam(ctx, a.SessionID, body, kind, teamID)
-			if err != nil {
-				receipt.State = "failed"
-				out.Sent = append(out.Sent, receipt)
-				continue
-			}
-			out.Sent = append(out.Sent, proposed.(messageReceipts).Sent...)
-			continue
-		}
+
 		data, sendErr := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: a.SessionID, Type: kind,
-			Body: body, IdempotencyKey: key + ":" + a.SessionID})
+			Body: body, IdempotencyKey: key + ":" + a.SessionID, FromCTO: asOwner, OwnerApproved: asOwner})
 		if sendErr != nil {
 			receipt.State = "failed"
 			out.Sent = append(out.Sent, receipt)
 			continue
+		}
+		if sid == d.ctoSessionID() {
+			if err := d.recordCTOSent(ctx, a.SessionID, asOwner); err != nil {
+				return out, err
+			}
 		}
 		receipt = d.receiptForSend(ctx, data, a.SessionID)
 		out.Sent = append(out.Sent, receipt)

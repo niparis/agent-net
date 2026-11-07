@@ -73,7 +73,7 @@ func TestCTODialogApprovalAppliesProposal(t *testing.T) {
 	n.d.cto.pid.Store(int64(os.Getpid()))
 	defer n.d.cto.pid.Store(0)
 	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
-	response, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
+	response, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestCTOProposalAsk(t *testing.T) {
 		}
 	}
 
-	created, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"waiting purpose"}}`))
+	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"waiting purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestCTOProposalAsk(t *testing.T) {
 		t.Fatalf("applied proposal reopened: %v", err)
 	}
 
-	second, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"declined purpose"}}`))
+	second, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"declined purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	cto := &localConn{d: c.d, client: "cto-mcp", peerPID: os.Getpid()}
 	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "harness": "claude", "model": "claude-opus-5-5", "reason": "matching group"}})
-	v, err := cto.dispatch(context.Background(), "cto_tool", args)
+	v, err := legacyCTODialog(t, c.d, cto, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestCTODialogApprovalDoesNotRepeatOutcomeNote(t *testing.T) {
 	defer n.d.cto.pid.Store(0)
 	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
 	ctx := context.Background()
-	created, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
+	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestProposalOperatorApprovalStillDeliversNote(t *testing.T) {
 	defer n.d.cto.pid.Store(0)
 	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
 	ctx := context.Background()
-	created, err := cto.dispatch(ctx, "cto_tool", json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"tui purpose"}}`))
+	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"tui purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestCTOProjectPlainTextDoesNotApprove(t *testing.T) {
 	path := filepath.Join(home, "code", "company-rag")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
-	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	c.cli.mustCall("cto_send", map[string]string{"text": "yes"})
@@ -322,7 +322,12 @@ func TestCTOProjectCreationMCPDialog(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		v, err := cto.dispatch(ctx, method, raw)
+		var v any
+		if method == "cto_tool" && strings.Contains(string(raw), `"name":"project_change"`) {
+			v, err = legacyCTODialog(t, c.d, cto, raw)
+		} else {
+			v, err = cto.dispatch(ctx, method, raw)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -368,7 +373,7 @@ func TestCTOProjectCloneDialogNamesRemote(t *testing.T) {
 	path := filepath.Join(home, "code", "company-rag")
 	remote := "git@git.example:team/repo.git"
 	args, _ := json.Marshal(map[string]any{"name": "project_change", "arguments": map[string]any{"action": "create", "path": path, "remote": remote, "harness": "claude", "model": "claude-opus-5-5"}})
-	value, err := cto.dispatch(context.Background(), "cto_tool", args)
+	value, err := legacyCTODialog(t, c.d, cto, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,4 +381,24 @@ func TestCTOProjectCloneDialogNamesRemote(t *testing.T) {
 	if strings.Contains(message, "\n") || !strings.Contains(message, path+", clone of "+remote+", Claude Opus, background. OK?") {
 		t.Fatalf("dialog %q", message)
 	}
+}
+
+// Reopen a proposal stored under the earlier policy to exercise dialog
+// compatibility without making a new non-gated action ask for approval.
+func legacyCTODialog(t *testing.T, d *Daemon, cto *localConn, raw json.RawMessage) (any, error) {
+	t.Helper()
+	var q struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	if err := json.Unmarshal(raw, &q); err != nil {
+		return nil, err
+	}
+	value, err := legacyProposalFixture(context.Background(), d, q.Name, q.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	id := strings.Fields(value.(string))[1]
+	ask, _ := json.Marshal(map[string]any{"name": "proposal_ask", "arguments": map[string]string{"id": id}})
+	return cto.dispatch(context.Background(), "cto_tool", ask)
 }

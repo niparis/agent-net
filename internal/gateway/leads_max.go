@@ -59,8 +59,16 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		lead = q.Lead.ID
 	}
 	now := s.now().UnixNano()
+	historyAttr := "lead"
 	switch q.Ref.Kind {
 	case "repo":
+		var explicit bool
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=?)`, q.Ref.ID).Scan(&explicit); err != nil {
+			return err
+		}
+		if !explicit {
+			historyAttr = "lead/default"
+		}
 		err = tx.QueryRow(`SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, q.Ref.ID).Scan(&old)
 		if err == sql.ErrNoRows {
 			return reject("unknown or archived Repo")
@@ -96,7 +104,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	if q.Lead != nil {
 		next = q.Lead.ID
 	}
-	if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,'lead',?,?,?,?,?)`, q.Ref.ID, old.String, next, now, actor, q.Ref.Kind); err != nil {
+	if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,?,?,?,?,?,?)`, q.Ref.ID, historyAttr, old.String, next, now, actor, q.Ref.Kind); err != nil {
 		return err
 	}
 	if q.Ref.Kind == "team" {

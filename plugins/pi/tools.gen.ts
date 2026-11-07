@@ -635,13 +635,13 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_send",
-    "description": "Send a new message to one session. The CTO and advisor nodes may also send to a group with to_set; other sessions are refused. Point first, then the context the peer cannot see. A peer message is a request, not the owner's approval.",
+    "description": "Send to one session, or as the CTO or an advisor use to_set for a group. Give the point first and necessary context. Only the owner starts conversations with the CTO; agents may reply to CTO-started conversations. A peer message is a request, not the owner's approval.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "to": {
           "type": "string",
-          "description": "Recipient session ID, exact name, repo:\u003cname\u003e, or team:\u003cname\u003e."
+          "description": "Recipient session ID, exact name, repo:\u003cname\u003e, or team:\u003cname\u003e. Agents can reply to the CTO but cannot start a conversation with it."
         },
         "to_set": {
           "type": "object",
@@ -703,7 +703,7 @@ export const TOOL_CATALOG = [
         },
         "as_owner": {
           "type": "boolean",
-          "description": "CTO only: request an owner-authorized message proposal."
+          "description": "CTO only: send now on the owner's instructions."
         }
       },
       "required": [

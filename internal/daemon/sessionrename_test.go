@@ -43,7 +43,8 @@ func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctoRaw := approveCTOToolResult(t, n.d, out)
+	assertCTOImmediate(t, out)
+	ctoRaw, _ := json.Marshal(out)
 	if !strings.Contains(string(ctoRaw), "cto-name") {
 		t.Fatalf("CTO rename: %s", ctoRaw)
 	}
@@ -52,7 +53,8 @@ func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctoRaw = approveCTOToolResult(t, n.d, out)
+	assertCTOImmediate(t, out)
+	ctoRaw, _ = json.Marshal(out)
 	if !strings.Contains(string(ctoRaw), `"name":"shop"`) {
 		t.Fatalf("CTO clear: %s", ctoRaw)
 	}

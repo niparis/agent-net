@@ -18,6 +18,7 @@ Keys · all screens ────────────────────
   A                      approve all
   t                      answer
   x                      dismiss
+  u                      undo
 
  On a held request row
   a                      approve
@@ -35,6 +36,5 @@ Keys · all screens ────────────────────
   enter                  open the proposal detail
   a                      approve
   r                      decline
-  A                      approve all
   more below
 up/down scroll  ? this screen  esc close

@@ -173,21 +173,21 @@ func TestCTOAsOwnerBecomesAProposal(t *testing.T) {
 	fa.setSessions(fakeSession("na", "alice"))
 	eventually(t, "recipient known", func() bool { return fa.host.SessionID("fake", "na") != "" })
 	aliceID := fa.host.SessionID("fake", "na")
-	cto, ctoID := helloPi(t, n, "cto", "/w/cto", true)
-	if _, err := n.d.st.db.Exec(`INSERT INTO cto_network(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, ctoID); err != nil {
+	if err := n.d.registerCTOSession(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := cto.call("send", map[string]any{"to": aliceID, "body": "owner words", "as_owner": true})
+	args, _ := json.Marshal(map[string]any{"to": aliceID, "body": "owner words", "as_owner": true})
+	value, err := n.d.runCTOToolRaw(context.Background(), "agent_message_send", args)
 	if err != nil {
-		t.Fatalf("as_owner from the CTO: %v", err)
+		t.Fatal(err)
 	}
-	got := groupReceipts(t, raw)
-	if len(got.Sent) != 1 || !strings.HasPrefix(got.Sent[0].MessageID, "p_") || got.Sent[0].State != "proposed" {
-		t.Fatalf("proposal receipt: %s", raw)
+	got, ok := value.(messageReceipts)
+	if !ok || len(got.Sent) != 1 || strings.HasPrefix(got.Sent[0].MessageID, "p_") {
+		t.Fatalf("receipt: %+v", value)
 	}
-	var count int
-	if err := n.d.st.db.QueryRow(`SELECT COUNT(*) FROM cto_proposals WHERE status='open'`).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("open proposals: %d %v", count, err)
+	msg, ok, err := g.gw.Store().Message(got.Sent[0].MessageID)
+	if err != nil || !ok || !msg.FromCTO || !msg.OwnerApproved {
+		t.Fatalf("message: %+v %v", msg, err)
 	}
 }
 

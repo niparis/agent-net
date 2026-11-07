@@ -6,13 +6,10 @@ Public settings, effective values, sources and history are readable by agents,
 workers, bots and the CTO. Only personal owner preferences may be marked
 owner-only. Do not put secrets in settings. Ordinary sessions cannot write
 settings. Owner writes and undo pass the daemon owner gate. The private CTO
-may write advice and undo an advice-only revision. A batch containing any rule,
-or undo of a revision containing a rule, is stored as a proposal and runs only
-after owner approval, including during a graph owner window. Every change is
-recorded; per-address expectations prevent a stale approval from silently
-replacing a newer value. Worker hand-back, delegation and approval wording is
-rule text, so the CTO must get owner approval to change it. The owner can set
-that wording at network or repo scope; text has no automatic strictness order.
+may write and undo settings at once. Every change is recorded, and per-address
+expectations prevent an old write from silently replacing a newer value. Worker
+hand-back, delegation and approval wording may be set at network or repo scope;
+text has no automatic strictness order.
 Required hand-back tool names and completion tokens are supplied by code, not
 by the editable wording.
 
@@ -25,8 +22,8 @@ and bound in its transaction. Those frames reject missing and unknown labels.
 The older `node.settings.set` frame may omit the label for compatibility with
 older daemons and is then treated as owner, as before. If it supplies a label
 for a moved setting, the label must be valid. Current daemons send it explicitly.
-A settings proposal is validated against the current state before it is stored
-and again on approval. Text settings cannot contain managed-block or agent-net
+An old settings proposal is validated against the current state before it runs.
+Text settings cannot contain managed-block or agent-net
 notice markers, apart from the standard guidance's worker-brief reference.
 Worker delivery text cannot contain a task boundary. The completion checklist
 marker is fixed framing, separate from editable advice.
@@ -60,12 +57,12 @@ Model score overrides, difficulty minimums, the worker provider allowlist and wo
 `scores_get`, `scores_set`, `difficulty_get`, `difficulty_set`, `worker_providers_get`, `worker_providers_set`, `protected_providers_get`, `protected_providers_set`, `worker_floors_get` and `worker_floors_set` methods use the
 owner gate and refuse agent sessions. Their gateway endpoints require an
 enrolled node token, which is an owner credential. Scores and minimums are
-limited to 0 through 100. Worker floors are limited to 0 through 95. The CTO's `settings_change` with `area: score` uses
-the same settings only after the owner approves its proposal.
+limited to 0 through 100. Worker floors are limited to 0 through 95. The CTO's `settings_change` with `area: score` changes
+the same settings at once.
 
 The daemon sends each worker brief to the configured difficulty judge before it asks the gateway to choose a model. The default is OpenCode with the DeepSeek judge model. The judge's label is the level the picker uses. A missing judge, a failure, a timeout or low confidence falls back to normal and never blocks the start. The gateway stores the scores and judge reasons, which may reflect the brief, but not the brief itself. Enrolled nodes and agents can read assessments with worker records. The assessment write is a daemon-to-gateway operation: the gateway accepts it only from the node that owns the worker session.
 
-Worker profiles are stored at the gateway. The list is public: any session except a worker, the CTO included, may read it. The owner CLI and bound non-worker agent sessions may add or remove them. The private CTO may propose adds or removals. The daemon and gateway both reject worker sessions, and the gateway verifies that the requesting session belongs to the sending node. It resolves each added model against the advertised model list of a machine and records the requester and time. The gateway does not verify that an agent received an owner's instruction, so agents must follow their normal instruction and approval rules. Registered profiles remain subject to the owner-controlled worker provider filter. Automatic choice also requires the task to be at the profile's maximum difficulty or exactly one level below it. The maximum is the highest level whose score minimum it meets. Ineligible profiles have no rotation weight. When none qualify, the start fails with registration guidance; explicit model requests override this eligibility rule and the start note says when they do. Recent failure and success marks apply only to the same node and harness.
+Worker profiles are stored at the gateway. The list is public: any session except a worker, the CTO included, may read it. The owner CLI and bound non-worker agent sessions may add or remove them. The private CTO may add or remove profiles at once. The daemon and gateway both reject worker sessions, and the gateway verifies that the requesting session belongs to the sending node. It resolves each added model against the advertised model list of a machine and records the requester and time. The gateway does not verify that an agent received an owner's instruction, so agents must follow their normal instruction and approval rules. Registered profiles remain subject to the owner-controlled worker provider filter. Automatic choice also requires the task to be at the profile's maximum difficulty or exactly one level below it. The maximum is the highest level whose score minimum it meets. Ineligible profiles have no rotation weight. When none qualify, the start fails with registration guidance; explicit model requests override this eligibility rule and the start note says when they do. Recent failure and success marks apply only to the same node and harness.
 
 The OpenCode CTO server binds only to localhost and requires a random password.
 Its data, state, configuration and cache are private to the daemon. The OpenCode
@@ -111,11 +108,11 @@ and the general subagent must be absent or disabled. Missing reports or deny
 rules stop startup. Fake harnesses test these checks. Real model tool execution
 and subagent inheritance have not been verified.
 
-The private MCP server classifies calls as public read, talk or proposal.
-Non-graph owner-only changes and major graph changes outside the owner window
-are proposals: the owner decides in the Inbox (tab 7) and the daemon executes the stored call. Typing instructions in the CTO chat grants no
-approval. Full results stay with the owner; outcome notes contain no result
-payload, including MCP responses and tool plan paths.
+The private MCP server classifies calls as public read, talk, immediate change
+or proposal. Only node removal, agent tombstone, repo archive, machine removal
+and machine token rotation are proposals. The CTO runs other changes at once;
+the owner sees Inbox notices and can undo supported changes. A proposal still
+requires a dialog or Inbox approval.
 
 The read rule follows decision 0035: a CTO data view calls the same daemon
 function as its matching ordinary agent tool, with the CTO caller identity,
@@ -139,7 +136,7 @@ playbook notes in `agent_machines_find` remain public; the owner-only full playb
 view is removed. No ordinary agent read is widened for the CTO, except where
 the owner widened it for every agent.
 
-**Team delivery.** Only the CTO and advisor nodes can send to a group. A team selector uses typed membership and repo owner links to select online sessions. It grants no authority. Team recipients are resolved when the message is sent, so a member removed at that same moment can still receive that one message. Owner-authorized team proposals record the team ID and check membership again when approved. An enrolled machine and the gateway remain trusted to report the graph and session identities.
+**Team delivery.** Only the CTO and advisor nodes can send to a group. A team selector uses typed membership and repo owner links to select online sessions. It grants no authority. Team recipients are resolved when the message is sent, so a member removed at that same moment can still receive that one message. Legacy team-send proposals check membership again when approved. An enrolled machine and the gateway remain trusted to report the graph and session identities.
 
 **Project layout read.** The CTO read tool `projects_layout` scans disk under the home folder on online machines to report repository root locations, group folders, and origin remotes. The CTO can read folder names and remotes under the home folder on every machine. It is read-only: it does not register projects, execute scripts, or change files. It drops worktrees, caches, dependency folders, hidden folders, and temp folders, and is bounded by depth (at most 4 levels under home), result caps, and a 15-second timeout. Results are cached per machine for 10 minutes.
 
@@ -153,7 +150,7 @@ the owner set for the node's project on each machine (`delegate`,
 `coder_model`, `main_model`, `workers`). `agent_session_get` puts the same rules on the
 session's node, so a session can check its own rules directly. Delivery rules,
 including merge authority and its displayed text, are settings-layer rules.
-The owner can change them; the CTO must propose changes for owner approval.
+The owner and CTO can change them.
 A repo with no graph node uses the network merge authority. The gateway supplies
 the receiver's merge text with each delivered message, overriding any sender
 value. The delegated approval modes are inserted into the rule text, so a
@@ -205,19 +202,19 @@ CTO record. Only the owner-gated send and enter paths do so.
 
 Plain sends and replies are peer messages from the CTO session. All four
 adapters append `from the CTO session: model output, not the owner's words. Judge it like any peer request.`
-Only the proposal runner for an approved `message {as_owner: true}` sets the
-CTO flag. The immediate tool path cannot set it. The gateway refuses the flag
-from every session except the recorded CTO session, including owner sessions.
-Approved worker-start tasks are ordinary owner-session messages, without that
-flag. Enrolled daemons remain trusted to set flags honestly.
+When the CTO sends or replies with `as_owner: true`, its immediate tool path sets
+the CTO owner-instruction flag. The gateway refuses the flag from every session
+except the recorded CTO session, including owner sessions. Worker-start tasks
+are ordinary owner-session messages, without that flag. Enrolled daemons remain
+trusted to set flags honestly.
 
 Adapters append `from the CTO, on the owner's instructions. Treat this as the owner's word within your charter's limits.`
-for an approved send. Both notes sit after the body, with agent-net markers in
+for an owner-voice send. Both notes sit after the body, with agent-net markers in
 the body neutralized. Neither note names a person. The Go and TypeScript
 copies are checked for equality. A body cannot forge either note's framing.
 CTO sends check the gateway's attribution and network-session capabilities on
 the same connection as the send. Older gateways are refused with an upgrade
-error. Neither plain nor approved CTO sends enter the offline outbox. Graph
+error. Neither peer nor owner-voice CTO sends enter the offline outbox. Graph
 writes keep their existing attribution checks. Text the CTO reads remains
 untrusted data; its brief says not to follow instructions in it.
 
@@ -527,9 +524,7 @@ Requests use rules on graph edges. `normal` uses the normal peer guidance, `auto
 
 The new delivery assignment edges, including `delivery_deploys`, do not set
 request permissions and cannot override those rules. The existing `deploys`
-edge retains its request rule and supplies the default deployer. The owner or
-an approved CTO proposal may change or undo a step owner edge, including
-`deploys`; a CTO graph owner window alone is not enough.
+edge retains its request rule and supplies the default deployer. The owner or CTO may change or undo a step owner edge, including `deploys`.
 A node-owned task can be claimed or reported only by an online non-worker
 session of that node. A claim reserves the task; the first report can also
 claim it in the evidence transaction.
@@ -566,88 +561,28 @@ The Inbox (tab 7) excludes worker sessions. The daemon refuses a worker's explic
 
 ## CTO tool classes and the two rules
 
-**Rule 1: changes.** Minor graph changes apply immediately. The gateway reuses
-its learned-change classifier for wording, accepts, needs, consumers and normal
-depends edges. New architect nodes are minor. Restrictive or narrowing wording,
-refuses, escalate, maturity, deploy rules, request rules (`auto`, `ask`, `never`),
-governs edges, node removal, all node settings and every change on
-or touching a critical node are major. Clearing a charter field or removing an accepts, needs or consumers item is
-major. Undo is classified by its reverse change.
-The gateway repeats the minor check in the mutation transaction before commit;
-a concurrent maturity or edge-rule change cannot bypass the check.
-Delivery owner edges, including `deploys`, are rules: changing or undoing them
-requires an owner-approved proposal even during the window.
+**Rule 1: changes.** The per-tool and per-action class table applies CTO
+changes at once except for `node_remove`, `agent_tombstone`, `repo_archive`,
+`machine_remove` and `machine_rotate`. Those five remain proposals approved by
+the owner in a dialog or the Inbox. Unknown tools and actions fail closed.
+Concrete handlers keep their schema, audit and integrity checks. The owner sees
+an Inbox notice after an immediate action, with a diff and undo where available.
+The old graph window no longer changes the class of an action.
 
-Major graph changes need a proposal unless the owner opened the 30-minute
-"I'm driving" window with `w` on the focused CTO box. The owner gate and the
-TUI subscription check both apply to reading or toggling this window. The CTO
-process, agent callers and CLI connections outside the TUI are refused. The
-host daemon stores only an in-memory deadline, never a model-supplied token or
-persisted grant. The CTO cannot read, forge, open or extend it. It expires at
-30 minutes, can be closed early with `w`, and closes on daemon restart.
-Immediate calls use `CTO (minor)` or `CTO (owner window)`, write an owner notice
-and normal undo history, and create no blocking row. The gateway advertises
-support before a daemon sends these actors, on the same link as the mutation.
+The CTO may send as owner at once using `as_owner`; the daemon attaches the CTO
+owner-instruction note. Other sends carry the CTO peer note. The gateway accepts
+that flag only from the registered CTO session and trusts enrolled daemons to
+supply it honestly.
 
-The window covers graph operations only. Trust, policy, workers, tools, MCP,
-settings and sends as owner still require proposals in every turn. Request
-rules and trust stay gated outside the window because they decide who can
-make an agent act without asking. While the window is open, peer messages can
-influence major graph changes too. The visible countdown, short lifetime and
-undo history make that temporary delegation reviewable. No chat approval counts;
-the owner uses `A` in the Inbox (tab 7) or `w` in the CTO box. A reason is model output,
-not evidence of permission. The operating-system user remains the trust boundary.
-
-The daemon keeps one fixed class table for every CTO tool and action. Unknown
-tools and actions fail closed; a completeness test checks the MCP registry.
-
-| Class | Execution |
-|---|---|
-| Read | Uses the ordinary agent dispatcher with the CTO caller; static guide and own timeline only otherwise |
-| Talk | Sends, replies, learning and UI views/notices run immediately |
-| Proposal | Validates and stores; only the owner-approved runner executes |
-
-The class table has exactly these three classes. `graph_change` is a proposal
-call, and the daemon checks its graph policy before the proposal route: a minor
-action applies at once, a major action applies during the owner window, and
-anything else is stored for the owner. After typed Graph cutover, Repo creation
-and archive, Agent creation and tombstone, and their undo always require the
-owner. The CTO may only propose them through the dialog or Inbox; the owner
-window does not authorize them. Peer sessions cannot run them. The gateway
-checks the authenticated owner session and repeats lifecycle and reference
-checks when an approved proposal runs. Tombstoned Agents cannot own Repos.
-Archive and tombstone retain historical references and refuse active ones rather
-than cascading changes. Session registration and Agent changes check for inactive
-identities in the same transaction as the write; a refusal leaves no partial
-session update.
-
-Proposal calls cover major graph/charter/node settings outside the owner window,
-and always names, trust, policy, workers,
-held and inbox answers and outcomes, tools plans/apply/undo/import, MCP changes
-and calls, integrations, notifications, CTO settings, providers, scores,
-profiles, playbooks, projects, invites, onboarding restart, `cto_new`, and
-`message` with `as_owner: true`. Empty settings calls also propose; they return
-no settings. Plain sends and replies use the registered CTO session and carry
-the peer note. Only an approved as-owner message carries the CTO authority note.
-
-Validation checks the advertised schema and current IDs, enrollment, names and
-policy using the same checks as execution. Graph and answer validations roll
-back their database transactions. Tools validation saves no plan or revision;
-worker validation starts and stops nothing and does not advance model rotation;
-MCP validation does not probe or invoke a server or edit native configuration.
-Read-only native-file checks use separate operations that an older daemon
-cannot mistake for a write. Execution checks again after approval because the
-world may have changed.
-
-**Rule 2: reads.** Implemented in design part 4. CTO data views reuse ordinary
-agent dispatch with the CTO caller; views without an ordinary source are
-removed. Static charter guidance and the CTO's own timeline remain. Owner-only
-data enters the CTO only when the owner types or sends it. Outcome
-notes carry no private result. The rule holds in every turn, whoever started it.
-The parity and canary tests enforce this rule.
+**Rule 2: reads.** CTO data views reuse ordinary agent dispatch with the CTO
+caller; views without an ordinary source are removed. Static charter guidance
+and the CTO's own timeline remain. The parity and canary tests enforce this
+for those views. Immediate actions also return their concrete results to the
+CTO, which can include paths or data returned by an MCP server. Proposal outcome
+notes carry no private result.
 The CTO now uses its registered network session for these checks. An agent
 session cannot call the owner-gated `owner_send` method.
-Peer messages reach the CTO through normal delivery to its session (design part 7).
+The gateway refuses a new agent conversation addressed to the CTO. It accepts owner messages, agent-net system notices, and replies in conversations the CTO started, including later replies. This rule applies to workers, merger and orchestrator sessions too.
 
 ## Limits against loops
 
@@ -655,9 +590,8 @@ CTO proposals are stored in the hosting daemon's private state database.
 The owner gate protects proposal listing and decisions, including relayed
 requests. An enrolled daemon is trusted to enforce that gate before relaying,
 as it is for other owner operations. A proposed call is checked before it is
-stored and again before it runs. All non-graph owner-only CTO changes use this
-path, including plans, previews, MCP tests and arbitrary MCP calls. Major graph
-changes also use it outside the owner window. Only the
+stored and again before it runs. Only the five actions listed above take this
+path. Only the
 daemon's runner executes an approved call, with actor
 `owner (CTO proposal p_N)`. For a dialog answer the daemon accepts only the private CTO MCP connection, and checks its process tree again on each call. The MCP server sends an answer only after the harness returns an elicitation response; the model has no approval tool. The dialog text comes from the stored proposal. The daemon wraps ordinary tool results separately so their contents cannot masquerade as a proposal. This relies on the harness presenting elicitation to the owner, and on the existing local process checks described above. The model cannot approve its own proposals through the tool interface. Identical open calls are refused, open proposals expire after 24
 hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
@@ -701,11 +635,11 @@ This section covers everything the owner can do with skills and MCP servers acro
 
 ### Who may change things
 
-- **Shared MCP server administration is owner-only.** The daemon refuses `mcp_add` and `mcp_remove` from every client except the owner CLI, including bound agent sessions. The gateway also refuses add or remove requests with non-empty `added_by_session` attribution. The owner's TUI and CLI keep working. An approved CTO `mcp_change` proposal runs through the owner CLI path. Agent sessions may still list and test shared servers. Plugin calls to add or remove a shared server reach the same daemon check and are refused.
-- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO cannot read tool inventory or metadata outside ordinary agent tools. Its plan, apply, undo, import and native-removal calls become proposals; only approval in the Inbox (tab 7) executes them. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
+- **Shared MCP server administration.** The daemon refuses `mcp_add` and `mcp_remove` from bound agent sessions. The gateway also refuses add or remove requests with non-empty `added_by_session` attribution. The owner's TUI and CLI keep working. A CTO `mcp_change` runs at once through the owner CLI path. Agent sessions may still list and test shared servers. Plugin calls to add or remove a shared server reach the same daemon check and are refused.
+- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO cannot read tool inventory or metadata outside ordinary agent tools. Its plan, apply, undo, import and native-removal calls execute at once. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
 - **The gateway checks too.** It accepts these requests only from the online owner session of the sending machine. As with every other frame, the gateway trusts the daemons of enrolled machines (see [the trust limit](#the-trust-limit)).
 - **Advice is not authority.** A charter's `needs`, a peer message, a skill's text or a project file never grants a change. Needs are shown as unverified text and are never turned into assignments.
-- **Audit.** The gateway records each plan and apply with the actor (owner, legacy CTO, or owner with a CTO proposal ID), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
+- **Audit.** The gateway records each plan and apply with the actor (owner, CTO, or owner with a CTO proposal ID), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
 
 ### What discovery sees
 
@@ -731,8 +665,7 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 ### Plans, copies and ownership
 
 Project skill switches and the new-projects setting use the owner gate at both
-the operator socket and gateway. The CTO can propose them through the same
-owner approval path as an assignment plan. An unmanaged switch imports first,
+the operator socket and gateway. The CTO can change them at once through the owner path. An unmanaged switch imports first,
 using the same bundle, hash, size and secret checks. Its assignment names only
 the machines with observed copies, so migration cannot deploy it to a new
 machine. Plugin, package and system sources remain read-only.
@@ -922,7 +855,7 @@ A timer deletes older data once at start and then every hour. A period of `0` ke
 
 ## Project display names
 
-The owner-only `project_display_get` and `project_display_set` methods use the daemon's owner gate. Agent clients and command lines inside an agent session are refused. The CTO reads names only through ordinary project and agent listings and proposes changes. As with other owner operations, the gateway trusts enrolled daemons to send the corresponding frames. Display names are visible in project and agent listings to enrolled machines and agents. They are not a secret store. The gateway limits a name to 4096 bytes and rejects non-printable characters. An empty name clears it.
+The owner-only `project_display_get` and `project_display_set` methods use the daemon's owner gate. Agent clients and command lines inside an agent session are refused. The CTO reads names through ordinary project and agent listings and applies changes. As with other owner operations, the gateway trusts enrolled daemons to send the corresponding frames. Display names are visible in project and agent listings to enrolled machines and agents. They are not a secret store. The gateway limits a name to 4096 bytes and rejects non-printable characters. An empty name clears it.
 
 ## Machine names
 
@@ -1002,10 +935,10 @@ The CTO design lists what its rules leave open ([design section 10](design/cto-a
 
 - **The owner approves without reading.** A proposal is checked again before it runs, and its diff is computed when the owner opens it. But the owner approves what the detail shows, not what the CTO saw.
 - **What the owner shares can be repeated.** Typed text and handed-over items enter the CTO conversation. Its brief asks it not to repeat them to other agents, but that is advice, not a data gate.
-- **A peak of proposals.** Deduplication, the cap of 20 open proposals and request rules on edges to the CTO limit a flood. A noisy sender can still fill the slots until the owner declines its proposals or sets `never` on its edge.
+- **A peak of proposals.** Deduplication and the cap of 20 open proposals limit a flood. Agents cannot start a conversation with the CTO.
 - **An agent asks the CTO to relay a request.** A plain send carries the peer note, so the receiver judges it like any peer request. This is the same as an agent relaying a request itself.
-- **A proposal shaped by public data.** The CTO reads only public data, and nothing it reads runs anything. Injected text can still shape a proposal, and the owner reviews that proposal.
-- **A forged CTO note or flag.** Only the proposal runner sets the CTO flag, and the gateway accepts it only from the recorded CTO session. As elsewhere, the gateway trusts enrolled daemons to set it honestly.
+- **A proposal shaped by public data.** The CTO reads only public data, and nothing it reads runs anything. Injected text can still shape an immediate action.
+- **A forged CTO note or flag.** The CTO send path sets the CTO flag, and the gateway accepts it only from the recorded CTO session. As elsewhere, the gateway trusts enrolled daemons to set it honestly.
 - **The trust boundary.** It stays the owner's operating-system user. A process of that user can type into the CTO box or read the OpenCode password. Rule 1 gives it no owner power beyond what the owner gate already exposes.
 
 ## Reporting a problem
@@ -1039,7 +972,7 @@ Graph operator methods use the owner gate, including history and graph changes. 
 
 ## Playbook notes
 
-`playbook_set` and `playbook_get` use the same owner gate: your command line or the TUI, never an agent client and never a CLI inside an agent session. The CTO cannot read the full playbook view. It sees only the public notes in ordinary machine inventory and proposes changes. A note is at most 1024 bytes after control characters other than newline and tab are removed, and it appears in every `agent_worker_start` result for that model. It is not a secret store: the note reaches any agent that starts a worker with that model, so do not put credentials in it.
+`playbook_set` and `playbook_get` use the same owner gate: your command line or the TUI, never an agent client and never a CLI inside an agent session. The CTO cannot read the full playbook view. It sees only the public notes in ordinary machine inventory and applies changes. A note is at most 1024 bytes after control characters other than newline and tab are removed, and it appears in every `agent_worker_start` result for that model. It is not a secret store: the note reaches any agent that starts a worker with that model, so do not put credentials in it.
 
 `agent_learn` is the other direction: it is open to agent sessions, because they are the ones that notice things, and refused for the command line. A finding is at most 500 bytes, names a subject and may carry up to 20 session or worker IDs. A session may record at most 3 findings in 24 hours; the fourth is refused. Findings are not messages and never appear in the Inbox (tab 7). They are stored in the gateway's `findings` table with the reporting session and a status. Automatic notes built from them are not secrets either, and they reach every agent at the moment of choice.
 
@@ -1084,11 +1017,11 @@ Skill file previews use the owner-only operator gate. The gateway checks the own
 
 The owner-only skill comparison summary sends up to 12,000 bytes of skill text to an automatically chosen read-only worker. The worker is selected through the normal protected-provider rules. Summary requests share the phrasing rate limit.
 
-### CTO session and project proposals
+### CTO session and project starts
 
-The CTO can only propose an owner session start or project creation. Neither the minor-change rule nor the graph owner window applies. The owner approves the stored call in the Inbox (tab 7). The proposal cannot supply Claude's trust confirmation. If the normal start path needs that answer, it returns `needs_trust` and starts no session. A newly created folder or worktree follows the same trust rule as the owner's form.
-
-A proposed typed path must have valid syntax; on the local machine it must also stay inside the owner's home, including through symbolic links. A remote target checks the path on that machine after approval. A proposed worktree is also checked against the destination owner's home before creation. The gateway requires the target to be online, and both the gateway and the destination must support the proposal start frame. Older versions refuse it rather than bypass the destination checks. As elsewhere, enrolled daemons are trusted to enforce their own checks.
+The CTO starts sessions and creates projects at once through the owner path.
+The destination keeps its normal path, enrollment and folder-trust checks.
+The gateway trusts enrolled daemons to enforce their own checks.
 
 ### Starting an owner session
 
@@ -1267,9 +1200,9 @@ A node's `autonomy` setting is `off` by default or `wake`. With `wake`, a
 `more` answer from an online session gets one short continue notification from
 the reserved `agent-net` identity and no Inbox row. An offline session is
 not woken: this slice never starts or resumes a session, and creating a new
-agent or a clone stays with the owner or a CTO proposal. `blocked on X` still
+agent or a clone stays with the owner or CTO. `blocked on X` still
 leaves a row. Only the owner changes autonomy, through `node_settings_set`
-(owner gate) or its CTO proposal; a session cannot set its own.
+(owner gate) or the CTO; a session cannot set its own.
 
 Wake-ups have their own cap of 6 per agent per day, separate from the check
 cap. Two wakes in a row with no new message and no change in open work stop the
@@ -1405,7 +1338,7 @@ Daemon leftover commits exclude files larger than 5 MB, binary executables and b
 
 ### Merger registration
 
-Only the owner through the TUI/CLI owner gate, or an approved CTO proposal,
+Only the owner through the TUI/CLI owner gate or the CTO
 may register a project's merger. Ordinary agent sessions and workers cannot
 call the owner-only `merger_set` operation. A session cannot become a merger
 by announcing a type. The gateway derives that type from its registration.
@@ -1428,8 +1361,7 @@ accept owner. Replacement releases the old claims and queues tasks for the new
 merger. Cleanup runs atomically on the registration record. Completed step
 evidence remains tied to its recorded revision and commit.
 
-A CTO `merger_start` proposal pins the registered project and machine before
-approval. Approval starts Claude there, registers the session, and assigns
+A CTO `merger_start` starts Claude on the registered project and machine, registers the session, and assigns
 test and merge. The built-in brief requires its own merge worktree, excludes
 build outputs, binaries and secrets, and tells it to resolve merge conflicts in its own worktree, preserving both
 intents and reporting each resolved file. Mechanical migration and decision
@@ -1456,8 +1388,7 @@ Rollback requires restoring the pre-cutover backup.
 
 Explicit Agent selection at session start uses `session.agent.reserve`. The
 caller must name the owner pseudo-session on its authenticated machine. The
-local daemon exposes this only to its owner start path or an approved CTO
-proposal. Agent role text grants no authority. Unknown and tombstoned Agents
+local daemon exposes this only to its owner start path or the CTO. Agent role text grants no authority. Unknown and tombstoned Agents
 are refused before launch and checked again at binding and first registration.
 A reservation cannot replace an existing identity or bind a worker.
 
@@ -1486,9 +1417,8 @@ in the write transaction. An owning Agent cannot be deleted or tombstoned while
 any Team retains its owner reference, including archived Teams.
 
 Session archive and restore are owner-only operations. Ordinary agent
-connections cannot call them. The CTO can submit a sessions_archive proposal;
-it cannot restore records or apply a proposal before approval. Proposals pin
-the previewed IDs and recheck them at approval. The gateway checks owner
+connections cannot call them. The CTO can archive at once and the owner can
+restore archived sessions. The gateway checks owner
 authority, refuses online sessions, and updates a batch in one transaction.
 Archiving retains rows and historical references; it does not revoke a session.
 A live session report restores its visibility.
@@ -1528,7 +1458,7 @@ The daemon logs these skips; an explicit missing-thread response counts as succe
 
 
 Repo and Team leads affect message routing, not trust or approval. Only the
-owner or an approved CTO proposal can set a lead. The gateway checks request
+owner or CTO can set a lead. The gateway checks request
 rules against the actual redirected recipient. Owner and CTO messages and a
 worker's messages to its caller are not redirected. For an explicit Repo or
 Team address, the gateway verifies that the recipient is still that lead before

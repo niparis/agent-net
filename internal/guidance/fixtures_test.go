@@ -2,11 +2,14 @@ package guidance
 
 import (
 	"encoding/json"
+	"flag"
 	"github.com/niparis/agent-net/internal/settings"
 	"os"
 	"strings"
 	"testing"
 )
+
+var update = flag.Bool("update", false, "rewrite guidance fixtures")
 
 func TestOriginalFixtures(t *testing.T) {
 	cases := map[string]string{}
@@ -18,6 +21,11 @@ func TestOriginalFixtures(t *testing.T) {
 	cases["remove"], _ = Remove("Before\n\n" + Block(Claude) + "\nAfter\n")
 	cases["legacy"], _ = Apply("Before\n\n## agent-net: working with other agents\nold\n\n## Next\nAfter\n", Other)
 	for name, got := range cases {
+		if *update {
+			if err := os.WriteFile("testdata/"+name+".golden", []byte(got), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
 		want, err := os.ReadFile("testdata/" + name + ".golden")
 		if err != nil {
 			t.Fatal(err)

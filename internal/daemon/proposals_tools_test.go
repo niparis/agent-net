@@ -27,17 +27,43 @@ var ctoProposalFixtures = map[string]string{
 	"message":          `{"action":"send","as_owner":true,"to":"s_test","body":"stored"}`,
 }
 
+func TestConcreteProposalClassAndGraphReasonCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		name, tool, args, concrete string
+		wantErr                    bool
+	}{
+		{"gated graph action", "graph_change", `{"action":"node_remove","name":"old","reason":"retired"}`, "node_remove", false},
+		{"legacy immediate graph action", "graph_change", `{"action":"team_create","name":"test","reason":"group work"}`, "team_create", false},
+		{"legacy owner message", "message", `{"action":"send","as_owner":true,"to":"s_test","body":"hello"}`, "message", false},
+		{"read", "agent_sessions_find", `{}`, "", true},
+		{"talk", "cto_ui_show", `{}`, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call, err := concreteProposal(proposalCall{Tool: tc.tool, Args: json.RawMessage(tc.args)})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("non-proposal call accepted")
+				}
+				return
+			}
+			if err != nil || call.Tool != tc.concrete {
+				t.Fatalf("concrete call: %+v %v", call, err)
+			}
+			if tc.tool == "graph_change" && strings.Contains(string(call.Args), `"reason"`) {
+				t.Fatalf("reason reached the concrete call: %s", call.Args)
+			}
+			if err := mcpserver.CTOArguments(call.Tool, call.Args); err != nil {
+				t.Fatalf("concrete schema: %v", err)
+			}
+		})
+	}
+}
+
 func TestProposalEveryChangeRunsStoredCallOnce(t *testing.T) {
 	t.Parallel()
-	for name, class := range ctoToolClasses {
-		if class != ctoProposal && name != "message" {
-			continue
-		}
+	// These fixtures represent proposals stored before the at-once policy.
+	for name, args := range ctoProposalFixtures {
 		t.Run(name, func(t *testing.T) {
-			args, ok := ctoProposalFixtures[name]
-			if !ok {
-				t.Fatal("missing proposal fixture")
-			}
 			wantTool, wantArgs, wantAction, err := ctoConcreteCall(name, json.RawMessage(args))
 			if err != nil {
 				t.Fatal(err)
@@ -73,17 +99,12 @@ func TestProposalEveryChangeRunsStoredCallOnce(t *testing.T) {
 				})
 			}}
 			ctx := context.Background()
-			result, err := routeCTOTool(ctx, name, json.RawMessage(args), func(ctx context.Context, tool, action string, stored json.RawMessage, reason string) (string, error) {
-				if tool != name || action != wantAction {
-					t.Fatalf("stored %s %s, want %s %s", tool, action, name, wantAction)
-				}
-				return p.propose(ctx, proposalCall{Tool: tool, Action: action, Args: stored}, reason)
-			}, func(context.Context, string, json.RawMessage) (any, error) { calls++; return nil, nil })
+			result, err := p.propose(ctx, proposalCall{Tool: name, Action: wantAction, Args: json.RawMessage(args)}, "legacy fixture")
 			if err != nil {
 				t.Fatal(err)
 			}
 			items, err := p.list()
-			if err != nil || len(items) != 1 || calls != 0 || validations != 1 || result != ProposalToolResult(items[0].ID) {
+			if err != nil || len(items) != 1 || calls != 0 || validations != 1 || result != items[0].ID {
 				t.Fatalf("items=%v calls=%d validations=%d result=%v err=%v", items, calls, validations, result, err)
 			}
 			if err := p.decide(ctx, items[0].ID, true); err != nil {
@@ -159,7 +180,7 @@ func TestCTOChangeParity(t *testing.T) {
 				}
 			}
 			class, err := ctoClass(call.tool, json.RawMessage(call.args))
-			if err != nil || class != ctoProposal {
+			if err != nil || (class != ctoProposal && class != ctoMinor) {
 				t.Fatalf("class=%s err=%v", class, err)
 			}
 			concrete, args, _, err := ctoConcreteCall(call.tool, json.RawMessage(call.args))
@@ -209,22 +230,20 @@ func TestCTOChangeProposalsValidateAndApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", call.name, err)
 		}
-		if call.name == "graph_change" && strings.Contains(call.args, "node_add") {
-			continue
-		}
-		if !strings.HasPrefix(value.(string), "proposal p_") {
-			t.Fatalf("%s ran directly: %v", call.name, value)
-		}
-		items, err := n.d.proposalRunner().list()
+		class, err := ctoClass(call.name, json.RawMessage(call.args))
 		if err != nil {
 			t.Fatal(err)
 		}
-		item := items[len(items)-1]
-		if item.Call.Tool != call.name || item.Status != "open" {
-			t.Fatalf("bad proposal: %+v", item)
-		}
-		if err := n.d.proposalRunner().decide(ctx, item.ID, true); err != nil {
-			t.Fatalf("approve %s: %v", call.name, err)
+		if class == ctoProposal {
+			text, ok := value.(string)
+			if !ok || !strings.HasPrefix(text, "proposal p_") {
+				t.Fatalf("missing proposal: %v", value)
+			}
+			if err := n.d.proposalRunner().decide(ctx, strings.Fields(text)[1], true); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			assertCTOImmediate(t, value)
 		}
 	}
 	for _, call := range []struct{ name, args string }{
@@ -298,7 +317,7 @@ func TestCTOProposalQueuedStopDoesNotCancelUntilApproval(t *testing.T) {
 		t.Fatalf("not queued: %+v", queued)
 	}
 	args, _ := json.Marshal(map[string]string{"action": "stop", "session": queued.QueueID})
-	value, err := w.d.runCTOToolRaw(context.Background(), "worker_change", args)
+	value, err := legacyProposalFixture(context.Background(), w.d, "worker_change", args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +328,7 @@ func TestCTOProposalQueuedStopDoesNotCancelUntilApproval(t *testing.T) {
 	if count, _ := w.d.st.queueLen(); count != 0 {
 		t.Fatal("approved stop did not cancel queued start")
 	}
-	if _, err := w.d.runCTOToolRaw(context.Background(), "worker_change", args); err == nil {
+	if _, err := legacyProposalFixture(context.Background(), w.d, "worker_change", args); err == nil {
 		t.Fatal("proposed stop of missing queue ID")
 	}
 }
@@ -320,7 +339,7 @@ func TestCTOProposalTrustHistoryActor(t *testing.T) {
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	_, sid := helloPi(t, n, "trust", "/work/project", true)
 	args, _ := json.Marshal(map[string]any{"action": "trust", "session_id": sid, "on": true})
-	value, err := n.d.runCTOToolRaw(context.Background(), "session_change", args)
+	value, err := legacyProposalFixture(context.Background(), n.d, "session_change", args)
 	if err != nil {
 		t.Fatal(err)
 	}

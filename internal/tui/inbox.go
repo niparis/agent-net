@@ -395,6 +395,9 @@ func (m Model) inboxMachineName(id string) string {
 
 // inboxNoticeParts names a connected app and says what it is.
 func inboxNoticeParts(item protocol.InboxItem) (string, string) {
+	if item.Node == "cto" {
+		return "CTO", item.Text
+	}
 	text := appApprovalNoticeText(item.Text)
 	if item.Node == "apps" {
 		if name, summary, ok := inboxConnectedNotice(text); ok {
@@ -848,7 +851,11 @@ func (m Model) inboxPanelText(row inboxRow) string {
 		}
 		return text
 	case "notice":
-		return sanitize(row.item.Text)
+		text := sanitize(row.item.Text)
+		if row.item.Node == "cto" && row.item.Recommendation != "" {
+			text += "\n" + sanitize(row.item.Recommendation)
+		}
+		return text
 	case "approval", "question":
 		text := sanitize(row.item.Text)
 		if row.item.Recommendation != "" {
@@ -890,7 +897,9 @@ func (m Model) inboxPanelOrigin(row inboxRow, withAge bool) string {
 	case "proposal":
 		add("CTO · " + m.inboxMachineName(row.proposal.NodeID))
 	case "notice":
-		if row.item.Kind != "session_stall" {
+		if row.item.Node == "cto" {
+			add("CTO")
+		} else if row.item.Kind != "session_stall" {
 			add("connected app")
 		}
 		if row.item.SessionID != "" {
@@ -1026,11 +1035,17 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 	case "notice", "approval", "question":
 		name := m.inboxAskerName(row.item)
 		out = append(out, "From: "+sanitize(name), "", sanitizeBody(row.item.Text))
-		for i, option := range row.item.Options {
-			out = append(out, fmt.Sprintf("%d. %s", i+1, sanitize(option)))
+		if row.item.Node != "cto" {
+			for i, option := range row.item.Options {
+				out = append(out, fmt.Sprintf("%d. %s", i+1, sanitize(option)))
+			}
 		}
 		if row.item.Recommendation != "" {
-			out = append(out, "", "Recommendation: "+sanitizeBody(row.item.Recommendation))
+			label := "Recommendation: "
+			if row.item.Node == "cto" {
+				label = "Diff: "
+			}
+			out = append(out, "", label+sanitizeBody(row.item.Recommendation))
 		}
 		if row.item.ChangeTitle != "" {
 			out = append(out, "", "Related change: "+sanitize(row.item.ChangeTitle))
@@ -1251,6 +1266,33 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.inboxInput.Focus()
 			m.inboxEditing = true
 		}
+	case "undo":
+		if op, args, ok := ctoInboxUndo(row.item); ok && row.kind == "notice" {
+			c, ok := m.src.(inboxCaller)
+			if !ok {
+				return m, nil
+			}
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				result, err := c.Call(ctx, op, args)
+				if err != nil {
+					return actionMsg{err: err}
+				}
+				if op == "mcp_native_remove" {
+					var restored protocol.MCPNativeRemoveResult
+					if json.Unmarshal(result, &restored) != nil || restored.State != protocol.MCPNativeRestored {
+						reason := restored.Reason
+						if reason == "" {
+							reason = "native MCP configuration was not restored"
+						}
+						return actionMsg{err: fmt.Errorf("undo: %s", reason)}
+					}
+				}
+				_, err = c.Call(ctx, "inbox_answer", map[string]any{"id": row.item.ID, "answer": "dismiss"})
+				return inboxAnswerMsg{id: row.item.ID, err: err}
+			}
+		}
 	case "dismiss":
 		if row.kind == "notice" || row.kind == "approval" || row.kind == "question" {
 			m.inboxError = ""
@@ -1382,6 +1424,9 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 	case "learned":
 		return []hint{{key: "a", label: "accept", prio: 1}, {key: "r", label: "reject", prio: 1}}
 	case "notice":
+		if _, _, ok := ctoInboxUndo(row.item); ok {
+			return []hint{bindingHint(contextInbox, "undo"), bindingHint(contextInbox, "dismiss")}
+		}
 		return []hint{bindingHint(contextInbox, "dismiss")}
 	}
 	return nil
@@ -1420,4 +1465,21 @@ func (m Model) inboxHints() []hint {
 // inboxCaller is the local call the Inbox and the CTO box need.
 type inboxCaller interface {
 	Call(context.Context, string, any) (json.RawMessage, error)
+}
+
+// ctoInboxUndo accepts only the owner operations emitted by the CTO daemon.
+func ctoInboxUndo(item protocol.InboxItem) (string, json.RawMessage, bool) {
+	if item.Node != "cto" || len(item.Options) != 2 {
+		return "", nil, false
+	}
+	switch item.Options[0] {
+	case "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive":
+	default:
+		return "", nil, false
+	}
+	raw := json.RawMessage(item.Options[1])
+	if !json.Valid(raw) {
+		return "", nil, false
+	}
+	return item.Options[0], raw, true
 }

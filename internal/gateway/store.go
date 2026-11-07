@@ -3067,7 +3067,40 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			return msg, false, err
 		}
 	}
-	if m.Type == protocol.TypeRequest && !m.FromCTO {
+	// Apply this after lead and legacy routing, against the actual recipient.
+	// A reply remains permitted throughout a CTO-started conversation.
+	var ctoID string
+	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&ctoID)
+	if err != nil && err != sql.ErrNoRows {
+		return msg, false, err
+	}
+	if m.To == ctoID && ctoID != "" {
+		var harness string
+		if err = tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, m.From).Scan(&harness); err != nil {
+			return msg, false, err
+		}
+		allowed := protocol.IsOwner(harness)
+		if !allowed && p.WorkerNotice {
+			var workerOwner string
+			if err = tx.QueryRow(`SELECT COALESCE(CASE WHEN json_valid(worker) THEN json_extract(worker, '$.owner') END, '') FROM sessions WHERE id=?`, m.From).Scan(&workerOwner); err != nil {
+				return msg, false, err
+			}
+			allowed = workerOwner == ctoID
+		}
+		if !allowed && m.Type == protocol.TypeReply && (p.ParentID != "" || p.ConversationID != "") {
+			var root string
+			var rootCTO bool
+			err = tx.QueryRow(`SELECT sender,sender_cto FROM messages WHERE conversation_id=? AND parent_id='' ORDER BY rowid LIMIT 1`, m.ConversationID).Scan(&root, &rootCTO)
+			if err != nil && err != sql.ErrNoRows {
+				return msg, false, err
+			}
+			allowed = root == ctoID || rootCTO
+		}
+		if !allowed {
+			return msg, false, reject("The CTO only takes replies. Ask your owner, or wait for the CTO to ask you.")
+		}
+	}
+	if m.Type == protocol.TypeRequest && !m.FromCTO && m.To != ctoID {
 		rule, err := requestRuleTx(tx, m.From, m.To)
 		if err != nil {
 			return msg, false, err

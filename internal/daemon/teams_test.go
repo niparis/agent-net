@@ -61,16 +61,16 @@ func TestCTOGraphTeamProposalLifecycle(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 1. team_create proposal
+	// 1. team_create runs at once and records its reason.
 	res, err := w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_create","name":"omega","purpose":"Omega team","reason":"group related work"}`))
 	if err != nil {
-		t.Fatalf("team_create proposal: %v", err)
+		t.Fatalf("team_create: %v", err)
 	}
-	var proposals []protocol.CTOProposal
-	if err := json.Unmarshal(w.cli.mustCall("proposal_list", nil), &proposals); err != nil || len(proposals) != 1 || proposals[0].Reason != "group related work" {
-		t.Fatalf("team_create proposal reason: %+v %v", proposals, err)
+	assertCTOImmediate(t, res)
+	items, err := g.gw.Store().ListInbox()
+	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, "group related work") {
+		t.Fatalf("team_create Inbox reason: %+v %v", items, err)
 	}
-	approveCTOToolResult(t, w.d, res)
 
 	// Verify team exists via agent_graph_read
 	readRes, err := w.d.runCTOToolRaw(ctx, "agent_graph_read", json.RawMessage(`{"ref":{"kind":"team","id":"omega"}}`))
@@ -82,12 +82,12 @@ func TestCTOGraphTeamProposalLifecycle(t *testing.T) {
 		t.Fatalf("agent_graph_read omega: %s", readRaw)
 	}
 
-	// 2. team_member_add proposal
+	// 2. Add a team member.
 	res, err = w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_member_add","team":"omega","member":{"kind":"agent","id":"member-agent"}}`))
 	if err != nil {
-		t.Fatalf("team_member_add proposal: %v", err)
+		t.Fatalf("team_member_add: %v", err)
 	}
-	approveCTOToolResult(t, w.d, res)
+	assertCTOImmediate(t, res)
 
 	// Verify member exists in team
 	readRes, err = w.d.runCTOToolRaw(ctx, "agent_graph_read", json.RawMessage(`{"ref":{"kind":"team","id":"omega"}}`))
@@ -99,12 +99,12 @@ func TestCTOGraphTeamProposalLifecycle(t *testing.T) {
 		t.Fatalf("agent_graph_read member-agent: %s", readRaw)
 	}
 
-	// 3. team_rename proposal
+	// 3. Rename the team.
 	res, err = w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_rename","team":"omega","name":"omega-renamed"}`))
 	if err != nil {
-		t.Fatalf("team_rename proposal: %v", err)
+		t.Fatalf("team_rename: %v", err)
 	}
-	approveCTOToolResult(t, w.d, res)
+	assertCTOImmediate(t, res)
 
 	// Verify rename via agent_graph_read
 	readRes, err = w.d.runCTOToolRaw(ctx, "agent_graph_read", json.RawMessage(`{"ref":{"kind":"team","id":"omega"}}`))
@@ -116,12 +116,12 @@ func TestCTOGraphTeamProposalLifecycle(t *testing.T) {
 		t.Fatalf("agent_graph_read renamed: %s", readRaw)
 	}
 
-	// 4. team_member_remove proposal
+	// 4. Remove the team member.
 	res, err = w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_member_remove","team":"omega","member":{"kind":"agent","id":"member-agent"}}`))
 	if err != nil {
-		t.Fatalf("team_member_remove proposal: %v", err)
+		t.Fatalf("team_member_remove: %v", err)
 	}
-	approveCTOToolResult(t, w.d, res)
+	assertCTOImmediate(t, res)
 
 	// Verify member removed
 	readRes, err = w.d.runCTOToolRaw(ctx, "agent_graph_read", json.RawMessage(`{"ref":{"kind":"team","id":"omega"}}`))
@@ -133,12 +133,12 @@ func TestCTOGraphTeamProposalLifecycle(t *testing.T) {
 		t.Fatalf("agent_graph_read member not removed: %s", readRaw)
 	}
 
-	// 5. team_archive proposal
+	// 5. Archive the team.
 	res, err = w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_archive","team":"omega"}`))
 	if err != nil {
-		t.Fatalf("team_archive proposal: %v", err)
+		t.Fatalf("team_archive: %v", err)
 	}
-	approveCTOToolResult(t, w.d, res)
+	assertCTOImmediate(t, res)
 
 	// Verify archived
 	readRes, err = w.d.runCTOToolRaw(ctx, "agent_graph_read", json.RawMessage(`{"ref":{"kind":"team","id":"omega"}}`))

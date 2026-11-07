@@ -181,7 +181,7 @@ func TestSettingsCTOApprovalAndRead(t *testing.T) {
 		t.Fatalf("advice: %v", err)
 	}
 	rule := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"test"}`)
-	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", rule); err != nil {
+	if _, err := legacyProposalFixture(ctx, n.d, "settings_change", rule); err != nil {
 		t.Fatalf("proposal: %v", err)
 	}
 	items, err := n.d.proposalRunner().list()
@@ -232,7 +232,7 @@ func TestSettingsOwnerGateAndUndo(t *testing.T) {
 		t.Fatalf("owner history %+v %v", hist, err)
 	}
 	ctx := context.Background()
-	if _, err = n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"values_undo","revision":1}`)); err != nil {
+	if _, err = legacyProposalFixture(ctx, n.d, "settings_change", json.RawMessage(`{"area":"values_undo","revision":1}`)); err != nil {
 		t.Fatal(err)
 	}
 	items, err := n.d.proposalRunner().list()
@@ -277,7 +277,7 @@ func TestSettingsProposalConflictAndOwnerWindow(t *testing.T) {
 	n.d.ctoGraph.until = time.Now().Add(time.Hour)
 	n.d.ctoGraph.mu.Unlock()
 	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"rule"}`)
-	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+	if _, err := legacyProposalFixture(ctx, n.d, "settings_change", raw); err != nil {
 		t.Fatal(err)
 	}
 	items, err := n.d.proposalRunner().list()
@@ -302,7 +302,7 @@ func TestSettingsDeliveryRuleCTOProposesOwnerApplies(t *testing.T) {
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
 	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"ask"}],"reason":"approval"}`)
-	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+	if _, err := legacyProposalFixture(ctx, n.d, "settings_change", raw); err != nil {
 		t.Fatal(err)
 	}
 	proposals, err := n.d.proposalRunner().list()
@@ -361,11 +361,12 @@ func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
 		t.Fatalf("null expected absent: %v", err)
 	}
 	items, err = n.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposal: %+v %v", items, err)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("unexpected proposal: %+v %v", items, err)
 	}
-	if err = n.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
-		t.Fatal(err)
+	snap, err = g.gw.Store().SettingsSnapshot()
+	if err != nil || snap.Revision != 1 {
+		t.Fatalf("setting not applied: %+v %v", snap, err)
 	}
 }
 
@@ -561,18 +562,8 @@ func TestWorkerBriefRuleCTOProposesOwnerApplies(t *testing.T) {
 		t.Fatal(err)
 	}
 	proposals, err := n.d.proposalRunner().list()
-	if err != nil || len(proposals) != 1 {
-		t.Fatalf("proposal: %+v %v", proposals, err)
-	}
-	before, err := g.gw.Store().SettingsSnapshot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := before.String("workers.brief_codex_complete", settings.Where{Repo: "shop"}); strings.Contains(got, "Report ") {
-		t.Fatalf("CTO write applied before approval: %q", got)
-	}
-	if err = n.d.proposalRunner().decide(ctx, proposals[0].ID, true); err != nil {
-		t.Fatal(err)
+	if err != nil || len(proposals) != 0 {
+		t.Fatalf("unexpected proposal: %+v %v", proposals, err)
 	}
 	after, err := g.gw.Store().SettingsSnapshot()
 	if err != nil {

@@ -29,6 +29,7 @@ type FileSend struct {
 	Type             string
 	ParentID         string
 	IdempotencyKey   string
+	WorkerNotice     bool
 	WorkerIdleNotice bool
 	Paths            []string
 	AllowSecrets     bool
@@ -86,7 +87,7 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 	}
 	raw, err := d.call(withCallWait(ctx, 90*time.Second), "msg.send", protocol.MsgSend{
 		Sender: req.From, Recipient: req.To, Type: req.Type, Body: req.Body,
-		ParentID: req.ParentID, IdempotencyKey: req.IdempotencyKey, WorkerIdleNotice: req.WorkerIdleNotice, Files: out.Manifest(),
+		ParentID: req.ParentID, IdempotencyKey: req.IdempotencyKey, WorkerIdleNotice: req.WorkerIdleNotice, WorkerNotice: req.WorkerNotice, Files: out.Manifest(),
 	})
 	if errors.Is(err, errNotConnected) {
 		return res, errors.New("files need a connection to the gateway; this machine is not connected now, so nothing was sent")

@@ -193,9 +193,6 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 	if err := toolcatalog.RenamedError(name); err != nil {
 		return nil, err
 	}
-	if name == "settings_change" {
-		return d.routeCTOSettings(ctx, raw)
-	}
 	if name == "session_change" {
 		if _, err := ctoClass(name, raw); err != nil {
 			return nil, err
@@ -231,10 +228,7 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			}
 		}
 	}
-	if isCTOGraphTool(name) {
-		return d.routeCTOGraph(ctx, name, raw)
-	}
-	return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
+	return routeCTOTool(ctx, name, raw, d.Propose, d.executeImmediateCTOTool)
 }
 
 // executeCTOTool is used only for immediate reads/talk or by the approved runner.

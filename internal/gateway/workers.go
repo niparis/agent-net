@@ -1594,7 +1594,7 @@ func (g *Gateway) notifyResumeRefusal(ctx context.Context, p protocol.MsgSend, r
 		body += strings.ToValidUTF8(p.Body[:remaining], "")
 	}
 	key := fmt.Sprintf("resume-refusal-%x", sha256.Sum256([]byte(p.Sender+"\x00"+p.IdempotencyKey)))
-	m, created, err := g.store.StoreMessage(protocol.MsgSend{Sender: p.Recipient, Recipient: p.Sender, Type: protocol.TypeNotification, Body: body, IdempotencyKey: key})
+	m, created, err := g.store.StoreMessage(protocol.MsgSend{Sender: p.Recipient, Recipient: p.Sender, Type: protocol.TypeNotification, Body: body, IdempotencyKey: key, WorkerNotice: true})
 	if err != nil {
 		g.logLine("worker.resume_notice_failed", "session", p.Recipient, "reason", err)
 		return
