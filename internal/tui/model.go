@@ -164,6 +164,10 @@ type Model struct {
 	filter                                      string
 	uiFilter                                    string
 	filtering                                   bool
+	finder                                      bool
+	finderQuery                                 string
+	finderSel                                   int
+	finderTop                                   int
 	input                                       textinput.Model
 	focus                                       focus
 	feedCur                                     int // index in the feed items when the feed has focus
@@ -233,7 +237,7 @@ func New(src Source) Model {
 	ti.Prompt = "/"
 	ti.CharLimit = 80
 	ti.SetVirtualCursor(false)
-	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
+	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true, activeOnly: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
 		graphPixel: &graphPixelState{imageID: graphview.ImageID}, workerForecastMemo: &workerForecastMemo{}}
@@ -1119,6 +1123,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
+	if m.finder {
+		return m.finderKey(k)
+	}
 	if m.archive != nil {
 		return m.sessionsArchiveKey(k)
 	}
@@ -1346,6 +1353,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if keyAction(contextGlobal, k.String()) == "find session" && m.mode == modeNormal && !m.help && !m.filtering && m.open == nil {
+		return m.openFinder(), nil
+	}
+
 	for i := range tabNames {
 		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab", "delivery tab"}[i] {
 			m.tab = i
@@ -1524,6 +1535,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 	case "cycle view":
 		m.cycleSessionView()
+		m.ensureSelection()
+		m.fixScroll()
+	case "show hidden":
+		m.showHiddenSessions = !m.showHiddenSessions
 		m.ensureSelection()
 		m.fixScroll()
 	case "cell":
@@ -1711,6 +1726,15 @@ func (m Model) idleLong(a protocol.AgentView) bool {
 	return m.now().Sub(time.Unix(a.LastSeen, 0)) > idleAfter
 }
 
+// quietInActive is the active view's rule: it hides an idle session only after
+// a whole day without activity. The owner-use change replaces this rule.
+func (m Model) quietInActive(a protocol.AgentView) bool {
+	if !a.Online || a.Status != "idle" || sessionActivity(a) == 0 {
+		return false
+	}
+	return m.now().Sub(time.Unix(sessionActivity(a), 0)) > 24*time.Hour
+}
+
 // treeMark is how a nested row hangs under the session it belongs to: a
 // worker under the session that started it, or a project's merger under that
 // project's main agent.
@@ -1749,6 +1773,9 @@ func (m Model) groups() []group {
 		if protocol.IsOwner(a.Harness) || a.Harness == "bot" || a.Worker != nil || m.hiddenSessions[a.SessionID] {
 			continue
 		}
+		if isJunkSession(a) && !m.showJunk() {
+			continue
+		}
 		k := key(a)
 		if a.Online && a.Status != protocol.StatusDormant {
 			online[k] = true
@@ -1767,6 +1794,9 @@ func (m Model) groups() []group {
 			continue // the owner is a sender, not a row
 		}
 		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
+			continue
+		}
+		if isJunkSession(a) && !m.showJunk() {
 			continue
 		}
 		// Dormant sessions are reachable but quiet: hidden with the offline ones.
@@ -1791,7 +1821,7 @@ func (m Model) groups() []group {
 			by[a.NodeID] = g
 			order = append(order, g)
 		}
-		if m.activeOnly && m.idleLong(a) {
+		if m.activeOnly && m.quietInActive(a) {
 			g.hidden++
 			continue
 		}
@@ -2215,11 +2245,11 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		for _, a := range m.snap.Agents {
 			if strings.EqualFold(q.Select, a.SessionID) || q.Select != "" && (strings.EqualFold(q.Select, a.Profile.Name) || strings.EqualFold(q.Select, a.Repo.Project)) {
 				m.selected = a.SessionID
-				if m.idleLong(a) {
-					m.activeOnly = false
+				if m.quietInActive(a) || isJunkSession(a) || !a.Online {
+					m.activeOnly, m.showOffline = false, true
 				}
-				if !a.Online {
-					m.showOffline = true
+				if isJunkSession(a) {
+					m.showHiddenSessions = true
 				}
 				break
 			}

@@ -63,7 +63,7 @@ func TestHideSessionPersistsAndCanBeShownAndUnhidden(t *testing.T) {
 	if !strings.Contains(m.titleLine(120), "hidden 1") {
 		t.Fatalf("session title omits hidden count: %s", m.titleLine(120))
 	}
-	m = keys(m, "v", "v")
+	m = keys(m, "H")
 	if !containsSession(m, id) || !strings.Contains(m.testView(), "hidden") {
 		t.Fatalf("show hidden did not draw a tagged session:\n%s", m.testView())
 	}
@@ -81,7 +81,7 @@ func TestHideSessionPersistsAndCanBeShownAndUnhidden(t *testing.T) {
 func TestHideSessionKeyDoesNotTakeTheWorkerStopKey(t *testing.T) {
 	m := keys(newModel(120, 34), "?")
 	v := m.testView()
-	for _, want := range []string{"stop the selected worker or session", "hide or unhide the selected session", "cycle the view: active only, all, all with offline, all with offline and hidden"} {
+	for _, want := range []string{"stop the selected worker or session", "hide or unhide the selected session", "cycle the view: active (default) or all, which includes offline sessions", "show or hide sessions hidden with h"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help is missing %q:\n%s", want, v)
 		}

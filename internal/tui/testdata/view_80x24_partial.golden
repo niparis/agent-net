@@ -6,15 +6,15 @@ machines list slow or unavailable
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           TYPE   PROJECT    MODEL            STATUS   CPU   RAM TASK
- Mac (here) 3 sessions ─────────────────────────────────────────────────────────
+ Mac (here) 3 sessions ────────────────────────────────────────────── active (v)
 ▸ tenebrae-53    agent  tenebrae   claude · opus-5… busy     38%  1.2G
   ◐ strategies   agent  strategies claude · sonnet… idle    240%  4.6G backtest…
   web            agent  shop       opencode · sonn… idle       ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ◐ ci-runner    agent  agent-net  pi · gpt-6       idle      5%  300M
   scratch        agent  -          pi               shell    <1%   80M
- old-box 1 session ─────────────────────────────────────────────────────────────
-  old-session    agent  old        claude           ended 1d ago
+
+
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

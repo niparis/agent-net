@@ -4,16 +4,16 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                   view: all  (v)
+  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                view: active  (v)
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
   tenebrae-53        agent  tenebrae   claude · opus-5-5        busy     38%  1.2G
-  ◐ strategies       agent  strategies claude · sonnet-5-5      wait    240%  4.6G waiting on a-v… · 12m
-  web                agent  shop       opencode · sonnet-5      owes       ?     ? owes reply to a… · 3m
+  ◐ strategies       agent  strategies claude · sonnet-5-5      wait    240%  4.6G waiting on … · 12m
+  web                agent  shop       opencode · sonnet-5      owes       ?     ? owes reply t… · 3m
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ◐ ci-runner        agent  agent-net  pi · gpt-6               idle      5%  300M
   scratch            agent  -          pi                       shell    <1%   80M
- old-box 1 session ─────────────────────────────────────────────────────────────────────────────────────────────────────
-  old-session        agent  old        claude                   ended 1d ago
+
+
 
 
 

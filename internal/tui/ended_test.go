@@ -10,6 +10,7 @@ import (
 
 func TestEndedVisibility(t *testing.T) {
 	m := newModel(120, 34)
+	m.activeOnly, m.showOffline = false, true // all, which is where ended sessions show
 	recent := func(id, project string, age time.Duration) protocol.AgentView {
 		return protocol.AgentView{SessionID: id, Harness: "claude", Cwd: project, LastSeen: m.now().Add(-age).Unix()}
 	}
@@ -38,12 +39,22 @@ func TestEndedVisibility(t *testing.T) {
 		}
 		return strings.Join(ids, ",")
 	}
-	if got := ids(); got != "dormant,latest" {
-		t.Fatalf("default: %s", got)
+	if got := ids(); got == "" {
+		t.Fatal("all showed no ended sessions")
+	}
+	for _, want := range []string{"older", "latest", "expired", "dormant"} {
+		if !strings.Contains(ids(), want) {
+			t.Errorf("all does not show %s: %s", want, ids())
+		}
+	}
+	for _, gone := range []string{"hidden", "worker", "owner"} {
+		if strings.Contains(ids(), gone) {
+			t.Errorf("all shows %s: %s", gone, ids())
+		}
 	}
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "live", Harness: "claude", Cwd: "/work/project", Online: true})
-	if got := ids(); strings.Contains(got, "latest") {
-		t.Fatalf("online project also shows ended session: %s", got)
+	if got := ids(); !strings.Contains(got, "live") {
+		t.Fatalf("all does not show the online project session: %s", got)
 	}
 	for _, filter := range []string{"older", "expired", "dormant"} {
 		m.filter = filter
@@ -59,18 +70,19 @@ func TestEndedVisibility(t *testing.T) {
 
 func TestEndedWorktreesGroupedByProject(t *testing.T) {
 	m := newModel(120, 34)
+	m.activeOnly, m.showOffline = false, true // all, which is where ended sessions show
 	m.snap.Agents = []protocol.AgentView{
 		{SessionID: "older", NodeID: "node", Harness: "claude", RepoContext: "/repo/worktree-a", Repo: protocol.RepoInfo{Project: "project", Root: "/repo/worktree-a"}, LastSeen: m.now().Add(-time.Hour).Unix()},
 		{SessionID: "newer", NodeID: "node", Harness: "claude", RepoContext: "/repo/worktree-b", Repo: protocol.RepoInfo{Project: "project", Root: "/repo/worktree-b"}, LastSeen: m.now().Add(-time.Minute).Unix()},
 	}
 	groups := m.groups()
-	if len(groups) != 1 || len(groups[0].agents) != 1 || groups[0].agents[0].SessionID != "newer" {
-		t.Fatalf("expected only newest worktree session, got %+v", groups)
+	if len(groups) != 1 || len(groups[0].agents) != 2 {
+		t.Fatalf("ended worktrees should share one project group, got %+v", groups)
 	}
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "live", NodeID: "node", Harness: "claude", Online: true, Repo: protocol.RepoInfo{Project: "project", Root: "/repo/main"}})
 	groups = m.groups()
-	if len(groups) != 1 || len(groups[0].agents) != 1 || groups[0].agents[0].SessionID != "live" {
-		t.Fatalf("expected only online main session, got %+v", groups)
+	if len(groups) != 1 || len(groups[0].agents) != 3 {
+		t.Fatalf("expected all three sessions in one project group, got %+v", groups)
 	}
 }
 
@@ -95,6 +107,7 @@ func TestEndedResumeHint(t *testing.T) {
 
 func TestEndedScene(t *testing.T) {
 	m := newModel(120, 34)
+	m.activeOnly, m.showOffline = false, true // all shows the ended session
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "ended-worktree", NodeID: "n_mac", Hostname: "Mac", Harness: "claude", Cwd: "/repo/.claude/worktrees/topic", Profile: protocol.Profile{Name: "office-politics"}, LastSeen: m.now().Add(-12 * time.Minute).Unix()})
 	golden(t, "sessions_ended_120x34", m.testView())
 }

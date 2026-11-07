@@ -10,15 +10,15 @@ Keys · Sessions ─────────────────────
   h                      hide or unhide the selected session
   left, right            move between session actions
   space                  cycle the request rule: normal, ask, auto
-  v                      cycle the view: active only, all, all with offline, all
-                         with offline and hidden
+  v                      cycle the view: active (default) or all, which includes
+                         offline sessions
+  H                      show or hide sessions hidden with h, and temp-folder
+                         sessions in the all view
   a                      in the offline view, preview and archive offline
                          sessions, or show archived and restore
   d                      show or hide the selected session details
   ◐                      runs in the background: no terminal is attached
 
- Global keys
-  1-8                    switch tabs: Sessions, Graph, Quotas, Messages, Tools,
   more below
 
 up/down scroll  ? all screens  esc close

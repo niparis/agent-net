@@ -13,40 +13,35 @@ func TestSessionsHasOneSettingsKeyAndNoDirectOnes(t *testing.T) {
 	if got := keyAction(contextSessions, "S"); got != "" {
 		t.Fatalf("S still acts: %q", got)
 	}
-	for _, key := range []string{"t", "p", "I", "N", "L", "o", "A", "H"} {
+	for _, key := range []string{"t", "p", "I", "N", "L", "o", "A"} {
 		if got := keyAction(contextSessions, key); got != "" {
 			t.Errorf("removed Sessions key %q still does %q", key, got)
 		}
 	}
 }
 
-// v is the only session view key: active only, all, all with offline, all
-// with offline and hidden.
+// v is the only session view key: active, then all with the offline sessions.
+// H is the separate hidden toggle.
 func TestSessionsViewCyclesWithOneKey(t *testing.T) {
 	m := newModel(120, 34)
 	if keyAction(contextSessions, "v") != "cycle view" {
 		t.Fatal("v is not the view key")
 	}
-	if got := m.sessionViewName(); got != "all" {
+	if keyAction(contextSessions, "H") != "show hidden" {
+		t.Fatal("H is not the hidden toggle")
+	}
+	if got := m.sessionViewName(); got != "active" || !m.activeOnly {
 		t.Fatalf("default view %q", got)
 	}
 	m = keys(m, "v")
-	if m.sessionViewName() != "offline" || !m.showOffline {
-		t.Fatalf("v did not show offline: %q", m.sessionViewName())
+	if m.sessionViewName() != "all" || !m.showOffline || m.activeOnly {
+		t.Fatalf("v did not show all: %q", m.sessionViewName())
 	}
 	m = keys(m, "v")
-	if m.sessionViewName() != "offline+hidden" || !m.showHiddenSessions {
-		t.Fatalf("v did not show hidden: %q", m.sessionViewName())
+	if m.sessionViewName() != "active" || m.showOffline || !m.activeOnly {
+		t.Fatalf("v did not return to active: %q", m.sessionViewName())
 	}
-	m = keys(m, "v")
-	if m.sessionViewName() != "active" || !m.activeOnly {
-		t.Fatalf("v did not switch to active only: %q", m.sessionViewName())
-	}
-	m = keys(m, "v")
-	if m.sessionViewName() != "all" || m.showOffline || m.activeOnly {
-		t.Fatalf("v did not return to all: %q", m.sessionViewName())
-	}
-	if !strings.Contains(ansi.Strip(strings.Join(m.sessionsTable(120, 10), "\n")), "view: all") {
+	if !strings.Contains(ansi.Strip(strings.Join(m.sessionsTable(120, 10), "\n")), "view: active") {
 		t.Fatalf("the Sessions title does not name the view: %q", ansi.Strip(m.titleLine(120)))
 	}
 }
@@ -228,7 +223,7 @@ func TestGraphFitsWhenItLoads(t *testing.T) {
 func TestRemovedDirectKeysDoNothing(t *testing.T) {
 	m := newModel(120, 34)
 	view := m.sessionViewName()
-	m = keys(m, "t", "p", "I", "N", "L", "o", "A", "H")
+	m = keys(m, "t", "p", "I", "N", "L", "o", "A")
 	if m.mode != modeNormal || m.sessionViewName() != view {
 		t.Fatalf("a removed Sessions key still acted: mode %v view %q", m.mode, m.sessionViewName())
 	}

@@ -604,7 +604,8 @@ func TestViewFitsEverySize(t *testing.T) {
 }
 
 func TestViewHasEverythingAt80Columns(t *testing.T) {
-	out := keys(newModel(80, 24), "down").testView() // tenebrae-53
+	m := keys(newModel(80, 24), "down") // tenebrae-53
+	out := m.testView()
 	for _, want := range []string{
 		"Mac (here)", "old-box", "8 Delivery", "cpu", "mem", "no claude",
 		"NAME", "TYPE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
@@ -615,8 +616,11 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
-	if !strings.Contains(out, "old-session") {
-		t.Error("latest recent ended session must remain visible")
+	if strings.Contains(out, "old-session") {
+		t.Error("the active view showed an ended session")
+	}
+	if !strings.Contains(keys(m, "v").testView(), "old-session") {
+		t.Error("all must show the latest recent ended session")
 	}
 }
 
@@ -632,23 +636,27 @@ func names(m Model) []string {
 
 func TestOfflineToggle(t *testing.T) {
 	m := newModel(100, 30)
-	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch,old-session" {
-		t.Fatalf("online sessions: %s", got)
+	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch" {
+		t.Fatalf("active sessions: %s", got)
 	}
 	m = keys(m, "v")
 	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch,old-session" {
 		t.Fatalf("with offline: %s", got)
 	}
 	m = keys(m, "end") // the offline session is last
-	if !strings.Contains(m.testView(), "old-session") || !strings.Contains(m.testView(), "off") || !strings.Contains(m.testView(), "view: offline") {
+	if !strings.Contains(m.testView(), "old-session") || !strings.Contains(m.testView(), "off") || !strings.Contains(m.testView(), "view: all") {
 		t.Fatalf("the offline session is not on screen:\n%s", m.testView())
 	}
 	if !strings.Contains(detailText(m), "offline, last seen 13 Oct") && !strings.Contains(detailText(m), "offline, last seen 28 Oct") {
 		t.Fatalf("the detail of an offline session lacks its last seen time:\n%s", m.testView())
 	}
-	m = keys(m, "v", "v", "v")
+	m = keys(m, "v")
+	if strings.Contains(strings.Join(names(m), ","), "old-session") {
+		t.Fatal("active did not hide the ended session again")
+	}
+	m = keys(m, "v")
 	if !strings.Contains(strings.Join(names(m), ","), "old-session") {
-		t.Fatal("all view did not retain the latest ended session")
+		t.Fatal("all did not retain the latest ended session")
 	}
 }
 
@@ -664,7 +672,7 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("typed keys acted as commands: filter %q quit %v offline %v", m.filter, m.quitting, m.showOffline)
 	}
 	m = keys(m, "esc")
-	if !m.filtering || m.filter != "" || len(names(m)) != 6 {
+	if !m.filtering || m.filter != "" || len(names(m)) != 5 {
 		t.Fatalf("esc must clear the filter: %q %v", m.filter, names(m))
 	}
 	m = keys(m, "esc")
@@ -691,7 +699,7 @@ func TestFilter(t *testing.T) {
 	}
 	// Esc outside the input clears it too.
 	m = keys(m, "esc")
-	if m.filter != "" || len(names(m)) != 6 {
+	if m.filter != "" || len(names(m)) != 5 {
 		t.Fatalf("esc did not clear the filter: %q", m.filter)
 	}
 
@@ -1233,12 +1241,12 @@ func TestDormantSessionsRemainDiscoverable(t *testing.T) {
 	m.now = func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
-	if !strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
-		t.Fatalf("latest dormant session is missing: %v", names(m))
+	if strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
+		t.Fatalf("active showed the dormant session: %v", names(m))
 	}
 	m = keys(m, "v")
 	if !strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
-		t.Fatalf("v does not show the dormant session: %v", names(m))
+		t.Fatalf("all does not show the dormant session: %v", names(m))
 	}
 	if got := statusShort(protocol.StatusDormant); got != "dorm" {
 		t.Fatalf("status text %q", got)

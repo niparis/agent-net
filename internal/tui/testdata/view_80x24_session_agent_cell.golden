@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           TYPE   AGENT      MODEL            STATUS   CPU   RAM TASK
- Mac (here) 4 sessions ─────────────────────────────────────────────────────────
+ Mac (here) 4 sessions ────────────────────────────────────────────── active (v)
   ↳ tenebrae     worker -          opencode · haik… busy       ?     ?
 ▸ tenebrae-53    agent  Home       claude · opus-5… busy       ?     ?
   ◐ strategies   agent  -          claude · sonnet… idle       ?     ? backtest…
@@ -13,8 +13,8 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ◐ ci-runner    agent  -          pi · gpt-6       idle       ?     ?
   scratch        agent  -          pi               shell      ?     ?
- old-box 1 session ─────────────────────────────────────────────────────────────
-  old-session    agent  -          claude           ended 1d ago
+
+
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

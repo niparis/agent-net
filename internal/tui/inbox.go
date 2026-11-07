@@ -165,13 +165,13 @@ func (m Model) inboxRows() []inboxRow {
 		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
 			continue
 		}
+		if isJunkSession(a) && !m.showJunk() {
+			continue
+		}
 		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
 			continue
 		}
 		if a.Worker != nil && !a.Online {
-			continue
-		}
-		if m.activeOnly && m.idleLong(a) {
 			continue
 		}
 		if !matches(a, m.filter) {

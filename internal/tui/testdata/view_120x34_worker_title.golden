@@ -4,7 +4,7 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                   view: all  (v)
+  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                view: active  (v)
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
 ▸ ↳ tenebrae         worker tenebrae   opencode · haiku-4-5     busy       ?     ? Fix band
   tenebrae-53        agent  tenebrae   claude · opus-5-5        busy       ?     ?
@@ -13,8 +13,8 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ◐ ci-runner        agent  agent-net  pi · gpt-6               idle       ?     ?
   scratch            agent  -          pi                       shell      ?     ?
- old-box 1 session ─────────────────────────────────────────────────────────────────────────────────────────────────────
-  old-session        agent  old        claude                   ended 1d ago
+
+
 
 
 

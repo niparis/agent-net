@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           TYPE   PROJECT    MODEL         STATUS   CPU   RAM TASK
- Mac (here) 6 sessions ─────────────────────────────────────────────────────────
+ Mac (here) 6 sessions ───────────────────────────────────────────────── all (v)
   tenebrae-53    agent  tenebrae   claude · opu… busy       ?     ?
   ◐ strategies   agent  strategies claude · son… idle       ?     ? backtest v2
   agent-net      agent  agent-net  claude        idle       ?     ? test ch_ed5f
