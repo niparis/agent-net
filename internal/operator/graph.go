@@ -36,3 +36,14 @@ func (s *Client) SetNodeAutonomy(ctx context.Context, node, value string) error 
 	})
 	return err
 }
+
+// ArchiveGraphNode removes a lasting graph identity through the existing
+// owner-only lifecycle calls. Records and their history remain archived.
+func (s *Client) ArchiveGraphNode(ctx context.Context, ref protocol.GraphRef) error {
+	method := protocol.OpRepoArchive
+	if ref.Kind == "agent" {
+		method = protocol.OpAgentTombstone
+	}
+	_, err := s.action(ctx, method, protocol.GraphLifecycleRequest{Ref: &ref})
+	return err
+}

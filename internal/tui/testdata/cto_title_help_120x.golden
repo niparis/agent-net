@@ -32,7 +32,12 @@
   ★                      repo or team lead; dim when no lead session is live
 
  Graph
-  d                      delivery
+  D                      delivery
+  d                      show or hide dormant nodes
+  f                      focus on a node and its neighbours, or zoom into a team
+  esc                    go back one focus or team level
+  x                      archive the selected dormant repo and tombstone its agent after confirmation
+  X                      on the dormant chip, confirm removal of every dormant node
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
@@ -61,6 +66,9 @@
   H                      show hidden projects
   ctrl+u/d, pgup/pgdn    scroll the card: charter, rules and learned changes
 
+  live state             needs you: highlighted; busy: bright; idle: normal; offline: dim
+  ★                      team lead; each box lists the team members
+  dormant                no online session or activity in 30 days, archived, or a temporary name
 Legend ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Edges
   ──▶ depends  consumer uses provider

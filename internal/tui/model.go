@@ -470,6 +470,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case graphRemovedMsg:
+		return m.onGraphRemoved(msg)
 	case sessionsArchiveMsg:
 		return m.sessionsArchiveResult(msg)
 	case sessionPinMsg:
@@ -1021,6 +1023,9 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	}
 	m.problem, m.problemT = ProblemNone, ""
 	m.snap, m.haveData, m.lastOK = r.snap, true, r.at
+	if m.mp.loaded {
+		m.applyTeamView(false)
+	}
 	m.applyTimeZone()
 	if n := len(m.snap.Calibration.Quality.Agents); m.qualityAgent > n {
 		m.qualityAgent = 0
@@ -1095,6 +1100,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if k.String() == "ctrl+c" {
 		m.quitting = true
 		return m, tea.Quit
+	}
+	if m.mp.removal != nil {
+		return m.graphRemovalKey(k)
 	}
 	if m.finder {
 		return m.finderKey(k)

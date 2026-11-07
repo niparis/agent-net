@@ -23,16 +23,23 @@ type mapMsg struct {
 
 // mapState holds shared network data and the selected card state.
 type mapState struct {
-	labels  map[string]string
-	nodes   []protocol.Node
-	edges   []protocol.Edge
-	changes []protocol.CharterChange
-	// full is the whole typed read before the Team filter. nodes and edges are
-	// what the Graph and its card show now. baseZoom is the fitted zoom of the
-	// full graph, the cap for a small filtered Team.
+	merged      map[string]protocol.Node
+	aliases     map[string]string
+	dormant     map[string]bool
+	removed     map[string]bool
+	everything  map[string]string
+	outside     map[string]bool
+	showDormant bool
+	focusNode   string
+	levels      []graphLevel
+	removal     *graphRemoval
+	labels      map[string]string
+	nodes       []protocol.Node
+	edges       []protocol.Edge
+	changes     []protocol.CharterChange
+	// full retains the typed read. nodes and edges retain the merged card data.
 	full             protocol.GraphView
 	teams            []teamEntry
-	baseZoom         float64
 	at               time.Time
 	loaded           bool
 	loading          bool
@@ -75,11 +82,6 @@ func (m *Model) applyMap(r mapMsg) {
 	}
 	m.mp.changes = m.mp.full.Changes
 	m.mp.at, m.mp.loaded, m.mp.err = r.at, true, ""
-	m.mp.baseZoom = 0
-	if len(m.mp.teams) > 0 {
-		w, h := m.graphSize()
-		m.mp.baseZoom = graphview.New(m.mp.full).Fit(w, h).Zoom
-	}
 	m.applyTeamView(false)
 	if m.mp.pendingSelection != "" {
 		name := m.mp.selected
@@ -213,6 +215,20 @@ func (m Model) toggleAutonomy() (Model, tea.Cmd) {
 // mapProjectNodes returns the visible nodes matching the network search.
 func (m Model) mapProjectNodes() []protocol.Node {
 	nodes := m.mapVisibleNodes()
+	if m.mp.finding && m.graphState.Graph != nil {
+		visible := map[string]bool{}
+		for _, n := range m.graphState.Graph.Nodes {
+			visible[n.Name] = true
+		}
+		filtered := nodes[:0]
+		for _, n := range nodes {
+			if visible[n.Name] {
+				filtered = append(filtered, n)
+			}
+		}
+		nodes = filtered
+	}
+
 	sort.SliceStable(nodes, func(i, j int) bool {
 		ai := nodes[i].Kind == "architect"
 		aj := nodes[j].Kind == "architect"
@@ -298,6 +314,11 @@ func (m Model) mapSelectedName() string { return m.mp.selected }
 
 func (m Model) mapNode(name string) (protocol.Node, bool) {
 	for _, n := range m.mp.nodes {
+		if n.Name == name {
+			return n, true
+		}
+	}
+	for _, n := range m.mp.full.Nodes {
 		if n.Name == name {
 			return n, true
 		}

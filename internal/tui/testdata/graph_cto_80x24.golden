@@ -1,7 +1,7 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 
 
-                                            ⢀  ⡀ ⠠  •      repo project-02 ⠾○⠶
+                                            ⢀  ⡀ ⠠  •           project-02 ⠾○⠶
    ⠶⠶                                                             ⣀⠤⠔⠒⠉⠁
    ⠶○⠶ CTO                                                  ⢀→⠤⠒⠊⠉
     ⢸                                                  ⣀⠤⠔⠒⠉⠁
@@ -14,11 +14,11 @@
     ⡇           ⣀⡠⠤⠒⠉⠁
     ⡇     ⢀⣀⠤⠒⠊⠉
     ⡇⣀⡠⠔⠒⠉⠁
-   (○) repo project-01
+   (○) project-01
 
-  ● charter · ○ open · gold: approved · pink: unverified
-  selected: repo project-01 · component · 2 edges
+  needs you: highlighted · busy: bright · offline: dim
+  selected: project-01 · component · 2 edges
   accept, test, review, merge, release, verify: caller
 
-  t team: all  left/right select  +/- zoom  m traffic  enter card  ? help
+  f focus/zoom  d dormant  esc back  x/X remove  t team: all  ? help
 1-8 tabs  c CTO  ? help  q quit

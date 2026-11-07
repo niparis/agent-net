@@ -5,8 +5,8 @@ Teams ────────────────────────�
 > Beta              1        Storefront work
 
   graph: all
-  member: repo homelab (no team)
-  space adds repo homelab to Beta
+  member: homelab (no team)
+  space adds homelab to Beta
 
 
 

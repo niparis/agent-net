@@ -33,8 +33,8 @@ Keys · all screens ────────────────────
   ★                      repo or team lead; dim when no lead session is live
 
  Graph
-  d                      delivery
-  /                      find a node; enter selects the first match
+  D                      delivery
+  d                      show or hide dormant nodes
   more below
 
 up/down scroll  ? this screen  esc close

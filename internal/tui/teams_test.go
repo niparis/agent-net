@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"testing"
 
@@ -43,8 +42,14 @@ func teamGraphFixture() protocol.GraphView {
 }
 
 func teamModel(w, h int) (Model, *fakeSource) {
-	m := mapModel(w, h, teamGraphFixture())
-	m.applyMap(mapMsg{view: teamGraphFixture(), at: t0})
+	v := teamGraphFixture()
+	for i := range v.Nodes {
+		if v.Nodes[i].Ref.Kind != "team" {
+			v.Nodes[i].Sessions = []protocol.GraphSession{{ID: "live-" + v.Nodes[i].Ref.ID, Status: "idle"}}
+		}
+	}
+	m := mapModel(w, h, v)
+	m.applyMap(mapMsg{view: v, at: t0})
 	m.tab = graphTab
 	gw, gh := m.graphSize()
 	m.graphState.Camera = m.graphState.Graph.Fit(gw, gh)
@@ -90,52 +95,36 @@ func teamLargeGraphFixture() protocol.GraphView {
 }
 
 func teamLargeModel(w, h int) (Model, *fakeSource) {
-	m := mapModel(w, h, teamLargeGraphFixture())
-	m.applyMap(mapMsg{view: teamLargeGraphFixture(), at: t0})
+	v := teamLargeGraphFixture()
+	for i := range v.Nodes {
+		if v.Nodes[i].Ref.Kind != "team" {
+			v.Nodes[i].Sessions = []protocol.GraphSession{{ID: "live-" + v.Nodes[i].Ref.ID, Status: "idle"}}
+		}
+	}
+	m := mapModel(w, h, v)
+	m.applyMap(mapMsg{view: v, at: t0})
 	m.tab = graphTab
 	return m, m.src.(*fakeSource)
 }
 
-func TestTeamFilterShowsOnlyOneTeamsMembers(t *testing.T) {
+func TestTeamFilterShowsMembersAndOutsideNeighbours(t *testing.T) {
 	m, _ := teamModel(120, 34)
 	m.setTeamFilter("alpha")
 	got := map[string]bool{}
 	for _, n := range m.graphState.Graph.Nodes {
 		got[n.Name] = true
 	}
-	for _, want := range []string{"cogforge", "agent\x00api-architect"} {
-		if !got[want] {
-			t.Errorf("alpha filter dropped %q: %v", want, got)
-		}
+	if !got["cogforge"] || !got["shop"] || got["homelab"] || got["agent\x00api-architect"] {
+		t.Fatalf("team zoom: %v", got)
 	}
-	for _, want := range []string{"team\x00alpha", "team\x00beta", "shop", "homelab"} {
-		if got[want] {
-			t.Errorf("alpha filter kept %q: %v", want, got)
-		}
+	if !m.mp.outside["shop"] || m.mp.outside["cogforge"] {
+		t.Fatal("outside neighbour not dimmed")
 	}
-	if len(m.graphState.Graph.Edges) != 1 {
-		t.Fatalf("alpha has %d edges, want 1: %+v", len(m.graphState.Graph.Edges), m.graphState.Graph.Edges)
-	}
-	for _, e := range m.graphState.Graph.Edges {
-		if !got[e.From] || !got[e.To] {
-			t.Errorf("edge leaves the team: %+v", e)
-		}
-	}
-	if _, ok := m.mapNode("shop"); ok {
-		t.Error("the card still lists a member of another team")
-	}
-	w, h := m.graphSize()
-	if m.mp.baseZoom <= 0 || m.graphState.Camera.Zoom > m.mp.baseZoom {
-		t.Errorf("filtered zoom %v is not capped at the full graph zoom %v", m.graphState.Camera.Zoom, m.mp.baseZoom)
-	}
-	for _, name := range []string{"cogforge", "agent\x00api-architect"} {
-		x, y := m.graphState.Camera.Project(m.graphState.Graph.Positions[name], w, h)
-		if math.Abs(x-float64(w)/2) > float64(w)*0.3 || math.Abs(y-float64(h)/2) > float64(h)*0.3 {
-			t.Errorf("%s is not near the middle: %.1f,%.1f in %dx%d", name, x, y, w, h)
-		}
+	if len(m.mp.merged) != 1 || len(m.graphState.Graph.Edges) != 1 {
+		t.Fatal("team members not merged or neighbour edge missing")
 	}
 	if !strings.Contains(ansi.Strip(m.testView()), "team: Alpha") {
-		t.Error("the Graph footer does not name the Team")
+		t.Fatal("footer does not name team")
 	}
 }
 
@@ -212,7 +201,7 @@ func TestTeamMemberToggleWritesMembership(t *testing.T) {
 		if q.Action != "membership" || q.ID != "beta" || q.ExpectTeam != "" || q.Member == nil || q.Member.Kind != "repo" || q.Member.ID != "homelab" {
 			t.Fatalf("membership request %+v", q)
 		}
-		if !strings.Contains(m.notice.text, "Added repo homelab to Beta.") {
+		if !strings.Contains(m.notice.text, "Added homelab to Beta.") {
 			t.Fatalf("result line %+v", m.notice)
 		}
 	})
@@ -229,7 +218,7 @@ func TestTeamMemberToggleWritesMembership(t *testing.T) {
 		if q.Action != "membership" || q.ID != "" || q.ExpectTeam != "alpha" || q.Member == nil || q.Member.ID != "cogforge" {
 			t.Fatalf("membership request %+v", q)
 		}
-		if !strings.Contains(m.notice.text, "Removed repo cogforge from Alpha.") {
+		if !strings.Contains(m.notice.text, "Removed cogforge from Alpha.") {
 			t.Fatalf("result line %+v", m.notice)
 		}
 	})

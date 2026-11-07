@@ -27,6 +27,8 @@ func (m Model) hints() []hint {
 	cto.label, cto.prio = m.ctoTitle(), 2
 	sessionHelp, sessionQuit := bindingHint(contextSessions, "help"), bindingHint(contextSessions, actQuit)
 	switch {
+	case m.mp.removal != nil:
+		return []hint{{key: "enter/y", label: "yes"}, {key: "esc/n", label: "no"}}
 	case m.proposalConfirm:
 		yes, no := bindingHint(contextConfirm, "yes"), bindingHint(contextConfirm, "no")
 		yes.key, no.key = "enter/y", "esc/n"
@@ -363,6 +365,9 @@ func (m Model) helpSectionContent(section helpSection, w int) []string {
 	}
 	if section.title == "Graph" {
 		out = append(out, "")
+		out = append(out, m.helpRow("live state", "needs you: highlighted; busy: bright; idle: normal; offline: dim", w)...)
+		out = append(out, m.helpRow("★", "team lead; each box lists the team members", w)...)
+		out = append(out, m.helpRow("dormant", "no online session or activity in 30 days, archived, or a temporary name", w)...)
 		out = append(out, mapLegendLines(w)...)
 	}
 	return out

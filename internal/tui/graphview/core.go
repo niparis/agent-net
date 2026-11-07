@@ -65,7 +65,7 @@ type Graph struct {
 // selecting it would draw its lines to every project.
 func (g *Graph) firstProject() int {
 	for i, n := range g.Nodes {
-		if n.Name != protocol.CTONodeName && n.Name != protocol.GraphVoiceOwner && n.Kind != "cto" {
+		if n.Name != protocol.CTONodeName && n.Name != protocol.GraphVoiceOwner && n.Kind != "cto" && n.Kind != "team" && n.Kind != "dormant" {
 			return i
 		}
 	}
@@ -119,8 +119,14 @@ func (g *Graph) Fit(width, height int) Camera {
 		return Camera{Zoom: 1, FitZoom: 1}
 	}
 	minx, miny, maxx, maxy := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+	excluded := map[string]bool{}
+	for _, n := range g.Nodes {
+		if n.Kind == "dormant" {
+			excluded[n.Name] = true
+		}
+	}
 	for name, p := range g.Positions {
-		if name == protocol.GraphVoiceOwner || name == protocol.CTONodeName {
+		if excluded[name] || name == protocol.GraphVoiceOwner || name == protocol.CTONodeName {
 			continue
 		}
 		minx = math.Min(minx, p.X)
@@ -145,7 +151,7 @@ func (g *Graph) Fit(width, height int) Camera {
 func (g *Graph) layout() {
 	nodes := make([]protocol.Node, 0, len(g.Nodes))
 	for _, node := range g.Nodes {
-		if node.Name == protocol.CTONodeName || node.Name == protocol.GraphVoiceOwner || node.Kind == "cto" {
+		if node.Name == protocol.CTONodeName || node.Name == protocol.GraphVoiceOwner || node.Kind == "cto" || node.Kind == "dormant" {
 			g.Positions[node.Name] = Point{}
 			continue
 		}

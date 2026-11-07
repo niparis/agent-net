@@ -1,24 +1,24 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 
 
-                                             (○) repo crew-a
-                                          ⣀⠤⠒⠉
-                                      ○ repo crew-b
-                                    ⡠⠊
-                                  ⢠⠊
-                                ⢀↙⠁
-                               ○ repo crew-c
-                              ⢠↗
-                              ⠎
-                             ⡄
-                            ○ agent ops
+                         ○ other-a⡀
+                                  ⠈⠉⠉⠒⠒⠤⠤⢄⣀⣀
+                                            ⠉⠉⠑⠒⠒(○) crew-a
+                                                    ⠉⠒⠤⣀
+                                                        ⠉⠒⠤⣀⡀
+                                                            ⠈⠑⠢⢄⡀
+                                                                →⠑⠢⢄○ crew-b
+                                                                    ⠈⢆
+                                                                      ⠑⡄
+                                                                       ⠈⠢⡀
+                                                                         ⠑↘
+                                                                     crew-c ○
 
-                                                   ○ agent qa
+    ○ qa
 
-
-  ● charter · ○ open · gold: approved · pink: unverified
-  selected: repo crew-a · repo · 1 edge
+  needs you: highlighted · busy: bright · offline: dim
+  selected: crew-a · repo · 2 edges
   accept, test, review, merge, release, verify: caller
 
-  t team: Crew  left/right select  +/- zoom  m traffic  enter card  ? help
+  f focus/zoom  d dormant  esc back  x/X remove  t team: Crew  ? help
 1-8 tabs  c CTO  ? help  q quit

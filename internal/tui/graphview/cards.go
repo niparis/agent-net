@@ -278,7 +278,10 @@ func pixelLabelsAndHits(scene Scene, size Size, cellMetrics ...PixelMetrics) (ma
 				}
 			}
 		}
-		role := "label"
+		role := n.Role
+		if role == "" || role == "none" {
+			role = "label"
+		}
 		if n.Selected {
 			role = "pixelSelectedLabel"
 		}

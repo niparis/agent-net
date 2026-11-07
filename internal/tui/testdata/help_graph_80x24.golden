@@ -1,5 +1,12 @@
 Keys · Graph ───────────────────────────────────────────────────────────────────
-  d                      delivery
+  D                      delivery
+  d                      show or hide dormant nodes
+  f                      focus on a node and its neighbours, or zoom into a team
+  esc                    go back one focus or team level
+  x                      archive the selected dormant repo and tombstone its
+                         agent after confirmation
+  X                      on the dormant chip, confirm removal of every dormant
+                         node
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
@@ -12,13 +19,6 @@ Keys · Graph ──────────────────────
   T                      create, rename, fill or archive a team
 
  Graph find
-  enter                  select the first match
-  backspace, ctrl+h      delete
-
- Agent card
-  enter                  open Sessions filtered to this agent's project
-  n                      start a new session in this project (the same form,
-                         filled from here)
   more below
 
 up/down scroll  ? all screens  esc close

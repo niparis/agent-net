@@ -449,7 +449,18 @@ func (m Model) mapFocusView(w, h int) []string {
 	if role != "" {
 		title += "  " + lipgloss.NewStyle().Foreground(roleCTO).Render(sanitize(role))
 	}
+	kind := node.Kind
+	if node.Ref != nil {
+		kind = node.Ref.Kind
+	}
+	title += "  " + sDim.Render(kind)
 	head = append(head, clip(title, w))
+	if agent, ok := m.mp.merged[node.Name]; ok {
+		head = append(head, clip("agent: "+m.graphName(agent.Name), w))
+		if agent.Charter.Purpose != "" {
+			head = append(head, clip("  "+sanitize(agent.Charter.Purpose), w))
+		}
+	}
 	if node.Ref == nil || node.Ref.Kind == "repo" {
 		head = append(head, m.nodeToolsLine(graphRecordID(node)))
 	}

@@ -51,7 +51,7 @@ func TestMapCardShowsWildcardAsAllProjectsAndRuleOnlyWhenNotNormal(t *testing.T)
 	if strings.Contains(v, "normal") || strings.Contains(v, " * ") {
 		t.Fatalf("rule normal or the raw wildcard is shown:\n%s", v)
 	}
-	if !strings.Contains(v, "repo homelab ──▶ deploys auto") || !strings.Contains(v, "──▶ repo homelab depends ask") {
+	if !strings.Contains(v, "homelab ──▶ deploys auto") || !strings.Contains(v, "──▶ homelab depends ask") {
 		t.Fatal(v)
 	}
 }
@@ -59,7 +59,7 @@ func TestMapCardShowsWildcardAsAllProjectsAndRuleOnlyWhenNotNormal(t *testing.T)
 func TestMapCardGovernedByAppearsOnlyWithAnArchitect(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, richGraph()))
 	m.mp.selected = "tenebrae"
-	if v := ansi.Strip(m.testView()); !strings.Contains(v, "governed by: agent wbg-architect (advisor)") {
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "governed by: wbg-architect (advisor)") {
 		t.Fatal(v)
 	}
 	m.mp.selected = "homelab"
