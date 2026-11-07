@@ -7,10 +7,10 @@ no purpose set
 ○ no live sessions
 agents 4/3 · over max
 accept, test, review, merge, release, verify: caller
+governed by: api-architect (-)
 
 IN 0                                     OUT 2
-                                         ──▶ shop depends
-                                         ──▶ Alpha member_of
+                                         +2 more
 Card 1-4/9  ctrl+u/d scroll ────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 no charter set

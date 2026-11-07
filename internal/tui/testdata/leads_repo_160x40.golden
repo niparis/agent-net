@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 5 nodes, 3 edges                                                  updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 5 nodes, 4 edges                                                  updated 14:05
 cogforge  autonomy: off  repo
 agent: api-architect
 Tools: 0 skills, 0 MCP servers · t open
@@ -7,6 +7,7 @@ no purpose set
 ○ no live sessions
 agents 4/3 · over max
 accept, test, review, merge, release, verify: caller
+governed by: api-architect (-)
 
 IN 0                                                          OUT 2
                                                               ──▶ shop depends
@@ -21,7 +22,6 @@ worker_sandbox     sandboxed              default
 judge_consumers    charter                default
 deploy_rule        brief                  default
 autonomy           off                    default
-
 
 
 

@@ -374,3 +374,31 @@ func TestGraphFocusKeepsLiveNeighboursAndCollapsedLinks(t *testing.T) {
 		t.Fatal("team zoom lost outside default-link neighbour")
 	}
 }
+
+func TestGraphMergedNodeKeepsDeliveryAssignments(t *testing.T) {
+	m := mapModel(120, 34, declutterFixture())
+	m.applyMap(mapMsg{view: declutterFixture(), at: t0})
+	if owners := strings.Join(m.graphDeliveryOwners("shop"), " "); !strings.Contains(owners, "accept: builder") {
+		t.Fatalf("merged delivery owner lost: %s", owners)
+	}
+	m.mp.selected = "shop"
+	if card := ansi.Strip(strings.Join(m.mapFocusView(120, 34), "\n")); !strings.Contains(card, "builder ──▶ accepts") {
+		t.Fatalf("card lost the agent's internal assignment:\n%s", card)
+	}
+}
+
+func TestGraphMergedNodeKeepsGovernanceIdentity(t *testing.T) {
+	v := declutterFixture()
+	v.Edges = append(v.Edges, protocol.Edge{FromRef: &protocol.GraphRef{Kind: "agent", ID: "builder"}, ToRef: &protocol.GraphRef{Kind: "repo", ID: "shop"}, Kind: "governs", Mode: "advisor"})
+	m := mapModel(120, 34, v)
+	m.applyMap(mapMsg{view: v, at: t0})
+	m.mp.selected = "shop"
+	card := ansi.Strip(strings.Join(m.mapFocusView(120, 34), "\n"))
+	if !strings.Contains(card, "governed by: builder (advisor)") {
+		t.Fatal("governing agent replaced by the merged repo")
+	}
+	edges := ansi.Strip(strings.Join(m.mapEdgeColumns("shop", 120, 6), "\n"))
+	if strings.Contains(edges, "governs") {
+		t.Fatal("governance repeated as an outgoing self-link")
+	}
+}

@@ -78,6 +78,11 @@ func (m Model) mapEdgeEntry(e protocol.Edge, incoming bool) string {
 	peer := e.To
 	if incoming {
 		peer = e.From
+		if e.FromRef != nil {
+			peer = graphRefKey(e.FromRef)
+		}
+	} else if e.ToRef != nil {
+		peer = graphRefKey(e.ToRef)
 	}
 	arrow := edgeKindStyle(e.Kind).Render("──▶")
 	text := m.graphName(peer)
@@ -100,6 +105,9 @@ func (m Model) mapEdgeEntry(e protocol.Edge, incoming bool) string {
 func (m Model) mapEdgeColumns(node string, w, room int) []string {
 	var in, out []protocol.Edge
 	for _, e := range m.mp.edges {
+		if e.To == node && e.Kind == "governs" {
+			continue
+		}
 		if protocol.DeliveryOwnerFromSource(e.From).Kind != protocol.OwnerNode {
 			continue
 		}
@@ -506,7 +514,11 @@ func (m Model) mapFocusView(w, h int) []string {
 	var gov []string
 	for _, e := range m.mp.edges {
 		if e.Kind == "governs" && e.To == node.Name {
-			gov = append(gov, m.graphName(e.From)+" ("+dashIfEmpty(sanitize(e.Mode))+")")
+			from := e.From
+			if e.FromRef != nil {
+				from = graphRefKey(e.FromRef)
+			}
+			gov = append(gov, m.graphName(from)+" ("+dashIfEmpty(sanitize(e.Mode))+")")
 		}
 	}
 	sort.Strings(gov)

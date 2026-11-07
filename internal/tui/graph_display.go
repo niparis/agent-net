@@ -126,9 +126,6 @@ func (m *Model) graphProjection() protocol.GraphView {
 	seen := map[string]bool{}
 	for _, e := range v.Edges {
 		e.From, e.To = alias(e.From), alias(e.To)
-		if e.From == e.To {
-			continue
-		}
 		key := e.From + "\x01" + e.To + "\x01" + e.Kind + "\x01" + e.Mode + "\x01" + e.Rule
 		if !seen[key] {
 			seen[key] = true
@@ -251,6 +248,9 @@ func (m *Model) graphDisplayView(v protocol.GraphView) protocol.GraphView {
 	type bucket struct{ node, dir, kind, mode, rule string }
 	groups := map[bucket]map[string]bool{}
 	for _, e := range v.Edges {
+		if e.From == e.To {
+			continue
+		}
 		for _, b := range []bucket{{e.From, "→", e.Kind, e.Mode, e.Rule}, {e.To, "←", e.Kind, e.Mode, e.Rule}} {
 			peer := e.To
 			if b.dir == "←" {
@@ -275,6 +275,9 @@ func (m *Model) graphDisplayView(v protocol.GraphView) protocol.GraphView {
 		}
 	}
 	for _, e := range v.Edges {
+		if e.From == e.To {
+			continue
+		}
 		marked := false
 		for _, b := range []bucket{{e.From, "→", e.Kind, e.Mode, e.Rule}, {e.To, "←", e.Kind, e.Mode, e.Rule}} {
 			if broad[b] {
