@@ -396,6 +396,9 @@ type Daemon struct {
 	wmu       sync.Mutex
 	workers   map[string]*worker
 	launchers map[string]launcher
+	// The independent retention loop owns the cursor while its pass is active.
+	workerSessionCleanupRunning atomic.Bool
+	workerSessionCleanupCursor  string
 	// reportMu guards reporting: the worker IDs that one caller is reporting
 	// now. The gateway link and the worker loop may report ended workers at the
 	// same time, and each worker must be reported once.
@@ -591,6 +594,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	close(d.adopted)
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.workerLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.workerSessionCleanupLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.queueLoop(ctx) }()
 	d.wg.Add(1)

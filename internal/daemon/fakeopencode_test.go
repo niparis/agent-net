@@ -108,6 +108,17 @@ func runFakeOpenCode() {
 		return ok && u == "opencode" && p == os.Getenv("OPENCODE_SERVER_PASSWORD")
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("DELETE /api/session/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		if err := os.Remove(filepath.Join(os.Getenv("XDG_DATA_HOME"), r.PathValue("id"))); err != nil && !os.IsNotExist(err) {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /api/info", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)

@@ -72,6 +72,8 @@ type WorkerSettings struct {
 	// that are past the longest run time, and the gateway's copy of them.
 	// Default 10 minutes. Tests shorten it.
 	Cleanup time.Duration
+	// DeleteSessions controls harness data deletion at record expiry. Nil means on.
+	DeleteSessions *bool
 	// CacheMaxAge trims the shared worker Go build cache. Default 24 h.
 	// 0 turns it off.
 	CacheMaxAge time.Duration
@@ -1297,7 +1299,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	}
 	set := d.workerSettings("")
 	if row.StartedAt.Add(set.MaxAge).Before(time.Now()) {
-		d.dropWorkerRow(row)
+		// Retention cleanup owns deletion and retries failed harness calls.
 		return fmt.Errorf("worker %s started more than %s ago (the longest run time), so it cannot be started again", sessionID, set.MaxAge)
 	}
 	ln := d.launchers[row.Harness]
@@ -1410,34 +1412,32 @@ func cannotResumeReason(harness string) string {
 
 // dropWorkerRow forgets an ended worker: its row and its folder. The gateway
 // drops its copy of the worker at the next worker.cleanup.
-func (d *Daemon) dropWorkerRow(r workerRow) {
+func (d *Daemon) dropWorkerRow(r workerRow) bool {
+	set := d.workerSettings("")
+	if set.DeleteSessions != nil && !*set.DeleteSessions && r.Harness == "opencode" {
+		// Preserve the only copy of the conversation when deletion is disabled.
+		d.st.deleteWorker(r.ID)
+		d.releaseWorkerReport(r.ID)
+		return true
+	}
+	size := workerFolderBytes(filepath.Join(d.cfg.StateDir, "workers", r.ID))
+	if err := os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID)); err != nil {
+		d.Logf("worker.cleanup retry worker=%s: %v", r.ID, err)
+		return false
+	}
 	d.st.deleteWorker(r.ID)
+	d.Logf("worker.session.cleaned worker=%s harness=%s session=%s bytes_freed=%d", r.ID, r.Harness, r.NativeID, size)
 	d.releaseWorkerReport(r.ID) // its row is gone; nothing is left to report
-	os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
+	return true
 }
 
-// cleanupWorkers removes ended worker records that are past the longest run
-// time, here and in the gateway (W7). It runs at daemon start and
-// periodically.
+// cleanupWorkers updates gateway retention (W7). It never deletes harness
+// sessions: the independent workerSessionCleanupLoop owns local retention.
 func (d *Daemon) cleanupWorkers(ctx context.Context) {
 	set := d.workerSettings("")
-	// Retry reports that failed while the gateway was away, then drop the
-	// records that are past the longest run time.
+	// Retry reports that failed while the gateway was away.
 	d.reportWorkerEnds(ctx)
 	d.dropWorktreeSessions()
-	rows, err := d.st.workers()
-	if err != nil {
-		return
-	}
-	for _, r := range rows {
-		if r.EndedReason == "" || !r.Reported || r.StartedAt.Add(set.MaxAge).After(time.Now()) {
-			continue
-		}
-		d.dropWorkerRow(r)
-		if r.Resumable {
-			d.Logf("worker.cleaned worker=%s session=%s (ended more than %s ago)", r.ID, r.SessionID, set.MaxAge)
-		}
-	}
 	if !d.Connected() {
 		return
 	}
