@@ -75,6 +75,8 @@ type NodeWorkers struct {
 	QueueTimeout           string  `json:"queue_timeout,omitempty"`
 	BackgroundStartTimeout string  `json:"background_start_timeout,omitempty"`
 	StartGap               string  `json:"start_gap,omitempty"`
+	CacheMaxAge            string  `json:"cache_max_age,omitempty"`
+	TmpMaxAge              string  `json:"tmp_max_age,omitempty"`
 	// OSSandbox lists the projects whose Pi and OpenCode workers run in the
 	// OS sandbox (bubblewrap on Linux); "*" means every project. Edited by
 	// hand. See docs/design/worker-os-sandbox.md.
@@ -148,6 +150,25 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 			d = -1
 		}
 		s.StartGap = d
+	}
+	for _, f := range []struct {
+		name string
+		in   string
+		out  *time.Duration
+	}{
+		{"cache_max_age", nc.Workers.CacheMaxAge, &s.CacheMaxAge},
+		{"tmp_max_age", nc.Workers.TmpMaxAge, &s.TmpMaxAge},
+	} {
+		if f.in != "" {
+			d, err := time.ParseDuration(f.in)
+			if err != nil || d < 0 {
+				return s, fmt.Errorf("node.json: workers.%s must be a duration like 24h, not %q", f.name, f.in)
+			}
+			if d == 0 {
+				d = -1
+			}
+			*f.out = d
+		}
 	}
 	if s.Max < 0 {
 		return s, errors.New("node.json: workers.max must not be negative")

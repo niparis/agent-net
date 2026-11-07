@@ -136,7 +136,15 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("AGENT_NET_CONFIG_DIR", config)
 	os.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakes, "state"))
+	cacheTemp, err := os.MkdirTemp("", "agent-net-worker-cache.")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv("AGENT_NET_GOCACHE", filepath.Join(cacheTemp, "gocache"))
+	os.Setenv("AGENT_NET_GOTMPDIR", filepath.Join(cacheTemp, "gotmp"))
 	code := m.Run()
+	os.RemoveAll(cacheTemp)
 	if leaked := reapFakes(fakes); len(leaked) > 0 && code == 0 {
 		fmt.Fprintf(os.Stderr, "FAIL: fake harness processes still alive after the tests (killed): %v\n", leaked)
 		code = 1

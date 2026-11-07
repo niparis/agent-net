@@ -80,6 +80,7 @@ func startUpNode(t *testing.T, g *testGateway, version string, install func(targ
 	n := &upNode{t: t}
 	n.cfg = Config{GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
 		Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"),
+		WorkerGoCache: t.TempDir(), WorkerGoTmp: t.TempDir(),
 		ClaudeSessionsDir: t.TempDir(), BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
 		Version: version}
 	if install != nil {

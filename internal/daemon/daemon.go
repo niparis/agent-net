@@ -240,6 +240,18 @@ type Config struct {
 	// Files holds the folders and timings of files between machines
 	// (decision 0054). Zero fields take the defaults.
 	Files FileConfig
+	// WorkerGoCache is the shared worker Go build cache directory.
+	// Empty uses AGENT_NET_GOCACHE or /tmp/agent-net-gocache.
+	WorkerGoCache string
+	// WorkerGoTmp is the shared worker test temporary directory.
+	// Empty uses AGENT_NET_GOTMPDIR or /tmp/agent-net-gotmp.
+	WorkerGoTmp string
+	// testDiskPercent overrides disk percentage used in tests.
+	testDiskPercent func(path string) (float64, bool)
+	// testWorkerCacheCleanFirst overrides the initial delay of worker cache cleanup in tests.
+	testWorkerCacheCleanFirst time.Duration
+	// testWorkerCacheCleanEvery overrides the interval of worker cache cleanup in tests.
+	testWorkerCacheCleanEvery time.Duration
 }
 
 type localSession struct {
@@ -419,6 +431,9 @@ type Daemon struct {
 	// tree. Default: insideSession. Replaced in tests, where the "agent" and
 	// the "command line" are the same process.
 	inSession func(pid int) bool
+
+	diskWarningActive bool
+	diskWarningItemID string
 }
 
 // defaultDetect looks for the harnesses in the usual places. Tests replace it so
@@ -579,6 +594,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.deliveredPruneLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.filesHousekeepingLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.workerCacheCleanupLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.proposalNotesLoop(ctx) }()
 	d.wg.Add(1)

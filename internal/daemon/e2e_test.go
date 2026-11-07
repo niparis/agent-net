@@ -431,7 +431,8 @@ func TestBadTokenRefused(t *testing.T) {
 	}
 	_, ca, _ := LoadNode(cfgDir)
 	d, err := New(Config{GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: "wrong", CAPEM: ca,
-		StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"), BackoffMin: 20 * time.Millisecond})
+		StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"), BackoffMin: 20 * time.Millisecond,
+		WorkerGoCache: t.TempDir(), WorkerGoTmp: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
