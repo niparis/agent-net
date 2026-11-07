@@ -1494,9 +1494,10 @@ the supplied owner session is online on the calling node before setting or
 clearing a pin. The same check protects open and resume use reports. Enrolled
 nodes are trusted to report their own Claude and Pi input events. Pi accepts
 only its bound plugin's input report; Claude's optional policy hook identifies
-a local session and ignores agent-net cross-session message wrappers. These
-signals are not proof of human identity against another process running as the
-same user. Use times, scores and pins appear in session listings available to
+a local session and ignores known agent-net peer and automated prompt wrappers.
+Claude does not document a prompt-source field, so other automated inputs may
+still count as use. These signals are not proof of human identity against
+another process running as the same user. Use times, scores and pins appear in session listings available to
 enrolled agents. Prompt text is not stored by this feature.
 
 Automatic archival changes visibility, not historical records. It excludes

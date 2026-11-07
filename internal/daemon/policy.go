@@ -198,10 +198,18 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	return d.policyResult(d.infoOf(ls).Harness, got), nil
 }
 
-// Claude inbox deliveries have a cross-session wrapper; never count them as typing.
+// Claude's prompt hook also fires for peer messages and automated turns.
 func isHumanClaudePrompt(prompt string) bool {
 	prompt = strings.TrimSpace(prompt)
-	return prompt != "" && !strings.HasPrefix(prompt, "<cross-session-message")
+	if prompt == "" {
+		return false
+	}
+	for _, prefix := range []string{"<cross-session-message", "[SYSTEM NOTIFICATION", "<task-notification", "<system-reminder", "<scheduled", "<<autonomous-loop"} {
+		if strings.HasPrefix(prompt, prefix) {
+			return false
+		}
+	}
+	return !strings.Contains(prompt[:min(len(prompt), 200)], "<task-notification>")
 }
 
 func (d *Daemon) recordOwnerOpen(ctx context.Context, id string) {

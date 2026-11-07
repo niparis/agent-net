@@ -2848,9 +2848,11 @@ Use is recorded when the owner opens or resumes a session, sends a message
 from the owner session, or restores an archived record. Message retries with
 the same idempotency key count once. Pi counts only input marked interactive;
 RPC and extension input do not count. Claude Code counts prompts seen by its
-optional policy hook, except agent-net cross-session deliveries. OpenCode and
-Codex do not provide a reliable human-input distinction in these paths, so
-their prompts do not count. Recording a prompt or open needs a reachable local
+optional policy hook, except known peer, notification, reminder, and scheduled
+prompt wrappers. Claude does not expose a documented prompt-source field, so
+other automated input may still be counted. OpenCode and Codex do not provide
+a reliable human-input distinction in these paths, so their prompts do not
+count. Recording a prompt or open needs a reachable local
 daemon and gateway; these events are not queued if either is unavailable.
 
 The gateway checks hourly for offline sessions to archive, starting one hour

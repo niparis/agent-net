@@ -1,23 +1,40 @@
 package daemon
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestOwnerUseClaudePromptDistinguishesPeer(t *testing.T) {
+	const notification = "<task-notification>"
 	for _, tc := range []struct {
-		prompt string
-		human  bool
+		name, prompt string
+		human        bool
 	}{
-		{"Please fix the bug", true},
-		{"<cross-session-message from=\"uds:peer\" from-mode=\"prompting\">\nhello\n</cross-session-message>", false},
-		{"  <cross-session-message from-name=\"peer\">\nhello", false},
+		{"human", "Please fix the bug", true},
+		{"empty", " \n\t", false},
+		{"peer", `<cross-session-message from="uds:peer">hello`, false},
+		{"peer with whitespace", `  <cross-session-message from-name="peer">hello`, false},
+		{"system notification", "[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification>done</task-notification>", false},
+		{"task notification", "<task-notification>done</task-notification>", false},
+		{"system reminder", "<system-reminder>resume</system-reminder>", false},
+		{"scheduled loop", "<scheduled-task>/loop check</scheduled-task>", false},
+		{"scheduled wakeup", "<scheduled-wakeup>check</scheduled-wakeup>", false},
+		{"autonomous loop", "<<autonomous-loop>check", false},
+		{"embedded task notification", "  background result: <task-notification>done", false},
+		{"marker ends at byte 200", strings.Repeat("x", 200-len(notification)) + notification, false},
+		{"marker crosses byte 200", strings.Repeat("x", 201-len(notification)) + notification, true},
+		{"human mentions task notification later", strings.Repeat("x", 200) + notification, true},
+		{"human discusses task notifications", "Please explain task-notification messages", true},
+		{"byte boundary with unicode", strings.Repeat("é", 100) + notification, true},
 	} {
-		if got := isHumanClaudePrompt(tc.prompt); got != tc.human {
-			t.Errorf("%q: %v", tc.prompt, got)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isHumanClaudePrompt(tc.prompt); got != tc.human {
+				t.Errorf("isHumanClaudePrompt(%q) = %v, want %v", tc.prompt, got, tc.human)
+			}
+		})
 	}
 }
 
@@ -54,7 +71,7 @@ func TestOwnerUsePromptPathAndPi(t *testing.T) {
 		return sid != ""
 	})
 	cli := cliClient(t, n)
-	for _, prompt := range []string{"<cross-session-message from=\"uds:peer\">\nhi\n</cross-session-message>", "fix it"} {
+	for _, prompt := range []string{"<cross-session-message from=\"uds:peer\">\nhi\n</cross-session-message>", "[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification>done</task-notification>", "<scheduled-wakeup>check</scheduled-wakeup>", "fix it"} {
 		askPolicy(t, cli, protocol.PolicyRequest{Harness: "claude", NativeID: "claude-human", Prompt: prompt})
 	}
 	a, _, err := g.gw.Store().Agent(sid)
