@@ -84,9 +84,17 @@ func Detect(spec io.Reader, version string) (Routes, error) {
 func (r Routes) Path(op Operation, id string) (string, error) {
 	path := r.paths[op]
 	if path == "" {
-		return "", fmt.Errorf("OpenCode %s has no %s route", r.version, op)
+		return "", r.HTTPError(op, http.StatusNotFound)
 	}
 	return strings.ReplaceAll(path, "{sessionID}", url.PathEscape(id)), nil
+}
+
+// HTTPError names the failed operation and the service version.
+func (r Routes) HTTPError(op Operation, status int) error {
+	if status == http.StatusNotFound {
+		return fmt.Errorf("OpenCode %s has no %s route", r.version, op)
+	}
+	return fmt.Errorf("OpenCode %s: %s failed (HTTP %d)", r.version, op, status)
 }
 
 // InterruptFallback returns the legacy route only after a current interrupt route.

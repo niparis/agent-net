@@ -137,10 +137,10 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 			}
 		}
 		if err != nil {
-			return no(errors.New("could not abort the OpenCode turn"))
+			return no(fmt.Errorf("could not interrupt the OpenCode turn: %w", err))
 		}
 		if status < 200 || status >= 300 {
-			return no(fmt.Errorf("OpenCode refused to abort the turn (HTTP %d)", status))
+			return no(routes.HTTPError(opencodeapi.Interrupt, status))
 		}
 		result.Note = name + ": turn aborted; the conversation stays in the service. An idle service session costs nothing."
 	case "pi":
