@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,9 +61,7 @@ func TestTeamGroupSendExcludesOutsider(t *testing.T) {
 	if _, err = n.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = n.d.call(context.Background(), "graph.refs.enable", map[string]any{"owner": n.d.ownerSessionID(), "backup": filepath.Join(t.TempDir(), "backup")}); err != nil {
-		t.Fatal(err)
-	}
+	waitGraphCutover(t, g)
 	cli.mustCall("team_write", map[string]any{"action": "create", "team_id": "finance", "name": "Finance"})
 	for _, id := range []string{"alice", "bob"} {
 		cli.mustCall("team_write", map[string]any{"action": "membership", "team_id": "finance", "member": map[string]any{"kind": "agent", "id": id}})

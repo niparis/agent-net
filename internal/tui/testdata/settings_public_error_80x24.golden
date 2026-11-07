@@ -13,10 +13,10 @@ Connected apps
 Integrations
   Choose integrations for every machine in your network.
   Configure integrations
-  Typed Repo/Agent Graph: loading
 
 Machines
-  The name every machine in your network shows for each machine. (more below)
+  The name every machine in your network shows for each machine.
+  NAME                  HOST NAME             VERSION       ONLINE
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

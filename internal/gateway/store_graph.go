@@ -849,7 +849,7 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 			return err
 		}
 		if !enabled {
-			return reject("typed Graph cutover has not been enabled")
+			return reject("typed Graph cutover is waiting for all machines to upgrade")
 		}
 		for _, ref := range []*protocol.GraphRef{e.FromRef, e.ToRef} {
 			if ref.Kind == "special" {

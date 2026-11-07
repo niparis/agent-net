@@ -4,7 +4,22 @@ Decision [0036](decisions/0036-primitives.md) defines an agent as a lasting iden
 
 ## Typed Repo/Agent Graph cutover
 
-In Settings (`6`), select **Typed Repo/Agent Graph** under Integrations and press Enter. The screen shows whether it is on and lists machines that block the cutover. Accept or edit the suggested new absolute backup destination on the gateway machine; the suggested directory is beside the gateway data directory. Use Page Up and Page Down to see a long blocker list. Review the confirmation, and press `y`. The gateway takes the backup before enabling the cutover. The result shows the backup path or the gateway's refusal. Turning the cutover off later requires restoring that backup. Once on, it cannot be run again.
+The cutover is an application upgrade, so nobody triggers it. The gateway
+checks at start and after every machine completes its hello. When every
+enrolled machine, including an offline machine or one that has never
+connected, has reported the `graph_refs` capability in `hello` with a known
+release version, the gateway takes a validated backup and enables typed reads
+and writes in one transaction. While any machine is older or unknown, the
+cutover waits. There is no Settings action and no owner call.
+
+The backup is a new directory beside the gateway data directory, named
+`gateway-before-typed-graph-<date>-<time>`. A successful cutover writes one log
+line with that path. If the cutover fails, the backup stays, the gateway logs
+the error and raises one Inbox item, and it retries at the next machine hello
+or gateway start. If blockers last more than 24 hours after the gateway
+version first started, the owner gets one Inbox item naming the machines to
+upgrade. It is closed when they upgrade. Turning the cutover off later
+requires restoring the backup. Once on, it cannot run again.
 
 ## Remove a machine or rotate its token
 
@@ -2800,7 +2815,7 @@ an owner action.
 
 ## Teams
 
-After the typed Graph cutover (`graph.refs.enable`), Teams have stable IDs,
+After the typed Graph cutover, Teams have stable IDs,
 names, purposes, an optional owning Agent, active state and immutable history.
 An Agent or Repo may belong to one Team. Ownership does not imply membership
 or authority over members. Nothing inherits yet: settings, request rules and
@@ -2828,8 +2843,8 @@ edges between them. Press `T` to open the Team list: Enter filters the Graph by
 the selected Team, `c` creates a Team with a name and purpose, `r` renames it,
 Space adds or removes the selected Repo or Agent, and `a` archives a Team with
 no members. A gateway refusal shows in the result line at the bottom. When
-the typed Graph cutover is not enabled, the screen says so instead of hiding
-Teams. Teams enforce nothing: these actions change labels and membership only.
+the typed Graph cutover waits for machines to upgrade, the screen says so
+instead of hiding Teams. Teams enforce nothing: these actions change labels and membership only.
 
 ### Owner session use and pins
 

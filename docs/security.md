@@ -1434,18 +1434,21 @@ fixing code. The one exception is a mechanical renumber when a migration or
 decision number clashes with the default branch. These are session
 instructions, not a git permission boundary.
 
-The local `graph_refs_status` and `graph_refs_enable` operations use the owner-only caller gate. The daemon supplies its owner session identity for both gateway requests; agents and commands inside agent sessions cannot call them.
-
-Typed Repo/Agent Graph cutover requires an authenticated owner request to
-`graph.refs.enable` with a backup destination. Every enrolled machine, including
-an offline machine or one that has never connected, must first report the
-`graph_refs` capability in `hello` with a known release version. An older or
-unknown daemon blocks cutover until the owner upgrades or removes that machine.
-The gateway takes a validated backup before enabling typed reads and writes.
-After cutover each new connection must pass its own typed-capable `hello` before
-it becomes available for routing. Old frames are refused with `upgrade required`.
-Legacy Graph string adapters remain available to upgraded daemons during the
-owner surface transition. Rollback requires restoring the pre-cutover backup.
+Typed Repo/Agent Graph cutover is automatic. No owner request, Settings action
+or agent call can trigger it. The gateway checks at start and after each
+machine completes its `hello`. It enables typed reads and writes only when
+every enrolled machine, including an offline machine or one that has never
+connected, has reported the `graph_refs` capability in `hello` with a known
+release version. An older or unknown daemon holds the cutover back; the owner
+upgrades or removes that machine. The gateway takes a validated backup before
+enabling. If the enable fails, the backup stays, the gateway raises one Inbox
+item with the error, and the next machine hello or gateway start retries it.
+The minute timer raises the 24 hour blocker notice and never retries the
+enable. After cutover each new connection must pass its own typed-capable
+`hello` before it becomes available for routing. Old frames are refused with
+`upgrade required`. Legacy Graph string adapters remain available to upgraded
+daemons during the owner surface transition. Rollback requires restoring the
+pre-cutover backup.
 
 Explicit Agent selection at session start uses `session.agent.reserve`. The
 caller must name the owner pseudo-session on its authenticated machine. The

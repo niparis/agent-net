@@ -200,9 +200,7 @@ func TestGraphRefsOldDaemonRefusedAfterCutover(t *testing.T) {
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
 	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
 	defer cancel()
-	if _, err := n.d.call(ctx, "graph.refs.enable", map[string]string{"owner": n.d.ownerSessionID(), "backup": filepath.Join(t.TempDir(), "before-cutover")}); err != nil {
-		t.Fatal(err)
-	}
+	waitGraphCutover(t, g)
 	hc, err := PinnedClient(n.cfg.CAPEM)
 	if err != nil {
 		t.Fatal(err)

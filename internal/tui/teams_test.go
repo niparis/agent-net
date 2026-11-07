@@ -191,9 +191,9 @@ func TestTeamWriteCutoverErrorIsClear(t *testing.T) {
 	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	// Enter on Name moves to Purpose, a second enter submits.
 	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	src.teamErr = errors.New("typed Graph cutover has not been enabled")
+	src.teamErr = errors.New("typed Graph cutover is waiting for all machines to upgrade")
 	m, _ = press2(m, cmd())
-	if !m.notice.err || !strings.Contains(m.notice.text, "typed Graph cutover") {
+	if !m.notice.err || !strings.Contains(m.notice.text, "waiting for all machines to upgrade") {
 		t.Fatalf("cutover error was not clear: %+v", m.notice)
 	}
 }

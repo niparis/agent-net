@@ -89,7 +89,7 @@ func (s *Store) requireGraphRefs() error {
 		return err
 	}
 	if !on {
-		return reject("typed Graph cutover has not been enabled")
+		return reject("typed Graph cutover is waiting for all machines to upgrade")
 	}
 	return nil
 }

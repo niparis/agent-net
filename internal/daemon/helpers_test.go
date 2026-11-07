@@ -54,6 +54,16 @@ func eventually(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// waitGraphCutover waits for the gateway to run the automatic typed Graph
+// cutover after the test machines report a typed hello.
+func waitGraphCutover(t *testing.T, g *testGateway) {
+	t.Helper()
+	eventually(t, "typed Graph cutover", func() bool {
+		_, err := g.gw.Store().GraphForRef(nil)
+		return err == nil
+	})
+}
+
 // ---- gateway ----
 
 type testGateway struct {

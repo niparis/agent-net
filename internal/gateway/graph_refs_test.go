@@ -129,7 +129,7 @@ func TestGraphRefsAgentHistoryAndUndo(t *testing.T) {
 	}
 }
 
-func TestGraphRefsCutoverRequiresOwnerAndBackup(t *testing.T) {
+func TestGraphRefsAutomaticCutoverBacksUpAndMigratesCharter(t *testing.T) {
 	g, err := New(Options{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
@@ -140,58 +140,21 @@ func TestGraphRefsCutoverRequiresOwnerAndBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nc := &nodeConn{id: node}
-	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Delivery: "owner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	call := func(owner, backup string) error {
-		raw, _ := json.Marshal(map[string]string{"owner": owner, "backup": backup})
-		_, err := g.handle(context.Background(), nc, "graph.refs.enable", raw)
-		return err
-	}
-	if err = call("", ""); err == nil {
-		t.Fatal("non-owner enabled cutover")
-	}
-	if err = call(owner, ""); err == nil {
-		t.Fatal("unreported node enabled cutover")
-	}
-	if _, err = g.handle(context.Background(), nc, "hello", []byte(`{"version":"dev","hostname":"fixture","graph_refs":true}`)); err != nil {
-		t.Fatal(err)
-	}
-	if b, e := g.graphRefsBlockers(context.Background(), s.db, false); e != nil || len(b) == 0 {
-		t.Fatal("unknown version passed gate")
-	}
-	if _, err = g.handle(context.Background(), nc, "hello", []byte(`{"version":"v0.4.145","hostname":"fixture","graph_refs":true}`)); err != nil {
-		t.Fatal(err)
-	}
-	if err = call(owner, ""); err == nil {
-		t.Fatal("cutover without backup")
-	}
 	if err = s.AddArchitect("advisor", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.SetCharter("advisor", "purpose", "Legacy actor", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	g.mu.Lock()
-	g.conns[node] = &nodeConn{id: node}
-	g.mu.Unlock()
-	staleErr := call(owner, filepath.Join(t.TempDir(), "unready-link"))
-	g.mu.Lock()
-	delete(g.conns, node)
-	g.mu.Unlock()
-	if staleErr == nil {
-		t.Fatal("cutover accepted a connected daemon without its current hello")
-	}
-	backup := filepath.Join(t.TempDir(), "before-cutover")
-	if err = call(owner, backup); err != nil {
+	if _, err = g.handle(context.Background(), &nodeConn{id: node}, "hello", []byte(`{"version":"v0.4.145","hostname":"fixture","graph_refs":true}`)); err != nil {
 		t.Fatal(err)
 	}
+	waitGraphCutoverOn(t, g)
 	on, err := s.graphRefsEnabled()
 	if err != nil || !on {
 		t.Fatalf("gate: %v %v", on, err)
 	}
+	backup := graphCutoverBackup(t, g)
 	snapshot, err := OpenStore(filepath.Join(backup, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
