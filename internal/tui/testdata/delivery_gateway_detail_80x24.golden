@@ -3,7 +3,7 @@
 │ Fix the deploy gate                                                          │
 │ voicemechs  feature/deploy-gate                                              │
 │ head: cccccccccccc  revision: r1  state: open  step: review  owner: merger   │
-│ status: review failed, back to an unknown session  waiting: 5h0m             │
+│ status: back to an unknown session to restart the worker  waiting: 5h0m      │
 │ a✓r✗t✓p-m·T·l·d·v·                                                           │
 │ a accept · r review · t test · p approve · m merge · T test after merge      │
 │ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │

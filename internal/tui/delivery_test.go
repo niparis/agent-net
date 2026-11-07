@@ -288,7 +288,7 @@ func TestDeliveryStaleAndGroups(t *testing.T) {
 	}{
 		{"person, ready", deliveryChange{State: "open", Step: "review", StepState: "ready", OwnerKind: "owner"}, groupNeedsYou},
 		{"failed goes back to caller", deliveryChange{State: "open", Step: "review", StepState: "failed", OwnerKind: "owner"}, groupMoving},
-		{"delegate, ready", deliveryChange{State: "open", Step: "approve", StepState: "needs_owner", OwnerKind: "delegate"}, groupMoving},
+		{"delegate needs owner", deliveryChange{State: "open", Step: "approve", StepState: "needs_owner", OwnerKind: "delegate"}, groupNeedsYou},
 		{"approval without inbox item", deliveryChange{State: "open", Step: "approve", StepState: "ready", OwnerKind: "node"}, groupMoving},
 		{"owner's caller", deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_owner"}, groupNeedsYou},
 		{"other caller", deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_agent"}, groupMoving},
@@ -363,7 +363,7 @@ func TestDeliveryRowsFitEveryWidth(t *testing.T) {
 			}
 		}
 		got := ansi.Strip(strings.Join(lines, "\n"))
-		for _, want := range []string{"Show which", "Say what", "Fix the", "merger", "ci-runner", "2h14m", "6m", "failed"} {
+		for _, want := range []string{"Show which", "Say what", "Fix the", "merger", "ci-runner", "2h14m", "6m", "back to"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("width %d missing %q: %s", w, want, got)
 			}
@@ -507,7 +507,7 @@ func TestDeliveryRevisionTwoLayoutAndOwnership(t *testing.T) {
 		t.Errorf("failed step grouped as %v", got)
 	}
 	m.snap.Agents[1].Profile.Name = "agent-net 2"
-	if got, _ := m.deliveryStatusText(failed); got != "review failed, back to agent-net 2" {
+	if got, _ := m.deliveryStatusText(failed); got != "back to agent-net 2 to restart the worker" {
 		t.Errorf("failed status %q", got)
 	}
 
@@ -675,6 +675,30 @@ func TestDeliveryHelpAndHints(t *testing.T) {
 	}
 }
 
+// deliveryActionScenes exercises the gateway mapping as well as the list.
+func deliveryActionScenes() []deliveryChange {
+	var changes []deliveryChange
+	for i, state := range []string{protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateFailed, protocol.StepStateFailed} {
+		step := protocol.StepTest
+		if i == 0 {
+			step = protocol.StepVerify
+		}
+		v := protocol.ChangeView{Change: protocol.Change{ID: fmt.Sprintf("ch_action_%d", i), Title: []string{"Resume offline sessions", "Fix the entry test", "Repair worker restart", "Stopped entry work"}[i], Project: "demo", State: protocol.ChangeOpen, HeadCommit: hash('a'), Caller: "s_0000000000000002", Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, SessionID: "s_0000000000000001"}},
+			Next: []protocol.StepRef{ref(protocol.StepAccept)}, Steps: []protocol.StepStatus{status(ref(protocol.StepAccept), ownCaller, protocol.StepStateReady, nil), status(ref(step), ownNode, state, nil)}}
+		if i >= 2 {
+			v.Change.Origin.SessionID = "s_ended"
+		}
+		if i == 3 {
+			v.Change.State = protocol.ChangeStopped
+		}
+		e := pev(v.Change.ID, 1, ref(step), protocol.StepResultFail, hash('a'), "s_merger", "", t0, nil)
+		e.Note = "Enter did not resume the offline session"
+		v.Steps[1].Evidence = &e
+		changes = append(changes, deliveryChangeFromView(v, t0))
+	}
+	return changes
+}
+
 func TestDeliveryGoldens(t *testing.T) {
 	scenes := deliveryScenes()
 	type scene struct {
@@ -688,6 +712,8 @@ func TestDeliveryGoldens(t *testing.T) {
 		{"delivery_empty", &fakeDelivery{}, "", false, false},
 		{"delivery_error", &fakeDelivery{err: errors.New("the gateway did not answer in time")}, "", false, false},
 		{"delivery_list", &fakeDelivery{changes: scenes}, "", false, false},
+		{"delivery_actions", &fakeDelivery{changes: deliveryActionScenes()}, "", false, false},
+		{"delivery_actions_all", &fakeDelivery{changes: deliveryActionScenes()}, "", false, true},
 		{"delivery_all", &fakeDelivery{changes: scenes}, "", false, true},
 		{"delivery_failed_review", &fakeDelivery{changes: scenes}, "c_3", false, false},
 		{"delivery_detail", &fakeDelivery{changes: scenes}, "c_1", true, false},

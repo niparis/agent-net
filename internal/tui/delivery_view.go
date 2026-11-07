@@ -157,7 +157,12 @@ func (m Model) deliveryLayout(inner int, changes []deliveryChange) deliveryColum
 	}
 	c.progress = max(c.progress, 4)
 	maxStatus := max(inner-(deliveryLead+c.repo+deliveryStepW+deliveryAgeW+c.progress+gaps*c.gap()+1), deliveryStatusW)
-	maxStatus = min(maxStatus, deliveryStatusCap)
+	if c.spaced {
+		// The restart action must remain readable on a wide screen.
+		maxStatus = min(maxStatus, deliveryStatusCap+len(" the worker"))
+	} else {
+		maxStatus = min(maxStatus, deliveryStatusCap)
+	}
 	c.status = min(c.status, maxStatus)
 	fixed := deliveryLead + c.repo + deliveryStepW + c.status + deliveryAgeW + c.progress + gaps*c.gap()
 	c.title = max(inner-fixed, 1)
@@ -355,14 +360,19 @@ func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
 	case protocol.StepStateRunning:
 		return m.deliveryActor(ch) + " is " + deliveryVerb(ch.Step), sBusy
 	case protocol.StepStateFailed:
-		return firstNonEmpty(ch.Step, "step") + " failed, back to " + m.deliveryChangeCaller(ch), sBad
+		if author, ok := m.agentByID(ch.Origin.SessionID); ok && author.Online {
+			return "back to " + m.deliverySessionName(ch.Origin.SessionID) + " (fix)", sBad
+		}
+		return "back to " + m.deliveryChangeCaller(ch) + " to restart the worker", sBad
 	case protocol.StepStatePassed:
 		return "passed", sBusy
 	case protocol.StepStateSkipped:
 		return "not needed", sDim
 	case protocol.StepStateWaiting:
 		return "blocked", sDim
-	case protocol.StepStateReady, protocol.StepStateNeedsOwner:
+	case protocol.StepStateNeedsOwner:
+		return "waiting for you", lipgloss.NewStyle().Foreground(roleWarning)
+	case protocol.StepStateReady:
 		if ch.ClaimedBy != "" {
 			return m.deliveryActor(ch) + " to " + deliveryVerb(ch.Step), sBusy
 		}
@@ -534,7 +544,7 @@ func (m Model) deliveryView(w, h int) []string {
 				selLine = len(list)
 			}
 			list = append(list, m.deliveryRow(cols, ch, i == sel))
-			if outcome := deliveryOutcome(ch); outcome != "" {
+			if outcome := deliveryRowFinding(ch); outcome != "" {
 				for _, line := range wrap(outcome, max(inner-2, 1)) {
 					list = append(list, sDim.Render("  "+line))
 				}
@@ -552,6 +562,14 @@ func (m Model) deliveryView(w, h int) []string {
 	}
 	title := strconv.Itoa(shown) + " shown"
 	return append(out, panelWithRightHeader("Delivery", title, body, w, roleAccent)...)
+}
+
+// deliveryRowFinding keeps the failed step's finding beside its row.
+func deliveryRowFinding(ch deliveryChange) string {
+	if ch.StepState == protocol.StepStateFailed && ch.State != protocol.ChangeStopped && ch.Finding != "" {
+		return sanitize(ch.Finding)
+	}
+	return deliveryOutcome(ch)
 }
 
 // deliveryGroupHeader names a band of the list and counts its changes.

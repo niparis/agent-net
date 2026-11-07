@@ -256,10 +256,9 @@ func TestWorkersLogBelongsToQuotasAndPickerNote(t *testing.T) {
 	if !m.quotaShowUnset || m.workersLog {
 		t.Fatal("s no longer toggles other subscriptions")
 	}
-	next, _ = m.Update(tea.KeyPressMsg{Text: "d", Code: []rune("d")[0]})
-	m = next.(Model)
+	m = keys(m, "tab", "tab")
 	if !m.qualityDetail || m.workersLog {
-		t.Fatal("d no longer opens quality details")
+		t.Fatal("tabs no longer open quality details")
 	}
 }
 

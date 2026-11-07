@@ -843,3 +843,78 @@ func TestDeliveryStartupUsesInflightGuard(t *testing.T) {
 		t.Fatal("startup overlapped its load")
 	}
 }
+
+func TestDeliveryOwnerAndFailureTakePriority(t *testing.T) {
+	for _, state := range []string{protocol.StepStateNeedsOwner, protocol.StepStateFailed} {
+		t.Run(state, func(t *testing.T) {
+			step := protocol.StepTest
+			if state == protocol.StepStateNeedsOwner {
+				step = protocol.StepVerify
+			}
+			v := protocol.ChangeView{Change: protocol.Change{ID: "ch_action", Title: "Fix session entry", State: protocol.ChangeOpen, HeadCommit: hash('a'), Caller: "s_caller", Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, SessionID: "s_author"}},
+				Next: []protocol.StepRef{ref(protocol.StepAccept)}, Steps: []protocol.StepStatus{
+					status(ref(protocol.StepAccept), ownCaller, protocol.StepStateReady, nil),
+					status(ref(step), ownCaller, state, nil),
+				}}
+			e := pev("ch_action", 1, ref(step), protocol.StepResultFail, hash('a'), "s_merger", "", t0, nil)
+			e.Note = "entry test failed"
+			v.Steps[1].Evidence = &e
+			ch := deliveryChangeFromView(v, t0)
+			m := deliveryModel(nil, 120, 34)
+			m.snap.Agents = []protocol.AgentView{{SessionID: "s_author", Profile: protocol.Profile{Name: "entry worker"}, Online: true}, {SessionID: "s_caller", Profile: protocol.Profile{Name: "caller"}, Online: true}}
+			m.delivery.changes = []deliveryChange{ch}
+			if ch.Step != step {
+				t.Errorf("current step = %q, want %s", ch.Step, step)
+			}
+			if state == protocol.StepStateNeedsOwner {
+				if got := deliveryText(m, 120, 34); !strings.Contains(got, "Needs you · 1") || !strings.Contains(got, "waiting for you") {
+					t.Fatal(got)
+				}
+			} else {
+				if got, _ := m.deliveryStatusText(ch); got != "back to entry worker (fix)" {
+					t.Errorf("status: %q", got)
+				}
+				if got := deliveryText(m, 120, 34); !strings.Contains(got, "entry test failed") {
+					t.Fatal(got)
+				}
+				m.snap.Agents[0].Online = false
+				if got, _ := m.deliveryStatusText(ch); got != "back to caller to restart the worker" {
+					t.Errorf("ended worker status: %q", got)
+				}
+				if got := deliveryText(m, 120, 34); !strings.Contains(got, "back to caller to restart the worker") {
+					t.Fatal(got)
+				}
+			}
+		})
+	}
+}
+
+func TestDeliveryStoppedFailureHidden(t *testing.T) {
+	m := deliveryModel(nil, 120, 34)
+	m.delivery.changes = []deliveryChange{{ID: "ch_stopped", Title: "Stopped work", State: protocol.ChangeStopped, StepState: protocol.StepStateFailed}}
+	if got := m.deliveryVisible(); len(got) != 0 {
+		t.Errorf("stopped is visible: %+v", got)
+	}
+	if done, stale := m.deliveryHidden(); done+stale != 1 {
+		t.Errorf("hidden: %d done %d stale", done, stale)
+	}
+	m = keys(m, "a")
+	if got := m.deliveryVisible(); len(got) != 1 || got[0].Group == groupMoving {
+		t.Errorf("show all: %+v", got)
+	}
+}
+
+func TestDeliveryLatestFailedStepFinding(t *testing.T) {
+	old := pev("ch_latest", 1, ref(protocol.StepReview), protocol.StepResultFail, hash('a'), "s_reviewer", "", t0.Add(-time.Hour), nil)
+	old.Note = "old review finding"
+	latest := pev("ch_latest", 1, ref(protocol.StepTest), protocol.StepResultFail, hash('a'), "s_merger", "", t0, nil)
+	latest.Note = "new test finding"
+	v := protocol.ChangeView{Change: protocol.Change{State: protocol.ChangeOpen, HeadCommit: hash('a')}, Next: []protocol.StepRef{ref(protocol.StepAccept)}, Steps: []protocol.StepStatus{
+		status(ref(protocol.StepReview), ownNode, protocol.StepStateFailed, &old),
+		status(ref(protocol.StepTest), ownNode, protocol.StepStateFailed, &latest),
+	}}
+	ch := deliveryChangeFromView(v, t0)
+	if ch.Step != protocol.StepTest || deliveryRowFinding(ch) != latest.Note {
+		t.Fatalf("latest failure: %+v", ch)
+	}
+}

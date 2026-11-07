@@ -122,47 +122,27 @@ func quotaPanelText(t *testing.T, view, title string) string {
 	return ""
 }
 
-func TestQuotaQualityOverflowKeepsBordersAndScrolls(t *testing.T) {
-	for _, size := range [][2]int{{120, 34}, {80, 24}} {
-		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
-			m := newModel(size[0], size[1])
-			m.tab = quotasTab
-			m.snap.Calibration = calibrationSnapshot()
-			initial := ansi.Strip(m.testView())
-			view := initial
-			quality := quotaPanelText(t, view, "Quality analysis")
-			quotaPanelText(t, view, "Subscriptions")
-			if size[0] == 80 && !strings.Contains(quality, "more below") {
-				t.Errorf("overflow hint missing:\n%s", quality)
+func TestQuotasHasNoQualityPanel(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		m.tab = quotasTab
+		m.snap.Calibration = calibrationSnapshot()
+		view := ansi.Strip(m.testView())
+		if strings.Contains(view, "Quality analysis") {
+			t.Errorf("Quality panel remains in Quotas:\n%s", view)
+		}
+		for _, key := range []string{"d", "left", "right"} {
+			if keyAction(contextQuotas, key) != "" {
+				t.Errorf("Quality-only key %q remains in Quotas", key)
 			}
-			golden(t, fmt.Sprintf("calibration_%dx%d", size[0], size[1]), m.testView())
-			found := false
-			for range 60 {
-				m = keys(m, "down")
-				view = ansi.Strip(m.testView())
-				quality = quotaPanelText(t, view, "Quality analysis")
-				if strings.Contains(quality, "My time =") {
-					found = true
-					golden(t, fmt.Sprintf("calibration_scrolled_%dx%d", size[0], size[1]), m.testView())
-					break
-				}
-			}
-			if !found {
-				t.Fatalf("scrolling never shows the legend:\n%s", view)
-			}
-			for range 60 {
-				m = keys(m, "up")
-			}
-			if got := ansi.Strip(m.testView()); got != initial {
-				t.Error("scrolling up did not restore the first page")
-			}
-		})
+		}
+		golden(t, fmt.Sprintf("calibration_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 
 func TestQuotaOverflowPreservesAllPanelBordersAcrossHeights(t *testing.T) {
 	// Include the room available with both the current CTO box and a shorter
-	// box. Scroll through Subscriptions, Quality and Workers, including joins.
+	// box. Scroll through Subscriptions and Workers, including joins.
 	for _, height := range []int{8, 12, 17, 22, 28} {
 		m := newModel(120, 34)
 		m.snap.Calibration = calibrationSnapshot()
@@ -199,7 +179,7 @@ func TestQuotaOverflowPreservesAllPanelBordersAcrossHeights(t *testing.T) {
 				t.Fatalf("height %d scroll %d: panel lost its bottom border", height, scroll)
 			}
 		}
-		for _, want := range []string{"Subscriptions", "Quality analysis", "Workers", "My time =", "simple · 8 tasks"} {
+		for _, want := range []string{"Subscriptions", "Workers"} {
 			if !strings.Contains(seen.String(), want) {
 				t.Errorf("height %d: scrolling never showed %q", height, want)
 			}
@@ -365,6 +345,7 @@ func TestQualityDetailAddsFixesAndContinues(t *testing.T) {
 func TestQualitySelectorCyclesAndFilters(t *testing.T) {
 	m := newModel(80, 40)
 	m.tab = quotasTab
+	m.qualityDetail = true
 	m.snap.Calibration.Quality = qualityLevelSnapshot()
 	view := func() string { return qualityPanel(m.snap.Calibration.Quality, 80, m.qualityAgent, m.qualityDetail) }
 	if !strings.Contains(view(), "agent ◂ all agents ▸") || !strings.Contains(view(), "normal · 154 tasks") ||
@@ -388,12 +369,6 @@ func TestQualitySelectorCyclesAndFilters(t *testing.T) {
 	m = keys(m, "left")
 	if !strings.Contains(view(), "agent ◂ homelab-agent ▸") {
 		t.Fatalf("selector does not wrap back: %s", view())
-	}
-	// The CTO box has focus: left and right must not move the selector.
-	m.focus = focusCTO
-	m = keys(m, "right")
-	if m.qualityAgent != 2 {
-		t.Fatalf("CTO focus moved the quality selector to %d", m.qualityAgent)
 	}
 }
 
