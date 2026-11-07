@@ -198,18 +198,26 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	return d.policyResult(d.infoOf(ls).Harness, got), nil
 }
 
-// Claude's prompt hook also fires for peer messages and automated turns.
+// Claude delivers peer messages, task notifications, reminders, scheduled turns,
+// and autonomous-loop turns through the prompt hook.
+var claudeNonHumanPromptMarkers = []string{
+	"<cross-session-message", "<agent-message", "Another Claude session sent a message",
+	"<task-notification", "[SYSTEM NOTIFICATION", "<system-reminder",
+	"<scheduled", "<<autonomous-loop",
+}
+
 func isHumanClaudePrompt(prompt string) bool {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return false
 	}
-	for _, prefix := range []string{"<cross-session-message", "[SYSTEM NOTIFICATION", "<task-notification", "<system-reminder", "<scheduled", "<<autonomous-loop"} {
-		if strings.HasPrefix(prompt, prefix) {
+	prompt = prompt[:min(len(prompt), 512)]
+	for _, marker := range claudeNonHumanPromptMarkers {
+		if strings.Contains(prompt, marker) {
 			return false
 		}
 	}
-	return !strings.Contains(prompt[:min(len(prompt), 200)], "<task-notification>")
+	return true
 }
 
 func (d *Daemon) recordOwnerOpen(ctx context.Context, id string) {

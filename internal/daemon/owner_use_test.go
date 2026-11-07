@@ -24,11 +24,11 @@ func TestOwnerUseClaudePromptDistinguishesPeer(t *testing.T) {
 		{"scheduled wakeup", "<scheduled-wakeup>check</scheduled-wakeup>", false},
 		{"autonomous loop", "<<autonomous-loop>check", false},
 		{"embedded task notification", "  background result: <task-notification>done", false},
-		{"marker ends at byte 200", strings.Repeat("x", 200-len(notification)) + notification, false},
-		{"marker crosses byte 200", strings.Repeat("x", 201-len(notification)) + notification, true},
-		{"human mentions task notification later", strings.Repeat("x", 200) + notification, true},
+		{"marker ends at byte 512", strings.Repeat("x", 512-len(notification)) + notification, false},
+		{"marker crosses byte 512", strings.Repeat("x", 513-len("<task-notification")) + notification, true},
+		{"human mentions task notification later", strings.Repeat("x", 512) + notification, true},
 		{"human discusses task notifications", "Please explain task-notification messages", true},
-		{"byte boundary with unicode", strings.Repeat("é", 100) + notification, true},
+		{"byte boundary with unicode", strings.Repeat("é", 256) + notification, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isHumanClaudePrompt(tc.prompt); got != tc.human {
