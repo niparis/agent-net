@@ -108,3 +108,19 @@ func TestCacheServiceIdentity(t *testing.T) {
 		t.Fatalf("got %d discoveries, want 2", calls)
 	}
 }
+
+func TestMissingOperations(t *testing.T) {
+	r, err := Detect(strings.NewReader(`{"paths":{}}`), "2.2.6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, op := range r.Missing() {
+		if op == Interrupt {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing interrupt absent from inventory")
+	}
+}

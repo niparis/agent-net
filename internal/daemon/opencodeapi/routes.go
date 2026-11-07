@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -126,4 +127,16 @@ func (c *Cache) Discover(ctx context.Context, client *http.Client, base, passwor
 	}
 	c.entries[key] = r
 	return r, nil
+}
+
+// Missing returns operations not advertised by the service in stable order.
+func (r Routes) Missing() []Operation {
+	var missing []Operation
+	for op := range operations {
+		if r.paths[op] == "" {
+			missing = append(missing, op)
+		}
+	}
+	sort.Slice(missing, func(i, j int) bool { return missing[i] < missing[j] })
+	return missing
 }
