@@ -160,7 +160,7 @@ func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	calls := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/openapi.json" {
-			http.NotFound(w, r)
+			fmt.Fprint(w, `{"paths":{"/api/session/{sessionID}/interrupt":{"post":{}}}}`)
 			return
 		}
 		calls <- r.Method + " " + r.URL.Path
@@ -184,8 +184,8 @@ func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
 	for len(calls) > 0 {
 		gotCalls = append(gotCalls, <-calls)
 	}
-	wantCalls := []string{"POST /api/session/ses_owner/abort"}
-	if len(gotCalls) != 1 || gotCalls[0] != wantCalls[0] {
+	wantCalls := []string{"POST /api/session/ses_owner/interrupt", "POST /api/session/ses_owner/abort"}
+	if len(gotCalls) != 2 || gotCalls[0] != wantCalls[0] || gotCalls[1] != wantCalls[1] {
 		t.Fatalf("calls %v, want %v", gotCalls, wantCalls)
 	}
 }

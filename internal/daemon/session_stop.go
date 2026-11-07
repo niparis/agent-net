@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os/exec"
 	"path/filepath"
@@ -130,6 +131,11 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		api := openCodeWorkerAPI(ctx, service.URL, service.Password)
 		directory := strings.ReplaceAll(url.QueryEscape(info.Cwd), "+", "%20")
 		_, status, err := api(opencodeapi.Interrupt.Method(), path, nil, "x-opencode-directory", directory)
+		if err == nil && status == http.StatusNotFound {
+			if fallback, ok := routes.InterruptFallback(info.NativeID); ok {
+				_, status, err = api(opencodeapi.Interrupt.Method(), fallback, nil, "x-opencode-directory", directory)
+			}
+		}
 		if err != nil {
 			return no(errors.New("could not abort the OpenCode turn"))
 		}

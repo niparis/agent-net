@@ -89,6 +89,15 @@ func (r Routes) Path(op Operation, id string) (string, error) {
 	return strings.ReplaceAll(path, "{sessionID}", url.PathEscape(id)), nil
 }
 
+// InterruptFallback returns the legacy route only after a current interrupt route.
+func (r Routes) InterruptFallback(id string) (string, bool) {
+	// 2026-11-07: v2.2.6 renamed abort to interrupt; keep the fallback 30 days.
+	if r.paths[Interrupt] != operations[Interrupt].path {
+		return "", false
+	}
+	return "/api/session/" + url.PathEscape(id) + "/abort", true
+}
+
 // Discover reads the service's capabilities with its configured credentials.
 func Discover(ctx context.Context, client *http.Client, base, password, version string) (Routes, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/openapi.json", nil)
