@@ -2071,6 +2071,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Text           string   `json:"text"`
 			Recommendation string   `json:"recommendation"`
 			Options        []string `json:"options"`
+			Replaces       string   `json:"replaces"`
 		}
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, reject("bad inbox.create")
@@ -2121,7 +2122,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if name == "" || strings.HasPrefix(name, "s_") {
 			name = "an agent"
 		}
-		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: identity.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
+		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: identity.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces})
 		return map[string]any{"item": item}, err
 
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":

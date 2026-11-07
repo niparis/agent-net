@@ -276,3 +276,20 @@ func TestAskOwnerPassesQuestion(t *testing.T) {
 		t.Fatalf("ask: %v %+v %+v", err, res, got)
 	}
 }
+
+func TestAskOwnerReplacesAndCloses(t *testing.T) {
+	var got struct {
+		Kind, Text, Recommendation, Replaces string
+	}
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "ask_question" {
+			b, _ := json.Marshal(params)
+			_ = json.Unmarshal(b, &got)
+		}
+		return json.RawMessage(`{"item":{"item_id":"i_1","kind":"question","state":"replaced"}}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"replaces": "i_1", "text": ""}})
+	if err != nil || res.IsError || got.Replaces != "i_1" || got.Text != "" {
+		t.Fatalf("ask replace/close: %v %+v %+v", err, res, got)
+	}
+}

@@ -315,19 +315,23 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			Recommendation string   `json:"recommendation"`
 			Options        []string `json:"options"`
 			Urgency        string   `json:"urgency"`
+			Replaces       string   `json:"replaces"`
 		}
-		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" {
+		if json.Unmarshal(raw, &p) != nil || (strings.TrimSpace(p.Text) == "" && p.Replaces == "") {
 			return nil, errors.New("agent_owner_ask needs kind, text and recommendation")
 		}
 		sid := d.ctoSessionID()
 		if sid == "" {
 			return nil, errors.New("CTO network session is not registered; start the CTO from the owner interface")
 		}
+		if p.Kind == "" && p.Replaces != "" {
+			p.Kind = "question"
+		}
 		kind := map[string]string{"question": "question", "approval": "approval", "idea": "feature_idea"}[p.Kind]
 		if kind == "" {
 			return nil, errors.New("kind must be question, approval or idea")
 		}
-		value, err := d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": p.Text, "recommendation": p.Recommendation, "options": p.Options, "urgency": p.Urgency})
+		value, err := d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": p.Text, "recommendation": p.Recommendation, "options": p.Options, "urgency": p.Urgency, "replaces": p.Replaces})
 		if err != nil {
 			return nil, err
 		}

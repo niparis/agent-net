@@ -18,6 +18,40 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 		return item, err
 	}
 	defer tx.Rollback()
+	now := s.now().UTC()
+	if item.Replaces != "" {
+		var old protocol.InboxItem
+		var created, answered int64
+		var options string
+		err := tx.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, item.Replaces).
+			Scan(&old.ID, &old.Kind, &old.SessionID, &old.Node, &old.Text, &old.Recommendation, &old.MessageID, &old.ConversationID, &created, &old.Status, &old.Answer, &answered, &options, &old.AskerName, &old.ChangeTitle)
+		if err == sql.ErrNoRows {
+			return item, reject("unknown inbox item %q", item.Replaces)
+		}
+		if err != nil {
+			return item, err
+		}
+		if old.Status != "open" {
+			return item, reject("inbox item is not pending")
+		}
+		if old.SessionID != item.SessionID {
+			return item, reject("inbox item %q does not belong to this session", item.Replaces)
+		}
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='replaced',answered_at=? WHERE id=?`, now.UnixNano(), item.Replaces); err != nil {
+			return item, err
+		}
+		if strings.TrimSpace(item.Text) == "" {
+			if _, err := tx.Exec(`UPDATE sessions SET waiting='' WHERE id=?`, item.SessionID); err != nil {
+				return item, err
+			}
+			old.Status = "replaced"
+			old.AnsweredAt = now
+			if err := tx.Commit(); err != nil {
+				return item, err
+			}
+			return old, nil
+		}
+	}
 	item, err = s.createInboxItem(tx, item)
 	if err != nil {
 		return item, err
@@ -25,6 +59,20 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 	if item.Kind == "question" || item.Kind == "approval" {
 		_, err = tx.Exec(`UPDATE inbox_items SET status='replaced',answered_at=? WHERE session_id=? AND kind=? AND status='open' AND id<>?`, item.CreatedAt.UnixNano(), item.SessionID, item.Kind, item.ID)
 		if err != nil {
+			return item, err
+		}
+		w := protocol.CleanWaiting(&protocol.Waiting{
+			Kind:     item.Kind,
+			Text:     item.Text,
+			Options:  item.Options,
+			Explicit: true,
+			Since:    now.Unix(),
+		})
+		var wJSON []byte
+		if w != nil {
+			wJSON, _ = json.Marshal(w)
+		}
+		if _, err := tx.Exec(`UPDATE sessions SET waiting=? WHERE id=?`, string(wJSON), item.SessionID); err != nil {
 			return item, err
 		}
 	}

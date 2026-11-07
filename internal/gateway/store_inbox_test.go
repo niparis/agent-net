@@ -310,3 +310,121 @@ func TestInboxOwnerIdeaTextLimit(t *testing.T) {
 		t.Fatal("accepted idea beyond owner ask limit")
 	}
 }
+
+func TestInboxOwnerAskReplaceAndClose(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("h1", "linux")
+	sidA, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "thread-a", Name: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sidB, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "thread-b", Name: "bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Session A creates an initial ask
+	first, err := s.CreateInboxItem(protocol.InboxItem{
+		Kind:      "question",
+		SessionID: sidA,
+		Text:      "PR15 + router + Mac",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Status != "open" {
+		t.Fatalf("first status = %q, want open", first.Status)
+	}
+
+	// Verify session A's waiting state follows first ask
+	a, ok, err := s.Agent(sidA)
+	if err != nil || !ok || a.Waiting == nil || a.Waiting.Text != "PR15 + router + Mac" {
+		t.Fatalf("agent waiting = %+v, want PR15 + router + Mac", a.Waiting)
+	}
+
+	// 2. Another session (Session B) cannot replace Session A's ask
+	_, err = s.CreateInboxItem(protocol.InboxItem{
+		Kind:      "question",
+		SessionID: sidB,
+		Text:      "bob tries to replace",
+		Replaces:  first.ID,
+	})
+	if err == nil {
+		t.Fatal("expected error when session B tries to replace session A's ask")
+	}
+	if !strings.Contains(err.Error(), "does not belong to this session") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+
+	// 3. Session A replaces its own ask with a new question
+	second, err := s.CreateInboxItem(protocol.InboxItem{
+		Kind:      "question",
+		SessionID: sidA,
+		Text:      "router + Mac",
+		Replaces:  first.ID,
+	})
+	if err != nil {
+		t.Fatalf("replace ask: %v", err)
+	}
+	if second.ID == first.ID || second.Status != "open" {
+		t.Fatalf("second item: %+v", second)
+	}
+
+	// Verify first ask is replaced and second ask is open in Inbox
+	items, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var openCount int
+	for _, it := range items {
+		if it.ID == first.ID && it.Status != "replaced" {
+			t.Fatalf("first item status = %q, want replaced", it.Status)
+		}
+		if it.ID == second.ID && it.Status != "open" {
+			t.Fatalf("second item status = %q, want open", it.Status)
+		}
+		if it.Status == "open" {
+			openCount++
+		}
+	}
+	if openCount != 1 {
+		t.Fatalf("open items count = %d, want 1", openCount)
+	}
+
+	// Verify session A's waiting state follows second ask
+	a, ok, err = s.Agent(sidA)
+	if err != nil || !ok || a.Waiting == nil || a.Waiting.Text != "router + Mac" {
+		t.Fatalf("agent waiting after replace = %+v, want router + Mac", a.Waiting)
+	}
+
+	// 4. Session A closes its ask without a new question
+	closed, err := s.CreateInboxItem(protocol.InboxItem{
+		Kind:      "question",
+		SessionID: sidA,
+		Text:      "",
+		Replaces:  second.ID,
+	})
+	if err != nil {
+		t.Fatalf("close ask: %v", err)
+	}
+	if closed.ID != second.ID || closed.Status != "replaced" {
+		t.Fatalf("closed item: %+v, want ID=%s Status=replaced", closed, second.ID)
+	}
+
+	// Verify second ask is also replaced and no open items remain
+	items, err = s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Status == "open" {
+			t.Fatalf("unexpected open item: %+v", it)
+		}
+	}
+
+	// Verify session A's waiting state is cleared
+	a, ok, err = s.Agent(sidA)
+	if err != nil || !ok || a.Waiting != nil {
+		t.Fatalf("agent waiting after close = %+v, want nil", a.Waiting)
+	}
+}

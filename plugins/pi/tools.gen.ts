@@ -586,7 +586,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_reply",
-    "description": "Reply to a message you received. For a request, set outcome from your charter: accept and do it, reject with a reason, redirect to the node that should do it, or escalate to the owner with a recommendation.",
+    "description": "Reply to a message you received. Outcome applies only to replies to requests. For a request, set outcome from your charter: accept and do it, reject with a reason, redirect to the node that should do it, or escalate to the owner with a recommendation.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -606,7 +606,7 @@ export const TOOL_CATALOG = [
             "redirect",
             "escalate"
           ],
-          "description": "Your decision on the request, from your charter. reject, redirect and escalate need reason; redirect needs redirect_to; escalate needs recommendation."
+          "description": "Your decision on the request, from your charter. Applies only to replies to requests. reject, redirect and escalate need reason; redirect needs redirect_to; escalate needs recommendation."
         },
         "reason": {
           "type": "string",
@@ -778,7 +778,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_ask",
-    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. Use it when you stop to wait for the owner.",
+    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. Give replaces to replace or close your earlier pending ask. Use it when you stop to wait for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -816,13 +816,13 @@ export const TOOL_CATALOG = [
           ],
           "description": "Normal or high urgency.",
           "default": "normal"
+        },
+        "replaces": {
+          "type": "string",
+          "description": "ID of an earlier pending ask from this session to replace or close."
         }
       },
-      "required": [
-        "kind",
-        "text",
-        "recommendation"
-      ],
+      "required": [],
       "additionalProperties": false
     },
     "roles": [

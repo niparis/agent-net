@@ -24,6 +24,7 @@ type InboxItem struct {
 	Answer         string         `json:"answer,omitempty"`
 	AnsweredAt     time.Time      `json:"answered_at,omitempty"`
 	Delivery       *InboxDelivery `json:"delivery,omitempty"`
+	Replaces       string         `json:"replaces,omitempty"`
 }
 
 // InboxDelivery links a step task to its exact revision and commit.

@@ -871,17 +871,37 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			Text           string   `json:"text"`
 			Recommendation string   `json:"recommendation"`
 			Options        []string `json:"options"`
+			Replaces       string   `json:"replaces"`
 		}
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, errors.New("bad inbox request")
 		}
 		kind, text := "approval", p.Action
+		if text == "" && p.Text != "" {
+			text = p.Text
+		}
 		if method == "propose_idea" {
 			kind, text = "feature_idea", p.Text
 		} else if method == "ask_question" {
 			kind, text = "question", p.Text
 		}
-		return d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": text, "recommendation": p.Recommendation, "options": p.Options})
+		res, err := d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": text, "recommendation": p.Recommendation, "options": p.Options, "replaces": p.Replaces})
+		if err != nil {
+			return nil, err
+		}
+		if ls != nil {
+			if p.Replaces != "" && strings.TrimSpace(text) == "" {
+				d.setWaiting(ls, nil)
+			} else if strings.TrimSpace(text) != "" {
+				d.setWaiting(ls, protocol.CleanWaiting(&protocol.Waiting{
+					Kind:     kind,
+					Text:     text,
+					Options:  p.Options,
+					Explicit: true,
+				}))
+			}
+		}
+		return res, nil
 
 	case "announce":
 		sid, err := lc.boundID()

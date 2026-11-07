@@ -169,7 +169,11 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		return map[string]any{"profile": profileOutput(m)}, nil
 	case "agent_owner_ask":
 		kind := str("kind")
-		m, err := ownerAskCall(ctx, run, kind, str("text"), str("recommendation"), stringSlice(a["options"]), str("urgency"))
+		replaces := str("replaces")
+		if kind == "" && replaces != "" {
+			kind = "question"
+		}
+		m, err := ownerAskCall(ctx, run, kind, str("text"), str("recommendation"), stringSlice(a["options"]), str("urgency"), replaces)
 		if err != nil {
 			return nil, err
 		}
