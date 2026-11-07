@@ -17,7 +17,7 @@ func TestDetectInterruptRoutes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := r.Interrupt("a")
+			got, err := r.Path(Interrupt, "a")
 			if err != nil || got != tt.want {
 				t.Fatalf("got %q, %v; want %q", got, err, tt.want)
 			}
@@ -30,8 +30,27 @@ func TestMissingInterrupt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.Interrupt("a")
+	_, err = r.Path(Interrupt, "a")
 	if err == nil || !strings.Contains(err.Error(), "OpenCode 2.2.6 has no interrupt route") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOperations(t *testing.T) {
+	r, err := Detect(strings.NewReader(`{"paths":{"/api/info":{"get":{}},"/api/session/{sessionID}/message":{"get":{}},"/api/session/{sessionID}":{"delete":{}}}}`), "2.2.6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		op       Operation
+		id, want string
+	}{{Info, "", "/api/info"}, {Messages, "a b", "/api/session/a%20b/message"}, {DeleteSession, "x", "/api/session/x"}} {
+		got, err := r.Path(tc.op, tc.id)
+		if err != nil || got != tc.want {
+			t.Errorf("%s: %q %v", tc.op, got, err)
+		}
+	}
+	if _, err := r.Path(Prompt, "x"); err == nil || !strings.Contains(err.Error(), "OpenCode 2.2.6 has no prompt route") {
+		t.Fatalf("missing prompt: %v", err)
 	}
 }
