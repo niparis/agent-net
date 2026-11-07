@@ -93,3 +93,18 @@ func TestDiscover(t *testing.T) {
 		})
 	}
 }
+
+func TestCacheServiceIdentity(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; fmt.Fprint(w, `{"paths":{}}`) }))
+	defer server.Close()
+	var cache Cache
+	for _, identity := range []string{"start-1", "start-1", "start-2"} {
+		if _, err := cache.Discover(context.Background(), server.Client(), server.URL, "", "2.2.6", identity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("got %d discoveries, want 2", calls)
+	}
+}

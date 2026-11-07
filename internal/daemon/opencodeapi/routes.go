@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 type Operation string
@@ -63,7 +64,7 @@ func Detect(spec io.Reader, version string) (Routes, error) {
 			r.paths[op] = rt.path
 		}
 	}
-	// Added 2026-11-07 for OpenCode releases before 2.2.6.
+	// 2026-11-07: v2.2.6 renamed abort to interrupt; keep the fallback 30 days.
 	legacy := "/api/session/{sessionID}/abort"
 	if r.paths[Interrupt] == "" {
 		if _, ok := doc.Paths[legacy]["post"]; ok || err == io.EOF {
@@ -101,4 +102,28 @@ func Discover(ctx context.Context, client *http.Client, base, password, version 
 		return Routes{}, fmt.Errorf("OpenCode OpenAPI HTTP %d", resp.StatusCode)
 	}
 	return Detect(io.LimitReader(resp.Body, 8<<20), version)
+}
+
+// Cache retains successful discovery for each service lifetime and version.
+type Cache struct {
+	mu      sync.Mutex
+	entries map[string]Routes
+}
+
+func (c *Cache) Discover(ctx context.Context, client *http.Client, base, password, version, identity string) (Routes, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := base + "\x00" + identity + "\x00" + version
+	if r, ok := c.entries[key]; ok {
+		return r, nil
+	}
+	r, err := Discover(ctx, client, base, password, version)
+	if err != nil {
+		return Routes{}, err
+	}
+	if c.entries == nil {
+		c.entries = make(map[string]Routes)
+	}
+	c.entries[key] = r
+	return r, nil
 }
