@@ -160,3 +160,11 @@ func TestResumeOpenCodeEntersRegisteredSession(t *testing.T) {
 		t.Fatalf("enter %+v", src.enters)
 	}
 }
+
+func TestResumeViewerBeforeRegistration(t *testing.T) {
+	m, _ := workerModel(120, 34)
+	m, cmd := m.onResume(resumeMsg{res: protocol.StartedSession{Status: "started", EnterPlan: &protocol.EnterPlan{OpenedHerdr: true, Note: "Opened viewer"}}})
+	if cmd != nil || m.notice.err || m.notice.text != "Opened viewer" {
+		t.Fatalf("viewer rejected: %+v", m.notice)
+	}
+}

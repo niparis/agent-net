@@ -119,6 +119,50 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 			return protocol.StartedSession{}, err
 		}
 	}
+	if resume {
+		bin, err := d.harnessBinary("opencode")
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		plan := protocol.EnterPlan{Argv: []string{bin, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; the session keeps running."}
+		opened := d.openForCaller("opencode:"+r.NativeID, r.Project, socket, pane, plan)
+		r.Status = "started"
+		r.EnterPlan = &opened
+		d.mu.Lock()
+		if d.startedSessions == nil {
+			d.startedSessions = make(map[string]protocol.StartedSession)
+		}
+		d.startedSessions[r.ID] = r
+		d.mu.Unlock()
+		d.wg.Add(1)
+		go func(r protocol.StartedSession) {
+			defer d.wg.Done()
+			wait, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
+			defer cancel()
+			ticker := time.NewTicker(25 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				d.mu.Lock()
+				if ls := d.sessions[key("opencode", r.NativeID)]; ls != nil {
+					r.SessionID = ls.sessionID
+				}
+				if r.SessionID != "" {
+					d.startedSessions[r.ID] = r
+				}
+				d.mu.Unlock()
+				if r.SessionID != "" {
+					return
+				}
+				select {
+				case <-wait.Done():
+					d.Logf("OpenCode resumed viewer opened; session registration is still pending")
+					return
+				case <-ticker.C:
+				}
+			}
+		}(r)
+		return r, nil
+	}
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)

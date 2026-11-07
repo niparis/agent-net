@@ -617,6 +617,7 @@ func TestSessionStartAgentFailureReportsAndNextStarts(t *testing.T) {
 }
 
 func TestSessionResumeOpenCodeRegistered(t *testing.T) {
+	_, viewerLog := fakeOpenHerdr(t)
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
 	g := startGateway(t, t.TempDir(), "")
@@ -640,16 +641,21 @@ func TestSessionResumeOpenCodeRegistered(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		helloOpenCode(t, n.node, native, repo)
 		fmt.Fprintf(w, `{"data":{"id":%q}}`, native)
 	}))
 	defer server.Close()
 	writeOwnerOpenCodeService(t, state, server.URL)
 	var r protocol.StartedSession
-	mustJSON(t, n.cli.mustCall("session_resume", map[string]string{"session_id": id}), &r)
+	mustJSON(t, n.cli.mustCall("session_resume", map[string]string{"session_id": id, "herdr_socket": "/tmp/herdr-test.sock", "herdr_pane_id": "w1:p0"}), &r)
+	if r.Status != "started" || r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
+		t.Fatalf("viewer not opened: %+v", r)
+	}
+	requireHerdrOpened(t, viewerLog, "shop", bins["opencode"], "--session", native)
+	// Only viewing emits session.viewed; reading through HTTP does not register.
+	helloOpenCode(t, n.node, native, repo)
 	eventually(t, "resume registered", func() bool {
 		mustJSON(t, n.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
-		return r.Status == "started"
+		return r.SessionID != ""
 	})
 	a := n.agentOf(t, r.SessionID)
 	if a == nil || !a.Online || a.NativeID != native {

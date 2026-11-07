@@ -110,6 +110,9 @@ func (m Model) onResume(r resumeMsg) (Model, tea.Cmd) {
 		m.fail("Cannot resume: " + explain(r.err))
 		return m, nil
 	}
+	if r.res.Status == "started" && r.res.EnterPlan != nil && r.res.SessionID == "" {
+		return m.onEnter(enterMsg{name: r.name, plan: *r.res.EnterPlan})
+	}
 	if r.res.Status != "started" || r.res.SessionID == "" {
 		m.fail(firstNonEmpty(sanitize(r.res.Error), "The session did not resume."))
 		return m, nil
