@@ -28,9 +28,14 @@ func (d *Daemon) machineWorkerOverrides() map[string]json.RawMessage {
 		value time.Duration
 	}{
 		{"workers.idle_timeout", s.Idle}, {"workers.max_age", s.MaxAge}, {"workers.caller_gone_grace", s.OwnerGrace}, {"workers.queue_timeout", s.QueueTimeout},
+		{"workers.cache_max_age", s.CacheMaxAge}, {"workers.tmp_max_age", s.TmpMaxAge},
 	} {
-		if f.value > 0 {
-			put(f.key, f.value.String())
+		if f.value != 0 {
+			val := f.value
+			if val < 0 {
+				val = 0
+			}
+			put(f.key, val.String())
 		}
 	}
 	if s.StartGap != 0 {
@@ -78,12 +83,14 @@ func (d *Daemon) workerSettingsWith(snap settings.Snapshot, repo string) WorkerS
 		{"workers.idle_timeout", local.Idle, &result.Idle}, {"workers.max_age", local.MaxAge, &result.MaxAge},
 		{"workers.caller_gone_grace", local.OwnerGrace, &result.OwnerGrace}, {"workers.queue_timeout", local.QueueTimeout, &result.QueueTimeout},
 		{"workers.start_gap", local.StartGap, &result.StartGap},
+		{"workers.cache_max_age", local.CacheMaxAge, &result.CacheMaxAge},
+		{"workers.tmp_max_age", local.TmpMaxAge, &result.TmpMaxAge},
 	} {
 		if f.local == 0 {
 			var value string
 			decode(f.key, &value)
 			if n, err := time.ParseDuration(value); err == nil {
-				if n == 0 && f.key == "workers.start_gap" {
+				if n == 0 && (f.key == "workers.start_gap" || f.key == "workers.cache_max_age" || f.key == "workers.tmp_max_age") {
 					n = -1
 				}
 				*f.out = n
