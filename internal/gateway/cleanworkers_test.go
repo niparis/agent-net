@@ -105,3 +105,46 @@ func TestUpsertKeepsKnownIDWhenCleanupRacesInsert(t *testing.T) {
 		t.Fatalf("session ID = %q, want %q", got, id)
 	}
 }
+
+func TestCleanWorkersRecentOwnerUseAndPinned(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, err := s.CreateNode("box", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for _, name := range []string{"recent", "pinned"} {
+		id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: name, Worker: &protocol.WorkerInfo{ID: "w_" + name, StartedAt: c.t.Add(-48 * time.Hour).Unix()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.SetWorkerSessionEnded(node, id); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.RecordOwnerUse(id); err != nil {
+			t.Fatal(err)
+		}
+		if name == "pinned" {
+			if err = s.SetSessionPin(id, true); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ids[name] = id
+	}
+	n, err := s.CleanWorkers(node, 24*time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("cleaned %d workers, want 1", n)
+	}
+	for name, id := range ids {
+		_, ok, err := s.Agent(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok != (name == "pinned") {
+			t.Errorf("%s worker retained=%v", name, ok)
+		}
+	}
+}

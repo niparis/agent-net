@@ -1046,7 +1046,7 @@ UPDATE sessions SET harness_activity=last_seen WHERE status='busy';
 
 `, `
 SELECT 1 /* session archive column */;
-`}
+`, `SELECT 1 /* session owner use columns */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1544,6 +1544,21 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session owner use columns") {
+			for _, name := range []string{"owner_used_at", "owner_uses", "pinned_at"} {
+				var has bool
+				if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name=?)`, name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if !has {
+					if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + name + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
 				}
 			}
 		}
@@ -2386,7 +2401,7 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 		return 0, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND node_id = ? AND online = 0 AND worker != ''
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND node_id = ? AND online = 0 AND worker != ''
 		AND (worker_started = 0 OR worker_started < ?)
         AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, cut)
 	if err != nil {
@@ -2444,9 +2459,9 @@ func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND node_id = ? AND online = 0 AND worker = ''
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND owner_used_at < ? AND node_id = ? AND online = 0 AND worker = ''
 		AND substr(cwd, 1, ?) = ?
-        AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, len(prefix), prefix)
+        AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, s.now().Add(-7*24*time.Hour).UnixNano(), nodeID, len(prefix), prefix)
 	if err != nil {
 		return 0, err
 	}
@@ -2552,6 +2567,7 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
+ s.owner_used_at, s.owner_uses, s.pinned_at,
  COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0)
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
@@ -2567,7 +2583,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.StalledSince)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.StalledSince)
 	if err != nil {
 		return a, err
 	}
@@ -2601,6 +2617,8 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	a.Online = online == 1
 	a.LastSeen = lastSeen / int64(time.Second)
 	a.LastActive = lastActive / int64(time.Second)
+	a.OwnerUsedAt /= int64(time.Second)
+	a.PinnedAt /= int64(time.Second)
 	a.TaskStarted = a.TaskStarted / int64(time.Second)
 	a.FirstSeen = created / int64(time.Second)
 	if json.Unmarshal([]byte(caps), &a.Profile.Capabilities) != nil || a.Profile.Capabilities == nil {
@@ -2618,6 +2636,7 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 		return a, false, err
 	}
 	s.botOnline(&a)
+	a.OwnerUses = decayOwnerUses(a.OwnerUses, a.OwnerUsedAt, s.now().Unix())
 	one := []protocol.AgentView{a}
 	if err := s.applyDelegation(one); err != nil {
 		return a, false, err
@@ -2651,6 +2670,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 			return nil, err
 		}
 		s.botOnline(&a)
+		a.OwnerUses = decayOwnerUses(a.OwnerUses, a.OwnerUsedAt, s.now().Unix())
 		if f.OnlineOnly && !a.Online {
 			continue
 		}
@@ -3038,6 +3058,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			m.ConversationID, m.To, m.From, protocol.TypeRequest, protocol.StateReplied); err != nil {
 			return msg, false, err
 		}
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET owner_uses=MIN(1000000, (owner_uses >> MIN(30, MAX(0, (? - owner_used_at) / ?))) + 1), owner_used_at=? WHERE id=? AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND harness=?)`, now.UnixNano(), int64(24*time.Hour), now.UnixNano(), m.To, m.From, protocol.OwnerHarness); err != nil {
+		return msg, false, err
 	}
 	detail := strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " ")
 	if m.FromCTO {

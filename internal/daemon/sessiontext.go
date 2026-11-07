@@ -33,7 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"sessions_archive": true, "sessions_archived": true,
+	"sessions_archive": true, "sessions_archived": true, "session_pin": true,
 	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true,
@@ -642,6 +642,17 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if res, err = d.call(ctx, "session.agent.set", q); err == nil {
 			d.policy.forget(q.SessionID)
 		}
+	case "session_pin":
+		var q struct {
+			SessionID string `json:"session_id"`
+			Pinned    bool   `json:"pinned"`
+			Owner     string `json:"owner"`
+		}
+		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+			return nil, true, errors.New("session_pin needs session_id")
+		}
+		q.Owner = d.ownerSessionID()
+		res, err = d.call(ctx, "session.pin", q)
 	case "sessions_archive", "sessions_archived":
 		var q struct {
 			protocol.SessionsArchiveRequest
@@ -969,6 +980,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("session_resume needs session_id")
 		}
 		res, err = d.sessionResume(ctx, p)
+		if err == nil {
+			d.recordOwnerOpen(ctx, p.SessionID)
+		}
 	case protocol.OpSessionStart:
 		var p protocol.SessionStartRequest
 		if json.Unmarshal(raw, &p) != nil {
@@ -988,6 +1002,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("session_enter needs session_id")
 		}
 		res, err = d.enterPlan(ctx, q)
+		if plan, ok := res.(protocol.EnterPlan); err == nil && ok && (plan.OpenedHerdr || len(plan.Argv) > 0 || plan.HerdrPane != "") {
+			d.recordOwnerOpen(ctx, q.SessionID)
+		}
 	case "session_text":
 		var q protocol.TextQuery
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {

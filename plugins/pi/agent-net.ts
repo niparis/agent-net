@@ -462,6 +462,11 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
+  // Interactive input is the terminal user; RPC and extension input may be injected.
+  pi.on("input", async (event) => {
+    if (event.source === "interactive") void request("owner_prompt", {}).catch(() => {});
+  });
+
   pi.on("message_start", async (event) => {
     const message = event.message;
     if (!firstWorkerMessage || firstWorkerConfirmed || message.role !== "custom" ||

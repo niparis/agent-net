@@ -164,6 +164,19 @@ function pushText(params) {
   conn.write(JSON.stringify({ method: "session_text", params }) + "\n");
 }
 
+await test("only interactive input counts as owner use", async () => {
+  const p = makePi();
+  extension(p.api);
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("Pi connection", () => hellos.length > 0);
+  const before = requests.filter((r) => r.method === "owner_prompt").length;
+  for (const source of ["extension", "rpc", "interactive"]) await p.fire("input", { type: "input", source, text: "hello" });
+  await until("interactive owner prompt", () => requests.filter((r) => r.method === "owner_prompt").length > before);
+  const after = requests.filter((r) => r.method === "owner_prompt").length;
+  if (after !== before + 1) throw new Error(`expected one interactive use, got ${after - before}`);
+  await p.fire("session_shutdown", { type: "session_shutdown" });
+});
+
 await test("hello carries the mode and the model", async () => {
   const p = makePi();
   extension(p.api);

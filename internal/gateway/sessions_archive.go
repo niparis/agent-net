@@ -148,6 +148,13 @@ func (s *Store) ArchiveSessions(q protocol.SessionsArchiveRequest) (protocol.Ses
 		if _, err = tx.Exec(`UPDATE sessions SET archived_at=? WHERE id=?`, stamp, id); err != nil {
 			return out, err
 		}
+		if q.Restore {
+			// A deliberate restoration is an owner interaction and gives the
+			// restored record seven days before automatic archiving can recur.
+			if err = recordOwnerUse(tx, id, s.now()); err != nil {
+				return out, err
+			}
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return out, err

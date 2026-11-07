@@ -200,6 +200,9 @@ func TestSessionResumeClaude(t *testing.T) {
 			})
 			var r sessionStartTestResult
 			mustJSON(t, c.cli.mustCall("session_resume", map[string]string{"session_id": id}), &r)
+			if a, ok, err := g.gw.Store().Agent(id); err != nil || !ok || a.OwnerUses != 1 {
+				t.Fatalf("resume owner use: %+v %v", a, err)
+			}
 			eventually(t, "resumed session", func() bool {
 				mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
 				if r.Status == "failed" {

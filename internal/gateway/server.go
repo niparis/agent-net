@@ -368,6 +368,17 @@ func (g *Gateway) Close() error {
 	return g.store.Close()
 }
 
+func (g *Gateway) autoArchiveSessions() {
+	ids, err := g.store.AutoArchiveSessions()
+	if err != nil {
+		g.logLine("error", "where", "auto archive sessions", "err", err)
+		return
+	}
+	for _, id := range ids {
+		g.logLine("session.auto_archived", "session", id)
+	}
+}
+
 // RunExpiry expires overdue messages once a minute until ctx ends.
 func (g *Gateway) RunExpiry(ctx context.Context) {
 	go g.RunRetries(ctx)
@@ -470,7 +481,11 @@ const RetentionInterval = time.Hour
 // frees its tasks, so the caller learns about them now rather than at the next
 // delivery change.
 func (g *Gateway) prune(ctx context.Context) (PruneResult, error) {
-	res, err := g.store.Prune(g.opts.Retention)
+	return g.pruneWithRetention(ctx, g.opts.Retention)
+}
+
+func (g *Gateway) pruneWithRetention(ctx context.Context, retention Retention) (PruneResult, error) {
+	res, err := g.store.Prune(retention)
 	if err != nil {
 		return res, err
 	}
@@ -485,8 +500,19 @@ func (g *Gateway) prune(ctx context.Context) (PruneResult, error) {
 func (g *Gateway) RunRetention(ctx context.Context) {
 	t := time.NewTicker(RetentionInterval)
 	defer t.Stop()
+	first := true
 	for {
-		if _, err := g.prune(ctx); err != nil {
+		// At startup all sessions are marked offline until their daemons
+		// reconnect. Wait for the first maintenance interval before archiving.
+		retention := g.opts.Retention
+		if first {
+			// Preserve offline records until the archive has had its first pass.
+			retention.Sessions = 0
+		} else {
+			g.autoArchiveSessions()
+		}
+		first = false
+		if _, err := g.pruneWithRetention(ctx, retention); err != nil {
 			g.logLine("error", "where", "retention", "err", err)
 		}
 		// A vacuum rewrites gateway.db. It runs at most once a week and only
@@ -1362,6 +1388,48 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad session.agent.set")
 		}
 		if err = st.setSessionAgent(nc.id, p); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
+
+	case "session.pin":
+		var p struct {
+			Owner     string `json:"owner"`
+			SessionID string `json:"session_id"`
+			Pinned    bool   `json:"pinned"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if p.SessionID == "" {
+			return nil, reject("session_id is required")
+		}
+		if err := st.SetSessionPin(p.SessionID, p.Pinned); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
+
+	case "session.owner_use":
+		var p struct {
+			Owner     string `json:"owner"`
+			SessionID string `json:"session_id"`
+			Prompt    bool   `json:"prompt"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
+			return nil, reject("bad session.owner_use")
+		}
+		if p.Prompt {
+			a, ok, err := st.Agent(p.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || a.NodeID != nc.id || (a.Harness != "claude" && a.Harness != "pi") {
+				return nil, reject("session does not belong to this node")
+			}
+		} else if !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if err := st.RecordOwnerUse(p.SessionID); err != nil {
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, nil
