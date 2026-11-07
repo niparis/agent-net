@@ -51,7 +51,12 @@ type Adapter struct {
 	host   daemon.Host
 	models *modelReader
 
-	mu sync.Mutex
+	compactStates                        map[string]idleCompactState // protected by mu
+	compactNow                           func() time.Time
+	compactBinary                        string
+	compactPromptTimeout, compactTimeout time.Duration
+	compactAttached                      func(context.Context) (map[string]bool, error)
+	mu                                   sync.Mutex
 	// healthWarning is set after healthBroken reaches two consecutive
 	// broken delivery checks (health.go).
 	healthWarning string
@@ -80,7 +85,7 @@ func New(cfg Config) *Adapter {
 	if cfg.ProjectsDir == "" {
 		cfg.ProjectsDir = filepath.Join(filepath.Dir(cfg.SessionsDir), "projects")
 	}
-	return &Adapter{cfg: cfg, models: newModelReader(cfg.ProjectsDir), byNative: map[string]found{}, bySock: map[string]string{},
+	return &Adapter{compactStates: map[string]idleCompactState{}, cfg: cfg, models: newModelReader(cfg.ProjectsDir), byNative: map[string]found{}, bySock: map[string]string{},
 		replies: map[replyKey]net.Listener{}, ctx: context.Background()}
 }
 
@@ -102,6 +107,7 @@ func (a *Adapter) Start(ctx context.Context, h daemon.Host) error {
 	a.mu.Unlock()
 	a.poll()
 	a.reopenReplies()
+	go a.compactLoop(ctx)
 	go func() {
 		t := time.NewTicker(a.cfg.PollInterval)
 		defer t.Stop()
@@ -221,6 +227,19 @@ func (a *Adapter) poll() {
 		infos = append(infos, info)
 	}
 	a.mu.Lock()
+	for id, f := range byNative {
+		a.observeCompactStateLocked(f.info)
+		f.info.IdleCompactedAt = a.compactStates[id].at
+		byNative[id] = f
+	}
+	for id := range a.compactStates {
+		if _, ok := byNative[id]; !ok {
+			delete(a.compactStates, id)
+		}
+	}
+	for i := range infos {
+		infos[i].IdleCompactedAt = a.compactStates[infos[i].NativeID].at
+	}
 	a.byNative, a.bySock = byNative, bySock
 	a.mu.Unlock()
 	a.models.forget(seenModels)

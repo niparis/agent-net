@@ -385,6 +385,27 @@ settings:
     levels: [network]
     default: Agent-Net-Caller
     live: true
+  - key: sessions.idle_compaction
+    description: Compact unattached idle background Claude sessions.
+    kind: advice
+    type: bool
+    levels: [network]
+    default: true
+    live: true
+  - key: sessions.idle_compaction_after
+    description: Idle time before background Claude compaction.
+    kind: advice
+    type: duration
+    levels: [network]
+    default: 50m
+    live: true
+  - key: sessions.idle_compaction_min_tokens
+    description: Minimum context tokens for idle Claude compaction.
+    kind: advice
+    type: int
+    levels: [network]
+    default: 200000
+    live: true
   - key: sessions.stall_timeout
     rows: [150]
     description: Time without harness activity before warning about a busy session.
