@@ -1278,13 +1278,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.filtering {
 		switch k.Code {
 		case tea.KeyEsc:
-			if m.filter != "" {
-				m.filter = ""
-				m.input.SetValue("")
-			} else {
-				m.filtering = false
-				m.input.Blur()
-			}
+			m.filter = ""
+			m.input.SetValue("")
+			m.filtering = false
+			m.input.Blur()
 			m.rebuildConversations()
 		case tea.KeyEnter:
 			m.filtering = false

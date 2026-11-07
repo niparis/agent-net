@@ -873,3 +873,12 @@ func TestCTOBoxShowsTheStartOfALongError(t *testing.T) {
 		t.Errorf("a roomy box did not show the whole error:\n%s", tall)
 	}
 }
+
+func TestInitialCTOPollDoesNotShowNotRegistered(t *testing.T) {
+	m := newModel(120, 34)
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, err: errors.New("the CTO session is not registered; start the CTO from the owner interface")})
+	if m.cto.err != "" || strings.Contains(strings.Join(m.ctoView(120, 8), "\n"), "not registered") {
+		t.Fatalf("initial dormant CTO poll showed an error: %q", m.cto.err)
+	}
+}

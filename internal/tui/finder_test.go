@@ -326,6 +326,16 @@ func TestFinderShowsAtMostTwelveRows(t *testing.T) {
 	}
 }
 
+func TestFinderHasMatchColumnHeader(t *testing.T) {
+	m := newModel(120, 34)
+	m.finder = true
+	m.finderQuery = "st"
+	view := ansi.Strip(strings.Join(m.finderView(120), "\n"))
+	if !strings.Contains(view, "AGE MATCH") {
+		t.Fatalf("finder match column has no header:\n%s", view)
+	}
+}
+
 func TestFinderGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 40}} {
 		m := newModel(size[0], size[1])

@@ -365,7 +365,7 @@ func (m Model) finderRow(a protocol.AgentView, cols []finderColumn, selected boo
 			value = a.Harness
 		case "STATE":
 			value = finderState(a)
-		case "":
+		case "MATCH":
 			if m.finderQuery != "" && !sessionMatchesName(a, m.finderQuery) {
 				labels := []string{"name", "project", "folder", "machine", "task"}
 				for j, field := range sessionSearchFields(a) {
@@ -378,7 +378,7 @@ func (m Model) finderRow(a protocol.AgentView, cols []finderColumn, selected boo
 		case "AGE":
 			value = needsAge(m.now(), sessionActivity(a))
 		}
-		if c.name != "" {
+		if c.name != "" && c.name != "MATCH" {
 			value = dashIfEmpty(value)
 		}
 		if c.name == "AGE" {
@@ -388,7 +388,7 @@ func (m Model) finderRow(a protocol.AgentView, cols []finderColumn, selected boo
 			if c.name == "NAME" {
 				cells[i] = highlightFinderName(cells[i], m.finderQuery)
 			}
-			if c.name == "" {
+			if c.name == "MATCH" {
 				cells[i] = sDim.Render(cells[i])
 			}
 		}
@@ -456,7 +456,7 @@ func (m Model) finderView(w int) []string {
 			used += c.width
 		}
 		if inner-used >= 17 {
-			cols = append(cols, finderColumn{"", 16})
+			cols = append(cols, finderColumn{"MATCH", 16})
 			used += 17
 		}
 		inner = used

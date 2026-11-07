@@ -1044,6 +1044,8 @@ func sessionColumns(avail, nameWant, projectWant int, narrow bool) []column {
 	if narrow {
 		cols[0].max = min(cols[0].max, 14)
 		cols[3].min, cols[3].max = 16, 16
+	} else {
+		cols[7].min = 20
 	}
 	for i := range cols {
 		cols[i].width = cols[i].min
@@ -1126,14 +1128,10 @@ func (m Model) sessionsTable(w, n int) []string {
 	indicator := "view: " + m.sessionViewName()
 	if w > 80 {
 		indicator += "  (v)"
-	}
-	if w <= 80 {
+	} else {
 		indicator = ""
 	}
 	avail := w - 2
-	if indicator != "" && w > 80 {
-		avail -= ansi.StringWidth(indicator) + 2
-	}
 	statusWidth := 6
 	if m.anySessionWaiting() {
 		statusWidth = 9
@@ -1195,9 +1193,6 @@ func (m Model) sessionsTable(w, n int) []string {
 			head += cell(label, c.width)
 		}
 	}
-	if indicator != "" {
-		head = padStyled(head, max(0, w-ansi.StringWidth(indicator))) + indicator
-	}
 	out := []string{sDim.Render(clip(head, w))}
 	rows := m.tableRows()
 	if !m.haveData {
@@ -1234,10 +1229,16 @@ func (m Model) sessionsTable(w, n int) []string {
 			visibleIndex++
 		}
 	}
+	viewShown := false
 	for i := top; i < len(rows) && len(out) < n+1; i++ {
 		r := rows[i]
 		if r.header {
-			out = append(out, m.groupLine(r.g, w))
+			line := m.groupLine(r.g, w)
+			if indicator != "" && !viewShown {
+				line = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(indicator)-1)) + sDim.Render(" "+indicator)
+				viewShown = true
+			}
+			out = append(out, line)
 		} else {
 			out = append(out, m.sessionLine(r.agent, r.mark, cols, w, visibleIndex, r.g.mine))
 			visibleIndex++

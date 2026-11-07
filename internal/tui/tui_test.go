@@ -672,19 +672,15 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("typed keys acted as commands: filter %q quit %v offline %v", m.filter, m.quitting, m.showOffline)
 	}
 	m = keys(m, "esc")
-	if !m.filtering || m.filter != "" || len(names(m)) != 5 {
-		t.Fatalf("esc must clear the filter: %q %v", m.filter, names(m))
-	}
-	m = keys(m, "esc")
-	if m.filtering {
-		t.Fatal("second esc did not leave the filter field")
+	if m.filtering || m.filter != "" || len(names(m)) != 5 {
+		t.Fatalf("esc must clear and leave the filter: %q filtering=%v", m.filter, m.filtering)
 	}
 
 	m = keys(m, "/", "g", "p", "t")
 	if got := strings.Join(names(m), ","); got != "ci-runner" {
 		t.Fatalf("filter gpt: %s", got) // matches the model openai/gpt-6
 	}
-	if v := m.testView(); !strings.Contains(v, "/gpt") || !strings.Contains(v, "enter keeps the filter") {
+	if v := m.testView(); !strings.Contains(v, "/gpt") || !strings.Contains(v, "esc clears and leaves") {
 		t.Fatalf("the filter prompt is not shown:\n%s", v)
 	}
 	m = keys(m, "enter")

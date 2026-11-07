@@ -4,8 +4,8 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   top: ci-runner 5%    no claude · no opencode                                   │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK                                                        view: active  (v)
- Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  NAME               TYPE   PROJECT    MODEL                    STATUS   CPU   RAM TASK
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── view: active  (v)
 ▸ tenebrae-53        agent  tenebrae   claude · opus-5-5        busy     38%  1.2G
   ◐ strategies       agent  strategies claude · sonnet-5-5      idle    240%  4.6G backtest v2
   web                agent  shop       opencode · sonnet-5      idle       ?     ?
@@ -15,7 +15,7 @@
 
                                     ╭─Find session───────────────────────────────────────────────────────────────4 matches─╮
                                     │ › st▌                                                                                │
-                                    │   NAME        PROJECT    MACHINE            HARNESS   STATE     AGE                  │
+                                    │   NAME        PROJECT    MACHINE            HARNESS   STATE     AGE MATCH            │
                                     │ › strategies  strategies Mac                claude    idle       1m                  │
                                     │   tenebrae-53 tenebrae   Mac                claude    busy       2m matched: folder  │
                                     │   ci-runner   agent-net  build-vm           pi        idle       4m matched: folder  │
