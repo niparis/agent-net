@@ -1429,9 +1429,10 @@ evidence remains tied to its recorded revision and commit.
 A CTO `merger_start` proposal pins the registered project and machine before
 approval. Approval starts Claude there, registers the session, and assigns
 test and merge. The built-in brief requires its own merge worktree, excludes
-build outputs, binaries and secrets, and tells it to report failures without
-fixing code. The one exception is a mechanical renumber when a migration or
-decision number clashes with the default branch. These are session
+build outputs, binaries and secrets, and tells it to resolve merge conflicts in its own worktree, preserving both
+intents and reporting each resolved file. Mechanical migration and decision
+renumbers remain a special case. It runs targeted tests and CI after resolution
+and reports test failures without rewriting features. These are session
 instructions, not a git permission boundary.
 
 Typed Repo/Agent Graph cutover is automatic. No owner request, Settings action

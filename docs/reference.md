@@ -2759,14 +2759,21 @@ assigned that step, after full CI passes on the exact merged commit, and reports
 the release tag. GitHub may own only test and merge.
 It retries a failed push a few times, then reports fail.
 
-It reports each step with commit hashes read from git and reports failures
-without fixing code or writing features. Git itself is not blocked. The one
-exception is a mechanical renumber when a change's only conflict with the
-default branch is a migration or decision number clash. It then rebases in its
-own merge worktree, renumbers the store.go migration comment, the
-migrations.lock line, the version numbers asserted in tests and the
-docs/decisions file number and links to it, runs the targeted tests and commits
-that renumber on its own. It changes no SQL, logic or other line. The Graph
+It reports each step with commit hashes read from git. When a change conflicts
+with the default branch or its merge batch, it resolves the conflict in its
+own merge worktree. It reads the change's diff against its base and what
+landed on the default branch since, keeps both intents, and commits the
+resolution separately with a message naming the files and what it kept.
+The merge report note names each resolved file and summarizes its resolution.
+It runs targeted tests for the touched packages and CI as above. If tests or
+CI fail after resolution, it reports test fail with the reason. It does not
+rewrite features to make tests pass. It never writes features.
+A mechanical renumber remains a special case: it may rebase in its own merge
+worktree and renumber the store.go migration comment, migrations.lock line,
+version numbers asserted in tests, and docs/decisions file number and links.
+It changes no SQL, logic or other line for that renumber, runs targeted tests,
+and commits it separately with the old and new numbers in the message.
+The Graph
 tab's selected project and project details card show the accept, test and merge
 owners. An offline merger is marked "offline, tasks wait".
 
