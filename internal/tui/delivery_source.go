@@ -182,10 +182,8 @@ func hasStep(steps []protocol.StepStatus, name string) bool {
 	return false
 }
 
-// currentStep is the step the change is in: the first step that may start now.
-// With none, a running step, then the step that needs the owner, else one that
-// failed, else one that waits. The state goes with it, so the list can say
-// "waiting for" or "running" from what is true.
+// currentStep prioritizes owner intervention and failed work over ready steps.
+// A failure sends the revision back to its author even when accept is ready.
 func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, string, bool) {
 	ownerOf := func(r protocol.StepRef) (protocol.StepOwner, string) {
 		for _, st := range v.Steps {
@@ -195,11 +193,23 @@ func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, s
 		}
 		return protocol.StepOwner{}, ""
 	}
+	for _, state := range []string{protocol.StepStateNeedsOwner, protocol.StepStateFailed} {
+		var latest *protocol.StepStatus
+		for i := range v.Steps {
+			st := &v.Steps[i]
+			if st.State == state && (latest == nil || (st.Evidence != nil && (latest.Evidence == nil || st.Evidence.At > latest.Evidence.At))) {
+				latest = st
+			}
+		}
+		if latest != nil {
+			return latest.StepRef, latest.Owner, latest.State, true
+		}
+	}
 	if len(v.Next) > 0 {
 		owner, state := ownerOf(v.Next[0])
 		return v.Next[0], owner, state, true
 	}
-	for _, state := range []string{protocol.StepStateRunning, protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateWaiting} {
+	for _, state := range []string{protocol.StepStateRunning, protocol.StepStateWaiting} {
 		for _, st := range v.Steps {
 			if st.State == state {
 				return st.StepRef, st.Owner, st.State, true
@@ -231,7 +241,7 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 		v.Next = filtered
 	}
 	out := deliveryChange{ID: c.ID, Title: c.Title, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
-		State: c.State, Caller: c.Caller, MergedCommit: c.MergedCommit, Marks: deliveryMarks(steps), Full: v.Pipeline != nil}
+		State: c.State, Caller: c.Caller, Origin: c.Origin, MergedCommit: c.MergedCommit, Marks: deliveryMarks(steps), Full: v.Pipeline != nil}
 	for _, st := range steps {
 		out.Steps = append(out.Steps, deliveryStep{Name: st.StepRef.String(), Owner: deliveryOwnerLabel(st.Owner), State: st.State, Note: st.Note})
 	}
@@ -241,6 +251,9 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 		for _, st := range steps {
 			if st.StepRef == r {
 				out.ClaimedBy = deliveryClaimedSession(st.Note)
+				if state == protocol.StepStateFailed && st.Evidence != nil {
+					out.Finding = st.Evidence.Note
+				}
 				break
 			}
 		}

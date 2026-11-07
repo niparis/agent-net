@@ -28,9 +28,9 @@ func TestQualityCardsRankAndPick(t *testing.T) {
 func TestQualityDetailsOpenClose(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = quotasTab
-	m = keys(m, "d")
+	m = keys(m, "tab", "tab")
 	if !m.qualityDetail {
-		t.Fatal("d did not open details")
+		t.Fatal("tabs did not open details")
 	}
 	m = keys(m, "esc")
 	if !m.qualityDetail {

@@ -5,20 +5,20 @@
 │ No machine reads quotas yet: quota-axi is not installed on any machine (see  │
 │ docs/setup.md, Quota).                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Quality analysis · read only · d details─────────────────────────────────────╮
-│ agent ◂ all agents ▸                                                         │
-│ ╭─simple · 9 tasks──────────────────╮ ╭─normal · 196 tasks─────────────────╮ │
-│ │   luna       1 min ·  3 this week │ │   deepseek   8 min · 25 this week  │ │
-│ │                                   │ │   terra      9 min · 18 this week  │ │
-│ │                                   │ │   1 late bug                       │ │
-│ │                                   │ │   luna       2 min ·  6 this week  │ │
-│ │                                   │ │ 2 more: ▸ sol 4 min · opus 0 min   │ │
-│ ╰───────────────────────────────────╯ ╰────────────────────────────────────╯ │
-│ ╭─hard · 42 tasks───────────────────╮ ╭─very complex · 5 tasks─────────────╮ │
-│ │ ▸ terra      8 min ·  9 this week │ │   terra      7 min ·  2 this week  │ │
-│ more below · up/down to scroll                                               │
+╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────╮
+│ NAME            HARNESS  MODEL               T     S     N     H     V       │
+│ T:trivial S:simple N:normal H:hard V:very complex                            │
+│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  d Quality  c CTO  ? help  q quit
+up/down select  p protect  s show unset  c CTO  ? help  q quit

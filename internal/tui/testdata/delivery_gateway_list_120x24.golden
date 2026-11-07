@@ -1,11 +1,11 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
 ╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────3 shown─╮
-│   TITLE                                      REPO        STEP      STATUS                              AGE     DONE  │
+│   TITLE                           REPO        STEP      STATUS                                         AGE     DONE  │
 │ Needs you · 1                                                                                                        │
-│ ▸ Say what a delivery row waits for          agent-net   approve   waiting for you                     6m      ●●●○○ │
+│ ▸ Say what a delivery row waits…  agent-net   approve   waiting for you                                6m      ●●●○○ │
 │ Moving · 2                                                                                                           │
-│   Show the provider in each quota row        agent-net   review    waiting for merger                  2h0m    ●○○○  │
-│   Fix the deploy gate                        voicemechs  review    review failed, back to an unknown…  5h0m    ●✗●○○ │
+│   Show the provider in each quo…  agent-net   review    waiting for merger                             2h0m    ●○○○  │
+│   Fix the deploy gate             voicemechs  review    back to an unknown session to restart the wo…  5h0m    ●✗●○○ │
 │ Stuck · 0                                                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 

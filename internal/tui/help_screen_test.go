@@ -103,9 +103,9 @@ func TestHelpEscClosesEitherView(t *testing.T) {
 }
 
 func TestQualityDetailsHelpShowsItsOwnSection(t *testing.T) {
-	m := keys(newModel(120, 40), "3", "d")
+	m := keys(newModel(120, 40), "3", "tab", "tab")
 	if !m.qualityDetail {
-		t.Fatal("d did not open Quality details")
+		t.Fatal("tabs did not open Quality details")
 	}
 	m = keys(m, "?")
 	if !m.help {

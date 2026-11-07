@@ -105,7 +105,7 @@ func (m Model) hints() []hint {
 		}
 		return []hint{{key: "tab", label: "sub tab"}, {key: "↑↓", label: "select run"}, {key: "→", label: "details"}, sessionHelp, sessionQuit}
 	case m.tab == quotasTab:
-		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), bindingHint(contextQuotas, "quality details"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
+		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == settingsTab:
 		item := m.settingsItems()[min(max(m.settingsRow, 0), len(m.settingsItems())-1)]
 		if item.kind == "machine" {

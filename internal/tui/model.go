@@ -1433,20 +1433,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.quotaShowUnset = !m.quotaShowUnset
 			m.quotaScroll = 0
 			m.refreshWorkerForecast()
-		case "previous agent", "next agent":
-			if m.focus != focusSessions {
-				return m, nil
-			}
-			n := len(m.snap.Calibration.Quality.Agents) + 1
-			if key == "next agent" {
-				m.qualityAgent = (m.qualityAgent + 1) % n
-			} else {
-				m.qualityAgent = (m.qualityAgent + n - 1) % n
-			}
-			m.quotaScroll = 0
-		case "quality details":
-			m.qualityDetail = !m.qualityDetail
-			m.quotaScroll = 0
 		case actQuit:
 			m.quitting = true
 			return m, tea.Quit

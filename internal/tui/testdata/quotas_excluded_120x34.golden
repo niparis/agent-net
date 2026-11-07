@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  d Quality  c CTO  ? help  q quit
+up/down select  p protect  s show unset  c CTO  ? help  q quit

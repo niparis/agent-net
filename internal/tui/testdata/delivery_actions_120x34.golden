@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
+╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────3 shown─╮
+│   TITLE                                 REPO        STEP      STATUS                                    AGE     DONE │
+│ Needs you · 1                                                                                                        │
+│ ▸ Resume offline sessions               demo        verify    waiting for you                           -       ○○   │
+│ Moving · 2                                                                                                           │
+│   Fix the entry test                    demo        test      back to tenebrae-53 (fix)                 -       ○✗   │
+│   Enter did not resume the offline session                                                                           │
+│   Repair worker restart                 demo        test      back to strategies to restart the worker  -       ○✗   │
+│   Enter did not resume the offline session                                                                           │
+│ Stuck · 0                                                                                                            │
+│ 1 done hidden · a shows all                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter evidence  a show all  R refresh  ? help  q quit

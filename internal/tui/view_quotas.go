@@ -351,9 +351,6 @@ func (m Model) quotasView(w, h int) []string {
 		title += " · f set worker floor"
 	}
 	out = append(out, panel(title, subscription, w, roleAccent)...)
-	if calibration := m.calibrationView(w); len(calibration) > 0 {
-		out = append(out, calibration...)
-	}
 
 	workers := m.quotaModelsView(w)
 	out = append(out, workers...)

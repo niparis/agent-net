@@ -26,6 +26,7 @@ type deliveryChange struct {
 	Head         string // the commit of the current revision
 	Revision     int
 	State        string // the change state: open, merged, done or stopped
+	Origin       protocol.ChangeOrigin
 	Caller       string // the session that gets the final notice
 	Step         string // the step the change is in
 	// StepOwner is who owns that step, as text: a node name, "caller",
@@ -35,6 +36,7 @@ type deliveryChange struct {
 	// StepState is the state of Step: ready, running, needs_owner, passed,
 	// failed, waiting, skipped or closed. Empty when no step is current.
 	StepState string
+	Finding   string // the current failed step's short finding
 	ClaimedBy string
 	Waiting   time.Duration
 	Evidence  []deliveryEvidence
@@ -193,6 +195,9 @@ func deliveryGroupOf(ch deliveryChange, ownerSession string) deliveryGroup {
 	if ch.StepState == protocol.StepStateFailed {
 		return groupMoving
 	}
+	if ch.StepState == protocol.StepStateNeedsOwner {
+		return groupNeedsYou
+	}
 	// A passed, skipped or blocked step has no action for anyone yet.
 	switch ch.StepState {
 	case "", protocol.StepStatePassed, protocol.StepStateSkipped, protocol.StepStateWaiting:
@@ -215,10 +220,7 @@ func deliveryGroupOf(ch deliveryChange, ownerSession string) deliveryGroup {
 }
 
 func (m Model) deliveryGroupFor(ch deliveryChange) deliveryGroup {
-	if ch.StepState == protocol.StepStateFailed {
-		return groupMoving
-	}
-	if group := deliveryGroupOf(ch, m.snap.OwnerSession); group == groupNeedsYou || group == groupDone {
+	if group := deliveryGroupOf(ch, m.snap.OwnerSession); group == groupNeedsYou || group == groupDone || ch.StepState == protocol.StepStateFailed {
 		return group
 	}
 	for _, item := range m.inboxItems {
