@@ -265,6 +265,8 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 			if w.MergedCommit == "" || w.ChangeEndedAt.IsZero() {
 				return nil
 			}
+			// A squash lands on the default branch as one normal commit, so
+			// this ancestry check covers both a merge and a squash.
 			if _, err := gitOut(ctx, w.Project, "merge-base", "--is-ancestor", w.MergedCommit, defaultRef); err != nil {
 				return nil
 			}

@@ -721,3 +721,34 @@ func TestCleanupChangeRejectsOldGateway(t *testing.T) {
 		t.Fatal("old gateway accepted as branch lookup")
 	}
 }
+
+func TestCleanupWorktreeSquash(t *testing.T) {
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_squash")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_squash", dir)
+	if err := os.WriteFile(filepath.Join(dir, "change"), []byte("change"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "change")
+	gitIn(t, dir, "commit", "-q", "-m", "change")
+	gitIn(t, project, "merge", "--squash", "agent-net/w_squash")
+	gitIn(t, project, "commit", "-q", "-m", "squash")
+	merged := gitHead(t, project, "HEAD")
+	now := time.Now()
+	d := &Daemon{cfg: Config{StateDir: state}, workers: map[string]*worker{}}
+	row := cleanupWorktree{ID: "w_squash", Project: project, Path: dir, Branch: "agent-net/w_squash", DefaultBranch: "main",
+		EndedAt: now.Add(-4 * 24 * time.Hour), ChangeState: protocol.ChangeDone, ChangeEndedAt: now.Add(-31 * 24 * time.Hour), MergedCommit: merged}
+	if err := d.cleanupWorktree(context.Background(), row, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("squash worktree remains: %v", err)
+	}
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/agent-net/w_squash"); err == nil {
+		t.Fatal("squash branch remains")
+	}
+}

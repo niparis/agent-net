@@ -281,8 +281,38 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, info protocol.Sessi
 		if err != nil {
 			return out, err
 		}
-		contains := deliveryMergeContainsHead(ctx, folder, q.Commit, q.Fields[protocol.FieldMergedCommit])
+		kind, err := deliveryMergeKind(ctx, folder, q.Commit, q.Fields[protocol.FieldMergedCommit])
+		if err != nil {
+			return out, err
+		}
+		contains := kind != ""
 		q.MergeContainsHead = &contains
+		delete(q.Fields, "merge_kind")
+		if contains {
+			q.Fields["merge_kind"] = kind
+		}
+	}
+	// Fill an omitted release tag when the local repository has a tag that
+	// contains the merged commit. An explicit tag remains the reporter's
+	// evidence, and repositories without local tags can still report a release.
+	if q.Step == protocol.StepRelease && q.AfterMerge && q.Result == protocol.StepResultPass && q.Fields[protocol.FieldTag] == "" {
+		var view protocol.ChangeView
+		if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: q.ChangeID}, &view); err != nil {
+			return out, err
+		}
+		if q.Commit == view.Change.MergedCommit && protocol.ValidCommit(q.Commit) {
+			folder, err := d.deliveryMergeRepo(ctx, sid, info, view.Change.Project)
+			if err != nil {
+				return out, err
+			}
+			tags, err := gitOut(ctx, folder, "tag", "--contains", q.Commit, "--sort=-version:refname")
+			if err == nil && tags != "" {
+				if q.Fields == nil {
+					q.Fields = make(map[string]string)
+				}
+				q.Fields[protocol.FieldTag] = strings.SplitN(tags, "\n", 2)[0]
+			}
+		}
 	}
 	if err := d.deliveryCall(ctx, protocol.FrameStepReport, q, &out); err != nil {
 		return out, err
@@ -571,14 +601,40 @@ func (d *Daemon) deliveryMergeRepo(ctx context.Context, sid string, info protoco
 	return folder, nil
 }
 
-// Object existence alone is not proof: merged must be a commit object, and
-// the exact reported change head must be reachable from it. Git failures,
-// missing objects and incomplete clones all give negative proof.
-func deliveryMergeContainsHead(ctx context.Context, folder, head, merged string) bool {
+// deliveryMergeKind verifies either ancestry or the exact tree of a squash.
+func deliveryMergeKind(ctx context.Context, folder, head, merged string) (string, error) {
 	kind, err := gitOut(ctx, folder, "cat-file", "-t", merged)
 	if err != nil || kind != "commit" {
-		return false
+		return "", nil
 	}
-	_, err = gitOut(ctx, folder, "merge-base", "--is-ancestor", head, merged)
-	return err == nil
+	if _, err = gitOut(ctx, folder, "merge-base", "--is-ancestor", head, merged); err == nil {
+		return "merge", nil
+	}
+	parents, err := gitOut(ctx, folder, "rev-list", "--parents", "-n", "1", merged)
+	parts := strings.Fields(parents)
+	if err != nil || len(parts) != 2 {
+		return "", nil
+	}
+	version, err := gitOut(ctx, folder, "--version")
+	var major, minor int
+	if err != nil || func() bool { _, e := fmt.Sscanf(version, "git version %d.%d", &major, &minor); return e != nil }() {
+		return "", fmt.Errorf("cannot determine git version for squash verification: %s", version)
+	}
+	if major < 2 || (major == 2 && minor < 38) {
+		return "", fmt.Errorf("squash verification requires git 2.38 or newer; found %s", version)
+	}
+	tree, err := gitOut(ctx, folder, "merge-tree", "--write-tree", parts[1], head)
+	if err != nil {
+		return "", nil
+	}
+	actual, err := gitOut(ctx, folder, "rev-parse", merged+"^{tree}")
+	if err == nil && tree == actual {
+		return "squash", nil
+	}
+	return "", nil
+}
+
+func deliveryMergeContainsHead(ctx context.Context, folder, head, merged string) bool {
+	kind, _ := deliveryMergeKind(ctx, folder, head, merged)
+	return kind != ""
 }
