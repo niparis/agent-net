@@ -229,7 +229,7 @@ func runFakeOpenCode() {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{id: map[string]any{"type": "running"}}})
 	})
-	mux.HandleFunc("POST /api/session/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) {
+	fakeOpenCodeCapabilities(mux, os.Getenv("FAKE_OC_OLD_ROUTES") != "", auth, func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
@@ -866,4 +866,35 @@ func fakePartialLeft(cwd string) int {
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 	return n
+}
+
+// fakeOpenCodeCapabilities supplies either the old or current route set.
+func fakeOpenCodeCapabilities(mux *http.ServeMux, old bool, auth func(*http.Request) bool, interrupt http.HandlerFunc) {
+	action := "interrupt"
+	if old {
+		action = "abort"
+	}
+	mux.HandleFunc("POST /api/session/{id}/"+action, interrupt)
+	if old {
+		return
+	}
+	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		paths := map[string]map[string]any{}
+		for _, route := range []struct{ path, method string }{
+			{"/api/info", "get"}, {"/api/agent", "get"}, {"/api/model", "get"}, {"/api/location", "get"},
+			{"/api/session", "post"}, {"/api/session/active", "get"}, {"/api/session/{sessionID}", "get"}, {"/api/session/{sessionID}", "delete"},
+			{"/api/session/{sessionID}/message", "get"}, {"/api/session/{sessionID}/prompt", "post"}, {"/api/session/{sessionID}/agent", "post"},
+			{"/api/session/{sessionID}/model", "post"}, {"/api/session/{sessionID}/compact", "post"}, {"/api/session/{sessionID}/interrupt", "post"},
+		} {
+			if paths[route.path] == nil {
+				paths[route.path] = map[string]any{}
+			}
+			paths[route.path][route.method] = map[string]any{}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"paths": paths})
+	})
 }
