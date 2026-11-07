@@ -1046,7 +1046,14 @@ UPDATE sessions SET harness_activity=last_seen WHERE status='busy';
 
 `, `
 SELECT 1 /* session archive column */;
-`, `SELECT 1 /* session owner use columns */;`}
+`, `SELECT 1 /* session owner use columns */;`, `
+-- Automatic typed Graph cutover: remember when this gateway version first started.
+CREATE TABLE IF NOT EXISTS graph_cutover_state (
+ id INTEGER PRIMARY KEY CHECK(id=1),
+ gateway_version TEXT NOT NULL DEFAULT '',
+ upgraded_at INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO graph_cutover_state(id) VALUES(1);
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {

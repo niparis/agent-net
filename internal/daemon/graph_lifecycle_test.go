@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/niparis/agent-net/internal/protocol"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,9 +33,7 @@ func TestCTOGraphLifecycleRequiresProposalEvenInWindow(t *testing.T) {
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
 	cli := cliClient(t, n)
 	ctx := context.Background()
-	if _, err := n.d.call(ctx, "graph.refs.enable", map[string]string{"owner": n.d.ownerSessionID(), "backup": filepath.Join(t.TempDir(), "before-cutover")}); err != nil {
-		t.Fatal(err)
-	}
+	waitGraphCutover(t, g)
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()

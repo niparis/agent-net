@@ -251,8 +251,8 @@ func teamWriteError(err error) string {
 	}
 	text := explain(err)
 	switch {
-	case strings.Contains(text, "typed Graph cutover has not been enabled"):
-		return "Teams need the typed Graph cutover before they can be saved."
+	case strings.Contains(text, "typed Graph cutover is waiting for all machines to upgrade"):
+		return "Teams are waiting for all machines to upgrade before they can be saved."
 	case strings.Contains(text, "UNIQUE constraint failed: teams"):
 		return "A team with that name already exists, active or archived."
 	}
@@ -369,7 +369,7 @@ func (m Model) teamsView(w, rows int) []string {
 	out := []string{section("Teams", w)}
 	const nameW, memberW = 18, 9
 	if len(teams) == 0 {
-		out = append(out, sDim.Render(clip("  No teams yet. c creates one. Team writes need the typed Graph cutover.", w)))
+		out = append(out, sDim.Render(clip("  No teams yet. c creates one. Team writes wait for all machines to upgrade.", w)))
 	} else {
 		out = append(out, sDim.Render(clip("  "+cell("name", nameW)+cell("members", memberW)+"purpose", w)))
 		i := min(max(m.teamIndex, 0), len(teams)-1)

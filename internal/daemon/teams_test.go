@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,9 +23,7 @@ func TestGraphTeamOwnerRelayAndCTORead(t *testing.T) {
 	if _, err := w.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.d.call(context.Background(), "graph.refs.enable", map[string]any{"owner": w.d.ownerSessionID(), "backup": filepath.Join(t.TempDir(), "backup")}); err != nil {
-		t.Fatal(err)
-	}
+	waitGraphCutover(t, g)
 	w.cli.mustCall("team_write", q)
 	if err := w.d.registerCTOSession(context.Background()); err != nil {
 		t.Fatal(err)

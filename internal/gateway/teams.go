@@ -56,7 +56,7 @@ func (s *Store) WriteTeam(q protocol.TeamWrite, actor string) error {
 		return err
 	}
 	if !on {
-		return reject("typed Graph cutover has not been enabled")
+		return reject("typed Graph cutover is waiting for all machines to upgrade")
 	}
 	now := s.now().UnixNano()
 	oldValue, newValue, oldTeam := "", "", ""

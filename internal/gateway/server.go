@@ -147,6 +147,16 @@ type Gateway struct {
 	rotationMu        sync.Mutex
 	machineRotationMu sync.Mutex
 	machineAuthMu     sync.Mutex // authentication, removal and confirmation ordering
+	// autoCutover is set on a fully built gateway. Partial gateways in tests
+	// never start the automatic typed Graph cutover.
+	autoCutover bool
+	// graphCutoverMu coalesces the automatic cutover checks so a burst of
+	// hellos starts one run and leaves one follow-up pending.
+	graphCutoverMu      sync.Mutex
+	graphCutoverRunning bool
+	graphCutoverPending bool
+	// graphCutoverCheckMu serializes the cutover checks themselves.
+	graphCutoverCheckMu sync.Mutex
 	// transferMu keeps the parts of every xfer.* frame in order.
 	transferMu sync.Mutex
 
@@ -263,6 +273,10 @@ func New(opts Options) (*Gateway, error) {
 	if opts.TempFolders != nil {
 		store.tempFolders = opts.TempFolders
 	}
+	if _, err := store.noteGatewayVersion(opts.Version, store.now()); err != nil {
+		store.Close()
+		return nil, err
+	}
 	if err := store.SetAllOffline(); err != nil {
 		store.Close()
 		return nil, err
@@ -292,7 +306,7 @@ func New(opts Options) (*Gateway, error) {
 		store.Close()
 		return nil, err
 	}
-	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
+	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger, autoCutover: true,
 		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*offlineTimer{},
 		enrollLimit: newEnrollLimiter(opts.Now),
 		stepBatches: make(map[string]*stepTaskBatch), lastReportBySession: make(map[string]time.Time),
@@ -742,7 +756,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "graph.refs.enable" || h.Type == "graph.refs.status" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
+		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -909,6 +923,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		if err := st.SetNodeTailscaleIP(nc.id, p.TailscaleIP); err != nil {
 			return nil, err
+		}
+		// A completed hello may be the last report the cutover was waiting for.
+		// The check runs in the background because this handler can hold the
+		// machine authentication lock.
+		if on, err := st.graphRefsEnabled(); err == nil && !on {
+			g.triggerGraphCutover(context.Background())
 		}
 		// The daemon uses the name the gateway lists (the owner's display name
 		// when there is one) where it compares host names.
@@ -1574,97 +1594,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return st.TeamHistory(q.ID, 1000)
 		}
 		return map[string]bool{"ok": true}, st.WriteTeam(q, "owner")
-	case "graph.refs.status":
-		p, err := decode[struct {
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		on, err := st.graphRefsEnabled()
-		if err != nil {
-			return nil, err
-		}
-		blockers, err := g.graphRefsBlockers(ctx, st.db, true)
-		if err != nil {
-			return nil, err
-		}
-		if _, graphErr := st.graphForRef(nil); graphErr != nil {
-			blockers = append(blockers, graphErr.Error())
-		}
-		dataDir, err := filepath.Abs(g.opts.DataDir)
-		if err != nil {
-			return nil, err
-		}
-		backup := filepath.Join(filepath.Dir(dataDir), "gateway-before-typed-graph-"+st.now().Format("20060102-1504"))
-		if on {
-			if err := st.db.QueryRowContext(ctx, `SELECT backup FROM graph_ref_gate WHERE id=1`).Scan(&backup); err != nil {
-				return nil, err
-			}
-		}
-		return map[string]any{"on": on, "blockers": blockers, "backup": backup}, nil
-
-	case "graph.refs.enable":
-		p, err := decode[struct {
-			Owner  string `json:"owner"`
-			Backup string `json:"backup"`
-		}](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		if on, err := st.graphRefsEnabled(); err != nil {
-			return nil, err
-		} else if on {
-			return nil, reject("typed Graph cutover is already enabled")
-		}
-		// Keep a pre-hello connection from replacing a qualified link during
-		// cutover. Offline nodes use their stored report; live links need hello.
-		g.machineAuthMu.Lock()
-		defer g.machineAuthMu.Unlock()
-		blockers, err := g.graphRefsBlockers(ctx, st.db, true)
-		if err != nil {
-			return nil, err
-		}
-		if len(blockers) > 0 {
-			return nil, reject("%s", blockers[0])
-		}
-
-		if _, err = st.graphForRef(nil); err != nil {
-			return nil, err
-		}
-		if err = g.Backup(p.Backup); err != nil {
-			return nil, err
-		}
-		// Recheck after the snapshot so an enrollment or downgrade cannot race it.
-		tx, err := st.db.BeginTx(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-		defer tx.Rollback()
-		blockers, err = g.graphRefsBlockers(ctx, tx, false)
-		if err != nil {
-			return nil, err
-		}
-		if len(blockers) > 0 {
-			return nil, reject("upgrade required: enrollment changed during backup")
-		}
-
-		// Standalone architect charters become the actor's canonical charter.
-		if _, err = tx.Exec(`INSERT OR IGNORE INTO agent_charter(agent_id,attr,value,updated_at,updated_by) SELECT c.node,c.attr,c.value,c.updated_at,c.updated_by FROM graph_charter c JOIN graph_nodes n ON n.name=c.node AND n.kind='architect'`); err != nil {
-			return nil, err
-		}
-		if _, err = tx.Exec(`UPDATE graph_history SET target_kind=CASE WHEN node IN (SELECT name FROM graph_nodes WHERE kind='architect') THEN 'agent' ELSE 'repo' END WHERE type='charter' AND target_kind=''`); err != nil {
-			return nil, err
-		}
-		_, err = tx.Exec(`UPDATE graph_ref_gate SET enabled=1,backup=? WHERE id=1`, p.Backup)
-		if err != nil {
-			return nil, err
-		}
-		if err = tx.Commit(); err != nil {
-			return nil, err
-		}
-		st.graphRefsOn.Store(true)
-		return map[string]bool{"ok": true}, nil
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {
