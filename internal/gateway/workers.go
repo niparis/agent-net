@@ -596,6 +596,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil {
 		return none, err
 	}
+	floors, err := g.store.workerFloors()
+	if err != nil {
+		return none, err
+	}
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
 	var automaticNote, harnessNote string
 	if automatic {
@@ -634,6 +638,28 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if err != nil {
 				return none, err
 			}
+			var allowedCandidates []protocol.WorkerModelCandidate
+			for _, c := range candidates {
+				under, floorSentence, noReading := protocol.CheckWorkerFloor(quotas, floors, c.Harness, c.Model)
+				if under {
+					name := c.Name
+					if name == "" {
+						name = c.Harness + " " + c.Model
+					}
+					skippedProfiles = append(skippedProfiles, fmt.Sprintf("skipped %s: %s", name, floorSentence))
+					continue
+				}
+				if noReading {
+					key := c.Harness + "\x00" + c.Model
+					if existing, ok := resolutionNotes[key]; ok && existing != "" {
+						resolutionNotes[key] = existing + "; no quota reading, floor not applied"
+					} else {
+						resolutionNotes[key] = "no quota reading, floor not applied"
+					}
+				}
+				allowedCandidates = append(allowedCandidates, c)
+			}
+			candidates = allowedCandidates
 			if len(candidates) == 0 {
 				reason := fmt.Sprintf("no registered workers are available on an allowed worker provider on %s", node.Hostname)
 				if len(skippedProfiles) > 0 {
@@ -756,6 +782,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			modelNote += "; "
 		}
 		modelNote += fmt.Sprintf("uses protected provider (%s), saved for your orchestrator", protocol.ProfileProvider(p.Harness, p.Model))
+	}
+	if !automatic {
+		if under, floorSentence, _ := protocol.CheckWorkerFloor(quotas, floors, p.Harness, p.Model); under {
+			isOwner := protocol.IsOwner(owner.Harness) && !p.FromCTO
+			if !isOwner {
+				return none, reject("%s", floorSentence)
+			}
+		}
 	}
 	// A provider with no allowance left refuses the start now, with the reset
 	// time, instead of failing at the first model call (decision 0022).

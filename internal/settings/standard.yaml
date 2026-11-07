@@ -948,7 +948,7 @@ ledger:
   - {row: 91, keys: [judge.analyzer_prompt]}
   - {row: 92, keys: [judge.weights_and_cut_points]}
   - {row: 93, keys: [judge.bottleneck_floor]}
-  - {row: 94, keys: [providers.protected_list]}
+  - {row: 94, keys: [providers.protected_list, providers.worker_floor]}
   - {row: 95, keys: [providers.protected_reason_text]}
   - {row: 96, keys: [providers.pool_mapping]}
   - {row: 97, keys: [providers.worker_allowlist]}

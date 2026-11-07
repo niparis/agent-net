@@ -94,6 +94,7 @@ Legend ────────────────────────�
   tab                    Quotas / Workers log
   left/right             cycle the Quality panel agent
   p                      protect or unprotect this subscription
+  f                      set worker quota floor (0-95%)
   s                      show or hide subscriptions that are not set up
   d                      open Quality details
 

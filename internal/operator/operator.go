@@ -117,6 +117,7 @@ type Snapshot struct {
 	WorkerProfiles     []protocol.WorkerProfile
 	WorkerProviders    []string
 	ProtectedProviders protocol.ProtectedProviders
+	WorkerFloors       protocol.WorkerFloors
 	Scores             []protocol.ModelScore
 	DifficultyMinimums map[string]float64
 	WorkerRotation     protocol.WorkerRotation

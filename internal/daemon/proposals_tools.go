@@ -155,6 +155,28 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 			return errNotConnected
 		}
 		return nil
+	case "worker_floors_set":
+		var p protocol.WorkerFloors
+		if err := json.Unmarshal(call.Args, &p); err != nil {
+			return err
+		}
+		if len(p.Floors) > 128 {
+			return errors.New("bad worker floors")
+		}
+		var providers []string
+		for k, f := range p.Floors {
+			if f < 0 || f > 95 {
+				return errors.New("bad floor: must be 0-95")
+			}
+			providers = append(providers, k)
+		}
+		if err := validateProposalProviders(providers); err != nil {
+			return err
+		}
+		if _, ok := d.integrationsClient(); !ok {
+			return errNotConnected
+		}
+		return nil
 	case "cto_settings":
 		var p protocol.CTOSettingsRequest
 		if err := json.Unmarshal(call.Args, &p); err != nil {

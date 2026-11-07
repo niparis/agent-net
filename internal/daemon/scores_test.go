@@ -116,3 +116,21 @@ func TestQualitySettingsOwnerGate(t *testing.T) {
 		t.Fatalf("enabled: %s %v", raw, err)
 	}
 }
+
+func TestWorkerFloorsOwnerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
+	pi, _ := helloPi(t, n, "p1", "/w/p", false)
+	q := protocol.WorkerFloors{Floors: map[string]int{"anthropic": 40}}
+	if _, err := pi.call(protocol.OpWorkerFloorsSet, q); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("gate: %v", err)
+	}
+	cli := cliClient(t, n)
+	cli.mustCall(protocol.OpWorkerFloorsSet, q)
+	raw := cli.mustCall(protocol.OpWorkerFloorsGet, nil)
+	var out protocol.WorkerFloors
+	if err := json.Unmarshal(raw, &out); err != nil || out.Floors["anthropic"] != 40 {
+		t.Fatalf("got %s %v", raw, err)
+	}
+}

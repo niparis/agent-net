@@ -56,11 +56,11 @@ that token is an owner credential and must not be shared with agents. The owner 
 `cto_graph_history` stay. All use the same gate. The daemon keeps CTO action lines in its private state database;
 these can include message and task text.
 
-Model score overrides, difficulty minimums and the worker provider allowlist are owner settings. The daemon's
-`scores_get`, `scores_set`, `difficulty_get`, `difficulty_set`, `worker_providers_get`, `worker_providers_set`, `protected_providers_get` and `protected_providers_set` methods use the
+Model score overrides, difficulty minimums, the worker provider allowlist and worker quota floors are owner settings. The daemon's
+`scores_get`, `scores_set`, `difficulty_get`, `difficulty_set`, `worker_providers_get`, `worker_providers_set`, `protected_providers_get`, `protected_providers_set`, `worker_floors_get` and `worker_floors_set` methods use the
 owner gate and refuse agent sessions. Their gateway endpoints require an
 enrolled node token, which is an owner credential. Scores and minimums are
-limited to 0 through 100. The CTO's `settings_change` with `area: score` uses
+limited to 0 through 100. Worker floors are limited to 0 through 95. The CTO's `settings_change` with `area: score` uses
 the same settings only after the owner approves its proposal.
 
 The daemon sends each worker brief to the configured difficulty judge before it asks the gateway to choose a model. The default is OpenCode with the DeepSeek judge model. The judge's label is the level the picker uses. A missing judge, a failure, a timeout or low confidence falls back to normal and never blocks the start. The gateway stores the scores and judge reasons, which may reflect the brief, but not the brief itself. Enrolled nodes and agents can read assessments with worker records. The assessment write is a daemon-to-gateway operation: the gateway accepts it only from the node that owns the worker session.

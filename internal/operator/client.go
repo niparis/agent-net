@@ -133,7 +133,7 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		{method: protocol.OpWorkerLog, params: protocol.WorkerLogQuery{Limit: 200}},
 		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
 		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
-		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet},
+		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet}, {method: protocol.OpWorkerFloorsGet},
 		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet}, {method: "outcome_inbox"}, {method: "learned_list"},
 		{method: protocol.OpHeldList}, {method: protocol.OpGraphGet},
 		{method: protocol.OpProjects, params: protocol.QueryProjects{}},
@@ -195,6 +195,8 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 				snap.WorkerProviders = v.Providers
 			case protocol.OpProtectedProvidersGet:
 				err = json.Unmarshal(c.raw, &snap.ProtectedProviders)
+			case protocol.OpWorkerFloorsGet:
+				err = json.Unmarshal(c.raw, &snap.WorkerFloors)
 			case protocol.OpScoresGet:
 				err = json.Unmarshal(c.raw, &snap.Scores)
 			case "difficulty_get":

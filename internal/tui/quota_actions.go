@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,4 +80,64 @@ func (m Model) quotaModelProvider(quota string) string {
 		return "openai"
 	}
 	return quota
+}
+
+func (m Model) quotaFloorKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch keyAction(contextForm, k.String()) {
+	case "cancel":
+		m.mode = modeNormal
+		m.say("Worker floor unchanged.")
+		return m, nil
+	case "submit":
+		valStr := strings.TrimSpace(m.rename.Value())
+		if valStr == "" {
+			valStr = "0"
+		}
+		floor, err := strconv.Atoi(valStr)
+		if err != nil || floor < 0 || floor > 95 {
+			m.fail("Floor must be 0 to 95 percent (0 = off).")
+			return m, nil
+		}
+		m.mode = modeNormal
+		provider := m.quotaConfirm
+		wf := m.snap.WorkerFloors
+		newFloors := make(map[string]int, len(wf.Floors)+1)
+		for k, v := range wf.Floors {
+			newFloors[k] = v
+		}
+		if floor == 0 {
+			delete(newFloors, provider)
+			delete(newFloors, strings.ToLower(m.quotaConfirmDisplay))
+		} else {
+			newFloors[provider] = floor
+		}
+		wf.Floors = newFloors
+		wf.Configured = true
+		m.snap.WorkerFloors = wf
+
+		statusText := fmt.Sprintf("Worker floor set to %d%% for %s.", floor, provider)
+		if floor == 0 {
+			statusText = fmt.Sprintf("Worker floor off for %s.", provider)
+		}
+		m.say(statusText)
+
+		src := m.src
+		return m, func() tea.Msg {
+			caller, ok := src.(interface {
+				Call(context.Context, string, any) (json.RawMessage, error)
+			})
+			if !ok {
+				return actionMsg{err: fmt.Errorf("Cannot change worker floor: operator does not support it")}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := caller.Call(ctx, protocol.OpWorkerFloorsSet, wf); err != nil {
+				return actionMsg{err: fmt.Errorf("Cannot change worker floor: %s", explain(err))}
+			}
+			return actionMsg{text: statusText}
+		}
+	}
+	var cmd tea.Cmd
+	m.rename, cmd = m.rename.Update(k)
+	return m, cmd
 }
