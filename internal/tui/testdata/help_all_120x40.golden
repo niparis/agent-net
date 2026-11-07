@@ -25,6 +25,7 @@ Keys · all screens ────────────────────
   v                      cycle the view: active (default) or all, which includes offline sessions
   H                      show or hide sessions hidden with h, and temp-folder sessions in the all view
   a                      in the offline view, preview and archive offline sessions, or show archived and restore
+  p                      pin or unpin the selected session so it stays at the top of Mine
   d                      show or hide the selected session details
   ◐                      runs in the background: no terminal is attached
 
@@ -34,7 +35,6 @@ Keys · all screens ────────────────────
   +, =                   zoom in
   -                      zoom out
   shift+arrows           pan
-  , .                    select a linked neighbour
   more below
 
 up/down scroll  ? this screen  esc close

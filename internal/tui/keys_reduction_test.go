@@ -13,7 +13,7 @@ func TestSessionsHasOneSettingsKeyAndNoDirectOnes(t *testing.T) {
 	if got := keyAction(contextSessions, "S"); got != "" {
 		t.Fatalf("S still acts: %q", got)
 	}
-	for _, key := range []string{"t", "p", "I", "N", "L", "o", "A"} {
+	for _, key := range []string{"t", "I", "N", "L", "o", "A"} {
 		if got := keyAction(contextSessions, key); got != "" {
 			t.Errorf("removed Sessions key %q still does %q", key, got)
 		}

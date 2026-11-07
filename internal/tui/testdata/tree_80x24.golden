@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop  p pin  ? help  q quit
