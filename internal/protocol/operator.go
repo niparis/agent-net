@@ -123,6 +123,7 @@ const (
 	OpHeldAnswer       = "held_answer"
 	OpGraphGet         = "graph_get"
 	OpTeamWrite        = "team_write"
+	OpLeadSet          = "lead_set"
 	OpTeamHistory      = "team_history"
 	OpCharterSet       = "charter_set"
 	OpCharterHistory   = "charter_history"
@@ -147,7 +148,7 @@ const (
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpWorkerLog, OpProposalList, OpProposalAnswer, OpProposalStartAck, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
-	OpHeldList, OpHeldAnswer, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone,
+	OpHeldList, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick}
 

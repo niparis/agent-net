@@ -26,6 +26,9 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 			}
 		}
 		r.NativeID = native
+		if err := d.bindRepoStart(d.ctoCtx, r); err != nil {
+			return protocol.StartedSession{}, err
+		}
 		piArgs = []string{bin, "--session-id", native, "--name", r.Project}
 		if r.Model != "" {
 			piArgs = append(piArgs, "--model", r.Model)
@@ -88,6 +91,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		}
 		if startErr != nil {
 			r.Status, r.Error = "failed", startErr.Error()
+			d.releaseRepoStart(r)
 			d.failStartAgent(r)
 		} else {
 			r.Status = "started"

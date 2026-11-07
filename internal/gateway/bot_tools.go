@@ -213,11 +213,19 @@ func (g *Gateway) botMessageSend(ctx context.Context, sid, tool string, in map[s
 		recipient = parent.From
 		p.Type = protocol.TypeReply
 	} else {
-		to, err := g.store.GetSession(protocol.SessionGetRequest{Session: p.To, Caller: sid})
-		if err != nil {
-			return nil, err
+		if strings.HasPrefix(p.To, "repo:") || strings.HasPrefix(p.To, "team:") {
+			var err error
+			recipient, err = g.store.ResolveLeadAddress(p.To)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			to, err := g.store.GetSession(protocol.SessionGetRequest{Session: p.To, Caller: sid})
+			if err != nil {
+				return nil, err
+			}
+			recipient = to.Session.ID
 		}
-		recipient = to.Session.ID
 		if p.Type == "" {
 			p.Type = protocol.TypeRequest
 		}
@@ -235,7 +243,11 @@ func (g *Gateway) botMessageSend(ctx context.Context, sid, tool string, in map[s
 	if target.Worker != nil && !target.Online {
 		return nil, fmt.Errorf("worker %s has ended; a bot cannot start it again", recipient)
 	}
-	msg, created, err := g.store.StoreMessage(protocol.MsgSend{Sender: sid, Recipient: recipient, Type: p.Type, Body: p.Body, ParentID: p.Message, ReplyOutcome: p.ReplyOutcome})
+	address := ""
+	if tool != "agent_message_reply" && (strings.HasPrefix(p.To, "repo:") || strings.HasPrefix(p.To, "team:")) {
+		address = p.To
+	}
+	msg, created, route, err := g.store.StoreLeadMessage(protocol.MsgSend{Sender: sid, Recipient: recipient, LeadAddress: address, Type: p.Type, Body: p.Body, ParentID: p.Message, ReplyOutcome: p.ReplyOutcome})
 	if err != nil {
 		return nil, err
 	}
@@ -245,13 +257,19 @@ func (g *Gateway) botMessageSend(ctx context.Context, sid, tool string, in map[s
 	if updated, ok, err := g.store.Message(msg.ID); err == nil && ok {
 		msg = updated
 	}
+	recipient = msg.To
 	name := g.store.displayName(recipient)
 	if name == "" {
 		name = recipient
 	}
-	receipt := botReceipt{MessageID: msg.ID, To: botRef{recipient, name}, State: msg.State}
+	receipt := botReceipt{MessageID: msg.ID, To: botRef{recipient, name}, State: msg.State, Note: route}
 	if msg.Type == protocol.TypeRequest {
-		receipt.Note = g.store.waitingReceiptNote(recipient)
+		if waiting := g.store.waitingReceiptNote(recipient); waiting != "" {
+			if receipt.Note != "" {
+				receipt.Note += " "
+			}
+			receipt.Note += waiting
+		}
 	}
 	if tool == "agent_message_reply" {
 		return receipt, nil

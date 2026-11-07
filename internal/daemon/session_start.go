@@ -206,6 +206,23 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if !info.IsDir() {
 		return protocol.StartedSession{}, errors.New("project path is not a folder")
 	}
+	startRef := protocol.NewID("start")
+	reserved, launched := false, false
+	if !p.Merger {
+		admission, err := d.repoStartReservation(ctx, protocol.RepoStartReservation{Owner: d.ownerSessionID(), Ref: startRef, Project: found.Name, Harness: p.Harness})
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		if admission.Status == "failed" {
+			return protocol.StartedSession{ID: startRef, Status: "failed", Project: found.Name, Error: admission.Error, SuggestedChange: admission.SuggestedChange}, nil
+		}
+		reserved = admission.Reserved
+	}
+	defer func() {
+		if reserved && (!launched || startErr != nil || result.Status == "failed") {
+			d.releaseRepoStart(protocol.StartedSession{ID: startRef, Project: found.Name, Harness: p.Harness, LimitReserved: true})
+		}
+	}()
 	sessionPath, branch := found.Path, ""
 	if p.Folder == protocol.FolderWorktree {
 		if p.CTOProposal {
@@ -233,7 +250,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 				StartedAt: time.Now().Unix()}, nil
 		}
 	}
-	r := protocol.StartedSession{AgentID: p.AgentID, Background: p.CTOProposal && p.Harness == "claude", ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
+	r := protocol.StartedSession{AgentID: p.AgentID, Background: p.CTOProposal && p.Harness == "claude", ID: startRef, LimitReserved: reserved, Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
 	defer func() {
 		if startErr != nil || result.Status == "failed" {
 			d.failStartAgent(r)
@@ -247,6 +264,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 			return protocol.StartedSession{}, err
 		}
 	}
+	launched = true
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
@@ -523,7 +541,10 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		d.claudeStartMu.Unlock()
 		if err == nil {
 			r.NativeID, r.JobID = sf.SessionID, sf.JobID
-			if r.AgentID != "" {
+			if r.LimitReserved {
+				err = d.bindRepoStart(cctx, r)
+			}
+			if err == nil && r.AgentID != "" {
 				err = d.reserveStartAgent(cctx, "claude", sf.SessionID, r.AgentID, r.ID, r.Path, r.Project)
 			}
 		}
@@ -564,6 +585,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		if err != nil {
 			r.Status = "failed"
 			r.Error = err.Error()
+			d.releaseRepoStart(r)
 			d.failStartAgent(r)
 		} else if r.Type == "merger" {
 			r.Status = "started"
@@ -708,5 +730,35 @@ func (d *Daemon) failStartAgent(r protocol.StartedSession) {
 	_, err := d.call(ctx, "session.agent.reserve", protocol.SessionAgentReservation{Owner: d.ownerSessionID(), AgentID: r.AgentID, Harness: r.Harness, Ref: r.ID, Cwd: r.Path, Project: r.Project, NativeID: r.NativeID, Failed: true})
 	if err != nil {
 		d.Logf("Agent choice failure report for %s: %v", r.ID, err)
+	}
+}
+
+// repoStartReservation returns a structured refusal so the caller can offer a
+// settings change without parsing an error string.
+func (d *Daemon) repoStartReservation(ctx context.Context, p protocol.RepoStartReservation) (protocol.RepoStartResult, error) {
+	var out protocol.RepoStartResult
+	raw, err := d.call(ctx, "session.repo.reserve", p)
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(raw, &out)
+	return out, err
+}
+func (d *Daemon) bindRepoStart(ctx context.Context, r protocol.StartedSession) error {
+	if !r.LimitReserved {
+		return nil
+	}
+	_, err := d.repoStartReservation(ctx, protocol.RepoStartReservation{Owner: d.ownerSessionID(), Ref: r.ID, Project: r.Project, Harness: r.Harness, NativeID: r.NativeID})
+	return err
+}
+func (d *Daemon) releaseRepoStart(r protocol.StartedSession) {
+	if !r.LimitReserved {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := d.repoStartReservation(ctx, protocol.RepoStartReservation{Owner: d.ownerSessionID(), Ref: r.ID, Release: true})
+	if err != nil {
+		d.Logf("release Repo start reservation %s: %v", r.ID, err)
 	}
 }

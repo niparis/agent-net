@@ -1522,3 +1522,13 @@ expire. Deletion runs in a bounded background pass, separate from gateway link
 setup and worker health checks.
 The daemon logs these skips; an explicit missing-thread response counts as success.
 `workers.delete_sessions: false` in node.json disables harness data deletion.
+
+
+Repo and Team leads affect message routing, not trust or approval. Only the
+owner or an approved CTO proposal can set a lead. The gateway checks request
+rules against the actual redirected recipient. Owner and CTO messages and a
+worker's messages to its caller are not redirected. For an explicit Repo or
+Team address, the gateway verifies that the recipient is still that lead before
+delivering. The gateway admits agent-net session starts against the Repo's `max_agents` setting and reserves
+places for concurrent starts. Terminal sessions and late registrations are
+never refused; they can put a Repo over its configured max.

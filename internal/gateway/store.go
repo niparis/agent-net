@@ -1053,6 +1053,18 @@ CREATE TABLE IF NOT EXISTS graph_cutover_state (
  gateway_version TEXT NOT NULL DEFAULT '',
  upgraded_at INTEGER NOT NULL DEFAULT 0);
 INSERT OR IGNORE INTO graph_cutover_state(id) VALUES(1);
+`, `
+-- Repo lead override. A missing row uses the repo owner.
+CREATE TABLE IF NOT EXISTS repo_leads (repo_id TEXT PRIMARY KEY REFERENCES repos(id), agent_id TEXT REFERENCES agents(id));
+CREATE TRIGGER IF NOT EXISTS repo_lead_delete BEFORE DELETE ON agents
+ WHEN EXISTS(SELECT 1 FROM repo_leads WHERE agent_id=OLD.id)
+ BEGIN SELECT RAISE(ABORT,'clear or transfer Repo lead first'); END;
+CREATE TRIGGER IF NOT EXISTS repo_lead_tombstone BEFORE UPDATE OF tombstone ON agents
+ WHEN NEW.tombstone<>0 AND EXISTS(SELECT 1 FROM repo_leads WHERE agent_id=OLD.id)
+ BEGIN SELECT RAISE(ABORT,'clear or transfer Repo lead first'); END;
+`, `
+-- Durable places for bounded Repo session starts.
+CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TEXT NOT NULL,repo_id TEXT NOT NULL,harness TEXT NOT NULL,native_id TEXT NOT NULL DEFAULT '',expires_at INTEGER NOT NULL,PRIMARY KEY(node_id,ref));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -2007,6 +2019,21 @@ func (s *Store) upsertSession(q interface {
 	if err != nil {
 		return "", false, err
 	}
+	removed, err := q.Exec(`DELETE FROM repo_start_reservations WHERE node_id=? AND harness=? AND native_id=? AND native_id<>''`, nodeID, in.Harness, in.NativeID)
+	if err != nil {
+		return "", false, err
+	}
+	n, err := removed.RowsAffected()
+	if err != nil {
+		return "", false, err
+	}
+	if n == 0 && !known && in.Worker == nil {
+		// Codex can hand a new terminal to the owner before it has a native
+		// ID. Count the new live session in place of one matching launch.
+		if _, err = q.Exec(`DELETE FROM repo_start_reservations WHERE rowid IN (SELECT r.rowid FROM repo_start_reservations r JOIN sessions s ON s.id=? WHERE r.node_id=? AND r.harness=? AND r.native_id='' AND r.repo_id=s.repo_id ORDER BY r.expires_at,r.ref LIMIT 1)`, id, nodeID, in.Harness); err != nil {
+			return "", false, err
+		}
+	}
 	if err := s.applyStartedAgent(q, nodeID, in, id, known); err != nil {
 		return "", false, err
 	}
@@ -2574,6 +2601,10 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  'picker_label',wa.picker_label,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
+ COALESCE(s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id),0),
+ EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
+ COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),
+ (SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)),
  s.owner_used_at, s.owner_uses, s.pinned_at,
  COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0)
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
@@ -2590,7 +2621,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.StalledSince)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.StalledSince)
 	if err != nil {
 		return a, err
 	}
@@ -2620,6 +2651,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 			}
 		}
 	}
+	a.RepoOverMax = a.RepoMaxAgents > 0 && a.RepoAgentCount > a.RepoMaxAgents
 	a.Type = protocol.SessionType(a.Harness, a.Worker, a.Type)
 	a.Online = online == 1
 	a.LastSeen = lastSeen / int64(time.Second)
@@ -2799,7 +2831,18 @@ func (s *Store) allow(sender string) bool {
 
 // StoreMessage applies every rule and commits the message. created is false
 // when the idempotency key was seen before and the first message is returned.
-func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created bool, err error) {
+func (s *Store) StoreMessage(p protocol.MsgSend) (protocol.Message, bool, error) {
+	return s.storeMessage(p, nil)
+}
+
+// StoreLeadMessage applies lead routing only to user-originated message sends.
+func (s *Store) StoreLeadMessage(p protocol.MsgSend) (protocol.Message, bool, string, error) {
+	var route string
+	m, created, err := s.storeMessage(p, &route)
+	return m, created, route, err
+}
+
+func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Message, created bool, err error) {
 	p.ReplyOutcome, err = protocol.CleanOutcome(p.ReplyOutcome)
 	if err != nil {
 		return msg, false, reject("%v", err)
@@ -2834,6 +2877,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if first, ok, err := s.message(tx, "m.sender = ? AND m.idem_key = ?", p.Sender, p.IdempotencyKey); err != nil {
 		return msg, false, err
 	} else if ok {
+		if route != nil && first.To != p.Recipient && strings.HasPrefix(first.Body, "Redirected to ") {
+			*route, _, _ = strings.Cut(first.Body, "\n")
+		}
 		return first, false, nil
 	}
 	var n int
@@ -2966,6 +3012,17 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	case protocol.TypeRequest, protocol.TypeReply, protocol.TypeNotification:
 	default:
 		return msg, false, reject("unknown message_type %q", m.Type)
+	}
+	if route != nil && p.LeadAddress != "" {
+		if err = validateLeadAddress(tx, p.LeadAddress, m.To); err != nil {
+			return msg, false, err
+		}
+	}
+	if route != nil && p.LeadAddress == "" {
+		*route, err = routeLead(tx, &m)
+		if err != nil {
+			return msg, false, err
+		}
 	}
 	if m.Type == protocol.TypeRequest && !m.FromCTO {
 		rule, err := requestRuleTx(tx, m.From, m.To)

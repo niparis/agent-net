@@ -152,6 +152,9 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 			return nil, reject("machine %s answered without a start", firstNonEmpty(host, nodeID))
 		}
 		res.NodeID, res.Hostname = nodeID, firstNonEmpty(host, nodeID)
+		if res.Status == "failed" {
+			return res, nil
+		}
 		g.logLine("session.started", "node", nodeID, "host", res.Hostname, "owner", relay.Owner,
 			"from_node", nc.id, "harness", res.Harness, "project", res.Project)
 		g.store.Event("session.started", nodeID, res.SessionID, "", strings.TrimPrefix(pairs(

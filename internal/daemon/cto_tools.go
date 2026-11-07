@@ -196,6 +196,41 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 	if name == "settings_change" {
 		return d.routeCTOSettings(ctx, raw)
 	}
+	if name == "session_change" {
+		if _, err := ctoClass(name, raw); err != nil {
+			return nil, err
+		}
+		var p struct {
+			Action string `json:"action"`
+			protocol.SessionStartRequest
+		}
+		if json.Unmarshal(raw, &p) == nil && p.Action == "session_start" {
+			project := strings.TrimSpace(p.Project)
+			if p.Path != "" {
+				project = p.Path
+			}
+			if project != "" {
+				if rawProjects, err := d.call(ctx, "query.projects", protocol.QueryProjects{}); err == nil {
+					var list protocol.ProjectsResult
+					if json.Unmarshal(rawProjects, &list) == nil {
+						for _, item := range list.Projects {
+							if item.Name == project || item.Path == project {
+								project = item.Name
+								break
+							}
+						}
+					}
+				}
+				admission, err := d.repoStartReservation(ctx, protocol.RepoStartReservation{Owner: d.ownerSessionID(), Ref: protocol.NewID("preview"), Project: project, Check: true})
+				if err != nil {
+					return nil, err
+				}
+				if admission.Status == "failed" {
+					return map[string]any{"state": "failed", "result": map[string]any{"summary": admission.Error, "data": admission}}, nil
+				}
+			}
+		}
+	}
 	if isCTOGraphTool(name) {
 		return d.routeCTOGraph(ctx, name, raw)
 	}
@@ -433,9 +468,9 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		res, _, err := lc.dispatchOwner(ctx, protocol.OpTeamWrite, b)
 		return res, err
-	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set", "repo_create", "repo_archive", "agent_create", "agent_tombstone":
+	case "lead_set", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set", "repo_create", "repo_archive", "agent_create", "agent_tombstone":
 		delete(args, "by")
-		if name == "repo_create" || name == "repo_archive" || name == "agent_create" || name == "agent_tombstone" {
+		if name == "lead_set" || name == "repo_create" || name == "repo_archive" || name == "agent_create" || name == "agent_tombstone" {
 			args["owner"] = d.ownerSessionID()
 		}
 		if name == "graph_undo" {

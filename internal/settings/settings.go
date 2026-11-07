@@ -131,8 +131,8 @@ func Load(data []byte) (*Recipe, error) {
 			}
 			seen[l] = true
 		}
-		if !seen["network"] {
-			return nil, fmt.Errorf("%s: network required", d.Key)
+		if !seen["network"] && !(len(d.Levels) == 1 && seen["repo"]) {
+			return nil, fmt.Errorf("%s: network or repo-only level required", d.Key)
 		}
 		if d.Kind == "rule" && len(d.Levels) > 1 {
 			switch d.Type {
