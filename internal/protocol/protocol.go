@@ -112,15 +112,17 @@ func IsWorkerTask(m Message) bool {
 
 // SessionInfo is what a daemon reports about one local session.
 type SessionInfo struct {
-	Type      string `json:"type"`
-	SessionID string `json:"session_id,omitempty"`
-	Harness   string `json:"harness"`
-	NativeID  string `json:"native_id"`
-	PID       int    `json:"pid"`
-	Cwd       string `json:"cwd"`
-	Name      string `json:"name"`
-	Status    string `json:"status"` // idle | busy | shell | dormant | unknown
-	Delivery  string `json:"delivery"`
+	// OpenCodeActivity is the service activity timestamp in milliseconds. Discovery preserves it.
+	OpenCodeActivity int64  `json:"opencode_activity,omitempty"`
+	Type             string `json:"type"`
+	SessionID        string `json:"session_id,omitempty"`
+	Harness          string `json:"harness"`
+	NativeID         string `json:"native_id"`
+	PID              int    `json:"pid"`
+	Cwd              string `json:"cwd"`
+	Name             string `json:"name"`
+	Status           string `json:"status"` // idle | busy | shell | dormant | unknown
+	Delivery         string `json:"delivery"`
 	// Repo is worked out by the daemon from Cwd. It is empty from older daemons.
 	Repo RepoInfo `json:"repo"`
 	// NoProject says the daemon found Cwd under a system temporary folder, so
@@ -445,6 +447,8 @@ type (
 		Session SessionInfo `json:"session"`
 	}
 	SessionRemove struct {
+		Closed    bool   `json:"closed,omitempty"`
+		Reopen    bool   `json:"reopen,omitempty"`
 		SessionID string `json:"session_id"`
 		Lost      bool   `json:"lost,omitempty"`
 	}

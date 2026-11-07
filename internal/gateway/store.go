@@ -1065,7 +1065,7 @@ CREATE TRIGGER IF NOT EXISTS repo_lead_tombstone BEFORE UPDATE OF tombstone ON a
 `, `
 -- Durable places for bounded Repo session starts.
 CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TEXT NOT NULL,repo_id TEXT NOT NULL,harness TEXT NOT NULL,native_id TEXT NOT NULL DEFAULT '',expires_at INTEGER NOT NULL,PRIMARY KEY(node_id,ref));
-`}
+`, `SELECT 1 /* session close column */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1142,6 +1142,17 @@ func (s *Store) migrate() error {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
+		}
+		if strings.Contains(migrations[i], "session close column") {
+			var has int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='closed_at'`).Scan(&has)
+			if err == nil && has == 0 {
+				_, err = tx.Exec(`ALTER TABLE sessions ADD COLUMN closed_at INTEGER NOT NULL DEFAULT 0`)
+			}
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 		if strings.Contains(migrations[i], "Typed edge metadata") {
 			for _, table := range []string{"graph_edges", "graph_history"} {
@@ -1870,6 +1881,20 @@ func (s *Store) upsertSession(q interface {
 	known := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
+	}
+	if known && in.Harness == "opencode" && in.Worker == nil {
+		var closed int64
+		if err := q.QueryRow(`SELECT closed_at FROM sessions WHERE id=?`, knownID).Scan(&closed); err != nil {
+			return "", false, err
+		}
+		if closed > 0 {
+			if in.OpenCodeActivity <= closed {
+				return knownID, false, nil
+			}
+			if _, err := q.Exec(`UPDATE sessions SET closed_at=0 WHERE id=?`, knownID); err != nil {
+				return "", false, err
+			}
+		}
 	}
 	if known && in.Worker != nil && in.Worker.RunGeneration > 0 {
 		var current int
@@ -3873,4 +3898,14 @@ func workerTaskForSend(q queryer, p protocol.MsgSend) (bool, error) {
 		}
 	}
 	return strings.HasPrefix(p.Body, "[agent-net worker brief]"), nil
+}
+
+// SetSessionClosed keeps an owner-closed conversation offline until new activity or resume.
+func (s *Store) SetSessionClosed(nodeID, sessionID string, closed bool) error {
+	if !closed {
+		_, err := s.db.Exec(`UPDATE sessions SET closed_at=0 WHERE id=? AND node_id=? AND harness='opencode' AND worker=''`, sessionID, nodeID)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE sessions SET closed_at=?, online=0, status='ended', harness_lost=0 WHERE id=? AND node_id=? AND harness='opencode' AND worker=''`, s.now().UnixMilli(), sessionID, nodeID)
+	return err
 }

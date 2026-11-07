@@ -113,36 +113,45 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 			return no(fmt.Errorf("Claude could not stop %s: %w", name, err))
 		}
 	case "opencode":
-		service, err := d.ownerOpenCodeService()
-		if err != nil {
-			return no(fmt.Errorf("the OpenCode service is not running on %s", d.hostName()))
-		}
-		if info.NativeID == "" {
-			return no(errors.New("OpenCode session ID is missing"))
-		}
-		routes, err := d.discoverOpenCodeRoutes(ctx, service.URL, service.Password, "", service.identity)
-		if err != nil {
-			return no(fmt.Errorf("could not discover OpenCode routes: %w", err))
-		}
-		path, err := routes.Path(opencodeapi.Interrupt, info.NativeID)
-		if err != nil {
-			return no(err)
-		}
-		api := openCodeWorkerAPI(ctx, service.URL, service.Password)
-		directory := strings.ReplaceAll(url.QueryEscape(info.Cwd), "+", "%20")
-		_, status, err := api(opencodeapi.Interrupt.Method(), path, nil, "x-opencode-directory", directory)
-		if err == nil && status == http.StatusNotFound {
-			if fallback, ok := routes.InterruptFallback(info.NativeID); ok {
-				_, status, err = api(opencodeapi.Interrupt.Method(), fallback, nil, "x-opencode-directory", directory)
+		if info.Status == "busy" {
+			service, err := d.ownerOpenCodeService()
+			if err != nil {
+				return no(fmt.Errorf("the OpenCode service is not running on %s", d.hostName()))
+			}
+			if info.NativeID == "" {
+				return no(errors.New("OpenCode session ID is missing"))
+			}
+			routes, err := d.discoverOpenCodeRoutes(ctx, service.URL, service.Password, "", service.identity)
+			if err != nil {
+				return no(fmt.Errorf("could not discover OpenCode routes: %w", err))
+			}
+			path, err := routes.Path(opencodeapi.Interrupt, info.NativeID)
+			if err != nil {
+				return no(err)
+			}
+			api := openCodeWorkerAPI(ctx, service.URL, service.Password)
+			directory := strings.ReplaceAll(url.QueryEscape(info.Cwd), "+", "%20")
+			_, status, err := api(opencodeapi.Interrupt.Method(), path, nil, "x-opencode-directory", directory)
+			if err == nil && status == http.StatusNotFound {
+				if fallback, ok := routes.InterruptFallback(info.NativeID); ok {
+					_, status, err = api(opencodeapi.Interrupt.Method(), fallback, nil, "x-opencode-directory", directory)
+				}
+			}
+			if err != nil {
+				return no(fmt.Errorf("could not interrupt the OpenCode turn: %w", err))
+			}
+			if status < 200 || status >= 300 {
+				return no(routes.HTTPError(opencodeapi.Interrupt, status))
 			}
 		}
-		if err != nil {
-			return no(fmt.Errorf("could not interrupt the OpenCode turn: %w", err))
+		d.mu.Lock()
+		ls.info.OpenCodeActivity = 0
+		ls.info.Status = "idle"
+		d.mu.Unlock()
+		if _, err := d.call(ctx, "session.remove", protocol.SessionRemove{SessionID: id, Closed: true}); err != nil {
+			return no(err)
 		}
-		if status < 200 || status >= 300 {
-			return no(routes.HTTPError(opencodeapi.Interrupt, status))
-		}
-		result.Note = name + ": turn aborted; the conversation stays in the service. An idle service session costs nothing."
+		result.Note = "Closed " + name + ". The conversation is kept; press v to see ended sessions and Enter to reopen it."
 	case "pi":
 		h, found := findHerdrPane(info.PID)
 		fromServer := false
