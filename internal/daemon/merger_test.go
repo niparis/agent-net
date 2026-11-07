@@ -32,7 +32,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 			}
 			ctx := context.Background()
 			args, _ := json.Marshal(map[string]any{"action": "merger_start", "project": "garden", "node_id": target.d.NodeID()})
-			if _, err := caller.d.runCTOToolRaw(ctx, "session_change", args); err != nil {
+			if _, err := legacyProposalFixture(ctx, caller.d, "session_change", args); err != nil {
 				t.Fatal(err)
 			}
 			items, err := caller.d.proposalRunner().list()
@@ -112,7 +112,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 				t.Fatalf("pipeline still off: %s", raw)
 			}
 			args, _ = json.Marshal(map[string]any{"action": "merger_stop", "project": "garden", "node_id": target.d.NodeID()})
-			if _, err := caller.d.runCTOToolRaw(ctx, "session_change", args); err != nil {
+			if _, err := legacyProposalFixture(ctx, caller.d, "session_change", args); err != nil {
 				t.Fatal(err)
 			}
 			items, err = caller.d.proposalRunner().list()

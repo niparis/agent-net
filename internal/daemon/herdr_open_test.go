@@ -659,7 +659,7 @@ func TestCTOSessionProposalStartsInBackground(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	path := filepath.Join(home, "code", "garden")
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "first_message": "hello"})
-	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := c.d.proposalRunner().list()
@@ -848,7 +848,7 @@ func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 	remote.register(t, repo)
 	t.Cleanup(func() { killFakeClaude(t, repo) })
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "node_id": remote.d.NodeID(), "harness": "claude", "first_message": "hello"})
-	if _, err := local.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), local.d, "session_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := local.d.proposalRunner().list()
@@ -942,7 +942,7 @@ func TestCTOProposalApprovalLeavesOwnerTUIViewUnchanged(t *testing.T) {
 	path := filepath.Join(home, "code", "garden")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
-	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := c.d.proposalRunner().list()
@@ -983,7 +983,7 @@ func testRemoteCTOProposalApproval(t *testing.T, all bool) {
 	path := filepath.Join(home, "code", "garden")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
-	if _, err := remote.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), remote.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := remote.d.proposalRunner().list()
@@ -1026,7 +1026,7 @@ func TestCTOProposalWithoutHerdrShowsEnterNotice(t *testing.T) {
 	path := filepath.Join(home, "code", "garden")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
-	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := c.d.proposalRunner().list()
@@ -1052,7 +1052,7 @@ func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
 	other := herdrNoticeChannel(t, n.node)
 	approver, notices := herdrUIClient(t, n.node)
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex", "first_message": "hello"})
-	if _, err := n.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), n.d, "session_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := n.d.proposalRunner().list()
@@ -1102,7 +1102,7 @@ func TestRemoteCTOApprovedCodexWithoutHerdrFails(t *testing.T) {
 	remote.register(t, repo)
 	approver, _ := herdrUIClient(t, local.node)
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex"})
-	if _, err := remote.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), remote.d, "session_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := remote.d.proposalRunner().list()
@@ -1154,7 +1154,7 @@ func TestCTOApprovedCodexWithoutHerdrOrTUIFails(t *testing.T) {
 	repo := newHomeRepo(t, home, "code/garden")
 	n.register(t, repo)
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex"})
-	if _, err := n.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), n.d, "session_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := n.d.proposalRunner().list()

@@ -47,9 +47,7 @@ func TestCTONetworkMessages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if asOwner {
-			approveOwnerMessage(t, w.d, result)
-		}
+		_ = result
 		select {
 		case msg := <-peer.Pushes:
 			return msg
@@ -75,16 +73,16 @@ func TestCTONetworkMessages(t *testing.T) {
 		t.Fatalf("own messages: %s %v", b, err)
 	}
 	// A reply belongs to the CTO's conversation, including approved replies.
-	incoming := sendResult(t, peer.mustCall("send", map[string]string{"to": id, "body": "question for CTO"}))
+	incoming := sendResult(t, peer.mustCall("reply", map[string]string{"message_id": plain.ID, "body": "question for CTO"}))
 	raw, _ := json.Marshal(map[string]any{"message": incoming.ID, "body": "approved answer", "as_owner": true})
 	proposal, err := w.d.runCTOTool(context.Background(), "agent_message_reply", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	approveOwnerMessage(t, w.d, proposal)
+	_ = proposal
 	select {
 	case reply := <-peer.Pushes:
-		if reply.From != id || !reply.FromCTO || reply.ParentID != incoming.ID || reply.Body != "approved answer" {
+		if reply.From != id || !reply.FromCTO || !reply.OwnerApproved || !strings.Contains(codexFrame(reply), protocol.CTONote) || reply.ParentID != incoming.ID || reply.Body != "approved answer" {
 			t.Fatalf("approved reply: %+v", reply)
 		}
 	case <-time.After(2 * time.Second):

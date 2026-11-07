@@ -27,7 +27,11 @@ func TestCTOPresenceReturnsOnHostSync(t *testing.T) {
 	if err != nil || a.Online || a.NodeID != host {
 		t.Fatalf("other host changed CTO: %+v %v", a, err)
 	}
-	msg, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: id, Body: "wake"})
+	root, _, err := s.StoreMessage(protocol.MsgSend{Sender: id, Recipient: peer, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: id, Body: "wake", ParentID: root.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

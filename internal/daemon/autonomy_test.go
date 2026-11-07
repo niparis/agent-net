@@ -78,24 +78,7 @@ func TestAutonomyCTOChangeIsAProposal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, ok := value.(string)
-	if !ok || !strings.HasPrefix(text, "proposal p_") {
-		t.Fatalf("autonomy change ran immediately: %#v", value)
-	}
-	var before protocol.NodeSettingsResult
-	if err := json.Unmarshal(cli.mustCall("node_settings_get", map[string]any{"node": "shop"}), &before); err != nil {
-		t.Fatal(err)
-	}
-	if before.Autonomy != protocol.AutonomyOff {
-		t.Fatalf("autonomy applied before approval: %+v", before)
-	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := n.d.proposalRunner().decide(ctx, items[len(items)-1].ID, true); err != nil {
-		t.Fatal(err)
-	}
+	assertCTOImmediate(t, value)
 	var after protocol.NodeSettingsResult
 	if err := json.Unmarshal(cli.mustCall("node_settings_get", map[string]any{"node": "shop"}), &after); err != nil {
 		t.Fatal(err)

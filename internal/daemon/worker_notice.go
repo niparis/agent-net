@@ -782,12 +782,12 @@ func (d *Daemon) sendWorkerNoticeBodyWithFiles(ctx context.Context, w *worker, b
 		noticeKey = protocol.NewID("k")
 	}
 	p := protocol.MsgSend{Sender: sid, Recipient: owner, Type: protocol.TypeNotification,
-		Body: body, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice}
+		Body: body, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice, WorkerNotice: true}
 	if parent != "" {
 		p.Type, p.ParentID = protocol.TypeReply, parent
 	}
 	if files != nil {
-		sent, err := d.sendPreparedFiles(ctx, FileSend{From: sid, To: owner, Body: body, Type: p.Type, ParentID: p.ParentID, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice}, files)
+		sent, err := d.sendPreparedFiles(ctx, FileSend{From: sid, To: owner, Body: body, Type: p.Type, ParentID: p.ParentID, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice, WorkerNotice: true}, files)
 		if err != nil {
 			if sent.Message.ID != "" {
 				return nil, fmt.Errorf("handback message %s was stored but file transfer failed: %w", sent.Message.ID, err)

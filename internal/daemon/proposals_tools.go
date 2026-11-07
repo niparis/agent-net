@@ -52,7 +52,9 @@ func concreteProposal(call proposalCall) (proposalCall, error) {
 			return call, err
 		}
 	}
-	if class != ctoProposal {
+	// Open proposals from the former policy may now be immediate actions.
+	// The legacy message tool also stored approved as-owner sends and replies.
+	if class != ctoProposal && class != ctoMinor && call.Tool != "message" {
 		return call, errors.New("tool call is not a proposal")
 	}
 	// Proposal reasons are metadata stored beside the concrete call. They are
@@ -371,10 +373,9 @@ func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor strin
 	return raw, nil
 }
 
-// Only the approved proposal runner may attach the CTO owner-instruction flag.
-// The immediate tool path always builds an unflagged peer message.
+// This also executes proposals stored before the at-once policy.
 func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
-	if name == "sessions_archive" {
+	if name == "sessions_archive" && proposalActor(ctx) != "cto" {
 		if proposalActor(ctx) == "" {
 			return nil, errors.New("archive requires an approved proposal")
 		}

@@ -58,8 +58,9 @@ func TestSettingsWritesUndoAndHistory(t *testing.T) {
 	if err != nil || noop.Revision != relax.Revision {
 		t.Fatalf("noop %+v %v", noop, err)
 	}
-	if _, err = s.WriteSettings([]SettingsChange{child}, "cto", "rule"); err == nil {
-		t.Fatal("CTO changed rule")
+	child.Value = settingValue(`"delegated"`)
+	if _, err = s.WriteSettings([]SettingsChange{child}, "cto", "rule"); err != nil {
+		t.Fatalf("CTO rule: %v", err)
 	}
 	advice := SettingsChange{Key: "guidance.peer_help_direct", Level: "network", Scope: "network", Value: settingValue(`"Reply {{reply}}."`)}
 	if _, err = s.WriteSettings([]SettingsChange{advice}, "cto", "advice"); err != nil {
@@ -253,10 +254,7 @@ func TestSettingsUndoTightensAndMovesChildren(t *testing.T) {
 	if _, err = s.WriteSettings([]SettingsChange{child}, "owner", "child"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.UndoSettings(relaxed.Revision, "cto"); err == nil {
-		t.Fatal("CTO undid rule")
-	}
-	undo, err := s.UndoSettings(relaxed.Revision, "owner")
+	undo, err := s.UndoSettings(relaxed.Revision, "cto")
 	if err != nil || len(undo.Moved) != 1 || !undo.Moved[0].Rewritten {
 		t.Fatalf("%+v %v", undo, err)
 	}
@@ -402,11 +400,7 @@ func TestSettingsFramesAtomicActorAndMoves(t *testing.T) {
 		t.Fatal(err)
 	}
 	cto := `{"changes":[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"delegated"}],"by":"cto"}`
-	if _, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(cto)); err == nil {
-		t.Fatal("CTO wrote a rule")
-	}
-	owner := strings.Replace(cto, `"cto"`, `"owner"`, 1)
-	got, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(owner))
+	got, err := g.handle(ctx, &nodeConn{}, "settings.write", []byte(cto))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,10 +420,7 @@ func TestSettingsFramesAtomicActorAndMoves(t *testing.T) {
 	if string(e.Value) != "true" {
 		t.Fatal("partial batch applied")
 	}
-	if _, err = g.handle(ctx, &nodeConn{}, "settings.undo", []byte(`{"revision":2,"by":"cto"}`)); err == nil {
-		t.Fatal("CTO undid rule")
-	}
-	if _, err = g.handle(ctx, &nodeConn{}, "settings.undo", []byte(`{"revision":2,"by":"owner"}`)); err != nil {
+	if _, err = g.handle(ctx, &nodeConn{}, "settings.undo", []byte(`{"revision":2,"by":"cto"}`)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -555,10 +546,10 @@ func TestSettingsFramesAllowOnlyNamedActors(t *testing.T) {
 			rule := protocol.SettingsWrite{By: actor, Changes: []SettingsChange{{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: settingValue("false")}}}
 			raw, _ = json.Marshal(rule)
 			_, err = g.handle(context.Background(), &nodeConn{}, "settings.write", raw)
-			if strings.HasPrefix(actor, "owner") && err != nil {
+			if (strings.HasPrefix(actor, "owner") || actor == "cto") && err != nil {
 				t.Fatalf("owner rule: %v", err)
 			}
-			if !strings.HasPrefix(actor, "owner") && err == nil {
+			if !strings.HasPrefix(actor, "owner") && actor != "cto" && err == nil {
 				t.Fatal("CTO changed rule")
 			}
 		})
@@ -604,13 +595,13 @@ func TestWorkerBriefRulesRequireOwner(t *testing.T) {
 				t.Fatal(err)
 			}
 			change := SettingsChange{Key: key, Level: "network", Scope: "network", Value: e.Value}
-			for _, actor := range []string{"cto", "CTO (minor)", "CTO (owner window)"} {
+			for _, actor := range []string{"CTO (minor)", "CTO (owner window)"} {
 				if _, err = s.WriteSettings([]SettingsChange{change}, actor, "test"); err == nil {
 					t.Errorf("%s changed protected %s without approval", actor, key)
 				}
 			}
-			if _, err = s.WriteSettings([]SettingsChange{change}, "owner", "test"); err != nil {
-				t.Fatalf("owner network write: %v", err)
+			if _, err = s.WriteSettings([]SettingsChange{change}, "cto", "test"); err != nil {
+				t.Fatalf("CTO network write: %v", err)
 			}
 			change.Level, change.Scope = "repo", "shop"
 			var original string
@@ -618,9 +609,6 @@ func TestWorkerBriefRulesRequireOwner(t *testing.T) {
 				t.Fatal(err)
 			}
 			change.Value, _ = json.Marshal(original + " Project wording.")
-			if _, err = s.WriteSettings([]SettingsChange{change}, "cto", "test"); err == nil {
-				t.Fatal("CTO wrote protected repo text")
-			}
 			if _, err = s.WriteSettings([]SettingsChange{change}, "owner", "test"); err != nil {
 				t.Fatalf("owner repo write: %v", err)
 			}

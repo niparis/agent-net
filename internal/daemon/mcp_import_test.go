@@ -290,7 +290,7 @@ func TestCTOMCPImportOwnerGate(t *testing.T) {
 		t.Fatal("a refused request registered a server")
 	}
 	// The CTO proposes the import; approval runs it with the proposal actor.
-	v, err := f.n.d.runCTOToolRaw(context.Background(), "tools_change", importActionJSON(t, "import", protocol.MCPImportRequest{PlanID: plan.ID}))
+	v, err := legacyProposalFixture(context.Background(), f.n.d, "tools_change", importActionJSON(t, "import", protocol.MCPImportRequest{PlanID: plan.ID}))
 	if err != nil {
 		t.Fatal(err)
 	}

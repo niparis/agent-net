@@ -514,7 +514,7 @@ func TestCTOSessionStartChosenAgentProposal(t *testing.T) {
 	c.register(t, newRepo(t, "chosen"))
 	path := filepath.Join(home, "code", "new-project")
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "agent_id": "chosen", "first_message": "hello"})
-	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {

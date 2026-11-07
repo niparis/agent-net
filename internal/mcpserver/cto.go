@@ -70,7 +70,7 @@ var ctoRoutingField = map[string]string{
 // the stored as-owner message call. The listed CTO tools come from the catalog;
 // these schemas validate stored proposals.
 var ctoTools = map[string]ctoToolDef{
-	"sessions_archive": {desc: "Propose archiving offline sessions. The owner sees the exact dry run before approval.", fields: map[string]ctoField{
+	"sessions_archive": {desc: "Archive offline sessions at once; the owner can restore them.", fields: map[string]ctoField{
 		"ids": {typ: "array"}, "expected": {typ: "array"},
 		"name": {typ: "string"}, "folder": {typ: "string"}, "project": {typ: "string"},
 		"harness": {typ: "string"}, "created_before": {typ: "string"}, "ended_workers": {typ: "boolean"},
@@ -78,10 +78,10 @@ var ctoTools = map[string]ctoToolDef{
 	// message is not listed. It is the stored call of an as-owner send or reply
 	// that agent_message_send or agent_message_reply proposes; this schema
 	// validates that call.
-	"message": {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"team_id": {typ: "string"}, "action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
+	"message": {desc: "Send or reply; as_owner sends with owner attribution.", fields: map[string]ctoField{"team_id": {typ: "string"}, "action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
 
 	"graph_change": {
-		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Repo and agent create, archive, tombstone and their undo always require owner approval.",
+		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Node removal, agent tombstone and repo archive require owner approval; other changes apply at once.",
 		fields: map[string]ctoField{
 			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove", "lead_set"}},
 			"ref":     {typ: "graph_ref", desc: "Typed target."},
@@ -447,7 +447,7 @@ func ctoDialogTools(s *mcp.Server, call Caller) ctoToolAdder {
 				if approve {
 					text = "Approved by the owner in the dialog."
 					var note string
-					if json.Unmarshal(outcome, &note) == nil && note != "" {
+					if json.Unmarshal(outcome, &note) == nil && note != "" && note != proposal.ID+" approved and applied" {
 						text += " " + note
 					}
 				} else {

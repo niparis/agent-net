@@ -285,7 +285,7 @@ func TestCTOProposalAskDialog(t *testing.T) {
 				t.Fatalf("result=%+v answered=%v askedID=%q elicited=%q", result, answered, askedID, elicited)
 			}
 			text := result.Content[0].(*mcp.TextContent).Text
-			if !strings.Contains(text, "Approved by the owner in the dialog.") || !strings.Contains(text, "p_15 approved and applied") {
+			if !strings.Contains(text, "Approved by the owner in the dialog.") || strings.Contains(text, "p_15 approved and applied") {
 				t.Fatalf("unexpected dialog text: %q", text)
 			}
 		})

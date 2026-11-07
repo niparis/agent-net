@@ -11,10 +11,7 @@ import (
 func TestMergerRoutingAndRegistration(t *testing.T) {
 	r := newDeliveryRig(t)
 	q := protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet}
-	if err := r.s.SetMerger(q, "cto"); err == nil {
-		t.Fatal("unapproved agent registered merger")
-	}
-	if err := r.s.SetMerger(q, "owner"); err != nil {
+	if err := r.s.SetMerger(q, "cto"); err != nil {
 		t.Fatal(err)
 	}
 	for _, step := range []string{"test", "merge"} {

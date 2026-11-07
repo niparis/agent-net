@@ -18,7 +18,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Every non-graph owner-only change is a proposal in the Inbox", "An approval typed in this chat never counts", "approval dialog opens in the chat", "`proposal_ask`", "The Inbox stays the other way", "with A in the Inbox (tab 7 of the TUI)", "presses w", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "`cto_ui_show`", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with `settings_change` in the worker_profile_add area under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
+	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Act at once", "node_remove", "agent_tombstone", "repo_archive", "machine_remove", "machine_rotate", "`proposal_ask`", "Only the owner starts conversations", "workers", "settings", "Write charters as short rules", "1200 characters"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -571,7 +571,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("graph_change", map[string]any{"action": "node_add", "name": "component"})
 	call("graph_change", map[string]any{"action": "charter_set", "node": "architecture", "attr": "purpose", "value": "design"})
 	var changes []protocol.CharterChange
-	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || changes[0].By != "CTO (minor)" {
+	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || changes[0].By != "cto" {
 		t.Fatalf("CTO history: %+v %v", changes, err)
 	}
 
@@ -598,8 +598,10 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 		t.Fatal("peer missing")
 	}
 	call("agent_message_send", map[string]any{"to": target, "body": "hello"})
+	var sent protocol.Message
 	select {
 	case msg := <-peer.Pushes:
+		sent = msg
 		if msg.FromCTO || msg.From != w.d.ctoSessionID() {
 			t.Fatalf("plain CTO sender: %+v", msg)
 		}
@@ -607,7 +609,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 		t.Fatal("message not delivered")
 	}
 	var incoming protocol.MessageSent
-	rawIncoming := peer.mustCall("send", map[string]any{"to": w.d.ctoSessionID(), "body": "question"})
+	rawIncoming := peer.mustCall("reply", map[string]any{"message_id": sent.ID, "body": "question"})
 	if err := json.Unmarshal(rawIncoming, &incoming); err != nil || incoming.Message == nil {
 		t.Fatalf("incoming message: %s %v", rawIncoming, err)
 	}
@@ -645,7 +647,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 		lines = append(lines, a.Text)
 	}
 	joined := strings.Join(lines, "|")
-	for _, want := range []string{"read sessions", "CTO (minor): applied charter_set", "sent to", "worker_start: proposal"} {
+	for _, want := range []string{"read sessions", "charter architecture", "sent to", "worker "} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}
@@ -817,7 +819,7 @@ func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
 }
 
 func TestCTOBriefToolsWorkflow(t *testing.T) {
-	for _, want := range []string{"ask the owner to share the relevant inventory or plan", "Plans and full results go to the owner", "Wait for the outcome before proposing the next step"} {
+	for _, want := range []string{"ask the owner to share the relevant inventory or plan", "Tools plans, apply, undo, MCP import and native removal apply at once"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief lacks %q", want)
 		}
@@ -832,11 +834,7 @@ func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
 }
 
 func TestCTONewProjectRecipe(t *testing.T) {
-	for _, want := range []string{
-		"projects_layout", "NAME -> MACHINE, PATH, Claude Opus, background. OK?", "NAME -> MACHINE, PATH, clone of REMOTE, Claude Opus, background. OK?",
-		"claude-opus-5-5", "exactly one short question", "project_change",
-		"NAME is ready: session NAME is waiting in tab 1 (Sessions). Press Enter on it to dive in.",
-	} {
+	for _, want := range []string{"projects_layout", "claude-opus-5-5", "one short question", "project_change", "Report the result and session location"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief lacks %q", want)
 		}

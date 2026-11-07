@@ -196,7 +196,7 @@ func actorAllowed(actor, kind string) bool {
 	if !settingsActor(actor) {
 		return false
 	}
-	return actor == "owner" || strings.HasPrefix(actor, "owner (CTO proposal p_") || kind == "advice"
+	return actor == "owner" || actor == "cto" || strings.HasPrefix(actor, "owner (CTO proposal p_") || kind == "advice"
 }
 
 // ValidateSettings checks a batch against current state without committing it.

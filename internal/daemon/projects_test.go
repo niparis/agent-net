@@ -340,7 +340,7 @@ func TestCTOProjectRemoveMachineAfterApproval(t *testing.T) {
 			}
 			raw, _ := json.Marshal(args)
 			ctx := context.Background()
-			if _, err := a.d.runCTOToolRaw(ctx, "project_change", raw); err != nil {
+			if _, err := legacyProposalFixture(ctx, a.d, "project_change", raw); err != nil {
 				t.Fatal(err)
 			}
 			items, err := a.d.proposalRunner().list()

@@ -800,7 +800,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "- **Message a peer when it helps the work:** a breaking change that affects its code, a question it can answer better than you, or a result it asked for. Find it with `agent_sessions_find`, read its charter with `agent_graph_read`, and send with `agent_message_send` to its session ID."
+    default: "- **Message a peer when it helps the work:** a breaking change that affects its code, a question it can answer better than you, or a result it asked for. Find it with `agent_sessions_find`, read its charter with `agent_graph_read`, and send with `agent_message_send` to its session ID. Only the owner starts conversations with the CTO. Reply when the CTO asks you; otherwise ask your owner."
     live: true
   - key: guidance.ask_peer_after_tries
     rows: [10]
@@ -808,7 +808,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "- **Ask a peer early.** When an error comes from a service, repo or machine that another session owns or can see (a 5xx or refused connection, a failing deploy, a host you cannot reach), or you are stuck after two tries, ask that session before you debug further. Match its project, host, function, task and expertise in `agent_sessions_find`. A line that starts with `agent-net:` after a failed tool call may name the session to ask."
+    default: "- **Ask a peer early.** When an error comes from a service, repo or machine that another session owns or can see (a 5xx or refused connection, a failing deploy, a host you cannot reach), or you are stuck after two tries, ask that session before you debug further. Match its project, host, function, task and expertise in `agent_sessions_find`. A line that starts with `agent-net:` after a failed tool call may name the session to ask. If that session is the CTO, ask your owner unless replying to the CTO."
     live: true
   - key: guidance.relay_unedited
     rows: [11]
@@ -840,7 +840,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "- **Only I add or remove shared MCP servers**, through the TUI or an approved CTO `mcp_change` proposal. Agents can list and test shared servers. Never put a secret value in a tool call; give an environment variable name or a file path."
+    default: "- **Only I or the CTO add or remove shared MCP servers**, through the TUI or CTO `mcp_change`. Agents can list and test shared servers. Never put a secret value in a tool call; give an environment variable name or a file path."
     live: true
   - key: guidance.register_projects_when_asked
     rows: [15]

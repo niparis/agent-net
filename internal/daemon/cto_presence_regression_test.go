@@ -32,9 +32,13 @@ func TestCTOWakeAfterCrashAndRestart(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory, interval: time.Hour, logger: log.New(logs, "", 0), cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
 	cli := cliClient(t, n)
-	peer, _ := helloPi(t, n, "wake-peer", "/w/peer", true)
+	peer, peerID := helloPi(t, n, "wake-peer", "/w/peer", true)
 	cli.mustCall("cto_send", map[string]string{"text": "initial"})
 	id := n.d.ctoSessionID()
+	root, _, err := g.gw.Store().StoreMessage(protocol.MsgSend{Sender: id, Recipient: peerID, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	conversation, err := n.d.ctoSession()
 	if err != nil || conversation == "" {
 		t.Fatalf("conversation: %q %v", conversation, err)
@@ -48,7 +52,7 @@ func TestCTOWakeAfterCrashAndRestart(t *testing.T) {
 	}
 	eventually(t, "CTO crash logged", func() bool { return strings.Contains(logs.String(), "cto.crash harness=opencode") })
 	eventually(t, "CTO dormant and reachable", func() bool { a, _, _ := g.gw.Store().Agent(id); return a.Online && a.Status == "dormant" })
-	peer.mustCall("send", map[string]string{"to": id, "body": "wake from peer"})
+	peer.mustCall("reply", map[string]string{"message_id": root.ID, "body": "wake from peer"})
 	path := filepath.Join(rec.Env["XDG_DATA_HOME"], "fake-session-"+conversation+".json")
 	eventually(t, "peer message delivered after crash", func() bool {
 		b, e := os.ReadFile(path)
@@ -58,15 +62,19 @@ func TestCTOWakeAfterCrashAndRestart(t *testing.T) {
 	if err := g.gw.Store().SetNodeOffline(n.cfg.NodeID); err != nil {
 		t.Fatal(err)
 	}
-	peer.mustCall("send", map[string]string{"to": id, "body": "queued while offline"})
+	peer.mustCall("reply", map[string]string{"message_id": root.ID, "body": "queued while offline"})
 	n.restart()
 	eventually(t, "CTO reachable after restart", func() bool { a, _, _ := g.gw.Store().Agent(id); return a.Online })
 	eventually(t, "queued message delivered after restart", func() bool {
 		b, e := os.ReadFile(path)
 		return e == nil && strings.Contains(string(b), "queued while offline")
 	})
-	peer, _ = helloPi(t, n, "wake-peer-again", "/w/peer", true)
-	peer.mustCall("send", map[string]string{"to": id, "body": "wake after restart"})
+	peer, peerID = helloPi(t, n, "wake-peer-again", "/w/peer", true)
+	root, _, err = g.gw.Store().StoreMessage(protocol.MsgSend{Sender: id, Recipient: peerID, Body: "question again"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer.mustCall("reply", map[string]string{"message_id": root.ID, "body": "wake after restart"})
 	eventually(t, "message delivered after restart", func() bool {
 		b, e := os.ReadFile(path)
 		return e == nil && strings.Contains(string(b), "wake after restart")
@@ -102,12 +110,16 @@ func TestCTOClaudeWakeAfterHarnessSwitch(t *testing.T) {
 		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
 	}})
 	cli := cliClient(t, n)
-	peer, _ := helloPi(t, n, "claude-wake-peer", "/w/peer", true)
+	peer, peerID := helloPi(t, n, "claude-wake-peer", "/w/peer", true)
 	harness := "claude"
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
 	cli.mustCall("cto_send", map[string]string{"text": "initial"})
 	<-adapter.received
 	id := n.d.ctoSessionID()
+	root, _, err := g.gw.Store().StoreMessage(protocol.MsgSend{Sender: id, Recipient: peerID, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	old, err := n.d.claudeCTOSession()
 	if err != nil || old == "" {
 		t.Fatalf("Claude conversation: %q %v", old, err)
@@ -117,7 +129,7 @@ func TestCTOClaudeWakeAfterHarnessSwitch(t *testing.T) {
 	harness = "claude"
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
 	eventually(t, "switched CTO dormant", func() bool { a, _, _ := g.gw.Store().Agent(id); return a.Online && a.Status == "dormant" })
-	peer.mustCall("send", map[string]string{"to": id, "body": "wake Claude"})
+	peer.mustCall("reply", map[string]string{"message_id": root.ID, "body": "wake Claude"})
 	select {
 	case text := <-adapter.received:
 		if !strings.Contains(text, "wake Claude") {
@@ -147,7 +159,7 @@ func TestCTOClaudeWakeAfterHarnessSwitch(t *testing.T) {
 		t.Fatalf("crash detail missing: %s", logs.String())
 	}
 	eventually(t, "crashed Claude dormant", func() bool { a, _, _ := g.gw.Store().Agent(id); return a.Online && a.Status == "dormant" })
-	peer.mustCall("send", map[string]string{"to": id, "body": "wake crashed Claude"})
+	peer.mustCall("reply", map[string]string{"message_id": root.ID, "body": "wake crashed Claude"})
 	select {
 	case text := <-adapter.received:
 		if !strings.Contains(text, "wake crashed Claude") {

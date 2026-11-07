@@ -95,160 +95,40 @@ func ctoGraphArgs(action, args string) json.RawMessage {
 }
 
 func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
-	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
 	ctx := context.Background()
-	for _, name := range []string{"first", "second"} {
-		cli.mustCall("node_add", map[string]string{"name": name})
-	}
-	if _, err := g.gw.Store().UpsertSession(n.d.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "component", Name: "component", Repo: protocol.RepoInfo{Project: "component", Root: "/work/component"}}); err != nil {
+	cli.mustCall("node_add", map[string]string{"name": "first"})
+	cli.mustCall("node_add", map[string]string{"name": "second"})
+	cli.mustCall("node_add", map[string]string{"name": "third"})
+	if err := n.d.registerCTOSession(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []struct{ action, args string }{
-		{"charter_set", `{"node":"first","attr":"purpose","value":"Help with work"}`},
-		{"charter_set", `{"node":"first","attr":"accepts","value":"features"}`},
-		{"charter_set", `{"node":"first","attr":"needs","value":"help"}`},
-		{"charter_set", `{"node":"first","attr":"consumers","value":"clients"}`},
-		{"node_add", `{"name":"helper"}`},
-		{"edge_set", `{"from":"first","to":"second","kind":"depends"}`},
-		{"edge_remove", `{"from":"first","to":"second","kind":"depends"}`},
-		{"undo", `{"id":0}`},
-	} {
-		t.Run(c.action+c.args, func(t *testing.T) {
-			if c.action == "edge_remove" {
-				cli.mustCall("edge_set", map[string]string{"from": "first", "to": "second", "kind": "depends"})
-			}
-			if c.action == "undo" {
-				cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "notes", "value": "base note"})
-				cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "notes", "value": "temporary note"})
-			}
-			var before int
-			if err := n.d.st.db.QueryRow(`SELECT count(*) FROM cto_actions WHERE text LIKE 'CTO (minor): applied %'`).Scan(&before); err != nil {
-				t.Fatal(err)
-			}
-			got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(c.action, c.args))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if s, ok := got.(string); ok && strings.HasPrefix(s, "proposal ") {
-				t.Fatalf("minor proposed: %s", s)
-			}
-			var h []protocol.CTOGraphChange
-			if err = json.Unmarshal(cli.mustCall("cto_graph_history", nil), &h); err != nil || len(h) == 0 {
-				t.Fatalf("history: %v %v", h, err)
-			}
-			var notices int
-			if err = n.d.st.db.QueryRow(`SELECT count(*) FROM cto_actions WHERE text LIKE 'CTO (minor): applied %'`).Scan(&notices); err != nil || notices != before+1 {
-				t.Fatalf("notice %d %v", notices, err)
-			}
-			cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: h[len(h)-1].ID})
-			if c.action == "edge_remove" {
-				cli.mustCall("edge_remove", map[string]string{"from": "first", "to": "second", "kind": "depends"})
-			}
-		})
-	}
-	// Minor changes keep their own attribution even while the window is open.
-	n.d.ctoGraph.mu.Lock()
-	n.d.ctoGraph.toggle(time.Now())
-	n.d.ctoGraph.mu.Unlock()
-	if _, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Routine wording"}`)); err != nil {
-		t.Fatal(err)
-	}
-	changes, err := g.gw.Store().CharterHistory("first", 1)
-	if err != nil || len(changes) != 1 || changes[0].By != "CTO (minor)" {
-		t.Fatalf("minor during window: %+v %v", changes, err)
-	}
-	cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: changes[0].ID})
-	n.d.ctoGraph.mu.Lock()
-	n.d.ctoGraph.toggle(time.Now())
-	n.d.ctoGraph.mu.Unlock()
-	for _, c := range []struct{ action, args string }{
-		{"charter_set", `{"node":"first","attr":"purpose","value":"Only local work"}`},
-		{"charter_set", `{"node":"first","attr":"refuses","value":"deployments"}`},
-		{"charter_set", `{"node":"first","attr":"escalate","value":"owner"}`},
+	for _, tc := range []struct{ action, args string }{
 		{"charter_set", `{"node":"first","attr":"maturity","value":"mature"}`},
+		{"charter_set", `{"node":"first","attr":"refuses","value":"deployments"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"auto"}`},
-		{"edge_set", `{"from":"first","to":"component","kind":"governs","mode":"owner"}`},
-		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"ask"}`},
-		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"never"}`},
-		{"edge_remove", `{"from":"first","to":"second","kind":"depends"}`},
-		{"undo", `{"id":0}`},
-		{"node_remove", `{"name":"second"}`},
 	} {
-		t.Run("major/"+c.action+c.args, func(t *testing.T) {
-			if c.action == "edge_remove" {
-				cli.mustCall("edge_set", map[string]string{"from": "first", "to": "second", "kind": "depends", "rule": "auto"})
-			}
-			if c.action == "undo" {
-				cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "refuses", "value": "deployments"})
-			}
-			got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(c.action, c.args))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
-				t.Fatalf("major applied: %v", got)
-			}
-			var before int
-			if err := n.d.st.db.QueryRow(`SELECT count(*) FROM cto_actions WHERE text LIKE 'CTO (owner window): applied %'`).Scan(&before); err != nil {
-				t.Fatal(err)
-			}
-			n.d.ctoGraph.mu.Lock()
-			n.d.ctoGraph.toggle(time.Now())
-			n.d.ctoGraph.mu.Unlock()
-			_, err = n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(c.action, c.args))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var notices int
-			if err := n.d.st.db.QueryRow(`SELECT count(*) FROM cto_actions WHERE text LIKE 'CTO (owner window): applied %'`).Scan(&notices); err != nil || notices != before+1 {
-				t.Fatalf("window notice %d %v", notices, err)
-			}
-			n.d.ctoGraph.mu.Lock()
-			n.d.ctoGraph.toggle(time.Now())
-			n.d.ctoGraph.mu.Unlock()
-			var h []protocol.CTOGraphChange
-			if err = json.Unmarshal(cli.mustCall("cto_graph_history", nil), &h); err != nil || len(h) == 0 {
-				t.Fatalf("history %v %v", h, err)
-			}
-			cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: h[len(h)-1].ID})
-			if c.action == "edge_remove" {
-				cli.mustCall("edge_remove", map[string]string{"from": "first", "to": "second", "kind": "depends"})
-			}
-		})
+		got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(tc.action, tc.args))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.action, err)
+		}
+		assertCTOImmediate(t, got)
 	}
-	cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "maturity", "value": "critical - production"})
-	got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Helpful wording"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
-		t.Fatalf("critical applied: %v", got)
+	items, err := g.gw.Store().ListInbox()
+	if err != nil || len(items) != 3 {
+		t.Fatalf("inbox: %+v %v", items, err)
 	}
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()
-	if _, err = n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Helpful wording"}`)); err != nil {
-		t.Fatal(err)
-	}
-	got, err = n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"notifications","disabled":true}`))
+	got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("node_remove", `{"name":"third"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
-		t.Fatalf("non graph applied: %v", got)
-	}
-	n.d.ctoGraph.mu.Lock()
-	n.d.ctoGraph.until = time.Now().Add(-time.Second)
-	n.d.ctoGraph.mu.Unlock()
-	got, err = n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Only after expiry"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
-		t.Fatalf("expired window applied: %v", got)
+	if text, ok := got.(string); !ok || !strings.HasPrefix(text, "proposal p_") {
+		t.Fatalf("node removal bypassed approval: %v", got)
 	}
 }
 
@@ -283,7 +163,7 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 				proposed = true
 				return "p_1", nil
 			}, func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
-			if err != nil || ran || !proposed {
+			if err != nil || !ran || proposed {
 				t.Fatalf("non graph %s ran=%v proposed=%v err=%v", name, ran, proposed, err)
 			}
 		})
@@ -291,15 +171,14 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 }
 
 func TestCTOGraphWindowStillProposesMovedNodeRule(t *testing.T) {
-	t.Parallel()
-	if !strings.Contains(ctoBrief, "Delivery owner edges, including deploys, always need an approved proposal") {
-		t.Fatal("CTO brief does not explain delivery owner approval")
-	}
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]string{"name": "alpha"})
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()
@@ -307,10 +186,8 @@ func TestCTOGraphWindowStillProposesMovedNodeRule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
-		t.Fatalf("rule bypassed proposal: %v", got)
-	}
-	if _, err := g.gw.Store().UpsertSession(n.d.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "component", Repo: protocol.RepoInfo{Project: "component", Root: "/work/component"}}); err != nil {
+	assertCTOImmediate(t, got)
+	if _, err = g.gw.Store().UpsertSession(n.d.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "component", Repo: protocol.RepoInfo{Project: "component", Root: "/work/component"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, kind := range []string{"deploys", "merges"} {
@@ -319,8 +196,6 @@ func TestCTOGraphWindowStillProposesMovedNodeRule(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}
-		if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
-			t.Fatalf("%s owner bypassed proposal: %v", kind, got)
-		}
+		assertCTOImmediate(t, got)
 	}
 }

@@ -53,8 +53,8 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 	if err := s.requireGraphRefs(); err != nil {
 		return err
 	}
-	if actor != "owner" {
-		return reject("only the owner may change Teams")
+	if !actorAllowed(actor, "rule") {
+		return reject("only the owner or CTO may change Teams")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -156,6 +156,15 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 	}
 	if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?,?,?,?)`, q.Action, q.ID, oldTeam, kind, id, oldValue, newValue, now, actor); err != nil {
 		return err
+	}
+	if actor == "cto" {
+		attr := q.Action
+		if q.Member != nil && q.Action == "membership" {
+			attr += ":" + q.Member.Kind + ":" + q.Member.ID
+		}
+		if err = graphRecord(tx, "team", q.ID, attr, oldValue, newValue, actor, now); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

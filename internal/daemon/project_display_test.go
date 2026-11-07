@@ -49,11 +49,8 @@ func TestCTOProjectDisplayOwnerGateAndListings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := cli.mustCall("project_display_get", map[string]string{"project": "agent-net"})
-	if !strings.Contains(string(before), "Agent Network") {
-		t.Fatalf("proposal changed display name before approval: %s", before)
-	}
-	raw := approveCTOToolResult(t, n.d, out)
+	assertCTOImmediate(t, out)
+	raw, _ := json.Marshal(out)
 	if !strings.Contains(string(raw), "CTO Name") {
 		t.Fatalf("CTO response: %s", raw)
 	}

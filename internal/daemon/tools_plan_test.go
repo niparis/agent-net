@@ -144,7 +144,7 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 		}
 	}
 	req, _ := json.Marshal(map[string]any{"action": "plan", "item": item.ID, "target": protocol.ToolAssignment{Scope: "global"}})
-	value, err := n.d.runCTOToolRaw(context.Background(), "tools_change", req)
+	value, err := legacyProposalFixture(context.Background(), n.d, "tools_change", req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,13 +154,91 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 		t.Fatalf("CTO actor: %s", b)
 	}
 	apply, _ := json.Marshal(map[string]string{"action": "apply", "plan_id": p.ID})
-	if value, err = n.d.runCTOToolRaw(context.Background(), "tools_change", apply); err != nil {
+	if value, err = legacyProposalFixture(context.Background(), n.d, "tools_change", apply); err != nil {
 		t.Fatal(err)
 	}
 	approveCTOToolResult(t, n.d, value)
 	history, err := g.gw.Store().ToolHistory(item.ID)
 	if err != nil || len(history) != 2 || !strings.HasPrefix(history[1].Actor, "owner (CTO proposal p_") {
 		t.Fatalf("CTO audit: %+v %v", history, err)
+	}
+}
+
+func TestCTOToolsApplyInboxUndo(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var item protocol.ToolItem
+	eventually(t, "tool inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{})
+		var page protocol.ToolsPage
+		if err != nil || json.Unmarshal(raw, &page) != nil {
+			return false
+		}
+		for _, v := range page.Items {
+			if v.Name == "demo" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	var plan protocol.ToolPlan
+	if err := json.Unmarshal(cli.mustCall("tools_plan", protocol.ToolPlanRequest{Item: item.ID, Target: protocol.ToolAssignment{Scope: "global"}}), &plan); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]string{"action": "apply", "plan_id": plan.ID})
+	if _, err := n.d.runCTOToolRaw(ctx, "tools_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := g.gw.Store().ListInbox()
+	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "tools_undo" {
+		t.Fatalf("missing tool apply undo: %+v %v", items, err)
+	}
+	var undo protocol.ToolUndoRequest
+	if err = json.Unmarshal([]byte(items[0].Options[1]), &undo); err != nil || undo.Item != item.ID {
+		t.Fatalf("wrong tool undo: %+v %v", undo, err)
+	}
+	cli.mustCall("tools_undo", undo)
+	var before []protocol.ToolProjectState
+	if err = json.Unmarshal(cli.mustCall("tools_projects", map[string]any{}), &before); err != nil {
+		t.Fatal(err)
+	}
+	var original bool
+	for _, state := range before {
+		if state.Item == item.ID {
+			original = state.NewProjects
+		}
+	}
+	args, _ = json.Marshal(map[string]any{"action": "new_projects", "item": item.ID, "on": !original})
+	if _, err = n.d.runCTOToolRaw(ctx, "tools_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err = g.gw.Store().ListInbox()
+	if err != nil || len(items) != 2 || len(items[1].Options) != 2 || items[1].Options[0] != "tools_new_projects" {
+		t.Fatalf("missing new-projects undo: %+v %v", items, err)
+	}
+	cli.mustCall("tools_new_projects", json.RawMessage(items[1].Options[1]))
+	var restored []protocol.ToolProjectState
+	if err = json.Unmarshal(cli.mustCall("tools_projects", map[string]any{}), &restored); err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range restored {
+		if state.Item == item.ID && state.NewProjects != original {
+			t.Fatalf("new-projects setting not restored: %+v", state)
+		}
 	}
 }
 

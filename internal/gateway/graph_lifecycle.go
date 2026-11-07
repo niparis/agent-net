@@ -21,6 +21,9 @@ func (s *Store) GraphLifecycle(action string, p protocol.GraphLifecycleRequest, 
 	if !ok || (kind != "repo" && kind != "agent") {
 		return reject("invalid lifecycle action")
 	}
+	if actor == "cto" && (action == "repo.archive" || action == "agent.tombstone") {
+		return reject("owner approval required")
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err

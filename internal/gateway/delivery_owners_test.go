@@ -49,10 +49,7 @@ func TestDeliveryOwnerAssignmentReplacesEdgeAtomically(t *testing.T) {
 		}
 	}
 	q := protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "accept", Node: "first"}
-	if err := r.s.SetDeliveryOwner(q, "cto"); err == nil {
-		t.Fatal("CTO changed a step owner without approval")
-	}
-	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
+	if err := r.s.SetDeliveryOwner(q, "cto"); err != nil {
 		t.Fatal(err)
 	}
 	q.Node, q.Expect = "missing", "first"
@@ -650,7 +647,7 @@ func TestDeliveryOwnerEdgesRequireOwnerAndAreUnique(t *testing.T) {
 		}
 	}
 	e := protocol.Edge{From: "merger", To: "demo", Kind: "merges"}
-	for _, actor := range []string{"cto", "CTO (minor)", "CTO (owner window)"} {
+	for _, actor := range []string{"CTO (minor)", "CTO (owner window)"} {
 		if err := r.s.SetEdge(e, actor); err == nil {
 			t.Errorf("%s could assign a merge owner", actor)
 		}
@@ -659,7 +656,7 @@ func TestDeliveryOwnerEdgesRequireOwnerAndAreUnique(t *testing.T) {
 	if class, err := r.s.CTOGraphClass("edge_set", raw); err != nil || class != "rule" {
 		t.Fatalf("CTO class = %q, %v", class, err)
 	}
-	if err := r.s.SetEdge(e, "owner (CTO proposal p_1)"); err != nil {
+	if err := r.s.SetEdge(e, "cto"); err != nil {
 		t.Fatal(err)
 	}
 	other := e

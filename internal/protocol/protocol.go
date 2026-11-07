@@ -485,12 +485,13 @@ type (
 		// The gateway uses it to reject notices for a task superseded by a
 		// newer owner request.
 		WorkerIdleNotice bool `json:"worker_idle_notice,omitempty"`
+		// WorkerNotice is set by the worker host daemon for its own notices.
+		WorkerNotice bool `json:"worker_notice,omitempty"`
 		// WorkerTaskRef identifies the gateway-tracked start for a remote relay.
 		WorkerTaskRef string `json:"worker_task_ref,omitempty"`
 		FromCTO       bool   `json:"sender_cto,omitempty"`
-		// OwnerApproved says the owner approved this exact text as their own
-		// words. Only the CTO proposal runner sets it, and only together with
-		// FromCTO. The gateway refuses it from any other sender.
+		// OwnerApproved carries CTO owner voice. Only the CTO path sets it,
+		// together with FromCTO. The gateway refuses it from any other sender.
 		OwnerApproved bool   `json:"owner_approved,omitempty"`
 		Sender        string `json:"sender_session_id"`
 		Recipient     string `json:"recipient_session_id"`

@@ -241,6 +241,7 @@ var keyBindings = []keyBinding{
 	bind(contextInbox, "A", "approve all", "approve all", 1),
 	bind(contextInbox, "t", "answer", "answer", 1),
 	bind(contextInbox, "x", "dismiss", "dismiss", 1),
+	bind(contextInbox, "u", "undo", "undo", 1),
 	bind(contextInbox, "?", "help", "help", 1),
 	bind(contextInbox, "q", actQuit, "quit", 0),
 	bind(contextApps, "esc", "back", "back", 1),

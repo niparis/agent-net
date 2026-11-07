@@ -177,11 +177,7 @@ func TestMaxCTOStartOffersSettingChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, ok := proposal.(string)
-	if !ok || !strings.HasPrefix(text, "proposal p_") {
-		t.Fatalf("setting proposal: %v", proposal)
-	}
-	n.cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: strings.Fields(text)[1], Action: "a"})
+	assertCTOImmediate(t, proposal)
 	limit, err := g.gw.Store().RepoAgentLimit("demo")
 	if err != nil || limit.MaxAgents != 2 {
 		t.Fatalf("approved limit: %+v %v", limit, err)

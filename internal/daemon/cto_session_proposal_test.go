@@ -28,7 +28,7 @@ func TestCTOSessionStartIsProposal(t *testing.T) {
 				proposed++
 				return "p_1", nil
 			}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return nil, nil })
-			if err != nil || proposed != 1 || ran != 0 {
+			if err != nil || proposed != 0 || ran != 1 {
 				t.Fatalf("proposal=%d runs=%d err=%v", proposed, ran, err)
 			}
 		})
@@ -55,7 +55,7 @@ func TestCTOSessionProposalApprovalAndTrust(t *testing.T) {
 	repo := newHomeRepo(t, home, "code/garden")
 	ctx := context.Background()
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "path": repo, "harness": "claude", "first_message": "hello"})
-	if _, err := c.d.runCTOToolRaw(ctx, "session_change", args); err != nil {
+	if _, err := legacyProposalFixture(ctx, c.d, "session_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := c.d.proposalRunner().list()
@@ -94,7 +94,7 @@ func TestCTOProjectCreateRunsAfterApproval(t *testing.T) {
 	path := filepath.Join(home, "code", "new-project")
 	ctx := context.Background()
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "first_message": "hello"})
-	if _, err := c.d.runCTOToolRaw(ctx, "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(ctx, c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -132,7 +132,7 @@ func TestCTOSessionProposalRemotePathRefusedAfterApproval(t *testing.T) {
 	b := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"claude": os.Args[0]} })
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "path": "/outside/project", "harness": "claude", "node_id": b.d.NodeID(), "create": true})
 	ctx := context.Background()
-	if _, err := a.d.runCTOToolRaw(ctx, "session_change", args); err != nil {
+	if _, err := legacyProposalFixture(ctx, a.d, "session_change", args); err != nil {
 		t.Fatalf("proposal: %v", err)
 	}
 	items, err := a.d.proposalRunner().list()
@@ -204,7 +204,7 @@ func TestCTOSessionProposalRemoteStartOnce(t *testing.T) {
 	writeOwnerOpenCodeService(t, os.Getenv("XDG_STATE_HOME"), server.URL)
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "path": repo, "node_id": b.d.NodeID(), "harness": "opencode", "first_message": "hello"})
 	ctx := context.Background()
-	if _, err := a.d.runCTOToolRaw(ctx, "session_change", args); err != nil {
+	if _, err := legacyProposalFixture(ctx, a.d, "session_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := a.d.proposalRunner().list()
@@ -248,7 +248,7 @@ func TestCTOProjectCreateRejectsExistingPath(t *testing.T) {
 	}
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
 	ctx := context.Background()
-	if _, err := c.d.runCTOToolRaw(ctx, "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(ctx, c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := c.d.proposalRunner().list()
@@ -302,7 +302,7 @@ func TestCTOProjectCloneRegistersAndStarts(t *testing.T) {
 	}
 	ctx := context.Background()
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "remote": "git@git.example:team/repo.git", "harness": "claude"})
-	if _, err := c.d.runCTOToolRaw(ctx, "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(ctx, c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := c.d.proposalRunner().list()
@@ -351,7 +351,7 @@ func TestCTOProjectCloneRejectsUnsafeRemotesBeforeHook(t *testing.T) {
 	c.d.cloneProject = func(context.Context, string, string) error { called = true; return nil }
 	for _, remote := range []string{"file:///tmp/repo.git", "/tmp/repo.git", "https://u:p@git.example/team/repo.git"} {
 		args, _ := json.Marshal(map[string]any{"action": "create", "path": filepath.Join(home, "code", "target"), "remote": remote, "harness": "claude"})
-		if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err == nil {
+		if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err == nil {
 			t.Errorf("accepted %q", remote)
 		}
 	}
@@ -371,7 +371,7 @@ func TestCTOProjectCloneRejectsExistingPath(t *testing.T) {
 	called := false
 	c.d.cloneProject = func(context.Context, string, string) error { called = true; return nil }
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "remote": "https://git.example/team/repo.git", "harness": "claude"})
-	if _, err := c.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := c.d.proposalRunner().list()
@@ -402,7 +402,7 @@ func TestCTOProjectCloneRemoteRelay(t *testing.T) {
 		return err
 	}
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "node_id": b.d.NodeID(), "remote": remote, "harness": "claude"})
-	if _, err := a.d.runCTOToolRaw(context.Background(), "project_change", args); err != nil {
+	if _, err := legacyProposalFixture(context.Background(), a.d, "project_change", args); err != nil {
 		t.Fatal(err)
 	}
 	items, err := a.d.proposalRunner().list()

@@ -72,7 +72,11 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	if ctoID == "" || ctoID == w.ownerID() {
 		t.Fatalf("CTO session id %q", ctoID)
 	}
-	ctoMessage, _, err := st.StoreMessage(protocol.MsgSend{Sender: ids[0], Recipient: ctoID, Body: "hello CTO", Type: protocol.TypeRequest})
+	root, _, err := st.StoreMessage(protocol.MsgSend{Sender: ctoID, Recipient: ids[0], Body: "question", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctoMessage, _, err := st.StoreMessage(protocol.MsgSend{Sender: ids[0], Recipient: ctoID, ParentID: root.ID, Body: "hello CTO", Type: protocol.TypeReply})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -102,7 +102,7 @@ func TestTeamGroupSendExcludesOutsider(t *testing.T) {
 	var ownerResult struct {
 		Sent []groupReceipt `json:"sent"`
 	}
-	if err := json.Unmarshal(ownerRaw, &ownerResult); err != nil || len(ownerResult.Sent) != 1 || ownerResult.Sent[0].State != "proposed" {
+	if err := json.Unmarshal(ownerRaw, &ownerResult); err != nil || len(ownerResult.Sent) != 1 || strings.HasPrefix(ownerResult.Sent[0].MessageID, "p_") {
 		t.Fatalf("owner proposal: %s %v", ownerRaw, err)
 	}
 	secondValue, err := n.d.runCTOToolRaw(context.Background(), "agent_message_send", json.RawMessage(`{"to_set":{"team":"finance"},"body":"approved order","as_owner":true}`))
@@ -116,25 +116,22 @@ func TestTeamGroupSendExcludesOutsider(t *testing.T) {
 	if err := json.Unmarshal(secondRaw, &secondResult); err != nil || len(secondResult.Sent) != 1 {
 		t.Fatalf("second proposal: %s %v", secondRaw, err)
 	}
-	if err := n.d.proposalRunner().decide(context.Background(), secondResult.Sent[0].MessageID, true); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "approved team delivery", func() bool { return len(fa.delivered()) == 2 })
-	cli.mustCall("team_write", map[string]any{"action": "membership", "expect_team": "finance", "member": map[string]any{"kind": "agent", "id": "alice"}})
-	if err := n.d.proposalRunner().decide(context.Background(), ownerResult.Sent[0].MessageID, true); err == nil || !strings.Contains(err.Error(), "no longer an online team member") {
-		t.Fatalf("approval after removal: %v", err)
-	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, item := range items {
-		if item.ID == ownerResult.Sent[0].MessageID && item.Status != "failed" {
-			t.Fatalf("removed member proposal status: %+v", item)
+	eventually(t, "owner team deliveries", func() bool { return len(fa.delivered()) == 3 })
+	for _, receipt := range []groupReceipt{ownerResult.Sent[0], secondResult.Sent[0]} {
+		m, ok, err := g.gw.Store().Message(receipt.MessageID)
+		if err != nil || !ok || !m.FromCTO || !m.OwnerApproved {
+			t.Fatalf("owner message %+v %v", m, err)
 		}
 	}
-	if len(fa.delivered()) != 2 {
-		t.Fatalf("approved proposal reached removed member: %+v", fa.delivered())
+	cli.mustCall("team_write", map[string]any{"action": "membership", "expect_team": "finance", "member": map[string]any{"kind": "agent", "id": "alice"}})
+	third, err := n.d.runCTOToolRaw(context.Background(), "agent_message_send", json.RawMessage(`{"to_set":{"team":"finance"},"body":"later","as_owner":true}`))
+	b, _ := json.Marshal(third)
+	var thirdResult struct {
+		Sent []groupReceipt `json:"sent"`
+	}
+	_ = json.Unmarshal(b, &thirdResult)
+	if err != nil || len(thirdResult.Sent) != 0 {
+		t.Fatalf("removed member: %s %v", b, err)
 	}
 
 }

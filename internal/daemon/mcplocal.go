@@ -10,7 +10,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-const mcpAdminOwnerOnly = "adding or removing a shared MCP server is owner-only: ask the owner to do it in the TUI, or the CTO can propose it with mcp_change"
+const mcpAdminOwnerOnly = "adding or removing a shared MCP server is owner-only: ask the owner to do it in the TUI, or ask the CTO to use mcp_change"
 
 // The daemon's part of the MCP registry: frames from the gateway (what to
 // host, probe and invoke), and the local socket methods mcp_* that agents and

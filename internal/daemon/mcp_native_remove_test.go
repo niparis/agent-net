@@ -117,6 +117,38 @@ func TestMCPNativeRemoveEndToEnd(t *testing.T) {
 	}
 }
 
+func TestCTOMCPNativeRemoveInboxUndo(t *testing.T) {
+	f := newImportFixture(t, map[string]string{"probe": stdioNative()}, "")
+	file := filepath.Join(f.home, ".claude.json")
+	original, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := f.nativePlan(t, f.importProbe(t))
+	ctx := context.Background()
+	if err = f.n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]string{"action": "native_remove", "plan_id": plan.ID})
+	if _, err = f.n.d.runCTOToolRaw(ctx, "tools_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := f.g.gw.Store().ListInbox()
+	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "mcp_native_remove" {
+		t.Fatalf("native removal undo missing: %+v %v", items, err)
+	}
+	var undo protocol.MCPNativeRemoveRequest
+	if err = json.Unmarshal([]byte(items[0].Options[1]), &undo); err != nil || undo.UndoPlanID != plan.ID {
+		t.Fatalf("wrong undo: %+v %v", undo, err)
+	}
+	if got := f.nativeCall(t, undo); got.State != protocol.MCPNativeRestored {
+		t.Fatalf("undo failed: %+v", got)
+	}
+	if restored, err := os.ReadFile(file); err != nil || string(restored) != string(original) {
+		t.Fatalf("native configuration not restored: %s %v", restored, err)
+	}
+}
+
 func TestMCPNativeRemoveUndoStopsAfterALaterEdit(t *testing.T) {
 	f := newImportFixture(t, map[string]string{"probe": stdioNative(), "other": stdioNative()}, "")
 	file := filepath.Join(f.home, ".claude.json")
@@ -225,7 +257,7 @@ func TestCTOMCPNativeRemoveOwnerGate(t *testing.T) {
 		t.Fatal("a refused request edited the file")
 	}
 	// The CTO proposes removal; the file stays intact until owner approval.
-	v, err := f.n.d.runCTOToolRaw(context.Background(), "tools_change", importActionJSON(t, "native_remove", protocol.MCPNativeRemoveRequest{PlanID: plan.ID}))
+	v, err := legacyProposalFixture(context.Background(), f.n.d, "tools_change", importActionJSON(t, "native_remove", protocol.MCPNativeRemoveRequest{PlanID: plan.ID}))
 	if err != nil {
 		t.Fatal(err)
 	}

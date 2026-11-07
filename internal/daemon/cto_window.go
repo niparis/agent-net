@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -59,48 +58,4 @@ func (lc *localConn) ctoGraphWindow(raw json.RawMessage) (any, error) {
 	}
 	w.active(now)
 	return protocol.CTOGraphWindow{Until: w.until}, nil
-}
-
-func (d *Daemon) routeCTOGraph(ctx context.Context, name string, raw json.RawMessage) (any, error) {
-	call := proposalCall{Tool: name, Args: raw}
-	// Validate before applying, exactly as for an approved proposal.
-	if err := d.validateProposal(ctx, call); err != nil {
-		return nil, err
-	}
-	concrete, args, _, err := ctoConcreteCall(name, raw)
-	if err != nil {
-		return nil, err
-	}
-	w := &d.ctoGraph
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	data, err := d.call(ctx, "cto.graph_class", map[string]any{"tool": concrete, "args": args})
-	if err != nil {
-		return nil, err
-	}
-	var class string
-	if err = json.Unmarshal(data, &class); err != nil {
-		return nil, err
-	}
-	if class == "rule" {
-		return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
-	}
-	actor := "CTO (minor)"
-	active := w.active(time.Now())
-	if class != "minor" {
-		if !active {
-			return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
-		}
-		actor = "CTO (owner window)"
-	}
-	result, err := d.executeCTOTool(context.WithValue(ctx, proposalActorKey{}, actor), concrete, args)
-	if err != nil {
-		return nil, err
-	}
-	text := actor + ": applied " + concrete + "; u to undo"
-	if err = d.recordCTOAction(text); err != nil {
-		return nil, err
-	}
-	d.broadcastCTOUI(protocol.UIRequest{Text: text})
-	return result, nil
 }

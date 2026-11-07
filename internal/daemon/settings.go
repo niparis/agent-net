@@ -254,36 +254,3 @@ func validateSettingsWrite(q protocol.SettingsWrite) (bool, error) {
 	}
 	return rule, nil
 }
-
-func (d *Daemon) routeCTOSettings(ctx context.Context, raw json.RawMessage) (any, error) {
-	var q struct {
-		Area     string                    `json:"area"`
-		Changes  []protocol.SettingsChange `json:"changes"`
-		Revision int64                     `json:"revision"`
-		Reason   string                    `json:"reason"`
-	}
-	if err := json.Unmarshal(raw, &q); err != nil {
-		return nil, err
-	}
-	var rule bool
-	var err error
-	switch q.Area {
-	case "values_write":
-		rule, err = validateSettingsWrite(protocol.SettingsWrite{Changes: q.Changes, Reason: q.Reason})
-	case "values_undo":
-		rule, err = d.settingsRevisionHasRule(ctx, q.Revision)
-	default:
-		return routeCTOTool(ctx, "settings_change", raw, d.Propose, d.executeCTOTool)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if rule {
-		return routeCTOTool(ctx, "settings_change", raw, d.Propose, d.executeCTOTool)
-	}
-	concrete, args, _, err := ctoConcreteCall("settings_change", raw)
-	if err != nil {
-		return nil, err
-	}
-	return d.executeCTOTool(context.WithValue(ctx, proposalActorKey{}, "cto"), concrete, args)
-}
