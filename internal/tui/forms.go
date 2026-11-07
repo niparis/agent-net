@@ -26,6 +26,7 @@ const (
 	modeDefectNote               // typing the one-line defect found later
 	modeDefectSeverity           // choosing the defect severity, 1 to 4
 	modeQuotaConfirm
+	modeQuotaFloor
 	modeTrust         // asking before trusting a session with peer requests
 	modePolicy        // the delegation policy form (policy.go)
 	modeRename        // typing a display name for the selected session's machine

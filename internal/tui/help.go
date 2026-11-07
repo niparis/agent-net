@@ -226,6 +226,8 @@ func (m Model) helpLine(w int) string {
 			return confirmLine("Unprotect "+target+"?", w)
 		}
 		return confirmLine("Protect "+target+"?", w)
+	case modeQuotaFloor:
+		return clip(m.rename.View()+sDim.Render("   enter saves, esc cancels, 0 = off"), w)
 	case modeConfirm:
 		if m.confirmMachine != "" {
 			prefix := "Remove machine "

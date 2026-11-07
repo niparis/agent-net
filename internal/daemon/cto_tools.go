@@ -449,6 +449,12 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, errors.New("bad protected providers")
 		}
 		return d.protectedProviders(ctx, &p)
+	case "worker_floors_set":
+		var p protocol.WorkerFloors
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad worker floors")
+		}
+		return d.workerFloors(ctx, &p)
 	case "worker_providers_set":
 		var p protocol.WorkerProviders
 		if json.Unmarshal(raw, &p) != nil {

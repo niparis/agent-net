@@ -239,3 +239,67 @@ func (g *Gateway) handleProtectedProviders(w http.ResponseWriter, r *http.Reques
 	}
 	writeJSON(w, in, err)
 }
+
+const workerFloorsKey = "worker_floors"
+
+func (s *Store) workerFloors() (protocol.WorkerFloors, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, workerFloorsKey).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return protocol.WorkerFloors{}, nil
+	}
+	if err != nil {
+		return protocol.WorkerFloors{}, err
+	}
+	var out protocol.WorkerFloors
+	err = json.Unmarshal([]byte(raw), &out)
+	out.Configured = true
+	return out, err
+}
+
+func (g *Gateway) handleWorkerFloors(w http.ResponseWriter, r *http.Request) {
+	node, ok := g.nodeAuthed(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method == http.MethodGet {
+		out, err := g.store.workerFloors()
+		writeJSON(w, out, err)
+		return
+	}
+	var in protocol.WorkerFloors
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in) != nil || len(in.Floors) > 128 {
+		http.Error(w, "bad worker floors", 400)
+		return
+	}
+	cleaned := make(map[string]int, len(in.Floors))
+	for p, f := range in.Floors {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p == "" || len(p) > 64 || strings.IndexFunc(p, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.')
+		}) >= 0 {
+			http.Error(w, "bad provider", 400)
+			return
+		}
+		if f < 0 || f > 95 {
+			http.Error(w, "bad floor: must be 0-95", 400)
+			return
+		}
+		if f > 0 {
+			cleaned[p] = f
+		}
+	}
+	in.Floors = cleaned
+	in.Configured = true
+	raw, err := json.Marshal(in)
+	if err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, workerFloorsKey, string(raw), g.store.now().UnixNano())
+	if err == nil {
+		g.store.Event("worker_floors.set", node, "", "", "")
+	}
+	writeJSON(w, in, err)
+}

@@ -1131,6 +1131,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.defectSeverityKey(k)
 	case modeQuotaConfirm:
 		return m.quotaConfirmKey(k)
+	case modeQuotaFloor:
+		return m.quotaFloorKey(k)
 	case modeTrust:
 		return m.trustKey(k)
 	case modePolicy:
@@ -1389,6 +1391,34 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.quotaConfirm, m.quotaUnprotect = provider, m.quotaProviderProtected(row.provider.Provider)
 			m.quotaConfirmDisplay = m.quotaRowDisplayName(row)
 			m.mode = modeQuotaConfirm
+		case "floor":
+			rows := m.selectableQuotaRows()
+			if len(rows) == 0 {
+				m.fail("No subscription selected.")
+				return m, nil
+			}
+			row := rows[min(m.quotaSelected, len(rows)-1)]
+			provider := m.quotaModelProvider(row.provider.Provider)
+			current := m.snap.WorkerFloors.Floor(provider)
+			m.notice = notice{}
+			m.quotaConfirm = provider
+			m.quotaConfirmDisplay = m.quotaRowDisplayName(row)
+			m.mode = modeQuotaFloor
+			target := sanitize(m.quotaConfirm)
+			if m.quotaConfirmDisplay != "" && !strings.EqualFold(m.quotaConfirmDisplay, m.quotaConfirm) {
+				target = sanitize(m.quotaConfirmDisplay) + " (" + target + ")"
+			}
+			m.rename = newTextInput()
+			m.rename.Prompt = "floor % for " + target + ": "
+			m.rename.CharLimit = 2
+			m.rename.SetVirtualCursor(false)
+			if current > 0 {
+				m.rename.SetValue(fmt.Sprintf("%d", current))
+			} else {
+				m.rename.SetValue("")
+			}
+			m.rename.CursorEnd()
+			return m, m.rename.Focus()
 		case "show unset":
 			m.quotaSelected = 0
 			m.quotaShowUnset = !m.quotaShowUnset

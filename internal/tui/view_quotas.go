@@ -37,6 +37,11 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sBold.Render(line))
 		}
 	}
+	if m.mode == modeQuotaFloor {
+		for _, line := range wrap("workers pause when quota falls below this floor (0-95, 0 = off)", w-4) {
+			subscription = append(subscription, sBold.Render(line))
+		}
+	}
 	rows := m.quotaDisplayRows()
 	nodes, ids := m.quotaNodes()
 	var errors []string
@@ -129,24 +134,38 @@ func (m Model) quotasView(w, h int) []string {
 			}
 		}
 	}
+	anyFloor := false
+	for _, r := range configured {
+		if m.snap.WorkerFloors.Floor(r.provider.Provider) > 0 {
+			anyFloor = true
+			break
+		}
+	}
 	machineRoom := 0
 	if showMachines {
 		machineRoom = len(machines) * (machineWidth + 1)
 	}
-	providerWidth, planWidth, windowWidth := quotaColumnWidths(configured, m, w-machineRoom, machineBadge)
+	providerWidth, planWidth, windowWidth := quotaColumnWidths(configured, m, w-machineRoom, machineBadge, anyFloor)
 	barCells, remainingWidth := 10, 20
 	if w < 100 {
 		barCells, remainingWidth = 8, 18
 	}
+	paceWidth := 9
+	if anyFloor {
+		paceWidth = 11
+	}
 	if len(rows) > 0 {
 		header := cell("PROVIDER", providerWidth) + " " + cell("PLAN", planWidth)
+		if anyFloor {
+			header += " " + cell("FLOOR", 5)
+		}
 		if showMachines {
 			for _, node := range machines {
 				header += " " + cell(strings.ToUpper(sanitize(firstNonEmpty(node.Hostname, node.NodeID))), machineWidth)
 			}
-			header += " " + cell("WINDOW", windowWidth) + " LEFT                 PACE      RESETS"
+			header += " " + cell("WINDOW", windowWidth) + " " + cell("LEFT", remainingWidth) + " " + cell("PACE", paceWidth) + " RESETS"
 		} else {
-			header += " " + cell("WINDOW", windowWidth) + " " + cell("USAGE", remainingWidth) + " " + cell("PACE", 9) + " RESETS"
+			header += " " + cell("WINDOW", windowWidth) + " " + cell("USAGE", remainingWidth) + " " + cell("PACE", paceWidth) + " RESETS"
 		}
 		subscription = append(subscription, sBold.Render(header))
 	}
@@ -159,8 +178,10 @@ func (m Model) quotasView(w, h int) []string {
 		if len(windows) == 0 {
 			windows = []protocol.QuotaWindow{{}}
 		}
+		floor := m.snap.WorkerFloors.Floor(p.Provider)
 		for i, window := range windows {
 			provider, plan := "", ""
+			floorCell := cell("", 5)
 			if i == 0 {
 				provider = sanitize(p.Provider)
 				if machineBadge != "" && quotaMachineStatus(liveMachine.Usage.Quotas, p.Provider) == "live" {
@@ -170,6 +191,13 @@ func (m Model) quotasView(w, h int) []string {
 					provider = "🔒 " + provider
 				}
 				plan = sanitize(p.Plan)
+				if anyFloor {
+					floorStr := "-"
+					if floor > 0 {
+						floorStr = fmt.Sprintf("%d%%", floor)
+					}
+					floorCell = sDim.Render(cell(floorStr, 5))
+				}
 			}
 			name := protocol.QuotaWindowName(window)
 			if name == "quota" && len(p.Windows) == 0 {
@@ -194,9 +222,15 @@ func (m Model) quotasView(w, h int) []string {
 			if left < 15 || window.Exhausted {
 				color = roleError
 			}
+			windowUnderFloor := floor > 0 && (window.Exhausted || left < float64(floor))
+			if windowUnderFloor && color == roleGood {
+				color = roleWarning
+			}
 			pctText := pct
 			if window.Exhausted || window.PercentUsed >= 100 {
 				pctText = sBad.Render(pct)
+			} else if windowUnderFloor && left > 40 {
+				pctText = lipgloss.NewStyle().Foreground(roleWarning).Render(pct)
 			}
 			remaining := "-"
 			if len(p.Windows) > 0 {
@@ -211,7 +245,11 @@ func (m Model) quotasView(w, h int) []string {
 			if window.Pace == protocol.QuotaPaceBehind {
 				paceStyle = sBusy
 			}
-			pace = paceStyle.Render(cell(pace, 9))
+			if windowUnderFloor {
+				pace = lipgloss.NewStyle().Foreground(roleWarning).Render(cell("under floor", paceWidth))
+			} else {
+				pace = paceStyle.Render(cell(pace, paceWidth))
+			}
 			reset := "-"
 			if window.ResetsAt > 0 {
 				t := m.displayTime(window.ResetsAt)
@@ -241,6 +279,9 @@ func (m Model) quotasView(w, h int) []string {
 				providerCell = sSel.Render(providerCell)
 			}
 			line := providerCell + " " + cell(plan, planWidth)
+			if anyFloor {
+				line += " " + floorCell
+			}
 			if showMachines {
 				for _, node := range machines {
 					status := ""
@@ -259,7 +300,6 @@ func (m Model) quotasView(w, h int) []string {
 			line += fmt.Sprintf(" %s %s %s %s", cell(name, windowWidth), remaining, pace, reset)
 			subscription = append(subscription, clip(line, w-4))
 		}
-
 	}
 	if count := len(liveUnused) + len(unset) + len(unused); count > 0 {
 		action := "s to show"
@@ -306,6 +346,9 @@ func (m Model) quotasView(w, h int) []string {
 			age = 0
 		}
 		title += fmt.Sprintf(" · read %s ago", age.Truncate(time.Second))
+	}
+	if !anyFloor && len(rows) > 0 {
+		title += " · f set worker floor"
 	}
 	out = append(out, panel(title, subscription, w, roleAccent)...)
 	if calibration := m.calibrationView(w); len(calibration) > 0 {
@@ -437,7 +480,7 @@ func quotaErrorLabel(err string) string {
 	}
 }
 
-func quotaColumnWidths(rows []quotaRow, m Model, w int, badge string) (int, int, int) {
+func quotaColumnWidths(rows []quotaRow, m Model, w int, badge string, anyFloor bool) (int, int, int) {
 	provider, plan, window := len("PROVIDER"), len("PLAN"), len("WINDOW")
 	badgeWidth := 0
 	if badge != "" {
@@ -467,6 +510,9 @@ func quotaColumnWidths(rows []quotaRow, m Model, w int, badge string) (int, int,
 	reserve := 47
 	if w < 100 {
 		reserve = 35
+	}
+	if anyFloor {
+		reserve += 8
 	}
 	budget := max(w-4-reserve, 12)
 	for provider+plan+window > budget {
