@@ -81,15 +81,15 @@ Legend ────────────────────────�
   feature_requests shown only when another agent looks this node up
 
  Quotas
-  tab                    Quotas / Workers log
+  tab, shift+tab         Quotas / Workers log / Quality
   left/right             cycle the Quality panel agent
   p                      protect or unprotect this subscription
   f                      set worker quota floor (0-95%)
   s                      show or hide subscriptions that are not set up
-  d                      open Quality details
+  d                      jump to Quality sub tab
 
  Workers log
-  tab                    Quotas
+  tab, shift+tab         sub tab
   pgup                   page up
   pgdown                 page down
 
@@ -199,7 +199,7 @@ Legend ────────────────────────�
   tab                    edit name
 
  Quality details
-  esc                    back
+  tab, shift+tab         sub tab
   ?                      help
   up/down, j/k           scroll
   pgup/pgdn              page

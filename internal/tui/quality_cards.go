@@ -179,10 +179,10 @@ func (m Model) qualityDetailsView(w, h int) []string {
 	body := []string{qualitySelector(q, m.qualityAgent, w)}
 	body = append(body, qualityDetailsTable(byLevel, picks, reasons, familyWidth, w)...)
 	legend := wrap("NEEDED HELP: share of tasks with at least one nudge or fix. LATE BUGS: bugs found after the hand-back, with the worst severity (1 to 4).", w)
-	room := max(0, h-1-len(legend))
+	room := max(0, h-2-len(legend))
 	offset := min(m.quotaScroll, max(0, len(body)-room))
 	end := min(len(body), offset+room)
-	out := []string{sBold.Render("Quality analysis · details") + sDim.Render("   j/k scroll · esc back")}
+	out := []string{m.titleLine(w), m.quotasSubtabs(w)}
 	out = append(out, body[offset:end]...)
 	for len(out) < h-len(legend) {
 		out = append(out, "")

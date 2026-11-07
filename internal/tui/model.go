@@ -1194,13 +1194,18 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.helpScroll = min(max(m.helpScroll, 0), max(len(m.helpContent(max(m.width, 40)))-room, 0))
 		return m, nil
 	}
-	if m.qualityDetail && m.tab == quotasTab {
+	if m.tab == quotasTab && !m.help && (k.String() == "tab" || k.String() == "shift+tab") {
+		if k.String() == "shift+tab" {
+			m, _ = m.nextQuotasSubtab()
+		}
+		return m.nextQuotasSubtab()
+	}
+	if m.qualityDetail && m.tab == quotasTab && keyAction(contextQualityDetails, k.String()) != "" {
 		switch keyAction(contextQualityDetails, k.String()) {
 		case "help":
 			m.openHelp()
 		case actClose:
-			m.qualityDetail = false
-			m.quotaScroll = 0
+			// Escape leaves the selected sub tab in place.
 		case actDown:
 			m.quotaScroll++
 		case actUp:

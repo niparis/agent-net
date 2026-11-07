@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-  Quotas    [ Workers log ]
+  Quotas    [ Workers log ]    Quality
 ╭─Workers log──────────────────────────────────────────────────────────────────╮
 │ ▸ 22:13 test-model norm owner     Review worker history and difficu… running │
 │                                                                              │
@@ -21,4 +21,4 @@
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 ╰─c: open the CTO──────────────────────────────────────────────────────────────╯
-tab Quotas  ↑↓ select run  → details  ? help  q quit
+tab sub tab  ↑↓ select run  → details  ? help  q quit

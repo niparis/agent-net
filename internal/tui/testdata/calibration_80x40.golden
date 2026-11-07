@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-[ Quotas ]    Workers log
+[ Quotas ]    Workers log      Quality
 ╭─Subscriptions────────────────────────────────────────────────────────────────╮
 │ no provider protected · select a subscription and press p                    │
 │ No machine reads quotas yet: quota-axi is not installed on any machine (see  │
@@ -37,4 +37,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  d quality details  c CTO  q quit
+up/down select  p protect  s show unset  d Quality  c CTO  ? help  q quit

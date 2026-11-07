@@ -428,7 +428,16 @@ func (m Model) deliveryDetailLoaded(msg deliveryDetailMsg) Model {
 
 // nextQuotasSubtab toggles the quota views.
 func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
-	m.workersLog = !m.workersLog
+	switch {
+	case m.qualityDetail:
+		m.qualityDetail = false
+	case m.workersLog:
+		m.workersLog = false
+		m.qualityDetail = true
+	default:
+		m.workersLog = true
+	}
+	m.quotaScroll = 0
 	if !m.workersLog {
 		m.workerLogDetailsFocus = false
 	}
