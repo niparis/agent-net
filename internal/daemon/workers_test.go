@@ -302,7 +302,10 @@ func TestShortWorkerSettingsBoundShutdown(t *testing.T) {
 // the owner, send it a follow-up as the owner, and stop it. The process, its
 // child and the whole group go away.
 func TestWorkerLifecycleStartReplyStop(t *testing.T) {
-	t.Parallel()
+	withFakeOpenCodeRouteSets(t, testWorkerLifecycleStartReplyStop)
+}
+
+func testWorkerLifecycleStartReplyStop(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")

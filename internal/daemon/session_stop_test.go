@@ -92,6 +92,10 @@ func TestSessionStopTerminalNamedWithFolder(t *testing.T) {
 }
 
 func TestSessionStopOpenCodeService(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testSessionStopOpenCodeService)
+}
+
+func testSessionStopOpenCodeService(t *testing.T) {
 	for _, status := range []string{"busy", "idle"} {
 		t.Run(status, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -99,11 +103,9 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 			state := t.TempDir()
 			t.Setenv("XDG_STATE_HOME", state)
 			calls := make(chan string, 1)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/openapi.json" {
-					fmt.Fprint(w, `{"paths":{"/api/session/{sessionID}/interrupt":{"post":{}}}}`)
-					return
-				}
+			mux := http.NewServeMux()
+			old := os.Getenv("FAKE_OC_OLD_ROUTES") != ""
+			fakeOpenCodeCapabilities(mux, old, func(*http.Request) bool { return true }, func(w http.ResponseWriter, r *http.Request) {
 				user, password, ok := r.BasicAuth()
 				if !ok || user != "opencode" || password != "test-owner-password" {
 					t.Errorf("missing service authentication")
@@ -113,7 +115,8 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 				}
 				calls <- r.Method + " " + r.URL.Path
 				fmt.Fprint(w, `{"interrupted":true}`)
-			}))
+			})
+			server := httptest.NewServer(mux)
 			defer server.Close()
 			writeOwnerOpenCodeService(t, state, server.URL)
 			raw := cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
@@ -122,7 +125,11 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 			}
 			select {
 			case got := <-calls:
-				if got != "POST /api/session/ses_owner/interrupt" {
+				action := "interrupt"
+				if old {
+					action = "abort"
+				}
+				if got != "POST /api/session/ses_owner/"+action {
 					t.Fatalf("interrupt %q", got)
 				}
 			default:

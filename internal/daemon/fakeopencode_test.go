@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -897,4 +898,19 @@ func fakeOpenCodeCapabilities(mux *http.ServeMux, old bool, auth func(*http.Requ
 		}
 		json.NewEncoder(w).Encode(map[string]any{"info": map[string]any{"version": "2.2.1"}, "paths": paths})
 	})
+}
+
+// withFakeOpenCodeRouteSets runs service scenarios with current discovery and
+// with the legacy server, which has no OpenAPI document and only serves abort.
+func withFakeOpenCodeRouteSets(t *testing.T, test func(*testing.T)) {
+	t.Helper()
+	for _, routes := range []struct{ name, old string }{
+		{"v2.2.6", ""},
+		{"legacy", "1"},
+	} {
+		t.Run(routes.name, func(t *testing.T) {
+			t.Setenv("FAKE_OC_OLD_ROUTES", routes.old)
+			test(t)
+		})
+	}
 }

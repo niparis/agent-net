@@ -26,6 +26,10 @@ func TestCTOBriefTeachesGraphUse(t *testing.T) {
 }
 
 func TestCTORuntime(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTORuntime)
+}
+
+func testCTORuntime(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
@@ -160,6 +164,10 @@ func TestCTORuntime(t *testing.T) {
 }
 
 func TestCTOAdoptsModelSelectedInOpenCode(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOAdoptsModelSelectedInOpenCode)
+}
+
+func testCTOAdoptsModelSelectedInOpenCode(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
@@ -220,6 +228,10 @@ func TestCTOAdoptsModelSelectedInOpenCode(t *testing.T) {
 }
 
 func TestCTOModelsAreSavedPerHarnessAndUsedByEachRuntime(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOModelsAreSavedPerHarnessAndUsedByEachRuntime)
+}
+
+func testCTOModelsAreSavedPerHarnessAndUsedByEachRuntime(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	sessions, _ := useFakeClaude(t)
@@ -312,6 +324,10 @@ func TestCTOLegacyModelMigratesToMatchingHarnessSlot(t *testing.T) {
 }
 
 func TestCTOSkipsAgentSwitchWhenSessionIsAlreadyCTO(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOSkipsAgentSwitchWhenSessionIsAlreadyCTO)
+}
+
+func testCTOSkipsAgentSwitchWhenSessionIsAlreadyCTO(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
@@ -342,6 +358,10 @@ func TestCTOSkipsAgentSwitchWhenSessionIsAlreadyCTO(t *testing.T) {
 }
 
 func TestCTOEnterAppliesSavedModelAndAgent(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOEnterAppliesSavedModelAndAgent)
+}
+
+func testCTOEnterAppliesSavedModelAndAgent(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
@@ -390,6 +410,10 @@ func TestCTOMethodsOwnerGate(t *testing.T) {
 // The CTO gets the owner-gated text exactly,
 // and an agent session cannot make the same call.
 func TestCTOSendCarriesTheTextAndUsesTheOwnerGate(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOSendCarriesTheTextAndUsesTheOwnerGate)
+}
+
+func testCTOSendCarriesTheTextAndUsesTheOwnerGate(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi", detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
@@ -413,6 +437,10 @@ func TestCTOSendCarriesTheTextAndUsesTheOwnerGate(t *testing.T) {
 }
 
 func TestCTORecoversAfterServerExit(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTORecoversAfterServerExit)
+}
+
+func testCTORecoversAfterServerExit(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
@@ -442,6 +470,10 @@ func TestCTORecoversAfterServerExit(t *testing.T) {
 }
 
 func TestCTOStartupFailure(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOStartupFailure)
+}
+
+func testCTOStartupFailure(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	t.Setenv("FAKE_OC_EXIT", "1")
 	g := startGateway(t, t.TempDir(), "")
@@ -453,6 +485,10 @@ func TestCTOStartupFailure(t *testing.T) {
 }
 
 func TestCTOPrivatePeerGate(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOPrivatePeerGate)
+}
+
+func testCTOPrivatePeerGate(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
@@ -475,6 +511,10 @@ func TestCTOPrivatePeerGate(t *testing.T) {
 }
 
 func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOToolsThroughFakeOpenCode)
+}
+
+func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, WorkerSettings{}, nil)
@@ -648,6 +688,10 @@ func TestCTOQueuedStartPersistsAttribution(t *testing.T) {
 }
 
 func TestCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOUndoBeforeFirstMessageIsKept)
+}
+
+func testCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
@@ -679,6 +723,10 @@ func TestCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
 }
 
 func TestCTOEventsIncludeAcceptedPromptFailure(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOEventsIncludeAcceptedPromptFailure)
+}
+
+func testCTOEventsIncludeAcceptedPromptFailure(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
@@ -703,6 +751,10 @@ func mustMarshalCTOEvents(t *testing.T, messages []json.RawMessage) []byte {
 }
 
 func TestCTOEnterOpenCode(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOEnterOpenCode)
+}
+
+func testCTOEnterOpenCode(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
