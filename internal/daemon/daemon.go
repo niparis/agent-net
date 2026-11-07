@@ -76,6 +76,9 @@ type Config struct {
 	testDeliveryRecordTimeout time.Duration
 	// testQueuedTaskTimeout shortens the queued task relay deadline in tests.
 	testQueuedTaskTimeout time.Duration
+	// testCleanupFetch replaces cleanupFetchDefault in cleanupProjects, so a
+	// test can hold the fetch and check that cleanup holds no locks.
+	testCleanupFetch func(ctx context.Context, dir, defaultBranch string) string
 
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.

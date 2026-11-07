@@ -70,16 +70,38 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 		if err != nil {
 			continue
 		}
+		defaultBranch := cleanupDefaultBranch(ctx, p.Path, p.DefaultBranch)
+		// Refresh the project's default branch once, before any row work and
+		// outside every cleanup lock.
+		remoteRef := ""
+		if len(rows) > 0 && defaultBranch != "" {
+			fetch := d.cfg.testCleanupFetch
+			if fetch == nil {
+				fetch = cleanupFetchDefault
+			}
+			remoteRef = fetch(ctx, p.Path, defaultBranch)
+		}
+		ready := make([]cleanupWorktree, 0, len(rows))
 		for _, row := range rows {
-			row.DefaultBranch = p.DefaultBranch
+			row.DefaultBranch = defaultBranch
+			row.RemoteDefaultRef = remoteRef
 			if err := d.cleanupChange(ctx, p.Name, &row); err != nil {
 				if d.log != nil {
 					d.Logf("worker.worktree_cleanup path=%q change_error=%v", row.Path, err)
 				}
 				continue
 			}
-			if err := d.cleanupWorktree(ctx, row, now); err != nil && d.log != nil {
-				d.Logf("worker.worktree_cleanup path=%q error=%v", row.Path, err)
+			ready = append(ready, row)
+		}
+		for i := range ready {
+			if err := cleanupPrepareProof(ctx, &ready[i]); err != nil {
+				if d.log != nil {
+					d.Logf("worker.worktree_cleanup path=%q prepare_error=%v", ready[i].Path, err)
+				}
+				continue
+			}
+			if err := d.cleanupWorktree(ctx, ready[i], now); err != nil && d.log != nil {
+				d.Logf("worker.worktree_cleanup path=%q error=%v", ready[i].Path, err)
 			}
 		}
 	}
@@ -90,6 +112,13 @@ type cleanupWorktree struct {
 	EndedAt, ChangeEndedAt, RetainUntil, DirtyLoggedAt time.Time
 	ChangeState, MergedCommit, RetainHead              string
 	ChangeChecked                                      bool
+	// RemoteDefaultRef is the fetched origin/<default> ref for the project,
+	// resolved once per cleanup pass outside the cleanup locks.
+	RemoteDefaultRef string
+	// MergedReason and MergedHead are the merged-elsewhere proof computed
+	// outside the cleanup locks. Cleanup uses the proof only when the branch
+	// head still equals MergedHead.
+	MergedReason, MergedHead string
 }
 
 // cleanupBranch verifies a recorded worker branch without depending on the
@@ -232,16 +261,7 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	}
 	defaultBranch := w.DefaultBranch
 	if defaultBranch == "" {
-		if ref, err := gitOut(ctx, w.Project, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil && strings.HasPrefix(ref, "refs/remotes/origin/") {
-			defaultBranch = strings.TrimPrefix(ref, "refs/remotes/origin/")
-		} else {
-			for _, name := range []string{"main", "master"} {
-				if _, err := gitOut(ctx, w.Project, "show-ref", "--verify", "--quiet", "refs/heads/"+name); err == nil {
-					defaultBranch = name
-					break
-				}
-			}
-		}
+		defaultBranch = cleanupDefaultBranch(ctx, w.Project, "")
 	}
 	defaultRef := "refs/heads/" + defaultBranch
 	if defaultBranch == "" || defaultRef == branchRef {
@@ -282,39 +302,49 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 			retainUntil = deadline
 		}
 	} else if retainUntil.IsZero() && unique != "" {
-		if !w.ChangeChecked || now.Sub(w.EndedAt) <= 14*24*time.Hour {
+		// The merged-elsewhere proof was computed outside the cleanup locks.
+		// Use it only for the branch head it was made for; a branch that moved
+		// waits for the next pass.
+		if w.MergedHead == "" || head != w.MergedHead {
 			return nil
 		}
-		// A worker record or symbolic ref may still name this branch.
-		if d.st != nil {
-			var references int
-			if err := d.st.db.QueryRow(`SELECT count(*) FROM workers WHERE id<>? AND base=?`, w.ID, w.Branch).Scan(&references); err != nil {
+		if w.MergedReason != "" {
+			reason = w.MergedReason
+		} else {
+			if !w.ChangeChecked || now.Sub(w.EndedAt) <= 14*24*time.Hour {
+				return nil
+			}
+			// A worker record or symbolic ref may still name this branch.
+			if d.st != nil {
+				var references int
+				if err := d.st.db.QueryRow(`SELECT count(*) FROM workers WHERE id<>? AND base=?`, w.ID, w.Branch).Scan(&references); err != nil {
+					return err
+				}
+				if references != 0 {
+					return nil
+				}
+			}
+			symrefs, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(symref)")
+			if err != nil {
 				return err
 			}
-			if references != 0 {
-				return nil
+			for _, ref := range strings.Split(symrefs, "\n") {
+				if ref == branchRef {
+					return nil
+				}
 			}
-		}
-		symrefs, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(symref)")
-		if err != nil {
-			return err
-		}
-		for _, ref := range strings.Split(symrefs, "\n") {
-			if ref == branchRef {
-				return nil
+			// Keep commits referenced by another branch or remote.
+			others, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(refname)", "--contains", head, "refs/heads/", "refs/remotes/")
+			if err != nil {
+				return err
 			}
-		}
-		// Keep commits referenced by another branch or remote.
-		others, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(refname)", "--contains", head, "refs/heads/", "refs/remotes/")
-		if err != nil {
-			return err
-		}
-		for _, ref := range strings.Split(others, "\n") {
-			if ref != "" && ref != branchRef {
-				return nil
+			for _, ref := range strings.Split(others, "\n") {
+				if ref != "" && ref != branchRef {
+					return nil
+				}
 			}
+			reason = "stale"
 		}
-		reason = "stale"
 	}
 	if !retainUntil.IsZero() && d.st != nil {
 		if _, err := d.st.db.Exec(`UPDATE cleanup_worktrees SET retain_until=?,retain_head=? WHERE worker_id=? AND ended_at=?`, retainUntil.UnixNano(), head, w.ID, w.EndedAt.UnixNano()); err != nil {
@@ -355,6 +385,183 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		}
 	}
 	return nil
+}
+
+// cleanupDefaultBranch returns the project's default branch: the registered
+// one, origin/HEAD, or a local main or master.
+func cleanupDefaultBranch(ctx context.Context, dir, configured string) string {
+	if configured != "" {
+		return configured
+	}
+	if ref, err := gitOut(ctx, dir, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil && strings.HasPrefix(ref, "refs/remotes/origin/") {
+		return strings.TrimPrefix(ref, "refs/remotes/origin/")
+	}
+	for _, name := range []string{"main", "master"} {
+		if _, err := gitOut(ctx, dir, "show-ref", "--verify", "--quiet", "refs/heads/"+name); err == nil {
+			return name
+		}
+	}
+	return ""
+}
+
+// cleanupNeedsRemoteProof reports whether a row has no delivery change and its
+// branch head is not on the local default branch, so cleanup must look at the
+// remote and at cherry or squash proofs. It runs outside the cleanup locks.
+func cleanupNeedsRemoteProof(ctx context.Context, w *cleanupWorktree) bool {
+	if w.ChangeState != "" || !w.RetainUntil.IsZero() || w.DefaultBranch == "" {
+		return false
+	}
+	branchRef := "refs/heads/" + w.Branch
+	defaultRef := "refs/heads/" + w.DefaultBranch
+	if defaultRef == branchRef {
+		return false
+	}
+	if _, err := gitOut(ctx, w.Project, "show-ref", "--verify", "--quiet", defaultRef); err != nil {
+		return false
+	}
+	head, err := gitOut(ctx, w.Project, "rev-parse", "--verify", branchRef+"^{commit}")
+	if err != nil {
+		return false
+	}
+	unique, err := gitOut(ctx, w.Project, "rev-list", "--max-count=1", head, "--not", defaultRef)
+	return err == nil && unique != ""
+}
+
+// cleanupPrepareProof records, outside the cleanup locks, whether a branch
+// with no delivery change is already on a default ref through a remote merge,
+// a cherry-pick or a squash. MergedHead is set even when no proof is found, so
+// cleanupWorktree knows the check was made for that head.
+func cleanupPrepareProof(ctx context.Context, w *cleanupWorktree) error {
+	if w.ChangeState != "" || !w.RetainUntil.IsZero() || w.DefaultBranch == "" {
+		return nil
+	}
+	branchRef := "refs/heads/" + w.Branch
+	defaultRef := "refs/heads/" + w.DefaultBranch
+	if defaultRef == branchRef {
+		return nil
+	}
+	if _, err := gitOut(ctx, w.Project, "show-ref", "--verify", "--quiet", defaultRef); err != nil {
+		return nil
+	}
+	head, err := gitOut(ctx, w.Project, "rev-parse", "--verify", branchRef+"^{commit}")
+	if err != nil {
+		return nil
+	}
+	unique, err := gitOut(ctx, w.Project, "rev-list", "--max-count=1", head, "--not", defaultRef)
+	if err != nil {
+		return err
+	}
+	if unique == "" {
+		// cleanupWorktree sees the local ancestry itself.
+		return nil
+	}
+	refs := []string{defaultRef}
+	if w.RemoteDefaultRef != "" {
+		refs = append(refs, w.RemoteDefaultRef)
+	}
+	w.MergedHead = head
+	w.MergedReason = cleanupMergedElsewhere(ctx, w.Project, head, refs)
+	return nil
+}
+
+// cleanupFetchTimeout bounds the fetch that looks for a merge on the remote.
+// Cleanup keeps the refs it has when the fetch fails.
+const cleanupFetchTimeout = 10 * time.Second
+
+// cleanupSquashCommits is how far back on the default branch cleanup looks for
+// a squash merge. Each commit costs one merge-tree call.
+const cleanupSquashCommits = 200
+
+// cleanupFetchDefault refreshes origin/<default> before cleanup judges a branch
+// that no delivery change describes. It returns the remote-tracking ref, or ""
+// when the repository has no origin, the fetch fails, or the ref is absent.
+func cleanupFetchDefault(ctx context.Context, dir, defaultBranch string) string {
+	remoteRef := "refs/remotes/origin/" + defaultBranch
+	if _, err := gitOut(ctx, dir, "remote", "get-url", "origin"); err != nil {
+		return ""
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, cleanupFetchTimeout)
+	defer cancel()
+	refspec := "+refs/heads/" + defaultBranch + ":" + remoteRef
+	if _, err := gitOut(fetchCtx, dir, "fetch", "--quiet", "--no-tags", "origin", refspec); err != nil {
+		return ""
+	}
+	if _, err := gitOut(ctx, dir, "show-ref", "--verify", "--quiet", remoteRef); err != nil {
+		return ""
+	}
+	return remoteRef
+}
+
+// cleanupMergedElsewhere proves that head is already on one of the default
+// refs without being an ancestor of the local default branch. It returns the
+// cleanup log reason, or "" when no proof is found.
+func cleanupMergedElsewhere(ctx context.Context, dir, head string, refs []string) string {
+	for _, ref := range refs {
+		if _, err := gitOut(ctx, dir, "merge-base", "--is-ancestor", head, ref); err == nil {
+			if strings.HasPrefix(ref, "refs/remotes/") {
+				return "merged-remote"
+			}
+			return "merged"
+		}
+	}
+	for _, ref := range refs {
+		if cleanupCherryMerged(ctx, dir, head, ref) {
+			return "merged-cherry"
+		}
+	}
+	for _, ref := range refs {
+		if cleanupSquashMerged(ctx, dir, head, ref) {
+			return "merged-squash"
+		}
+	}
+	return ""
+}
+
+// cleanupCherryMerged reports whether every commit of head that is not on ref
+// is patch-equivalent to a commit on ref, which is what `git cherry` shows
+// with a "-" line. A cherry-pick or a rebase leaves that shape.
+func cleanupCherryMerged(ctx context.Context, dir, head, ref string) bool {
+	out, err := gitOut(ctx, dir, "cherry", ref, head)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasPrefix(line, "- ") {
+			return false
+		}
+	}
+	return true
+}
+
+// cleanupSquashMerged reports whether a commit on ref has exactly the tree
+// that merging head into that commit's parent would produce. A squash merge
+// has that shape, including a squash commit made by a pull request. Only the
+// commits since the merge base, up to cleanupSquashCommits, are checked.
+func cleanupSquashMerged(ctx context.Context, dir, head, ref string) bool {
+	base, err := gitOut(ctx, dir, "merge-base", head, ref)
+	if err != nil || base == "" {
+		return false
+	}
+	commits, err := gitOut(ctx, dir, "rev-list", "--parents", fmt.Sprintf("--max-count=%d", cleanupSquashCommits), ref, "--not", base)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(commits, "\n") {
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			// A root commit or a merge commit is not a squash.
+			continue
+		}
+		tree, err := gitOut(ctx, dir, "merge-tree", "--write-tree", parts[1], head)
+		if err != nil {
+			continue
+		}
+		actual, err := gitOut(ctx, dir, "rev-parse", parts[0]+"^{tree}")
+		if err == nil && tree != "" && tree == actual {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanupChange finds every change that has used the branch. Multiple matches

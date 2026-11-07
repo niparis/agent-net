@@ -1296,7 +1296,7 @@ off. When enabled, predicted quality multiplies rotation weights by 0.5 to
 exclusions. Ratings from callers below score 45 count half; without a strong
 rating, a model cannot receive a prediction above the fitted average.
 
-Worker cleanup removes only managed worktrees after the worker has ended. It checks the default branch and delivery changes, including prior revisions, and applies the retention periods in the reference. A squash merge is a normal commit on the default branch, so the merged commit check accepts it without requiring the branch head to be an ancestor. It keeps worktrees with uncommitted changes or untracked files, running workers, queued branches and branches used by starts in progress. Ignored files are removed with the worktree. Cleanup logs the reason and bytes removed.
+Worker cleanup removes only managed worktrees after the worker has ended. It checks the default branch and delivery changes, including prior revisions, and applies the retention periods in the reference. A squash merge is a normal commit on the default branch, so the merged commit check accepts it without requiring the branch head to be an ancestor. For a branch with no delivery change, cleanup refreshes `origin/<default>` with a short timeout and accepts a merge, cherry-pick or squash proven on either the local or the remote default branch. A failed fetch never counts as a merge and leaves the refs as they are. It keeps worktrees with uncommitted changes or untracked files, running workers, queued branches and branches used by starts in progress. Ignored files are removed with the worktree. Cleanup logs the reason and bytes removed.
 
 ### Tools owner actions
 
