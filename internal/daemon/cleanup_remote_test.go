@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -71,7 +72,15 @@ func cleanupRun(t *testing.T, state string, w cleanupWorktree) string {
 	t.Helper()
 	var logs bytes.Buffer
 	d := &Daemon{cfg: Config{StateDir: state}, log: log.New(&logs, "", 0), workers: map[string]*worker{}}
-	if err := d.cleanupWorktree(context.Background(), w, time.Now()); err != nil {
+	ctx := context.Background()
+	w.DefaultBranch = cleanupDefaultBranch(ctx, w.Project, w.DefaultBranch)
+	if cleanupNeedsRemoteProof(ctx, &w) {
+		w.RemoteDefaultRef = cleanupFetchDefault(ctx, w.Project, w.DefaultBranch)
+	}
+	if err := cleanupPrepareProof(ctx, &w); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.cleanupWorktree(ctx, w, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	return logs.String()
@@ -241,6 +250,79 @@ func TestCleanupWorktreeFetchFailureKeepsBranch(t *testing.T) {
 	cleanupKept(t, dir, "agent-net/w_offline", repo)
 	if strings.Contains(logs, "reason=merged") {
 		t.Fatalf("log: %q", logs)
+	}
+}
+
+// The per-project fetch and the merged-elsewhere proof run outside the worker
+// locks: a hanging fetch must not block worker start or the operator view.
+func TestCleanupProjectsFetchHoldsNoLocks(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	w := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.testCleanupFetch = func(ctx context.Context, dir, branch string) string {
+			once.Do(func() { close(started) })
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return ""
+			}
+			return cleanupFetchDefault(ctx, dir, branch)
+		}
+	})
+	repo, _, peer := cleanupRemoteRepo(t, "project")
+	w.register(t, repo)
+	state := w.cfg.StateDir
+	dir := cleanupAddWorktree(t, repo, state, "w_fetchhang")
+	cleanupCommit(t, dir, "change", "change")
+	gitIn(t, repo, "push", "-q", "origin", "agent-net/w_fetchhang")
+	gitIn(t, peer, "fetch", "-q", "origin")
+	gitIn(t, peer, "merge", "-q", "--no-ff", "-m", "merge", "origin/agent-net/w_fetchhang")
+	gitIn(t, peer, "push", "-q", "origin", "main")
+	row := workerRow{ID: "w_fetchhang", Harness: "test", Project: "project", Path: dir, MainPath: repo,
+		Worktree: dir, Branch: "agent-net/w_fetchhang", StartedAt: time.Now(), LastActive: time.Now(), EndedReason: "stopped"}
+	if err := w.d.st.saveWorker(row); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		w.d.cleanupProjects(context.Background())
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cleanup did not reach the fetch")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		wmu := w.d.wmu.TryLock()
+		if wmu {
+			w.d.wmu.Unlock()
+		}
+		qmu := w.d.qmu.TryLock()
+		if qmu {
+			w.d.qmu.Unlock()
+		}
+		if wmu && qmu {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cleanup holds a lock while the fetch hangs")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cleanup did not finish after the fetch")
+	}
+	cleanupGone(t, dir, "agent-net/w_fetchhang", repo)
+	if len(w.logs.lines("reason=merged-remote")) == 0 {
+		t.Fatalf("log: %q", w.logs.lines("worker.worktree_cleanup"))
 	}
 }
 

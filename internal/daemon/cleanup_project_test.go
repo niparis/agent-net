@@ -701,7 +701,15 @@ func TestCleanupWorktreeDeliveryRules(t *testing.T) {
 				}
 			}
 			d := &Daemon{cfg: Config{StateDir: stateDir}, workers: map[string]*worker{}}
-			if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+			ctx := context.Background()
+			w.DefaultBranch = cleanupDefaultBranch(ctx, project, w.DefaultBranch)
+			if cleanupNeedsRemoteProof(ctx, &w) {
+				w.RemoteDefaultRef = cleanupFetchDefault(ctx, project, w.DefaultBranch)
+			}
+			if err := cleanupPrepareProof(ctx, &w); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.cleanupWorktree(ctx, w, now); err != nil {
 				t.Fatal(err)
 			}
 			_, err = os.Stat(dir)
