@@ -434,8 +434,11 @@ type Daemon struct {
 	// the "command line" are the same process.
 	inSession func(pid int) bool
 
-	diskWarningActive bool
-	diskWarningItemID string
+	// diskWarnMu protects warning state; gateway calls run without it held.
+	diskWarnMu          sync.Mutex
+	diskWarningUpdating bool
+	diskWarningActive   bool
+	diskWarningItemID   string
 }
 
 // defaultDetect looks for the harnesses in the usual places. Tests replace it so
