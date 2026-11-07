@@ -882,3 +882,57 @@ func TestInitialCTOPollDoesNotShowNotRegistered(t *testing.T) {
 		t.Fatalf("initial dormant CTO poll showed an error: %q", m.cto.err)
 	}
 }
+
+func TestCTOLocalCommandMarkupGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := New(&fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}})
+		m.cto = &ctoState{messages: []string{
+			"you: /mcp",
+			"/mcp → Failed to reconnect to agent-net-cto: CONNECTION_CLOSED",
+			"cto: Reconnecting to the network...",
+		}}
+		m.focus = focusCTO
+		view := strings.Join(m.ctoView(size[0], size[1]), "\n")
+		golden(t, fmt.Sprintf("cto_local_command_%dx%d", size[0], size[1]), view)
+	}
+}
+
+func TestCTOLocalCommandParsing(t *testing.T) {
+	raw1 := json.RawMessage(`{"type":"user","text":"<command-name>/mcp</command-name>\n  <command-message>mcp</command-message>\n  <command-args></command-args>"}`)
+	text1, cmd1 := ctoMessageWithCmd(raw1, "")
+	if text1 != "you: /mcp" || cmd1 != "/mcp" {
+		t.Fatalf("turn 1: got text %q, cmd %q; want %q, %q", text1, cmd1, "you: /mcp", "/mcp")
+	}
+
+	rawArgs := json.RawMessage(`{"type":"user","text":"<command-name>/mcp</command-name>\n  <command-message>mcp</command-message>\n  <command-args>status</command-args>"}`)
+	textArgs, _ := ctoMessageWithCmd(rawArgs, "")
+	if textArgs != "you: /mcp status" {
+		t.Fatalf("turn 1 with args: got text %q; want %q", textArgs, "you: /mcp status")
+	}
+
+	raw2 := json.RawMessage(`{"type":"user","text":"<local-command-stdout>Failed to reconnect to agent-net-cto: CONNECTION_CLOSED"}`)
+	text2, _ := ctoMessageWithCmd(raw2, cmd1)
+	want2 := "/mcp → Failed to reconnect to agent-net-cto: CONNECTION_CLOSED"
+	if text2 != want2 {
+		t.Fatalf("turn 2 stdout: got text %q; want %q", text2, want2)
+	}
+
+	rawErr := json.RawMessage(`{"type":"user","text":"<local-command-stderr>connection refused</local-command-stderr>"}`)
+	textErr, _ := ctoMessageWithCmd(rawErr, cmd1)
+	wantErr := "/mcp → connection refused"
+	if textErr != wantErr {
+		t.Fatalf("turn 2 stderr: got text %q; want %q", textErr, wantErr)
+	}
+
+	m := newModel(120, 34)
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{
+		generation: 1,
+		events: protocol.CTOEvents{
+			Messages: []json.RawMessage{raw1, raw2},
+		},
+	})
+	if len(m.cto.messages) != 2 || m.cto.messages[0] != "you: /mcp" || m.cto.messages[1] != want2 {
+		t.Fatalf("cto.messages: got %v, want [%q, %q]", m.cto.messages, "you: /mcp", want2)
+	}
+}

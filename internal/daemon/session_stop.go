@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -59,9 +61,25 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 	if info.Worker != nil {
 		return no(errors.New("use worker_stop for a worker"))
 	}
-	name := cleanLine(firstNonEmpty(info.Name, info.NativeID))
+	name := ""
+	if view, err := d.agentView(ctx, id); err == nil && view.Profile.Name != "" {
+		name = cleanLine(view.Profile.Name)
+	}
+	if name == "" {
+		name = cleanLine(firstNonEmpty(info.Name, info.Repo.Project))
+	}
+	if name == "" && strings.TrimSpace(info.Cwd) != "" && filepath.Clean(info.Cwd) != "/" && filepath.Clean(info.Cwd) != "." {
+		name = cleanLine(filepath.Base(filepath.Clean(info.Cwd)))
+	}
+	if name == "" {
+		name = cleanLine(info.NativeID)
+	}
 	result := protocol.SessionStopResult{Note: "Stopped " + name + ". The conversation is kept."}
-	terminal := fmt.Errorf("%s runs in your terminal on %s: end it there", name, d.hostName())
+	displayName := name
+	if folder := firstNonEmpty(info.Cwd, info.Repo.Worktree, info.Repo.Root); folder != "" {
+		displayName = fmt.Sprintf("%s (%s)", name, agentfiles.DisplayPath(folder))
+	}
+	terminal := fmt.Errorf("%s runs in your terminal on %s: end it there", displayName, d.hostName())
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	switch info.Harness {
@@ -102,7 +120,10 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		}
 		api := openCodeWorkerAPI(ctx, service.URL, service.Password)
 		directory := strings.ReplaceAll(url.QueryEscape(info.Cwd), "+", "%20")
-		_, status, err := api("POST", "/api/session/"+url.PathEscape(info.NativeID)+"/abort", nil, "x-opencode-directory", directory)
+		_, status, err := api("POST", "/api/session/"+url.PathEscape(info.NativeID)+"/interrupt", nil, "x-opencode-directory", directory)
+		if err == nil && status == 404 {
+			_, status, err = api("POST", "/api/session/"+url.PathEscape(info.NativeID)+"/abort", nil, "x-opencode-directory", directory)
+		}
 		if err != nil {
 			return no(errors.New("could not abort the OpenCode turn"))
 		}

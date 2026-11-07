@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/niparis/agent-net/internal/claudetext"
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
@@ -555,6 +556,7 @@ func claudeCTOTranscript(projects, id string) ([]json.RawMessage, error) {
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 1<<16), 16<<20)
+	var lastCmd string
 	for sc.Scan() {
 		var line struct {
 			Type      string `json:"type"`
@@ -592,6 +594,14 @@ func claudeCTOTranscript(projects, id string) ([]json.RawMessage, error) {
 					text = owner
 				}
 			}
+		}
+		clean, newCmd, _ := claudetext.CleanCommandMarkup(text, lastCmd)
+		if newCmd != "" {
+			lastCmd = newCmd
+		}
+		text = clean
+		if strings.TrimSpace(text) == "" {
+			continue
 		}
 		var millis int64
 		if at, err := time.Parse(time.RFC3339Nano, line.Timestamp); err == nil {

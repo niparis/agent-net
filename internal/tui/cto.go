@@ -12,6 +12,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/niparis/agent-net/internal/claudetext"
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -243,6 +244,11 @@ func mergeCTOEventPages(older []protocol.CTOEvents, latest protocol.CTOEvents) p
 }
 
 func ctoMessage(raw json.RawMessage) string {
+	text, _ := ctoMessageWithCmd(raw, "")
+	return text
+}
+
+func ctoMessageWithCmd(raw json.RawMessage, lastCmd string) (string, string) {
 	var v struct {
 		Type    string          `json:"type"`
 		Error   json.RawMessage `json:"error"`
@@ -253,7 +259,7 @@ func ctoMessage(raw json.RawMessage) string {
 		} `json:"content"`
 	}
 	if json.Unmarshal(raw, &v) != nil {
-		return ""
+		return "", lastCmd
 	}
 	if len(v.Error) > 0 && string(v.Error) != "null" {
 		var e struct {
@@ -265,12 +271,12 @@ func ctoMessage(raw json.RawMessage) string {
 		}
 		if json.Unmarshal(v.Error, &e) == nil {
 			msg := firstNonEmpty(firstNonEmpty(e.Message, e.Data.Message), firstNonEmpty(e.Name, string(v.Error)))
-			return "error: " + ctoErrorHint(msg)
+			return "error: " + ctoErrorHint(msg), lastCmd
 		}
-		return "error: " + ctoErrorHint(string(v.Error))
+		return "error: " + ctoErrorHint(string(v.Error)), lastCmd
 	}
 	if v.Type != "user" && v.Type != "assistant" {
-		return ""
+		return "", lastCmd
 	}
 	text := v.Text
 	for _, p := range v.Content {
@@ -280,13 +286,22 @@ func ctoMessage(raw json.RawMessage) string {
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return ""
+		return "", lastCmd
 	}
+
+	clean, newCmd, isOutput := claudetext.CleanCommandMarkup(text, lastCmd)
+	if clean == "" {
+		return "", newCmd
+	}
+	if isOutput || (strings.HasPrefix(clean, "/") && strings.Contains(clean, " → ")) {
+		return clean, newCmd
+	}
+
 	who := "you"
 	if v.Type == "assistant" {
 		who = "cto"
 	}
-	return fmt.Sprintf("%s: %s", who, text)
+	return fmt.Sprintf("%s: %s", who, clean), newCmd
 }
 func (m Model) ctoKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
@@ -424,8 +439,13 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		text string
 	}
 	var lines []line
+	lastCmd := ""
 	for _, raw := range events.Messages {
-		if text := ctoMessage(raw); text != "" {
+		text, nextCmd := ctoMessageWithCmd(raw, lastCmd)
+		if nextCmd != "" {
+			lastCmd = nextCmd
+		}
+		if text != "" {
 			var v struct {
 				Time struct {
 					Created int64 `json:"created"`

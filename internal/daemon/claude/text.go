@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudetext"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 )
@@ -333,7 +334,11 @@ func entriesOfLine(line []byte, sidechain bool) []protocol.TextEntry {
 		if strings.TrimSpace(s) == "" {
 			return nil
 		}
-		return []protocol.TextEntry{mk(base, "", s)}
+		clean, _, _ := claudetext.CleanCommandMarkup(s, "")
+		if strings.TrimSpace(clean) == "" {
+			return nil
+		}
+		return []protocol.TextEntry{mk(base, "", clean)}
 	}
 	var blocks []struct {
 		Type    string          `json:"type"`
@@ -350,8 +355,9 @@ func entriesOfLine(line []byte, sidechain bool) []protocol.TextEntry {
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
-			if strings.TrimSpace(b.Text) != "" {
-				out = append(out, mk(base, "", b.Text))
+			clean, _, _ := claudetext.CleanCommandMarkup(b.Text, "")
+			if strings.TrimSpace(clean) != "" {
+				out = append(out, mk(base, "", clean))
 			}
 		case "image":
 			out = append(out, mk(base, "", "[image]"))

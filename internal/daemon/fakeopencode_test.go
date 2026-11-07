@@ -229,6 +229,21 @@ func runFakeOpenCode() {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{id: map[string]any{"type": "running"}}})
 	})
+	mux.HandleFunc("POST /api/session/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")
+		mu.Lock()
+		defer mu.Unlock()
+		if _, err := os.Stat(path); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"interrupted":true}`)
+	})
 	mux.HandleFunc("POST /api/session/{id}/compact", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
