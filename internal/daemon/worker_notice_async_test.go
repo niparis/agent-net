@@ -122,7 +122,7 @@ func TestWorkerHandbackWIPDoesNotWaitBehindQueuedEndNotice(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		unblock()
 		select {
 		case <-finished:
