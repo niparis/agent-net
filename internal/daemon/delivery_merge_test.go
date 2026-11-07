@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,6 +30,9 @@ func TestDeliveryMergeChecksGitAncestry(t *testing.T) {
 		}
 		if q.MergeContainsHead == nil {
 			t.Error("new daemon omitted merge proof")
+		}
+		if q.MergeContainsHead != nil && *q.MergeContainsHead && q.Fields["merge_kind"] != "merge" {
+			t.Errorf("wrong merge kind: %v", q.Fields)
 		}
 		if q.MergeContainsHead != nil && !*q.MergeContainsHead {
 			return nil, errors.New("merged_commit must exist and contain the change head")
@@ -98,5 +104,95 @@ func TestDeliveryMergeUsesRegisteredChangeRepo(t *testing.T) {
 	}
 	if got := len(f.frames(protocol.FrameStepReport)); got != 1 {
 		t.Fatalf("unverified report sent: %d", got)
+	}
+}
+
+func TestDeliveryMergeSquash(t *testing.T) {
+	repo, wt := deliveryWorktree(t)
+	head := gitHead(t, wt, "HEAD")
+	gitIn(t, repo, "merge", "--squash", "feat/x")
+	gitIn(t, repo, "commit", "-m", "squash")
+	squash := gitHead(t, repo, "HEAD")
+	if kind, _ := deliveryMergeKind(context.Background(), repo, head, squash); kind != "squash" {
+		t.Fatal("squash refused")
+	}
+	if err := os.WriteFile(filepath.Join(repo, "extra"), []byte("extra"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "add", "extra")
+	gitIn(t, repo, "commit", "--amend", "--no-edit")
+	if deliveryMergeContainsHead(context.Background(), repo, head, gitHead(t, repo, "HEAD")) {
+		t.Fatal("extra change accepted")
+	}
+}
+
+func TestDeliveryMergeRejectsUnrelatedTwoParentCommit(t *testing.T) {
+	repo, wt := deliveryWorktree(t)
+	head := gitHead(t, wt, "HEAD")
+	gitIn(t, repo, "checkout", "-b", "other")
+	if err := os.WriteFile(filepath.Join(repo, "other"), []byte("other"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "add", "other")
+	gitIn(t, repo, "commit", "-m", "other")
+	gitIn(t, repo, "checkout", "main")
+	gitIn(t, repo, "merge", "--no-ff", "other", "-m", "unrelated")
+	if deliveryMergeContainsHead(context.Background(), repo, head, gitHead(t, repo, "HEAD")) {
+		t.Fatal("unrelated merge accepted")
+	}
+}
+
+func TestDeliveryMergeSquashEvidence(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	repo, wt := deliveryWorktree(t)
+	lc, _ := helloDelivery(t, n, "merge-reporter", wt, "claude-opus-5-5")
+	head := gitHead(t, wt, "HEAD")
+	gitIn(t, repo, "merge", "--squash", "feat/x")
+	gitIn(t, repo, "commit", "-m", "squash")
+	merged := gitHead(t, repo, "HEAD")
+	f.answer(protocol.FrameChangeGet, func(json.RawMessage) (any, error) {
+		return deliveryTestView(protocol.Change{ID: "ch_1", Project: "demo", HeadCommit: head}), nil
+	})
+	f.answer(protocol.FrameStepReport, func(raw json.RawMessage) (any, error) {
+		var q protocol.StepReportRequest
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return nil, err
+		}
+		if q.MergeContainsHead == nil || !*q.MergeContainsHead || q.Fields["merge_kind"] != "squash" {
+			t.Errorf("wrong squash proof: %+v", q)
+		}
+		return protocol.StepReportResult{}, nil
+	})
+	_, err := lc.call(protocol.OpStepReport, protocol.StepReportArgs{Change: "ch_1", StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: head, Fields: map[string]string{protocol.FieldMergedCommit: merged, "merge_kind": "merge"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeliveryReleaseFindsSquashTag(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	repo, wt := deliveryWorktree(t)
+	lc, _ := helloDelivery(t, n, "release-reporter", wt, "claude-opus-5-5")
+	head := gitHead(t, wt, "HEAD")
+	gitIn(t, repo, "merge", "--squash", "feat/x")
+	gitIn(t, repo, "commit", "-m", "squash")
+	merged := gitHead(t, repo, "HEAD")
+	gitIn(t, repo, "tag", "v1.0.0")
+	f.answer(protocol.FrameChangeGet, func(json.RawMessage) (any, error) {
+		return deliveryTestView(protocol.Change{ID: "ch_1", Project: "demo", HeadCommit: head, MergedCommit: merged}), nil
+	})
+	f.answer(protocol.FrameStepReport, func(raw json.RawMessage) (any, error) {
+		var q protocol.StepReportRequest
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return nil, err
+		}
+		if q.Fields[protocol.FieldTag] != "v1.0.0" {
+			t.Errorf("release tag = %q", q.Fields[protocol.FieldTag])
+		}
+		return protocol.StepReportResult{}, nil
+	})
+	_, err := lc.call(protocol.OpStepReport, protocol.StepReportArgs{Change: "ch_1", StepRef: protocol.StepRef{Step: protocol.StepRelease, AfterMerge: true}, Result: protocol.StepResultPass, Commit: merged})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
