@@ -261,6 +261,7 @@ type Config struct {
 }
 
 type localSession struct {
+	stopToken       string
 	pushMu          sync.Mutex // orders gateway registration updates for this session
 	info            protocol.SessionInfo
 	sessionID       string
@@ -794,7 +795,8 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			}
 		}
 		if ls == nil {
-			ls = &localSession{info: in, lastActive: candidate, harnessActivity: harnessActivity}
+			token, _ := procToken(in.PID)
+			ls = &localSession{stopToken: token, info: in, lastActive: candidate, harnessActivity: harnessActivity}
 			d.sessions[k] = ls
 			changed = append(changed, ls)
 			if candidate.After(d.activity[k]) {
@@ -810,6 +812,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 				sid := ls.info.SessionID
 				if harness == "claude" && in.Worker != nil && ls.info.PID != in.PID {
 					ls.sessionID = "" // wait for this process to be registered
+				}
+				if ls.info.PID != in.PID {
+					ls.stopToken, _ = procToken(in.PID)
 				}
 				ls.info = in
 				ls.info.SessionID = sid

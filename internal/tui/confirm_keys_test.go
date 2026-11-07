@@ -411,3 +411,14 @@ func TestToolsApplyConfirmKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestStopTerminalConfirmation(t *testing.T) {
+	m, _ := workerModel(120, 34)
+	m.mode = modeConfirm
+	m.confirmOwner = true
+	m.confirmTerminal = true
+	m.confirmName = "video"
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "End video in your terminal? Conversation kept.") {
+		t.Fatal(v)
+	}
+}

@@ -170,32 +170,33 @@ type Model struct {
 	quitting                  bool
 
 	// Actions (forms.go).
-	mode           inputMode
-	notice         notice
-	compose        textinput.Model // the message prompt
-	composeTo      string          // session ID the message goes to
-	composeName    string
-	sform          sessionForm
-	leadPicker     leadPicker
-	sessionPending *sessionAsk // the create or trust question of a start
-	confirmID      string      // session the stop question is about
-	confirmClose   bool
-	confirmOwner   bool   // owner session rather than a worker
-	confirmDefect  bool   // confirm reporting a defect found later
-	confirmMachine string // machine_remove or machine_rotate
-	confirmName    string
-	defect         textinput.Model // the one-line defect note
-	defectSeverity textinput.Model // the 1 to 4 severity prompt
-	defectWorker   string          // worker session the defect is about
-	defectName     string          // how the prompt names the worker
-	defectLevel    int             // the severity the owner chose
-	pol            policyForm
-	apps           appsForm
-	intg           integrationsForm // the setup integrations of the whole network
-	rename         textinput.Model  // the machine name prompt
-	renameNode     string           // node ID the name is for
-	renameShown    string           // the name shown when the prompt opened
-	renameSet      bool             // that name is the owner's, not the reported one
+	mode            inputMode
+	notice          notice
+	compose         textinput.Model // the message prompt
+	composeTo       string          // session ID the message goes to
+	composeName     string
+	sform           sessionForm
+	leadPicker      leadPicker
+	sessionPending  *sessionAsk // the create or trust question of a start
+	confirmID       string      // session the stop question is about
+	confirmClose    bool        // selected owner session closes in the OpenCode service
+	confirmTerminal bool        // selected session runs in a terminal
+	confirmOwner    bool        // owner session rather than a worker
+	confirmDefect   bool        // confirm reporting a defect found later
+	confirmMachine  string      // machine_remove or machine_rotate
+	confirmName     string
+	defect          textinput.Model // the one-line defect note
+	defectSeverity  textinput.Model // the 1 to 4 severity prompt
+	defectWorker    string          // worker session the defect is about
+	defectName      string          // how the prompt names the worker
+	defectLevel     int             // the severity the owner chose
+	pol             policyForm
+	apps            appsForm
+	intg            integrationsForm // the setup integrations of the whole network
+	rename          textinput.Model  // the machine name prompt
+	renameNode      string           // node ID the name is for
+	renameShown     string           // the name shown when the prompt opened
+	renameSet       bool             // that name is the owner's, not the reported one
 
 	// herdrSocket is the herdr server this terminal runs in, or "".
 	herdrSocket         string

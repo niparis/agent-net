@@ -526,7 +526,8 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			title = "" // a worker's task is its title; the harness name adds nothing
 		}
 		repo, noProject := d.sessionRepo(p.Cwd, true)
-		ls := &localSession{conn: lc, info: protocol.SessionInfo{
+		token, _ := procToken(pid)
+		ls := &localSession{stopToken: token, conn: lc, info: protocol.SessionInfo{
 			OpenCodeActivity: p.OpenCodeActivity, Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: title,
 			Status: status, Delivery: "plugin", Repo: repo, NoProject: noProject,
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
