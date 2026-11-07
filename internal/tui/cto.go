@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -242,7 +243,67 @@ func mergeCTOEventPages(older []protocol.CTOEvents, latest protocol.CTOEvents) p
 	return out
 }
 
+var reCommandTags = regexp.MustCompile(`(?s)</?(command|local-command)[^>]*>`)
+
+func extractTag(s, tag string) string {
+	open := "<" + tag + ">"
+	close := "</" + tag + ">"
+	start := strings.Index(s, open)
+	if start == -1 {
+		return ""
+	}
+	start += len(open)
+	end := strings.Index(s[start:], close)
+	if end == -1 {
+		rem := s[start:]
+		if nextOpen := strings.Index(rem, "<"); nextOpen != -1 {
+			return strings.TrimSpace(rem[:nextOpen])
+		}
+		return strings.TrimSpace(rem)
+	}
+	return strings.TrimSpace(s[start : start+end])
+}
+
+func cleanClaudeCommandMarkup(text, lastCmd string) (string, string, bool) {
+	trimmed := strings.TrimSpace(text)
+	if strings.Contains(trimmed, "<command-name>") || strings.Contains(trimmed, "<command-message>") {
+		cmdName := extractTag(trimmed, "command-name")
+		if cmdName == "" {
+			cmdName = extractTag(trimmed, "command-message")
+			if cmdName != "" && !strings.HasPrefix(cmdName, "/") {
+				cmdName = "/" + cmdName
+			}
+		}
+		cmdArgs := strings.TrimSpace(extractTag(trimmed, "command-args"))
+		cmd := cmdName
+		if cmdArgs != "" {
+			cmd = cmdName + " " + cmdArgs
+		}
+		if cmd == "" {
+			cmd = strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
+		}
+		return strings.TrimSpace(cmd), cmdName, false
+	}
+	if strings.Contains(trimmed, "<local-command-stdout>") || strings.Contains(trimmed, "<local-command-stderr>") {
+		out := strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
+		if lastCmd != "" && !strings.HasPrefix(out, lastCmd+" → ") && !strings.Contains(out, " → ") {
+			out = lastCmd + " → " + out
+		}
+		return out, lastCmd, true
+	}
+	if strings.Contains(trimmed, "<command-") || strings.Contains(trimmed, "<local-command-") {
+		out := strings.TrimSpace(reCommandTags.ReplaceAllString(trimmed, ""))
+		return out, lastCmd, false
+	}
+	return text, lastCmd, false
+}
+
 func ctoMessage(raw json.RawMessage) string {
+	text, _ := ctoMessageWithCmd(raw, "")
+	return text
+}
+
+func ctoMessageWithCmd(raw json.RawMessage, lastCmd string) (string, string) {
 	var v struct {
 		Type    string          `json:"type"`
 		Error   json.RawMessage `json:"error"`
@@ -253,7 +314,7 @@ func ctoMessage(raw json.RawMessage) string {
 		} `json:"content"`
 	}
 	if json.Unmarshal(raw, &v) != nil {
-		return ""
+		return "", lastCmd
 	}
 	if len(v.Error) > 0 && string(v.Error) != "null" {
 		var e struct {
@@ -265,12 +326,12 @@ func ctoMessage(raw json.RawMessage) string {
 		}
 		if json.Unmarshal(v.Error, &e) == nil {
 			msg := firstNonEmpty(firstNonEmpty(e.Message, e.Data.Message), firstNonEmpty(e.Name, string(v.Error)))
-			return "error: " + ctoErrorHint(msg)
+			return "error: " + ctoErrorHint(msg), lastCmd
 		}
-		return "error: " + ctoErrorHint(string(v.Error))
+		return "error: " + ctoErrorHint(string(v.Error)), lastCmd
 	}
 	if v.Type != "user" && v.Type != "assistant" {
-		return ""
+		return "", lastCmd
 	}
 	text := v.Text
 	for _, p := range v.Content {
@@ -280,13 +341,22 @@ func ctoMessage(raw json.RawMessage) string {
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return ""
+		return "", lastCmd
 	}
+
+	clean, newCmd, isOutput := cleanClaudeCommandMarkup(text, lastCmd)
+	if clean == "" {
+		return "", newCmd
+	}
+	if isOutput || (strings.HasPrefix(clean, "/") && strings.Contains(clean, " → ")) {
+		return clean, newCmd
+	}
+
 	who := "you"
 	if v.Type == "assistant" {
 		who = "cto"
 	}
-	return fmt.Sprintf("%s: %s", who, text)
+	return fmt.Sprintf("%s: %s", who, clean), newCmd
 }
 func (m Model) ctoKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
@@ -424,8 +494,13 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		text string
 	}
 	var lines []line
+	lastCmd := ""
 	for _, raw := range events.Messages {
-		if text := ctoMessage(raw); text != "" {
+		text, nextCmd := ctoMessageWithCmd(raw, lastCmd)
+		if nextCmd != "" {
+			lastCmd = nextCmd
+		}
+		if text != "" {
 			var v struct {
 				Time struct {
 					Created int64 `json:"created"`

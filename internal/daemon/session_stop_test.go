@@ -71,6 +71,26 @@ func TestSessionStopTerminalRefusal(t *testing.T) {
 	}
 }
 
+func TestSessionStopTerminalNamedWithFolder(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cwd := filepath.Join(home, "code", "niparis", "video")
+	n, _, id := enterNode(t, g, "claude", protocol.SessionInfo{
+		NativeID: "b0e105f0-ab2e-45e8-bf38-e3608761c8e9",
+		Cwd:      cwd,
+		Repo:     protocol.RepoInfo{Project: "video"},
+		PID:      1,
+		Status:   "idle",
+		Mode:     protocol.ModeForeground,
+	}, nil, nil)
+	_, err := cliClient(t, n).call("session_stop", map[string]string{"session_id": id})
+	want := "video (~/code/niparis/video) runs in your terminal on " + n.d.hostName() + ": end it there"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("want %q, got %v", want, err)
+	}
+}
+
 func TestSessionStopOpenCodeService(t *testing.T) {
 	for _, status := range []string{"busy", "idle"} {
 		t.Run(status, func(t *testing.T) {
@@ -88,7 +108,7 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 					t.Errorf("directory %q", r.Header.Get("x-opencode-directory"))
 				}
 				calls <- r.Method + " " + r.URL.Path
-				fmt.Fprint(w, `{"data":true}`)
+				fmt.Fprint(w, `{"interrupted":true}`)
 			}))
 			defer server.Close()
 			writeOwnerOpenCodeService(t, state, server.URL)
@@ -98,13 +118,47 @@ func TestSessionStopOpenCodeService(t *testing.T) {
 			}
 			select {
 			case got := <-calls:
-				if got != "POST /api/session/ses_owner/abort" {
-					t.Fatalf("abort %q", got)
+				if got != "POST /api/session/ses_owner/interrupt" {
+					t.Fatalf("interrupt %q", got)
 				}
 			default:
-				t.Fatal("no abort")
+				t.Fatal("no interrupt")
 			}
 		})
+	}
+}
+
+func TestSessionStopOpenCodeServiceFallbackAbort(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n, _, id := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "ses_owner", Name: "shop", Status: "busy", Cwd: "/src/shop space"}, nil, nil)
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	calls := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls <- r.Method + " " + r.URL.Path
+		if r.URL.Path == "/api/session/ses_owner/interrupt" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/api/session/ses_owner/abort" {
+			fmt.Fprint(w, `{"data":true}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	writeOwnerOpenCodeService(t, state, server.URL)
+	raw := cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
+	if !strings.Contains(string(raw), "stays in the service") {
+		t.Fatalf("result %s", raw)
+	}
+	var gotCalls []string
+	for len(calls) > 0 {
+		gotCalls = append(gotCalls, <-calls)
+	}
+	wantCalls := []string{"POST /api/session/ses_owner/interrupt", "POST /api/session/ses_owner/abort"}
+	if len(gotCalls) != 2 || gotCalls[0] != wantCalls[0] || gotCalls[1] != wantCalls[1] {
+		t.Fatalf("calls %v, want %v", gotCalls, wantCalls)
 	}
 }
 

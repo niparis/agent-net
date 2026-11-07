@@ -46,6 +46,35 @@ func TestClaudeCTOTranscript(t *testing.T) {
 	}
 }
 
+func TestClaudeCTOTranscriptCommandMarkup(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "proj")
+	if err := os.Mkdir(p, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(p, "session.jsonl")
+	data := "{\"type\":\"user\",\"message\":{\"content\":\"<command-name>/mcp</command-name>\\n  <command-message>mcp</command-message>\\n  <command-args></command-args>\"}}\n" +
+		"{\"type\":\"user\",\"message\":{\"content\":\"<local-command-stdout>Failed to reconnect to agent-net-cto: CONNECTION_CLOSED\"}}\n"
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := claudeCTOTranscript(dir, "session")
+	if err != nil || len(messages) != 2 {
+		t.Fatalf("messages: %s %v", messages, err)
+	}
+	var out0, out1 struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(messages[0], &out0) != nil || out0.Type != "user" || out0.Text != "/mcp" {
+		t.Fatalf("user command: %s", messages[0])
+	}
+	wantOut := "/mcp → Failed to reconnect to agent-net-cto: CONNECTION_CLOSED"
+	if json.Unmarshal(messages[1], &out1) != nil || out1.Text != wantOut {
+		t.Fatalf("command stdout: %s", messages[1])
+	}
+}
+
 func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")

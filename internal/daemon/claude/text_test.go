@@ -256,3 +256,22 @@ func TestAdapterTextFindsTheTranscript(t *testing.T) {
 		t.Error("a missing transcript should be an error")
 	}
 }
+
+func TestTextStripsCommandMarkup(t *testing.T) {
+	cmd := "<command-name>/mcp</command-name>\n  <command-message>mcp</command-message>\n  <command-args></command-args>"
+	out := "<local-command-stdout>Failed to reconnect to agent-net-cto: CONNECTION_CLOSED"
+	path := writeTranscript(t, userLine("2026-10-29T10:00:00Z", cmd)+userLine("2026-10-29T10:00:01Z", out))
+	pg, err := readTranscript(path, protocol.TextQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pg.Entries) != 2 {
+		t.Fatalf("entries = %v", texts(pg))
+	}
+	if pg.Entries[0].Text != "/mcp" {
+		t.Errorf("entry 0: got %q, want %q", pg.Entries[0].Text, "/mcp")
+	}
+	if pg.Entries[1].Text != "Failed to reconnect to agent-net-cto: CONNECTION_CLOSED" {
+		t.Errorf("entry 1: got %q, want %q", pg.Entries[1].Text, "Failed to reconnect to agent-net-cto: CONNECTION_CLOSED")
+	}
+}
