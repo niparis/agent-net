@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/niparis/agent-net/internal/diagnostics"
 	"io"
 	"log"
 	"net/http"
@@ -259,6 +260,9 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	// Every log line carries its own ts=, so the logger adds nothing.
 	logger := log.New(serviceLog("gateway"), "", 0)
+	if profiling := diagnostics.StartPprof(os.Getenv("AGENT_NET_PPROF"), logger); profiling != nil {
+		defer profiling.Close()
+	}
 	// The phone app is served by the gateway-managed apps listener.
 	op := operator.New(daemon.SocketPath())
 	defer op.Close()
@@ -364,6 +368,9 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	}
 	host := daemon.Hostname(nc.Hostname)
 	logger := log.New(serviceLog("daemon"), "daemon: ", log.LstdFlags)
+	if profiling := diagnostics.StartPprof(os.Getenv("AGENT_NET_PPROF"), logger); profiling != nil {
+		defer profiling.Close()
+	}
 	inventoryHome, err := os.UserHomeDir()
 	if err != nil {
 		return err

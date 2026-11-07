@@ -2989,3 +2989,11 @@ one attempt, including failures; a later busy turn resets it. This guard resets
 when the daemon restarts. Logs record the outcome. After success the Sessions
 row says `compacted while idle HH:MM`, in your display time zone, until a new turn.
 The separate CTO compaction loop handles OpenCode, so it does not overlap.
+
+### Opt-in Go profiling
+
+Set `AGENT_NET_PPROF=127.0.0.1:6061` in the gateway or daemon process
+ environment to serve Go profiles at `/debug/pprof/`. Use a different port for
+ each process on the same host. The address must contain a literal loopback IP
+ (IPv4 or IPv6). Other addresses are refused with `event=pprof.refused`.
+ When unset, no profiling listener starts. Setup and service files do not set it.
