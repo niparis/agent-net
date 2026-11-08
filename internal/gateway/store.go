@@ -54,7 +54,9 @@ type Store struct {
 	db              *sql.DB
 	// connector opens the database connection. Its write count says when
 	// data read from the database may be out of date.
-	connector         *sqlitecache.Connector
+	connector *sqlitecache.Connector
+	// rc keeps reads that stay current until the next write. See readThrough.
+	rc                readCache
 	graphJunkRemoved  int64
 	graphJunkMigrated bool
 	identityMerges    [][2]string
@@ -3115,7 +3117,24 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 		AND (parent.online = 1 OR parent.last_seen >= s.created_at)
 		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
 
+// Agents lists the agent views that match f.
+//
+// The read is kept until the next write to the database, but never past the
+// second it was read in: the view holds windows and decays that depend on the
+// time. Each caller gets a copy.
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
+	key, err := json.Marshal(f)
+	if err != nil {
+		return s.agentsRead(f)
+	}
+	v, err := s.readThrough("agents|"+string(key), true, func() (any, error) { return s.agentsRead(f) })
+	if err != nil {
+		return nil, err
+	}
+	return copyOf(v.([]protocol.AgentView)), nil
+}
+
+func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	out, err := s.agentsBase(f)
 	if err != nil {
 		return nil, err

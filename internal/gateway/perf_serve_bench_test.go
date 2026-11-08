@@ -129,3 +129,12 @@ func BenchmarkRealHandleQueryProjects(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkRealDispatchStepTasks(b *testing.B) {
+	g := benchRealGateway(b)
+	ctx := context.Background()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.dispatchStepTasks(ctx)
+	}
+}
