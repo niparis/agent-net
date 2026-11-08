@@ -6,9 +6,9 @@
 │ docs/setup.md, Quota).                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────╮
-│ NAME            HARNESS  MODEL               T     S     N     H     V       │
-│ T:trivial S:simple N:normal H:hard V:very complex                            │
-│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
+│ NAME            HARNESS  MODEL             T   S   N   H   V                 │
+│ N sol · H terra high                                                         │
+│ T S N H V: the picker's preview at the middle of each level · ▸ = chosen · … │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 

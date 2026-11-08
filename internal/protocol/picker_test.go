@@ -528,3 +528,42 @@ func BenchmarkPickTwentyProfiles(b *testing.B) {
 		}
 	}
 }
+
+func TestPickerBucketVerdictsAreTheCellRule(t *testing.T) {
+	table := BuildPickerTable(shrinkFixture(), DefaultPickerSettings())
+	lo, _ := table.BucketRange(4)
+	mean := table.BucketMean(4)
+	a := table.Cell("A", 4) // three tasks, the best record
+	b := table.Cell("B", 4) // one task, strong benchmark, above the work
+	facts := []PickerCandidateFacts{
+		{Key: "A", Cell: a, Scored: true, Benchmark: 30, Ceiling: 2.25},
+		{Key: "B", Cell: b, Scored: true, Benchmark: 55, Ceiling: 5},
+		{Key: "D", Cell: PickerCell{Score: .2, Lo: .1, Hi: .3, N: 5}, Scored: true, Benchmark: 20, Ceiling: 1.5},
+		{Key: "E", Cell: PickerCell{Score: mean, Lo: mean, Hi: mean, N: 0}, Scored: true, Benchmark: 15, Ceiling: 2},
+		{Key: "C", Cell: PickerCell{Score: mean, Lo: mean, Hi: mean, N: 0}},
+	}
+	got, best := PickerBucketVerdicts(facts, lo, mean, 4, DefaultPickerSettings())
+	if best != 0 || !got[0].Allowed {
+		t.Fatalf("best = %d, A = %+v, want A allowed and best", best, got[0])
+	}
+	if got[1].Allowed || got[1].Reason != "overqualified" {
+		t.Errorf("B = %+v, want left out as overqualified", got[1])
+	}
+	if got[2].Allowed || got[2].Reason != "below 0.9×best" {
+		t.Errorf("D = %+v, want left out below the allowed fraction", got[2])
+	}
+	if got[3].Allowed || got[3].Reason != "above its benchmark" {
+		t.Errorf("E = %+v, want left out above its benchmark", got[3])
+	}
+	if got[4].Allowed || got[4].Reason != "no record, no benchmark" {
+		t.Errorf("C = %+v, want left out with no record and no benchmark", got[4])
+	}
+
+	// A thin model below its ceiling is allowed by the benchmark and flagged
+	// as a prior, which the screen shows as "chosen by benchmark (n<3)".
+	facts[1].Ceiling = 2.5
+	got, _ = PickerBucketVerdicts(facts, lo, mean, 4, DefaultPickerSettings())
+	if !got[1].Allowed || !got[1].Prior {
+		t.Errorf("B with ceiling 2.5 = %+v, want allowed by benchmark", got[1])
+	}
+}

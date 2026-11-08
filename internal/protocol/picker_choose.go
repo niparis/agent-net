@@ -29,6 +29,103 @@ import (
 //
 // When nothing is allowed the caller falls back to the level rule.
 
+// PickerCandidateFacts is what the cell rule reads about one candidate in one
+// bucket. The TUI builds these from picker_get and the picker builds them from
+// its entries, so both run the same decision.
+type PickerCandidateFacts struct {
+	Key       string
+	Cell      PickerCell
+	Scored    bool
+	Benchmark float64
+	Ceiling   float64
+}
+
+// PickerVerdict is the cell rule's decision for one candidate in one bucket.
+// Reason is empty when the candidate is allowed; it is one of "below 0.9×best",
+// "overqualified", "above its benchmark" or "no record, no benchmark" when it
+// is left out. Prior is true when the candidate is allowed by its benchmark
+// because it has fewer than PickerMinCellTasks tasks in the bucket.
+type PickerVerdict struct {
+	Key     string
+	Allowed bool
+	Prior   bool
+	Reason  string
+}
+
+// pickerBucket is the index of the bucket a D falls in, for a given width.
+func pickerBucket(d float64, s PickerSettings) int {
+	return max(0, int(math.Floor((d-PickerDStart)/s.BucketWidth+pickerEdgeTolerance)))
+}
+
+// PickerBucketVerdicts applies the cell rule to one bucket. facts are the
+// candidates, bucketLo is the bottom of the bucket, bucketMean is the mean task
+// score over all models in the bucket, bucket is the bucket index and s the
+// picker settings. The second return value is the index in facts of the best
+// candidate: the one with the highest cell score and at least
+// PickerMinCellTasks tasks. It is -1 when no candidate has a record, and the
+// bucket mean is then the best.
+//
+// The decision here is exactly the one chooseByCells uses: a candidate with a
+// record is allowed unless the top of its interval is below AllowedFraction x
+// best, a thin candidate is allowed by its benchmark ceiling, and an allowed
+// candidate well above the work is left out when a weaker allowed candidate
+// exists.
+func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean float64, bucket int, s PickerSettings) ([]PickerVerdict, int) {
+	s = s.Normalized()
+	out := make([]PickerVerdict, len(facts))
+	best, bestIdx := bucketMean, -1
+	for i, f := range facts {
+		out[i].Key = f.Key
+		if f.Cell.N >= PickerMinCellTasks && (bestIdx < 0 || f.Cell.Score > best) {
+			best, bestIdx = f.Cell.Score, i
+		}
+	}
+	above := make([]bool, len(facts))
+	for i, f := range facts {
+		above[i] = f.Scored && pickerBucket(f.Ceiling-pickerEdgeTolerance*10, s)-bucket > 1
+		switch {
+		case f.Cell.N >= PickerMinCellTasks:
+			out[i].Allowed = f.Cell.Hi >= s.AllowedFraction*best
+			if !out[i].Allowed {
+				out[i].Reason = fmt.Sprintf("below %g×best", s.AllowedFraction)
+			}
+		case f.Scored && bucketLo < f.Ceiling:
+			out[i].Allowed, out[i].Prior = true, true
+		case f.Scored:
+			out[i].Reason = "above its benchmark"
+		default:
+			out[i].Reason = "no record, no benchmark"
+		}
+	}
+	// The over-qualification test reads the allowed set as it stood before any
+	// candidate was left out, which is what chooseByCells has always done.
+	initiallyAllowed := make([]bool, len(facts))
+	for i := range out {
+		initiallyAllowed[i] = out[i].Allowed
+	}
+	bench := func(f PickerCandidateFacts) float64 {
+		if !f.Scored {
+			return math.Inf(-1)
+		}
+		return f.Benchmark
+	}
+	for i, f := range facts {
+		if !initiallyAllowed[i] {
+			continue
+		}
+		if !above[i] || f.Cell.N >= PickerMinCellTasks && best-f.Cell.Score <= s.OverqualifiedMargin {
+			continue
+		}
+		for j, other := range facts {
+			if j != i && initiallyAllowed[j] && bench(other) < bench(f) {
+				out[i].Allowed, out[i].Reason = false, "overqualified"
+				break
+			}
+		}
+	}
+	return out, bestIdx
+}
+
 // pickerEntry is a candidate with what the cell rule reads about it.
 type pickerEntry struct {
 	c    WorkerModelCandidate
@@ -49,13 +146,6 @@ type pickerEntry struct {
 	allowed   bool
 	prior     bool
 	reason    string
-}
-
-func (e *pickerEntry) benchScore() float64 {
-	if !e.scored {
-		return math.Inf(-1)
-	}
-	return e.bench
 }
 
 // chooseByCells runs the cell rule. A non-empty fallback says why it chose
@@ -97,57 +187,28 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		return WorkerModelChoice{}, header + ": fallback to the level rule (every profile is out of quota)"
 	}
 
-	// 1. The best cell among candidates with a record of their own.
-	best, bestKnown := table.BucketMean(bucket), false
+	// 1-3. The same decision the Quality subtab shows, one verdict per entry.
+	// The best cell, the interval test, the benchmark prior and the
+	// over-qualification test all live in PickerBucketVerdicts.
+	facts := make([]PickerCandidateFacts, len(entries))
+	for i, e := range entries {
+		facts[i] = PickerCandidateFacts{Key: e.key, Cell: e.cell, Scored: e.scored, Benchmark: e.bench, Ceiling: e.ceiling}
+	}
+	verdicts, bestIdx := PickerBucketVerdicts(facts, bucketLo, table.BucketMean(bucket), bucket, set)
 	var bestEntry *pickerEntry
-	for _, e := range entries {
-		if e.cell.N >= PickerMinCellTasks && (!bestKnown || e.cell.Score > best) {
-			best, bestKnown, bestEntry = e.cell.Score, true, e
-		}
+	if bestIdx >= 0 {
+		bestEntry = entries[bestIdx]
+	}
+	for i, e := range entries {
+		e.allowed = verdicts[i].Allowed
+		e.prior = verdicts[i].Prior
+		e.reason = verdicts[i].Reason
 	}
 
-	// 2. Allowed by the interval, or by the benchmark where the record is thin.
-	for _, e := range entries {
-		switch {
-		case e.cell.N >= PickerMinCellTasks:
-			e.allowed = e.cell.Hi >= set.AllowedFraction*best
-			if !e.allowed {
-				e.reason = fmt.Sprintf("below %g×best", set.AllowedFraction)
-			}
-		case e.scored && bucketLo < e.ceiling:
-			e.allowed, e.prior = true, true
-		case e.scored:
-			e.reason = "above its benchmark"
-		default:
-			e.reason = "no record, no benchmark"
-		}
-	}
-
-	// 3. Strong models stay off easy work when a weaker allowed one exists. A
-	// cell with a record says so by its score. A thin cell has no score of its
-	// own, so the benchmark alone decides.
-	var allowed []*pickerEntry
-	for _, e := range entries {
-		if e.allowed {
-			allowed = append(allowed, e)
-		}
-	}
-	for _, e := range allowed {
-		if !e.above || e.cell.N >= PickerMinCellTasks && best-e.cell.Score <= set.OverqualifiedMargin {
-			continue
-		}
-		for _, other := range allowed {
-			if other != e && other.benchScore() < e.benchScore() {
-				e.reason = "overqualified"
-				break
-			}
-		}
-	}
 	var eligible []rankedChoice
 	var final []*pickerEntry
-	for _, e := range allowed {
-		if e.reason != "" {
-			e.allowed = false
+	for _, e := range entries {
+		if !e.allowed {
 			continue
 		}
 		final = append(final, e)

@@ -8,16 +8,16 @@
 │ 1 other subscription · s to show                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
-│ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │
-│ renamed            pi       gpt-6.1-zed               -            x     x     x     x     x      unused             │
+│ NAME               HARNESS  MODEL                     SCORE        T   S   N   H   V    USED                         │
+│ renamed            pi       gpt-6.1-zed               -            ·   ·   ·   ·   ·    unused                       │
 │   model gone - ask the CTO to fix                                                                                    │
-│ opus               claude   opus-5-5:high             51.7/high    x     x     x     █100% █100%  12·83%·2✗          │
-│ sol                codex    gpt-6.1-sol:medium        46.1/medium  x     x     ·     ·     x      unused             │
-│ terra              codex    gpt-6.1-terra:high        42.3/high    x     x     ·     ·     x      unused             │
-│ terra pi           pi       gpt-6.1-terra             38.1/medium  x     ·     ·     x     x      unused             │
+│ opus               claude   opus-5-5:high             51.7/high    ·   ·   ·   ·   ▸    12 · 83% done · 2 failed     │
+│ sol                codex    gpt-6.1-sol:medium        46.1/medium  ▸   ▸   ·   ·   ·    unused                       │
+│ terra              codex    gpt-6.1-terra:high        42.3/high    ·   ·   ▸   ▸   ·    unused                       │
+│ terra pi           pi       gpt-6.1-terra             38.1/medium  ·   ·   ·   ·   ·    unused                       │
 │   not on research                                                                                                    │
-│ T:trivial S:simple N:normal H:hard V:very complex                                                                    │
-│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
+│ T sol medium · S sol medium · N terra high · H terra high · V opus high                                              │
+│ T S N H V: the picker's preview at the middle of each level · ▸ = chosen · gateway preview, not simulated            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 

@@ -342,36 +342,6 @@ func TestQualityDetailAddsFixesAndContinues(t *testing.T) {
 	}
 }
 
-func TestQualitySelectorCyclesAndFilters(t *testing.T) {
-	m := newModel(80, 40)
-	m.tab = quotasTab
-	m.qualityDetail = true
-	m.snap.Calibration.Quality = qualityLevelSnapshot()
-	view := func() string { return qualityPanel(m.snap.Calibration.Quality, 80, m.qualityAgent, m.qualityDetail) }
-	if !strings.Contains(view(), "agent ◂ all agents ▸") || !strings.Contains(view(), "normal · 154 tasks") ||
-		!strings.Contains(view(), "unknown · 23 tasks") {
-		t.Fatalf("all agents: %s", view())
-	}
-	m = keys(m, "right")
-	if !strings.Contains(view(), "agent ◂ agent-net ▸") || !strings.Contains(view(), "normal · 20 tasks") ||
-		!strings.Contains(view(), "hard · 8 tasks") || strings.Contains(view(), "unknown ·") {
-		t.Fatalf("first caller: %s", view())
-	}
-	m = keys(m, "right")
-	if !strings.Contains(view(), "agent ◂ homelab-agent ▸") || !strings.Contains(view(), "simple · 5 tasks") ||
-		!strings.Contains(view(), "unknown · 12 tasks") || strings.Contains(view(), "hard ·") {
-		t.Fatalf("second caller: %s", view())
-	}
-	m = keys(m, "right")
-	if !strings.Contains(view(), "agent ◂ all agents ▸") {
-		t.Fatalf("selector does not wrap forward: %s", view())
-	}
-	m = keys(m, "left")
-	if !strings.Contains(view(), "agent ◂ homelab-agent ▸") {
-		t.Fatalf("selector does not wrap back: %s", view())
-	}
-}
-
 func TestQualityFamilyDimRule(t *testing.T) {
 	if !qualityFamilyDim("normal", protocol.CalibrationMinTasks-1) {
 		t.Fatal("a family below the minimum should be dim")

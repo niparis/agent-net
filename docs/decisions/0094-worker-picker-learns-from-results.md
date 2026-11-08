@@ -178,9 +178,11 @@ Settings that the cell rule replaced (`picker.fit_bands`, `picker.max_level_gap`
 - A model with fewer than 3 tasks in a bucket is allowed up to its benchmark
   ceiling and, near that ceiling, gets the uncertain boost. That is how it earns a
   record. A strong model does not get tries on easy work.
-- The Quotas heatmap forecast in the TUI still simulates the level rule. The
-  gateway's own preview of the current picks (`QualityPicks`) uses the cell rule
-  at the middle of each level's D range. Part 2 should move the forecast too.
+- Part 2 moved the forecast: the Quotas Workers panel now marks the gateway's
+  own preview of the current picks (`QualityPicks`), which uses the cell rule at
+  the middle of each level's D range, instead of simulating the level rule. The
+  Quality subtab shows the same cells the picker reads, with the verdicts of the
+  same protocol function.
 - A model that is continued often is not punished on every run: its defects and
   failed steps land on one run per session. Its earlier runs still show their own
   partial outcomes and fix rounds.
