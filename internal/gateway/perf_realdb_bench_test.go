@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -121,6 +123,79 @@ func BenchmarkRealSettingsSnapshot(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := g.store.SettingsSnapshot(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRealWorkerLog(b *testing.B) {
+	g := benchRealGateway(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := g.store.WorkerLog(200); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRealToolProjectStates(b *testing.B) {
+	g := benchRealGateway(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := g.store.ToolProjectStates(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRealSkillItems(b *testing.B) {
+	g := benchRealGateway(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRealAddNewSkillProjects(b *testing.B) {
+	g := benchRealGateway(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := g.addNewSkillProjects(context.Background()); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRealSessionUpsert(b *testing.B) {
+	g := benchRealGateway(b)
+	all, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
+	if err != nil || len(all) == 0 {
+		b.Skip("no online agents")
+	}
+	a := all[0]
+	raw, err := json.Marshal(protocol.SessionUpsert{Session: protocol.SessionInfo{SessionID: a.SessionID, Harness: a.Harness, NativeID: a.NativeID, PID: a.PID, Cwd: a.Cwd, Name: a.Profile.Name, Status: a.Status}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	nc := g.conns[a.NodeID]
+	ctx := context.Background()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := g.handle(ctx, nc, "session.upsert", raw); err != nil {
+			b.Fatal(err)
+		}
+		g.standingWG.Wait()
+	}
+}
+
+// The CTO daemon asks for the CTO's agent view on each timeline poll.
+func BenchmarkRealAgentsCTO(b *testing.B) {
+	g := benchRealGateway(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := g.store.Agents(protocol.QueryAgents{IncludeOwners: true, Harness: "cto"}); err != nil {
 			b.Fatal(err)
 		}
 	}

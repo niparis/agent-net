@@ -316,6 +316,7 @@ type Daemon struct {
 	herdrOpened         map[string]herdrOpenedPane
 	cto                 ctoRuntime
 	claudeCTO           claudeCTOState
+	ctoTranscript       ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
 	layoutMu            sync.Mutex
 	layoutCache         *protocol.MachineLayout
 	layoutTime          time.Time

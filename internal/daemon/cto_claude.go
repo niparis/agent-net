@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -529,7 +531,7 @@ func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (proto
 	if id == "" {
 		return out, nil
 	}
-	messages, err := claudeCTOTranscript(filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects"), id)
+	messages, err := d.ctoTranscript.read(filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects"), id)
 	if err != nil {
 		return out, err
 	}
@@ -540,77 +542,190 @@ func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (proto
 	return out, nil
 }
 
+// claudeCTOTranscript reads the whole CTO transcript from the start. The daemon
+// uses a ctoTranscriptCache instead, which gives the same answer without
+// parsing the lines it has already seen.
 func claudeCTOTranscript(projects, id string) ([]json.RawMessage, error) {
-	out := []json.RawMessage{}
+	return new(ctoTranscriptCache).read(projects, id)
+}
+
+// ctoTranscriptCache keeps the parsed messages of the CTO transcript. The file
+// is only appended to, so a call parses only the lines added since the last
+// one. It starts over when the file is another file, got shorter, or no longer
+// has the bytes it had at the end of the last complete line. It looks at the
+// file and never at the clock: the answer is what a full parse gives.
+type ctoTranscriptCache struct {
+	mu       sync.Mutex
+	path     string
+	info     os.FileInfo
+	offset   int64  // end of the last complete line that was parsed
+	tail     []byte // the bytes just before offset
+	lastCmd  string // command markup state at offset
+	messages []json.RawMessage
+	parsed   int // lines parsed so far, for tests
+}
+
+// ctoTranscriptTailCheck is how many bytes before the offset are compared to
+// tell an appended file from a rewritten one.
+const ctoTranscriptTailCheck = 256
+
+func (c *ctoTranscriptCache) reset() {
+	c.path, c.info, c.offset, c.tail, c.lastCmd, c.messages = "", nil, 0, nil, "", nil
+}
+
+// sameTail tells whether the file still holds the bytes the cache saw before
+// its offset.
+func (c *ctoTranscriptCache) sameTail(f *os.File) bool {
+	if len(c.tail) == 0 {
+		return c.offset == 0
+	}
+	buf := make([]byte, len(c.tail))
+	_, err := f.ReadAt(buf, c.offset-int64(len(buf)))
+	return err == nil && bytes.Equal(buf, c.tail)
+}
+
+func (c *ctoTranscriptCache) read(projects, id string) ([]json.RawMessage, error) {
+	empty := []json.RawMessage{}
 	if id == "" || filepath.Base(id) != id || strings.ContainsAny(id, "*?[]") {
-		return out, errors.New("invalid Claude session id")
+		return empty, errors.New("invalid Claude session id")
 	}
-	matches, err := filepath.Glob(filepath.Join(projects, "*", id+".jsonl"))
-	if err != nil || len(matches) == 0 {
-		return out, err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var f *os.File
+	var err error
+	if c.path != "" && filepath.Dir(filepath.Dir(c.path)) == projects && filepath.Base(c.path) == id+".jsonl" {
+		f, err = os.Open(c.path)
 	}
-	f, err := os.Open(matches[0])
-	if err != nil {
-		return out, err
+	if f == nil || err != nil {
+		matches, gerr := filepath.Glob(filepath.Join(projects, "*", id+".jsonl"))
+		if gerr != nil || len(matches) == 0 {
+			c.reset()
+			return empty, gerr
+		}
+		if f, err = os.Open(matches[0]); err != nil {
+			c.reset()
+			return empty, err
+		}
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 1<<16), 16<<20)
-	var lastCmd string
-	for sc.Scan() {
-		var line struct {
-			Type      string `json:"type"`
-			Timestamp string `json:"timestamp"`
-			Side      bool   `json:"isSidechain"`
-			Meta      bool   `json:"isMeta"`
-			Message   struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-		}
-		if json.Unmarshal(sc.Bytes(), &line) != nil || line.Side || line.Meta || (line.Type != "user" && line.Type != "assistant") {
-			continue
-		}
-		var text string
-		if json.Unmarshal(line.Message.Content, &text) != nil {
-			var parts []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			}
-			if json.Unmarshal(line.Message.Content, &parts) != nil {
-				continue
-			}
-			for _, p := range parts {
-				if p.Type == "text" {
-					text += p.Text
-				}
-			}
-		}
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		if line.Type == "user" && strings.HasPrefix(text, "<cross-session-message ") {
-			if _, body, ok := strings.Cut(text, ">\n"); ok {
-				if owner, _, ok := strings.Cut(body, "\n\n[agent-net]"); ok {
-					text = owner
-				}
-			}
-		}
-		clean, newCmd, _ := claudetext.CleanCommandMarkup(text, lastCmd)
-		if newCmd != "" {
-			lastCmd = newCmd
-		}
-		text = clean
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		var millis int64
-		if at, err := time.Parse(time.RFC3339Nano, line.Timestamp); err == nil {
-			millis = at.UnixMilli()
-		}
-		b, _ := json.Marshal(map[string]any{"type": line.Type, "text": text, "time": map[string]int64{"created": millis}})
-		out = append(out, b)
+	info, err := f.Stat()
+	if err != nil {
+		c.reset()
+		return empty, err
 	}
-	return out, sc.Err()
+	if c.info == nil || !os.SameFile(c.info, info) || info.Size() < c.offset || !c.sameTail(f) {
+		c.reset()
+	}
+	c.path, c.info = f.Name(), info
+	if info.Size() == c.offset {
+		return c.messages[:len(c.messages):len(c.messages)], nil
+	}
+
+	// Lines that end in a newline are kept. A last line without one may still
+	// be written to: it is part of this answer, but not of what is kept.
+	lastCmd := c.lastCmd
+	var fresh []json.RawMessage
+	var consumed int64
+	partial := false
+	sc := bufio.NewScanner(io.NewSectionReader(f, c.offset, info.Size()-c.offset))
+	sc.Buffer(make([]byte, 0, 1<<16), 16<<20)
+	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		advance, token, err := bufio.ScanLines(data, atEOF)
+		if token != nil {
+			partial = advance == len(data) && data[len(data)-1] != '\n'
+			if !partial {
+				consumed += int64(advance)
+			}
+		}
+		return advance, token, err
+	})
+	keptLen, keptCmd := 0, lastCmd
+	for sc.Scan() {
+		c.parsed++
+		if m, ok := parseCTOTranscriptLine(sc.Bytes(), &lastCmd); ok {
+			fresh = append(fresh, m)
+		}
+		if !partial {
+			keptLen, keptCmd = len(fresh), lastCmd
+		}
+	}
+	if err := sc.Err(); err != nil {
+		// Same as a full parse: what was read, and the error.
+		out := append(c.messages[:len(c.messages):len(c.messages)], fresh...)
+		c.reset()
+		return out, err
+	}
+	out := append(c.messages[:len(c.messages):len(c.messages)], fresh...)
+	c.messages = append(c.messages, fresh[:keptLen]...)
+	c.offset += consumed
+	c.lastCmd = keptCmd
+	c.tail = c.tail[:0]
+	if c.offset > 0 {
+		n := min(int64(ctoTranscriptTailCheck), c.offset)
+		buf := make([]byte, n)
+		if _, err := f.ReadAt(buf, c.offset-n); err != nil {
+			c.reset()
+			return out, nil
+		}
+		c.tail = buf
+	}
+	return out, nil
+}
+
+// parseCTOTranscriptLine turns one transcript line into a timeline message.
+// lastCmd carries the command markup state from line to line.
+func parseCTOTranscriptLine(raw []byte, lastCmd *string) (json.RawMessage, bool) {
+	var line struct {
+		Type      string `json:"type"`
+		Timestamp string `json:"timestamp"`
+		Side      bool   `json:"isSidechain"`
+		Meta      bool   `json:"isMeta"`
+		Message   struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(raw, &line) != nil || line.Side || line.Meta || (line.Type != "user" && line.Type != "assistant") {
+		return nil, false
+	}
+	var text string
+	if json.Unmarshal(line.Message.Content, &text) != nil {
+		var parts []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(line.Message.Content, &parts) != nil {
+			return nil, false
+		}
+		for _, p := range parts {
+			if p.Type == "text" {
+				text += p.Text
+			}
+		}
+	}
+	if strings.TrimSpace(text) == "" {
+		return nil, false
+	}
+	if line.Type == "user" && strings.HasPrefix(text, "<cross-session-message ") {
+		if _, body, ok := strings.Cut(text, ">\n"); ok {
+			if owner, _, ok := strings.Cut(body, "\n\n[agent-net]"); ok {
+				text = owner
+			}
+		}
+	}
+	clean, newCmd, _ := claudetext.CleanCommandMarkup(text, *lastCmd)
+	if newCmd != "" {
+		*lastCmd = newCmd
+	}
+	text = clean
+	if strings.TrimSpace(text) == "" {
+		return nil, false
+	}
+	var millis int64
+	if at, err := time.Parse(time.RFC3339Nano, line.Timestamp); err == nil {
+		millis = at.UnixMilli()
+	}
+	b, _ := json.Marshal(map[string]any{"type": line.Type, "text": text, "time": map[string]int64{"created": millis}})
+	return b, true
 }
 
 func (d *Daemon) bindClaudeCTO(sf claudeSessionFile, model, id, mode string) bool {

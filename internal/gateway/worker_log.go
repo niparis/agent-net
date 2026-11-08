@@ -50,14 +50,28 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Many runs share a caller: look each one up once.
+	type callerName struct{ name, host string }
+	callers := map[string]callerName{}
+	workerCaller := func(id string) (string, string, error) {
+		if c, ok := callers[id]; ok {
+			return c.name, c.host, nil
+		}
+		name, host, err := s.workerCaller(id)
+		if err == nil {
+			callers[id] = callerName{name, host}
+		}
+		return name, host, err
+	}
 	for _, run := range runs {
 		r := run.entry
-		if r.Caller, r.CallerHost, err = s.workerCaller(run.callerID); err != nil {
+		if r.Caller, r.CallerHost, err = workerCaller(run.callerID); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
 	}
-	agents, err := s.Agents(protocol.QueryAgents{IncludeOwners: true})
+	// Only the stored fields of online workers are used below.
+	agents, err := s.agentsBase(protocol.QueryAgents{IncludeOwners: true, OnlineOnly: true})
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +91,7 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 		if ended {
 			continue
 		}
-		caller, callerHost, err := s.workerCaller(w.Owner)
+		caller, callerHost, err := workerCaller(w.Owner)
 		if err != nil {
 			return nil, err
 		}
@@ -87,23 +101,16 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 	if len(out) > limit {
 		out = out[:limit]
 	}
+	lookups, err := s.workerRunLookups(out)
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
 		r := &out[i]
-		// Match the start, not merely the session: continuations reuse a session.
-		// worker_runs.started_at is Unix seconds, while a worker assessment's
-		// started_at is Unix nanoseconds, taken when the judge was asked a few
-		// seconds before the run. Take the latest assessment at or before the
-		// run's start plus a small margin, never one from a later start.
-		runStartNS := r.StartedAt * int64(time.Second)
-		assessmentLimit := runStartNS + int64(5*time.Second)
-		var raw string
-		err = s.db.QueryRow(`SELECT json_object('run_id',run_id,'session_id',session_id,'started_at',started_at,'reasoning',reasoning,'scope',scope,'coupling',coupling,'uncertainty',uncertainty,'verification',verification,'risk',risk,'d',d,'label',label,'judge_harness',judge_harness,'judge_model',judge_model,'reasons',json(reasons),'picker_label',picker_label,'picker_note',picker_note,'error',error) FROM worker_assessments WHERE session_id=? AND started_at<=? ORDER BY started_at DESC, assessed_at DESC LIMIT 1`, r.SessionID, assessmentLimit).Scan(&raw)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return nil, err
-		}
-		if err == nil {
+		lookup := lookups[i]
+		if lookup.assessment.Valid {
 			var a protocol.WorkerAssessment
-			if err = json.Unmarshal([]byte(raw), &a); err != nil {
+			if err = json.Unmarshal([]byte(lookup.assessment.String), &a); err != nil {
 				return nil, err
 			}
 			r.Assessment = &a
@@ -117,11 +124,7 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 		}
 
 		if r.Status != "running" {
-			var body string
-			err = s.db.QueryRow(`SELECT body FROM messages WHERE sender=? AND created_at>=? AND created_at<=? AND body LIKE '[agent-net worker notice]%' AND body NOT LIKE '%status: difficulty%' AND body NOT LIKE '%status: started%' ORDER BY created_at LIMIT 1`, r.SessionID, r.StartedAt*1000000000, (r.EndedAt+60)*1000000000).Scan(&body)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return nil, err
-			}
+			body := lookup.notice.String
 			for _, line := range strings.Split(strings.Split(body, protocol.ReportMarker)[0], "\n") {
 				if strings.HasPrefix(line, "worker: ") {
 					if _, title, ok := strings.Cut(line, " · "); ok {
@@ -160,4 +163,60 @@ func (s *Store) workerCaller(id string) (name, host string, err error) {
 		sessionName = "CTO"
 	}
 	return sessionName, hostname, nil
+}
+
+// workerRunLookup is what one run of the log needs besides its own row.
+type workerRunLookup struct {
+	assessment sql.NullString // the assessment, as JSON
+	notice     sql.NullString // the body of the worker's final notice
+}
+
+// workerRunLookups finds, for every entry, its assessment and its notice in one
+// statement. The log has up to 200 entries, and a statement per lookup costs
+// more than the lookup.
+//
+// An assessment's started_at is Unix nanoseconds, taken when the judge was
+// asked a few seconds before the run, while worker_runs.started_at is Unix
+// seconds. The latest assessment at or before the run's start plus a small
+// margin matches the run, never one from a later start. Continuations reuse a
+// session, so the start matters, not only the session. A running entry has no
+// notice yet.
+func (s *Store) workerRunLookups(entries []protocol.WorkerLogEntry) ([]workerRunLookup, error) {
+	out := make([]workerRunLookup, len(entries))
+	if len(entries) == 0 {
+		return out, nil
+	}
+	var q strings.Builder
+	args := make([]any, 0, 5*len(entries))
+	q.WriteString(`WITH q(i,sid,assessed_before,notice_from,notice_to) AS (VALUES `)
+	for i, r := range entries {
+		if i > 0 {
+			q.WriteByte(',')
+		}
+		q.WriteString(`(?,?,?,?,?)`)
+		noticeFrom, noticeTo := r.StartedAt*int64(time.Second), (r.EndedAt+60)*int64(time.Second)
+		if r.Status == "running" {
+			noticeFrom, noticeTo = 1, 0 // nothing is in this range
+		}
+		args = append(args, i, r.SessionID, r.StartedAt*int64(time.Second)+int64(5*time.Second), noticeFrom, noticeTo)
+	}
+	q.WriteString(`) SELECT q.i,
+ (SELECT json_object('run_id',run_id,'session_id',session_id,'started_at',started_at,'reasoning',reasoning,'scope',scope,'coupling',coupling,'uncertainty',uncertainty,'verification',verification,'risk',risk,'d',d,'label',label,'judge_harness',judge_harness,'judge_model',judge_model,'reasons',json(reasons),'picker_label',picker_label,'picker_note',picker_note,'error',error)
+  FROM worker_assessments WHERE session_id=q.sid AND started_at<=q.assessed_before ORDER BY started_at DESC, assessed_at DESC LIMIT 1),
+ (SELECT body FROM messages WHERE sender=q.sid AND created_at>=q.notice_from AND created_at<=q.notice_to AND body LIKE '[agent-net worker notice]%' AND body NOT LIKE '%status: difficulty%' AND body NOT LIKE '%status: started%' ORDER BY created_at LIMIT 1)
+ FROM q`)
+	rows, err := s.db.Query(q.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var i int
+		var l workerRunLookup
+		if err = rows.Scan(&i, &l.assessment, &l.notice); err != nil {
+			return nil, err
+		}
+		out[i] = l
+	}
+	return out, rows.Err()
 }

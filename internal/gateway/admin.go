@@ -91,18 +91,30 @@ func writeJSON(w http.ResponseWriter, v any, err error) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// NodesInfo lists the nodes with their versions; Online comes from the live
-// connections.
-func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
+// nodesWithOnline is the stored nodes with their connection state. A caller
+// that needs only that (and the harnesses and models a node reports) uses it
+// instead of NodesInfo, which also reads track records, quotas and the quality
+// picks of each node.
+func (g *Gateway) nodesWithOnline() ([]protocol.NodeView, error) {
 	nodes, err := g.store.Nodes()
 	if err != nil {
-		return protocol.NodesInfo{}, err
+		return nil, err
 	}
 	g.mu.Lock()
 	for i := range nodes {
 		_, nodes[i].Online = g.conns[nodes[i].NodeID]
 	}
 	g.mu.Unlock()
+	return nodes, nil
+}
+
+// NodesInfo lists the nodes with their versions; Online comes from the live
+// connections.
+func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
+	nodes, err := g.nodesWithOnline()
+	if err != nil {
+		return protocol.NodesInfo{}, err
+	}
 	var preview qualityPreviewInputs
 	previewRead := false
 	for i := range nodes {

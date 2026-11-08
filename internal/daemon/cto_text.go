@@ -122,7 +122,7 @@ func ctoTextEntry(raw json.RawMessage) (role, text, tool string, at int64, ok bo
 // must relay instead of starting a second CTO. When the gateway cannot answer,
 // the local record is the best information there is.
 func (d *Daemon) ctoOnThisNode(ctx context.Context) bool {
-	data, err := d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true})
+	data, err := d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true, Harness: "cto"})
 	if err != nil {
 		return true
 	}

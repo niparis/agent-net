@@ -162,7 +162,7 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 	// The roster is public, like charters: any caller but a worker may read
 	// it, the CTO included. Changes also need a session on this machine.
 	if action == "worker.profile.list" {
-		if agent, ok, err := g.store.Agent(p.Requester); err != nil {
+		if agent, ok, err := g.store.agentBase(p.Requester); err != nil {
 			return nil, err
 		} else if ok && agent.Worker != nil {
 			return nil, reject("worker profiles require a non-worker session on this machine")
@@ -171,13 +171,13 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 		if err != nil {
 			return nil, err
 		}
-		info, err := g.NodesInfo()
+		nodes, err := g.nodesWithOnline()
 		if err != nil {
 			return nil, err
 		}
-		return withWorkerProfileAvailability(profiles, info.Nodes), nil
+		return withWorkerProfileAvailability(profiles, nodes), nil
 	}
-	agent, ok, err := g.store.Agent(p.Requester)
+	agent, ok, err := g.store.agentBase(p.Requester)
 	if err != nil {
 		return nil, err
 	}
