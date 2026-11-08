@@ -350,3 +350,74 @@ func mockTenTeamsModel(w, h int) Model {
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: graphRefKey(ref("team", "forge"))})
 	return m
 }
+
+// Pixel polish: nodes own a left column, labels keep a clear cell from the
+// ring, side boxes keep their lead inside, focus is centred, and adjacent
+// boxes leave room for a link.
+func TestTeamPolishSpacing(t *testing.T) {
+	const w, h = 130, 38
+	overview := mockTeamsModel(w, h)
+	s := overview.graphScene(overview.graphState, graphview.Size{Width: w, Height: h})
+	for _, f := range s.Frames {
+		for _, tx := range s.Texts {
+			if tx.Hit == f.Hit && tx.Y == f.Y+1 && tx.X < f.X+6 {
+				t.Fatalf("team %s text starts at x=%d, want its own column at x>=%d", f.Hit, tx.X, f.X+6)
+			}
+		}
+		for _, n := range s.Nodes {
+			if n.Name != f.Hit {
+				continue
+			}
+			nx := int(math.Round(n.Position.X * float64(w)))
+			if nx > f.X+4 {
+				t.Fatalf("team %s node at x=%d is over the text column", f.Hit, nx)
+			}
+		}
+	}
+
+	// A three-team row at 120 leaves a wide gap for a link and its count.
+	narrow := mockTeamsModel(120, 34)
+	sn := narrow.graphScene(narrow.graphState, graphview.Size{Width: 120, Height: 34})
+	if len(sn.Frames) < 2 {
+		t.Fatal("no frames")
+	}
+	if gap := sn.Frames[1].X - (sn.Frames[0].X + sn.Frames[0].Width); gap < 5 {
+		t.Fatalf("gap between boxes = %d, want at least 5", gap)
+	}
+
+	// Focus centres the frame and keeps the side box lead inside the box.
+	focus := mockTeamsModel(w, h)
+	focus = keys(focus, "enter")
+	sf := focus.graphScene(focus.graphState, graphview.Size{Width: w, Height: h})
+	main := sf.Frames[0]
+	if main.Y == 0 || main.Y+main.Height >= h {
+		t.Fatalf("focus frame y=%d height=%d is not centred", main.Y, main.Height)
+	}
+	side := sf.Frames[1]
+	for _, n := range sf.Nodes {
+		if n.Name != side.Hit {
+			continue
+		}
+		nx := int(math.Round(n.Position.X * float64(w)))
+		ny := int(math.Round(n.Position.Y * float64(h)))
+		if nx < side.X+2 || nx > side.X+side.Width-4 || ny <= side.Y || ny >= side.Y+side.Height-1 {
+			t.Fatalf("side box lead at %d,%d is not inside %+v", nx, ny, side)
+		}
+	}
+
+	// The cell just before a node label is blank, even where an edge passes.
+	lines := (graphview.Braille{}).Render(sf, graphview.Size{Width: w, Height: h}).Lines
+	for _, n := range sf.Nodes {
+		nx := int(math.Round(n.Position.X * float64(w)))
+		ny := int(math.Round(n.Position.Y * float64(h)))
+		for _, tx := range sf.Texts {
+			if tx.Hit != n.Name || tx.Y != ny || tx.X <= nx {
+				continue
+			}
+			runes := []rune(lines[ny])
+			if tx.X-1 < len(runes) && runes[tx.X-1] != ' ' {
+				t.Fatalf("label %q touches the ring at %d,%d: %q", tx.Text, tx.X-1, ny, string(runes[tx.X-1]))
+			}
+		}
+	}
+}

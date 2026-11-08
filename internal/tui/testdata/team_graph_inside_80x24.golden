@@ -5,8 +5,8 @@
 │                                              │ │                             │
 │                                              │ │ SESSIONS                    │
 │                                   ⣀⡀         │ │ strategy second  desk  idle │
-│                                 ⢠○ ingest    │ │ ★ strategy lead  desk  busy │
-│                                ⢠⠊  1 session │ │ + 1 offline                 │
+│                                 ⢠○  ingest   │ │ ★ strategy lead  desk  busy │
+│                                ⢠⠊   1 session│ │ + 1 offline                 │
 │                               ⢰⠁        ops ▸│ │                             │
 │                             ⢀⠔⠁              │ │ CHARTER                     │
 │                         ⢀⣀⠤⠊⠁                │ │ purpose  Strategy research  │
@@ -15,8 +15,8 @@
 │                                              │ │ refuses  live trades        │
 │                                              │ │                             │
 │                                              │ │ YOUR CHOICES                │
-│            ○ finance                         │ │   tests before merge  suit… │
-│              1 session                       │ │ ◆ merge authority  ask ove… │
+│            ○  finance                        │ │   tests before merge  suit… │
+│               1 session                      │ │ ◆ merge authority  ask ove… │
 │                                              │ │   worker sandbox  sandboxe… │
 │                                              │ │   judge consumers  charter… │
 │                                              │ │   deploy rule  brief defau… │

@@ -586,6 +586,35 @@ func teamAbs(v int) int {
 	return v
 }
 
+// shiftTeamScene moves the drawn scene down by dy cells, keeping the footer
+// and title in their own rows.
+func shiftTeamScene(scene *graphview.Scene, dy int, size graphview.Size) {
+	if dy == 0 {
+		return
+	}
+	for i := range scene.Frames {
+		scene.Frames[i].Y += dy
+	}
+	for i := range scene.Groups {
+		scene.Groups[i].Y += dy
+	}
+	for i := range scene.Texts {
+		scene.Texts[i].Y += dy
+	}
+	fy := float64(dy) / float64(size.Height)
+	for i := range scene.Nodes {
+		scene.Nodes[i].Position.Y += fy
+	}
+	for i := range scene.Edges {
+		e := &scene.Edges[i]
+		e.From.Y += fy
+		e.To.Y += fy
+		for j := range e.Path {
+			e.Path[j].Y += fy
+		}
+	}
+}
+
 func clampInt(v, lo, hi int) int {
 	if v < lo {
 		return lo
@@ -640,14 +669,13 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 	// small draws a neighbour team box and returns the cell of its lead node.
 	// nodeRight puts the lead against the right border, so an edge to a frame
 	// on its right leaves without crossing the box text.
-	small := func(g teamGraphData, x, y, w, h int, strong, nodeRight bool) (int, int) {
+	small := func(g teamGraphData, x, y, w, h int, strong bool) (int, int) {
 		frame(x, y, w, h, g, strong)
-		nx, ny := x+2, y+3
+		// The lead has its own column; the text starts one cell right of the
+		// ring so the ring never sits over a glyph.
+		nx, ny := x+3, y+3
 		if h <= 4 {
 			ny = y + 1
-		}
-		if nodeRight {
-			nx = x + w - 3
 		}
 		n := node(g.lead, nx, ny, strong)
 		n.Name, n.Label, n.Kind = g.key, g.label, "team"
@@ -660,35 +688,21 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		if g.lead != "" {
 			lead = "★ " + m.graphName(g.lead)
 		}
-		textW := w - 4
-		if nodeRight {
-			textW = w - 7
-		}
-		leadX := x + 3
-		if h <= 4 {
-			leadX = x + 4
-			textW = w - 5
-			if nodeRight {
-				textW = w - 7
-			}
-		}
-		text(leadX, y+1, textW, lead, "label", g.key)
+		textX := x + 6
+		textW := max(1, w-7)
+		text(textX, y+1, textW, lead, "label", g.key)
 		if h >= 4 {
-			text(x+3, y+2, textW, teamCount(g.projects, "project", "projects")+" · "+teamCount(g.sessions, "session", "sessions"), "labelDim", g.key)
+			text(textX, y+2, textW, teamCount(g.projects, "project", "projects")+" · "+teamCount(g.sessions, "session", "sessions"), "labelDim", g.key)
 		}
 		if h >= 5 {
 			state := g.role
 			if g.busy > 0 && state != "needs you" {
 				state = fmt.Sprintf("%d busy", g.busy)
 			}
-			sx := x + 4
-			if strong {
-				sx = x + 5
-			}
-			text(sx, y+3, w-(sx-x)-1, state, g.role, g.key)
+			text(textX, y+3, textW, state, g.role, g.key)
 		}
 		if h > 5 && g.merger != "" {
-			text(x+3, y+4, textW, g.merger, "busy", g.key)
+			text(textX, y+4, textW, g.merger, "busy", g.key)
 		}
 		return nx, ny
 	}
@@ -704,6 +718,8 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		gap := 3
 		if size.Width < 100 {
 			gap = 2
+		} else if len(ordered) <= 3 {
+			gap = 6 // leave room for a visible link and its count
 		} else if size.Width >= 126 {
 			gap = 4
 		}
@@ -737,7 +753,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			if y+h > avail {
 				break
 			}
-			small(g, x, y, w, h, g.key == selectedTeam, false)
+			small(g, x, y, w, h, g.key == selectedTeam)
 			boxes[g.key] = scene.Frames[len(scene.Frames)-1]
 			visible++
 		}
@@ -955,10 +971,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			}
 			return true
 		}
-		gap := 2
-		if n.Selected {
-			gap = 3
-		}
+		gap := 3
 		placed := false
 		for _, pos := range [][2]int{
 			{c[0] + gap, c[1]},
@@ -969,12 +982,22 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			if placeLabel(pos[0], pos[1]) {
 				placed = true
 				if pos[1] == c[1] {
-					gapX := pos[0] - 1
-					if pos[0] < c[0] {
-						gapX = pos[0] + labelW
-					}
-					if !(n.Selected && (gapX == c[0]-1 || gapX == c[0]+1)) {
-						text(gapX, pos[1], 1, " ", "label", key)
+					if pos[0] > c[0] {
+						start := c[0] + 1
+						if n.Selected {
+							start = c[0] + 2
+						}
+						for gx := start; gx < pos[0]; gx++ {
+							text(gx, pos[1], 1, " ", "label", key)
+						}
+					} else {
+						end := c[0] - 1
+						if n.Selected {
+							end = c[0] - 2
+						}
+						for gx := pos[0] + labelW; gx <= end; gx++ {
+							text(gx, pos[1], 1, " ", "label", key)
+						}
 					}
 				}
 				if !place(key, detail, "labelDim", pos[0], pos[1]+1) {
@@ -1005,9 +1028,14 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			if w < 12 || y+boxH > mainH {
 				continue
 			}
-			nx, ny := small(ng, x, y, w, boxH, false, i%2 == 0)
-			cells[ng.key] = [2]int{nx, ny}
-			positions[ng.key] = teamNodePoint(nx, ny, size)
+			small(ng, x, y, w, boxH, false)
+			// The edge leaves from the box edge that faces the main frame.
+			portX := x + w - 1
+			if i%2 == 1 {
+				portX = x
+			}
+			cells[ng.key] = [2]int{portX, y + boxH/2}
+			positions[ng.key] = teamCellPoint(portX, y+boxH/2, size)
 		}
 	}
 	if inside {
@@ -1069,6 +1097,15 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		bend := math.Min(4, math.Max(1.5, chord*.25))
 		path := teamCurve(a[0], a[1], b[0], b[1], bend, size)
 		scene.Edges = append(scene.Edges, graphview.SceneEdge{FromName: e.From, ToName: e.To, From: path[0], To: path[len(path)-1], Path: path, Kind: e.Kind, Mode: e.Mode, Rule: e.Rule, Selected: e.From == selected || e.To == selected})
+	}
+	if !inside {
+		avail := size.Height
+		if footer {
+			avail--
+		}
+		if y := (avail - mainH) / 2; y > 0 {
+			shiftTeamScene(&scene, y, size)
+		}
 	}
 	if footer {
 		x := 1

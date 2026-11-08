@@ -7,8 +7,8 @@
 │                                                                       │ │ strategy second  desk  idle                │
 │                                                         ⢀⡠⠤⠤⠤⣀        │ │ ★ strategy lead  desk  busy                │
 │                                                      ⢀⠔⠊⠁     ⠉⠒⢄     │ │ + 1 offline                                │
-│                                                     ⢠○ ingest    ops ▸│ │                                            │
-│                                                    ⡰⠁  1 session      │ │ CHARTER                                    │
+│                                                     ⢠○  ingest   ops ▸│ │                                            │
+│                                                    ⡰⠁   1 session     │ │ CHARTER                                    │
 │                                                   ⡔⠁                  │ │ purpose  Strategy research                 │
 │                                                 ⡠⠜                    │ │ maturity  growing                          │
 │                                               ⢀⠔⠁                     │ │ accepts  studies                           │
@@ -23,8 +23,8 @@
 │                                                                       │ │   autonomy  off default                    │
 │                                                                       │ │                                            │
 │                                                                       │ │ ROUTING                                    │
-│                ○ finance                                              │ │ to ingest  auto                            │
-│                  1 session                                            │ │                                            │
+│                ○  finance                                             │ │ to ingest  auto                            │
+│                   1 session                                           │ │                                            │
 │                                                                       │ │ EDGES                                      │
 │                                                                       │ │ to ingest  depends                         │
 │                                                                       │ │                                            │
