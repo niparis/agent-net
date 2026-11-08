@@ -29,12 +29,21 @@ func setWakeAutonomy(t *testing.T, cli *localClient, project, value string) {
 // the given background records.
 func newInteractiveWakeRig(t *testing.T, autonomy string, records []map[string]any) wakeRig {
 	t.Helper()
+	return newClaudeWakeRig(t, protocol.ModeForeground, autonomy, records)
+}
+
+// newClaudeWakeRig is a wake rig for an offline Claude session of the given
+// mode, with the given autonomy, and a machine that lists the given records.
+func newClaudeWakeRig(t *testing.T, mode, autonomy string, records []map[string]any) wakeRig {
+	t.Helper()
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	listing, calls := filepath.Join(t.TempDir(), "agents.json"), filepath.Join(t.TempDir(), "calls")
 	for _, r := range records {
-		r["cwd"] = repo
+		if _, ok := r["cwd"]; !ok {
+			r["cwd"] = repo
+		}
 	}
 	b, _ := json.Marshal(records)
 	if err := os.WriteFile(listing, b, 0600); err != nil {
@@ -42,7 +51,7 @@ func newInteractiveWakeRig(t *testing.T, autonomy string, records []map[string]a
 	}
 	t.Setenv("FAKE_CLAUDE_AGENTS_FILE", listing)
 	t.Setenv("FAKE_CLAUDE_AGENTS_LOG", calls)
-	id, err := g.gw.Store().UpsertSession(c.d.NodeID(), protocol.SessionInfo{Harness: "claude", NativeID: wakeNative, Cwd: repo, Name: "shop", Mode: protocol.ModeForeground,
+	id, err := g.gw.Store().UpsertSession(c.d.NodeID(), protocol.SessionInfo{Harness: "claude", NativeID: wakeNative, Cwd: repo, Name: "shop", Mode: mode,
 		Repo: protocol.RepoInfo{Root: repo, Project: "shop"}})
 	if err != nil {
 		t.Fatal(err)
@@ -107,10 +116,11 @@ func TestMessageDoesNotWakeInteractiveClaudeWithAutonomyOff(t *testing.T) {
 
 func TestInteractiveWakeRefusesRunningOrUnclearRecords(t *testing.T) {
 	for name, records := range map[string][]map[string]any{
-		"running":         {{"id": wakeNative[:8], "kind": "interactive", "pid": 4242}},
-		"stopped-bg":      {{"id": wakeNative[:8], "kind": "background", "state": "stopped"}},
-		"no-kind":         {{"id": wakeNative[:8], "state": "done"}},
-		"other-sessionid": {{"id": wakeNative[:8], "sessionId": "different-native", "kind": "interactive"}},
+		"running":            {{"id": wakeNative[:8], "kind": "interactive", "pid": 4242}},
+		"stopped-bg":         {{"id": wakeNative[:8], "kind": "background", "state": "stopped"}},
+		"no-kind":            {{"id": wakeNative[:8], "state": "done"}},
+		"other-sessionid":    {{"id": wakeNative[:8], "sessionId": "different-native", "kind": "interactive"}},
+		"finished-elsewhere": {{"id": wakeNative[:8], "kind": "background", "state": "done", "cwd": "/elsewhere"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newInteractiveWakeRig(t, protocol.AutonomyWake, records)

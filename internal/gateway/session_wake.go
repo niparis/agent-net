@@ -58,17 +58,27 @@ func (g *Gateway) autonomyWake(a protocol.AgentView) bool {
 	return err == nil && mode == protocol.AutonomyWake
 }
 
-// wakeReceiptNote adds to the sender's routing note when a message waits for a
-// session that autonomy would wake but its harness cannot be woken.
+// wakeReceiptNote adds to the sender's routing note when a message waits for an
+// offline session that is not woken: a Pi session that autonomy would wake, or
+// any wakeable session when wake is off or the last wake failed.
 func (g *Gateway) wakeReceiptNote(m protocol.Message, route string) string {
 	if m.State != protocol.StateStored {
 		return route
 	}
 	a, ok, err := g.store.Agent(m.To)
-	if err != nil || !ok || a.Harness != "pi" || a.Worker != nil || a.Online || !g.autonomyWake(a) {
+	if err != nil || !ok || a.Worker != nil || a.Online {
 		return route
 	}
-	const line = "Pi sessions are not woken by messages"
+	line := ""
+	switch {
+	case a.Harness == "pi" && g.autonomyWake(a):
+		line = "Pi sessions are not woken by messages"
+	case wakeHarness(a.Harness):
+		line = g.wakeStatusLine(a)
+	}
+	if line == "" {
+		return route
+	}
 	if route == "" {
 		return line
 	}
@@ -84,19 +94,22 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 		if err != nil || !current {
 			return
 		}
+	} else if !g.wakeAllowed(a, g.autonomyWake(a)) {
+		// A queued message wakes only what wakeAllowed lets it wake. The step
+		// messages below keep the rule of their ready task (wakeSession).
+		return
 	}
 	g.wakeSession(ctx, a)
 }
 
-// wakeSession is shared by queued messages and explicitly assigned ready step
-// tasks. The receiving daemon makes the final retired-session safety checks.
+// wakeSession is shared by queued step messages and explicitly assigned ready
+// step tasks. The Claude background wake does not depend on autonomy. Every
+// other wake does: an interactive Claude session, Codex and OpenCode. The
+// receiving daemon makes the final safety checks.
 func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
 	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online {
 		return
 	}
-	// The Claude background wake does not depend on autonomy. Every other
-	// wake does: an interactive Claude session, Codex and OpenCode. The daemon
-	// still makes the final safety checks.
 	autonomy := g.autonomyWake(a)
 	if !autonomy && (a.Harness != "claude" || a.Mode == protocol.ModeForeground) {
 		return
@@ -139,14 +152,22 @@ func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
 		_, err := target.call(cctx, protocol.FrameSessionWake, frame)
 		if err != nil {
 			g.logLine("error", "where", "session wake", "session", a.SessionID, "err", err)
+			g.wakeFailed(ctx, a.SessionID, token, err)
+			return
+		}
+		if err := g.store.clearWakeFailure(a.SessionID); err != nil {
+			g.logLine("error", "where", "clear session wake failure", "session", a.SessionID, "err", err)
 		}
 	}()
 }
 
 // On reconnect, queued messages can have arrived while the machine was away.
+// A session whose last wake the machine refused is not asked again here: only a
+// new message asks (see wakeFailed).
 func (g *Gateway) wakePending(ctx context.Context, node string) {
 	rows, err := g.store.db.Query(msgSelect+` JOIN sessions r ON r.id=m.recipient
  WHERE r.node_id=? AND r.online=0 AND r.harness IN ('claude','codex','opencode') AND r.worker=''
+ AND NOT EXISTS (SELECT 1 FROM session_wake_failures f WHERE f.session_id=m.recipient)
  AND m.state='stored' AND m.expires_at>? ORDER BY m.created_at,m.rowid`, node, g.store.now().UnixNano())
 	if err != nil {
 		g.logLine("error", "where", "wake pending", "err", err)

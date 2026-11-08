@@ -1176,7 +1176,12 @@ ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS standing_orders (
  id TEXT PRIMARY KEY, text TEXT NOT NULL, saved_at INTEGER NOT NULL,
  source TEXT NOT NULL DEFAULT 'owner');
-`, botAgentMigration}
+`, botAgentMigration, `
+-- A wake that the machine refused for a reason. A gateway restart does not
+-- retry it; only a new message asks again (see wake_failure.go).
+CREATE TABLE IF NOT EXISTS session_wake_failures (
+ session_id TEXT PRIMARY KEY, failed_at INTEGER NOT NULL, reason TEXT NOT NULL);
+`}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
 // after its columns exist: the log table, the indexes and the backfill of old
