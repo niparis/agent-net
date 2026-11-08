@@ -354,6 +354,11 @@ type WorkerStartRequest struct {
 	// stops early (a partial hand-back, or idle without a hand-back), up to
 	// DefaultAutoContinues times, before the caller is told. Absent means on.
 	AutoContinue *bool `json:"auto_continue,omitempty"`
+	// MCPServers is "approve" or "disable". For a Claude worker it is recorded
+	// for the .mcp.json servers in the worker's folder before Claude starts, on
+	// top of the choice copied from the project's main checkout. Empty records
+	// nothing. Not allowed with Continue.
+	MCPServers string `json:"mcp_servers,omitempty"`
 }
 
 // WorkerStartResult answers OpWorkerStart.

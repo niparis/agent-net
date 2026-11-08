@@ -845,7 +845,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue})
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {

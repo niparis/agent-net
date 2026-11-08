@@ -62,14 +62,14 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 				areas = append(areas, x)
 			}
 		}
-		in := startIn{Touches: areas, Project: str("project"), Task: task, Title: str("title"), Harness: str("harness"), Difficulty: str("difficulty"), Model: str("model"), Provider: str("provider"), Effort: str("effort"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), Continue: continuation}
+		in := startIn{Touches: areas, Project: str("project"), Task: task, Title: str("title"), Harness: str("harness"), Difficulty: str("difficulty"), Model: str("model"), Provider: str("provider"), Effort: str("effort"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), MCPServers: str("mcp_servers"), Continue: continuation}
 		if v, ok := a["auto_continue"].(bool); ok {
 			in.AutoContinue = &v
 		}
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, Continue: in.Continue, AutoContinue: in.AutoContinue})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Continue: in.Continue, AutoContinue: in.AutoContinue})
 		if err != nil {
 			return nil, err
 		}

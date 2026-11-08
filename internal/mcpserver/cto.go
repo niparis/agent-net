@@ -135,6 +135,7 @@ var ctoTools = map[string]ctoToolDef{
 			"task":          {typ: "string", desc: "Brief and limits."},
 			"machine":       {typ: "string", desc: "Machine."},
 			"isolation":     {typ: "string", desc: "None reads only; default worktree.", enum: []string{"worktree", "none"}},
+			"mcp_servers":   {typ: "string", desc: "Claude: approve or disable the .mcp.json servers of the worker's folder.", enum: []string{"approve", "disable"}},
 			"session":       {typ: "string", desc: "Worker or queue ID."},
 			"auto_continue": {typ: "boolean", desc: "Default true: continue a worker that stops early."},
 		},
