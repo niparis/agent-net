@@ -550,5 +550,5 @@ func cmdTUI(ctx context.Context, args []string) error {
 	if fi, err := os.Stdout.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
 		return errors.New("tui needs a terminal; use `agent-net list --json` in a script")
 	}
-	return tui.Run(ctx, tui.NewDaemonSource(daemon.SocketPath()))
+	return tui.Run(ctx, tui.NewDaemonSource(daemon.SocketPath()), version)
 }
