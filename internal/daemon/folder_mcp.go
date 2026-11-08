@@ -52,9 +52,9 @@ func (d *Daemon) folderMCP(ctx context.Context, q protocol.FolderMCPRequest) (pr
 }
 
 // folderMCPLocal does the work on this machine. A project must be registered
-// here and a typed path must be an existing folder under the owner's home. An
-// undo only needs the absolute path, so it works for a project folder outside
-// home too.
+// here. A typed path, for a choice or an undo, must be under the owner's home.
+// A choice also needs an existing folder. An undo by project works for a
+// registered folder outside home too.
 func (d *Daemon) folderMCPLocal(ctx context.Context, q protocol.FolderMCPRequest) (protocol.FolderMCPResult, error) {
 	res := protocol.FolderMCPResult{NodeID: d.cfg.NodeID, Hostname: d.hostName()}
 	var err error
@@ -65,8 +65,6 @@ func (d *Daemon) folderMCPLocal(ctx context.Context, q protocol.FolderMCPRequest
 			return res, e
 		}
 		res.Path, res.Project = found.Path, found.Name
-	case q.Undo != nil:
-		res.Path, err = expandPath(q.Path)
 	default:
 		res.Path, err = cleanOwnerPath(q.Path)
 	}

@@ -50,10 +50,10 @@ func (d *Daemon) folderTrust(ctx context.Context, q protocol.FolderTrustRequest)
 }
 
 // folderTrustLocal trusts (or untrusts) a folder on this machine. A project
-// must be registered here and a typed path must be an existing folder under the
-// owner's home, the rule a typed path in the New session form already has.
-// Removing a trust only needs the absolute path, so an undo works for a project
-// folder outside home too.
+// must be registered here. A typed path, for a trust or an undo, must be under
+// the owner's home, the rule a typed path in the New session form already has.
+// A trust also needs an existing folder. An undo by project works for a
+// registered folder outside home too.
 func (d *Daemon) folderTrustLocal(ctx context.Context, q protocol.FolderTrustRequest) (protocol.FolderTrustResult, error) {
 	res := protocol.FolderTrustResult{NodeID: d.cfg.NodeID, Hostname: d.hostName()}
 	var err error
@@ -64,8 +64,6 @@ func (d *Daemon) folderTrustLocal(ctx context.Context, q protocol.FolderTrustReq
 			return res, e
 		}
 		res.Path, res.Project = found.Path, found.Name
-	case q.Remove:
-		res.Path, err = expandPath(q.Path)
 	default:
 		res.Path, err = cleanOwnerPath(q.Path)
 	}

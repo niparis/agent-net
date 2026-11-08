@@ -146,6 +146,30 @@ func TestCTOMCPServersByProjectOnARemoteNode(t *testing.T) {
 	}
 }
 
+// An undo frame carries a path like a choice does, so it gets the same home
+// check. A frame must not change a settings file in a folder outside home.
+func TestFolderMCPUndoOutsideHomeWritesNothing(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	folderTrustEnv(t)
+	n := startWorkerNode(t, g, shortSet, nil)
+	outside := t.TempDir()
+	settings := filepath.Join(outside, ".claude", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(settings), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	before := `{"enabledMcpjsonServers":["lib"]}`
+	if err := os.WriteFile(settings, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	undo := protocol.FolderMCPRequest{Path: outside, Undo: &protocol.MCPUndo{Choice: protocol.MCPApprove, Added: []string{"lib"}}}
+	if _, err := n.cli.call(protocol.OpFolderMCP, undo); err == nil || !strings.Contains(err.Error(), "outside your home folder") {
+		t.Fatalf("undo outside home: want a refusal, got %v", err)
+	}
+	if raw, err := os.ReadFile(settings); err != nil || string(raw) != before {
+		t.Fatalf("undo outside home changed the settings file: %q %v", raw, err)
+	}
+}
+
 // session_start with mcp_servers records the choice in the session folder
 // before Claude Code starts, so the first run does not stop on the prompt.
 func TestCTOSessionStartRecordsTheMCPChoiceFirst(t *testing.T) {
