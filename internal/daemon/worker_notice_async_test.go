@@ -117,16 +117,20 @@ func TestWorkerHandbackWIPDoesNotWaitBehindQueuedEndNotice(t *testing.T) {
 		_, err := w.d.handback(context.Background(), res.SessionID, protocol.WorkerHandbackRequest{Status: protocol.StatusBlocked, Report: "blocked"})
 		finished <- err
 	}()
+	// The hand-back runs git and gateway calls, which slow down under host load,
+	// so it gets the same wait as the other steps of a worker (20 s, scaled). A
+	// hand-back that waits behind the blocked end still fails: it cannot return
+	// before the release.
 	select {
 	case err := <-finished:
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(scaled(20 * time.Second)):
 		unblock()
 		select {
 		case <-finished:
-		case <-time.After(5 * time.Second):
+		case <-time.After(scaled(20 * time.Second)):
 			t.Fatal("hand-back did not return after releasing the end queue")
 		}
 		t.Fatal("hand-back WIP commit waited behind a blocked global end notice")
