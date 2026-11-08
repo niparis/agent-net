@@ -2191,7 +2191,7 @@ released change whose after-merge verify waits for the owner to try it; its
 status is `try it` and its second line says what to check), Stuck and Done. A
 To try change never counts as needing you.
 
-The daemon checks each local repo at most once every ten minutes: an open change with commits beyond its base whose head is on the remote default branch moves to Done as `merged outside agent-net`, without running further steps. A change with no step reports, older than seven days, closes as `abandoned: branch gone` when its branch is absent both locally and on the remote.
+The daemon checks each local repo at most once every ten minutes: an open change with commits beyond its base whose head is on the remote default branch moves to Merged as `merged outside agent-net`, without running the steps before merge. The gateway records that merge only ten minutes after the last test or merge report on the change, so the merger can report its own merge first; a merger's merge pass for the same merged commit then replaces the git observation as the latest merge report. The change moves to Done when its after-merge steps have passed or are left out. A change with no step reports, older than seven days, closes as `abandoned: branch gone` when its branch is absent both locally and on the remote.
 
 The evidence strip has a mark for each step: `a` accept, `r` review, `t`
 test, `p` approve, `m` merge, `T` test after merge, `l` release, `d` deploy
