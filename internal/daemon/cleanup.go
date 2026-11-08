@@ -464,7 +464,7 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	if !missing && d.log != nil {
 		d.Logf("worker.worktree_cleanup path=%q branch=%q reason=%s freed=%d", w.Path, w.Branch, reason, size)
 	}
-	if !retainUntil.IsZero() && now.Before(retainUntil) {
+	if w.ChangeState == protocol.ChangeStopped || (!retainUntil.IsZero() && now.Before(retainUntil)) {
 		return nil
 	}
 	if _, err := gitOut(ctx, w.Project, "update-ref", "-d", branchRef, head); err != nil {

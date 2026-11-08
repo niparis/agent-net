@@ -1061,3 +1061,22 @@ func TestCleanupWorktreeErrorRateLimited(t *testing.T) {
 		t.Fatalf("pass 3 expected error log for worktree after 24h: %s", out3)
 	}
 }
+
+func TestCleanupStoppedChangeKeepsBranch(t *testing.T) {
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_stopped")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_stopped", dir)
+	d := &Daemon{cfg: Config{StateDir: state}, workers: map[string]*worker{}}
+	old := time.Now().Add(-60 * 24 * time.Hour)
+	candidate := cleanupWorktree{ID: "w_stopped", Project: project, Path: dir, Branch: "agent-net/w_stopped", EndedAt: old, ChangeState: protocol.ChangeStopped, ChangeEndedAt: old}
+	if err := d.cleanupWorktree(context.Background(), candidate, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/agent-net/w_stopped"); err != nil {
+		t.Fatal("stopped change branch was deleted")
+	}
+}
