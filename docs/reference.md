@@ -393,7 +393,7 @@ are proposals. The CTO has one action tool per area:
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
 | `sessions_archive` | Propose archiving offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Includes the exact dry run; owner approval required. |
-| `session_change` | `action: rename`, `trust`, `policy`, `session_start`, `merger_start` or `merger_stop`. `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `session_start` takes `trust: true` to trust the folder and start in one step. See [CTO folder trust](#cto-folder-trust) |
+| `session_change` | `action: rename`, `trust`, `policy`, `session_start`, `merger_start`, `merger_stop`, `stop`, `resume` or `restart`. `stop`, `resume` and `restart` take `session_id`; see [CTO session stop, resume and restart](#cto-session-stop-resume-and-restart). `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `session_start` takes `trust: true` to trust the folder and start in one step. See [CTO folder trust](#cto-folder-trust) |
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
@@ -2627,6 +2627,16 @@ The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell
 cannot supply it, setup adds common Homebrew and local binary directories to the
 current PATH. A daemon upgrade adds PATH to older service files.
+
+### CTO session stop, resume and restart
+
+The owner can ask the CTO to stop, resume or restart an owner or agent session, as the owner does in the TUI. The CTO calls `session_change` with `action` `stop`, `resume` or `restart` and a `session_id`. The session may be on any machine: the request goes through the gateway like a session start.
+
+- `stop` is the TUI stop, unchanged: the same guarded path as the operator method `session_stop`, which signals only the registered harness process. The conversation is kept. The Inbox notice has an undo, which is `session_resume` for the same session.
+- `resume` reopens the same conversation in its recorded folder with the same harness, as `session_resume` does when the owner presses Enter on an offline session. It runs in the background and never opens a view, so the herdr rules of decision 0046 hold. The owner opens it with Enter. The CTO waits for the background launch to finish and reports a failure. Pi cannot reopen an old session, so `resume` and `restart` refuse a Pi session.
+- `restart` stops the session, waits up to 30 seconds until the gateway reports it ended, then resumes it. A fresh Claude Code process reads `~/.claude.json` again, which brings back user MCP servers such as agent-net. A session that is already offline is only resumed. A Pi session is refused before anything is stopped.
+
+All three refuse a worker (use `worker_change` with `stop`) and the CTO's own session. They are immediate changes with an Inbox notice and an audit line (`session_stop`, `session_resume` or `session_restart`). Only `stop` has an undo. `resume` and `restart` have none, because the session is already running again.
 
 ### CTO folder trust
 
