@@ -30,9 +30,9 @@ func graphTestStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ node, attr, value string }{
-		{"trading-architect", "maturity", "mature - stable"},
+		{"trading-architect", "maturity", "mature"},
 		{"cogforge", "purpose", "Generic document API"},
-		{"cogforge", "maturity", "early - prototype"},
+		{"cogforge", "maturity", "early"},
 		{"tenebrae", "maturity", "growing"},
 	} {
 		if err := s.SetCharter(c.node, c.attr, c.value, "owner"); err != nil {
@@ -69,7 +69,7 @@ func TestGraphViewReturnsNodesChartersEdgesAndHistory(t *testing.T) {
 	if got := byName["cogforge"].Charter.Purpose; got != "Generic document API" {
 		t.Fatalf("cogforge purpose %q", got)
 	}
-	if got := byName["cogforge"].Charter.Maturity; got != "early - prototype" {
+	if got := byName["cogforge"].Charter.Maturity; got != "early" {
 		t.Fatalf("cogforge maturity %q", got)
 	}
 	if len(view.Changes) != 4 {
@@ -83,7 +83,7 @@ func TestGraphViewReturnsNodesChartersEdgesAndHistory(t *testing.T) {
 func TestGraphViewKeepsTheLastChangesPerNode(t *testing.T) {
 	s := graphTestStore(t)
 	for i := 0; i < 7; i++ {
-		if err := s.SetCharter("cogforge", "notes", fmt.Sprintf("note %d", i), "owner"); err != nil {
+		if err := s.SetCharter("cogforge", "rules", fmt.Sprintf("note %d", i), "owner"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -93,7 +93,7 @@ func TestGraphViewKeepsTheLastChangesPerNode(t *testing.T) {
 	}
 	got := 0
 	for _, c := range view.Changes {
-		if c.Node == "cogforge" && c.Attr == "notes" {
+		if c.Node == "cogforge" && c.Attr == "rules" {
 			got++
 		}
 	}

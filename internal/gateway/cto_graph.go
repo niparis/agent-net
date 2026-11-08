@@ -14,6 +14,19 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 	if (tool == "node_add" || tool == "node_remove") && s.graphRefsOn.Load() {
 		return "rule", nil
 	}
+	if tool == "charter_set" {
+		var q protocol.CharterSetRequest
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return "", err
+		}
+		if q.Level == "global" || q.Level == "team" || (q.Ref != nil && q.Ref.Kind == "team") {
+			return "rule", nil
+		}
+		if q.Level != "" && q.Ref == nil {
+			q.Ref = &protocol.GraphRef{Kind: q.Level, ID: q.Node}
+			raw, _ = json.Marshal(q)
+		}
+	}
 	var target struct {
 		Ref *protocol.GraphRef `json:"ref"`
 	}
@@ -21,7 +34,7 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 		return "", err
 	}
 	if tool == "lead_set" || tool == "repo_create" || tool == "repo_archive" || tool == "agent_create" || tool == "agent_tombstone" ||
-		tool == "team_create" || tool == "team_rename" || tool == "team_purpose" || tool == "team_archive" || tool == "team_member_add" || tool == "team_member_remove" {
+		tool == "team_create" || tool == "team_rename" || tool == "team_purpose" || tool == "team_charter" || tool == "team_archive" || tool == "team_member_add" || tool == "team_member_remove" {
 		if err := s.requireGraphRefs(); err != nil {
 			return "", err
 		}
@@ -153,7 +166,7 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 }
 
 func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, error) {
-	if typ == "lifecycle" {
+	if typ == "lifecycle" || typ == "level_charter" {
 		return "rule", nil
 	}
 	if typ == "edge" && deliveryEdgeStep(attr) != "" {
@@ -184,7 +197,7 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 			v.Kind = "remove"
 		}
 		switch attr {
-		case "accepts", "needs", "consumers":
+		case "accepts", "rules":
 			// Learned items are separated with semicolons. Removing an existing item
 			// is a removal, even if the replacement itself has no restrictive words.
 			for _, item := range strings.FieldsFunc(old, func(r rune) bool { return r == ';' || r == '\n' }) {
@@ -204,8 +217,8 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 		// Wording uses the same restriction rule as learned additions. These fields
 		// do not set authority; maturity, refuses and escalate still fail closed.
 		switch attr {
-		case "purpose", "notes", "feature_requests":
-			v.Field = "needs"
+		case "purpose", "rules", "maturity_note", "feature_requests":
+			v.Field = "rules"
 		}
 	case "edge":
 		data := value

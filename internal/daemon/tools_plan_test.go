@@ -124,7 +124,7 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 	if err := g.gw.Store().AddArchitect("architect", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.gw.Store().SetCharter("architect", "needs", "Need a review skill", "owner"); err != nil {
+	if err := g.gw.Store().SetCharter("architect", "rules", "Need a review skill", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := n.d.runCTOToolRaw(context.Background(), "tools_list", json.RawMessage(`{}`)); err == nil {

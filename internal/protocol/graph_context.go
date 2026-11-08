@@ -20,7 +20,7 @@ const DecideRule = "Decide, do not defer: judge every request from another agent
 // charterSet tells whether a node has any charter at all.
 func charterSet(c Charter) bool {
 	return c.Purpose != "" || c.Maturity != "" || c.Accepts != "" || c.Refuses != "" ||
-		c.Consumers != "" || c.Escalate != "" || c.Needs != "" || c.Notes != ""
+		c.FeatureRequests != "" || c.Escalate != "" || c.MaturityNote != "" || c.Rules != ""
 }
 
 // CharterBrief is the whole charter, for a worker's brief. Empty when the node
@@ -37,10 +37,10 @@ func CharterBriefWithSettings(n Node, snap settings.Snapshot) string {
 		{"maturity", n.Charter.Maturity},
 		{"accepts", n.Charter.Accepts},
 		{"refuses", n.Charter.Refuses},
-		{"consumers", n.Charter.Consumers},
+		{"feature_requests", n.Charter.FeatureRequests},
 		{"escalate", n.Charter.Escalate},
-		{"needs", n.Charter.Needs},
-		{"notes", n.Charter.Notes},
+		{"maturity_note", n.Charter.MaturityNote},
+		{"rules", n.Charter.Rules},
 	} {
 		if a.value != "" {
 			fmt.Fprintf(&b, "%s: %s\n", a.name, a.value)
@@ -89,9 +89,13 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "[agent-net] Your node's charter for %s, from agent-net:\n", node.Name)
+	fmt.Fprintf(&b, "[agent-net] Your effective charter for %s, from agent-net (global -> team -> repo -> agent):\n", node.Name)
 	for _, a := range []struct{ name, value string }{
+		{"purpose", node.Charter.Purpose},
 		{"maturity", node.Charter.Maturity},
+		{"maturity_note", node.Charter.MaturityNote},
+		{"rules", node.Charter.Rules},
+		{"feature_requests", node.Charter.FeatureRequests},
 		{"accepts", node.Charter.Accepts},
 		{"refuses", node.Charter.Refuses},
 		{"escalate", node.Charter.Escalate},

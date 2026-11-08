@@ -219,6 +219,8 @@ func (m Model) helpLine(w int) string {
 		return sDim.Render(clip("up/down field · left/right change · enter start · esc cancel", w))
 	case modeLeadPicker:
 		return sDim.Render(clip("up/down select · enter save · esc cancel", w))
+	case modeCharterForm:
+		return sDim.Render(clip("tab/up/down field · enter saves field · empty inherits · esc returns", w))
 	case modeTeamForm:
 		return sDim.Render(clip("up/down field · enter saves or moves on · esc cancels", w))
 	case modeQuotaConfirm:

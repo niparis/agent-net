@@ -48,7 +48,7 @@ func TestWorkerSandboxFollowsTheNodesMaturity(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	st := g.gw.Store()
-	if err := st.SetCharter("shop", "maturity", "critical - money", "owner"); err != nil {
+	if err := st.SetCharter("shop", "maturity", "mature", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersReadOnly, "owner"); err != nil {

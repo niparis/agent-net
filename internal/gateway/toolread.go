@@ -285,6 +285,13 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		Accepts: charterList(a.Charter.Accepts), Refuses: charterList(a.Charter.Refuses),
 		FeatureRequests: a.Charter.FeatureRequests,
 	}
+	if c := a.Charter.Effective; c != nil {
+		row.Charter.Maturity = c.Maturity
+		row.Charter.MaturityNote = c.MaturityNote
+		row.Charter.Rules = c.Rules
+		row.Charter.Escalate = c.Escalate
+		row.Charter.Sources = c.Sources
+	}
 	if len(a.Charter.Rules) > 0 {
 		row.Rules = map[string]string{}
 		for _, rule := range a.Charter.Rules {

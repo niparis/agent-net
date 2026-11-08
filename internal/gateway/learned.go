@@ -25,7 +25,7 @@ func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) 
 		args = append(args, s.now().UnixNano())
 	}
 	if s.phraseCleaner != nil {
-		query += ` AND NOT (status='pending' AND field IN ('accepts','needs','consumers') AND EXISTS(SELECT 1 FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id AND d.origin='owner') AND NOT EXISTS(SELECT 1 FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id))`
+		query += ` AND NOT (status='pending' AND field IN ('accepts','rules') AND EXISTS(SELECT 1 FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id AND d.origin='owner') AND NOT EXISTS(SELECT 1 FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id))`
 	}
 	query += ` ORDER BY id`
 	rows, err := s.db.Query(query, args...)
@@ -230,7 +230,7 @@ func (s *Store) learnOwner(tx *sql.Tx, from, to, id, prompt string, at int64) er
 	if target == from {
 		return nil
 	}
-	return learnedAdd(tx, at, from, "needs", "", target+" for "+phrase, "minor", "owner", ev)
+	return learnedAdd(tx, at, from, "rules", "", target+" for "+phrase, "minor", "owner", ev)
 }
 
 func (s *Store) learnOutcome(tx *sql.Tx, replyID string, at int64) error {
@@ -294,7 +294,7 @@ func (s *Store) learnOutcome(tx *sql.Tx, replyID string, at int64) error {
 	if len(ev) < 2 || to == redirect {
 		return nil
 	}
-	if err = learnedAdd(tx, at, to, "needs", "", redirect+" for "+phrase, "minor", "outcome", ev); err != nil {
+	if err = learnedAdd(tx, at, to, "rules", "", redirect+" for "+phrase, "minor", "outcome", ev); err != nil {
 		return err
 	}
 	return learnedAdd(tx, at, to, "edge", "depends", redirect, "minor", "outcome", ev)

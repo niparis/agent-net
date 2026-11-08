@@ -15,10 +15,10 @@ Charter ────────────────────────
 accepts          New document sources, retrieval fixes, and schema changes that keep old ids working.
 refuses          Anything that writes to the trading accounts; one-off client reports.
 feature_requests Open an issue in the repo; the architect triages them every Monday.
-consumers        cogforge, shop, the nightly report job
+maturity_note    stable since spring
 escalate         Data loss, or a change of the public ids.
-needs            MCP: tenebrae-library; a GPU box for embeddings.
-notes            Deploys go through homelab. Keep the library read only on laptops.
+rules            Consumers: cogforge, shop, the nightly report job. Needs: MCP: tenebrae-library; a GPU box for
+                 embeddings. Notes: Deploys go through homelab. Keep the library read only on laptops.
 Rules ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 tests_before_merge suite-new-tests        maturity default
 merge_authority    delegated              maturity default

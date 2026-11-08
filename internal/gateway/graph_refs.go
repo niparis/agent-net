@@ -256,6 +256,10 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
+	if err = s.applyEffectiveCharters(&g); err != nil {
+		return g, err
+	}
+
 	rows, err = s.db.Query(`SELECT source,target,kind,mode,rule,source_kind,target_kind FROM graph_edges ORDER BY source_kind,source,target_kind,target,kind`)
 	if err != nil {
 		return g, err

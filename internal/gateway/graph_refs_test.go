@@ -89,7 +89,7 @@ func TestGraphRefsReadAndCTOWrite(t *testing.T) {
 	if err != nil || len(graph.Nodes) != 1 || graph.Nodes[0].Charter.Purpose != "Repo purpose" {
 		t.Fatalf("repo: %+v %v", graph, err)
 	}
-	if err = s.SetRefCharter(agent, "notes", "context", "cto", false); err != nil {
+	if err = s.SetRefCharter(agent, "rules", "context", "cto", false); err != nil {
 		t.Fatal(err)
 	}
 	history, err := s.CTOGraphHistory(0)

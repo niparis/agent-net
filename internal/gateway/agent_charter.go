@@ -92,6 +92,12 @@ func (s *Store) applyAgentChartersWith(agents []protocol.AgentView, short bool, 
 		a := &agents[i]
 		project := projectOfSession(*a)
 		c := byNode[project]
+		effective, err := s.EffectiveCharter(project, a.AgentID, "")
+		if err != nil {
+			return err
+		}
+		c.Purpose, c.Maturity, c.Accepts, c.Refuses, c.FeatureRequests = effective.Purpose, effective.Maturity, effective.Accepts, effective.Refuses, effective.FeatureRequests
+		c.Effective = &effective
 		if c.Purpose == "" && a.Repo.Description != "" {
 			c.Purpose = a.Repo.Description
 			c.PurposeFallback = true

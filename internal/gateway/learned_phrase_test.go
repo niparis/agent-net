@@ -39,7 +39,7 @@ func TestLearnPhraseBeforeApply(t *testing.T) {
 		t.Fatalf("chooser request: %+v", fake.req)
 	}
 	v := learnedRead(t, s, false)
-	if learnedFind(v, "ops", "accepts", "daily backup operations") == nil || learnedFind(v, "app", "needs", "ops for backup operations") == nil {
+	if learnedFind(v, "ops", "accepts", "daily backup operations") == nil || learnedFind(v, "app", "rules", "ops for backup operations") == nil {
 		t.Fatalf("phrases: %+v", v)
 	}
 	h, err := s.CharterHistory("ops", 10)
@@ -58,7 +58,7 @@ func TestLearnPhraseRejectedRawIsNotReoffered(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.t = c.t.Add(2 * time.Minute)
-	if err := s.SetCharter("ops", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("ops", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.ProcessLearned(); err != nil {
@@ -177,7 +177,7 @@ func TestLearnPhraseMergesNewEvidenceByRawPhrase(t *testing.T) {
 	s, c, a, b := learnedProjects(t)
 	fake := &phraseFake{report: `{"backups":"daily backup operations","ops for backups":"ops for backup operations"}`}
 	s.phraseCleaner = phrasing.New(fake)
-	if err := s.SetCharter("ops", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("ops", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.RememberOwnerPrompt(a, "ops: backups are his job"); err != nil {

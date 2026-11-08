@@ -44,7 +44,7 @@ func TestLearnedOwnerMergeAndQuiet(t *testing.T) {
 		c.t = c.t.Add(time.Minute)
 	}
 	all := learnedRead(t, s, false)
-	for _, x := range [][3]string{{"ops", "accepts", "backups"}, {"app", "needs", "ops for backups"}} {
+	for _, x := range [][3]string{{"ops", "accepts", "backups"}, {"app", "rules", "ops for backups"}} {
 		v := learnedFind(all, x[0], x[1], x[2])
 		if v == nil || len(v.Evidence) != 2 || v.Status != "pending" {
 			t.Fatalf("suggestions: %+v", all)
@@ -82,7 +82,7 @@ func TestLearnedRedirectAndWindow(t *testing.T) {
 	}
 	learnedOutcome(t, s, a, b, "redirect", "backups belongs to infra", "infra")
 	v := learnedRead(t, s, false)
-	for _, x := range [][3]string{{"ops", "needs", "infra for backups"}, {"ops", "edge", "infra"}} {
+	for _, x := range [][3]string{{"ops", "rules", "infra for backups"}, {"ops", "edge", "infra"}} {
 		p := learnedFind(v, x[0], x[1], x[2])
 		if p == nil || len(p.Evidence) != 2 {
 			t.Fatalf("redirects: %+v", v)
@@ -144,7 +144,7 @@ func TestLearnedNamedOwnerAndOtherRecipient(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := learnedRead(t, s, false)
-	if learnedFind(v, "infra", "accepts", "backups") == nil || learnedFind(v, "app", "needs", "infra for backups") == nil || learnedFind(v, "ops", "accepts", "backups") != nil {
+	if learnedFind(v, "infra", "accepts", "backups") == nil || learnedFind(v, "app", "rules", "infra for backups") == nil || learnedFind(v, "ops", "accepts", "backups") != nil {
 		t.Fatalf("named target: %+v", v)
 	}
 }

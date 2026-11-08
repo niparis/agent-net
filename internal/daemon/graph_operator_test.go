@@ -89,7 +89,7 @@ func TestNodeSettingsOwnerOnly(t *testing.T) {
 		}
 	}
 	cli := cliClient(t, n)
-	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "critical"})
+	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "mature"})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
 	var got protocol.NodeSettingsResult
 	if err := json.Unmarshal(cli.mustCall("node_settings_get", map[string]any{"node": "shop"}), &got); err != nil {
@@ -128,12 +128,12 @@ func TestCharterSetReturnsBudgetWarnings(t *testing.T) {
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]any{"name": "architect"})
-	cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "needs", "value": strings.Repeat("n", 700)})
-	raw := cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "notes", "value": strings.Repeat("n", 501)})
+	cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "rules", "value": strings.Repeat("n", 700)})
+	raw := cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "feature_requests", "value": strings.Repeat("n", 501)})
 	if !strings.Contains(string(raw), "the whole charter exceeds 1200 characters") {
 		t.Fatalf("missing total warning: %s", raw)
 	}
-	raw = cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "notes", "value": ""})
+	raw = cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "feature_requests", "value": ""})
 	if strings.Contains(string(raw), "the whole charter exceeds 1200 characters") {
 		t.Fatalf("warning after clearing: %s", raw)
 	}

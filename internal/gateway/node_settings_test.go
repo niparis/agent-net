@@ -12,7 +12,7 @@ func TestNodeSettingsOverridesAreStoredOnTheNode(t *testing.T) {
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("shop", "maturity", "critical - money", "owner"); err != nil {
+	if err := s.seedLegacyCharter("shop", "maturity", "critical - money", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetNodeSetting("shop", protocol.SettingMergeAuthority, protocol.MergeAsk, "owner"); err != nil {
@@ -105,7 +105,7 @@ func TestWorkerPermissionsUseTheNodesMaturityUntilAProjectOverride(t *testing.T)
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("shop", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("shop", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions("n_test", "shop")

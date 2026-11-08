@@ -22,13 +22,13 @@ func TestAgentCharterAndFallback(t *testing.T) {
 		t.Fatalf("feature_requests: %+v %v", a.Charter, err)
 	}
 	long := strings.Repeat("é", 310)
-	for attr, value := range map[string]string{"purpose": long, "maturity": "mature - " + long, "accepts": long, "refuses": long, "feature_requests": long} {
+	for attr, value := range map[string]string{"purpose": long, "maturity": "mature", "maturity_note": long, "accepts": long, "refuses": long, "feature_requests": long} {
 		if err := s.SetCharter("p", attr, value, "owner"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	a, _, err = s.Agent(id)
-	if err != nil || a.Charter.Purpose != long || a.Charter.PurposeFallback || a.Charter.Maturity != "mature - "+long || a.Charter.Accepts != long || a.Charter.Refuses != long || a.Charter.FeatureRequests != long {
+	if err != nil || a.Charter.Purpose != long || a.Charter.PurposeFallback || a.Charter.Maturity != "mature" || a.Charter.Effective.MaturityNote != long || a.Charter.Accepts != long || a.Charter.Refuses != long || a.Charter.FeatureRequests != long {
 		t.Fatalf("get: %+v %v", a.Charter, err)
 	}
 	list, err := s.Agents(protocol.QueryAgents{})
@@ -36,7 +36,7 @@ func TestAgentCharterAndFallback(t *testing.T) {
 		t.Fatalf("list: %+v %v", list, err)
 	}
 	c := list[0].Charter
-	for _, value := range []string{c.Purpose, c.Maturity, c.Accepts, c.Refuses, c.FeatureRequests} {
+	for _, value := range []string{c.Purpose, c.Accepts, c.Refuses, c.FeatureRequests} {
 		if len([]rune(value)) != 300 {
 			t.Fatalf("list field length: %q", value)
 		}

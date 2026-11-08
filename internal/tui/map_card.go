@@ -189,8 +189,8 @@ func mapCharterFields(c protocol.Charter) []mapCharterField {
 	var out []mapCharterField
 	for _, f := range []mapCharterField{
 		{"accepts", c.Accepts}, {"refuses", c.Refuses},
-		{"feature_requests", c.FeatureRequests}, {"consumers", c.Consumers}, {"escalate", c.Escalate},
-		{"needs", c.Needs}, {"notes", c.Notes},
+		{"feature_requests", c.FeatureRequests}, {"maturity_note", c.MaturityNote}, {"escalate", c.Escalate},
+		{"rules", c.Rules},
 	} {
 		if strings.TrimSpace(f.value) != "" {
 			f.value = strings.TrimSpace(sanitize(f.value))
@@ -401,9 +401,9 @@ func mapLegendLines(w int) []string {
 	out = append(out, mapLegendEntry("refuses", 16, "same as accepts", sDim, w)...)
 	out = append(out, mapLegendEntry("escalate", 16, "your agent reads it every turn", sDim, w)...)
 	out = append(out, mapLegendEntry("purpose", 16, "in a worker's brief", sDim, w)...)
-	out = append(out, mapLegendEntry("consumers", 16, "in a worker's brief", sDim, w)...)
-	out = append(out, mapLegendEntry("needs", 16, "in a worker's brief, and in the Tools tab", sDim, w)...)
-	out = append(out, mapLegendEntry("notes", 16, "in a worker's brief", sDim, w)...)
+	out = append(out, mapLegendEntry("maturity_note", 16, "explains the repo enum", sDim, w)...)
+	out = append(out, mapLegendEntry("rules", 16, "free text at every level; read by agents", sDim, w)...)
+	out = append(out, mapLegendEntry("sources", 16, "the level and scope of each effective field", sDim, w)...)
 	out = append(out, mapLegendEntry("feature_requests", 16, "shown only when another agent looks this node up", sDim, w)...)
 	return out
 }

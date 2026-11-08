@@ -11,12 +11,12 @@ func TestCTOGraphClass(t *testing.T) {
 	for _, c := range []struct{ tool, args, want string }{
 		{"charter_set", `{"node":"app","attr":"purpose","value":"Build useful things"}`, "minor"},
 		{"charter_set", `{"node":"app","attr":"accepts","value":"feature work"}`, "minor"},
-		{"charter_set", `{"node":"app","attr":"notes","value":"Useful context"}`, "minor"},
+		{"charter_set", `{"node":"app","attr":"rules","value":"Useful context"}`, "minor"},
 		{"charter_set", `{"node":"app","attr":"feature_requests","value":"Ask the project"}`, "major"},
-		{"charter_set", `{"node":"app","attr":"needs","value":"help"}`, "minor"},
-		{"charter_set", `{"node":"app","attr":"consumers","value":"clients"}`, "minor"},
-		{"charter_set", `{"node":"app","attr":"notes","value":"Only local work"}`, "major"},
-		{"charter_set", `{"node":"app","attr":"needs","value":""}`, "major"},
+		{"charter_set", `{"node":"app","attr":"rules","value":"help"}`, "minor"},
+		{"charter_set", `{"node":"app","attr":"rules","value":"clients"}`, "minor"},
+		{"charter_set", `{"node":"app","attr":"rules","value":"Only local work"}`, "major"},
+		{"charter_set", `{"node":"app","attr":"rules","value":""}`, "major"},
 		{"charter_set", `{"node":"app","attr":"refuses","value":"deploys"}`, "major"},
 		{"charter_set", `{"node":"app","attr":"escalate","value":"owner"}`, "major"},
 		{"charter_set", `{"node":"app","attr":"maturity","value":"mature"}`, "major"},
@@ -36,7 +36,7 @@ func TestCTOGraphClass(t *testing.T) {
 			}
 		})
 	}
-	if err := s.SetCharter("ops", "maturity", "critical - production", "owner"); err != nil {
+	if err := s.seedLegacyCharter("ops", "maturity", "critical - production", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range []string{`{"from":"app","to":"ops","kind":"depends"}`, `{"from":"ops","to":"app","kind":"depends"}`} {

@@ -357,6 +357,17 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	var action graphview.Action
 	switch key {
+	case "edit charter", "global charter":
+		n, ok := m.mapNode(m.mp.selected)
+		if key == "global charter" {
+			n = protocol.Node{Ref: &protocol.GraphRef{Kind: "global"}}
+			ok = true
+		}
+		if ok {
+			m.startCharterForm(n)
+			return m, m.charterForm.input.Focus()
+		}
+		return m, nil
 	case "focus":
 		return m.graphFocus()
 	case "back":

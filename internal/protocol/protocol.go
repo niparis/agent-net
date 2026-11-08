@@ -268,12 +268,13 @@ type Profile struct {
 // AgentView keeps what the daemon verified apart from what the agent claims.
 // AgentCharter is the public part of a project's charter.
 type AgentCharter struct {
-	Purpose         string `json:"purpose,omitempty"`
-	PurposeFallback bool   `json:"purpose_fallback,omitempty"`
-	Maturity        string `json:"maturity,omitempty"`
-	Accepts         string `json:"accepts,omitempty"`
-	Refuses         string `json:"refuses,omitempty"`
-	FeatureRequests string `json:"feature_requests,omitempty"`
+	Effective       *Charter `json:"effective,omitempty"`
+	Purpose         string   `json:"purpose,omitempty"`
+	PurposeFallback bool     `json:"purpose_fallback,omitempty"`
+	Maturity        string   `json:"maturity,omitempty"`
+	Accepts         string   `json:"accepts,omitempty"`
+	Refuses         string   `json:"refuses,omitempty"`
+	FeatureRequests string   `json:"feature_requests,omitempty"`
 	// Rules are the node's effective rules, the same read-only name/value
 	// pairs agent_graph_read returns. They are set on a single agent (agent_session_get),
 	// not in a list.

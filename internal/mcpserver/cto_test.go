@@ -89,7 +89,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	}
 	wantEnums := map[string]map[string][]string{
 		"graph_change": {
-			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_archive", "team_member_add", "team_member_remove", "lead_set"},
+			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set"},
 			"mode":   {"advisor", "arbiter", "owner"},
 			"rule":   {"normal", "auto", "ask", "never"},
 		},
@@ -141,7 +141,7 @@ func TestCTOCharterSetWarnsWithoutRefusing(t *testing.T) {
 	}
 
 	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "graph_change", Arguments: map[string]any{
-		"action": "charter_set", "node": "cogforge", "attr": "needs", "value": "Read /home/project/private/config",
+		"action": "charter_set", "node": "cogforge", "attr": "rules", "value": "Read /home/project/private/config",
 	}})
 	if err != nil || out.IsError {
 		t.Fatalf("detailed value was refused: result=%+v err=%v", out, err)

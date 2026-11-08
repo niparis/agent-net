@@ -8,14 +8,11 @@ governed by: trading-architect (owner)
 
 IN 1                                                         OUT 1
 tenebrae ──▶ depends ask                                     ──▶ shop depends auto
-Card 1-15/17  ctrl+u/d scroll ──────────────────────────────────────────────────────────────────────────────────────────
+Card ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
-consumers        tenebrae, shop
 escalate         Breaking API changes.
-needs            MCP: tenebrae-library
-notes            Deploy through homelab.
 ● 1 learned ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ▸ needs: ops backups  now
     why: ops owns backups
@@ -24,6 +21,9 @@ tests_before_merge optional               maturity default
 merge_authority    full                   maturity default
 worker_sandbox     sandboxed              maturity default
 judge_consumers    free                   maturity default
+deploy_rule        brief                  maturity default
+autonomy           off                    default
+
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

@@ -122,7 +122,7 @@ func TestCharterSuggestionsRedirectRequiresRepeatedRecentEvidence(t *testing.T) 
 	}
 	two.At = now.Add(-time.Hour).UnixNano()
 	got := charterSuggestions(g, []protocol.CharterSignal{one, two})
-	if len(got.Suggestions) != 1 || got.Suggestions[0].Node != "other" || got.Suggestions[0].Field != "needs" || len(got.Suggestions[0].MessageIDs) != 2 {
+	if len(got.Suggestions) != 1 || got.Suggestions[0].Node != "other" || got.Suggestions[0].Field != "rules" || len(got.Suggestions[0].MessageIDs) != 2 {
 		t.Fatalf("redirect suggestion: %+v", got.Suggestions)
 	}
 }

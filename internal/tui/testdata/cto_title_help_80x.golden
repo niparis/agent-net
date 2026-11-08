@@ -60,12 +60,16 @@
   m                      toggle all message and owner lines
   t                      show all nodes, then each active team in turn
   T                      create, rename, fill or archive a team
+  e                      charter
+  E                      global charter
 
  Graph find
   enter                  select the first match
   backspace, ctrl+h      delete
 
  Agent card
+  e                      charter
+  E                      global charter
   enter                  open Sessions filtered to this agent's project
   n                      start a new session in this project (the same form,
                          filled from here)
@@ -105,9 +109,9 @@ Legend ────────────────────────�
   refuses          same as accepts
   escalate         your agent reads it every turn
   purpose          in a worker's brief
-  consumers        in a worker's brief
-  needs            in a worker's brief, and in the Tools tab
-  notes            in a worker's brief
+  maturity_note    explains the repo enum
+  rules            free text at every level; read by agents
+  sources          the level and scope of each effective field
   feature_requests shown only when another agent looks this node up
 
  Quotas

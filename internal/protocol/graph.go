@@ -9,17 +9,29 @@ import (
 // CharterValueMaxBytes is the maximum UTF-8 byte length of a charter value.
 const CharterValueMaxBytes = 2048
 
+// CharterSource identifies one effective field contribution.
+type CharterSource struct {
+	Level string `json:"level"`
+	Scope string `json:"scope,omitempty"`
+	Value string `json:"value"`
+}
+type CharterSources map[string][]CharterSource
+
 // Charter contains the fixed, independently versioned attributes of a node.
+// Deprecated Consumers, Needs and Notes stay empty for older readers.
 type Charter struct {
-	Purpose         string `json:"purpose,omitempty"`
-	Maturity        string `json:"maturity,omitempty"`
-	Accepts         string `json:"accepts,omitempty"`
-	Refuses         string `json:"refuses,omitempty"`
-	FeatureRequests string `json:"feature_requests,omitempty"`
-	Consumers       string `json:"consumers,omitempty"`
-	Escalate        string `json:"escalate,omitempty"`
-	Needs           string `json:"needs,omitempty"`
-	Notes           string `json:"notes,omitempty"`
+	MaturityNote    string          `json:"maturity_note,omitempty"`
+	Rules           string          `json:"rules,omitempty"`
+	Sources         *CharterSources `json:"sources,omitempty"`
+	Purpose         string          `json:"purpose,omitempty"`
+	Maturity        string          `json:"maturity,omitempty"`
+	Accepts         string          `json:"accepts,omitempty"`
+	Refuses         string          `json:"refuses,omitempty"`
+	FeatureRequests string          `json:"feature_requests,omitempty"`
+	Consumers       string          `json:"consumers,omitempty"`
+	Escalate        string          `json:"escalate,omitempty"`
+	Needs           string          `json:"needs,omitempty"`
+	Notes           string          `json:"notes,omitempty"`
 }
 
 type GraphLocation struct {
@@ -102,7 +114,7 @@ type Graph struct {
 func ParseMaturity(value string) (level, text string, err error) {
 	level, text, hasText := strings.Cut(value, " - ")
 	switch level {
-	case "early", "growing", "mature", "critical":
+	case "experimental", "early", "growing", "mature", "critical":
 	default:
 		return "", "", fmt.Errorf("invalid maturity level")
 	}
@@ -127,8 +139,10 @@ func CleanCharterValue(attr, value string) (string, error) {
 		return "", fmt.Errorf("charter value exceeds %d bytes", CharterValueMaxBytes)
 	}
 	if attr == "maturity" && value != "" {
-		if _, _, err := ParseMaturity(value); err != nil {
-			return "", err
+		switch value {
+		case "experimental", "early", "growing", "mature":
+		default:
+			return "", fmt.Errorf("maturity must be experimental, early, growing or mature")
 		}
 	}
 	return value, nil
@@ -136,6 +150,7 @@ func CleanCharterValue(attr, value string) (string, error) {
 
 // CharterSetRequest sets an attribute; an empty value clears it.
 type CharterSetRequest struct {
+	Level string    `json:"level,omitempty"`
 	Ref   *GraphRef `json:"ref,omitempty"`
 	Node  string    `json:"node"`
 	Attr  string    `json:"attr"`
@@ -186,4 +201,21 @@ type EdgeChange struct {
 	New *Edge  `json:"new,omitempty"`
 	At  int64  `json:"at"`
 	By  string `json:"by"`
+}
+
+// CharterAttributeAtLevel describes new writes. Legacy unscoped calls retain
+// repo-local work fields so older clients can edit an existing charter.
+func CharterAttributeAtLevel(level, attr string) bool {
+	if attr == "rules" || attr == "refuses" {
+		return level == "global" || level == "team" || level == "repo" || level == "agent"
+	}
+	switch level {
+	case "repo":
+		return attr == "purpose" || attr == "maturity" || attr == "maturity_note"
+	case "team":
+		return attr == "purpose" || attr == "escalate"
+	case "agent":
+		return attr == "accepts" || attr == "escalate" || attr == "feature_requests"
+	}
+	return false
 }

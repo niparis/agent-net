@@ -97,6 +97,18 @@ func (m *Model) applyMap(r mapMsg) {
 func (m Model) mapKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := keyAction(contextCard, k.String())
 	switch key {
+	case "edit charter", "global charter":
+		n, ok := m.mapNode(m.mp.selected)
+		if key == "global charter" {
+			n = protocol.Node{Ref: &protocol.GraphRef{Kind: "global"}}
+			ok = true
+		}
+		if ok {
+			m.startCharterForm(n)
+			return m, m.charterForm.input.Focus()
+		}
+		return m, nil
+
 	case "back":
 		m.mapOn = false
 		m.uiFilter = ""

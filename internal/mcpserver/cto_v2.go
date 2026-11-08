@@ -54,7 +54,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 				"edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set",
 				"undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive",
 				"agent_create": "agent_create", "agent_tombstone": "agent_tombstone",
-				"lead_set": "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_purpose": "team_purpose", "team_archive": "team_archive",
+				"lead_set": "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_purpose": "team_purpose", "team_charter": "team_charter", "team_archive": "team_archive",
 				"team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
 			}[action],
 			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"}[action],
@@ -144,6 +144,8 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 			required = []string{"name"}
 		case "team_rename":
 			required = []string{"team", "name"}
+		case "team_charter":
+			required = []string{"team", "attr", "value"}
 		case "team_purpose":
 			required = []string{"team", "purpose"}
 		case "team_archive":
@@ -241,6 +243,8 @@ func actionExampleFor(tool, action string) string {
 			return `{"action":"team_create","name":"team-name"}`
 		case "team_rename":
 			return `{"action":"team_rename","team":"team-name","name":"new-name"}`
+		case "team_charter":
+			return `{"action":"team_charter","team":"team-name","attr":"rules","value":"plain English"}`
 		case "team_purpose":
 			return `{"action":"team_purpose","team":"team-name","purpose":"new purpose"}`
 		case "team_archive":

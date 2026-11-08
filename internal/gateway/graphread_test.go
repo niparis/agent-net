@@ -32,7 +32,7 @@ func TestGraphForAProjectHasItsCharterAndTheEdgesThatTouchIt(t *testing.T) {
 	if err := s.AddArchitect("wbg-architect", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("cogforge", "maturity", "mature - careful.", "owner"); err != nil {
+	if err := s.SetCharter("cogforge", "maturity", "mature", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range []protocol.Edge{
@@ -62,7 +62,7 @@ func TestGraphForAProjectHasItsCharterAndTheEdgesThatTouchIt(t *testing.T) {
 		}
 	}
 	for _, n := range g.Nodes {
-		if n.Name == "cogforge" && n.Charter.Maturity != "mature - careful." {
+		if n.Name == "cogforge" && n.Charter.Maturity != "mature" {
 			t.Errorf("charter: %+v", n.Charter)
 		}
 	}
