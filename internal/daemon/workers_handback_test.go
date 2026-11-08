@@ -517,3 +517,102 @@ func TestCodexWorkerIdleNoticeAfterAutomaticHandbackFails(t *testing.T) {
 	}
 	eventually(t, "codex worker ends after follow-up", func() bool { return w.d.workerCount() == 0 })
 }
+
+// A Claude worker that ends its turn without a hand-back tells its caller. The
+// daemon adopts it after a restart (nothing of the session belongs to the old
+// daemon process), so the notice must come from the adopted worker too.
+func TestClaudeWorkerIdleNoticeAfterDaemonRestart(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.IdleNotice = time.Second
+	set.Idle = time.Hour
+	c := startClaudeNode(t, g, set)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("worker daemon logs:\n%s", strings.Join(c.logs.lines(), "\n"))
+		}
+	})
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "haiku",
+		Task: "FAKE:ignore", AutoContinue: autoContinueOff()})
+	rec := readClaude(t, repo)
+	fakeClaudeTranscriptLine(c.sessions, repo, rec.Session,
+		`{"type":"assistant","message":{"id":"m1","model":"claude-haiku-5-5","content":[{"type":"text","text":"I stopped before finishing."}]}}`)
+
+	// A turn is running, so the worker is not idle yet.
+	setFakeClaudeStatus(t, c.sessions, rec.Pid, "busy")
+	eventually(t, "the Claude session is busy", func() bool {
+		ls := c.d.sessionByID(res.SessionID)
+		return ls != nil && c.d.infoOf(ls).Status == "busy"
+	})
+	if got := len(c.notices(t)); got != 0 {
+		t.Fatalf("got %d notices while the worker was busy", got)
+	}
+
+	restarted := time.Now()
+	c.node.restart()
+	c.cli = cliClient(t, c.node)
+	eventually(t, "the Claude worker is adopted", func() bool {
+		return c.d.workerBySession(res.SessionID) != nil && c.d.sessionByID(res.SessionID) != nil
+	})
+
+	// The adopted worker's turn ends without a hand-back.
+	setFakeClaudeStatus(t, c.sessions, rec.Pid, "idle")
+	eventually(t, "the adopted Claude session is idle", func() bool {
+		ls := c.d.sessionByID(res.SessionID)
+		return ls != nil && c.d.infoOf(ls).Status == "idle"
+	})
+	n := c.waitNotice(t, 1)[0]
+	if n.From != res.SessionID || n.ParentID != res.Task.ID || !strings.Contains(n.Body, "status: idle without hand-back") {
+		t.Fatalf("idle notice: %+v", n)
+	}
+	if !strings.Contains(n.Body, "I stopped before finishing.") {
+		t.Errorf("notice lacks the worker's last assistant message:\n%s", n.Body)
+	}
+	if n.CreatedAt.Before(restarted) {
+		t.Fatalf("the idle notice was sent before the restart: %s < %s", n.CreatedAt, restarted)
+	}
+	if c.d.workerBySession(res.SessionID) == nil {
+		t.Fatal("the adopted worker ended on its idle clock instead of telling the caller")
+	}
+}
+
+// A Claude worker whose session process died while the daemon was down is
+// reported as lost, not left running.
+func TestClaudeWorkerThatDiedDuringRestartIsReportedLost(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.IdleNotice = time.Hour
+	set.Idle = time.Hour
+	c := startClaudeNode(t, g, set)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("worker daemon logs:\n%s", strings.Join(c.logs.lines(), "\n"))
+		}
+	})
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "haiku",
+		Task: "FAKE:ignore", AutoContinue: autoContinueOff()})
+	rec := readClaude(t, repo)
+
+	c.d.Stop()
+	syscall.Kill(-rec.Pgid, syscall.SIGKILL)
+	eventually(t, "the Claude session died", func() bool { return !alive(rec.Pid) })
+	c.node.restart()
+	c.cli = cliClient(t, c.node)
+
+	if c.d.workerCount() != 0 {
+		t.Fatalf("the daemon runs %d workers after losing its worker", c.d.workerCount())
+	}
+	c.workerStopped(t, g, protocol.StopLost)
+	n := c.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "status: lost after daemon restart") {
+		t.Fatalf("lost notice: %+v", n)
+	}
+	rows, _ := c.d.st.workers()
+	if len(rows) != 1 || rows[0].EndedReason != protocol.StopLost {
+		t.Fatalf("the worker row is not ended: %+v", rows)
+	}
+}

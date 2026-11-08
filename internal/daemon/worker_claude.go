@@ -421,6 +421,102 @@ func claudeTranscriptPath(projectsDir, session, cwd string) string {
 	return ""
 }
 
+// claudeWorkerLastAssistant returns the text of the newest assistant message
+// in the worker's transcript. The idle notice shows it as the last message,
+// not a hand-back.
+func (d *Daemon) claudeWorkerLastAssistant(native, cwd string) string {
+	if native == "" {
+		return ""
+	}
+	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	return claudeTranscriptLastAssistant(claudeTranscriptPath(projectsDir, native, cwd))
+}
+
+// claudeTranscriptLastAssistant returns the text of the newest assistant
+// message in path, or "". It skips sidechains and synthetic placeholders, and
+// reads only the tail of a long transcript.
+func claudeTranscriptLastAssistant(path string) string {
+	if path == "" {
+		return ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	size := fi.Size()
+	start := int64(0)
+	if size > claudeFailureMaxRead {
+		start = size - claudeFailureMaxRead
+	}
+	if size <= start {
+		return ""
+	}
+	buf := make([]byte, size-start)
+	n, err := f.ReadAt(buf, start)
+	if err != nil && err != io.EOF {
+		return ""
+	}
+	buf = buf[:n]
+	if start > 0 {
+		// The first line may be partial: start at the next one.
+		i := bytes.IndexByte(buf, '\n')
+		if i < 0 {
+			return ""
+		}
+		buf = buf[i+1:]
+	}
+	lines := bytes.Split(buf, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
+		if len(line) == 0 || !bytes.Contains(line, []byte(`"assistant"`)) {
+			continue
+		}
+		var e struct {
+			Type        string `json:"type"`
+			IsSidechain bool   `json:"isSidechain"`
+			Message     struct {
+				Model   string          `json:"model"`
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.IsSidechain {
+			continue
+		}
+		if strings.HasPrefix(e.Message.Model, "<") {
+			continue // a synthetic entry, such as Claude Code's "No response requested."
+		}
+		var text string
+		if json.Unmarshal(e.Message.Content, &text) == nil {
+			if strings.TrimSpace(text) != "" {
+				return text
+			}
+			continue
+		}
+		var blocks []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(e.Message.Content, &blocks) != nil {
+			continue
+		}
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && strings.TrimSpace(b.Text) != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "\n")
+		}
+	}
+	return ""
+}
+
 // failure reads the worker's transcript tail and reports whether the latest
 // assistant entry is a synthetic error or API error.
 func (claudeLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, bool) {

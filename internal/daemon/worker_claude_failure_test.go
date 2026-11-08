@@ -331,3 +331,24 @@ func TestClaudeTranscriptPlaceholderIsNotAFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudeTranscriptLastAssistant(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "s.jsonl")
+	lines := []string{
+		`{"type":"user","message":{"role":"user","content":"do it"}}`,
+		`{"type":"assistant","message":{"model":"claude-haiku-5-5","content":[{"type":"text","text":"first answer"}]}}`,
+		`{"type":"assistant","isSidechain":true,"message":{"model":"claude-haiku-5-5","content":[{"type":"text","text":"sidechain text"}]}}`,
+		`{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"No response requested."}]}}`,
+		`{"type":"assistant","message":{"model":"claude-haiku-5-5","content":[{"type":"tool_use","name":"Bash"}]}}`,
+		`{"type":"assistant","message":{"model":"claude-haiku-5-5","content":[{"type":"text","text":"second"},{"type":"tool_use","name":"Bash"},{"type":"text","text":"answer"}]}}`,
+	}
+	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := claudeTranscriptLastAssistant(p), "second\nanswer"; got != want {
+		t.Fatalf("last assistant = %q, want %q", got, want)
+	}
+	if got := claudeTranscriptLastAssistant(filepath.Join(t.TempDir(), "missing.jsonl")); got != "" {
+		t.Fatalf("missing transcript = %q, want empty", got)
+	}
+}
