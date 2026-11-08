@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -123,10 +125,19 @@ func deliveryReconcileRepo(ctx context.Context, folder string, changes []protoco
 			continue
 		}
 		q := protocol.ChangeReconcileRequest{ChangeID: c.ID, Revision: c.Revision, HeadCommit: c.HeadCommit}
-		if _, err := gitOut(ctx, info.Path, "merge-base", "--is-ancestor", c.HeadCommit, tip); err == nil {
-			q.Kind, q.MergedCommit = "external", tip
-			out = append(out, q)
-			continue
+		// A base already on origin is not evidence that this change was
+		// merged. Require commits beyond a known base; git errors do not
+		// prove that the head is outside its history.
+		if c.HeadCommit != c.BaseCommit && protocol.ValidCommit(c.BaseCommit) {
+			_, err := gitOut(ctx, info.Path, "merge-base", "--is-ancestor", c.HeadCommit, c.BaseCommit)
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				if _, err := gitOut(ctx, info.Path, "merge-base", "--is-ancestor", c.HeadCommit, tip); err == nil {
+					q.Kind, q.MergedCommit = "external", tip
+					out = append(out, q)
+					continue
+				}
+			}
 		}
 		if c.Branch == "" || now.Sub(time.Unix(c.CreatedAt, 0)) <= 7*24*time.Hour || len(v.Evidence) > 0 {
 			continue

@@ -31,6 +31,9 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	now := s.now().Unix()
 	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, Commit: c.HeadCommit, By: "daemon", At: now, Fields: map[string]string{"reconcile_kind": q.Kind}}
 	if q.Kind == "external" {
+		if c.HeadCommit == c.BaseCommit {
+			return protocol.ChangeView{}, reject("change has no commits beyond its base")
+		}
 		c.State, c.MergedCommit = protocol.ChangeDone, q.MergedCommit
 		e.Step, e.Result, e.Note = protocol.StepMerge, protocol.StepResultPass, "merged outside agent-net"
 		e.Fields["merge_kind"], e.Fields[protocol.FieldMergedCommit] = "external", q.MergedCommit

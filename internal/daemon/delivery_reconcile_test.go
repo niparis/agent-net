@@ -26,6 +26,7 @@ func TestDeliveryReconcileRepo(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo, wt := deliveryWorktree(t)
 			head := gitHead(t, wt, "HEAD")
+			base := gitHead(t, repo, "main")
 			if tc.merged {
 				gitIn(t, repo, "merge", "--no-ff", "feat/x", "-m", "merge")
 			}
@@ -42,7 +43,7 @@ func TestDeliveryReconcileRepo(t *testing.T) {
 				gitIn(t, remote, "branch", "-D", "feat/x")
 			}
 			now := time.Now()
-			c := protocol.Change{ID: "ch_test", HeadCommit: head, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: now.Add(-tc.age).Unix()}
+			c := protocol.Change{ID: "ch_test", HeadCommit: head, BaseCommit: base, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: now.Add(-tc.age).Unix()}
 			got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, now)
 			if err != nil {
 				t.Fatal(err)
@@ -73,7 +74,7 @@ func TestDeliveryReconcileFetchesRemoteDefault(t *testing.T) {
 	gitIn(t, repo, "remote", "add", "origin", remote)
 	gitIn(t, repo, "fetch", "origin")
 	gitIn(t, remote, "update-ref", "refs/heads/main", head)
-	c := protocol.Change{ID: "ch_test", HeadCommit: head, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
+	c := protocol.Change{ID: "ch_test", HeadCommit: head, BaseCommit: gitHead(t, repo, "main"), Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
 	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
 	if err != nil || len(got) != 1 || got[0].Kind != "external" {
 		t.Fatalf("fresh remote merge missed: %+v, %v", got, err)
@@ -95,7 +96,7 @@ func TestDeliveryReconcileKeepsRemoteBranchAndFetchFailures(t *testing.T) {
 	gitIn(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
 	gitIn(t, repo, "worktree", "remove", wt)
 	gitIn(t, repo, "branch", "-D", "feat/x")
-	c := protocol.Change{ID: "ch_test", HeadCommit: head, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Add(-8 * 24 * time.Hour).Unix()}
+	c := protocol.Change{ID: "ch_test", HeadCommit: head, BaseCommit: gitHead(t, repo, "main"), Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Add(-8 * 24 * time.Hour).Unix()}
 	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
 	if err != nil || len(got) != 0 {
 		t.Fatalf("remote branch abandoned: %+v, %v", got, err)
@@ -121,7 +122,7 @@ func TestDeliveryReconcileRateAndMachine(t *testing.T) {
 		return protocol.ProjectsResult{Projects: []protocol.ProjectView{{Name: "demo", Path: repo, NodeID: n.d.NodeID()}}}, nil
 	})
 	f.answer(protocol.FrameChangeList, func(json.RawMessage) (any, error) {
-		own := protocol.Change{ID: "ch_own", Project: "demo", Machine: n.d.NodeID(), Branch: "feat/x", HeadCommit: head, Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
+		own := protocol.Change{ID: "ch_own", Project: "demo", Machine: n.d.NodeID(), Branch: "feat/x", HeadCommit: head, BaseCommit: gitHead(t, repo, "main"), Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
 		other := own
 		other.ID = "ch_other"
 		other.Machine = "other-node"
@@ -145,5 +146,34 @@ func TestDeliveryReconcileRateAndMachine(t *testing.T) {
 	}
 	if got := len(f.frames(protocol.FrameChangeList)); got != 1 {
 		t.Fatalf("got %d list calls, want one within ten minutes", got)
+	}
+}
+
+func TestDeliveryReconcileNoOwnCommitsStaysOpen(t *testing.T) {
+	for _, kind := range []string{"head equals base", "head precedes base", "unknown base"} {
+		t.Run(kind, func(t *testing.T) {
+			repo, wt := deliveryWorktree(t)
+			base, tip := gitHead(t, repo, "main"), gitHead(t, wt, "HEAD")
+			gitIn(t, repo, "merge", "--ff-only", "feat/x")
+			remote := filepath.Join(t.TempDir(), "remote.git")
+			if out, err := exec.Command("git", "clone", "--bare", repo, remote).CombinedOutput(); err != nil {
+				t.Fatalf("clone: %s: %v", out, err)
+			}
+			gitIn(t, repo, "remote", "add", "origin", remote)
+			c := protocol.Change{ID: "ch_empty", HeadCommit: base, BaseCommit: base, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
+			if kind == "head precedes base" {
+				c.BaseCommit = tip
+			}
+			if kind == "unknown base" {
+				c.BaseCommit = ""
+			}
+			got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("change without own commits would close: %+v", got)
+			}
+		})
 	}
 }

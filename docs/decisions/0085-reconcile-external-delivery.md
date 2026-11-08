@@ -6,7 +6,9 @@ stay open indefinitely, waiting for accept even though the work has shipped.
 The change's daemon observes its local repos at most once every ten minutes.
 It fetches only origin's default branch, resolved by repoinfo, and checks head
 ancestry against that remote tip. If the clone has no origin/HEAD, it asks
-origin for HEAD without setting a local symbolic ref. A positive observation records merge evidence
+origin for HEAD without setting a local symbolic ref. The head must differ
+from its known base and must not be an ancestor of that base: a change with
+no commits of its own does not prove an external merge. A positive observation records merge evidence
 with `merge_kind: external` and that tip as `merged_commit`, then marks the
 change done. It does not run or attest to tests, release, deploy or verify.
 

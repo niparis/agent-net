@@ -79,3 +79,21 @@ func TestDeliveryReconcileListKeepsTerminalEvidence(t *testing.T) {
 		t.Fatalf("%d pending tasks after external merge", pending)
 	}
 }
+
+func TestDeliveryReconcileHeadEqualsBaseStaysOpen(t *testing.T) {
+	r := newDeliveryRig(t)
+	q := r.workerSubmit("feat/empty", commitA)
+	q.BaseCommit = commitA
+	c := r.submit(r.a, q).Change.Change
+	_, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, protocol.ChangeReconcileRequest{ChangeID: c.ID, Revision: c.Revision, HeadCommit: c.HeadCommit, Kind: "external", MergedCommit: commitMerged})
+	if err == nil {
+		t.Fatal("external merge accepted for head equal to base")
+	}
+	v, err := r.s.GetChange(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Change.State != protocol.ChangeOpen || len(v.Evidence) != 0 {
+		t.Fatalf("empty change was reconciled: %+v", v)
+	}
+}
