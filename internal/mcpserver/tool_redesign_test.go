@@ -23,7 +23,7 @@ func TestHandoverRefreshesCatalogTools(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := newRigServer(t, &handover{V: 1, Init: []byte(initReq), Initialized: []byte(initDone)}, tc.newServer())
+			r := newRigServer(t, &handover{V: 1, Init: []byte(initSupports), Initialized: []byte(initDone)}, tc.newServer())
 			if line := r.next(); !strings.Contains(line, `"method":"notifications/tools/list_changed"`) {
 				t.Fatalf("handover notification = %s", line)
 			}

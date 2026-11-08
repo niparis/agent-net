@@ -5,6 +5,7 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/niparis/agent-net/internal/executable"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -22,7 +23,7 @@ func Run(ctx context.Context, src Source, versions ...string) error {
 	}
 	attempted := restoreRestart(&m, version)
 	path := restartExecutable()
-	m.restart = &restartState{changed: executableChanged(path), version: version, attempted: attempted}
+	m.restart = &restartState{changed: executable.Changed(path), version: version, attempted: attempted}
 	m.graphPixel.set(graphview.Detect(os.Getenv, graphview.QueryTerminal))
 	m.graphPixel.motion = os.Getenv("AGENT_NET_GRAPH_MOTION") == "1"
 	m.herdrSocket = herdrSocketOf(os.Getenv("HERDR_ENV"), os.Getenv("HERDR_SOCKET_PATH"))

@@ -175,6 +175,9 @@ func startMCP(t *testing.T, exe, sock, tmp string, extraEnv ...string) *mcpProc 
 	t.Helper()
 	cmd := exec.Command(exe, "mcp")
 	cmd.Env = append(os.Environ(),
+		"HOME="+tmp,
+		"AGENT_NET_GATEWAY_DATA="+filepath.Join(tmp, "gateway"),
+		"AGENT_NET_CLAUDE_SESSIONS_DIR="+filepath.Join(tmp, "claude-sessions"),
 		"AGENT_NET_SOCKET="+sock,
 		"AGENT_NET_CONFIG_DIR="+filepath.Join(tmp, "cfg"),
 		"AGENT_NET_STATE_DIR="+filepath.Join(tmp, "state"),
@@ -235,7 +238,7 @@ func toolNames(t *testing.T, line string) string {
 
 func handshake(t *testing.T, c *mcpClient) {
 	t.Helper()
-	c.send(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"fake","version":"1"}}}`)
+	c.send(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"clientInfo":{"name":"fake","version":"1"}}}`)
 	if l, _ := c.reply(0); !strings.Contains(l, "serverInfo") {
 		t.Fatalf("initialize reply: %s", l)
 	}

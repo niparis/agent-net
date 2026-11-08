@@ -82,10 +82,12 @@ type stdioConn struct {
 	initLine, initializedLine []byte
 	pendingIn                 map[jsonrpc.ID]bool // requests the server has not answered
 	pendingOut                map[jsonrpc.ID]bool // server requests the client has not answered
+	writing                   int                 // writes started but not yet completed
 
-	execPath string                              // set when an exec is wanted
-	execFn   func(h handover, path string) error // does the exec; returns only on failure
-	logf     func(format string, a ...any)
+	execFailed bool                                // an exec failed; do not retry in this process
+	execPath   string                              // set when an exec is wanted
+	execFn     func(h handover, path string) error // does the exec; returns only on failure
+	logf       func(format string, a ...any)
 
 	wake      chan struct{}
 	closed    chan struct{}
@@ -113,7 +115,9 @@ func newStdioConn(in int, out io.Writer, h *handover, logf func(string, ...any))
 		if len(h.Initialized) > 0 && len(h.Init) > 0 {
 			c.pre = append(c.pre, h.Initialized)
 			c.initializedLine = h.Initialized
-			c.announce = append(c.announce, []byte(listChangedLine))
+			if wantsLegacyToolsChanged(h.Init) {
+				c.announce = append(c.announce, []byte(listChangedLine))
+			}
 		}
 		for _, l := range h.Listens {
 			m, err := jsonrpc.DecodeMessage(l)
@@ -127,13 +131,41 @@ func newStdioConn(in int, out io.Writer, h *handover, logf func(string, ...any))
 					c.swallowAcks = map[jsonrpc.ID]bool{}
 				}
 				c.swallowAcks[r.ID] = true
-				c.announce = append(c.announce, listChangedFor(r.ID))
+				if wantsListenToolsChanged(l) {
+					c.announce = append(c.announce, listChangedFor(r.ID))
+				}
 			}
 		}
 		c.buf = append(c.buf, h.Leftover...)
 	}
 	c.started = len(c.pre) == 0
 	return c
+}
+
+// Legacy handshakes may explicitly opt in to tool-list notifications.
+func wantsLegacyToolsChanged(line []byte) bool {
+	var msg struct {
+		Params struct {
+			Capabilities struct {
+				Tools struct {
+					ListChanged bool `json:"listChanged"`
+				} `json:"tools"`
+			} `json:"capabilities"`
+		} `json:"params"`
+	}
+	return json.Unmarshal(line, &msg) == nil && msg.Params.Capabilities.Tools.ListChanged
+}
+
+// Newer clients opt in on each subscriptions/listen stream.
+func wantsListenToolsChanged(line []byte) bool {
+	var msg struct {
+		Params struct {
+			Notifications struct {
+				ToolsListChanged bool `json:"toolsListChanged"`
+			} `json:"notifications"`
+		} `json:"params"`
+	}
+	return json.Unmarshal(line, &msg) == nil && msg.Params.Notifications.ToolsListChanged
 }
 
 func (c *stdioConn) signal() {
@@ -223,6 +255,9 @@ func (c *stdioConn) Read(ctx context.Context) (jsonrpc.Message, error) {
 			c.started = true // the server has processed the replay
 			announce = c.announce
 			c.announce = nil
+			if len(announce) > 0 {
+				c.writing++
+			}
 		}
 		c.maybeExecLocked() // returns only if there is no exec, or it failed
 		line := c.nextLineLocked()
@@ -235,6 +270,12 @@ func (c *stdioConn) Read(ctx context.Context) (jsonrpc.Message, error) {
 		for _, l := range announce {
 			// The client did not ask again, so tell it the tools may differ.
 			c.writeLine(l)
+		}
+		if len(announce) > 0 {
+			c.mu.Lock()
+			c.writing--
+			c.maybeExecLocked()
+			c.mu.Unlock()
 		}
 		if line != nil {
 			msg, err := jsonrpc.DecodeMessage(line)
@@ -347,14 +388,15 @@ func (c *stdioConn) Write(ctx context.Context, msg jsonrpc.Message) error {
 			}
 		}
 	}
+	c.writing++
 	c.mu.Unlock()
 	data, err := jsonrpc.EncodeMessage(msg)
-	if err != nil {
-		return err
+	if err == nil {
+		err = c.writeLine(data)
 	}
-	err = c.writeLine(data)
 	// Only now is the answer out; this may be the idle moment an exec waits for.
 	c.mu.Lock()
+	c.writing--
 	if m, ok := msg.(*jsonrpc.Response); ok {
 		delete(c.pendingIn, m.ID)
 		c.dropListenLocked(m.ID) // a listen that ended
@@ -382,7 +424,7 @@ func (c *stdioConn) SessionID() string { return "" }
 // nothing is in flight. It returns at once.
 func (c *stdioConn) requestExec(path string) {
 	c.mu.Lock()
-	if c.execPath == "" {
+	if c.execPath == "" && !c.execFailed {
 		c.execPath = path
 		// If the switch is still not possible after a while, say why.
 		time.AfterFunc(stuckAfter, c.logStuck)
@@ -408,7 +450,7 @@ func (c *stdioConn) logStuck() {
 // answer and waits for none.
 func (c *stdioConn) idleLocked() bool {
 	return c.waiting && c.started && len(c.pre) == 0 && c.swallow == nil &&
-		len(c.pendingIn) == 0 && len(c.pendingOut) == 0
+		len(c.pendingIn) == 0 && len(c.pendingOut) == 0 && c.writing == 0
 }
 
 // maybeExecLocked execs if one is wanted and the connection is idle. It
@@ -428,6 +470,7 @@ func (c *stdioConn) maybeExecLocked() {
 	c.wmu.Lock() // no half-written line may be cut off by the exec
 	err := c.execFn(h, path)
 	c.wmu.Unlock()
+	c.execFailed = true
 	c.logf("cannot switch to the new binary, staying on this one: %v", err)
 }
 
