@@ -1,4 +1,4 @@
-# 0080. Show the Graph by team and live state
+# 0082. Show the Graph by team and live state
 
 Date: 2026-11-07
 Status: Built.
