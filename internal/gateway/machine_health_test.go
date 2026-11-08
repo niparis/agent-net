@@ -50,7 +50,11 @@ func TestMachineHealthHelloAndOldDaemon(t *testing.T) {
 // A machine that is not connected gives an offline note, and the call works.
 func TestMachineGetUsageOfflineNote(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, _, err := s.CreateNode("box", "linux"); err != nil {
+	id, _, err := s.CreateNode("box", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetNodeHello(id, "box", "1"); err != nil {
 		t.Fatal(err)
 	}
 	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
