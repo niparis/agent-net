@@ -7,27 +7,60 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// OwnerLearned returns ready major suggestions and recorded changes.
+// learnedListTables are the tables OwnerLearned reads: the suggestions and their
+// details, phrase state and views, the history of a change (graph_history), the
+// graph charter and the drafts. The drafts' own-value check (draftOwnValue) also
+// reads the agent and team charters. Keep it equal to those queries (see
+// readThrough).
+var learnedListTables = []string{"learned_suggestions", "learned_suggestion_details", "learned_phrase_state",
+	"learned_views", "graph_history", "graph_charter", "charter_drafts", "agent_charter", "charter_values", "teams"}
+
+// ownerLearnedRows is what the owner's list reads from the database: every
+// suggestion, ready or not, and the pending drafts. OwnerLearned applies the
+// ready time to the suggestions on each call, so the rows need no clock.
+type ownerLearnedRows struct {
+	items  []protocol.LearnedSuggestion
+	drafts []protocol.LearnedSuggestion
+}
+
+// OwnerLearned returns ready major suggestions and recorded changes. The rows
+// are kept until one of learnedListTables is written (see readThrough). The ready
+// time is checked on every call, so a suggestion shows as soon as its time has
+// passed, with no write. Each caller gets a copy.
 func (s *Store) OwnerLearned() ([]protocol.LearnedSuggestion, error) {
-	all, err := s.LearnedSuggestions(false)
+	v, err := s.readThrough("owner_learned", learnedListTables, false, func() (any, error) { return s.ownerLearnedRead() })
 	if err != nil {
 		return nil, err
 	}
-	out := make([]protocol.LearnedSuggestion, 0, len(all))
-	for _, v := range all {
-		if v.Status == "pending" && (v.Severity != "major" || v.ReadyAt > s.now().UnixNano()) {
+	rows := v.(ownerLearnedRows)
+	now := s.now().UnixNano()
+	out := make([]protocol.LearnedSuggestion, 0, len(rows.items)+len(rows.drafts))
+	for _, item := range rows.items {
+		if item.Status == "pending" && (item.Severity != "major" || item.ReadyAt > now) {
 			continue
 		}
+		out = append(out, copyOf(item))
+	}
+	return append(out, copyOf(rows.drafts)...), nil
+}
+
+func (s *Store) ownerLearnedRead() (ownerLearnedRows, error) {
+	all, err := s.LearnedSuggestions(false)
+	if err != nil {
+		return ownerLearnedRows{}, err
+	}
+	items := make([]protocol.LearnedSuggestion, 0, len(all))
+	for _, v := range all {
 		var seen int64
 		err = s.db.QueryRow(`SELECT last_seen_id FROM learned_views WHERE node=?`, v.Node).Scan(&seen)
 		if err != nil && err != sql.ErrNoRows {
-			return nil, err
+			return ownerLearnedRows{}, err
 		}
 		if v.HistoryID != 0 {
 			var actor string
 			err = s.db.QueryRow(`SELECT actor,new_value FROM graph_history WHERE id=?`, v.HistoryID).Scan(&actor, &v.NewValue)
 			if err != nil && err != sql.ErrNoRows {
-				return nil, err
+				return ownerLearnedRows{}, err
 			}
 			v.Unseen = v.Status == "applied" && actor == "learned" && v.HistoryID > seen
 			v.By = actor
@@ -35,19 +68,19 @@ func (s *Store) OwnerLearned() ([]protocol.LearnedSuggestion, error) {
 		if v.Status == "pending" && v.Field != "edge" {
 			err = s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&v.OldValue)
 			if err != nil && err != sql.ErrNoRows {
-				return nil, err
+				return ownerLearnedRows{}, err
 			}
 			v.NewValue = learnedValue(v.OldValue, v.Phrase, v.Kind)
 		} else if v.Status == "pending" {
 			v.NewValue = v.EdgeKind + " -> " + v.Phrase
 		}
-		out = append(out, v)
+		items = append(items, v)
 	}
 	drafts, err := s.ownerDrafts()
 	if err != nil {
-		return nil, err
+		return ownerLearnedRows{}, err
 	}
-	return append(out, drafts...), nil
+	return ownerLearnedRows{items: items, drafts: drafts}, nil
 }
 func learnedValue(old, phrase, kind string) string {
 	var items []string

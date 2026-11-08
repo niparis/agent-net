@@ -64,6 +64,9 @@ type Connector struct {
 	cols sync.Map // lower case table.column -> *atomic.Uint64
 	// names keeps the column names of the tables statements write.
 	names sync.Map // lower case table name -> *tableNames
+	// watched holds the tables that a column key names. The pre-update hook
+	// counts only these: a table no key reads by column costs nothing per row.
+	watched sync.Map // lower case table name -> struct{}
 
 	views    atomic.Pointer[viewSet]
 	observer atomic.Pointer[func(Statement)]
@@ -112,12 +115,23 @@ func (c *Connector) Stamp(keys ...string) uint64 {
 	sum := c.global.Load()
 	for _, k := range keys {
 		if i := strings.IndexByte(k, '.'); i >= 0 {
+			c.watch(k[:i])
 			sum += c.count(&c.wide, k[:i]).Load() + c.count(&c.cols, k).Load()
 			continue
 		}
 		sum += c.count(&c.tables, k).Load()
 	}
 	return sum
+}
+
+// watch marks table as one that a column key names, so the hook counts its rows.
+// A table is watched before the key is read, so every write after that read is
+// counted, and a write before it is in the data the read loads.
+func (c *Connector) watch(table string) {
+	table = strings.ToLower(table)
+	if _, ok := c.watched.Load(table); !ok {
+		c.watched.LoadOrStore(table, struct{}{})
+	}
 }
 
 // count returns the counter of key in m, made when it is first used.
@@ -738,6 +752,9 @@ func (c *Connector) columnNames(table string) ([]string, bool) {
 // a write counts for every column of its table.
 func (c *Connector) preUpdate(d sqlite.SQLitePreUpdateData) {
 	table := strings.ToLower(d.TableName)
+	if _, ok := c.watched.Load(table); !ok {
+		return
+	}
 	names, known := c.columnNames(table)
 	n := d.Count()
 	if sqlite.AuthorizerActionCode(d.Op) != sqlite.AuthUpdate || !known || len(names) != n {

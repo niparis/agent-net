@@ -150,3 +150,16 @@ func TestTablesColumnStampFollowsADroppedColumn(t *testing.T) {
 		}
 	}
 }
+
+// A table's columns are counted once a key names them. A write made before any
+// key names the table is not counted, but a key made later still moves with the
+// next write, so an earlier write never hides a later one.
+func TestTablesColumnKeyCountsWritesAfterItIsMade(t *testing.T) {
+	db, c := openColumns(t, 16)
+	mustExec(t, db, `INSERT INTO d(n,x,y) VALUES (1,'','')`)
+	mustExec(t, db, `UPDATE d SET x='before' WHERE n=1`) // no key names d yet
+	got := movedKeys(t, c, []string{"d.x", "d.y"}, func() { mustExec(t, db, `UPDATE d SET x='after' WHERE n=1`) })
+	if !reflect.DeepEqual(got, []string{"d.x"}) {
+		t.Fatalf("moved %v, want [d.x]", got)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/sqlitecache"
 )
@@ -42,6 +43,7 @@ func readCases() []readCase {
 		{"visible graph", visibleTables, func(s *Store) { s.visibleGraph(false) }},
 		{"worker failures", failuresTables, func(s *Store) { s.RecentWorkerFailures("n_readcase", "opencode") }},
 		{"calibration", calibrationTables, func(s *Store) { s.Calibration() }},
+		{"learned list", learnedListTables, func(s *Store) { s.OwnerLearned() }},
 	}
 }
 
@@ -84,6 +86,27 @@ func richReadStore(t *testing.T) *Store {
 		Name: "rc", Cwd: "/w/rc", Repo: protocol.RepoInfo{Project: "cogforge"}}); err != nil {
 		t.Fatal(err)
 	}
+	// Learned suggestions: one linked to a charter change and viewed, one
+	// pending draft. The phrase cleaner is on, as in production.
+	id := insertLearned(t, s, "cogforge", "purpose", "", "add", "learn things", "outcome")
+	// Ready and major: the list reads the history and the view of it.
+	if _, err := s.db.Exec(`UPDATE learned_suggestions SET severity='major', ready_at=1 WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	var hist int64
+	if err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history`).Scan(&hist); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE learned_suggestion_details SET history_id=? WHERE suggestion_id=?`, hist, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO learned_views(node,last_seen_id) VALUES('cogforge',?)`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,status,drafted_by,created_at) VALUES('repo','cogforge','maturity','draft','outcome','pending','lead',1)`); err != nil {
+		t.Fatal(err)
+	}
+	s.phraseCleaner = phrasing.New(nil)
 	// A finished run, so the worker log looks up its assessment and notice.
 	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: oc1, Harness: "opencode", Model: "p/m",
 		Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: oc2, Difficulty: "hard"}); err != nil {
@@ -241,11 +264,12 @@ func TestSchemaHasNoWritesTheConnectorMisses(t *testing.T) {
 
 // jsonColumns are the columns that hold JSON, which the reads decode or a
 // CHECK constraint validates.
-var jsonColumns = map[string]string{"options": "[]", "origin": "{}", "fields": "{}", "reasons": "[]", "capabilities": "[]"}
+var jsonColumns = map[string]string{"options": "[]", "origin": "{}", "fields": "{}", "reasons": "[]", "capabilities": "[]", "evidence": "[]"}
 
 // checkedColumns are the table.column values a CHECK constraint accepts, for the
 // columns the generic row cannot guess.
-var checkedColumns = map[string]string{"delivery_changes.state": "open", "worker_runs.early_quit": "0", "worker_ratings.score": "3"}
+var checkedColumns = map[string]string{"delivery_changes.state": "open", "worker_runs.early_quit": "0", "worker_ratings.score": "3",
+	"learned_suggestions.status": "pending", "learned_suggestions.severity": "minor", "learned_suggestions.kind": "add", "charter_drafts.level": "repo", "charter_drafts.status": "pending"}
 
 // rowFor inserts a row with fresh values into table. The values are not
 // meaningful; they only have to be accepted.
