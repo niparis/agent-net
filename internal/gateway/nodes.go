@@ -134,6 +134,10 @@ ON CONFLICT(node_id) DO UPDATE SET ip=excluded.ip,updated_at=excluded.updated_at
 
 // Nodes lists every node that has connected at least once. Online is left
 // false; the gateway fills it from its live connections.
+// nodesTables are the tables Nodes reads. Keep it equal to the query there (see
+// readThrough).
+var nodesTables = []string{"nodes", "node_time_zones", "node_tailscale"}
+
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
 	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, COALESCE(z.zone,''), COALESCE(ts.ip,'')
 FROM nodes n LEFT JOIN node_time_zones z ON z.node_id=n.id LEFT JOIN node_tailscale ts ON ts.node_id=n.id

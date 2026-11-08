@@ -11,9 +11,12 @@
 // not change. A statement that is still in use (its rows are open) is never
 // shared: a second call with the same text gets a statement of its own.
 //
-// The Connector also counts the statements that may change the database, so a
-// cache above it can tell that its data is stale without knowing which tables
-// a write touched.
+// The Connector also counts the statements that may change the database, one
+// count for each table, so a cache above it can tell that the tables it read
+// are unchanged. SQLite tells the connector which tables a statement reads and
+// writes when the statement is prepared (the authorizer), including the tables
+// that triggers write. When the connector cannot tell, it counts a write for
+// every table, so the fallback is always safe.
 package sqlitecache
 
 import (
@@ -21,6 +24,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,14 +38,25 @@ const maxQueryLen = 16 << 10
 
 // Connector opens connections for sql.OpenDB.
 type Connector struct {
-	inner  driver.Connector
-	size   int
+	inner driver.Connector
+	size  int
+
+	// writes counts every statement that may change the database. global
+	// counts the ones whose tables are not known; it is part of every Stamp.
+	// schema counts the changes of the schema, which expire what the
+	// connector knows about a kept statement.
 	writes atomic.Uint64
+	global atomic.Uint64
+	schema atomic.Uint64
+	tables sync.Map // lower case table name -> *atomic.Uint64
+
+	views    atomic.Pointer[viewSet]
+	observer atomic.Pointer[func(Statement)]
 }
 
 // New returns a connector for the SQLite database dsn. Each connection keeps
 // up to size prepared statements; size <= 0 turns the cache off, and the
-// connector still counts writes.
+// connector still counts writes (for every table, as it cannot place them).
 func New(dsn string, size int) (*Connector, error) {
 	inner, err := sqlite.NewConnector(dsn)
 	if err != nil {
@@ -51,13 +66,133 @@ func New(dsn string, size int) (*Connector, error) {
 }
 
 // Writes is the number of statements run so far that may have changed the
-// database: everything except SELECT, VALUES, EXPLAIN, PRAGMA and a WITH
-// statement without INSERT, UPDATE, DELETE or REPLACE. It only goes up.
-// Read it before reading data you keep, and keep it with the data: the data is
-// current while the number is the same. A statement inside a transaction counts
-// when it runs, and a rolled back one counts too; that only makes a cache
-// refresh when it did not have to.
+// database: everything except SELECT, VALUES, EXPLAIN, PRAGMA, a WITH
+// statement without INSERT, UPDATE, DELETE or REPLACE, and an INSERT, UPDATE or
+// DELETE that reports no changed row. It only goes up. A statement inside a
+// transaction counts when it runs, and a rolled back one counts too; that only
+// makes a cache refresh when it did not have to.
 func (c *Connector) Writes() uint64 { return c.writes.Load() }
+
+// Stamp is a number that changes whenever a statement that may change one of
+// the tables has run. Names are table names in any case. Read it before
+// reading data you keep, and keep it with the data: the data is current while
+// Stamp of the same tables gives the same number.
+//
+// A write counts for the tables SQLite says the statement changes, which
+// includes the tables its triggers change. A statement that ran with Exec and
+// changed no row counts for none. A write the connector cannot place
+// (a schema change, a script, a statement it does not keep, a savepoint)
+// counts for every table, so Stamp of any tables moves.
+//
+// The number is a sum of counts that only go up, so it is the same exactly
+// when none of them moved. It is not a count of writes.
+func (c *Connector) Stamp(tables ...string) uint64 {
+	sum := c.global.Load()
+	for _, t := range tables {
+		sum += c.counter(t).Load()
+	}
+	return sum
+}
+
+// counter returns the write count of a table.
+func (c *Connector) counter(table string) *atomic.Uint64 {
+	table = strings.ToLower(table)
+	if v, ok := c.tables.Load(table); ok {
+		return v.(*atomic.Uint64)
+	}
+	v, _ := c.tables.LoadOrStore(table, new(atomic.Uint64))
+	return v.(*atomic.Uint64)
+}
+
+// Statement describes a statement the connector ran, for SetObserver.
+type Statement struct {
+	Query string
+	// Known is false when the connector could not work out the tables: a
+	// script, or a driver without an authorizer. Reads and Writes are then
+	// empty.
+	Known bool
+	// Reads and Writes are the sorted, lower case names of the tables SQLite
+	// says the statement reads and writes, triggers and views included.
+	Reads, Writes []string
+	// Schema is true for a statement that changes the schema.
+	Schema bool
+}
+
+// SetObserver sets a function that is called with every statement before it
+// runs. It is for tests and diagnostics: a nil fn turns it off. The function
+// runs on the caller's goroutine and must not use the database.
+func (c *Connector) SetObserver(fn func(Statement)) {
+	if fn == nil {
+		c.observer.Store(nil)
+		return
+	}
+	c.observer.Store(&fn)
+}
+
+// stmtInfo is what the authorizer told about one statement.
+type stmtInfo struct {
+	reads, writes []string
+	counters      []*atomic.Uint64 // the counts of writes
+	schemaChange  bool
+	// rowCounted is true when the statement changes tables only (none of the
+	// names it writes is a view), so it changed nothing when it reports that
+	// no row was changed.
+	rowCounted bool
+}
+
+// record counts the write of a statement that has run. info is nil when the
+// connector does not know the statement's tables.
+func (c *Connector) record(info *stmtInfo, query string) {
+	switch {
+	case info == nil:
+		if mayWrite(query) {
+			c.writes.Add(1)
+			c.global.Add(1)
+			if mayChangeSchema(query) {
+				c.schema.Add(1)
+			}
+		}
+	case info.schemaChange:
+		c.writes.Add(1)
+		c.schema.Add(1)
+		c.global.Add(1)
+	case len(info.counters) > 0:
+		c.writes.Add(1)
+		for _, n := range info.counters {
+			n.Add(1)
+		}
+	case mayWrite(query):
+		// A statement that names no table and is not a read: BEGIN, COMMIT,
+		// SAVEPOINT, VACUUM.
+		c.writes.Add(1)
+		c.global.Add(1)
+	}
+}
+
+// recordExec counts the write of an exec that has run. A statement that
+// changed no row changed nothing: a trigger or a foreign key action only runs
+// for a row that changed.
+func (c *Connector) recordExec(info *stmtInfo, query string, res driver.Result, err error) {
+	if err == nil && info != nil && info.rowCounted && res != nil {
+		if n, rerr := res.RowsAffected(); rerr == nil && n == 0 {
+			return
+		}
+	}
+	c.record(info, query)
+}
+
+// observe calls the observer, if there is one.
+func (c *Connector) observe(query string, info *stmtInfo) {
+	f := c.observer.Load()
+	if f == nil {
+		return
+	}
+	st := Statement{Query: query}
+	if info != nil {
+		st.Known, st.Reads, st.Writes, st.Schema = true, info.reads, info.writes, info.schemaChange
+	}
+	(*f)(st)
+}
 
 // Connect implements driver.Connector.
 func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -79,6 +214,13 @@ func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 	cc.exec, _ = inner.(driver.ExecerContext)
 	cc.query, _ = inner.(driver.QueryerContext)
+	// Without an authorizer the connector cannot place a write, and counts it
+	// for every table.
+	if reg, ok := inner.(sqlite.AuthorizerRegisterer); ok {
+		if reg.RegisterAuthorizer(cc.authorize) == nil {
+			cc.authorized = true
+		}
+	}
 	return cc, nil
 }
 
@@ -90,22 +232,31 @@ type entry struct {
 	stmt  driver.Stmt
 	busy  bool
 	elem  *list.Element
+	info  *stmtInfo // nil when the connector does not know the tables
+	// schema is the schema count when the statement was prepared. The tables
+	// of a statement change with the schema (a trigger), so an entry made
+	// before a schema change is prepared again.
+	schema uint64
 }
 
 type conn struct {
-	inner driver.Conn
-	begin driver.ConnBeginTx
-	prep  driver.ConnPrepareContext
-	exec  driver.ExecerContext
-	query driver.QueryerContext
-	owner *Connector
+	inner      driver.Conn
+	begin      driver.ConnBeginTx
+	prep       driver.ConnPrepareContext
+	exec       driver.ExecerContext
+	query      driver.QueryerContext
+	owner      *Connector
+	authorized bool
+	collect    atomic.Pointer[collector]
 
 	mu    sync.Mutex
 	cache map[string]*list.Element // query -> element holding *entry
 	order *list.List               // front is the newest
 }
 
-func (c *conn) Prepare(query string) (driver.Stmt, error) { return c.inner.Prepare(query) }
+func (c *conn) Prepare(query string) (driver.Stmt, error) {
+	return c.PrepareContext(context.Background(), query)
+}
 
 func (c *conn) Begin() (driver.Tx, error) { return c.inner.Begin() } //nolint:staticcheck
 
@@ -113,8 +264,59 @@ func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	return c.begin.BeginTx(ctx, opts)
 }
 
+// PrepareContext prepares a statement for a caller that keeps it (sql.Stmt).
+// Its writes are counted like the others.
 func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
-	return c.prep.PrepareContext(ctx, query)
+	schema := c.owner.schema.Load()
+	st, info, err := c.prepare(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return &countedStmt{Stmt: st, owner: c.owner, query: query, info: info, schema: schema}, nil
+}
+
+// countedStmt counts the writes of a statement the caller prepared.
+type countedStmt struct {
+	driver.Stmt
+	owner  *Connector
+	query  string
+	info   *stmtInfo
+	schema uint64
+}
+
+// current is what the statement is known to touch. A schema change since the
+// statement was prepared may have given it other tables, so it is then unknown.
+func (s *countedStmt) current() *stmtInfo {
+	if s.schema != s.owner.schema.Load() {
+		return nil
+	}
+	return s.info
+}
+
+func (s *countedStmt) Exec(args []driver.Value) (driver.Result, error) {
+	s.owner.observe(s.query, s.info)
+	res, err := s.Stmt.Exec(args) //nolint:staticcheck
+	s.owner.recordExec(s.current(), s.query, res, err)
+	return res, err
+}
+
+func (s *countedStmt) Query(args []driver.Value) (driver.Rows, error) {
+	s.owner.observe(s.query, s.info)
+	defer func() { s.owner.record(s.current(), s.query) }()
+	return s.Stmt.Query(args) //nolint:staticcheck
+}
+
+func (s *countedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	s.owner.observe(s.query, s.info)
+	res, err := s.Stmt.(driver.StmtExecContext).ExecContext(ctx, args)
+	s.owner.recordExec(s.current(), s.query, res, err)
+	return res, err
+}
+
+func (s *countedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	s.owner.observe(s.query, s.info)
+	defer func() { s.owner.record(s.current(), s.query) }()
+	return s.Stmt.(driver.StmtQueryContext).QueryContext(ctx, args)
 }
 
 func (c *conn) Ping(ctx context.Context) error {
@@ -152,12 +354,12 @@ func (c *conn) Close() error {
 
 // cacheable says whether a text is one statement worth keeping. A script
 // (more than one statement) is not prepared whole by the driver, so keeping it
-// saves nothing.
+// saves nothing. A semicolon in a comment or a string does not make a script.
 func (c *conn) cacheable(query string) bool {
 	if c.owner.size <= 0 || len(query) > maxQueryLen {
 		return false
 	}
-	return !strings.Contains(strings.TrimRight(query, " \t\r\n;"), ";")
+	return strings.IndexByte(query, ';') < 0 || !isScript(query)
 }
 
 // take returns a statement for query that nobody else is using, and whether
@@ -167,29 +369,39 @@ func (c *conn) take(ctx context.Context, query string) (*entry, bool, error) {
 	if !c.cacheable(query) {
 		return nil, false, nil
 	}
+	schema := c.owner.schema.Load()
 	c.mu.Lock()
 	if el, ok := c.cache[query]; ok {
 		e := el.Value.(*entry)
-		if !e.busy {
+		switch {
+		case e.busy:
+			c.mu.Unlock()
+			// Same text, already running: use a statement of its own.
+			st, info, err := c.prepare(ctx, query)
+			if err != nil {
+				return nil, false, err
+			}
+			return &entry{query: query, stmt: st, busy: true, info: info, schema: schema}, false, nil
+		case e.schema == schema:
 			e.busy = true
 			c.order.MoveToFront(el)
 			c.mu.Unlock()
 			return e, true, nil
 		}
+		// The schema changed since the statement was prepared: its tables may
+		// have changed too. Prepare it again.
+		c.order.Remove(el)
+		delete(c.cache, query)
 		c.mu.Unlock()
-		// Same text, already running: use a statement of its own.
-		st, err := c.prep.PrepareContext(ctx, query)
-		if err != nil {
-			return nil, false, err
-		}
-		return &entry{query: query, stmt: st, busy: true}, false, nil
+		e.stmt.Close()
+		c.mu.Lock()
 	}
 	c.mu.Unlock()
-	st, err := c.prep.PrepareContext(ctx, query)
+	st, info, err := c.prepare(ctx, query)
 	if err != nil {
 		return nil, false, err
 	}
-	e := &entry{query: query, stmt: st, busy: true}
+	e := &entry{query: query, stmt: st, busy: true, info: info, schema: schema}
 	c.mu.Lock()
 	if _, dup := c.cache[query]; dup {
 		// Another call kept the same text while this one prepared.
@@ -229,37 +441,208 @@ func (c *conn) done(e *entry, kept bool) {
 }
 
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	if mayWrite(query) {
-		defer c.owner.writes.Add(1)
-	}
 	e, kept, err := c.take(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	if e == nil {
+		defer c.owner.record(nil, query)
+		c.describe(ctx, query)
 		return c.exec.ExecContext(ctx, query, args)
 	}
 	defer c.done(e, kept)
-	return e.stmt.(driver.StmtExecContext).ExecContext(ctx, args)
+	c.owner.observe(query, e.info)
+	res, err := e.stmt.(driver.StmtExecContext).ExecContext(ctx, args)
+	c.owner.recordExec(e.info, query, res, err)
+	return res, err
 }
 
 func (c *conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	if mayWrite(query) {
-		defer c.owner.writes.Add(1)
-	}
 	e, kept, err := c.take(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	if e == nil {
+		defer c.owner.record(nil, query)
+		c.describe(ctx, query)
 		return c.query.QueryContext(ctx, query, args)
 	}
+	defer c.owner.record(e.info, query)
+	c.owner.observe(query, e.info)
 	r, err := e.stmt.(driver.StmtQueryContext).QueryContext(ctx, args)
 	if err != nil {
 		c.done(e, kept)
 		return nil, err
 	}
 	return &rows{Rows: r, c: c, e: e, kept: kept}, nil
+}
+
+// describe tells the observer about a statement that is not kept. It prepares
+// the statement a second time, so it only works when somebody is watching.
+func (c *conn) describe(ctx context.Context, query string) {
+	if c.owner.observer.Load() == nil {
+		return
+	}
+	var info *stmtInfo
+	if !isScript(query) {
+		if st, i, err := c.prepare(ctx, query); err == nil {
+			st.Close()
+			info = i
+		}
+	}
+	c.owner.observe(query, info)
+}
+
+// isScript says whether query holds more than one statement. A semicolon in a
+// string, a quoted name or a comment does not count.
+func isScript(query string) bool {
+	semi := false
+	for i := 0; i < len(query); i++ {
+		switch ch := query[i]; {
+		case ch == '\'' || ch == '"' || ch == '`':
+			// A doubled quote inside a quoted text is an escaped quote, and
+			// reads as the end of one text and the start of the next.
+			for i++; i < len(query) && query[i] != ch; i++ {
+			}
+			if semi {
+				return true
+			}
+		case ch == '[':
+			for i++; i < len(query) && query[i] != ']'; i++ {
+			}
+			if semi {
+				return true
+			}
+		case ch == '-' && i+1 < len(query) && query[i+1] == '-':
+			for i += 2; i < len(query) && query[i] != '\n'; i++ {
+			}
+		case ch == '/' && i+1 < len(query) && query[i+1] == '*':
+			j := strings.Index(query[i+2:], "*/")
+			if j < 0 {
+				return semi
+			}
+			i += j + 3
+		case ch == ';':
+			semi = true
+		case ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n':
+		default:
+			if semi {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// collector gathers what the authorizer reports while one statement is
+// prepared.
+type collector struct {
+	reads, writes map[string]struct{}
+	schemaChange  bool
+}
+
+// authorize is the SQLite authorizer of the connection. It only watches: it
+// collects the tables of the statement being prepared by prepare, and allows
+// everything.
+func (c *conn) authorize(action sqlite.AuthorizerActionCode, arg1, arg2, _, _ string) sqlite.AuthorizerReturnCode {
+	col := c.collect.Load()
+	if col == nil {
+		return sqlite.AuthorizerOK
+	}
+	switch action {
+	case sqlite.AuthRead:
+		if col.reads == nil {
+			col.reads = map[string]struct{}{}
+		}
+		col.reads[strings.ToLower(arg1)] = struct{}{}
+	case sqlite.AuthInsert, sqlite.AuthUpdate, sqlite.AuthDelete:
+		if col.writes == nil {
+			col.writes = map[string]struct{}{}
+		}
+		col.writes[strings.ToLower(arg1)] = struct{}{}
+	case sqlite.AuthCreateIndex, sqlite.AuthCreateTable, sqlite.AuthCreateTempIndex, sqlite.AuthCreateTempTable,
+		sqlite.AuthCreateTempTrigger, sqlite.AuthCreateTempView, sqlite.AuthCreateTrigger, sqlite.AuthCreateView,
+		sqlite.AuthDropIndex, sqlite.AuthDropTable, sqlite.AuthDropTempIndex, sqlite.AuthDropTempTable,
+		sqlite.AuthDropTempTrigger, sqlite.AuthDropTempView, sqlite.AuthDropTrigger, sqlite.AuthDropView,
+		sqlite.AuthAlterTable, sqlite.AuthReindex, sqlite.AuthAnalyze, sqlite.AuthAttach, sqlite.AuthDetach,
+		sqlite.AuthCreateVTable, sqlite.AuthDropVTable:
+		col.schemaChange = true
+	}
+	return sqlite.AuthorizerOK
+}
+
+// prepare prepares query and works out its tables. The info is nil when the
+// driver has no authorizer.
+func (c *conn) prepare(ctx context.Context, query string) (driver.Stmt, *stmtInfo, error) {
+	if !c.authorized {
+		st, err := c.prep.PrepareContext(ctx, query)
+		return st, nil, err
+	}
+	col := &collector{}
+	c.collect.Store(col)
+	st, err := c.prep.PrepareContext(ctx, query)
+	c.collect.Store(nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	info := &stmtInfo{reads: sortedNames(col.reads), writes: sortedNames(col.writes), schemaChange: col.schemaChange}
+	for _, w := range info.writes {
+		info.counters = append(info.counters, c.owner.counter(w))
+	}
+	if len(info.writes) > 0 && !info.schemaChange {
+		info.rowCounted = c.noViews(ctx, info.writes)
+	}
+	return st, info, nil
+}
+
+// viewSet is the names of the views, as of one schema count.
+type viewSet struct {
+	schema uint64
+	names  map[string]struct{}
+}
+
+// noViews says whether none of the names is a view. Writing through a view
+// runs INSTEAD OF triggers and the row count of the statement does not say
+// what they changed. It is false when the views cannot be listed.
+func (c *conn) noViews(ctx context.Context, names []string) bool {
+	schema := c.owner.schema.Load()
+	vs := c.owner.views.Load()
+	if vs == nil || vs.schema != schema {
+		if c.query == nil {
+			return false
+		}
+		rows, err := c.query.QueryContext(ctx, `SELECT lower(name) FROM sqlite_master WHERE type='view' UNION SELECT lower(name) FROM sqlite_temp_master WHERE type='view'`, nil)
+		if err != nil {
+			return false
+		}
+		vs = &viewSet{schema: schema, names: map[string]struct{}{}}
+		dest := make([]driver.Value, 1)
+		for rows.Next(dest) == nil {
+			if n, ok := dest[0].(string); ok {
+				vs.names[n] = struct{}{}
+			}
+		}
+		rows.Close()
+		c.owner.views.Store(vs)
+	}
+	for _, n := range names {
+		if _, isView := vs.names[n]; isView {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedNames(m map[string]struct{}) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for n := range m {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // rows gives its statement back when it closes.
@@ -313,6 +696,18 @@ func (r *rows) ColumnTypeScanType(i int) reflect.Type {
 		return t.ColumnTypeScanType(i)
 	}
 	return reflect.TypeOf(new(any)).Elem()
+}
+
+// mayChangeSchema says whether a statement the connector knows nothing about
+// may change the schema: a script, or a statement that starts like one that
+// does. A long INSERT does not.
+func mayChangeSchema(query string) bool {
+	word, _ := firstWord(query)
+	switch strings.ToUpper(word) {
+	case "CREATE", "ALTER", "DROP", "REINDEX", "ANALYZE", "ATTACH", "DETACH", "VACUUM":
+		return true
+	}
+	return strings.IndexByte(query, ';') >= 0 && isScript(query)
 }
 
 // mayWrite says whether a statement may change the database.

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,7 +138,7 @@ func TestReadCacheForTimedReadsLastOneSecond(t *testing.T) {
 	}
 	loads := 0
 	read := func() {
-		if _, err := s.readThrough("timed", true, func() (any, error) { loads++; return id, nil }); err != nil {
+		if _, err := s.readThrough("timed", nil, true, func() (any, error) { loads++; return id, nil }); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -158,7 +159,7 @@ func TestReadCacheDropsReadsThatSawAWrite(t *testing.T) {
 	s, _ := newTestStore(t)
 	loads := 0
 	read := func(during func()) {
-		if _, err := s.readThrough("racy", false, func() (any, error) {
+		if _, err := s.readThrough("racy", nil, false, func() (any, error) {
 			loads++
 			if during != nil {
 				during()
@@ -173,5 +174,84 @@ func TestReadCacheDropsReadsThatSawAWrite(t *testing.T) {
 	read(nil) // and now it is kept
 	if loads != 2 {
 		t.Fatalf("%d loads, want 2", loads)
+	}
+}
+
+// A write to a table the read does not use leaves the value alone, a write to
+// a table it uses is not kept, and no table named means any write.
+func TestReadCacheKeepsReadsOnlyAgainstTheirTables(t *testing.T) {
+	s, _ := newTestStore(t)
+	loads := 0
+	read := func(tables []string, during func()) {
+		if _, err := s.readThrough("tables|"+strings.Join(tables, ","), tables, false, func() (any, error) {
+			loads++
+			if during != nil {
+				during()
+			}
+			return loads, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probe := func(table string) func() {
+		return func() {
+			// A row that changes: insert one with a fresh key.
+			s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0)`, table+time.Now().String(), "1")
+		}
+	}
+	// A write to another table while the read loads: the value is kept.
+	read([]string{"graph_edges"}, probe("p"))
+	read([]string{"graph_edges"}, nil)
+	read([]string{"graph_edges"}, nil)
+	if loads != 1 {
+		t.Fatalf("a write to another table dropped the value: %d loads, want 1", loads)
+	}
+	// A write to its own table while it loads: not kept.
+	loads = 0
+	read([]string{"owner_settings"}, probe("q"))
+	read([]string{"owner_settings"}, nil) // loads again
+	read([]string{"owner_settings"}, nil) // and now it is kept
+	if loads != 2 {
+		t.Fatalf("a write to its table during the load: %d loads, want 2", loads)
+	}
+	// After the load, a write to its table makes it load again, a write to
+	// another table does not.
+	probe("r")()
+	read([]string{"owner_settings"}, nil)
+	if loads != 3 {
+		t.Fatalf("a write to its table was not seen: %d loads, want 3", loads)
+	}
+	s.db.Exec(`UPDATE graph_edges SET mode=mode`)
+	if _, err := s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('a','b','depends','','')`); err != nil {
+		t.Fatal(err)
+	}
+	read([]string{"owner_settings"}, nil)
+	if loads != 3 {
+		t.Fatalf("a write to another table was seen: %d loads, want 3", loads)
+	}
+	// No table named: any write.
+	loads = 0
+	read(nil, nil)
+	read(nil, nil)
+	probe("s")()
+	read(nil, nil)
+	if loads != 2 {
+		t.Fatalf("with no tables named: %d loads, want 2", loads)
+	}
+}
+
+// What a kept read costs: the stamp of the tables, and nothing else.
+func BenchmarkReadThroughHit(b *testing.B) {
+	s, _ := newTestStore(b)
+	for name, tables := range map[string][]string{"settings": settingsTables, "graph": graphTables, "agents": agentsTables, "any write": nil} {
+		b.Run(name, func(b *testing.B) {
+			load := func() (any, error) { return 1, nil }
+			s.readThrough(name, tables, false, load)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				s.readThrough(name, tables, false, load)
+			}
+		})
 	}
 }

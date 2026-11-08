@@ -62,10 +62,14 @@ func bumpSettingsRevision(tx *sql.Tx) error {
 	return err
 }
 
-// SettingsSnapshot reads all settings. The read is kept until the next write
-// to the database, and each caller gets a copy.
+// settingsTables are the tables settingsSnapshotTx reads. Keep it equal to the
+// queries there (see readThrough).
+var settingsTables = []string{"setting_revision", "setting_values", "graph_charter", "graph_edges"}
+
+// SettingsSnapshot reads all settings. The read is kept until one of
+// settingsTables is written, and each caller gets a copy.
 func (s *Store) SettingsSnapshot() (settings.Snapshot, error) {
-	v, err := s.readThrough("settings", false, func() (any, error) { return s.settingsSnapshotRead() })
+	v, err := s.readThrough("settings", settingsTables, false, func() (any, error) { return s.settingsSnapshotRead() })
 	if err != nil {
 		return settings.Snapshot{}, err
 	}

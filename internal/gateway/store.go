@@ -3003,6 +3003,12 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
  s.limited_until, s.limited_reason
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id@JOINS@`
 
+// agentListTables are the tables agentListSelect and its joins read, with the
+// piChildSQL filter. Keep it equal to those queries (see readThrough).
+var agentListTables = []string{"sessions", "nodes", "profiles", "apps", "project_display_names", "project_mergers",
+	"worker_assessments", "agents", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
+	"owner_settings"}
+
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
 	// agent limit. x is the session.
@@ -3146,9 +3152,15 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 		AND (parent.online = 1 OR parent.last_seen >= s.created_at)
 		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
 
+// agentsTables are the tables agentsRead reads, through every function it
+// calls: the agent rows (agentListTables), the delegation of each agent, its
+// public charter, its pending requests and its loop. Keep it equal to those
+// queries (see readThrough).
+var agentsTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, pendingTables, loopTables)
+
 // Agents lists the agent views that match f.
 //
-// The read is kept until the next write to the database, but never past the
+// The read is kept until one of agentsTables is written, but never past the
 // second it was read in: the view holds windows and decays that depend on the
 // time. Each caller gets a copy.
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
@@ -3156,7 +3168,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	if err != nil {
 		return s.agentsRead(f)
 	}
-	v, err := s.readThrough("agents|"+string(key), true, func() (any, error) { return s.agentsRead(f) })
+	v, err := s.readThrough("agents|"+string(key), agentsTables, true, func() (any, error) { return s.agentsRead(f) })
 	if err != nil {
 		return nil, err
 	}

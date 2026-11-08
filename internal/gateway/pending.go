@@ -11,6 +11,10 @@ import (
 // its query to the requests of those agents.
 var pendingScopeMax = 32
 
+// pendingTables are the tables applyPending reads. Keep it equal to the query
+// there (see readThrough).
+var pendingTables = []string{"messages", "sessions", "profiles"}
+
 // applyPending derives current waits from retained messages. Activity clears
 // the sender's wait, but does not discharge the recipient's obligation to reply.
 // Deriving this on read also clears stale waits retained by older versions.
