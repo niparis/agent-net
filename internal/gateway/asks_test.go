@@ -693,3 +693,22 @@ func TestOwnerTypedClosesOnlyThatSessionsAsks(t *testing.T) {
 		}
 	}
 }
+
+// A "stopped with work left" row stays no longer than the session's next
+// announce, also when that announce does not answer a pending idle check.
+func TestStoppedWithWorkLeftRowClosesOnNewWorkAnnounce(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	row, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: sid, Text: "p stopped with work left: x"})
+	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: "fixing the CI config"}); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := askRow(t, s, `id=?`, row.ID); status != "closed" {
+		t.Fatalf("row after a new-work announce: %s", status)
+	}
+}
