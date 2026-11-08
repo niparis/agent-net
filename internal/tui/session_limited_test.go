@@ -10,7 +10,7 @@ import (
 // its TASK with the time the limit ends.
 func TestSessionLimitedScene(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
-		m := newModel(size.w, size.h)
+		m := quietFixtures(newModel(size.w, size.h))
 		m.activeOnly = false
 		a := &m.snap.Agents[0]
 		a.Status = "idle"
