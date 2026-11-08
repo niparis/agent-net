@@ -99,21 +99,26 @@ type Model struct {
 	quotaConfirmDisplay string
 	quotaUnprotect      bool
 	quotaShowUnset      bool
-	qualityAgent        int
 	qualityDetail       bool
-	messageShowEvents   bool
-	hideWorkerThreads   bool
+	// The picker table of the Quality subtab. It changes only on writes, so it
+	// is read when the subtab opens and on R, not on every tick.
+	picker            protocol.PickerAnalysis
+	pickerLoaded      bool
+	pickerErr         string
+	pickerWanted      bool
+	pickerSelModel    int
+	pickerSelBucket   int
+	messageShowEvents bool
+	hideWorkerThreads bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
-	snap       Snapshot
-	haveData   bool
-	lastOK     time.Time
-	problem    Problem
-	problemT   string // text of the last error
-	graphState graphview.State
-	graphPixel *graphPixelState
-	// workerForecastMemo is shared by copies of the model, like graphPixel.
-	workerForecastMemo     *workerForecastMemo
+	snap                   Snapshot
+	haveData               bool
+	lastOK                 time.Time
+	problem                Problem
+	problemT               string // text of the last error
+	graphState             graphview.State
+	graphPixel             *graphPixelState
 	graphGeneration        int
 	graphTalkLoading       bool
 	graphTalkLastID        int64
@@ -254,7 +259,7 @@ func New(src Source) Model {
 	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true, activeOnly: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
-		graphPixel: &graphPixelState{imageID: graphview.ImageID}, workerForecastMemo: &workerForecastMemo{}}
+		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
 	if c, ok := src.(inboxCaller); ok {
 		m.deliverySrc = newGatewayDelivery(c.Call, time.Now)
 	}
@@ -295,13 +300,18 @@ type fetchedMsg struct {
 	convPage  protocol.ConversationPage
 	convErr   error
 	// usage and counts are set when this refresh asked for them.
-	askedUsage           bool
-	usage                Usage
-	usageErr             error
-	counts               protocol.SessionCounts
-	countsErr            error
-	hidden               protocol.HiddenItems
-	hiddenErr            error
+	askedUsage bool
+	usage      Usage
+	usageErr   error
+	counts     protocol.SessionCounts
+	countsErr  error
+	hidden     protocol.HiddenItems
+	hiddenErr  error
+	// picker is read only when the Quality subtab opens or on R. It changes
+	// on writes, not on every refresh.
+	pickerAsked          bool
+	picker               protocol.PickerAnalysis
+	pickerErr            error
 	onboarding           protocol.Onboarding
 	onboardingErr        error
 	onboardingAsked      bool
@@ -376,6 +386,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	inboxSeen, inboxAt := m.inboxSeen, m.inboxAt
 	deskLogOpen := m.deskLogOpen
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
+	wantPicker := m.tab == quotasTab && m.qualityDetail && m.pickerWanted
 	now := m.now
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
@@ -393,6 +404,21 @@ func (m Model) fetchCmd() tea.Cmd {
 			return res
 		}
 		res.hidden, res.hiddenErr = src.HiddenItems(ctx)
+
+		if wantPicker {
+			res.pickerAsked = true
+			if caller, ok := src.(interface {
+				Call(context.Context, string, any) (json.RawMessage, error)
+			}); ok {
+				raw, err := caller.Call(ctx, protocol.OpPickerGet, nil)
+				if err == nil {
+					err = json.Unmarshal(raw, &res.picker)
+				}
+				res.pickerErr = err
+			} else {
+				res.pickerErr = ErrTooOld
+			}
+		}
 
 		if caller, ok := src.(inboxCaller); ok && !onboardingPending {
 			res.onboardingAsked, res.onboardingRevision = true, onboardingRevision
@@ -859,6 +885,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fetching = false
 		m.applyFetch(msg)
+		if msg.pickerAsked {
+			m.pickerWanted = false
+			if msg.pickerErr != nil {
+				m.pickerErr = sanitize(msg.pickerErr.Error())
+			} else {
+				wasLoaded := m.pickerLoaded
+				m.picker, m.pickerErr = msg.picker, ""
+				if !wasLoaded {
+					m.defaultPickerSelection()
+				}
+				m.pickerLoaded = true
+				m.clampPickerSelection()
+			}
+		}
 		if msg.err == nil && msg.snap.Connected {
 			m.inboxSeen = inboxMarkerOf(m.snap)
 		}
@@ -1135,15 +1175,11 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		m.applyTeamView(false)
 	}
 	m.applyTimeZone()
-	if n := len(m.snap.Calibration.Quality.Agents); m.qualityAgent > n {
-		m.qualityAgent = 0
-	}
 	m.updateSessionOrder(r.events)
 	if r.hiddenErr == nil {
 		m.setHiddenItems(r.hidden)
 	}
 	m.applyUsage(r)
-	m.refreshWorkerForecast()
 	if r.eventsErr != nil {
 		if errors.Is(r.eventsErr, ErrFeedUnavailable) {
 			m.feed.unavailable = "no message feed: the daemon or the gateway is older than the event feed"
@@ -1366,20 +1402,23 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case actClose:
 			// Escape leaves the selected sub tab in place.
 		case actDown:
-			m.quotaScroll++
+			m.movePickerModel(1)
 		case actUp:
-			m.quotaScroll = max(0, m.quotaScroll-1)
+			m.movePickerModel(-1)
 		case actPageDown:
-			m.quotaScroll += max(1, m.height-5)
+			m.movePickerModel(5)
 		case actPageUp:
-			m.quotaScroll = max(0, m.quotaScroll-max(1, m.height-5))
-		case "next agent":
-			m.qualityAgent = (m.qualityAgent + 1) % (len(m.snap.Calibration.Quality.Agents) + 1)
-			m.quotaScroll = 0
-		case "previous agent":
-			n := len(m.snap.Calibration.Quality.Agents) + 1
-			m.qualityAgent = (m.qualityAgent + n - 1) % n
-			m.quotaScroll = 0
+			m.movePickerModel(-5)
+		case "next bucket":
+			m.movePickerBucket(1)
+		case "previous bucket":
+			m.movePickerBucket(-1)
+		case "refresh":
+			m.pickerWanted = true
+			if !m.fetching {
+				m.fetching = true
+				return m, m.fetchCmd()
+			}
 		}
 		return m, nil
 	}
@@ -1493,6 +1532,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
+			if i == quotasTab && m.qualityDetail {
+				// Returning to the Quality subtab reads the picker table again.
+				m.pickerWanted = true
+			}
 			if i == sessionsTab {
 				m.sessionCell = 0
 			}
@@ -1581,7 +1624,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.quotaSelected = 0
 			m.quotaShowUnset = !m.quotaShowUnset
 			m.quotaScroll = 0
-			m.refreshWorkerForecast()
 		case actQuit:
 			m.quitting = true
 			return m, tea.Quit

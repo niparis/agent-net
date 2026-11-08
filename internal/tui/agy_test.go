@@ -24,20 +24,18 @@ func TestWorkerPanelAgyProfileIsStartable(t *testing.T) {
 	}
 }
 
-// An allowed, scored agy profile is a forecast candidate like other workers.
-func TestAgyProfileIsAWorkerCandidate(t *testing.T) {
+// The gateway's picker preview marks an agy profile like any other profile.
+func TestAgyProfileIsInThePickerPreview(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.Nodes = m.snap.Nodes[:1]
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "agy", Models: []string{"gemini-3.8-flash-low"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "argon agy", Harness: "agy", Model: "gemini-3.8-flash-low"}}
 	m.snap.WorkerProviders = []string{"agy"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "gemini-3.8-flash-low", Score: 55}}
-	for _, c := range m.workerForecastInputs().candidates {
-		if c.Harness == "agy" {
-			return
-		}
+	m.snap.Nodes[0].QualityPickModels = map[string]string{"normal": pickerPreviewName("gemini-3.8-flash-low")}
+	if view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n")); !strings.Contains(view, "▸") {
+		t.Fatalf("agy preview is not marked:\n%s", view)
 	}
-	t.Fatal("agy profile is not a worker candidate")
 }
 
 // A Claude model through agy is not the owner's Anthropic subscription, so the

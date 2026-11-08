@@ -255,9 +255,10 @@ Legend ────────────────────────�
  Quality details
   tab, shift+tab         sub tab
   ?                      help
-  up/down, j/k           scroll
+  up/down, j/k           model
+  left/right, h/l        bucket
   pgup/pgdn              page
-  left/right             agent
+  R                      refresh
 
  Proposal detail
   esc                    back

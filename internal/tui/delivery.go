@@ -518,6 +518,10 @@ func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 	if !m.workersLog {
 		m.workerLogDetailsFocus = false
 	}
+	if m.qualityDetail {
+		// The table changes only on writes: read it when the subtab opens.
+		m.pickerWanted = true
+	}
 	return m, nil
 }
 

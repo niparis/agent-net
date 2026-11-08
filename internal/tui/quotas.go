@@ -1,15 +1,13 @@
 package tui
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -405,168 +403,65 @@ func (m Model) quotaModels() []quotaModel {
 	return rows
 }
 
-// workerForecastMemo keeps the Workers panel forecast for one snapshot. The
-// forecast runs the chooser for every start of every level, which is too slow
-// to repeat on every redraw: the screen redraws on every tick, key and fetch.
-type workerForecastMemo struct {
-	key    string
-	picks  []protocol.WorkerModelChoice
-	shares []string
-	counts [][]int
-}
-
-// workerForecastLevels are the difficulty columns of the Workers panel.
+// workerForecastLevels are the preview columns of the Workers panel.
 var workerForecastLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
 
-// workerForecastInputs is what the Workers forecast depends on.
-type workerForecastInputs struct {
-	rows       []quotaModel
-	rowKeys    []string
-	candidates []protocol.WorkerModelCandidate
-	quotas     *protocol.Quotas
-	running    map[string]int
-}
-
-func (m Model) workerForecastInputs() workerForecastInputs {
-	in := workerForecastInputs{rows: m.quotaModels(), quotas: &protocol.Quotas{}, running: map[string]int{}}
-	for _, r := range in.rows {
-		in.rowKeys = append(in.rowKeys, protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model}))
-		if r.available && r.allowed && r.scored && protocol.WorkerHarnessSupported(r.harness) {
-			in.candidates = append(in.candidates, protocol.WorkerModelCandidate{Name: r.name, Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded, Track: r.track})
-		}
-	}
-	for _, r := range m.quotaRows() {
-		in.quotas.Providers = append(in.quotas.Providers, r.provider)
-		if r.at > in.quotas.GeneratedAt {
-			in.quotas.GeneratedAt = r.at
-		}
-	}
-	for _, a := range m.snap.Agents {
-		if a.Online && a.Worker != nil {
-			in.running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
-		}
-	}
-	return in
-}
-
-// refreshWorkerForecast runs on events that can change the forecast: new data
-// from a fetch, or a change of the rows shown. The chooser runs again only
-// when an input changed, which is rare: a profile, a score, a quota reading,
-// a running worker or the rotation. Drawing the screen only reads the result.
-func (m *Model) refreshWorkerForecast() {
-	if m.workerForecastMemo == nil {
-		return
-	}
-	m.workerForecastMemo.refresh(*m, m.workerForecastInputs())
-}
-
-func (f *workerForecastMemo) refresh(m Model, in workerForecastInputs) {
-	inputs, _ := json.Marshal([]any{in.rowKeys, in.candidates, in.quotas.Providers, in.running,
-		m.snap.Scores, m.snap.DifficultyMinimums, m.snap.WorkerRotation, m.snap.ProtectedProviders, m.snap.Calibration.Quality})
-	sum := sha256.Sum256(inputs)
-	key := string(sum[:])
-	if f.key == key {
-		return
-	}
-	levels := workerForecastLevels
-	picks := make([]protocol.WorkerModelChoice, len(levels))
-	shares := make([]string, len(levels))
-	counts := make([][]int, len(levels))
-	forecast := m.snap.WorkerRotation.Clone()
-	for i, level := range levels {
-		counts[i] = make([]int, len(in.rows))
-		var eligible []protocol.WorkerModelCandidate
-		for _, c := range in.candidates {
-			_, _, fits, _ := protocol.WorkerCandidateFit(c, level, m.snap.Scores, m.snap.DifficultyMinimums)
-			if fits {
-				eligible = append(eligible, c)
+// localPickerPreview is the gateway's preview of the pick at the middle D of
+// each level on this machine, as a Models row name (family and effort). The
+// preview already uses the picker's cell rule; the screen never simulates it.
+func (m Model) localPickerPreview() map[string]string {
+	for _, n := range m.snap.Nodes {
+		if n.NodeID != "" && n.NodeID == m.snap.NodeID {
+			if len(n.QualityPickModels) > 0 {
+				return n.QualityPickModels
 			}
-		}
-		shares[i] = protocol.WorkerRotationShares(level, eligible, &m.snap.WorkerRotation)
-		normal, protected := m.workerCandidateTiers(level, in.candidates)
-		for start := 0; start < workerShareStarts; start++ {
-			choice, err := protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, in.quotas, in.running, &forecast)
-			if err != nil {
-				choice, err = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, in.quotas, in.running, &forecast)
-			}
-			if err != nil {
-				break
-			}
-			if start == 0 {
-				picks[i] = choice
-			}
-			key := protocol.WorkerModelKey(choice.WorkerModelCandidate)
-			for rowIndex, rowKey := range in.rowKeys {
-				if rowKey == key {
-					counts[i][rowIndex]++
-				}
-			}
+			return n.QualityPicks
 		}
 	}
-	*f = workerForecastMemo{key: key, picks: picks, shares: shares, counts: counts}
+	return nil
 }
 
-// workerShareStarts is how many future starts the Workers panel forecasts.
-const workerShareStarts = 20
-
-// workerShareCellWidth keeps every heatmap cell the same width.
-const workerShareCellWidth = 5
-
-// workerCandidateTiers splits the candidates the way automatic starts do:
-// unprotected first, then protected only when no ordinary model qualifies.
-func (m Model) workerCandidateTiers(level string, candidates []protocol.WorkerModelCandidate) (normal, protected []protocol.WorkerModelCandidate) {
-	for _, c := range candidates {
-		if len(m.snap.ProtectedProviders.Providers) > 0 {
-			_, _, adequate, ok := protocol.WorkerCandidateFit(c, level, m.snap.Scores, m.snap.DifficultyMinimums)
-			if !ok || !adequate {
-				continue
-			}
+// pickerPreviewName is the name the gateway uses for a pick: the model family
+// and the effort, for example "terra high".
+func pickerPreviewName(model string) string {
+	base, effort := protocol.SplitModelLevel(model)
+	base = protocol.PickerModelDisplay(base)
+	family := ""
+	for _, token := range strings.FieldsFunc(strings.ToLower(base), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		switch token {
+		case "deepseek", "luna", "sol", "terra", "sonnet", "opus":
+			family = token
 		}
-		if m.providerProtected(protocol.ProfileProvider(c.Harness, c.Model)) {
-			protected = append(protected, c)
-		} else {
-			normal = append(normal, c)
+		if family != "" {
+			break
 		}
 	}
-	return normal, protected
+	if family == "" {
+		family = base
+	}
+	if effort != "" {
+		return family + " " + effort
+	}
+	return family
 }
 
-// workerShareCell renders one profile's share of the next 20 starts. A model
-// outside its eligible levels is a dim x; an eligible model with no share is
-// a dot.
-func workerShareCell(count int, eligible bool) string {
-	if !eligible {
-		return sDim.Render(cell("x", workerShareCellWidth))
+// pickerPreviewCell marks the profile the gateway preview chooses for a level.
+func pickerPreviewCell(preview map[string]string, level string, r quotaModel) string {
+	if len(preview) == 0 {
+		return sDim.Render(cell("-", 3))
 	}
-	if count <= 0 {
-		return sDim.Render(cell("·", workerShareCellWidth))
+	if preview[level] == pickerPreviewName(r.model) {
+		return sAccent.Render(cell("▸", 3))
 	}
-	pct := count * 100 / workerShareStarts
-	block := "░"
-	switch {
-	case pct >= 75:
-		block = "█"
-	case pct >= 50:
-		block = "▓"
-	case pct >= 25:
-		block = "▒"
-	}
-	return lipgloss.NewStyle().Foreground(roleGood).Render(cell(fmt.Sprintf("%s%3d%%", block, pct), workerShareCellWidth))
+	return sDim.Render(cell("·", 3))
 }
 
-func shareHeaderCell(s string) string {
-	pad := workerShareCellWidth - ansi.StringWidth(s)
-	if pad <= 0 {
-		return s
-	}
-	left := pad / 2
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", pad-left)
-}
-
-func workerShareHeader() string {
+func workerPreviewHeader() string {
 	var cells []string
 	for _, letter := range []string{"T", "S", "N", "H", "V"} {
-		cells = append(cells, shareHeaderCell(letter))
+		cells = append(cells, cell(letter, 3))
 	}
 	return strings.Join(cells, " ")
 }
@@ -592,67 +487,39 @@ func shortWorkerModel(model string, w int) string {
 }
 
 func (m Model) quotaModelsView(w int) []string {
-	in := m.workerForecastInputs()
-	rows, levels := in.rows, workerForecastLevels
+	rows, levels := m.quotaModels(), workerForecastLevels
+	preview := m.localPickerPreview()
 	runningCount := 0
 	for _, a := range m.snap.Agents {
 		if a.Online && a.Worker != nil {
 			runningCount++
 		}
 	}
-	f := m.workerForecastMemo
-	if f == nil || f.key == "" {
-		// A model drawn before any fetch event, as in tests, computes it once.
-		f = &workerForecastMemo{}
-		f.refresh(m, in)
-		if m.workerForecastMemo != nil {
-			*m.workerForecastMemo = *f
-		}
-	}
-	picks, counts := f.picks, f.counts
-	if len(counts) != len(levels) || (len(counts) > 0 && len(counts[0]) != len(rows)) {
-		f = &workerForecastMemo{}
-		f.refresh(m, in)
-		picks, counts = f.picks, f.counts
-	}
 	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
 	if w < 110 {
 		nameWidth, harnessWidth, modelWidth, scoreWidth = 15, 8, 17, 0
 	}
-	usedWidth := max(w-4-(nameWidth+1+harnessWidth+1+modelWidth+1+scoreWidth+1+len(workerShareHeader())+2), 0)
+	previewWidth := len(workerPreviewHeader())
+	usedWidth := max(w-4-(nameWidth+1+harnessWidth+1+modelWidth+1+scoreWidth+1+previewWidth+2), 0)
 	showUsed := w >= 110 && usedWidth >= 10
 	header := fmt.Sprintf("%-*s %-*s %-*s", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL")
 	if scoreWidth > 0 {
 		header += " " + cell("SCORE", scoreWidth)
 	}
-	header += " " + workerShareHeader()
+	header += " " + workerPreviewHeader()
 	if showUsed {
 		header += "  " + cell("USED", usedWidth)
 	}
 	var body []string
-	body = append(body, sDim.Render(header))
+	body = append(body, sDim.Render(clip(header, w-4)))
 	type displayRow struct {
 		line string
 	}
 	displayed := make([]displayRow, 0, len(rows))
-	for rowIndex, r := range rows {
+	for _, r := range rows {
 		var cellsOut []string
-		for i, level := range levels {
-			eligible := false
-			if r.scored && !r.stale {
-				_, fit, fits, _ := protocol.WorkerCandidateFit(protocol.WorkerModelCandidate{Model: r.model, DefaultEffort: r.defaultEffort}, level, m.snap.Scores, m.snap.DifficultyMinimums)
-				switch fit {
-				case "excellent":
-					eligible = fits
-				case "good":
-					eligible = fits
-				}
-			}
-			share := workerShareCell(counts[i][rowIndex], eligible)
-			if picks[i].Model == r.model && picks[i].Harness == r.harness && picks[i].Model != "" {
-				share = sSel.Bold(true).Render(stripStyles(share))
-			}
-			cellsOut = append(cellsOut, share)
+		for _, level := range levels {
+			cellsOut = append(cellsOut, pickerPreviewCell(preview, level, r))
 		}
 		score := "-"
 		if r.scored && !r.stale {
@@ -710,9 +577,28 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 		}
 	}
-	body = append(body, sDim.Render(clip("T:trivial S:simple N:normal H:hard V:very complex", w-4)))
-	legend := "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible"
-	body = append(body, sDim.Render(clip(legend, w-4)))
+	legend := []string{
+		"T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen",
+		"the gateway's picker preview at the middle of each level, not simulated",
+	}
+	if len(preview) > 0 {
+		var picks []string
+		for _, level := range levels {
+			if name := preview[level]; name != "" {
+				picks = append(picks, strings.ToUpper(level[:1])+" "+name)
+			}
+		}
+		if len(picks) > 0 {
+			for _, line := range wrap(strings.Join(picks, " · "), w-4) {
+				body = append(body, sDim.Render(line))
+			}
+		}
+	} else {
+		body = append(body, sDim.Render(clip("the gateway sent no picker preview", w-4)))
+	}
+	for _, line := range legend {
+		body = append(body, sDim.Render(clip(line, w-4)))
+	}
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	if len(m.snap.ProtectedProviders.Providers) > 0 {
 		title = fmt.Sprintf("Workers · 🔒 protected · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
@@ -747,8 +633,8 @@ func workerUsage(r quotaModel) string {
 	return usage
 }
 
-// workerUsageShort fits the usage column when the table also shows the share
-// heatmap.
+// workerUsageShort fits the usage column when the table also shows the picker
+// preview columns.
 func workerUsageShort(r quotaModel) string {
 	if r.used <= 0 {
 		return "unused"

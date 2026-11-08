@@ -103,7 +103,7 @@ func (m Model) hints() []hint {
 		}
 		return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, actLast), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 	case m.tab == quotasTab && m.qualityDetail:
-		return []hint{bindingPairHint(contextQualityDetails, actUp, actDown), bindingPairHint(contextQualityDetails, actPageUp, actPageDown), bindingPairHint(contextQualityDetails, "previous agent", "next agent"), bindingHint(contextQualityDetails, "sub tab")}
+		return []hint{bindingPairHint(contextQualityDetails, actUp, actDown), bindingPairHint(contextQualityDetails, "previous bucket", "next bucket"), bindingHint(contextQualityDetails, "refresh"), bindingHint(contextQualityDetails, "sub tab"), bindingHint(contextQualityDetails, "help")}
 	case m.tab == quotasTab && m.workersLog:
 		if m.workerLogDetailsFocus {
 			return []hint{{key: "tab", label: "sub tab"}, {key: "↑↓", label: "scroll details"}, {key: "←", label: "runs"}, sessionHelp, sessionQuit}

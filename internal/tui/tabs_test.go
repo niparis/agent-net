@@ -84,6 +84,9 @@ func TestQuotaViewGoldens(t *testing.T) {
 				MachineAvailability: []protocol.WorkerProfileMachineAvailability{{Machine: "Mac", Available: true, ResolvedModel: "openai/gpt-6.1-terra"}, {Machine: "research", Closest: []string{"openai/gpt-6.1-terra"}}}},
 		}
 		m.snap.Scores = append(m.snap.Scores, protocol.ModelScore{Match: "openai-codex/gpt-6.1-zed", Score: 77, Source: "owner"})
+		m.snap.Nodes[0].QualityPickModels = map[string]string{
+			"trivial": "sol medium", "simple": "sol medium", "normal": "terra high", "hard": "terra high", "very_complex": "opus high",
+		}
 		m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "claude", Model: "claude-opus-5-5:high", Runs: 12, Complete: 10, Failed: 2}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
 			{Provider: "codex", Plan: "pro", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92, Pace: protocol.QuotaPaceAhead, ResetsAt: t0.Add(2 * time.Hour).Unix()}}},
@@ -157,7 +160,6 @@ func TestQuotaViewClosesPanelAtCTOWhenRowsOverflow(t *testing.T) {
 				Name: fmt.Sprintf("profile-%02d", i), Harness: "codex", Model: fmt.Sprintf("model-%02d", i),
 			})
 		}
-		m.refreshWorkerForecast()
 		view := lines(ansi.Strip(m.testView()))
 		for i, line := range view {
 			if strings.HasPrefix(line, "╭─CTO") {
@@ -446,31 +448,6 @@ func TestQuotaModelsSection(t *testing.T) {
 	}
 }
 
-func forecastPickForTest(m Model, model string) bool {
-	f := &workerForecastMemo{}
-	f.refresh(m, m.workerForecastInputs())
-	for _, pick := range f.picks {
-		if pick.Model == model {
-			return true
-		}
-	}
-	return false
-}
-
-func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
-	m := newModel(120, 34)
-	m.tab = 2
-	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
-	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
-	m.snap.Nodes[0].RecentModelFailures = map[string]map[string]bool{"codex": {"fake/a": true}}
-	m.snap.WorkerProviders = []string{"codex"}
-	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	v := ansi.Strip(m.testView())
-	if forecastPickForTest(m, "fake/b") == false || strings.Contains(v, "◀") {
-		t.Fatalf("choice ignored failed run:\n%s", v)
-	}
-}
-
 func TestQuotaShowsExcludedRegisteredWorker(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
@@ -479,18 +456,6 @@ func TestQuotaShowsExcludedRegisteredWorker(t *testing.T) {
 	v := ansi.Strip(m.testView())
 	if !strings.Contains(v, "router") || !strings.Contains(v, "not a worker provider") {
 		t.Fatalf("profile missing: %s", v)
-	}
-}
-
-func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
-	m := newModel(120, 34)
-	m.tab = 2
-	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
-	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
-	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
-	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	if v := ansi.Strip(m.testView()); forecastPickForTest(m, "fake/b") == false || strings.Contains(v, "◀") {
-		t.Fatalf("choice ignored success:\n%s", v)
 	}
 }
 
@@ -543,7 +508,7 @@ func TestWorkerPanelPicksAndTrackRecord(t *testing.T) {
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "artificialanalysis"}}
 	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	for _, s := range []string{"Workers · 1 registered · 0 running · scores: Artificial Analysis", "12·83%·2✗"} {
+	for _, s := range []string{"Workers · 1 registered · 0 running · scores: Artificial Analysis", "12 · 83% done · 2 failed"} {
 		if !strings.Contains(v, s) {
 			t.Errorf("missing %q in %s", s, v)
 		}
@@ -567,6 +532,9 @@ func TestWorkersPanelRedesign(t *testing.T) {
 	}
 	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "openai/gpt-6-luna:xhigh", Runs: 3, Complete: 2, Failed: 1}, {Harness: "codex", Model: "openai-codex/gpt-6.1-terra:high", Runs: 5, Complete: 5}}
 	m.snap.Nodes[0].Harnesses[0].ModelDefaultEfforts = map[string]string{"openai/gpt-6-luna": "xhigh", "openai-codex/gpt-6.1-terra": "high"}
+	m.snap.Nodes[0].QualityPickModels = map[string]string{
+		"trivial": "terra high", "simple": "terra high", "normal": "terra high", "hard": "luna xhigh", "very_complex": "terra high",
+	}
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{Harness: "codex", Online: true, Worker: &protocol.WorkerInfo{ID: "w1"}}, protocol.AgentView{Harness: "codex", Online: false, Worker: &protocol.WorkerInfo{ID: "w2"}})
 	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6-luna", Effort: "xhigh", Score: 30, Source: "artificialanalysis"}, {Match: "gpt-6.1-terra", Effort: "high", Score: 42.3, Source: "artificialanalysis"}}
 	m.snap.WorkerProviders = []string{"codex"}
@@ -578,11 +546,11 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"gpt-6-luna:xhigh",
 		"gpt-6.1-terra:high",
 		"opus-5.5",
-		"3·67%·1✗",
+		"3 · 67% done · 1 failed",
 		"5 · 100% done",
 		"unused",
-		"T S N H V: share of next 20",
-		"░<25% ▒<50% ▓<75% █≥75%",
+		"T:trivial S:simple N:normal H:hard V:very complex",
+		"T terra high · S terra high · N terra high",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("missing %q in:\n%s", want, plain)
@@ -591,17 +559,12 @@ func TestWorkersPanelRedesign(t *testing.T) {
 	if strings.Contains(plain, "workers now:") || strings.Contains(plain, "◀") {
 		t.Fatalf("old workers decoration remains:\n%s", plain)
 	}
-	if !strings.Contains(got, "48;2;") {
-		t.Fatalf("picked fit cell has no highlight background:\n%q", got)
-	}
-	for _, line := range strings.Split(plain, "\n") {
-		if strings.Contains(line, "T S N H V: share of next 20") && ansi.StringWidth(line) > 120 {
-			t.Fatalf("key line exceeds panel width: %q", line)
-		}
+	if !strings.Contains(plain, "▸") {
+		t.Fatalf("the picker preview is not marked:\n%s", plain)
 	}
 }
 
-func TestWorkersPanelShowsRotationShares(t *testing.T) {
+func TestWorkersPanelShowsGatewayPreview(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"openai-codex/gpt-6.1-terra", "openai/gpt-6-luna"}}}
@@ -612,141 +575,22 @@ func TestWorkersPanelShowsRotationShares(t *testing.T) {
 	}
 	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6.1-terra", Effort: "high", Score: 42.3}, {Match: "gpt-6-luna", Effort: "xhigh", Score: 30}}
 	m.snap.WorkerProviders = []string{"codex"}
-	terra := protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: "codex", Model: "openai-codex/gpt-6.1-terra:high"})
-	luna := protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: "codex", Model: "openai/gpt-6-luna:xhigh"})
-	m.snap.WorkerRotation = protocol.WorkerRotation{Levels: map[string]*protocol.WorkerRotationLevel{
-		"normal": {Recent: []string{terra, terra, luna}},
-	}}
+	m.snap.Nodes[0].QualityPickModels = map[string]string{
+		"trivial": "terra high", "simple": "terra high", "normal": "terra high", "hard": "luna xhigh", "very_complex": "terra high",
+	}
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	for _, want := range []string{"terra codex", "luna codex", "%"} {
+	for _, want := range []string{"terra codex", "luna codex", "▸", "T terra high", "H luna xhigh"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q in:\n%s", want, view)
 		}
 	}
-}
-
-func heatmapModel(t *testing.T, profiles []protocol.WorkerProfile, scores []protocol.ModelScore, providers []string) Model {
-	t.Helper()
-	m := newModel(120, 34)
-	m.tab = 2
-	m.snap.Nodes = m.snap.Nodes[:1]
-	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{
-		{Name: "codex", Models: []string{"openai-codex/gpt-6.1-alpha", "openai-codex/gpt-6.1-beta", "openai-codex/gpt-6.1-terra", "openai-codex/gpt-6.1-weak", "openai-codex/gpt-6.1-strong"}},
-		{Name: "opencode", Models: []string{"opencode-go/deepseek-v4.1-flash"}},
-		{Name: "claude", Models: []string{"claude-opus-5-5"}},
-	}
-	m.snap.WorkerProfiles = profiles
-	m.snap.WorkerProviders = providers
-	m.snap.Scores = scores
-	return m
-}
-
-// heatmapRow finds the table row for a profile, not the detail line.
-func heatmapRow(t *testing.T, view, name string) string {
-	t.Helper()
-	for _, line := range strings.Split(ansi.Strip(view), "\n") {
-		if strings.Contains(line, name) && strings.ContainsAny(line, "░▒▓█x·") {
-			return line
-		}
-	}
-	t.Fatalf("no heatmap row for %q in:\n%s", name, view)
-	return ""
-}
-
-func TestWorkerPanelHeatmapMatchesChooserShares(t *testing.T) {
-	profiles := []protocol.WorkerProfile{
-		{Name: "terra", Harness: "codex", Model: "openai-codex/gpt-6.1-terra"},
-		{Name: "deepseek", Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash"},
-	}
-	scores := []protocol.ModelScore{{Match: "gpt-6.1-terra", Score: 42.3}, {Match: "deepseek-v4.1-flash", Score: 32.5}}
-	m := heatmapModel(t, profiles, scores, []string{"codex", "opencode-go"})
-	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{
-		{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 20, ResetsAt: t0.Add(84 * time.Hour).Unix()}}},
-	}}
-
-	candidates := []protocol.WorkerModelCandidate{
-		{Name: "terra", Harness: "codex", Model: "openai-codex/gpt-6.1-terra"},
-		{Name: "deepseek", Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash"},
-	}
-	q := &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{
-		{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 20, ResetsAt: t0.Add(84 * time.Hour).Unix()}}},
-	}}
-	rotation := m.snap.WorkerRotation.Clone()
-	counts := map[string]int{}
-	for i := 0; i < workerShareStarts; i++ {
-		choice, err := protocol.ChooseWorkerModel(candidates, "normal", m.snap.Scores, m.snap.DifficultyMinimums, q, nil, &rotation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		counts[choice.Model]++
-	}
-	view := strings.Join(m.quotaModelsView(120), "\n")
-	for _, p := range profiles {
-		want := fmt.Sprintf("%d%%", counts[p.Model]*100/workerShareStarts)
-		row := heatmapRow(t, view, p.Name)
-		if !strings.Contains(row, want) {
-			t.Errorf("%s row lacks %s: %s", p.Name, want, row)
-		}
-	}
-	// Terra is thirty points behind pace, so it takes more of the next 20 starts
-	// even though the over-qualification penalty favours weaker models.
-	terra := heatmapRow(t, view, "terra")
-	deepseek := heatmapRow(t, view, "deepseek")
-	if counts["openai-codex/gpt-6.1-terra"] <= counts["opencode-go/deepseek-v4.1-flash"] {
-		t.Fatalf("terra did not win more: %v", counts)
-	}
-	if !strings.Contains(terra, "▓") || !strings.Contains(deepseek, "▒") {
-		t.Errorf("shades do not follow the shares: terra=%s deepseek=%s", terra, deepseek)
-	}
-}
-
-func TestWorkerPanelHeatmapProtectedProviderStaysAtZero(t *testing.T) {
-	profiles := []protocol.WorkerProfile{
-		{Name: "terra", Harness: "codex", Model: "openai-codex/gpt-6.1-terra"},
-		{Name: "claude", Harness: "claude", Model: "claude-opus-5-5"},
-	}
-	scores := []protocol.ModelScore{{Match: "gpt-6.1-terra", Score: 42.3}, {Match: "claude-opus-5-5", Score: 55}}
-	m := heatmapModel(t, profiles, scores, []string{"codex", "claude"})
-	m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}}
-	view := strings.Join(m.quotaModelsView(120), "\n")
-	claudeRow := heatmapRow(t, view, "claude")
-	if !strings.Contains(claudeRow, "·") {
-		t.Errorf("protected provider has no zero cell: %s", claudeRow)
-	}
-	// Terra qualifies for normal and hard; Claude is excluded below hard.
-	// Very complex is above Terra, so the protected provider is the only choice.
-	if !strings.Contains(claudeRow, "100%") {
-		t.Errorf("protected fallback is not 100%% at very complex: %s", claudeRow)
-	}
-	if !strings.Contains(heatmapRow(t, view, "terra"), "x") {
-		t.Errorf("terra should show x at very complex: %s", heatmapRow(t, view, "terra"))
-	}
-}
-
-func TestWorkerPanelHeatmapMarksBelowMinimum(t *testing.T) {
-	profiles := []protocol.WorkerProfile{
-		{Name: "weak", Harness: "codex", Model: "openai-codex/gpt-6.1-weak"},
-		{Name: "strong", Harness: "codex", Model: "openai-codex/gpt-6.1-strong"},
-	}
-	scores := []protocol.ModelScore{{Match: "gpt-6.1-weak", Score: 10}, {Match: "gpt-6.1-strong", Score: 55}}
-	m := heatmapModel(t, profiles, scores, []string{"codex"})
-	view := strings.Join(m.quotaModelsView(120), "\n")
-	if weak := heatmapRow(t, view, "weak"); !strings.Contains(weak, "x") {
-		t.Errorf("below-minimum model has no x: %s", weak)
-	}
-	if strong := heatmapRow(t, view, "strong"); !strings.Contains(strong, "100%") {
-		t.Errorf("strong model is not 100%%: %s", strong)
-	}
-	if got := workerShareCell(0, false); !strings.Contains(ansi.Strip(got), "x") {
-		t.Errorf("below-minimum cell is %q, want x", ansi.Strip(got))
-	}
-	if got := ansi.Strip(workerShareCell(0, true)); strings.TrimSpace(got) != "·" {
-		t.Errorf("zero share cell is %q, want a dot", got)
+	if strings.Contains(view, "share of next 20") || strings.Contains(view, "░") {
+		t.Errorf("the simulated heatmap remains:\n%s", view)
 	}
 }
 
 func TestWorkersPanelKeyAndLinesFitResponsiveWidths(t *testing.T) {
-	const legend = "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible"
+	legend := []string{"T:trivial S:simple N:normal H:hard V:very complex", "picker preview at the middle"}
 	for _, width := range []int{80, 100, 120} {
 		m := newModel(width, 34)
 		m.tab = 2
@@ -757,8 +601,10 @@ func TestWorkersPanelKeyAndLinesFitResponsiveWidths(t *testing.T) {
 				t.Errorf("Workers line at width %d is %d columns: %q", width, got, ansi.Strip(line))
 			}
 		}
-		if !strings.Contains(plain, legend) {
-			t.Errorf("Workers legend at width %d is missing %q:\n%s", width, legend, plain)
+		for _, want := range legend {
+			if !strings.Contains(plain, want) {
+				t.Errorf("Workers legend at width %d is missing %q:\n%s", width, want, plain)
+			}
 		}
 	}
 }
@@ -873,10 +719,8 @@ func TestQuotaEmptyTrack(t *testing.T) {
 	if !strings.Contains(v, "──────────") {
 		t.Fatal(v)
 	}
-	for _, line := range lines(v) {
-		if strings.Contains(line, "░") && !strings.Contains(line, "share of next 20") {
-			t.Fatalf("quota bar shade without a track: %s", line)
-		}
+	if strings.Contains(v, "share of next 20") {
+		t.Fatalf("the old heatmap remains: %s", v)
 	}
 }
 
@@ -1127,66 +971,6 @@ func TestQuotaCopyShownBeforeFirstReading(t *testing.T) {
 	if view := ansi.Strip(m.testView()); !strings.Contains(view, "quota-axi 0.1.66 · yours (/opt/homebrew/bin)") {
 		t.Fatal(view)
 	}
-}
-
-func TestWorkerPanelUsesTrackRecordForPicks(t *testing.T) {
-	m := newModel(120, 34)
-	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
-	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "cheap", Harness: "codex", Model: "fake/a"}, {Name: "strong", Harness: "codex", Model: "fake/b"}}
-	m.snap.WorkerProviders = []string{"codex"}
-	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 32}, {Match: "fake/b", Score: 42}}
-	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "fake/a", Runs: 5, Complete: 1, Partial: 4}}
-	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	if !strings.Contains(heatmapRow(t, v, "strong"), "%") {
-		t.Fatalf("track record not used for picks: %s", v)
-	}
-}
-
-// The Workers forecast runs the chooser for every start of every level. It is
-// rebuilt on events (new data, a change of the rows shown) and only when an
-// input changed; drawing the screen only reads it (v0.4.49 recomputed it on
-// every redraw and the TUI spent most of its time there on the Quotas tab).
-func TestWorkersForecastIsRebuiltOnlyByEventsThatChangeIt(t *testing.T) {
-	m := newModel(120, 34)
-	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"openai-codex/gpt-6.1-terra"}}}
-	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra codex", Harness: "codex", Model: "openai-codex/gpt-6.1-terra"}}
-	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6.1-terra", Score: 42.3}}
-	m.snap.WorkerProviders = []string{"codex"}
-	m.refreshWorkerForecast()
-	memo := m.workerForecastMemo
-	if memo == nil || memo.key == "" || len(memo.counts) == 0 {
-		t.Fatalf("forecast not built by the event: %+v", memo)
-	}
-	// Mark the kept forecast. Drawing, and a fetch with the same inputs, must
-	// keep it.
-	memo.picks[2].Model = "marker"
-	_ = m.quotaModelsView(120)
-	m.lastOK = time.Unix(2000, 0)
-	m.refreshWorkerForecast()
-	if m.workerForecastMemo.picks[2].Model != "marker" {
-		t.Fatal("the forecast was computed again although no input changed")
-	}
-	// A changed score is new data: drawing alone does not rebuild, the event does.
-	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6.1-terra", Score: 50}}
-	_ = m.quotaModelsView(120)
-	if m.workerForecastMemo.picks[2].Model != "marker" {
-		t.Fatal("drawing the screen rebuilt the forecast")
-	}
-	m.refreshWorkerForecast()
-	if m.workerForecastMemo.picks[2].Model == "marker" {
-		t.Fatal("a changed score did not rebuild the forecast")
-	}
-}
-
-func TestWorkerPanelMaximumLevelEligibility(t *testing.T) {
-	profiles := []protocol.WorkerProfile{{Name: "terra max", Harness: "codex", Model: "openai-codex/gpt-6.1-terra", Effort: "max"}}
-	m := heatmapModel(t, profiles, []protocol.ModelScore{{Match: "gpt-6.1-terra", Effort: "max", Score: 51}}, []string{"codex"})
-	view := strings.Join(m.quotaModelsView(120), "\n")
-	row := heatmapRow(t, view, "terra max")
-	if strings.Count(row, " x ") != 3 { // trivial, simple and normal
-		t.Fatalf("expected x at trivial, simple and normal: %s", row)
-	}
-	golden(t, "worker_maximum_level", view)
 }
 
 func TestQuotaMachineStatusColumns(t *testing.T) {
