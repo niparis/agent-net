@@ -101,12 +101,14 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		} else {
 			r.Status = "started"
 		}
+		// Report a failure before the failed state is visible; see launchOwnerClaude.
+		if r.Status == "failed" {
+			d.startFailed(r, notify)
+		}
 		d.mu.Lock()
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
-		if r.Status == "failed" {
-			d.startFailed(r, notify)
-		} else if notify {
+		if r.Status == "started" && notify {
 			d.notifySessionStart(r)
 		}
 	}(r)

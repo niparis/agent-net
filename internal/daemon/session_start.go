@@ -620,12 +620,15 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 			}
 			r.Status = "started"
 		}
+		// Report a failure before the failed state is visible, so a poller that
+		// sees "failed" also finds the log line and the gateway event.
+		if r.Status == "failed" {
+			d.startFailed(r, notify)
+		}
 		d.mu.Lock()
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
-		if r.Status == "failed" {
-			d.startFailed(r, notify)
-		} else if notify {
+		if r.Status == "started" && notify {
 			d.notifySessionStart(r)
 		}
 	}(r)
@@ -742,8 +745,8 @@ func (d *Daemon) failStartAgent(r protocol.StartedSession) {
 // startFailed reports a start that was answered as starting and then failed in
 // the background. It writes one daemon log line, tells the gateway, and, for a
 // start the owner asked for (notify), shows the error in the owner's TUI, as a
-// successful start is shown. Call it after r is stored in startedSessions, so
-// the failure is visible to session_start_get first.
+// successful start is shown. Call it before r is stored as failed, so that a
+// poller who sees "failed" also finds the log line and the gateway event.
 func (d *Daemon) startFailed(r protocol.StartedSession, notify bool) {
 	d.Logf("event=session.start_failed start=%s project=%s harness=%s error=%q", r.ID, r.Project, r.Harness, r.Error)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
