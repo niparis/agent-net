@@ -89,6 +89,6 @@ func (d *Daemon) toolDifferences(ctx context.Context, offset, limit int) (any, e
 		"to_look_at":  toolsdiff.Counts(diffs, accepted),
 		"not_listed":  len(diffs) - end,
 		"next":        next,
-		"note":        "Each difference has one suggested fix. Show the plan with tools_plan or mcp_import and wait for the owner before any apply.",
+		"note":        "Each difference has one suggested fix. Use tools_change to plan, apply or import the requested fix; reversible changes include undo.",
 	}, nil
 }

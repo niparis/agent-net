@@ -166,12 +166,16 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"mcp_change": {
-		desc: "Change shared MCP servers: add, remove, test or enable.",
+		desc: "Manage shared MCP servers, connected apps and internet access.",
 		fields: map[string]ctoField{
-			"action":  {typ: "string", enum: []string{"add", "remove", "test", "enable"}},
+			"action":  {typ: "string", enum: []string{"add", "remove", "test", "enable", "app_ask", "apps_list", "app_grant", "app_ungrant", "app_rename", "app_revoke", "public_status", "public_on", "public_off"}},
 			"server":  {typ: "object", desc: "Configuration."},
 			"name":    {typ: "string", desc: "Server name."},
 			"enabled": {typ: "boolean", desc: "Enable."},
+			"id":      {typ: "string", desc: "App ID from apps_list."},
+			"grant":   {typ: "string", desc: "mcp server <name>."},
+			"code":    {typ: "string", desc: "Code shown by the app or phone."},
+			"kind":    {typ: "string", enum: []string{"bot", "owner_app"}},
 			"on":      {typ: "string", desc: "Host; local default."},
 		},
 	},
@@ -181,9 +185,11 @@ var ctoTools = map[string]ctoToolDef{
 	"settings_change": {
 		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite or onboarding.",
 		fields: map[string]ctoField{
+			"method":              {typ: "string", enum: strings.Fields(protocol.CTOOperatorReads + " " + protocol.CTOOperatorChanges)},
+			"arguments":           {typ: "object", desc: "Arguments for the owner operation."},
 			"changes":             settingsChangesField(),
 			"revision":            {typ: "integer", desc: "Revision to undo."},
-			"area":                {typ: "string", enum: []string{"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
+			"area":                {typ: "string", enum: []string{"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
 			"name":                {typ: "string", desc: "Profile or machine name; empty clears."},
 			"harness":             {typ: "string", desc: "Harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":               {typ: "string", desc: "Model ID or name."},

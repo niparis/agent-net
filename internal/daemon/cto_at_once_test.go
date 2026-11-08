@@ -395,6 +395,12 @@ func TestCTOPlaybookInboxUndo(t *testing.T) {
 func TestCTOActionClassCoverage(t *testing.T) {
 	for tool, actions := range ctoChangeActions {
 		for action := range actions {
+			if tool == "mcp_change" && (action == "apps_list" || action == "public_status") {
+				if ctoActionClasses[tool][action] != ctoRead {
+					t.Errorf("app read classified as mutation: %s %s", tool, action)
+				}
+				continue
+			}
 			if class, ok := ctoActionClasses[tool][action]; !ok || (class != ctoMinor && class != ctoProposal) {
 				t.Errorf("unclassified %s %s", tool, action)
 			}

@@ -148,15 +148,15 @@ func TestAppsPublicOwnTailscaleNodeNeedsLogin(t *testing.T) {
 	g := nodeGateway(t, dir, node, &publicRunner{})
 	defer g.Close()
 	v, err := g.handle(context.Background(), &nodeConn{}, "apps.public.on", nil)
-	if err == nil || !strings.Contains(err.Error(), "https://login.tailscale.com/a/test123") || !strings.Contains(err.Error(), "press p again") {
+	if err == nil || !strings.Contains(err.Error(), "https://login.tailscale.com/a/test123") || !strings.Contains(err.Error(), "Inbox") {
 		t.Fatalf("on: %v %v", v, err)
 	}
 	if g.public.On || g.tsNode == nil {
 		t.Fatalf("on=%v, node kept=%v", g.public.On, g.tsNode != nil)
 	}
-	// After the owner logs in, p again uses the same node.
+	// Status retries automatically after the owner logs in.
 	node.needsLogin = false
-	if on := publicCall(t, g, "apps.public.on", nil); on["on"] != true || on["error"] != "" {
+	if on := publicCall(t, g, "apps.public.status", nil); on["on"] != true || on["error"] != "" {
 		t.Fatalf("after login: %v", on)
 	}
 	if node.ups != 2 {

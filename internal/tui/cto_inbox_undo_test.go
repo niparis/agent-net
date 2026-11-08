@@ -119,3 +119,12 @@ func TestCTOLogUndoSessionStopResumes(t *testing.T) {
 		t.Fatalf("undo: %q %s %v", method, args, ok)
 	}
 }
+
+func TestCTOLogUndoApps(t *testing.T) {
+	for _, method := range []string{"apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off"} {
+		got, _, ok := logUndo(logEntry(1, "x", method, `{"id":"app_fixture"}`))
+		if !ok || got != method {
+			t.Fatalf("%s undo not available", method)
+		}
+	}
+}

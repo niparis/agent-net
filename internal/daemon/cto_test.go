@@ -819,7 +819,7 @@ func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
 }
 
 func TestCTOBriefToolsWorkflow(t *testing.T) {
-	for _, want := range []string{"ask the owner to share the relevant inventory or plan", "Tools plans, apply, undo, MCP import and native removal apply at once"} {
+	for _, want := range []string{"inspect the inventory with settings_change area operator", "Tools plans, apply, undo, MCP import and native removal apply at once"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief lacks %q", want)
 		}

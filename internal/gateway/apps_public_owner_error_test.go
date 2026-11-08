@@ -45,7 +45,7 @@ func TestAppsPublicOwnerFacingFunnelErrors(t *testing.T) {
 		{"operator", "On research-gateway (the gateway machine, where internet access runs), run once in a terminal: sudo tailscale set --operator=$USER. Then press p again."},
 		{"missing", "Tailscale is not installed on research-gateway (the gateway machine). Install it there, or use your own tunnel URL (u)."},
 		{"not-running", "Tailscale is not running on research-gateway (the gateway machine). Start it there, then press p again."},
-		{"not-allowed", "Allow Funnel for your tailnet: open https://tailscale.com/s/no-funnel, then press p again."},
+		{"not-allowed", "Approve Funnel in the Inbox: https://tailscale.com/s/no-funnel. Internet access resumes after approval."},
 	} {
 		t.Run(tt.kind, func(t *testing.T) {
 			host, err := os.Hostname()

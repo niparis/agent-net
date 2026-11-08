@@ -133,16 +133,87 @@ restart. A resume never opens a view and carries no herdr location. A CTO can
 therefore interrupt a running turn of any agent session, as the owner can; the
 conversation is kept, and the Inbox notice for a stop can resume it.
 
-The read rule follows decision 0035: a CTO data view calls the same daemon
-function as its matching ordinary agent tool, with the CTO caller identity,
-never a CLI or owner identity. The parity table in [reference.md](reference.md)
-lists every source. Views with no ordinary tool are removed, including charter
-history and the owner-only parts of the graph, the Desk (tab 7), inboxes, settings,
-tools inventory, session text, the network feed and worker lists. Static
-charter guidance and the CTO's own timeline are the only exceptions. A protected-provider read schema exists
-for ordinary agents, but its daemon method is owner-gated, so it is removed
-from the CTO too. Caller-scoped reads use the registered CTO session ID, never
-the owner's ID. Before registration they fail closed.
+**Connected apps.** The private CTO may list connected apps and public-access
+status, grant or remove a bot's shared MCP server access, rename an app, revoke
+it, and switch internet access on or off through `mcp_change`. These calls use
+the existing owner handlers after the CTO process-tree check and explicit
+classification. Ordinary agent and worker access stays refused. The app list
+includes names, client metadata, grants and revocation state, never credentials.
+This is an explicit exception to the public-read rule below, authorized by the
+owner's request for CTO operator access on 2026-11-08.
+
+A grant is still only `mcp server <name>`, only for an active bot and a registered
+server. The server's allowed-tool filter and per-app call limit still apply.
+Removing a grant takes effect on the next request. Rename still requires a
+unique active name and updates the bot session. Revocation invalidates app
+credentials and may switch access off when no active apps remain. It cannot
+restore credentials through undo; reconnecting needs owner consent. Public
+access uses the gateway's existing listener and Tailscale or tunnel setup.
+A new Tailscale login or OAuth consent still requires the owner.
+
+Every CTO app call has a durable local audit line, including reads and failures.
+Successful mutations also create a CTO notice in the Inbox and Desk log. Names,
+grants and the public switch save their previous values for Inbox undo; a
+request for an already-set value preserves that value on undo. Revocation has
+no undo action. No extra approval gate is added. The CTO tool-list
+regression test allows 36 KiB of serialized schemas, increased from 32 KiB to
+keep connected-app and trust/standing-orders descriptions readable. This is a
+test budget, not an authority check or a runtime request limit.
+
+**Private owner operations.** On 2026-11-08 the owner authorized the CTO to
+perform owner actions. `settings_change` area `operator` adds an explicit enum
+of owner methods. The private process-tree check and action classification run
+before the existing owner handlers, which retain their argument validation.
+This route can read owner Inbox/Desk and asks, other sessions' text and stored
+conversations, usage, inventory and skill files, full settings and playbooks,
+worker selection data, graph history and delivery records. Ordinary agent
+schemas and caller-scoped reads remain unchanged. The CTO must keep these
+results private unless the owner asks it to share them.
+
+New mutation powers include session pinning, stop/resume, archive/restore and
+agent binding; hidden-session, quality, timezone, onboarding, worker-floor and
+difficulty preferences; Team authority modes and held back text, delivery-owner
+assignments and merger set/clear; tool copy/import/export, accepted versions and
+MCP coverage plans/apply/undo; gateway backups, learned-suggestion answers,
+delivery reports and defect reports; app refusal and public URL changes.
+Node names, project registration/removal/display, Graph autonomy and worker
+profiles already have private CTO paths. No new approval gate is added.
+
+All calls record a durable CTO audit line, including failures and reads.
+Changes also record Inbox/Desk notices. Supported undo stores the old value,
+uses graph/settings history, or uses an existing inverse action. Merger undo
+restores registrations, routing edges and pipeline settings. Composite undo
+checks every operation before executing any, and cannot include app consent.
+An archive preview has an audit line but no mutation notice or undo. Exports,
+backups, imports, append-only reports and sent messages cannot be undone by
+deleting their artifacts. Stop/resume inverses do not undo a session's work.
+
+**Owner consent.** The CTO may open an app or phone pairing ask with
+`mcp_change app_ask`, using a live pending code. The ask includes that code and
+the requested app type/name. The owner answers through the existing Inbox
+approval handler. The daemon supplies CTO attribution itself; a CTO answer
+cannot approve this ask. Payload changes replace the ask ID, so an old approval
+cannot authorize new permissions. Approval/refusal closes the ask in the same
+transaction as the pending request; expiry and completion elsewhere also close
+it. The CTO cannot invoke `apps.approve` through the operator or undo route.
+
+Tailscale login and Funnel consent asks contain the HTTPS link. The TUI opens
+it only after the owner's answer, with an HTTPS-only browser opener. Approval
+in the browser remains the owner's action. The gateway retries the requested
+public switch and closes the ask on success; switching off withdraws it.
+
+**Owner UI and invites.** Session/CTO entry relays an identifier-only request
+to one connected owner TUI, which retains its own herdr context and existing
+entry rules. It cannot carry a command, start plan or terminal flags. A missing
+owner TUI is an error. Optional `ui_node_id` selects the target. Private CTO
+network identity recovery reuses the registered identity on its own node and
+cannot move a CTO home registered elsewhere. Only an actual owner start moves
+home. Gateway-hosted invite creation can be requested by the CTO from another
+enrolled machine through the owner-validated gateway route.
+
+Decision 0035 still governs ordinary agent-shaped CTO reads: they use the CTO
+caller and ordinary checks. Decision 0097 adds the explicit private operator
+exceptions above; it does not widen ordinary agents' reads.
 
 Ordinary agent list/detail reads omit waiting-question contents. Owner CLI/TUI
 reads retain them. Senders of requests to a waiting session and bots receive
@@ -150,10 +221,9 @@ only the waiting kind and start time in the waiting notice or send receipt,
 never the question or tool summary. Agent
 message lists force the bound caller's session ID;
 message status requires that caller to be a sender or recipient and never
-uses the owner-only body relay. The CTO uses those same checks. Public model
+uses the owner-only body relay. The CTO uses those same checks on ordinary agent-shaped reads. Public model
 playbook notes in `agent_machines_find` remain public; the owner-only full playbook
-view is removed. No ordinary agent read is widened for the CTO, except where
-the owner widened it for every agent.
+view is available through the private operator route. No ordinary agent read is widened.
 
 **Team delivery.** Only the CTO can send to a group. A team selector uses typed membership and repo owner links to select online sessions. It grants no authority. Team recipients are resolved when the message is sent, so a member removed at that same moment can still receive that one message. Legacy team-send proposals check membership again when approved. An enrolled machine and the gateway remain trusted to report the graph and session identities.
 

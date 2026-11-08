@@ -17,10 +17,19 @@ func (d *Daemon) ctoSessionID() string {
 	return id
 }
 
-// Called when the owner starts a CTO turn, never from the CTO tool path.
+// Called when the owner starts a CTO turn, or a process-verified private CTO
+// tool restores a missing network identity. Peer messages never register it.
 // The gateway, not a native conversation or the owner's chosen title, owns ID.
 func (d *Daemon) registerCTOSession(ctx context.Context) error {
-	raw, err := d.ctoAttributedCall(ctx, "cto.session.register", map[string]string{"owner": d.ownerSessionID()})
+	return d.saveCTONetwork(ctx, "cto.session.register")
+}
+
+func (d *Daemon) restoreCTOSession(ctx context.Context) error {
+	return d.saveCTONetwork(ctx, "cto.session.restore")
+}
+
+func (d *Daemon) saveCTONetwork(ctx context.Context, method string) error {
+	raw, err := d.ctoAttributedCall(ctx, method, map[string]string{"owner": d.ownerSessionID()})
 	if err != nil {
 		return err
 	}
@@ -47,7 +56,7 @@ func (d *Daemon) ctoMessage(ctx context.Context, action string, raw json.RawMess
 	}
 	out = protocol.MsgSend{Sender: d.ctoSessionID(), Body: q.Body, Type: protocol.TypeRequest}
 	if out.Sender == "" {
-		return out, errors.New("CTO network session is not registered; start the CTO from the owner interface")
+		return out, errors.New("CTO network session is not registered; retry after the gateway reconnects")
 	}
 	switch action {
 	case "send":

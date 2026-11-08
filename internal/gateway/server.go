@@ -5,6 +5,7 @@ package gateway
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -454,6 +455,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			func() {
 				defer g.slowLoop("expiry", time.Now())
 				g.logStepDispatchCount()
+				g.retryPublicConsent(ctx)
 				if err := g.store.checkSessionStalls(); err != nil {
 					g.logLine("error", "where", "session stalls", "err", err)
 				}
@@ -806,7 +808,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
+		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -956,12 +958,58 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		defer g.scheduleNewSkillProjects()
 	}
 	switch typ {
-	case "cto.session.register":
+	case "owner.ui.request":
+		return g.requestOwnerUI(ctx, nc, raw)
+	case "owner.worker_floors.reset":
+		var p struct {
+			Owner string `json:"owner"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		_, err := st.db.Exec(`DELETE FROM owner_settings WHERE key=?`, workerFloorsKey)
+		if err == nil {
+			st.Event("worker_floors.reset", nc.id, p.Owner, "", "")
+		}
+		return map[string]bool{"reset": err == nil}, err
+	case "owner.invite":
+		var p struct {
+			Owner string `json:"owner"`
+			Host  string `json:"host"`
+			Port  string `json:"port"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		port, err := strconv.Atoi(p.Port)
+		if err != nil || port < 1 || port > 65535 || p.Host == "" || strings.ContainsAny(p.Host, "'\"\r\n") {
+			return nil, reject("invalid invite address")
+		}
+		return Invite(InviteOptions{Host: p.Host, Port: p.Port, Data: g.opts.DataDir})
+	case "cto.session.register", "cto.session.restore":
 		p, err := decode[struct {
 			Owner string `json:"owner"`
 		}](raw)
 		if err != nil || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
+		}
+		if typ == "cto.session.restore" {
+			id, err := st.CTOSessionID()
+			if err != nil {
+				return nil, err
+			}
+			if id != "" {
+				agent, found, err := st.Agent(id)
+				if err != nil {
+					return nil, err
+				}
+				if found && agent.NodeID != nc.id {
+					return nil, reject("CTO is registered on another machine")
+				}
+				if found {
+					return map[string]string{"session_id": id}, nil
+				}
+			}
 		}
 		id, err := st.RegisterCTOSession(nc.id)
 		return map[string]string{"session_id": id}, err
@@ -1862,6 +1910,40 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			g.dispatchStepTasks(ctx)
 		}
 		return map[string]bool{"ok": true}, err
+	case "merger.restore":
+		var p struct {
+			Owner       string                      `json:"owner_session"`
+			Project     string                      `json:"project"`
+			Assignments []protocol.MergerSetRequest `json:"assignments"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		err := st.RestoreMergerRegistrations(p.Project, p.Assignments)
+		if err == nil {
+			g.logLine("merger.restore", "project", p.Project, "by", graphActor(raw))
+			g.dispatchStepTasks(ctx)
+		}
+		return map[string]bool{"ok": err == nil}, err
+	case "merger.get":
+		var p protocol.MergerSetRequest
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) || p.Project == "" {
+			return nil, reject("owner and project required")
+		}
+		rows, err := st.db.Query(`SELECT project,node_id,session_id FROM project_mergers WHERE project=? ORDER BY node_id`, p.Project)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := []protocol.MergerSetRequest{}
+		for rows.Next() {
+			var q protocol.MergerSetRequest
+			if err := rows.Scan(&q.Project, &q.NodeID, &q.SessionID); err != nil {
+				return nil, err
+			}
+			out = append(out, q)
+		}
+		return out, rows.Err()
 	case "merger.plan":
 		p, err := decode[protocol.MergerSetRequest](raw)
 		if err != nil || p.Project == "" {
@@ -2264,7 +2346,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: identity.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces})
 		return map[string]any{"item": item}, err
 
-	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
+	case "apps.ask":
+		var p struct {
+			Owner string `json:"owner"`
+			Code  string `json:"code"`
+			Kind  string `json:"kind"`
+			Name  string `json:"name"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return st.OpenAppConsent(p.Code, p.Kind, p.Name)
+	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url", "apps.public.restore":
 		return g.publicOperation(ctx, typ, raw)
 	case "apps.list":
 		apps, err := st.ListApps()
@@ -2396,12 +2489,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "inbox.answer":
 		var p struct {
-			ID     string `json:"item_id"`
-			Answer string `json:"answer"`
+			ID      string `json:"item_id"`
+			Answer  string `json:"answer"`
+			FromCTO bool   `json:"from_cto"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
 			return nil, reject("bad inbox.answer")
+		}
+		var owner string
+		if err := st.db.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness=? LIMIT 1`, nc.id, protocol.OwnerHarness).Scan(&owner); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		if handled, err := st.answerAppConsent(p.ID, p.Answer, owner, p.FromCTO); handled {
+			return map[string]bool{"answered": err == nil}, err
 		}
 		item, err := st.AnswerInbox(p.ID, p.Answer)
 		if err != nil {
