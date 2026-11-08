@@ -330,3 +330,46 @@ func (d *Daemon) focusHerdrSession(socket, harness, native, host, name string) (
 	}
 	return protocol.EnterPlan{}, false
 }
+
+// A pane that runs `claude attach <job>` has the agent claude but no
+// agent_session, so focusHerdrSession cannot see it. Find it through the
+// processes of each pane, so that a second Enter, a daemon restart or a pane
+// the owner opened by hand never leads to a second tab for the same job.
+func (d *Daemon) focusHerdrAttachClient(socket, job, host, name string) (protocol.EnterPlan, bool) {
+	if job == "" {
+		return protocol.EnterPlan{}, false
+	}
+	bin := d.herdrBinary("")
+	if bin == "" {
+		return protocol.EnterPlan{}, false
+	}
+	if !filepath.IsAbs(socket) {
+		socket = ""
+	}
+	panes, err := d.herdrPanes(bin, socket)
+	if err != nil {
+		return protocol.EnterPlan{}, false
+	}
+	for _, pane := range panes {
+		if !herdrIDRe.MatchString(pane.PaneID) {
+			continue
+		}
+		for _, pid := range d.herdrPaneProcesses(bin, socket, pane.PaneID) {
+			if claudeAttachJob(processArgs(pid)) != job {
+				continue
+			}
+			if pane.Agent != "" {
+				_, err = d.herdrRun(bin, socket, "agent", "focus", pane.PaneID)
+			} else if herdrIDRe.MatchString(pane.TabID) {
+				_, err = d.herdrRun(bin, socket, "tab", "focus", pane.TabID)
+			} else {
+				err = fmt.Errorf("pane has no tab ID")
+			}
+			if err != nil {
+				return protocol.EnterPlan{Host: host, Note: "cannot focus " + cleanLine(name) + " in herdr; open pane " + pane.PaneID}, true
+			}
+			return openedHerdrPlan(host, name, pane.PaneID), true
+		}
+	}
+	return protocol.EnterPlan{}, false
+}

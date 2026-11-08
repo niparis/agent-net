@@ -203,6 +203,7 @@ type herdrPaneInfo struct {
 	TabID      string `json:"tab_id"`
 	TerminalID string `json:"terminal_id"`
 	Agent      string `json:"agent"`
+	Focused    bool   `json:"focused"`
 	Session    *struct {
 		Agent string `json:"agent"`
 		Kind  string `json:"kind"`
@@ -259,6 +260,50 @@ func (d *Daemon) herdrHolds(bin, socket, pane string, pids map[int]bool) bool {
 		}
 	}
 	return false
+}
+
+// herdrPaneProcesses lists the pids of a pane: its shell and the processes of
+// its foreground group.
+func (d *Daemon) herdrPaneProcesses(bin, socket, pane string) []int {
+	out, err := d.herdrRun(bin, socket, "pane", "process-info", "--pane", pane)
+	if err != nil {
+		return nil
+	}
+	var r struct {
+		Result struct {
+			Info struct {
+				ShellPID int `json:"shell_pid"`
+				Procs    []struct {
+					PID int `json:"pid"`
+				} `json:"foreground_processes"`
+			} `json:"process_info"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(out, &r) != nil {
+		return nil
+	}
+	var pids []int
+	if r.Result.Info.ShellPID > 1 {
+		pids = append(pids, r.Result.Info.ShellPID)
+	}
+	for _, p := range r.Result.Info.Procs {
+		if p.PID > 1 {
+			pids = append(pids, p.PID)
+		}
+	}
+	return pids
+}
+
+// claudeAttachJob returns the job ID of a `claude attach <job>` command line,
+// or "". The program may be started through an interpreter, so the word
+// `claude` may be the first or the second argument.
+func claudeAttachJob(args []string) string {
+	for i := 0; i < len(args) && i < 2; i++ {
+		if filepath.Base(args[i]) == "claude" && i+2 < len(args) && args[i+1] == "attach" {
+			return args[i+2]
+		}
+	}
+	return ""
 }
 
 // pidChain is pid and its parents.
@@ -367,4 +412,49 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 		out.HerdrPane = pane.PaneID
 	}
 	return out, true
+}
+
+// AttachClientViewing says whether the owner is looking at the `claude attach`
+// client with this pid (idle compaction, decision 0078). It does when the
+// client runs outside herdr, or in a herdr pane that herdr reports as focused.
+// A client in an unfocused pane does not. When herdr cannot say where the
+// client is, the owner may be looking at it, so it counts as viewing.
+func (d *Daemon) AttachClientViewing(pid int) bool {
+	h, found := findHerdrPane(pid)
+	fromServer := false
+	if !found {
+		h, found = findHerdrServer(pid)
+		fromServer = found
+	}
+	if !found {
+		return true
+	}
+	bin := d.herdrBinary(h.bin)
+	if bin == "" {
+		return true
+	}
+	var panes []herdrPaneInfo
+	if fromServer {
+		var ok bool
+		panes, h.socket, ok = d.herdrPanesFromServer(bin, h)
+		if !ok {
+			return true
+		}
+	} else {
+		var err error
+		if panes, err = d.herdrPanes(bin, h.socket); err != nil {
+			return true
+		}
+	}
+	// The pane in the environment is where the client started; a moved pane has
+	// a new ID, so check what the pane holds and look at the others if needed.
+	pids := pidChain(pid)
+	for _, own := range []bool{true, false} {
+		for _, p := range panes {
+			if (p.PaneID == h.id) == own && d.herdrHolds(bin, h.socket, p.PaneID, pids) {
+				return p.Focused
+			}
+		}
+	}
+	return true
 }

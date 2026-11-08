@@ -2322,6 +2322,8 @@ While the TUI has handed its terminal to a session, agent-net keeps the bottom r
 
 **herdr.** The daemon finds the binary from the session's `HERDR_BIN_PATH`, the server command line, the configured harness path, `PATH`, or `~/.local/bin/herdr`. It uses `herdr pane list` and `herdr pane process-info` to find the pane holding a session process. A moved pane is found the same way. `herdr agent focus` focuses a recognized agent, and `herdr tab focus` focuses the tab of a plain terminal. Herdr's existing clients can remain on their previous tab after a focus command; select the named tab if needed.
 
+A background Claude session has no `agent_session` in `herdr pane list` when its pane runs `claude attach <id>`. Before opening a new view, the daemon looks at the foreground processes of every pane (`herdr pane process-info`), reads their command lines, and focuses a pane that already runs `claude attach <id>` for that session. This also works after a daemon restart.
+
 For a new view, agent-net uses `herdr pane split --pane <tui-pane> --direction right --focus` and `herdr pane rename` inside herdr, or `herdr tab create --label <name> --focus` outside it. It uses `herdr pane run` to launch the session. A private one-use environment file keeps worker credentials out of command arguments and pane text. The pane removes the file after use; the daemon also removes it after one minute while it is running. Claude's herdr client has mouse tracking enabled; the old terminal fallback still disables it for text selection. A second Enter focuses the existing pane instead of creating another one, while that pane remains present. The daemon also remembers panes it opened during its current run.
 
 On macOS the daemon reads process environments and command lines with `sysctl kern.procargs2` when permitted. If Herdr's pane variables are not readable, it checks the process ancestry and candidate server sockets.
@@ -2984,7 +2986,11 @@ apply these advice settings immediately, without owner approval.
 Idle time starts at the latest session-file or transcript write. Context tokens
 are the latest assistant usage: input plus cache read plus cache creation.
 A running `claude attach <jobId>` process, found through `ps`, prevents automatic
-compaction. The daemon checks again before typing, excluding its own client.
+compaction only when the owner can be looking at it: the client runs outside
+herdr, or in a herdr pane that `herdr pane list` reports as `focused: true`.
+A client in an unfocused herdr pane does not block, so tabs left open for days
+do not stop compaction. If herdr cannot say where a client runs, it counts as
+viewed. The daemon checks again before typing, excluding its own client.
 If the process scan fails it skips compaction.
 
 The daemon opens its own attach client in a pseudo-terminal, waits up to 30
@@ -2992,7 +2998,10 @@ seconds for the prompt, sends `/compact` and Enter, then waits up to five minute
 for a new `compact_boundary` transcript record. It closes and reaps the attach
 client and checks that the background process is alive. Each idle stretch gets
 one attempt, including failures; a later busy turn resets it. This guard resets
-when the daemon restarts. Logs record the outcome. After success the Sessions
+when the daemon restarts. Logs record the outcome. Each attempt or skip decision
+writes one line, `event=idle_compact session=<id> result=<ok|skipped:reason|error>`,
+with the reasons `small_context` and `viewing`; the same skip reason is logged
+once per session in an idle stretch. After success the Sessions
 row says `compacted while idle HH:MM`, in your display time zone, until a new turn.
 The separate CTO compaction loop handles OpenCode, so it does not overlap.
 

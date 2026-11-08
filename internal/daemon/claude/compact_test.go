@@ -18,6 +18,9 @@ func TestIdleCompact(t *testing.T) {
 		tokens                                         int
 		age                                            time.Duration
 		attached, noPrompt, disabled, scanError, noJob bool
+		clients                                        string // ps output; the clients' pids are asked to the host
+		viewing                                        bool   // the host says the client's herdr pane is focused, or outside herdr
+		wantLog                                        string
 		want                                           int
 	}{
 		{name: "eligible", status: "idle", kind: "bg", tokens: 200000, age: 50 * time.Minute, want: 1},
@@ -30,6 +33,9 @@ func TestIdleCompact(t *testing.T) {
 		{name: "disabled", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, disabled: true},
 		{name: "process scan failure", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, scanError: true},
 		{name: "missing job ID", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, noJob: true},
+		{name: "attach client in an unfocused herdr pane", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, clients: "77 claude attach job-test", want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "attach client in a focused herdr pane or outside herdr", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, clients: "77 claude attach job-test", viewing: true, wantLog: "event=idle_compact session=test result=skipped:viewing"},
+		{name: "small context is logged once", status: "idle", kind: "bg", tokens: 100000, age: time.Hour, wantLog: "event=idle_compact session=test result=skipped:small_context"},
 		{name: "prompt timeout", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, noPrompt: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -79,7 +85,7 @@ func TestIdleCompact(t *testing.T) {
 			t.Setenv("COMPACT_TRANSCRIPT", transcript)
 			starts := filepath.Join(dir, "starts")
 			t.Setenv("COMPACT_STARTS", starts)
-			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}}
+			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}, viewing: map[int]bool{77: tc.viewing}}
 			if tc.disabled {
 				h.snap.Values = []settings.Value{{Key: "sessions.idle_compaction", Level: "network", Scope: "network", Value: []byte("false")}}
 			}
@@ -89,11 +95,15 @@ func TestIdleCompact(t *testing.T) {
 			a.compactBinary = bin
 			a.compactPromptTimeout = 100 * time.Millisecond
 			a.compactTimeout = time.Second
-			a.compactAttached = func(context.Context) (map[string]bool, error) {
-				if tc.scanError {
-					return nil, fmt.Errorf("process scan failed")
+			if tc.clients != "" {
+				a.compactPS = func(context.Context) ([]byte, error) { return []byte(tc.clients), nil }
+			} else {
+				a.compactAttached = func(context.Context) (map[string]bool, error) {
+					if tc.scanError {
+						return nil, fmt.Errorf("process scan failed")
+					}
+					return map[string]bool{"job-test": tc.attached}, nil
 				}
-				return map[string]bool{"job-test": tc.attached}, nil
 			}
 			a.poll()
 			a.compactOnce(context.Background())
@@ -117,28 +127,42 @@ func TestIdleCompact(t *testing.T) {
 			if len(startBytes) != wantStarts {
 				t.Fatalf("attach attempts=%d want %d", len(startBytes), wantStarts)
 			}
-			if tc.want > 0 {
-				if got := h.current()[0].IdleCompactedAt; got != started.Unix() {
-					t.Fatalf("note timestamp=%d", got)
+			if tc.wantLog != "" {
+				n := 0
+				for _, l := range h.logs {
+					if strings.Contains(l, "event=idle_compact") {
+						n++
+						if l != tc.wantLog {
+							t.Errorf("event line %q, want %q", l, tc.wantLog)
+						}
+					}
 				}
-				// A real busy observation starts a new stretch; polling idle alone did not.
-				a.mu.Lock()
-				f := a.byNative["test"]
-				f.info.Status = "busy"
-				a.byNative["test"] = f
-				a.observeCompactStateLocked(f.info)
-				f.info.Status = "idle"
-				f.info.LastActive = old.Unix()
-				a.byNative["test"] = f
-				a.mu.Unlock()
-				a.compactOnce(context.Background())
-				data, _ = os.ReadFile(transcript)
-				if strings.Count(string(data), `"compact_boundary"`) != 3 {
-					t.Fatalf("next idle stretch did not compact: %s logs=%v", data, h.logs)
+				if n != 1 {
+					t.Errorf("%d event lines for one idle stretch, want 1; logs=%v", n, h.logs)
 				}
-			}
-			if tc.noPrompt && len(h.logs) == 0 {
-				t.Fatal("timeout was not logged")
+				if tc.want > 0 {
+					if got := h.current()[0].IdleCompactedAt; got != started.Unix() {
+						t.Fatalf("note timestamp=%d", got)
+					}
+					// A real busy observation starts a new stretch; polling idle alone did not.
+					a.mu.Lock()
+					f := a.byNative["test"]
+					f.info.Status = "busy"
+					a.byNative["test"] = f
+					a.observeCompactStateLocked(f.info)
+					f.info.Status = "idle"
+					f.info.LastActive = old.Unix()
+					a.byNative["test"] = f
+					a.mu.Unlock()
+					a.compactOnce(context.Background())
+					data, _ = os.ReadFile(transcript)
+					if strings.Count(string(data), `"compact_boundary"`) != 3 {
+						t.Fatalf("next idle stretch did not compact: %s logs=%v", data, h.logs)
+					}
+				}
+				if tc.noPrompt && len(h.logs) == 0 {
+					t.Fatal("timeout was not logged")
+				}
 			}
 		})
 	}
@@ -146,8 +170,11 @@ func TestIdleCompact(t *testing.T) {
 
 type compactHost struct {
 	*fakeHost
-	snap settings.Snapshot
+	snap    settings.Snapshot
+	viewing map[int]bool
 }
+
+func (h *compactHost) AttachClientViewing(pid int) bool { return h.viewing[pid] }
 
 func (h *compactHost) SettingsSnapshot() settings.Snapshot { return h.snap }
 
