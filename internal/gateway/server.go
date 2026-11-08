@@ -819,7 +819,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveWorker(ctx, nc, h, raw)
 			continue
 		}
-		if isSessionRelay(h.Type) || h.Type == protocol.FrameProjectChange || h.Type == protocol.FrameSessionTrustFolder || h.Type == protocol.FrameSessionMCPServers {
+		if isSessionRelay(h.Type) || h.Type == protocol.FrameProjectChange || h.Type == protocol.FrameSessionTrustFolder || h.Type == protocol.FrameSessionMCPServers || h.Type == protocol.FrameSessionStopProcess {
 			// The target machine may ask this gateway a question while it acts,
 			// so the relay must not run in this node's read loop.
 			go g.answer(ctx, nc, h, raw)
@@ -1331,6 +1331,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case protocol.FrameSessionMCPServers:
 		return g.handleFolderMCPRelay(ctx, nc, raw)
+	case protocol.FrameSessionStopProcess:
+		return g.handleProcessStopRelay(ctx, nc, raw)
 
 	case "query.projects":
 		p, err := decode[protocol.QueryProjects](raw)

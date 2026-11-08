@@ -1037,6 +1037,7 @@ The CTO design lists what its rules leave open ([design section 10](design/cto-a
 - **An agent asks the CTO to relay a request.** A plain send carries the peer note, so the receiver judges it like any peer request. This is the same as an agent relaying a request itself.
 - **A proposal shaped by public data.** The CTO reads only public data, and nothing it reads runs anything. Injected text can still shape an immediate action.
 - **A forged CTO note or flag.** The CTO send path sets the CTO flag, and the gateway accepts it only from the recorded CTO session. As elsewhere, the gateway trusts enrolled daemons to set it honestly.
+- **A wrong process is stopped.** The CTO can stop any process of the owner's user that is not a known session, worker, the daemon or the gateway, and nothing undoes it. The refusals stop the CTO from touching system processes or agent-net itself. They do not tell an orphan from a process the owner still needs. The Inbox notice names every process that was stopped.
 - **The trust boundary.** It stays the owner's operating-system user. A process of that user can type into the CTO box or read the OpenCode password. Rule 1 gives it no owner power beyond what the owner gate already exposes.
 
 ## Reporting a problem
@@ -1268,6 +1269,19 @@ worker settings, MCP override, brief or hand-back tools. Normal discovery
 registers the session without a worker flag. Worker limits, stop rules,
 notices and cleanup do not apply. Stopping the daemon leaves it running.
 
+
+### CTO process stop
+
+The CTO can stop processes on any enrolled machine on the owner's instruction, with `settings_change` area `process_stop` ([decision 0102](decisions/0102-cto-process-stop.md)). It is not a proposal and there is no other gate: the owner chose that the CTO decides when to use it. Nothing can undo it.
+
+What limits it:
+
+- **Only the owner path.** The operator method `process_stop` is refused for agent clients and for a command line inside an agent session's process tree. The gateway accepts the relay frame only from the owner session of the calling machine, and the target machine checks the owner flag again. A forged frame needs a machine token, like every other owner frame.
+- **A named machine.** `node_id` is required. A stop never defaults to the local machine, so a stop cannot land on the wrong machine because a field was left out.
+- **What is refused.** Pid 1 and any number below 1 (so a signal can never reach a process group); the daemon itself; any `agent-net daemon` or `agent-net gateway` process; any session or worker the daemon knows by its registered process ID; any process that is not owned by the daemon's own user (real and effective user ID both checked), so system processes and other users' processes are never signalled. These are the only refusals. A process of the owner's user that the daemon does not know, for example the owner's editor or a shell, is not refused. A parent or child of a live session is not refused either: only the registered process of the session or worker is.
+- **No reused process number.** The daemon reads the process start time before SIGTERM and checks it again before SIGKILL. If the process ended and the number now belongs to another process, the new process is not signalled.
+
+What it exposes: the command line of each process goes into the tool result, the Inbox notice and the daemon log, cut at 400 characters. A command line can hold a secret (an API key in an argument). It is the same data any user on the machine reads with `ps`, but now it is written to the Inbox and the log too. The gateway event keeps only pids and outcomes. The notice is the record of what was stopped.
 
 ## Automatic reply reminders
 

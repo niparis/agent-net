@@ -188,13 +188,13 @@ var ctoTools = map[string]ctoToolDef{
 	"proposal_ask": {desc: "Open the approval dialog for a waiting proposal.", fields: map[string]ctoField{"id": {typ: "string", desc: "Open proposal ID."}}},
 	"cto_new":      {desc: "Start a new conversation for the active harness."},
 	"settings_change": {
-		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite or onboarding.",
+		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite, onboarding, or stop processes (process_stop: TERM then KILL, no undo).",
 		fields: map[string]ctoField{
 			"method":              {typ: "string", enum: strings.Fields(protocol.CTOOperatorReads + " " + protocol.CTOOperatorChanges)},
 			"arguments":           {typ: "object", desc: "Arguments for the owner operation."},
 			"changes":             settingsChangesField(),
 			"revision":            {typ: "integer", desc: "Revision to undo."},
-			"area":                {typ: "string", enum: []string{"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
+			"area":                {typ: "string", enum: []string{"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"}},
 			"name":                {typ: "string", desc: "Profile or machine name; empty clears."},
 			"harness":             {typ: "string", desc: "Harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":               {typ: "string", desc: "Model ID or name."},
@@ -214,7 +214,8 @@ var ctoTools = map[string]ctoToolDef{
 			"compaction":          {typ: "object", desc: "Compaction."},
 			"note":                {typ: "string", desc: "Playbook note; empty clears."},
 			"pin":                 {typ: "boolean", desc: "Pin."},
-			"node_id":             {typ: "string", desc: "Machine."},
+			"node_id":             {typ: "string", desc: "Machine; required for process_stop."},
+			"pids":                {typ: "array", desc: "Process IDs to stop on node_id (process_stop).", items: map[string]any{"type": "integer"}},
 		},
 	},
 	"project_change": {

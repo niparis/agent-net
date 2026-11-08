@@ -302,6 +302,26 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		verb := map[string]string{protocol.MCPApprove: "approved", protocol.MCPDisable: "disabled"}[res.Choice]
 		text = fmt.Sprintf("CTO %s the .mcp.json servers for Claude Code in %s on %s", verb, cleanLine(res.Path), where)
 		diff, options = mcpChoiceAudit(res.MCPChoiceResult, res.NodeID)
+	case concrete == "process_stop":
+		var res protocol.ProcessStopResult
+		b, _ := json.Marshal(result)
+		_ = json.Unmarshal(b, &res)
+		where := cleanLine(firstNonEmpty(res.Hostname, res.NodeID))
+		if where == "" {
+			where = "the machine"
+		}
+		counts := map[string]int{}
+		lines := []string{"No undo: a stopped process cannot be brought back."}
+		for _, p := range res.Processes {
+			counts[p.Outcome]++
+			lines = append(lines, processOutcomeLine(p))
+		}
+		text = fmt.Sprintf("CTO stopped processes on %s (no undo): %d stopped by TERM, %d by KILL, %d refused, %d not found",
+			where, counts[protocol.ProcessStoppedTerm], counts[protocol.ProcessStoppedKill], counts[protocol.ProcessRefused], counts[protocol.ProcessNotFound])
+		if n := counts[protocol.ProcessFailed]; n > 0 {
+			text += fmt.Sprintf(", %d failed", n)
+		}
+		diff = strings.Join(lines, "\n")
 	case concrete == "session_start":
 		var res protocol.StartedSession
 		b, _ := json.Marshal(result)
