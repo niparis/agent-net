@@ -50,6 +50,8 @@ type roProfileRow struct {
 	Model       string   `json:"model"`
 	Effort      string   `json:"effort"`
 	AvailableOn []string `json:"available_on"`
+	Score       *float64 `json:"score,omitempty"`
+	ScoreSource string   `json:"score_source,omitempty"`
 	key         string
 }
 
@@ -195,7 +197,7 @@ func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) 
 			provider = protocol.ModelVendor(selection.Harness, selection.Model)
 		}
 		rows = append(rows, roProfileRow{Name: profile.Name, Harness: profile.Harness, Provider: provider, Model: selection.Model,
-			Effort: selection.Effort, AvailableOn: roUniqueSorted(on), key: profile.Name})
+			Effort: selection.Effort, AvailableOn: roUniqueSorted(on), Score: profile.Score, ScoreSource: profile.ScoreSource, key: profile.Name})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].key < rows[j].key })
 	page, next := roWindow(rows, limit, after, false, func(row roProfileRow) string { return row.key })

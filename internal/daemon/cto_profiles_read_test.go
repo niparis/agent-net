@@ -24,5 +24,8 @@ func TestCTOReadsWorkerProfiles(t *testing.T) {
 		if err != nil || !strings.Contains(string(raw), "gpt-6.1-terra:high") {
 			t.Errorf("%s: %s, %v", tc.name, raw, err)
 		}
+		if !strings.Contains(string(raw), `"score":42.3`) || !strings.Contains(string(raw), `"score_source":"artificialanalysis"`) {
+			t.Errorf("%s lost the profile score: %s", tc.name, raw)
+		}
 	}
 }

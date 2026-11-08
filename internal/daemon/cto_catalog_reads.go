@@ -806,8 +806,13 @@ func (d *Daemon) ctoCatalogWorkerProfilesFind(ctx context.Context, raw json.RawM
 			on = append(on, profile.MachinesChecked...)
 		}
 		sort.Strings(on)
-		rows = append(rows, map[string]any{"name": profile.Name, "harness": profile.Harness, "model": profile.Model,
-			"effort": profile.Effort, "available_on": on})
+		row := map[string]any{"name": profile.Name, "harness": profile.Harness, "model": profile.Model,
+			"effort": profile.Effort, "available_on": on}
+		if profile.Score != nil {
+			row["score"] = *profile.Score
+			row["score_source"] = profile.ScoreSource
+		}
+		rows = append(rows, row)
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i]["name"].(string) < rows[j]["name"].(string) })
 	page, next, err := ctoCatalogPage(rows, limit, q.Cursor)

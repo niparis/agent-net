@@ -185,9 +185,12 @@ type MachinesPage struct {
 }
 
 // MachineModelRow is one model in the models category of agent_machine_get.
+// Scores lists the capability score at each matching effort, when the score
+// table has one.
 type MachineModelRow struct {
-	Harness string `json:"harness"`
-	ID      string `json:"id"`
+	Harness string             `json:"harness"`
+	ID      string             `json:"id"`
+	Scores  []ModelEffortScore `json:"scores,omitempty"`
 }
 
 // MachineModelPage pages the models category.

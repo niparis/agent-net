@@ -121,13 +121,19 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 func TestWorkerProfilesListToolReturnsRoster(t *testing.T) {
 	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		if method == "worker_profiles" {
-			return json.RawMessage(`[{"name":"demo","harness":"codex","model":"gpt"}]`), nil
+			return json.RawMessage(`[{"name":"demo","harness":"codex","model":"gpt","score":42.5,"score_source":"owner"}]`), nil
 		}
 		return json.RawMessage(`{}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_profiles_find"})
 	if err != nil || res.IsError || len(res.Content) == 0 || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "demo") {
 		t.Fatalf("profiles: %+v %v", res, err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	for _, want := range []string{`"score":42.5`, `"score_source":"owner"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("profile row lost %s: %s", want, text)
+		}
 	}
 }
 
