@@ -158,6 +158,11 @@ type Gateway struct {
 	graphCutoverMu      sync.Mutex
 	graphCutoverRunning bool
 	graphCutoverPending bool
+	// graphCutoverClosing is set when Close begins: no cutover starts after it.
+	graphCutoverClosing bool
+	// graphCutoverWG holds the running cutover goroutine. Close waits for it, so
+	// the database never closes under a backup or a transaction.
+	graphCutoverWG sync.WaitGroup
 	// graphCutoverCheckMu serializes the cutover checks themselves.
 	graphCutoverCheckMu sync.Mutex
 	// transferMu keeps the parts of every xfer.* frame in order.
@@ -379,9 +384,15 @@ func (g *Gateway) Close() error {
 		c.ws.Close(websocket.StatusGoingAway, "gateway closing")
 		c.cancel()
 	}
+	g.graphCutoverMu.Lock()
+	g.graphCutoverClosing = true
+	g.graphCutoverMu.Unlock()
 	closeAllAppSessions(g.store)
 	// Give the read loops a moment to leave before the database goes away.
 	time.Sleep(50 * time.Millisecond)
+	// A cutover in its backup or transaction finishes first, so the backup is
+	// complete and the database is still open for it.
+	g.graphCutoverWG.Wait()
 	return g.store.Close()
 }
 

@@ -332,3 +332,63 @@ func TestGraphCutoverBlockedNodesCanSayHello(t *testing.T) {
 		t.Fatal("cutover enabled with blockers")
 	}
 }
+
+// A shutdown during the automatic cutover's backup used to close the database
+// under it, and the backup could be left half written in the parent of the data
+// directory. Close must wait for the cutover to finish, and a cutover must not
+// start after Close has begun.
+func TestGraphCutoverCloseWaitsForTheBackup(t *testing.T) {
+	now := time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC)
+	g, logs := autoCutoverGateway(t, now)
+	reportGraphNode(t, g, "fixture", "v0.4.145", true)
+	repo, err := g.skillRepository()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The backup takes the skill repository lock. Holding it keeps the cutover
+	// inside its backup until the test releases it.
+	repo.mu.Lock()
+	g.triggerGraphCutover(context.Background())
+	waitLink(t, "cutover check running", func() bool {
+		if g.graphCutoverCheckMu.TryLock() {
+			g.graphCutoverCheckMu.Unlock()
+			return false
+		}
+		return true
+	})
+	time.Sleep(100 * time.Millisecond)
+
+	closed := make(chan struct{})
+	go func() { defer close(closed); g.Close() }()
+	select {
+	case <-closed:
+		repo.mu.Unlock()
+		t.Fatal("Close returned while the cutover was still in its backup")
+	case <-time.After(200 * time.Millisecond):
+	}
+	repo.mu.Unlock()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return after the backup finished")
+	}
+
+	if out := logs.String(); !strings.Contains(out, "result=enabled") || strings.Contains(out, "event=graph.cutover.failed") {
+		t.Fatalf("cutover did not finish before Close: %s", out)
+	}
+	backups, err := filepath.Glob(filepath.Join(filepath.Dir(g.opts.DataDir), "gateway-before-typed-graph-*"))
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("backups: %v %v", backups, err)
+	}
+	if _, err := os.Stat(filepath.Join(backups[0], "gateway.db")); err != nil {
+		t.Fatalf("backup is incomplete: %v", err)
+	}
+
+	g.triggerGraphCutover(context.Background())
+	g.graphCutoverMu.Lock()
+	running := g.graphCutoverRunning
+	g.graphCutoverMu.Unlock()
+	if running {
+		t.Fatal("a cutover started after Close")
+	}
+}
