@@ -241,3 +241,67 @@ func claudeStartChoiceValid(choice string) error {
 	}
 	return nil
 }
+
+// claudeLaunchMCPAnswers returns the MCP answers to put in a launch's --settings
+// JSON: the servers of dir's .mcp.json that dir's settings.local.json approves
+// or refuses after the copy. It carries names only, never enable-all, and a
+// refusal wins over an approval. Passing them on the command line means the
+// start does not depend on Claude Code finding the settings file in the launch
+// folder, which a background job did not do on 2026-11-08 (decision 0101).
+func claudeLaunchMCPAnswers(dir string) (enabled, disabled []string) {
+	servers := claudeMCPServers(dir)
+	if len(servers) == 0 {
+		return nil, nil
+	}
+	names := make(map[string]bool, len(servers))
+	for _, s := range servers {
+		names[s.Name] = true
+	}
+	doc, err := readClaudeLocalSettings(claudeLocalSettingsFile(dir))
+	if err != nil {
+		return nil, nil
+	}
+	approved, _ := claudeSettingsList(doc, claudeMCPEnabledKey)
+	refused, _ := claudeSettingsList(doc, claudeMCPDisabledKey)
+	for _, name := range approved {
+		if names[name] && !containsName(refused, name) && !containsName(enabled, name) {
+			enabled = append(enabled, name)
+		}
+	}
+	for _, name := range refused {
+		if names[name] && !containsName(disabled, name) {
+			disabled = append(disabled, name)
+		}
+	}
+	sort.Strings(enabled)
+	sort.Strings(disabled)
+	return enabled, disabled
+}
+
+// claudeSettingsWithMCPAnswers adds the answers for dir to a --settings JSON
+// string. An empty string means a launch without --settings, when there is
+// nothing to carry. Other keys of the JSON stay as they are.
+func claudeSettingsWithMCPAnswers(settings, dir string) string {
+	enabled, disabled := claudeLaunchMCPAnswers(dir)
+	if len(enabled) == 0 && len(disabled) == 0 {
+		return settings
+	}
+	doc := map[string]any{}
+	if strings.TrimSpace(settings) != "" && json.Unmarshal([]byte(settings), &doc) != nil {
+		return settings
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+	if len(enabled) > 0 {
+		doc[claudeMCPEnabledKey] = enabled
+	}
+	if len(disabled) > 0 {
+		doc[claudeMCPDisabledKey] = disabled
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return settings
+	}
+	return string(out)
+}

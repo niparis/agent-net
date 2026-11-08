@@ -315,3 +315,107 @@ func TestSessionStartWorktreeGetsTheMainCheckoutMCPChoice(t *testing.T) {
 		t.Fatalf("worktree settings %v", got)
 	}
 }
+
+// ---- the choice in the launch settings ----
+//
+// Real Claude Code reads the project MCP answer from the launch --settings JSON
+// as well as from .claude/settings.local.json (checked with `claude --bg` in a
+// worktree: both sources start the job, neither leaves it blocked on "1 new MCP
+// server needs approval"). The daemon passes the inherited choice in --settings
+// too, so the start does not depend on the background service finding the
+// worktree's settings file.
+
+// launchMCPList reads one of the two lists from the settings of the fake.
+func launchMCPList(t *testing.T, settings map[string]any, key string) []string {
+	t.Helper()
+	raw, ok := settings[key]
+	if !ok {
+		return nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		t.Fatalf("%s in the launch settings is %T, not a list: %v", key, raw, raw)
+	}
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		name, _ := v.(string)
+		out = append(out, name)
+	}
+	return out
+}
+
+func TestClaudeLaunchAnswersTakeOnlyTheWorktreeServers(t *testing.T) {
+	repo := newRepo(t, "strats")
+	commitMCPJSON(t, repo, map[string]any{"a": map[string]any{"command": "x"}, "b": map[string]any{"command": "y"}, "c": map[string]any{"command": "z"}})
+	writeSettingsLocal(t, repo, `{"enabledMcpjsonServers":["a","a","b","other"],"disabledMcpjsonServers":["b","c"],"enableAllProjectMcpServers":true}`)
+	enabled, disabled := claudeLaunchMCPAnswers(repo)
+	if !reflect.DeepEqual(enabled, []string{"a"}) || !reflect.DeepEqual(disabled, []string{"b", "c"}) {
+		t.Fatalf("answers: enabled %v, disabled %v", enabled, disabled)
+	}
+	out := claudeSettingsWithMCPAnswers(`{"env":{"X":"1"}}`, repo)
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(launchMCPList(t, doc, "enabledMcpjsonServers"), []string{"a"}) {
+		t.Fatalf("enabled in %s", out)
+	}
+	if !reflect.DeepEqual(launchMCPList(t, doc, "disabledMcpjsonServers"), []string{"b", "c"}) {
+		t.Fatalf("disabled in %s", out)
+	}
+	if _, ok := doc["enableAllProjectMcpServers"]; ok {
+		t.Fatalf("enable-all must not be passed on: %s", out)
+	}
+	if doc["env"] == nil {
+		t.Fatalf("the other settings must stay: %s", out)
+	}
+	// No .mcp.json means no answer to carry, and the JSON stays as it was.
+	plain := newRepo(t, "plain")
+	if got := claudeSettingsWithMCPAnswers(`{"env":{"X":"1"}}`, plain); got != `{"env":{"X":"1"}}` {
+		t.Fatalf("without servers the settings changed: %s", got)
+	}
+}
+
+func TestClaudeWorkerPassesMCPChoiceInLaunchSettings(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := mcpWorkerRepo(t, c)
+	writeSettingsLocal(t, repo, `{"enabledMcpjsonServers":["tenebrae-library"]}`)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "strats", Harness: "claude", Isolation: protocol.IsolationWorktree, Task: "FAKE:handback ok"})
+	var rec fakeClaudeRecord
+	readRecord(t, res.Worktree, "fake-claude.json", &rec)
+	if got := launchMCPList(t, rec.Settings, "enabledMcpjsonServers"); !reflect.DeepEqual(got, []string{"tenebrae-library"}) {
+		t.Fatalf("the launch settings must carry the inherited approval, got %v in %v", got, rec.Settings)
+	}
+	if _, ok := rec.Settings["enableAllProjectMcpServers"]; ok {
+		t.Fatalf("never enable-all: %v", rec.Settings)
+	}
+}
+
+// With the approval in the launch settings, the fake Claude (which reads the
+// same sources as the real one) does not stay blocked on the prompt.
+func TestClaudeWorkerStartsWhenTheChoiceReachesTheLaunch(t *testing.T) {
+	t.Setenv(envFakeMCPBlocked, "1")
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := mcpWorkerRepo(t, c)
+	writeSettingsLocal(t, repo, `{"enabledMcpjsonServers":["tenebrae-library"]}`)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "strats", Harness: "claude", Isolation: protocol.IsolationWorktree, Task: "FAKE:handback ok"})
+	if res.Worktree == "" || res.SessionID == "" {
+		t.Fatalf("the worker must start: %+v", res)
+	}
+}
+
+func TestSessionStartPassesMCPChoiceInLaunchSettings(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := mcpWorkerRepo(t, c)
+	writeSettingsLocal(t, repo, `{"enabledMcpjsonServers":["tenebrae-library"]}`)
+	r := startOwnerWorktree(t, c.workerNode, protocol.SessionStartRequest{Project: "strats", Harness: "claude"})
+	t.Cleanup(func() { killFakeClaude(t, r.Path) })
+	var rec fakeClaudeRecord
+	readRecord(t, r.Path, "fake-claude.json", &rec)
+	if got := launchMCPList(t, rec.Settings, "enabledMcpjsonServers"); !reflect.DeepEqual(got, []string{"tenebrae-library"}) {
+		t.Fatalf("the owner launch settings must carry the inherited approval, got %v in %v", got, rec.Settings)
+	}
+}

@@ -59,6 +59,20 @@ the owner wants for the whole tree, and the caller asked for it. The effect is
 that a worktree of a project can be more approved than Claude Code would make
 the project's own main checkout.
 
+## The launch settings carry the same answer
+
+On 2026-11-08 a worker still stopped on "1 new MCP server needs approval" after
+the copy had written the worktree's `settings.local.json` (job 1ebf7146,
+v0.4.206). The real `claude` 2.1.319 was measured with `--bg` in a worktree:
+the job starts from the answer in `.claude/settings.local.json`, from the answer
+in the launch `--settings` JSON, and from `enableAllProjectMcpServers` in either
+place. With no answer in either place it blocks. So the launch now also passes
+`enabledMcpjsonServers` and `disabledMcpjsonServers` in `--settings`, built from
+the same worktree answers: names of the worktree's `.mcp.json` servers only, a
+refusal wins, and never the switch. This covers a worker, an owner session
+start, an owner resume and a wake. The file copy stays, because the owner's next
+interactive session in that folder reads it.
+
 ## What we gave up
 
 A copied approval lets the worker's session run the `.mcp.json` command as the

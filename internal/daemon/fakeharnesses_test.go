@@ -266,15 +266,21 @@ func fakeClaudeCLI() {
 		os.Exit(1)
 	}
 	if os.Getenv(envFakeMCPBlocked) != "" {
-		// Claude Code stops on "new MCP server needs approval": the job exists
-		// and is alive, and it never writes a session file.
-		id := "blockedjob"
-		job := filepath.Join(filepath.Dir(dir), "jobs", id)
-		os.MkdirAll(job, 0700)
-		body, _ := json.Marshal(map[string]string{"state": "blocked", "detail": "1 new MCP server needs approval"})
-		os.WriteFile(filepath.Join(job, "state.json"), body, 0600)
-		fmt.Printf("backgrounded · %s · %s\n  claude stop %s      stop this session\n", id, argValue(os.Args, "--name"), id)
-		return
+		if pending := fakeClaudeMCPPending(); len(pending) > 0 {
+			// Claude Code stops on "new MCP server needs approval": the job
+			// exists and is alive, and it never writes a session file.
+			id := "blockedjob"
+			job := filepath.Join(filepath.Dir(dir), "jobs", id)
+			os.MkdirAll(job, 0700)
+			detail := "1 new MCP server needs approval"
+			if len(pending) > 1 {
+				detail = fmt.Sprintf("%d new MCP servers need approval", len(pending))
+			}
+			body, _ := json.Marshal(map[string]string{"state": "blocked", "detail": detail})
+			os.WriteFile(filepath.Join(job, "state.json"), body, 0600)
+			fmt.Printf("backgrounded · %s · %s\n  claude stop %s      stop this session\n", id, argValue(os.Args, "--name"), id)
+			return
+		}
 	}
 	if mode := os.Getenv("FAKE_CLAUDE_RESUME_FAILURE"); mode != "" && argValue(os.Args, "--resume") != "" {
 		if mode == "cli-missing" {
@@ -333,6 +339,56 @@ func fakeClaudeCLI() {
 	}
 	fmt.Println("the session did not start")
 	os.Exit(1)
+}
+
+// fakeClaudeMCPPending lists the .mcp.json servers of the launch folder that
+// have no answer, the way Claude Code decides to block a background job. The
+// answer comes from the launch --settings JSON and from the folder's
+// .claude/settings.local.json, and enableAllProjectMcpServers approves the rest
+// (checked on Claude Code 2.1.319 with `claude --bg`).
+func fakeClaudeMCPPending() []string {
+	cwd, _ := os.Getwd()
+	servers := claudeMCPServers(cwd)
+	if len(servers) == 0 {
+		return nil
+	}
+	enabled, disabled := map[string]bool{}, map[string]bool{}
+	enableAll := false
+	take := func(list []string, into map[string]bool) {
+		for _, name := range list {
+			into[name] = true
+		}
+	}
+	if doc, err := readClaudeLocalSettings(claudeLocalSettingsFile(cwd)); err == nil {
+		yes, _ := claudeSettingsList(doc, claudeMCPEnabledKey)
+		no, _ := claudeSettingsList(doc, claudeMCPDisabledKey)
+		take(yes, enabled)
+		take(no, disabled)
+		if raw, ok := doc[claudeEnableAllKey]; ok {
+			var on bool
+			if json.Unmarshal(raw, &on) == nil && on {
+				enableAll = true
+			}
+		}
+	}
+	var inline struct {
+		Enabled   []string `json:"enabledMcpjsonServers"`
+		Disabled  []string `json:"disabledMcpjsonServers"`
+		EnableAll bool     `json:"enableAllProjectMcpServers"`
+	}
+	if json.Unmarshal([]byte(argValue(os.Args, "--settings")), &inline) == nil {
+		take(inline.Enabled, enabled)
+		take(inline.Disabled, disabled)
+		enableAll = enableAll || inline.EnableAll
+	}
+	var pending []string
+	for _, s := range servers {
+		if disabled[s.Name] || enabled[s.Name] || enableAll {
+			continue
+		}
+		pending = append(pending, s.Name)
+	}
+	return pending
 }
 
 // fakeClaudeSession is the process of a background session: it writes the
