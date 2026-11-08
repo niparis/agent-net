@@ -778,6 +778,8 @@ func (g *Gateway) nodeGone(nodeID string, timer *offlineTimer) {
 }
 
 func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
+	lane := newFrameLane()
+	defer lane.stop()
 	for {
 		_, raw, err := nc.health.Read(ctx, nc.ws)
 		if err != nil {
@@ -822,15 +824,37 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
-		if h.Type == "msg.send" && g.msgSendMayResume(raw) {
-			// Starting an ended worker again asks this same node and waits for
-			// its answer, so it must not run in the read loop that reads it.
-			go g.answer(ctx, nc, h, raw)
+		if h.Type == "hello" {
+			// The only frame the loop runs itself: later frames are checked
+			// against what it sets, and the node waits for its answer.
+			if g.answer(ctx, nc, h, raw) != nil {
+				return
+			}
 			continue
 		}
-		if g.answer(ctx, nc, h, raw) != nil {
-			return
+		if parallelFrames[h.Type] {
+			go g.answerOrDrop(ctx, nc, h, raw)
+			continue
 		}
+		lane.submit(func() {
+			if h.Type == "msg.send" && g.msgSendMayResume(raw) {
+				// Starting an ended worker again asks this same node and waits
+				// for its answer. The answer comes to the read loop, which is
+				// free, but the lane must not wait for the worker to start.
+				go g.answerOrDrop(ctx, nc, h, raw)
+				return
+			}
+			g.answerOrDrop(ctx, nc, h, raw)
+		})
+	}
+}
+
+// answerOrDrop is answer for a frame that does not run in the read loop. When
+// the result cannot be written the link is gone, so it ends the connection.
+func (g *Gateway) answerOrDrop(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
+	if g.answer(ctx, nc, h, raw) != nil {
+		nc.cancel()
+		nc.ws.CloseNow()
 	}
 }
 
