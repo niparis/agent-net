@@ -12,7 +12,7 @@ import (
 func scanTeam(row interface{ Scan(...any) error }) (protocol.Team, error) {
 	var t protocol.Team
 	var owner *string
-	err := row.Scan(&t.ID, &t.Name, &t.Purpose, &owner, &t.Active, &t.CreatedAt, &t.UpdatedAt)
+	err := row.Scan(&t.ID, &t.Name, &t.Purpose, &owner, &t.Active, &t.AuthorityMode, &t.HeldBack, &t.CreatedAt, &t.UpdatedAt)
 	if owner != nil {
 		t.Owner = &protocol.GraphRef{Kind: "agent", ID: *owner}
 	}
@@ -21,7 +21,7 @@ func scanTeam(row interface{ Scan(...any) error }) (protocol.Team, error) {
 
 // Teams includes archived identities so their history and owner remain visible.
 func (s *Store) Teams() ([]protocol.Team, error) {
-	rows, err := s.db.Query(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +76,12 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 	if q.Action == "membership" {
 		oldTeam, err = writeTeamMember(tx, q)
 		oldValue, newValue = oldTeam, q.ID
+	} else if q.Action == "repo_held_back" {
+		// A repo is not a Team: its change has no Team history row.
+		if _, _, err = writeRepoHeldBack(tx, q, actor, now); err != nil || dryRun {
+			return err
+		}
+		return tx.Commit()
 	} else {
 		if !validGraphName(q.ID) {
 			return reject("invalid Team ID")
@@ -99,9 +105,9 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 				owner = q.Owner.ID
 			}
 			_, err = tx.Exec(`INSERT INTO teams(id,name,purpose,owner_agent_id,created_at,updated_at) VALUES(?,?,?,?,?,?)`, q.ID, q.Name, q.Purpose, owner, now, now)
-		case "rename", "purpose", "archive":
+		case "rename", "purpose", "archive", "mode", "held_back":
 			var t protocol.Team
-			t, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, q.ID))
+			t, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, q.ID))
 			if err == sql.ErrNoRows {
 				return reject("unknown Team")
 			}
@@ -125,6 +131,23 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 					return nil
 				}
 				_, err = tx.Exec(`UPDATE teams SET name=?,updated_at=? WHERE id=?`, q.Name, now, q.ID)
+			case "mode":
+				if !protocol.ValidAuthorityMode(q.Mode) {
+					return reject("authority mode is absolute, charter_first or negotiate")
+				}
+				if t.AuthorityMode == q.Mode {
+					return nil
+				}
+				_, err = tx.Exec(`UPDATE teams SET authority_mode=?,updated_at=? WHERE id=?`, q.Mode, now, q.ID)
+			case "held_back":
+				if !validHeldBack(q.HeldBack) {
+					return reject("invalid held back text")
+				}
+				held := strings.TrimSpace(q.HeldBack)
+				if t.HeldBack == held {
+					return nil
+				}
+				_, err = tx.Exec(`UPDATE teams SET held_back=?,updated_at=? WHERE id=?`, held, now, q.ID)
 			case "purpose":
 				if len(q.Purpose) > protocol.CharterValueMaxBytes || strings.IndexFunc(q.Purpose, func(r rune) bool { return unicode.IsControl(r) && r != '\n' }) >= 0 {
 					return reject("invalid Team purpose")
@@ -148,7 +171,7 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 		}
 		if err == nil {
 			var t protocol.Team
-			t, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, q.ID))
+			t, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, q.ID))
 			b, _ := json.Marshal(t)
 			newValue = string(b)
 		}

@@ -490,6 +490,9 @@ func codexFrame(m protocol.Message) string {
 	if m.Type == protocol.TypeRequest && m.RecipientRelation != "" {
 		foot += " " + m.RecipientRelation
 	}
+	if m.AuthorityNote != "" {
+		foot += "\n[agent-net] " + m.AuthorityNote
+	}
 	if m.OwnerInstruction != "" {
 		foot += "\n" + protocol.OwnerInstructionNoteFor(m)
 	}

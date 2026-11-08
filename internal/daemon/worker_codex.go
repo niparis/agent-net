@@ -536,6 +536,9 @@ func codexWorkerText(m protocol.Message) string {
 	if m.FromHarness == protocol.OwnerHarness && !protocol.IsWorkerTask(m) {
 		text = "Message from your user, in person:\n" + text
 	}
+	if m.AuthorityNote != "" {
+		text += "\n[agent-net] " + m.AuthorityNote
+	}
 	if m.ApprovalNote != "" {
 		text += "\n[agent-net] " + m.ApprovalNote
 	}

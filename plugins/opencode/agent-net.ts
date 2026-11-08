@@ -67,6 +67,7 @@ interface DeliveredMessage {
   owner_instruction?: string;
   created_at?: string;
   approval_note?: string;
+  authority_note?: string;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -122,6 +123,7 @@ function formatDelivery(m: DeliveredMessage): string {
   if (m.sender_session_id === "agent-net" && m.sender_harness === "agent-net" && m.message_type === "notification") return m.body;
 
   let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  if (m.authority_note) text += `\n[agent-net] ${m.authority_note}`;
   if (m.owner_instruction) text += `\n${ownerInstructionNote(m)}`;
   if (m.overruled === true) text += `\n[agent-net] the owner overrules: do it.`;
   if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;

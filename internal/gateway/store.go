@@ -1124,6 +1124,14 @@ DELETE FROM agent_charter WHERE attr IN ('consumers','needs','notes');
 `, `
 -- Message hand-off: the lead who passed this message on. Empty for others.
 ALTER TABLE messages ADD COLUMN handed_off_by TEXT NOT NULL DEFAULT '';
+`, `
+-- Team authority mode and held back (decision 0088). A repo has no column:
+-- the repos table has positional inserts in live triggers, so its held back
+-- text lives in its own table. is_order records the sender's checked order flag.
+ALTER TABLE teams ADD COLUMN authority_mode TEXT NOT NULL DEFAULT 'charter_first';
+ALTER TABLE teams ADD COLUMN held_back TEXT NOT NULL DEFAULT '';
+ALTER TABLE messages ADD COLUMN is_order INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES repos(id), held_back TEXT NOT NULL DEFAULT '');
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1469,6 +1477,25 @@ func (s *Store) migrate() error {
 			}
 			if err == nil {
 				result, err = tx.Exec(`SELECT 1`)
+			}
+		} else if strings.Contains(migrations[i], "Team authority mode and held back (decision 0088)") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"teams", "authority_mode", `TEXT NOT NULL DEFAULT 'charter_first'`},
+				{"teams", "held_back", `TEXT NOT NULL DEFAULT ''`},
+				{"messages", "is_order", `INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+					break
+				}
+				if has == 0 {
+					if _, err = tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				result, err = tx.Exec(`CREATE TABLE IF NOT EXISTS repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES repos(id), held_back TEXT NOT NULL DEFAULT '')`)
 			}
 		} else if strings.Contains(migrations[i], "Message hand-off: the lead who passed") {
 			var has int
@@ -3041,7 +3068,7 @@ func (s *Store) agentsBaseWith(selectSQL string, f protocol.QueryAgents) ([]prot
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
 	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
-	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),''), m.worker_task
+	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),''), m.worker_task, m.is_order
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
@@ -3050,7 +3077,7 @@ func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var files string
 	var workerTask sql.NullBool
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files, &workerTask)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files, &workerTask, &m.IsOrder)
 	if workerTask.Valid {
 		m.WorkerTask = &workerTask.Bool
 	}
@@ -3367,10 +3394,22 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if n >= protocol.MaxConvMessages {
 		return msg, false, reject("conversation budget exceeded (%d messages)", protocol.MaxConvMessages)
 	}
+	// The order flag counts only when the sender is above the recipient in the
+	// tree. Otherwise the message goes as a request and the sender is told.
+	if p.Order && route != nil {
+		if note, err := s.checkOrderFlag(tx, &m); err != nil {
+			return msg, false, err
+		} else if note != "" {
+			if *route != "" {
+				*route += "\n"
+			}
+			*route += note
+		}
+	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder)
 	if err != nil {
 		return msg, false, err
 	}

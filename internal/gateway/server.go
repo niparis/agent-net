@@ -2582,6 +2582,13 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	// The relation from the sender's node to the recipient's node is graph
 	// data, computed here and never set by a sender (decision 0022).
 	m.RecipientRelation = g.relationForDelivery(m)
+	// The order and advice labels come from the tree, never from the body.
+	m.AuthorityNote = ""
+	if note, err := g.store.authorityNote(m); err != nil {
+		g.logLine("error", "where", "authority note", "err", err)
+	} else {
+		m.AuthorityNote = note
+	}
 	authority, rule, err := g.store.MergeRuleForSession(m.To)
 	if err != nil {
 		g.logLine("error", "where", "recipient merge authority", "err", err)

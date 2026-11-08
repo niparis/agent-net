@@ -44,7 +44,7 @@ func TestPlaceTextLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "[agent-net] Your place, from agent-net:\n" +
-		"You lead team Alpha. Members: demo.\n" +
+		"You lead team Alpha (mode: charter first). Members: demo.\n" +
 		"You report to the owner.\n" +
 		"Requests from outside Alpha to a member come to you. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly.\n" +
 		"Team purpose: Build the forge and keep it green."
@@ -60,7 +60,8 @@ func TestPlaceTextMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "[agent-net] Your place, from agent-net:\n" +
-		"You are in team Alpha, led by forge-lead.\n" +
+		"You are in team Alpha, led by forge-lead (mode: charter first).\n" +
+		"An order from your lead binds you unless your charter refuses it; then say so, quote the charter line, and it goes up.\n" +
 		"Escalate to your lead first, not to the owner."
 	if got != want {
 		t.Fatalf("member place:\n%s\nwant:\n%s", got, want)
@@ -109,7 +110,7 @@ func TestPlaceTextFollowsTeamChanges(t *testing.T) {
 	if got, err = r.s.placeText(r.lead); err != nil || strings.Contains(got, "You lead") {
 		t.Fatalf("unpinned session still leads: %q %v", got, err)
 	}
-	if got, err = r.s.placeText(second); err != nil || !strings.Contains(got, "You lead team Alpha.") {
+	if got, err = r.s.placeText(second); err != nil || !strings.Contains(got, "You lead team Alpha (mode: charter first).") {
 		t.Fatalf("pinned session: %q %v", got, err)
 	}
 }
@@ -136,7 +137,7 @@ func TestPlaceTextRepoLead(t *testing.T) {
 	}
 	got, err := s.placeText(lead)
 	want := "[agent-net] Your place, from agent-net:\n" +
-		"You lead repo demo. Members: helper.\n" +
+		"You lead repo demo (mode: charter first). Members: helper.\n" +
 		"You report to the owner.\n" +
 		"Requests from outside demo to a member come to you. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly."
 	if err != nil || got != want {
@@ -151,7 +152,7 @@ func TestPlaceTextRepoLead(t *testing.T) {
 func TestContextGetCarriesPlace(t *testing.T) {
 	r := newPlaceRig(t)
 	got, err := r.s.contextText(r.lead)
-	if err != nil || !strings.Contains(got, "You lead team Alpha.") {
+	if err != nil || !strings.Contains(got, "You lead team Alpha (mode: charter first).") {
 		t.Fatalf("context: %q %v", got, err)
 	}
 	if got, err = r.s.contextText(r.outside); err != nil || strings.Contains(got, "Your place") {

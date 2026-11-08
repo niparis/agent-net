@@ -191,6 +191,9 @@ func (g *Gateway) botMessageSend(ctx context.Context, sid, tool string, in map[s
 	if _, ok := in["as_owner"]; ok {
 		return nil, fmt.Errorf("bots cannot send as the owner")
 	}
+	if _, ok := in["order"]; ok {
+		return nil, fmt.Errorf("bots cannot give orders")
+	}
 	var p struct {
 		To      string `json:"to"`
 		Message string `json:"message"`

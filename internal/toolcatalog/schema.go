@@ -56,6 +56,7 @@ var botMessageSendInput = func() json.RawMessage {
 	}
 	delete(properties, "to_set")
 	delete(properties, "as_owner")
+	delete(properties, "order")
 	data, err := json.Marshal(properties)
 	if err != nil {
 		panic(err)

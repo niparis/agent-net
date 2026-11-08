@@ -736,6 +736,10 @@ export const TOOL_CATALOG = [
         "as_owner": {
           "type": "boolean",
           "description": "CTO only: send now on the owner's instructions."
+        },
+        "order": {
+          "type": "boolean",
+          "description": "Mark this as an order. Only a lead can give one, to a session below it in its team or repo. agent-net checks the tree; for anyone else the message goes as an ordinary request."
         }
       },
       "required": [

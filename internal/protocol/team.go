@@ -7,15 +7,21 @@ import (
 	"strings"
 )
 
-// Team is an additive grouping identity. It grants no authority or settings.
+// Team is a grouping identity with an authority mode and held back text
+// (decision 0088). The mode says how an order from its lead binds a member.
+// Rules text on a Team never grants or removes authority.
 type Team struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Purpose   string    `json:"purpose"`
-	Owner     *GraphRef `json:"owner,omitempty"`
-	Active    bool      `json:"active"`
-	CreatedAt int64     `json:"created_at"`
-	UpdatedAt int64     `json:"updated_at"`
+	ID      string    `json:"id"`
+	Name    string    `json:"name"`
+	Purpose string    `json:"purpose"`
+	Owner   *GraphRef `json:"owner,omitempty"`
+	Active  bool      `json:"active"`
+	// AuthorityMode is absolute, charter_first or negotiate. HeldBack is free
+	// text the owner sets: what this team may not do (decision 0088).
+	AuthorityMode string `json:"authority_mode"`
+	HeldBack      string `json:"held_back"`
+	CreatedAt     int64  `json:"created_at"`
+	UpdatedAt     int64  `json:"updated_at"`
 }
 
 // TeamWrite is owner-only. Membership ID is the new Team, empty to remove.
@@ -33,6 +39,11 @@ type TeamWrite struct {
 	ExpectTeam   string    `json:"expect_team,omitempty"`
 	ExpectName   string    `json:"expect_name,omitempty"`
 	OwnerSession string    `json:"owner_session,omitempty"`
+	// Mode is the new authority mode for action "mode". HeldBack is the new
+	// held back text for actions "held_back" (ID is a Team) and "repo_held_back"
+	// (ID is a Repo).
+	Mode     string `json:"mode,omitempty"`
+	HeldBack string `json:"held_back,omitempty"`
 }
 
 // TeamChange retains immutable before/after JSON snapshots or Team IDs for a

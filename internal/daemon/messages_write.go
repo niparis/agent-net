@@ -54,6 +54,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		MessageType    string      `json:"message_type"`
 		Type           string      `json:"type"`
 		AsOwner        bool        `json:"as_owner"`
+		Order          bool        `json:"order"`
 		IdempotencyKey string      `json:"idempotency_key"`
 		Receipt        bool        `json:"receipt"`
 	}
@@ -94,7 +95,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		address = p.To
 	}
 	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind, LeadAddress: address,
-		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
+		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order})
 	if err == nil && sid == d.ctoSessionID() {
 		err = d.recordCTOSent(ctx, to, p.AsOwner)
 	}

@@ -362,6 +362,9 @@ func BuildFrameFor(m protocol.Message, replySock string, toWorker bool) ([]byte,
 	if m.Type == "request" && m.RecipientRelation != "" {
 		details += " " + m.RecipientRelation
 	}
+	if m.AuthorityNote != "" {
+		details += "\n[agent-net] " + m.AuthorityNote
+	}
 	if m.OwnerInstruction != "" {
 		details += "\n" + protocol.OwnerInstructionNoteFor(m)
 	}
