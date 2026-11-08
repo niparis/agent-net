@@ -71,7 +71,10 @@ type Config struct {
 	// ClaudeDiscoveryGrace is how long an MCP hello waits for session discovery.
 	// Zero uses the production default of three seconds.
 	ClaudeDiscoveryGrace time.Duration
-	testFreePort         func() (int, error) // deterministic collision tests
+	// MCPLinkGrace is how long a Claude session may have no `agent-net mcp`
+	// connection before it is reported as tools: disconnected (default 1 minute).
+	MCPLinkGrace time.Duration
+	testFreePort func() (int, error) // deterministic collision tests
 	// testDeliveryRecordTimeout replaces deliveryRecordTimeout, how long a
 	// hand-back waits for the gateway to record its change.
 	testDeliveryRecordTimeout time.Duration
@@ -279,6 +282,12 @@ type localSession struct {
 	// owned is set for a session the daemon registered itself (a Codex worker
 	// in its private server). Discovery of a harness never removes it.
 	owned bool
+	// mcpLinks counts the live `agent-net mcp` connections of a Claude session.
+	// mcpSince is when the session was first seen or its last connection was
+	// lost. Both are protected by d.mu. A session with no link for MCPLinkGrace
+	// is reported as tools: disconnected (toolsLinkInfoLocked).
+	mcpLinks int
+	mcpSince time.Time
 }
 
 type activityUpdate struct {
@@ -493,6 +502,9 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	if cfg.ClaudeDiscoveryGrace <= 0 {
 		cfg.ClaudeDiscoveryGrace = 3 * time.Second
+	}
+	if cfg.MCPLinkGrace <= 0 {
+		cfg.MCPLinkGrace = time.Minute
 	}
 	if cfg.PluginAckTimeout == 0 {
 		cfg.PluginAckTimeout = 10 * time.Second
@@ -805,13 +817,14 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			// The tools state comes from the session's MCP hello. Discovery
 			// does not know it, and must not erase it.
 			in.ToolsVersion, in.ToolsOld = ls.info.ToolsVersion, ls.info.ToolsOld
+			in = d.toolsLinkInfoLocked(ls, in, time.Now())
 			if ls.lastActive.After(candidate) {
 				candidate = ls.lastActive
 			}
 		}
 		if ls == nil {
 			token, _ := procToken(in.PID)
-			ls = &localSession{stopToken: token, info: in, lastActive: candidate, harnessActivity: harnessActivity}
+			ls = &localSession{stopToken: token, info: in, lastActive: candidate, harnessActivity: harnessActivity, mcpSince: time.Now()}
 			d.sessions[k] = ls
 			changed = append(changed, ls)
 			if candidate.After(d.activity[k]) {

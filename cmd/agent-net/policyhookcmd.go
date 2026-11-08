@@ -47,15 +47,18 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	ctx, cancel := context.WithTimeout(ctx, policyBudget)
 	defer cancel()
 	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Prompt: in.Prompt})
-	if err != nil || (res.Text == "" && res.Charter == "") {
+	if err != nil || (res.Text == "" && res.Charter == "" && res.Notice == "") {
 		return
 	}
 	context := res.Text
-	if res.Charter != "" {
+	for _, part := range []string{res.Charter, res.Notice} {
+		if part == "" {
+			continue
+		}
 		if context != "" {
 			context += "\n\n"
 		}
-		context += res.Charter
+		context += part
 	}
 	var out hookOutput
 	out.HookSpecificOutput.HookEventName = "UserPromptSubmit"

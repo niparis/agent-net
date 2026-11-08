@@ -149,7 +149,9 @@ type SessionInfo struct {
 	Worker *WorkerInfo `json:"worker,omitempty"`
 	// ToolsVersion is the agent-net version of the session's MCP tools (the
 	// `agent-net mcp` process it started), ToolsUnknown when that process sent
-	// no version, and empty for a session with no such process. ToolsOld is
+	// no version, ToolsDisconnected for a Claude Code session whose process has
+	// been gone for more than a minute, and empty for a session with no such
+	// process yet. ToolsOld is
 	// true when those tools are older than the machine's agent-net, so the
 	// owner should reconnect agent-net in the session.
 	ToolsVersion string `json:"tools_version,omitempty"`
@@ -837,6 +839,12 @@ func SessionType(harness string, worker *WorkerInfo, explicit string) string {
 // Limited tells whether the session's provider usage limit is still on at now.
 func (a AgentView) Limited(now time.Time) bool {
 	return a.LimitedUntil > now.Unix()
+}
+
+// ToolsDisconnected tells whether the session is online but has lost its
+// agent-net tools (see the ToolsDisconnected constant).
+func (a AgentView) ToolsDisconnected() bool {
+	return a.Online && a.Worker == nil && a.ToolsVersion == ToolsDisconnected
 }
 
 // LimitKind is the kind of limit in a limited_reason ("ChatGPT usage limit"):
