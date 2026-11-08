@@ -23,7 +23,7 @@ func (m *Model) prepareGraph(v protocol.GraphView) protocol.GraphView {
 		}
 		name := n.Name
 		n.Name = graphRefKey(n.Ref)
-		m.mp.labels[n.Name] = n.Ref.Kind + " " + sanitize(name)
+		m.mp.labels[n.Name] = sanitize(name)
 		// Retain the renderer's established Repo and Agent styles.
 		if n.Ref.Kind == "repo" {
 			n.Kind = "component"
@@ -53,15 +53,7 @@ func (m Model) graphName(key string) string {
 	if name, ok := m.mp.labels[key]; ok {
 		return name
 	}
-	name := m.projectName(key)
-	if n, ok := m.mapNode(key); ok && key != protocol.CTONodeName {
-		kind := "repo"
-		if n.Kind == "architect" || n.Kind == "agent" {
-			kind = "agent"
-		}
-		return kind + " " + name
-	}
-	return name
+	return m.projectName(key)
 }
 
 func graphRecordID(n protocol.Node) string {

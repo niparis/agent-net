@@ -125,6 +125,12 @@ func (m *Model) smoothCamera() {
 // cheap and never touches pixels.
 func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.Scene {
 	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(size.Width), Height: float64(size.Height)})
+	duplicates := map[string]int{}
+	for _, n := range m.mp.nodes {
+		if n.Ref != nil && (n.Ref.Kind == "repo" || n.Ref.Kind == "agent") {
+			duplicates[strings.ToLower(m.graphName(n.Name))]++
+		}
+	}
 	scene.Hints = nil
 	for _, binding := range keyBindings {
 		if binding.context == contextGraph {
@@ -139,7 +145,34 @@ func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.
 		scene.Nodes[i].Card.Name = m.graphName(scene.Nodes[i].Name)
 		if node, ok := m.mapNode(scene.Nodes[i].Name); ok && node.Ref != nil {
 			scene.Nodes[i].Kind = node.Ref.Kind
+			if (node.Ref.Kind == "repo" || node.Ref.Kind == "agent") && duplicates[strings.ToLower(m.graphName(node.Name))] > 1 {
+				scene.Nodes[i].LabelSuffix = " · " + node.Ref.Kind
+				scene.Nodes[i].Label += scene.Nodes[i].LabelSuffix
+			}
 		}
+	}
+	for i := range scene.Nodes {
+		n := &scene.Nodes[i]
+		if n.Name == dormantChip {
+			n.Position = graphview.Point{X: .02, Y: float64(size.Height-1) / float64(size.Height)}
+		}
+		if node, ok := m.mapNode(n.Name); ok {
+			if node.Ref != nil {
+				n.Kind = node.Ref.Kind
+			}
+			n.Role = m.graphLiveRole(node)
+			if m.mp.dormant[n.Name] || m.mp.outside[n.Name] {
+				n.Role = "offline"
+			}
+		}
+		if mark := m.mp.everything[n.Name]; mark != "" {
+			n.Wildcard = true
+			n.WildcardLabel = mark
+		}
+	}
+	scene.Groups = m.graphGroups(scene)
+	if len(scene.Groups) > 0 {
+		scene = graphview.ArrangeGroups(scene, size)
 	}
 	return scene
 }
@@ -166,6 +199,9 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 	state := m.graphState
 	state.Smooth = g.motion
 	scene := m.graphScene(state, size)
+	if len(scene.Groups) > 0 {
+		return nil
+	}
 	if !g.motion {
 		stillScene(&scene)
 	}
@@ -321,6 +357,18 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	var action graphview.Action
 	switch key {
+	case "focus":
+		return m.graphFocus()
+	case "back":
+		return m.graphBack()
+	case "dormant":
+		m.mp.showDormant = !m.mp.showDormant
+		m.applyTeamView(true)
+		return m, nil
+	case "remove dormant":
+		return m.startGraphRemoval(false)
+	case "remove all dormant":
+		return m.startGraphRemoval(true)
 	case "show all traffic":
 		action = graphview.ToggleTalk{}
 	case "find":
@@ -342,7 +390,39 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "select down":
 			d.DY = 1
 		}
-		action = d
+		scene := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
+		if len(scene.Groups) > 0 || len(m.mp.dormant) > 0 {
+			current := m.graphState.Graph.Selected()
+			var from graphview.Point
+			for _, n := range scene.Nodes {
+				if n.Name == current {
+					from = n.Position
+				}
+			}
+			best := ""
+			score := 1e30
+			for _, n := range scene.Nodes {
+				if n.Name == current {
+					continue
+				}
+				dx, dy := (n.Position.X-from.X)*float64(w), (n.Position.Y-from.Y)*float64(h)
+				forward := dx*d.DX + dy*d.DY
+				if forward <= 0 {
+					continue
+				}
+				cross := dx*d.DY - dy*d.DX
+				s := forward + cross*cross/forward*2
+				if s < score {
+					score = s
+					best = n.Name
+				}
+			}
+			if best != "" {
+				action = graphview.SelectNode{Name: best}
+			}
+		} else {
+			action = d
+		}
 	case "pan left":
 		action = graphview.Pan{DX: -4}
 	case "pan right":
@@ -370,6 +450,18 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.startSessionFormFromNode()
 		}
 	case "open card":
+		name := m.graphState.Graph.Selected()
+		if name == dormantChip {
+			m.mp.showDormant = !m.mp.showDormant
+			m.applyTeamView(true)
+			return m, nil
+		}
+		if name == unassignedTeam {
+			return m.graphFocus()
+		}
+		if n, ok := m.mapNode(name); ok && n.Ref != nil && n.Ref.Kind == "team" {
+			return m.graphFocus()
+		}
 		action = graphview.OpenSelected{}
 	case "next team":
 		return m.cycleTeamFilter()
@@ -413,7 +505,7 @@ func (m Model) graphView(w, h int) []string {
 	size := graphview.Size{Width: gw, Height: gh}
 	scene := m.graphScene(state, size)
 	renderer := graphview.Braille{Styled: true}
-	if lines, ok := m.pixelLines(gw, gh); ok {
+	if lines, ok := m.pixelLines(gw, gh); ok && len(scene.Groups) == 0 {
 		for _, line := range lines {
 			out = append(out, "  "+line)
 		}
@@ -440,11 +532,23 @@ func (m Model) graphView(w, h int) []string {
 		out = append(out, sDim.Render(graphLegendCompact(w)))
 	}
 	out = append(out, graphStatusLine(w, scene))
-	for _, line := range m.graphOwnerLines(w) {
-		out = append(out, sDim.Render(clip("  "+line, w)))
+	if m.mp.removal != nil {
+		questions := wrap(m.mp.removal.question, max(w-4, 1))
+		for i := 0; i < m.graphOwnerCount(); i++ {
+			line := ""
+			if i < len(questions) {
+				line = "  " + questions[i]
+			}
+			out = append(out, clip(line, w))
+		}
+		out = append(out, sDim.Render("  "+confirmHint))
+	} else {
+		for _, line := range m.graphOwnerLines(w) {
+			out = append(out, sDim.Render(clip("  "+line, w)))
+		}
+		out = append(out, sDim.Render(graphHintLine(m.teamFilterName(), w)))
 	}
 
-	out = append(out, sDim.Render(graphHintLine(m.teamFilterName(), w)))
 	return out
 }
 
@@ -490,7 +594,11 @@ func graphStatusLine(w int, scene graphview.Scene) string {
 		edges := n.Card.Incoming + n.Card.Outgoing
 		prefix := "  selected: "
 		line := prefix + ansi.Truncate(name, max(w-ansi.StringWidth(prefix), 1), "…")
-		for _, extra := range []string{" · " + kind, edgeCount(edges)} {
+		extras := []string{edgeCount(edges)}
+		if n.LabelSuffix == "" {
+			extras = append([]string{" · " + kind}, extras...)
+		}
+		for _, extra := range extras {
 			if ansi.StringWidth(line+extra) <= w {
 				line += extra
 			}
@@ -526,23 +634,16 @@ func (m Model) graphTalkCmd() tea.Cmd {
 }
 
 // graphHintLine drops whole table hints, starting with the least important.
-// The Team filter stays first: it names what the Graph shows.
+// Focus, dormant and back stay visible before less-used navigation.
 func graphHintLine(team string, w int) string {
 	if ansi.StringWidth(team) > 24 {
 		team = ansi.Truncate(team, 24, "…")
 	}
-	teamHint := hint{key: "t", label: "team: " + team, prio: 0}
+	teamHint := hint{key: "t", label: "team: " + team, prio: 1}
 	direction := bindingPairHint(contextGraph, "select left", "select right")
-	direction.label, direction.prio = "select", 1
-	zoom := bindingPairHint(contextGraph, "zoom in", "zoom out")
-	zoom.label, zoom.prio = "zoom", 1
-	card := bindingHint(contextGraph, "open card")
-	card.prio = 2
-	traffic := bindingHint(contextGraph, "show all traffic")
-	traffic.prio = 2
-	delivery := bindingHint(contextGraph, "delivery")
-	delivery.prio = 3
-	hs := []hint{teamHint, direction, zoom, delivery, traffic, card, bindingHint(contextGraph, "help")}
+	direction.label, direction.prio = "select", 2
+	hs := []hint{{key: "f", label: "focus/zoom", prio: 0}, {key: "d", label: "dormant", prio: 0}, {key: "esc", label: "back", prio: 0}, {key: "x/X", label: "remove", prio: 1}, teamHint, direction, {key: "?", label: "help", prio: -1}}
+
 	text := func() string {
 		parts := make([]string, 0, len(hs))
 		for _, h := range hs {
@@ -567,7 +668,7 @@ func graphHintLine(team string, w int) string {
 
 // graphLegend drops whole items from the end when the viewport is narrow.
 func graphLegend(w int) string {
-	items := []string{"● charter", "○ no charter", "gold: your words", "pink: talked, no rule set"}
+	items := []string{"needs you: highlighted", "busy: bright", "idle: normal", "offline: dim"}
 	for len(items) > 0 {
 		line := "  " + strings.Join(items, " · ")
 		if ansi.StringWidth(line) <= w {
@@ -580,7 +681,7 @@ func graphLegend(w int) string {
 
 // graphLegendCompact is the one row legend on a 24 row terminal.
 func graphLegendCompact(w int) string {
-	items := []string{"● charter", "○ open", "gold: approved", "pink: unverified"}
+	items := []string{"needs you: highlighted", "busy: bright", "offline: dim"}
 	for len(items) > 0 {
 		line := "  " + strings.Join(items, " · ")
 		if ansi.StringWidth(line) <= w {
@@ -640,7 +741,7 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 	size := graphview.Size{Width: w, Height: h}
 	scene := m.graphScene(m.graphState, size)
 	hit := ""
-	pixelReady := m.graphPixel.enabled() && m.graphPixel.ready && m.graphPixel.size == size
+	pixelReady := m.graphPixel.enabled() && m.graphPixel.ready && m.graphPixel.size == size && len(scene.Groups) == 0
 	if pixelReady {
 		hit = graphview.PixelHit(scene, size, graphview.PixelMetrics{CellWidth: m.graphPixel.cellW, CellHeight: m.graphPixel.cellH}, graphview.Cell{X: x, Y: y})
 		if hit == "" {

@@ -1,21 +1,21 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-repo shop  autonomy: off
+shop  autonomy: off  repo
+agent: shop
+  Own the shop and review changes.
 Tools: 0 skills, 0 MCP servers · t open
-owner: agent shop
+owner: shop
 Build and ship the shop.
 ○ no live sessions
-accept: agent shop (offline)
+accept: shop (offline)
 test, review, merge, release, verify: caller
 
 IN 1                                     OUT 0
-agent shop ──▶ accepts
-Card 1-6/9  ctrl+u/d scroll ────────────────────────────────────────────────────
+shop ──▶ accepts
+Card 1-4/9  ctrl+u/d scroll ────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 no charter set
 Rules ──────────────────────────────────────────────────────────────────────────
 tests_before_merge suite                  default
-merge_authority    full                   default
-worker_sandbox     sandboxed              default
 RECENT  no changes yet
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

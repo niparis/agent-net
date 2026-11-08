@@ -380,6 +380,16 @@ func nodeRadius(n SceneNode, zoom float64) float64 {
 }
 
 func ringColor(n SceneNode) color.NRGBA {
+	switch n.Role {
+	case "needs you":
+		return deploysColor
+	case "busy":
+		return pixelBusy
+	case "idle":
+		return color.NRGBA{0xd7, 0xdc, 0xe5, 0xff}
+	case "offline":
+		return ringNone
+	}
 	if n.Architect {
 		return architectColor
 	}

@@ -1,16 +1,17 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 6 nodes, 5 edges                                                  updated 14:05
-repo cogforge  autonomy: off
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 5 nodes, 4 edges                                                  updated 14:05
+cogforge  autonomy: off  repo
+agent: api-architect
 Tools: 0 skills, 0 MCP servers · t open
-owner: agent api-architect
+owner: api-architect
 no purpose set
 ○ no live sessions
 agents 4/3 · over max
 accept, test, review, merge, release, verify: caller
-governed by: agent api-architect (-)
+governed by: api-architect (-)
 
 IN 0                                                          OUT 2
-                                                              ──▶ repo shop depends
-                                                              ──▶ team Alpha member_of
+                                                              ──▶ shop depends
+                                                              ──▶ Alpha member_of
 Card ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 no charter set
@@ -21,7 +22,6 @@ worker_sandbox     sandboxed              default
 judge_consumers    charter                default
 deploy_rule        brief                  default
 autonomy           off                    default
-
 
 
 

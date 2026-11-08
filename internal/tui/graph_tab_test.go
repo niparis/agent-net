@@ -190,10 +190,10 @@ func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
 	m := graphModel(80, 24)
 	lines := m.graphView(80, 16)
 	line := ansi.Strip(lines[len(lines)-1])
-	if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "enter card") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
+	if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "f focus/zoom") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
 		t.Fatalf("invalid hint line %q", line)
 	}
-	if !strings.Contains(line, "left/right select") || strings.Contains(line, "space pause") || strings.Contains(line, "o orbit") || strings.Contains(line, "t tools") {
+	if !strings.Contains(line, "d dormant") || strings.Contains(line, "space pause") || strings.Contains(line, "o orbit") || strings.Contains(line, "t tools") {
 		t.Fatalf("incorrect hint line %q", line)
 	}
 }
@@ -202,9 +202,9 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"left/right select", "+/- zoom", "enter card", "? help", "t team: all"}, []string{"0 fit", "o orbit", "t tools", "space pause"}},
-		{60, []string{"left/right select", "+/- zoom", "? help", "t team: all"}, []string{"enter card", "0 fit", "o orbit", "t tools"}},
-		{40, []string{"left/right select", "? help", "t team: all"}, []string{"+/- zoom", "enter card", "0 fit", "o orbit", "t tools"}},
+		{80, []string{"f focus/zoom", "d dormant", "esc back", "x/X remove", "? help", "t team: all"}, []string{"0 fit", "o orbit", "t tools", "space pause"}},
+		{60, []string{"f focus/zoom", "d dormant", "esc back", "x/X remove", "? help"}, []string{"enter card", "0 fit", "o orbit", "t tools"}},
+		{40, []string{"f focus/zoom", "d dormant", "? help"}, []string{"+/- zoom", "enter card", "0 fit", "o orbit", "t tools"}},
 	} {
 		line := graphHintLine("all", tc.width)
 		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? help") {
@@ -227,7 +227,7 @@ func TestGraphStatusLineNamesSelectedNode(t *testing.T) {
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-01"})
 	lines := m.graphView(120, 20)
 	plain := ansi.Strip(strings.Join(lines, "\n"))
-	if !strings.Contains(plain, "selected: repo project-01 · component · 2 edges") {
+	if !strings.Contains(plain, "selected: project-01 · component · 2 edges") {
 		t.Fatalf("status line does not name the selection:\n%s", plain)
 	}
 	for _, line := range lines {
@@ -238,7 +238,7 @@ func TestGraphStatusLineNamesSelectedNode(t *testing.T) {
 	m80 := graphModel(80, 24)
 	m80.graphState, _ = graphview.Update(m80.graphState, graphview.SelectNode{Name: "project-01"})
 	plain = ansi.Strip(strings.Join(m80.graphView(80, 16), "\n"))
-	if !strings.Contains(plain, "selected: repo project-01 · component · 2 edges") || strings.Contains(plain, "…") {
+	if !strings.Contains(plain, "selected: project-01 · component · 2 edges") || strings.Contains(plain, "…") {
 		t.Fatalf("narrow status line is cut:\n%s", plain)
 	}
 }
@@ -248,7 +248,7 @@ func TestGraphStatusLineFollowsTheCamera(t *testing.T) {
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
 	m = keys(m, "+", "h", "h")
 	lines := m.graphView(120, 20)
-	if !strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "selected: repo project-02 · component · 2 edges") {
+	if !strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "selected: project-02 · component · 2 edges") {
 		t.Fatalf("status line changed after zoom and pan:\n%s", strings.Join(lines, "\n"))
 	}
 }
@@ -317,7 +317,7 @@ func TestGraphQuitDisablesMouseBeforeQuit(t *testing.T) {
 }
 
 func TestGraphVoiceLegend(t *testing.T) {
-	if legend := graphLegend(52); !strings.Contains(legend, "gold: your words") || strings.Contains(legend, "pink:") || ansi.StringWidth(legend) > 52 {
+	if legend := graphLegend(52); !strings.Contains(legend, "needs you: highlighted") || strings.Contains(legend, "offline:") || ansi.StringWidth(legend) > 52 {
 		t.Fatalf("narrow legend: %q", legend)
 	}
 	for _, w := range []int{80, 120} {
@@ -325,7 +325,7 @@ func TestGraphVoiceLegend(t *testing.T) {
 		found := false
 		for _, line := range lines {
 			line = ansi.Strip(line)
-			if strings.Contains(line, "gold: your words") {
+			if strings.Contains(line, "needs you: highlighted") {
 				found = true
 				if ansi.StringWidth(line) > w || strings.Contains(line, "…") {
 					t.Fatalf("legend: %q", line)
@@ -407,7 +407,7 @@ func TestGraphHidesTheCTOBoxWithoutAGraphProposalAt80(t *testing.T) {
 	if strings.Contains(view, "no messages yet") {
 		t.Errorf("the 80x24 graph kept its feed line:\n%s", view)
 	}
-	if !strings.Contains(view, "● charter · ○ open · gold: approved · pink: unverified") {
+	if !strings.Contains(view, "needs you: highlighted · busy: bright · offline: dim") {
 		t.Errorf("the compact legend is missing:\n%s", view)
 	}
 	m.proposals = []protocol.CTOProposal{{ID: "p1", NodeID: "n_mac", Tool: "graph_change", Action: "charter_set", Status: "open"}}

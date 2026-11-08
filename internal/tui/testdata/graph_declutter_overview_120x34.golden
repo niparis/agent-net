@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 2 busy     updated 14:05:00
+
+   ┌─ forge ─────┐  ┌─ platform ──┐  ┌─ unassigned ─────────────────────────────┐
+   │             │  │             │  │                                          │
+   │   api       │  │   accounts  │  │   review    docs      mobile    tools    │
+   │   checkout  │──│   billing   │  │   deploy    events    storage   website  │
+   │ ★ shop      │  │   catalog   │──│   desktop   metrics   support            │
+   └─────────────┘  │   gateway   │  │   standards                              │
+                    │   search    │  │ → all projects · auto                    │
+                    └─────────────┘  └──────────────────────────────────────────┘
+   unassigned ↔ platform: depends   forge ↔ platform: 3 depends
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   4 dormant · d to show
+  no messages yet
+  needs you: highlighted · busy: bright · idle: normal · offline: dim
+  selected: shop · repo · 2 edges
+  accept, test, review, merge, release, verify: caller
+
+
+  f focus/zoom  d dormant  esc back  x/X remove  t team: all  left/right select  ? help
+1-8 tabs  c CTO  ? help  q quit

@@ -1,5 +1,10 @@
 Keys · Graph ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-  d                      delivery
+  D                      delivery
+  d                      show or hide dormant nodes
+  f                      focus on a node and its neighbours, or zoom into a team
+  esc                    go back one focus or team level
+  x                      archive the selected dormant repo and tombstone its agent after confirmation
+  X                      on the dormant chip, confirm removal of every dormant node
   /                      find a node; enter selects the first match
   +, =                   zoom in
   -                      zoom out
@@ -28,13 +33,8 @@ Keys · Graph ──────────────────────
   H                      show hidden projects
   ctrl+u/d, pgup/pgdn    scroll the card: charter, rules and learned changes
 
-Legend ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Edges
-  ──▶ depends  consumer uses provider
-  ──▶ governs  architect over component; mode advisor, arbiter or owner
-  ──▶ deploys  deployer runs the app's deploys
-  Request rule on an edge from A to B
-  normal  delivered; B judges it
+  live state             needs you: highlighted; busy: bright; idle: normal; offline: dim
+  ★                      team lead; each box lists the team members
   more below
 
 up/down scroll  ? all screens  esc close

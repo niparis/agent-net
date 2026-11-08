@@ -32,6 +32,9 @@ type LabelCell struct {
 }
 
 func (b Braille) Render(scene Scene, size Size) Output {
+	if len(scene.Groups) > 0 && size.Width > 0 && size.Height > 0 {
+		return b.renderGroups(scene, size)
+	}
 	width, height := size.Width, size.Height
 	if width <= 0 || height <= 0 {
 		return Output{}
@@ -199,7 +202,10 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if n.HasCharter {
 			marker = '●'
 		}
-		role := "node"
+		role := n.Role
+		if role == "" || role == "none" {
+			role = "node"
+		}
 		if n.Role == "cto" {
 			role = "cto"
 		}
@@ -320,9 +326,12 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if scene.Level == "cards" {
 			label = "[" + label + "]"
 		}
-		labelRole := "labelDim"
-		if n.HasCharter {
-			labelRole = "label"
+		labelRole := n.Role
+		if labelRole == "" || labelRole == "none" {
+			labelRole = "labelDim"
+			if n.HasCharter {
+				labelRole = "label"
+			}
 		}
 		if n.Selected {
 			labelRole = "selectedLabel"
@@ -369,10 +378,18 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			if !free {
 				continue
 			}
+			suffixStart := len([]rune(n.Label)) - len([]rune(n.LabelSuffix))
+			if scene.Level == "cards" {
+				suffixStart++
+			}
 			for i, r := range rs {
-				if put(pos[0]+i, pos[1], r, labelRole) {
+				role := labelRole
+				if n.LabelSuffix != "" && i >= suffixStart && i < suffixStart+len([]rune(n.LabelSuffix)) {
+					role = "labelDim"
+				}
+				if put(pos[0]+i, pos[1], r, role) {
 					hits[Cell{pos[0] + i, pos[1]}] = n.Name
-					labels[Cell{pos[0] + i, pos[1]}] = LabelCell{Rune: r, Role: labelRole}
+					labels[Cell{pos[0] + i, pos[1]}] = LabelCell{Rune: r, Role: role}
 				}
 			}
 			// Keep the cell between a marker and a label on its row blank,
@@ -502,7 +519,9 @@ func colorRole(role, text string) string {
 		color = AccentColor
 	case "edgeDim":
 		color = edgeDimColor
-	case "node", "label", "card":
+	case "needs you":
+		color = palette.Color("#865000", "#f0b35a")
+	case "idle", "node", "label", "card":
 		color = palette.Color("#242a34", "#d7dce5")
 	case "busy", "comet":
 		color = palette.Color("#246b32", "#7ccf8a")

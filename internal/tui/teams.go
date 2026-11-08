@@ -88,67 +88,32 @@ func (m Model) teamFilterName() string {
 	return sanitize(m.teamName(m.teamFilter))
 }
 
-// teamFilterView keeps one Team's members and the edges between them. The
-// Team node itself is not a member, so the Graph footer names the filter.
-func (m Model) teamFilterView(v protocol.GraphView) protocol.GraphView {
-	if m.teamFilter == "" {
-		return v
-	}
-	members := map[string]bool{}
-	for _, e := range v.Edges {
-		if e.Kind == "member_of" && e.FromRef != nil && e.ToRef != nil && e.ToRef.Kind == "team" && e.ToRef.ID == m.teamFilter {
-			members[graphRefKey(e.FromRef)] = true
-		}
-	}
-	out := protocol.GraphView{Changes: v.Changes}
-	for _, n := range v.Nodes {
-		if n.Ref != nil && members[graphRefKey(n.Ref)] {
-			out.Nodes = append(out.Nodes, n)
-		}
-	}
-	keep := map[string]bool{}
-	for _, n := range out.Nodes {
-		keep[n.Name] = true
-	}
-	for _, e := range v.Edges {
-		if keep[e.From] && keep[e.To] {
-			out.Edges = append(out.Edges, e)
-		}
-	}
-	return out
-}
-
-// applyTeamView redraws the graph from the full read with the current filter.
-// A filtered Team is laid out alone and centered. Its zoom is capped at the
-// full graph's fitted zoom, so a small Team stays near the middle with short
-// edges instead of stretching across the canvas.
+// applyTeamView builds the display projection while retaining full card data.
 func (m *Model) applyTeamView(fit bool) {
-	view := m.teamFilterView(m.mp.full)
+	full := m.graphProjection()
+	m.mp.nodes, m.mp.edges = full.Nodes, full.Edges
+	view := m.graphDisplayView(full)
 	first := m.graphState.Graph == nil
 	m.graphState, _ = graphview.Update(m.graphState, graphview.GraphChanged{Graph: view})
 	if first || fit {
 		w, h := m.graphSize()
 		m.graphState, _ = graphview.Update(m.graphState, graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}})
-		if m.teamFilter != "" && m.graphState.Graph != nil {
-			cam := m.graphState.Graph.Fit(w, h)
-			if m.mp.baseZoom > 0 && cam.Zoom > m.mp.baseZoom {
-				cam.Zoom, cam.FitZoom = m.mp.baseZoom, m.mp.baseZoom
-				cam.ScaleX, cam.ScaleY = 1, 1
-			}
-			m.graphState.Camera = cam
-			m.graphState.Tween = nil
-		}
 	}
-	m.mp.nodes, m.mp.edges = view.Nodes, view.Edges
+	// Cards retain the complete merged view.
 	m.mapEnsureSelection()
 }
 
 func (m *Model) setTeamFilter(id string) {
 	m.teamFilter = id
+	m.mp.focusNode = ""
+	m.mp.levels = nil
 	if m.mp.full.Nodes == nil {
 		return
 	}
 	m.applyTeamView(true)
+	if id != "" {
+		m.selectGraphInterior()
+	}
 	m.smoothCamera()
 }
 

@@ -125,7 +125,7 @@ func TestGraphOpensDeliveryForProject(t *testing.T) {
 	m := graphModel(80, 24)
 	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
-	m = keys(m, "d")
+	m = keys(m, "D")
 	if m.tab != deliveryTab || m.delivery.project != "project-02" {
 		t.Fatalf("tab %d project %q", m.tab, m.delivery.project)
 	}

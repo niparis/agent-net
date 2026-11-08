@@ -1,13 +1,13 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-agent shop  architect
+shop  architect  agent
 Own the shop and review changes.
 ○ no live sessions
 
-IN 0                                     OUT 1
-                                         ──▶ repo shop accepts
+no edges yet · ask the CTO to connect it (c)
 Card ───────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 no charter set
+
 
 
 

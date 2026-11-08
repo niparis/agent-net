@@ -28,12 +28,12 @@ func TestGraphTypedLabels(t *testing.T) {
 			for _, key := range names {
 				m.mp.selected = key
 				out := ansi.Strip(strings.Join(m.mapFocusView(120, 40), "\n"))
-				label := "repo shop"
+				label := "shop"
 				n, _ := m.mapNode(key)
 				if n.Kind == "architect" {
-					label = "agent lead"
+					label = "lead"
 					if typed {
-						label = "agent shop"
+						label = "shop"
 					}
 				}
 				if !strings.Contains(out, label) || strings.Contains(out, "opaque-") {
@@ -51,7 +51,7 @@ func TestGraphTypedLabels(t *testing.T) {
 					}
 				}
 			}
-			if len(labels) != 2 {
+			if (!typed && len(labels) != 2) || (typed && len(labels) != 1) {
 				t.Fatal(labels)
 			}
 		})
@@ -82,7 +82,7 @@ func TestGraphIdentityGoldens(t *testing.T) {
 	agent := &protocol.GraphRef{Kind: "agent", ID: "opaque-record"}
 	v := protocol.GraphView{
 		Nodes: []protocol.Node{
-			{Name: "shop", Kind: "repo", Ref: repo, Owner: agent, Charter: protocol.Charter{Purpose: "Build and ship the shop."}},
+			{Name: "shop", Kind: "repo", Ref: repo, Owner: agent, Sessions: []protocol.GraphSession{{ID: "shop-live", Status: "idle"}}, Charter: protocol.Charter{Purpose: "Build and ship the shop."}},
 			{Name: "shop", Kind: "agent", Ref: agent, Role: "architect", Charter: protocol.Charter{Purpose: "Own the shop and review changes."}},
 		},
 		Edges: []protocol.Edge{{FromRef: agent, ToRef: repo, Kind: "accepts", Rule: "normal"}},
@@ -102,7 +102,7 @@ func TestGraphIdentityGoldens(t *testing.T) {
 	for _, n := range scene.Nodes {
 		labels[n.Label] = true
 	}
-	if !labels["repo shop"] || !labels["agent shop"] {
+	if !labels["shop"] || len(m.mp.merged) != 1 {
 		t.Fatalf("scene labels: %v", labels)
 	}
 	sessions := keys(newModel(80, 24), "d")
