@@ -8,10 +8,10 @@
  Working (1)                                                             all (v)
   tenebrae-53    Mac     tenebrae  claude · op… busy        ?     ?
  Idle (8)
-  ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
   ★ agent-net    Mac     agent-net claude       idle        ?     ? test ch_ed5f
   ├─ fix-login   Mac     agent-net opencode · … idle        ?     ?
 ▸ └─ age… merger Mac     agent-net claude       idle        ?     ?
+  ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
   web            Mac     shop      opencode · … idle        ?     ?
   ◐ ci-runner    build-… agent-net pi · gpt-6   idle        ?     ?
   scratch        build-… -         pi           shell       ?     ?

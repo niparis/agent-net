@@ -22,7 +22,7 @@ func TestSessionsBotsGroupAndKeys(t *testing.T) {
 		t.Fatal("bot creates a phantom machine")
 	}
 	groups := m.groups()
-	if groups[len(groups)-1].host != "Idle" {
+	if groups[len(groups)-1].host != "Bots" {
 		t.Fatalf("last group: %+v", groups[len(groups)-1])
 	}
 	m.selected = "s-bot"

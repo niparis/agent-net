@@ -3,6 +3,7 @@ package tui
 import (
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -11,6 +12,20 @@ import (
 // workingGrace is how long after its last activity a session stays in the
 // Working band. Once an hour passes with nothing done, it moves to Idle.
 const workingGrace = time.Hour
+
+// sessionEnded tells whether a session is over: its daemon no longer reports
+// it, its harness process exited, or it ended. An ended session is never
+// Working and never lifts its caller's tree into a more urgent band.
+func sessionEnded(a protocol.AgentView) bool {
+	if !a.Online {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(a.Status)) {
+	case "ended", "exited", "offline":
+		return true
+	}
+	return false
+}
 
 // activityBand keeps a session in its old band until the idle margin expires.
 func activityBand(now, activity time.Time, previous int, online, urgent bool) int {
@@ -98,7 +113,7 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 		if exists {
 			prev = old.band
 		}
-		band := activityBand(now, old.activity, prev, a.Online, a.Status == "busy" || waiting)
+		band := activityBand(now, old.activity, prev, !sessionEnded(a), a.Status == "busy" || waiting)
 		if !exists {
 			m.sessionNext++
 			old.rank = m.sessionNext
@@ -121,4 +136,16 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 		}
 		m.sessionOrder[a.SessionID] = old
 	}
+}
+
+// sessionKeyBefore orders two activity keys the way the Sessions list does:
+// the more urgent band first, then the newer activity, then the newer rank.
+func sessionKeyBefore(a, b sessionOrder) bool {
+	if a.band != b.band {
+		return a.band < b.band
+	}
+	if !a.activity.Equal(b.activity) {
+		return a.activity.After(b.activity)
+	}
+	return a.rank < b.rank
 }

@@ -1907,15 +1907,25 @@ func (m Model) groups() []group { return m.sessionGroups(true) }
 func (m Model) sessionGroups(collapse bool) []group {
 	shown := map[string]protocol.AgentView{}
 	eligible := map[string]bool{}
+	var bots []protocol.AgentView
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) || m.hiddenSessions[a.SessionID] && !m.showHiddenSessions || isJunkSession(a) && !m.showJunk() {
 			continue
 		}
-		if a.Worker != nil && !a.Online {
+		if a.Harness == "bot" {
+			// A bot has no turns, so it is never Working. It gets its own
+			// small group at the bottom, and a filter still selects it.
+			if m.filter == "" || matches(a, m.filter) {
+				bots = append(bots, a)
+			}
+			continue
+		}
+		live := !sessionEnded(a)
+		if a.Worker != nil && !live {
 			continue
 		}
 		shown[a.SessionID] = a
-		eligible[a.SessionID] = a.Online && a.Status != protocol.StatusDormant || m.showOffline || strings.TrimSpace(m.filter) != "" || a.StalledSince > 0 || m.sessionHasOwnerRequest(a)
+		eligible[a.SessionID] = live && a.Status != protocol.StatusDormant || m.showOffline || strings.TrimSpace(m.filter) != "" || a.StalledSince > 0 || m.sessionNeedsOwner(a)
 	}
 	parents := map[string]string{}
 	for id, a := range shown {
@@ -1967,6 +1977,10 @@ func (m Model) sessionGroups(collapse bool) []group {
 			roots = append(roots, a)
 		}
 	}
+	treeOrder := make(map[string]sessionOrder, len(roots))
+	for _, root := range roots {
+		treeOrder[root.SessionID] = m.treeOrder(root, children)
+	}
 	less := func(a, b protocol.AgentView) bool {
 		if (a.PinnedAt > 0) != (b.PinnedAt > 0) {
 			return a.PinnedAt > 0
@@ -1984,8 +1998,8 @@ func (m Model) sessionGroups(collapse bool) []group {
 				return ia < ib
 			}
 		}
-		oa, oka := m.sessionOrder[a.SessionID]
-		ob, okb := m.sessionOrder[b.SessionID]
+		oa, oka := treeOrder[a.SessionID]
+		ob, okb := treeOrder[b.SessionID]
 		if oka && okb {
 			if oa.band != ob.band {
 				return oa.band < ob.band
@@ -2027,12 +2041,13 @@ func (m Model) sessionGroups(collapse bool) []group {
 			matched = matched || matches(a, m.filter)
 			pinned = pinned || a.PinnedAt > 0
 			subagent = subagent || a.Worker != nil || isMerger(a)
-			if a.Online && m.sessionNeedsOwner(a) {
+			live := !sessionEnded(a)
+			if live && m.sessionNeedsOwner(a) {
 				band = 0
-			} else if a.Online && (m.mergerWorking(a) || a.Status == "busy" || m.activeWithin(a, workingGrace)) {
+			} else if live && (m.mergerWorking(a) || a.Status == "busy" || m.activeWithin(a, workingGrace)) {
 				band = min(band, 1)
 			}
-			if a.Online && a.Status == "busy" {
+			if live && a.Status == "busy" {
 				busy++
 			}
 			cs := children[a.SessionID]
@@ -2080,11 +2095,50 @@ func (m Model) sessionGroups(collapse bool) []group {
 			out = append(out, g)
 		}
 	}
+	var botAgents []protocol.AgentView
+	for _, a := range bots {
+		if !a.Online && !m.showOffline {
+			continue
+		}
+		botAgents = append(botAgents, a)
+	}
+	sort.SliceStable(botAgents, func(i, j int) bool {
+		if botAgents[i].LastSeen != botAgents[j].LastSeen {
+			return botAgents[i].LastSeen > botAgents[j].LastSeen
+		}
+		return botAgents[i].SessionID < botAgents[j].SessionID
+	})
+	if len(botAgents) > 0 {
+		g := group{host: "Bots", agents: botAgents, total: len(botAgents), marks: map[string]treeMark{}}
+		g.first = len(out) == 0
+		out = append(out, g)
+	}
 	return out
 }
 
+// treeOrder picks the order key of a root tree's most urgent member. A worker
+// or merger that is more recent than its caller lifts the whole tree, so the
+// owner still sees a working child near the top of its band.
+func (m Model) treeOrder(root protocol.AgentView, children map[string][]protocol.AgentView) sessionOrder {
+	best, ok := m.sessionOrder[root.SessionID]
+	if !ok {
+		best = sessionOrder{band: 4}
+	}
+	var walk func(protocol.AgentView)
+	walk = func(a protocol.AgentView) {
+		if o, ok := m.sessionOrder[a.SessionID]; ok && sessionKeyBefore(o, best) {
+			best = o
+		}
+		for _, c := range children[a.SessionID] {
+			walk(c)
+		}
+	}
+	walk(root)
+	return best
+}
+
 func (m Model) sessionNeedsOwner(a protocol.AgentView) bool {
-	return a.Online && m.sessionHasOwnerRequest(a)
+	return !sessionEnded(a) && m.sessionHasOwnerRequest(a)
 }
 
 func (m Model) sessionHasOwnerRequest(a protocol.AgentView) bool {
