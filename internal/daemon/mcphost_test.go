@@ -39,7 +39,10 @@ func TestMain(m *testing.M) {
 	}
 
 	if os.Getenv(helperEnv) != "" {
-		if err := tools.New().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		runForkingHelper()
+		err := tools.New().Run(context.Background(), &mcp.StdioTransport{})
+		holdIfStubborn()
+		if err != nil {
 			os.Exit(1)
 		}
 		return

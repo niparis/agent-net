@@ -12,8 +12,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -66,7 +68,10 @@ func newMCPHost(d *Daemon) *mcpHost {
 	return h
 }
 
-func (h *mcpHost) start(ctx context.Context) { h.ctx = ctx }
+func (h *mcpHost) start(ctx context.Context) {
+	h.ctx = ctx
+	h.reapLeftovers()
+}
 
 func (h *mcpHost) stop() {
 	h.mu.Lock()
@@ -177,13 +182,9 @@ type mcpRunner struct {
 }
 
 func (r *mcpRunner) stop() {
+	// The run loop ends the session and the server's process group when its
+	// context ends.
 	r.cancel()
-	r.mu.Lock()
-	s := r.sess
-	r.mu.Unlock()
-	if s != nil {
-		s.Close()
-	}
 	<-r.done
 }
 
@@ -237,7 +238,7 @@ func (r *mcpRunner) run(ctx context.Context) {
 			tools, err = listTools(lctx, c.sess)
 			lcancel()
 			if err != nil {
-				c.sess.Close()
+				c.close()
 				err = c.red.wrap(err)
 			}
 		}
@@ -260,6 +261,7 @@ func (r *mcpRunner) run(ctx context.Context) {
 			r.logf("up with %d tools", len(tools))
 			started := time.Now()
 			r.watch(ctx, c)
+			c.close() // the server may have exited and left children
 			cancel()
 			if ctx.Err() != nil {
 				return
@@ -308,7 +310,7 @@ func (r *mcpRunner) watch(ctx context.Context, c *mcpConn) {
 			lastItems = time.Now()
 			r.reportItemsChanged()
 		case <-ctx.Done():
-			c.sess.Close()
+			c.close()
 			return
 		case <-c.listChanged:
 			lctx, cancel := context.WithTimeout(ctx, probeTimeout)
@@ -326,7 +328,7 @@ func (r *mcpRunner) watch(ctx context.Context, c *mcpConn) {
 			cancel()
 			if err != nil {
 				r.logf("ping failed: %v", c.red.wrap(err))
-				c.sess.Close()
+				c.close()
 				return
 			}
 		}
@@ -423,6 +425,44 @@ type mcpConn struct {
 	listChanged chan struct{}
 	// itemsChanged gets a signal when the server's resources or prompts change.
 	itemsChanged chan struct{}
+
+	// A stdio server's process group (its leader pid) and the record file the
+	// host keeps for it; zero and empty for other transports.
+	pgid      int
+	pidRecord string
+	closeOnce sync.Once
+}
+
+// close ends the session and, for a stdio server, its whole process group.
+// The group gets SIGTERM first and SIGKILL after a short wait, so a server
+// that ignores its closed input still goes, with the programs it started.
+func (c *mcpConn) close() {
+	if c == nil {
+		return
+	}
+	c.closeOnce.Do(func() {
+		if c.pgid > 1 {
+			syscall.Kill(-c.pgid, syscall.SIGTERM)
+		}
+		if c.sess != nil {
+			done := make(chan struct{})
+			go func() { c.sess.Close(); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(mcpGroupGrace):
+				if c.pgid > 1 {
+					syscall.Kill(-c.pgid, syscall.SIGKILL)
+				}
+				<-done
+			}
+		}
+		if c.pgid > 1 {
+			endGroup(c.pgid, mcpGroupGrace)
+		}
+		if c.pidRecord != "" {
+			os.Remove(c.pidRecord)
+		}
+	})
 }
 
 // connectMCP opens a client session to the server described by spec. stderr
@@ -460,7 +500,20 @@ func connectMCP(ctx context.Context, d *Daemon, spec protocol.MCPServer, stderr 
 		}
 		cmd.Env = env
 		cmd.Stderr = stderr
-		tr = &mcp.CommandTransport{Command: cmd}
+		// Its own process group, so the host can end the server with
+		// everything it started.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		dir := ""
+		if d != nil && d.mcp != nil {
+			dir = d.mcp.pidDir()
+		}
+		tr = &recordingTransport{inner: &mcp.CommandTransport{Command: cmd}, started: func(pid int) {
+			c.pgid = pid
+			if dir != "" {
+				writeMCPPidRecord(dir, pid)
+				c.pidRecord = filepath.Join(dir, strconv.Itoa(pid))
+			}
+		}}
 	case protocol.MCPHTTP, protocol.MCPSSE:
 		hdr := http.Header{}
 		for _, h := range spec.Headers {
@@ -482,6 +535,7 @@ func connectMCP(ctx context.Context, d *Daemon, spec protocol.MCPServer, stderr 
 	}
 	sess, err := client.Connect(ctx, tr, nil)
 	if err != nil {
+		c.close()
 		return nil, c.red.wrap(friendlyConnectError(err))
 	}
 	c.sess = sess
@@ -586,7 +640,7 @@ func (h *mcpHost) probe(ctx context.Context, spec protocol.MCPServer) ([]protoco
 		}
 		return nil, c.redOrZero().wrap(err)
 	}
-	defer c.sess.Close()
+	defer c.close()
 	tools, err := listTools(ctx, c.sess)
 	if err != nil {
 		return nil, c.red.wrap(err)
