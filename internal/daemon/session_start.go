@@ -261,12 +261,17 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	// The choice for the .mcp.json servers is stored in the launch folder before
 	// Claude Code starts, so its first run does not stop on the approval prompt.
 	var mcpChoice *protocol.MCPChoiceResult
-	if p.Harness == "claude" && p.MCPServers != "" {
-		res, err := claudeMCPChoose(sessionPath, p.MCPServers)
-		if err != nil {
-			return protocol.StartedSession{}, fmt.Errorf("cannot record the MCP server choice: %w", err)
+	if p.Harness == "claude" {
+		// A new worktree is a new folder for Claude Code: copy the answers the
+		// owner gave for the project's main checkout, then apply the choice.
+		main := found.Path
+		if sessionPath == found.Path {
+			main = ""
 		}
-		mcpChoice = &res
+		var err error
+		if mcpChoice, err = d.prepareClaudeMCP(main, sessionPath, p.MCPServers); err != nil {
+			return protocol.StartedSession{}, err
+		}
 	}
 	requester, _ := ctx.Value(startRequesterKey{}).(string)
 	r := protocol.StartedSession{MCPChoice: mcpChoice, Requester: requester, AgentID: p.AgentID, Background: p.CTOProposal && p.Harness == "claude", ID: startRef, LimitReserved: reserved, Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}

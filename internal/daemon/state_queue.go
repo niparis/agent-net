@@ -38,6 +38,8 @@ type queuedStart struct {
 	FromCTO                         bool
 	// ChangeID is the delivery change a queued continue carries.
 	ChangeID string
+	// MCPServers is the start's "approve" or "disable" for a Claude worker.
+	MCPServers string
 	// Assessment is the judge result made when the start was requested. It
 	// keeps the level through the queue.
 	Assessment *protocol.WorkerAssessment
@@ -53,14 +55,14 @@ func (s *state) addQueued(q queuedStart) error {
 			assessment = string(raw)
 		}
 	}
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID)
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID, q.MCPServers)
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +73,7 @@ func (s *state) queue() ([]queuedStart, error) {
 		var at int64
 		var autoContinue int
 		var assessment string
-		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID); err != nil {
+		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID, &q.MCPServers); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)

@@ -37,7 +37,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	q := queuedStart{ID: queueIDFor(l), Owner: l.Owner, OwnerName: l.OwnerName, Project: l.Project, Path: l.Path, Harness: l.Harness,
 		Model: l.Model, Task: l.Task, Title: l.Title, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions,
 		DifficultyAsked: l.DifficultyAsked, DifficultyUsed: l.DifficultyUsed, Touches: strings.Join(l.Touches, ","), FromCTO: l.FromCTO, QueuedAt: time.Now(),
-		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID}
+		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID, MCPServers: l.MCPServers}
 	if err := d.st.addQueued(q); err != nil {
 		// Without a queue the old behaviour is the safe one: refuse.
 		return &protocol.WorkerLaunched{Reason: "cannot queue: " + err.Error()}
@@ -163,7 +163,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	l := protocol.WorkerLaunch{StartRef: e.ID, Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner, OwnerName: e.OwnerName,
 		Task: e.Task, Title: e.Title, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask, Permissions: e.Permissions,
 		DifficultyAsked: e.DifficultyAsked, DifficultyUsed: e.DifficultyUsed, Touches: splitTouches(e.Touches), Assessment: e.Assessment,
-		AutoContinue: &e.AutoContinue, TaskID: e.TaskID, ContinuationPartial: e.ContinuationPartial, ChangeID: e.ChangeID}
+		AutoContinue: &e.AutoContinue, TaskID: e.TaskID, ContinuationPartial: e.ContinuationPartial, ChangeID: e.ChangeID, MCPServers: e.MCPServers}
 	out, err := d.runWorkerStart(ctx, l)
 	if err != nil {
 		d.clearStartReservation()

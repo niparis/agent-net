@@ -78,6 +78,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		"touches": {typ: "array", desc: "Deprecated and ignored: the level comes from the difficulty judge.", items: map[string]any{"type": "string", "enum": []string{"db", "hot-path", "ui", "docs", "tests", "config", "other"}}},
 		"base":    s("Branch."), "continue": s("Worker ID."), "task": s("Brief and limits."), "machine": s("Machine."),
 		"isolation":     en("None reads only; default worktree.", "worktree", "none"),
+		"mcp_servers":   en("Claude: approve or disable the .mcp.json servers of the worker's folder.", "approve", "disable"),
 		"auto_continue": b("Default true: agent-net continues a worker that stops early."),
 	})
 	add("worker_stop", "Stop a worker or queued start.", map[string]ctoField{"session": s("Worker ID.")})
