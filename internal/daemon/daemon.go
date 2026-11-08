@@ -637,6 +637,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 		go func() { defer d.wg.Done(); d.toolsLoop(ctx) }()
 	}
 	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.deliveryReconcileLoop(ctx) }()
+	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.linkLoop(ctx) }()
 	return nil
 }

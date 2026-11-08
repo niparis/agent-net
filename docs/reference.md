@@ -2169,6 +2169,8 @@ released change whose after-merge verify waits for the owner to try it; its
 status is `try it` and its second line says what to check), Stuck and Done. A
 To try change never counts as needing you.
 
+The daemon checks each local repo at most once every ten minutes: an open change with commits beyond its base whose head is on the remote default branch moves to Done as `merged outside agent-net`, without running further steps. A change with no step reports, older than seven days, closes as `abandoned: branch gone` when its branch is absent both locally and on the remote.
+
 The evidence strip has a mark for each step: `a` accept, `r` review, `t`
 test, `p` approve, `m` merge, `T` test after merge, `l` release, `d` deploy
 and `v` verify. The glyphs mean `✓` passed, `✗` failed, `*` running, `-`
