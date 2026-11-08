@@ -1,23 +1,23 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-
-   ┌─ forge ─────┐  ┌─ platform ──┐  ┌─ unassigned ───────────────────┐
-   │             │  │             │  │                                │
-   │   api       │  │   accounts  │  │   review    events    support  │
-   │   checkout  │──│   billing   │  │   deploy    metrics   tools    │
-   │ ★ shop      │  │   catalog   │──│   desktop   mobile    website  │
-   └─────────────┘  │   gateway   │  │   docs      storage            │
-                    │   search    │  │   standards                    │
-                    └─────────────┘  │ → all projects · auto          │
-                                     └────────────────────────────────┘
-   unassigned ↔ platform: depends   forge ↔ platform: 3 depends
-
-
-
-
-
+   Graph · all teams
+  ╭─ platform ───────────────────────╮    ╭─ forge ──────────────────────────╮
+  │     ★ shop                       │    │     ★ shop                       │
+  │     5 projects · 5 sessions      │    │     3 projects · 3 sessions      │
+  │  ●  1 busy                       │    │ (●) needs you                    │
+  │                                  │    │                                  │
+  ╰──────────────────────────────────╯    ╰──────────────────────────────────╯
+                     ──────────────────13───────────────────
+                                       │
+  ╭─ unassigned ─────────────────────╮ │
+  │     no lead                      │ │
+  │     10 projects · 8 sessions     │ │
+  │  ○  idle                         │ │
+  │                                  │ │
+  ╰──────────────────────────────────╯ │
+                     ──────────────────
    4 dormant · d to show
   needs you: highlighted · busy: bright · offline: dim
-  selected: shop · repo · 2 edges
+  selected: forge · team · 0 edges
   accept, test, review, merge, release, verify: caller
 
   f focus/zoom  d dormant  esc back  x/X remove  t team: all  ? help

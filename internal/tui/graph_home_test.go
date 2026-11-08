@@ -43,12 +43,14 @@ func TestGraphSameNameHomeMergesSharedOwnerOrLead(t *testing.T) {
 			}
 			scene := m.graphScene(m.graphState, graphview.Size{Width: 116, Height: 24})
 			count := 0
-			for _, n := range scene.Nodes {
-				if n.Label == "workbench" {
-					count++
-				}
-				if n.Name == "agent\x00builder" {
-					t.Fatal("merged agent still appears")
+			for _, group := range scene.Groups {
+				for _, name := range group.Members {
+					if name == "workbench" {
+						count++
+					}
+					if name == "agent\x00builder" {
+						t.Fatal("merged agent still appears")
+					}
 				}
 			}
 			if count != 1 {
@@ -97,6 +99,7 @@ func TestGraphUnrelatedNamesGetDimKindSuffixes(t *testing.T) {
 	v.Nodes[2].Owner = nil
 	m := mapModel(120, 34, v)
 	m.applyMap(mapMsg{view: v, at: t0})
+	m.setTeamFilter(unassignedTeam)
 	size := graphview.Size{Width: 116, Height: 24}
 	scene := m.graphScene(m.graphState, size)
 	names := map[string]string{"workbench": "workbench · repo", "agent\x00builder": "workbench · agent"}
@@ -111,6 +114,7 @@ func TestGraphUnrelatedNamesGetDimKindSuffixes(t *testing.T) {
 	grouped := (graphview.Braille{}).Render(scene, size)
 	flat := scene
 	flat.Groups = nil
+	flat.TeamCanvas = false
 	flat.Nodes = nil
 	for _, n := range scene.Nodes {
 		if _, ok := names[n.Name]; ok {
@@ -137,7 +141,7 @@ func TestGraphUnrelatedNamesGetDimKindSuffixes(t *testing.T) {
 		}
 	}
 	if text := strings.Join(grouped.Lines, "\n"); !strings.Contains(text, "workbench · repo") || !strings.Contains(text, "workbench · agent") {
-		t.Fatal("overview omitted a namesake")
+		t.Fatal("team view omitted a namesake")
 	}
 }
 

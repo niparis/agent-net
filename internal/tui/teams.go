@@ -82,6 +82,9 @@ func (m Model) teamName(id string) string {
 
 // teamFilterName is the Team the Graph shows, or "all".
 func (m Model) teamFilterName() string {
+	if m.teamFilter == unassignedTeam {
+		return "unassigned"
+	}
 	if m.teamFilter == "" {
 		return "all"
 	}
@@ -106,6 +109,7 @@ func (m *Model) applyTeamView(fit bool) {
 func (m *Model) setTeamFilter(id string) {
 	m.teamFilter = id
 	m.mp.focusNode = ""
+	m.mp.teamInside = false
 	m.mp.levels = nil
 	if m.mp.full.Nodes == nil {
 		return

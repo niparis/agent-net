@@ -1,14 +1,14 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 2 busy     updated 14:05:00
+   Graph · all teams
+  ╭─ platform ───────────────────────╮    ╭─ forge ──────────────────────────╮    ╭─ unassigned ─────────────────────╮
+  │     ★ shop                       │    │     ★ shop                       │    │     no lead                      │
+  │     5 projects · 5 sessions      │    │     3 projects · 3 sessions      │    │     10 projects · 8 sessions     │
+  │  ●  1 busy                       │    │ (●) needs you                    │    │  ○  idle                         │
+  │                                  │    │                                  │    │                                  │
+  ╰──────────────────────────────────╯    ╰──────────────────────────────────╯    ╰──────────────────────────────────╯
+                     ───────────────────3───────────────────────────────────────────────────────────
 
-   ┌─ forge ─────┐  ┌─ platform ──┐  ┌─ unassigned ─────────────────────────────┐
-   │             │  │             │  │                                          │
-   │   api       │  │   accounts  │  │   review    docs      mobile    tools    │
-   │   checkout  │──│   billing   │  │   deploy    events    storage   website  │
-   │ ★ shop      │  │   catalog   │──│   desktop   metrics   support            │
-   └─────────────┘  │   gateway   │  │   standards                              │
-                    │   search    │  │ → all projects · auto                    │
-                    └─────────────┘  └──────────────────────────────────────────┘
-   unassigned ↔ platform: depends   forge ↔ platform: 3 depends
+
 
 
 
@@ -26,7 +26,7 @@
    4 dormant · d to show
   no messages yet
   needs you: highlighted · busy: bright · idle: normal · offline: dim
-  selected: shop · repo · 2 edges
+  selected: forge · team · 0 edges
   accept, test, review, merge, release, verify: caller
 
 

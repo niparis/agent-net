@@ -27,9 +27,21 @@ type SceneCard struct {
 	Name, Maturity, Purpose      string
 	Sessions, Incoming, Outgoing int
 }
+type SceneFrame struct {
+	X, Y, Width, Height int
+	Role, Hit           string
+	Selected, Card      bool
+}
+
+type SceneText struct {
+	X, Y            int
+	Text, Role, Hit string
+}
+
 type SceneEdge struct {
 	FromName, ToName string
 	From, To, Arrow  Point
+	Path             []Point `json:",omitempty"`
 	Kind, Mode, Rule string
 	Dashed           bool
 	Selected         bool
@@ -67,6 +79,9 @@ type KeyHint struct {
 
 // Scene contains semantic elements in normalized viewport coordinates.
 type Scene struct {
+	TeamCanvas bool         `json:",omitempty"`
+	Frames     []SceneFrame `json:",omitempty"`
+	Texts      []SceneText  `json:",omitempty"`
 	Groups     []Group
 	Nodes      []SceneNode
 	Edges      []SceneEdge

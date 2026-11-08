@@ -1,11 +1,11 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-
-   ┌─ unassigned ─┐
-   │              │
-   │ › shop       │
-   └──────────────┘
-
-
+   Graph · all teams
+  ╭─ unassigned ─────────────────────╮
+  │     no lead                      │
+  │     1 projects · 1 sessions      │
+  │ (○) idle                         │
+  │                                  │
+  ╰──────────────────────────────────╯
 
 
 
@@ -17,7 +17,7 @@
 
 
   needs you: highlighted · busy: bright · offline: dim
-  selected: shop · repo · 0 edges
+  selected: unassigned · team · 0 edges
   accept: shop (offline)
   test, review, merge, release, verify: caller
   f focus/zoom  d dormant  esc back  x/X remove  t team: all  ? help

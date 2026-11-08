@@ -23,20 +23,22 @@ type mapMsg struct {
 
 // mapState holds shared network data and the selected card state.
 type mapState struct {
-	merged      map[string]protocol.Node
-	aliases     map[string]string
-	dormant     map[string]bool
-	removed     map[string]bool
-	everything  map[string]string
-	outside     map[string]bool
-	showDormant bool
-	focusNode   string
-	levels      []graphLevel
-	removal     *graphRemoval
-	labels      map[string]string
-	nodes       []protocol.Node
-	edges       []protocol.Edge
-	changes     []protocol.CharterChange
+	merged         map[string]protocol.Node
+	aliases        map[string]string
+	dormant        map[string]bool
+	removed        map[string]bool
+	everything     map[string]string
+	outside        map[string]bool
+	teamInside     bool
+	teamCardScroll int
+	showDormant    bool
+	focusNode      string
+	levels         []graphLevel
+	removal        *graphRemoval
+	labels         map[string]string
+	nodes          []protocol.Node
+	edges          []protocol.Edge
+	changes        []protocol.CharterChange
 	// full retains the typed read. nodes and edges retain the merged card data.
 	full             protocol.GraphView
 	teams            []teamEntry

@@ -71,6 +71,9 @@ func Rasterize(scene Scene, size Size, metrics PixelMetrics) *image.RGBA {
 	c := &pixelCanvas{img: img, w: float64(width), h: float64(height), level: scene.Level, metrics: metrics, zoom: scene.ZoomRatio}
 	c.background()
 	c.grid(scene.GridOrigin)
+	for _, frame := range scene.Frames {
+		c.teamFrame(frame)
+	}
 
 	selected := -1
 	for i := range scene.Nodes {
@@ -554,6 +557,14 @@ func (c *pixelCanvas) talk(t SceneTalk) {
 }
 
 func (c *pixelCanvas) edge(e SceneEdge, nodes []SceneNode) {
+	if len(e.Path) > 1 {
+		points := make([]Point, len(e.Path))
+		for i, p := range e.Path {
+			points[i].X, points[i].Y = c.px(p)
+		}
+		c.stroke(points, 1.5, edgeColor(e.Kind), 1, e.Dashed)
+		return
+	}
 	col := edgeColor(e.Kind)
 	width := 1.5
 	alpha := 1.0

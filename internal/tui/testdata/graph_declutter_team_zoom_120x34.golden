@@ -1,32 +1,32 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 2 busy     updated 14:05:00
-                                                                                                 → all projects · auto
+   Graph · team forge
+  ╭─ platform ───────────────╮ ╭─ forge ────────────────────────────────────────────────╮
+  │     ★ shop               │ │ lead shop · 3 projects · 3 sessions                    │
+  │     5 projects · 5 sessi…│ │     api                       checkout                 │
+  │  ●  1 busy               │←│⠛⠫●←⠉1 sessions⠒⠒⠒⠒⠒⠒⠤⠤⠤⠤⠤⠤⠤●  1 sessions               │
+  │                          │↖│  ⢸  1 busy                                             │
+  ╰──────────────────────────╯⠸│  ↑                                                     │
+                               │  ⢸                                                     │
+                               │⡄ ⢸                                                     │
+                               │⢱ ⢸                                                     │
+                               │ ⢇⢸                                                     │
+                               │ ⠘⣼  ★ shop                                             │
+                               │ (●) 1 sessions                                         │
+                               │                                                        │
+                               │                                                        │
+                               │                                                        │
+                               │                                                        │
+                               │                                                        │
+                               │                                                        │
+                               │                                                        │
+                               │                                                        │
+                               │                                                        │
+                               ╰────────────────────────────────────────────────────────╯
 
-                        ⣀⡠⠤⠔● checkout                                                             standards ○
-                 ⣀⣀⠤⠔⠒⠊⠉
-          ⢀⣀⠤⠔⠒⠊⠉
-    ● gateway
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                                                         ⢀⣀⣀billing ●
-                                                                                             ⢀⣀⣀⡠⠤⠤⠔⠒⠒⠊⠉⠉⠁
-                                                                               →⣀⣀⣀⣀⠤⠤● api⠉⠉⠁
-                                                           ⣀⣀⣀⣀⣀⠤⠤⠤⠤⠤⠒⠒⠒⠒⠒⠉⠉⠉⠉⠉
-                        ⢀←⣀⣀⣀⣀⣀⣀⣀⣀⣀⡠⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠔⠒⠒⠒(●) shop⠉
-                   ● accounts
-    ○ 4 dormant · d to show
+   more teams  unassigned
   no messages yet
   needs you: highlighted · busy: bright · idle: normal · offline: dim
-  selected: shop · repo · 2 edges
+  selected: shop · repo · 0 edges
   accept, test, review, merge, release, verify: caller
 
 
