@@ -50,8 +50,8 @@ func checkInputRoot(t *testing.T, name string, raw json.RawMessage) {
 }
 
 func TestInputSchemaShape(t *testing.T) {
-	if len(Tools) != 46 {
-		t.Errorf("catalog has %d tools, want 46", len(Tools))
+	if len(Tools) != 47 {
+		t.Errorf("catalog has %d tools, want 47", len(Tools))
 	}
 	for _, tool := range Tools {
 		checkInputRoot(t, tool.Name, tool.InputSchema)
