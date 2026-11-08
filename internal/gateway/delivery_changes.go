@@ -634,6 +634,10 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := tx.Commit(); err != nil {
 		return protocol.StepReportResult{}, err
 	}
+	// A failed accept, review or test step lowers the score of the worker's task.
+	if pickerStepCounts(e.Step, e.Result) {
+		s.refreshPickerLogged()
+	}
 	for _, notice := range notices {
 		if notice.ID != "" {
 			s.logMessage(notice)

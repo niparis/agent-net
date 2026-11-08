@@ -70,27 +70,14 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	qsettings, err := g.store.qualitySettings()
-	if err != nil {
-		return nil, nil, nil, err
-	}
 	rotation, rotationErr := g.store.WorkerRotation()
 	readRotation := func() (protocol.WorkerRotation, error) { return cloneRotation(rotation), rotationErr }
-	weigh := func(c []protocol.WorkerModelCandidate, level string) error {
-		return g.store.applyQualityWeightsWith(qsettings, c, level)
-	}
-	noWeigh := func([]protocol.WorkerModelCandidate, string) error { return nil }
 	health := in.health.health
 
-	// The candidates each level sees, with their quality weights.
-	levels := make([][]protocol.WorkerModelCandidate, len(protocol.DifficultyLevels))
-	for i, level := range protocol.DifficultyLevels {
-		levels[i] = append([]protocol.WorkerModelCandidate(nil), candidates...)
-		if err := weigh(levels[i], level); err != nil {
-			return nil, nil, nil, err
-		}
-	}
-	key, keyed := g.previewKey(node.NodeID, in, node.Quotas, running, levels, rotation, rotationErr, health)
+	// The cell table is read once per call. A level previews at the middle of its
+	// D range. The table revision is part of the key below.
+	table := g.store.pickerTable()
+	key, keyed := g.previewKey(node.NodeID, in, node.Quotas, running, candidates, table.Revision, rotation, rotationErr, health)
 	if keyed {
 		if out, reasons, models, ok := g.previewMemo.get(node.NodeID, key); ok {
 			return out, reasons, models, nil
@@ -100,8 +87,9 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 	out := map[string]string{}
 	reasons := map[string]string{}
 	models := map[string]string{}
-	for i, level := range protocol.DifficultyLevels {
-		choice, _, err := g.chooseAutomaticWorkerCore(health, noWeigh, readRotation, levels[i], level, in.scores, in.minimums, node.Quotas, running, in.protected, false)
+	for _, level := range protocol.DifficultyLevels {
+		pick := &protocol.PickerInput{D: protocol.PickerD(nil, level), Table: table}
+		choice, _, err := g.chooseAutomaticWorkerCore(health, readRotation, pick, candidates, level, in.scores, in.minimums, node.Quotas, running, in.protected, false)
 		if err == nil {
 			out[level] = qualityModelFamily(choice.Model)
 			models[level] = qualityModelKey(choice.Model)
@@ -141,31 +129,30 @@ func cloneRotation(r protocol.WorkerRotation) protocol.WorkerRotation {
 // previewKey hashes everything the picks of one node are computed from. It
 // reports false when an input cannot be hashed, and the caller then computes
 // without the stored answer.
-func (g *Gateway) previewKey(node string, in qualityPreviewInputs, quotas *protocol.Quotas, running map[string]int, levels [][]protocol.WorkerModelCandidate, rotation protocol.WorkerRotation, rotationErr error, health func(harness, model string) (ModelHealth, error)) ([32]byte, bool) {
+func (g *Gateway) previewKey(node string, in qualityPreviewInputs, quotas *protocol.Quotas, running map[string]int, candidates []protocol.WorkerModelCandidate, pickerRevision uint64, rotation protocol.WorkerRotation, rotationErr error, health func(harness, model string) (ModelHealth, error)) ([32]byte, bool) {
 	if rotationErr != nil {
 		return [32]byte{}, false
 	}
 	var healths []ModelHealth
-	if len(levels) > 0 {
-		for _, c := range levels[0] {
-			h, err := health(c.Harness, c.Model)
-			if err != nil {
-				return [32]byte{}, false
-			}
-			healths = append(healths, h)
+	for _, c := range candidates {
+		h, err := health(c.Harness, c.Model)
+		if err != nil {
+			return [32]byte{}, false
 		}
+		healths = append(healths, h)
 	}
 	raw, err := json.Marshal(struct {
-		Node      string
-		Levels    [][]protocol.WorkerModelCandidate
-		Healths   []ModelHealth
-		Scores    []protocol.ModelScore
-		Minimums  map[string]float64
-		Quotas    *protocol.Quotas
-		Running   map[string]int
-		Protected protocol.ProtectedProviders
-		Rotation  protocol.WorkerRotation
-	}{node, levels, healths, in.scores, in.minimums, quotas, running, in.protected, rotation})
+		Node       string
+		Candidates []protocol.WorkerModelCandidate
+		Picker     uint64
+		Healths    []ModelHealth
+		Scores     []protocol.ModelScore
+		Minimums   map[string]float64
+		Quotas     *protocol.Quotas
+		Running    map[string]int
+		Protected  protocol.ProtectedProviders
+		Rotation   protocol.WorkerRotation
+	}{node, candidates, pickerRevision, healths, in.scores, in.minimums, quotas, running, in.protected, rotation})
 	if err != nil {
 		return [32]byte{}, false
 	}

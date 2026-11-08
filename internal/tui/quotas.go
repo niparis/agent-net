@@ -516,14 +516,6 @@ const workerShareCellWidth = 5
 // unprotected first, then protected only when no ordinary model qualifies.
 func (m Model) workerCandidateTiers(level string, candidates []protocol.WorkerModelCandidate) (normal, protected []protocol.WorkerModelCandidate) {
 	for _, c := range candidates {
-		if m.snap.Calibration.Quality.WeightingEnabled {
-			for _, p := range m.snap.Calibration.Quality.Profiles {
-				if p.Name == c.Name {
-					c.QualityWeight = p.Weights[level]
-					break
-				}
-			}
-		}
 		if len(m.snap.ProtectedProviders.Providers) > 0 {
 			_, _, adequate, ok := protocol.WorkerCandidateFit(c, level, m.snap.Scores, m.snap.DifficultyMinimums)
 			if !ok || !adequate {

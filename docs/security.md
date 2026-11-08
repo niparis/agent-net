@@ -1257,12 +1257,13 @@ rare.
 
 
 
-The quality rotation setting (`quality_get`, `quality_set`) is owner only
-on the local socket. Agent sessions cannot enable weighting. It defaults to
-off. When enabled, predicted quality multiplies rotation weights by 0.5 to
-1.5 and cannot bypass capability minimums, protected providers or quota
-exclusions. Ratings from callers below score 45 count half; without a strong
-rating, a model cannot receive a prediction above the fitted average.
+Quality weighting is off for good (decision 0094). The methods `quality_get` and
+`quality_set` remain owner only on the local socket, but `quality_set` changes
+nothing and `quality_get` always answers disabled. The picker reads its own
+table of task results (`picker_get`, owner only on the local socket). That table
+only decides which allowed profiles rotate. It cannot bypass protected
+providers, worker floors or quota exclusions, and an explicit model request
+does not use it.
 
 Worker cleanup removes only managed worktrees after the worker has ended. A worker branch is deleted when its delivery change is merged or done and the merge is verified; a stopped change keeps its branch. It checks the default branch and delivery changes, including prior revisions, and applies the retention periods in the reference. A squash merge is a normal commit on the default branch, so the merged commit check accepts it without requiring the branch head to be an ancestor. For a branch with no delivery change, cleanup refreshes `origin/<default>` with a short timeout and accepts a merge, cherry-pick or squash proven on either the local or the remote default branch. A failed fetch never counts as a merge and leaves the refs as they are. It keeps worktrees with uncommitted changes or untracked files, running workers, queued branches and branches used by starts in progress. Ignored files are removed with the worktree. Cleanup logs the reason and bytes removed.
 

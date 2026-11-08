@@ -10,8 +10,6 @@ import (
 
 // WorkerModelCandidate is one model available on an installed harness.
 type WorkerModelCandidate struct {
-	// QualityWeight is supplied only when owner quality weighting is enabled.
-	QualityWeight float64
 	Name          string
 	Harness       string
 	Model         string
@@ -35,6 +33,12 @@ type WorkerModelChoice struct {
 	Weight float64
 	// ShareNote says how the recent starts of this difficulty were spread.
 	ShareNote string
+	// PickNote explains a pick by cell record: the bucket, the chosen model's
+	// cell, the best cell and what was left out.
+	PickNote string
+	// Fallback is true when no profile was allowed by its cell and the old level
+	// rule chose the model.
+	Fallback bool
 }
 
 // WorkerRotation is the smooth weighted round robin state of automatic worker
@@ -89,7 +93,35 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 	return state
 }
 
-// ChooseWorkerModel picks an adequate model by weighted rotation.
+// ChooseWorkerModel picks a model by weighted rotation.
+//
+// With a PickerInput it reads the cells: the models that have done well enough
+// in the bucket of the task's D rotate, weighted by their cell score (see
+// chooseByCells). When no profile is allowed that way, or without a
+// PickerInput, the old level rule applies (chooseWorkerModelBand).
+func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
+	if len(pick) > 0 && pick[0].usable() {
+		if level == "" {
+			level = "normal"
+		}
+		if _, err := DifficultyFit(0, level, minimums); err != nil {
+			return WorkerModelChoice{}, err
+		}
+		choice, fallback := chooseByCells(candidates, level, scores, minimums, quotas, running, rotation, pick[0])
+		if fallback == "" {
+			return choice, nil
+		}
+		choice, err := chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
+		if err == nil {
+			choice.PickNote, choice.Fallback = fallback, true
+		}
+		return choice, err
+	}
+	return chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
+}
+
+// chooseWorkerModelBand is the level rule: it picks an adequate model by weighted
+// rotation. It is the fallback of the cell rule.
 //
 // A candidate must score at or above the difficulty minimum, and the task
 // must be its maximum level or exactly one level below it. Exhausted
@@ -98,7 +130,7 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 // when no other adequate candidate remains. The rest rotate with a smooth
 // weighted round robin, so one model with a little more quota room does not win
 // every start.
-func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) (WorkerModelChoice, error) {
+func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) (WorkerModelChoice, error) {
 	if level == "" {
 		level = "normal"
 	}
@@ -108,11 +140,6 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 	state := rotation
 	if state == nil {
 		state = &WorkerRotation{}
-	}
-	type ranked struct {
-		choice WorkerModelChoice
-		weight float64
-		poor   bool
 	}
 	// Over-qualification is measured from the weakest adequate candidate of
 	// this start, so every difficulty fills from the bottom of its adequate
@@ -124,8 +151,7 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 			weakestAdequate = score
 		}
 	}
-	var eligible []ranked
-	var adequate []string
+	var eligible []rankedChoice
 	var reasons []string
 	for _, c := range candidates {
 		score, fit, isAdequate, ok := WorkerCandidateFit(c, level, scores, minimums)
@@ -156,12 +182,11 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		// An early quit is one failed attempt, with the existing failure weight.
 		c.Failed = c.Failed || c.EarlyQuitLevels[level]
 		weight := workerRotationWeight(c, score, weakestAdequate, servedRoom, measured)
-		eligible = append(eligible, ranked{
+		eligible = append(eligible, rankedChoice{
 			choice: WorkerModelChoice{WorkerModelCandidate: c, Score: score, Fit: fit, QuotaNote: note},
 			weight: weight,
 			poor:   poorTrack(c.Track),
 		})
-		adequate = append(adequate, WorkerModelKey(c))
 	}
 	if len(eligible) == 0 {
 		sort.Strings(reasons)
@@ -171,12 +196,26 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		}
 		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
 	}
+	return rotateRanked(state, level, eligible)
+}
+
+// rankedChoice is a candidate that passed the rules of a pick, with its
+// rotation weight.
+type rankedChoice struct {
+	choice WorkerModelChoice
+	weight float64
+	poor   bool
+}
+
+// rotateRanked is the smooth weighted round robin step shared by both rules.
+// It advances the rotation state of the level and returns the picked choice.
+func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) (WorkerModelChoice, error) {
 	lvl := state.level(level)
 	// Follow the roster: a model that left or lost its allowance no longer
 	// carries weight.
-	keep := make(map[string]bool, len(adequate))
-	for _, key := range adequate {
-		keep[key] = true
+	keep := make(map[string]bool, len(eligible))
+	for _, e := range eligible {
+		keep[WorkerModelKey(e.choice.WorkerModelCandidate)] = true
 	}
 	for key := range lvl.Current {
 		if !keep[key] {
@@ -194,7 +233,7 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		}
 	}
 	if hasGood {
-		good := make([]ranked, 0, len(eligible))
+		good := make([]rankedChoice, 0, len(eligible))
 		for _, e := range eligible {
 			if !e.poor {
 				good = append(good, e)
@@ -296,10 +335,22 @@ func WorkerMaximumLevel(score float64, minimums map[string]float64) string {
 	return maxLevel
 }
 
-// workerRotationWeight turns quota room, over-qualification and track record
-// into a positive weight. Every adequate candidate keeps a positive weight, so
-// none is starved.
+// workerRotationWeight is the level rule's weight. Fit decays with the distance
+// above the weakest adequate score. The weakest adequate model keeps the full
+// weight, and a model 8 points stronger gets about a third of it.
 func workerRotationWeight(c WorkerModelCandidate, score, weakestAdequate, room float64, measured bool) float64 {
+	fit := 1.0
+	if !math.IsInf(weakestAdequate, 1) {
+		fit = math.Exp(-math.Max(0, score-weakestAdequate) / workerOverQualificationScale)
+	}
+	return rotationWeight(c, fit, room, measured)
+}
+
+// rotationWeight turns quota room, a fit term and track record into a positive
+// weight. Every candidate that passes the rules of a pick keeps a positive
+// weight, so none is starved. The fit term is the caller's: the level rule
+// passes its over-qualification decay, the cell rule its cell score.
+func rotationWeight(c WorkerModelCandidate, fit, room float64, measured bool) float64 {
 	weight := 1.0
 	if measured {
 		// Room is percentage points behind pace. Five points behind is about a
@@ -307,12 +358,7 @@ func workerRotationWeight(c WorkerModelCandidate, score, weakestAdequate, room f
 		// pace keeps less, but never zero.
 		weight *= math.Max(0.1, math.Min(4, math.Exp(room/20)))
 	}
-	// Fit decays with the distance above the weakest adequate score. The
-	// weakest adequate model keeps the full weight, and a model 8 points
-	// stronger gets about a third of it.
-	if !math.IsInf(weakestAdequate, 1) {
-		weight *= math.Exp(-math.Max(0, score-weakestAdequate) / workerOverQualificationScale)
-	}
+	weight *= fit
 	if n := c.Track.Complete + c.Track.Partial + c.Track.Failed; n >= 5 {
 		weight *= 1 + 0.20*float64(c.Track.Complete)/float64(n)
 	}
@@ -320,9 +366,6 @@ func workerRotationWeight(c WorkerModelCandidate, score, weakestAdequate, room f
 		weight *= 0.5
 	} else if c.Succeeded {
 		weight *= 1.2
-	}
-	if c.QualityWeight > 0 {
-		weight *= math.Max(.5, math.Min(1.5, c.QualityWeight))
 	}
 	return weight
 }

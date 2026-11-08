@@ -672,7 +672,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if err != nil {
 				return none, reject("%v", err)
 			}
-			choice, protectionNote, err := g.chooseAutomaticWorker(candidates, difficulty, scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
+			choice, protectionNote, err := g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
 			if err != nil {
 				if familyNote != "" {
 					return none, reject("%v; %s", err, familyNote)
@@ -1617,8 +1617,28 @@ func appendModelNote(note, more string) string {
 }
 
 // workerChoiceNote leaves the parenthesis open for resolution and protection notes.
+//
+// A pick by cell record says which bucket it read, the chosen cell, the best
+// cell and what was left out (decision 0094). A pick that fell back to the level
+// rule says so first and then gives the level rule's own note.
 func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidates []protocol.WorkerModelCandidate, scores []protocol.ModelScore, minimums map[string]float64) string {
+	if choice.PickNote != "" && !choice.Fallback {
+		note := choice.PickNote
+		if choice.QuotaNote != "" {
+			note += "; " + choice.QuotaNote
+		}
+		if choice.Weight > 0 {
+			note += fmt.Sprintf("; rotation weight %.2f", choice.Weight)
+		}
+		if choice.ShareNote != "" {
+			note += "; " + choice.ShareNote
+		}
+		return note
+	}
 	note := fmt.Sprintf("%g, good enough", choice.Score)
+	if choice.Fallback {
+		note = choice.PickNote + "; " + note
+	}
 	if choice.QuotaNote != "" {
 		note += "; " + choice.QuotaNote
 	} else {
@@ -1808,24 +1828,23 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, node *protoco
 	return candidates, skippedProfiles, resolutionNotes, nil
 }
 
-// chooseAutomaticWorker applies the same weights and rotation for a start or a preview.
+// chooseAutomaticWorker applies the same weights and rotation for a start or a
+// preview. Without a judge result it picks at the middle of the level's D range.
 func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	return g.chooseAutomaticWorkerWith(g.store.ModelHealth, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
+	return g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(nil, difficulty), scores, minimums, quotas, running, protected, persist)
 }
 
-// chooseAutomaticWorkerWith takes the model health lookup, so a caller that
-// picks for many levels in a row can read each model's health once.
-func (g *Gateway) chooseAutomaticWorkerWith(modelHealth func(harness, model string) (ModelHealth, error), candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	return g.chooseAutomaticWorkerCore(modelHealth, g.store.applyQualityWeights, g.store.WorkerRotation, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
+// chooseAutomaticWorkerAt picks for a task with judge D d. The picker table is
+// the cached one, so a pick makes no query of its own besides the model health
+// and the rotation.
+func (g *Gateway) chooseAutomaticWorkerAt(candidates []protocol.WorkerModelCandidate, difficulty string, d float64, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
+	pick := &protocol.PickerInput{D: d, Table: g.store.pickerTable()}
+	return g.chooseAutomaticWorkerCore(g.store.ModelHealth, g.store.WorkerRotation, pick, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
 }
 
 // chooseAutomaticWorkerCore is the chooser with its two store reads passed in,
-// so a preview for many levels reads the quality settings and the rotation
-// once.
-func (g *Gateway) chooseAutomaticWorkerCore(modelHealth func(harness, model string) (ModelHealth, error), weigh func([]protocol.WorkerModelCandidate, string) error, readRotation func() (protocol.WorkerRotation, error), candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	if err := weigh(candidates, difficulty); err != nil {
-		return protocol.WorkerModelChoice{}, "", err
-	}
+// so a preview for many levels reads the model health and the rotation once.
+func (g *Gateway) chooseAutomaticWorkerCore(modelHealth func(harness, model string) (ModelHealth, error), readRotation func() (protocol.WorkerRotation, error), pick *protocol.PickerInput, candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
 	g.rotationMu.Lock()
 	defer g.rotationMu.Unlock()
 	rotation, err := readRotation()
@@ -1848,12 +1867,12 @@ func (g *Gateway) chooseAutomaticWorkerCore(modelHealth func(harness, model stri
 	var choice protocol.WorkerModelChoice
 	var note string
 	if len(healthy) > 0 && len(cooling) > 0 {
-		choice, note, err = chooseProtectedWorker(healthy, difficulty, scores, minimums, quotas, running, &rotation, protected)
+		choice, note, err = chooseProtectedWorker(healthy, difficulty, scores, minimums, quotas, running, &rotation, protected, pick)
 	} else if len(cooling) > 0 {
 		err = fmt.Errorf("no healthy candidates")
 	}
 	if len(cooling) == 0 || err != nil {
-		choice, note, err = chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected)
+		choice, note, err = chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected, pick)
 		if err == nil && len(cooling) > 0 {
 			note = appendModelNote(note, "used model cooling down because no healthy alternative is adequate")
 		}

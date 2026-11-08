@@ -268,7 +268,10 @@ func TestWorkerExplicitProtectedProviderNote(t *testing.T) {
 	}
 }
 
-func TestWorkerStartMaximumLevelRule(t *testing.T) {
+// Decision 0094 replaced the max-or-one-level-below band. With no record in a
+// bucket, a model's benchmark ceiling decides whether it is allowed, and the
+// note says which bucket was read and which profiles were considered.
+func TestWorkerStartCellRuleUsesTheBenchmarkWhereThereIsNoRecord(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
@@ -277,11 +280,11 @@ func TestWorkerStartMaximumLevelRule(t *testing.T) {
 	score := 51.0
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: "strong", Harness: "opencode", Model: "fake/m1"})
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
-	if err == nil || !strings.Contains(err.Error(), "very_complex") || !strings.Contains(err.Error(), "model explicitly") {
-		t.Fatalf("missing actionable eligibility error: %v", err)
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
+	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "bucket 2.33-2.67: strong n0, chosen (benchmark)") {
+		t.Fatalf("a strong model with no record: %+v %v", res, err)
 	}
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "fake/m1", Difficulty: "normal", Task: "x"})
+	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Model: "fake/m1", Difficulty: "normal", Task: "x"})
 	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "explicit model overrides") {
 		t.Fatalf("explicit override: %+v %v", res, err)
 	}
@@ -289,7 +292,7 @@ func TestWorkerStartMaximumLevelRule(t *testing.T) {
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m2", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: "adequate", Harness: "opencode", Model: "fake/m2"})
 	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
-	if err != nil || res.Model != "fake/m2" || !strings.Contains(res.ModelNote, "strong excluded: its max is very_complex") || !strings.Contains(res.ModelNote, "one level") {
-		t.Fatalf("automatic exclusion: %+v %v", res, err)
+	if err != nil || (res.Model != "fake/m1" && res.Model != "fake/m2") || !strings.Contains(res.ModelNote, "strong n0") || !strings.Contains(res.ModelNote, "adequate n0") {
+		t.Fatalf("both profiles are considered: %+v %v", res, err)
 	}
 }

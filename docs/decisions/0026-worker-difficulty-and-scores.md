@@ -33,3 +33,7 @@ The rotation state is kept per difficulty in the gateway's owner settings, so it
 ## Amendment: over-qualification penalty
 
 The fit term is measured from the weakest adequate candidate at the difficulty, not from the minimum: `fit = exp(-(score - weakestAdequateScore) / 8)`. At trivial difficulty the weakest adequate model therefore takes the largest share, and strong models take small shares instead of an even split. A model below the minimum still gets none. Every adequate candidate keeps a positive weight, so the rotation and the Quotas heatmap still spread starts. The chooser, the rotation preview and the heatmap use the same rule.
+
+## Amendment: results decide (0094)
+
+Decision [0094](0094-worker-picker-learns-from-results.md) replaces the max-or-one-level-below band and the over-qualification weight with a table of results: a score per model, effort and D bucket, with 90 percent intervals. The level rule above stays as the fallback when no candidate is allowed by its record or its benchmark.

@@ -116,6 +116,36 @@ func (d *Daemon) workerRotation(ctx context.Context) (protocol.WorkerRotation, e
 	return out, err
 }
 
+// pickerAnalysis reads the picker's cell table from the gateway: every model key
+// with every bucket, the bucket means, the settings in use and each profile's
+// benchmark ceiling.
+func (d *Daemon) pickerAnalysis(ctx context.Context) (protocol.PickerAnalysis, error) {
+	c, ok := d.integrationsClient()
+	if !ok {
+		return protocol.PickerAnalysis{}, errNotConnected
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.URL, "/")+"/v1/picker", nil)
+	if err != nil {
+		return protocol.PickerAnalysis{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	hc := c.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return protocol.PickerAnalysis{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return protocol.PickerAnalysis{}, fmt.Errorf("gateway answered %s", resp.Status)
+	}
+	var out protocol.PickerAnalysis
+	err = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out)
+	return out, err
+}
+
 func (d *Daemon) workerProviders(ctx context.Context, change *protocol.WorkerProviders) (protocol.WorkerProviders, error) {
 	c, ok := d.integrationsClient()
 	if !ok {
