@@ -11,11 +11,11 @@ accept, test, review, merge, release, verify: caller
 IN 1                                     OUT 2
 api-architect ──▶ deploys                ──▶ shop depends
                                          ──▶ Alpha member_of
-Card 1-4/9  ctrl+u/d scroll ────────────────────────────────────────────────────
-Charter ────────────────────────────────────────────────────────────────────────
-no charter set
-Rules ──────────────────────────────────────────────────────────────────────────
-tests_before_merge suite                  default
+Card 1-4/14  ctrl+u/d scroll ───────────────────────────────────────────────────
+PLACE ──────────────────────────────────────────────────────────────────────────
+team       Alpha   mode charter first
+repo lead  ★ cogforge, reports to the owner
+held back  deploy to production (from team)
 RECENT  no changes yet
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

@@ -491,6 +491,11 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.teamFilter != "" && m.mp.teamInside {
 			if n, ok := m.mapNode(name); ok && n.Ref != nil && n.Ref.Kind == "team" {
+				if n.Ref.ID == m.teamFilter {
+					m.mp.selected = name
+					m.mapOn = true
+					return m, nil
+				}
 				m.setTeamFilter(n.Ref.ID)
 				return m, nil
 			}
@@ -508,7 +513,9 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.graphFocus()
 		}
 		if n, ok := m.mapNode(name); ok && n.Ref != nil && n.Ref.Kind == "team" {
-			return m.graphFocus()
+			m.mp.selected = name
+			m.mapOn = true
+			return m, nil
 		}
 		action = graphview.OpenSelected{}
 	case "next team":

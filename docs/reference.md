@@ -554,8 +554,18 @@ follows the node when the camera zooms or pans. The graph fits itself when the
 tab opens. Press `/` to find a node by identity or display name;
 Enter selects the first match and Esc cancels.
 
+With teams, the all teams view puts a staff row above the frames: owner, CTO
+with its live state, and chief of staff as not set up. Each team frame shows
+its lead with the authority mode, the project and session counts, and
+`held back: N` when the team holds anything back. The unassigned frame reads
+`answers to owner`. `f` focuses a team. Enter on a team frame opens the team
+card: purpose, lead, mode, held back text, members and team rules.
+
 Press `n` on a project node or its card to open the new session form filled from that project and machine, using its most-used harness and model. Harness and Model are switches: left and right change them to what the machine reports. Enter on a node opens its card: name, maturity, purpose and live sessions as
-dots. IN and OUT
+dots. An agent card starts with `PLACE`: its team and live lead, the mode, the
+repo lead and who it reports to, and each held back item with the level that
+set it (`from team` or `from repo`). Each charter value ends with its level,
+for example `(team)` or `(global)`. IN and OUT
 columns list edges with colored arrows and rules other than `normal`; `*`
 reads `all projects`. The two columns sit side by side and each is capped at 60
 columns, so a wide terminal does not push them to opposite edges; a narrow one

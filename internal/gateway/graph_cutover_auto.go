@@ -230,7 +230,7 @@ func (g *Gateway) enableGraphRefsAutomatically(ctx context.Context) {
 		}
 		return
 	}
-	if _, err = st.graphForRef(nil); err != nil {
+	if _, err = st.graphForRef(nil, false); err != nil {
 		g.graphCutoverFailed("", err)
 		return
 	}
