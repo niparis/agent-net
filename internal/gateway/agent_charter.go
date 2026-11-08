@@ -88,11 +88,29 @@ func (s *Store) applyAgentChartersWith(agents []protocol.AgentView, short bool, 
 		}
 		return s
 	}
+	// Resolve every row's charter from one in-memory set of level values. The
+	// Agents path runs every second, so it must not run per-row queries.
+	charters := s.newCharterResolver()
+	repos := make([]string, 0, len(agents))
+	ids := make([]string, 0, len(agents))
+	for _, a := range agents {
+		repos = append(repos, projectOfSession(a))
+		ids = append(ids, a.AgentID)
+	}
+	if err := charters.preloadTeams(); err != nil {
+		return err
+	}
+	if err := charters.preloadRepos(repos); err != nil {
+		return err
+	}
+	if err := charters.preloadAgents(ids); err != nil {
+		return err
+	}
 	for i := range agents {
 		a := &agents[i]
 		project := projectOfSession(*a)
 		c := byNode[project]
-		effective, err := s.EffectiveCharter(project, a.AgentID, "")
+		effective, err := charters.resolve(project, a.AgentID, "")
 		if err != nil {
 			return err
 		}

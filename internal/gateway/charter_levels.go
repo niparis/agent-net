@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"database/sql"
-	"encoding/json"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -111,119 +110,7 @@ func (s *Store) SetLevelCharter(q protocol.CharterSetRequest, actor string, vali
 // work in multiple Repos; the caller supplies its current Repo explicitly.
 // With no Repo context, only the Agent's direct Team applies.
 func (s *Store) EffectiveCharter(repo, agent, team string) (protocol.Charter, error) {
-	var c protocol.Charter
-	sources := protocol.CharterSources{}
-	refused := map[string]bool{}
-	apply := func(level, scope, attr, value string) error {
-		if value == "" {
-			return nil
-		}
-		if _, ok := protocol.CharterGuideFor(attr); !ok {
-			return nil
-		}
-		src := protocol.CharterSource{Level: level, Scope: scope, Value: value}
-		if attr == "refuses" {
-			sources[attr] = append(sources[attr], src)
-			// Union by complete refusal. Do not split prose or interpret rules.
-			if !refused[value] {
-				if c.Refuses != "" {
-					c.Refuses += "\n"
-				}
-				c.Refuses += value
-				refused[value] = true
-			}
-			return nil
-		}
-		b, _ := json.Marshal(map[string]string{attr: value})
-		if err := json.Unmarshal(b, &c); err != nil {
-			return err
-		}
-		sources[attr] = []protocol.CharterSource{src}
-		return nil
-	}
-	read := func(query, level, scope string, args ...any) error {
-		rows, err := s.db.Query(query, args...)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var attr, value string
-			if err = rows.Scan(&attr, &value); err != nil {
-				return err
-			}
-			if err = apply(level, scope, attr, value); err != nil {
-				return err
-			}
-		}
-		return rows.Err()
-	}
-	if err := read(`SELECT attr,value FROM charter_values WHERE level='global' AND scope='' ORDER BY attr`, "global", ""); err != nil {
-		return c, err
-	}
-	if team == "" {
-		// Repo membership takes precedence over direct Agent membership in a Repo context.
-		kind, id := "agent", agent
-		if repo != "" {
-			kind, id = "repo", repo
-		}
-		err := s.db.QueryRow(`SELECT m.team_id FROM team_members m JOIN teams t ON t.id=m.team_id AND t.active=1 WHERE m.member_kind=? AND m.member_id=?`, kind, id).Scan(&team)
-		if err != nil && err != sql.ErrNoRows {
-			return c, err
-		}
-		if team == "" && agent != "" && repo != "" {
-			err = s.db.QueryRow(`SELECT m.team_id FROM team_members m JOIN teams t ON t.id=m.team_id AND t.active=1 WHERE m.member_kind='agent' AND m.member_id=?`, agent).Scan(&team)
-			if err != nil && err != sql.ErrNoRows {
-				return c, err
-			}
-		}
-	}
-	if team != "" {
-		var purpose string
-		err := s.db.QueryRow(`SELECT purpose FROM teams WHERE id=? AND active=1`, team).Scan(&purpose)
-		if err != nil {
-			return c, err
-		}
-		if err = apply("team", team, "purpose", purpose); err != nil {
-			return c, err
-		}
-		if c.Escalate == "" {
-			if err = apply("team", team, "escalate", "ask the team lead"); err != nil {
-				return c, err
-			}
-		}
-		if err = read(`SELECT attr,value FROM charter_values WHERE level='team' AND scope=? ORDER BY attr`, "team", team, team); err != nil {
-			return c, err
-		}
-	}
-	// A directly assigned Agent Team retains its safety refusals even when
-	// the current Repo belongs to a different Team.
-	if agent != "" {
-		var ownTeam string
-		err := s.db.QueryRow(`SELECT m.team_id FROM team_members m JOIN teams t ON t.id=m.team_id AND t.active=1 WHERE m.member_kind='agent' AND m.member_id=?`, agent).Scan(&ownTeam)
-		if err != nil && err != sql.ErrNoRows {
-			return c, err
-		}
-		if ownTeam != "" && ownTeam != team {
-			if err = read(`SELECT attr,value FROM charter_values WHERE level='team' AND scope=? AND attr='refuses'`, "team", ownTeam, ownTeam); err != nil {
-				return c, err
-			}
-		}
-	}
-	if repo != "" {
-		if err := read(`SELECT attr,value FROM graph_charter WHERE node=? ORDER BY attr`, "repo", repo, repo); err != nil {
-			return c, err
-		}
-	}
-	if agent != "" {
-		if err := read(`SELECT attr,value FROM agent_charter WHERE agent_id=? ORDER BY attr`, "agent", agent, agent); err != nil {
-			return c, err
-		}
-	}
-	if len(sources) > 0 {
-		c.Sources = &sources
-	}
-	return c, nil
+	return s.newCharterResolver().resolve(repo, agent, team)
 }
 
 func (s *Store) applyEffectiveCharters(g *protocol.Graph) error {
