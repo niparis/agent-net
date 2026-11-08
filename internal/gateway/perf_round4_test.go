@@ -265,24 +265,26 @@ func TestNodesInfoPreviewFollowsItsInputsAtOnce(t *testing.T) {
 	if g.previewMemo.hits == hitsBefore {
 		t.Fatal("an unchanged call did not use the stored answer")
 	}
-	// A worker profile that is removed, and one that is added back.
+	// The preview picks the first profile of the roster when no cell has a
+	// record, so the profile that is removed is the one the preview picks now.
 	changed("a removed profile", func() {
 		if err := g.store.saveWorkerProfiles([]protocol.WorkerProfile{
-			{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"},
+			{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"},
 			{Name: "deepseek", Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash", Effort: "high"},
 		}); err != nil {
 			t.Fatal(err)
 		}
 	})
-	changed("a new profile", func() {
-		if err := g.store.AddWorkerProfile(protocol.WorkerProfile{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}); err != nil {
+	changed("a profile added back", func() {
+		if err := g.store.AddWorkerProfile(protocol.WorkerProfile{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"}); err != nil {
 			t.Fatal(err)
 		}
 	})
-	// A new score: the third model becomes the strongest.
+	// A new score: the first model now tops out at trivial work, so the harder
+	// levels no longer allow it by its benchmark.
 	changed("a new score", func() {
 		if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey,
-			`[{"match":"claude-opus-5-5","score":40},{"match":"gpt-6.1-terra","score":41},{"match":"gpt-6.1-sol","score":41},{"match":"deepseek/deepseek-v4.1-flash","score":60}]`); err != nil {
+			`[{"match":"claude-opus-5-5","score":10},{"match":"gpt-6.1-terra","score":41},{"match":"gpt-6.1-sol","score":41},{"match":"deepseek/deepseek-v4.1-flash","score":60}]`); err != nil {
 			t.Fatal(err)
 		}
 	})

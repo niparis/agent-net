@@ -50,7 +50,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
-	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
+	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpLeadSet: true, protocol.OpTeamWrite: true, protocol.OpTeamHistory: true, protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpDeliveryOwnerSet: true, protocol.OpMergerSet: true, protocol.OpGraphUndo: true, protocol.OpRepoCreate: true, protocol.OpRepoArchive: true, protocol.OpAgentCreate: true, protocol.OpAgentTombstone: true,
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
@@ -991,6 +991,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.scores(ctx, nil)
 	case protocol.OpWorkerRotationGet:
 		res, err = d.workerRotation(ctx)
+	case protocol.OpPickerGet:
+		res, err = d.pickerAnalysis(ctx)
 	case protocol.OpDifficultyJudgePick:
 		var req protocol.DifficultyJudgePick
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &req) != nil {

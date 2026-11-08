@@ -59,6 +59,22 @@ func TestWorkerRotationOwnerGate(t *testing.T) {
 	}
 }
 
+func TestPickerGetOwnerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
+	pi, _ := helloPi(t, n, "p1", "/w/p", false)
+	if _, err := pi.call(protocol.OpPickerGet, nil); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("gate: %v", err)
+	}
+	cli := cliClient(t, n)
+	raw := cli.mustCall(protocol.OpPickerGet, nil)
+	var out protocol.PickerAnalysis
+	if err := json.Unmarshal(raw, &out); err != nil || out.Tasks != 0 || out.Settings != protocol.DefaultPickerSettings() || len(out.Buckets) != 12 {
+		t.Fatalf("picker: %s %v", raw, err)
+	}
+}
+
 func TestWorkerProvidersOwnerGate(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
@@ -110,10 +126,12 @@ func TestQualitySettingsOwnerGate(t *testing.T) {
 	if err := json.Unmarshal(raw, &out); err != nil || out.Enabled {
 		t.Fatalf("default: %s %v", raw, err)
 	}
+	// Quality weighting is off for good (decision 0105): the call is accepted
+	// and changes nothing.
 	cli.mustCall(protocol.OpQualitySet, q)
 	raw = cli.mustCall(protocol.OpQualityGet, nil)
-	if err := json.Unmarshal(raw, &out); err != nil || !out.Enabled {
-		t.Fatalf("enabled: %s %v", raw, err)
+	if err := json.Unmarshal(raw, &out); err != nil || out.Enabled {
+		t.Fatalf("still disabled: %s %v", raw, err)
 	}
 }
 

@@ -17,9 +17,9 @@ func isProtected(harness, model string, setting protocol.ProtectedProviders) boo
 	return false
 }
 
-func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, rotation *protocol.WorkerRotation, setting protocol.ProtectedProviders) (protocol.WorkerModelChoice, string, error) {
+func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, rotation *protocol.WorkerRotation, setting protocol.ProtectedProviders, pick ...*protocol.PickerInput) (protocol.WorkerModelChoice, string, error) {
 	if len(setting.Providers) == 0 {
-		c, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, rotation)
+		c, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, rotation, pick...)
 		return c, "", err
 	}
 	var ordinary, protected []protocol.WorkerModelCandidate
@@ -40,15 +40,15 @@ func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level str
 		}
 	}
 	if len(ordinary) > 0 {
-		c, err := protocol.ChooseWorkerModel(ordinary, level, scores, minimums, quotas, running, rotation)
+		c, err := protocol.ChooseWorkerModel(ordinary, level, scores, minimums, quotas, running, rotation, pick...)
 		if err == nil {
 			return c, strings.Join(skipped, "; "), nil
 		}
 	}
-	c, err := protocol.ChooseWorkerModel(protected, level, scores, minimums, quotas, running, rotation)
+	c, err := protocol.ChooseWorkerModel(protected, level, scores, minimums, quotas, running, rotation, pick...)
 	if err != nil {
 		// Report the full roster, including profiles excluded by level.
-		_, allErr := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, nil)
+		_, allErr := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, nil, pick...)
 		if allErr != nil {
 			err = allErr
 		}

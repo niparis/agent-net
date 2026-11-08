@@ -32,6 +32,7 @@ func address(c SettingsChange) settingAddress { return settingAddress{c.Key, c.L
 
 // settingsNotify runs only after commit. The hook is installed by the gateway.
 func (s *Store) settingsNotify() {
+	s.pickerSettingsChanged()
 	s.settingsHookMu.RLock()
 	hook := s.settingsHook
 	s.settingsHookMu.RUnlock()

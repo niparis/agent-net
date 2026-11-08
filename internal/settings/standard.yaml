@@ -631,6 +631,66 @@ settings:
     levels: [network]
     default: 0.1
     live: true
+  - key: picker.bucket_width
+    rows: [70]
+    description: Width of a judge D bucket for the worker picker, starting at 1.0. One third gives the buckets 1.00, 1.33, 1.67, 2.00.
+    kind: rule
+    type: float
+    min: 0.05
+    max: 2
+    levels: [network]
+    default: 0.3333333333
+    live: true
+  - key: picker.k
+    rows: [71]
+    description: Weight of the bucket mean in a picker cell, counted in tasks. A higher value pulls thin cells harder toward the bucket mean.
+    kind: rule
+    type: float
+    min: 0.1
+    max: 100
+    levels: [network]
+    default: 5.0
+    live: true
+  - key: picker.allowed_fraction
+    rows: [72]
+    description: A model is allowed for a task unless the top of its 90 percent interval is below this fraction of the best cell in the bucket.
+    kind: rule
+    type: float
+    min: 0.01
+    max: 1
+    levels: [network]
+    default: 0.9
+    live: true
+  - key: picker.overqualified_margin
+    rows: [72]
+    description: A model that is more than one bucket under its benchmark ceiling is left out when its score is this far under the best cell and a weaker allowed model exists.
+    kind: rule
+    type: float
+    min: 0.01
+    max: 1
+    levels: [network]
+    default: 0.25
+    live: true
+  - key: picker.uncertain_boost
+    rows: [78]
+    description: Rotation weight multiplier for a model whose cell holds fewer than picker.uncertain_n tasks, so uncertain models get a few more tasks.
+    kind: rule
+    type: float
+    min: 1
+    max: 10
+    levels: [network]
+    default: 1.5
+    live: true
+  - key: picker.uncertain_n
+    rows: [78]
+    description: A cell with fewer tasks than this gets the uncertain boost.
+    kind: rule
+    type: int
+    min: 1
+    max: 1000
+    levels: [network]
+    default: 5
+    live: true
   - key: workers.brief_preamble
     rows: [67]
     description: Worker brief or continuation text.
@@ -1072,16 +1132,16 @@ ledger:
   - {row: 67, keys: [workers.brief_preamble, workers.brief_task, workers.brief_no_delegation, workers.brief_tests, workers.brief_handback, workers.brief_handback_partial, workers.brief_blocked, workers.brief_approval, workers.brief_codex_tools, workers.brief_codex_final, workers.brief_codex_complete, workers.brief_codex_blocked, workers.brief_claude], step: 7}
   - {row: 68, keys: [picker.difficulty_minimums]}
   - {row: 69, keys: [picker.model_scores]}
-  - {row: 70, keys: [picker.fit_bands]}
-  - {row: 71, keys: [picker.max_level_gap]}
-  - {row: 72, keys: [picker.overqualified_scale]}
+  - {row: 70, keys: [picker.bucket_width]}
+  - {row: 71, keys: [picker.k]}
+  - {row: 72, keys: [picker.allowed_fraction, picker.overqualified_margin]}
   - {row: 73, keys: [picker.rotation_window]}
   - {row: 74, keys: [picker.quota_max_percent]}
   - {row: 75, keys: [picker.running_worker_penalty]}
   - {row: 76, keys: [picker.quota_pace_curve]}
   - {row: 77, keys: [picker.track_weights]}
-  - {row: 78, keys: [picker.poor_track_threshold]}
-  - {row: 79, keys: [picker.quality_weighting]}
+  - {row: 78, keys: [picker.uncertain_boost, picker.uncertain_n]}
+  - {row: 79, code: "quality weighting is off for good, replaced by the cell picker (decision 0105)"}
   - {row: 80, keys: [picker.rating_sampling]}
   - {row: 81, keys: [picker.quality_estimator_priors]}
   - {row: 82, keys: [picker.playbook_promotion]}

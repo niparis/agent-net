@@ -186,6 +186,10 @@ func (s *Store) qualityRunSamples() ([]qualitySample, error) {
 // refreshQuality is called on source writes and startup, never by a read or
 // a TUI redraw. Holding qualityMu serializes rebuilds and snapshot reads.
 func (s *Store) refreshQuality() error {
+	// The picker table reads the same sources as the quality fit.
+	if err := s.refreshPicker(); err != nil {
+		return err
+	}
 	s.qualityMu.Lock()
 	defer s.qualityMu.Unlock()
 	scores, err := s.scores()
@@ -251,12 +255,7 @@ func (s *Store) refreshQuality() error {
 	}
 	for _, p := range profiles {
 		v := qualityPrediction(q, strong, p.Model, p.Harness, p.Effort, "normal")
-		row := protocol.ProfileQuality{Name: p.Name, Quality: v, Weights: map[string]float64{}}
-		if len(ratings) >= protocol.QualityMinRatings || len(r.Counts) > 0 {
-			for _, level := range protocol.DifficultyLevels {
-				row.Weights[level] = combinedQualityRotationWeight(q, r, strong, len(ratings), p.Model, p.Harness, p.Effort, level)
-			}
-		}
+		row := protocol.ProfileQuality{Name: p.Name, Quality: v}
 		actual, predicted := 0.0, 0.0
 		for _, x := range ratings {
 			if x.Model == qualityModel(p.Model) && x.Harness == p.Harness && x.Effort == p.Effort {
@@ -284,11 +283,6 @@ func (s *Store) refreshQuality() error {
 		return err
 	}
 	out.Levels, out.Areas, out.Agents = families, areas, agents
-	settings, err := s.qualitySettings()
-	if err != nil {
-		return err
-	}
-	out.WeightingEnabled = settings.Enabled
 	s.quality = out
 	s.qualityFit = q
 	s.reworkFit = r
@@ -345,62 +339,5 @@ func (s *Store) QualityAnalysis() protocol.QualityAnalysis {
 		out.Agents[i].Areas = append([]protocol.QualityFamily(nil), out.Agents[i].Areas...)
 	}
 	out.Profiles = append([]protocol.ProfileQuality(nil), out.Profiles...)
-	for i, p := range out.Profiles {
-		out.Profiles[i].Weights = make(map[string]float64, len(p.Weights))
-		for level, weight := range p.Weights {
-			out.Profiles[i].Weights[level] = weight
-		}
-	}
 	return out
-}
-func (s *Store) applyQualityWeights(candidates []protocol.WorkerModelCandidate, difficulty string) error {
-	settings, err := s.qualitySettings()
-	if err != nil {
-		return err
-	}
-	return s.applyQualityWeightsWith(settings, candidates, difficulty)
-}
-
-// applyQualityWeightsWith is applyQualityWeights with the settings the caller
-// has already read.
-func (s *Store) applyQualityWeightsWith(settings protocol.QualitySettings, candidates []protocol.WorkerModelCandidate, difficulty string) error {
-	if !settings.Enabled {
-		return nil
-	}
-	s.qualityMu.Lock()
-	defer s.qualityMu.Unlock()
-	if s.quality.Ratings < protocol.QualityMinRatings && len(s.reworkFit.Counts) == 0 {
-		return nil
-	}
-	for i, c := range candidates {
-		model, effort := protocol.SplitModelLevel(c.Model)
-		if effort == "" {
-			effort = c.DefaultEffort
-		}
-		candidates[i].QualityWeight = combinedQualityRotationWeight(s.qualityFit, s.reworkFit, s.qualityStrong, s.quality.Ratings, model, c.Harness, effort, difficulty)
-	}
-	return nil
-}
-
-func qualityRotationWeight(prediction, average float64) float64 {
-	return math.Max(.5, math.Min(1.5, 1+(prediction-average)/4))
-}
-
-// combinedQualityRotationWeight is shared by the picker and profile previews.
-func combinedQualityRotationWeight(q, r qualityFit, strong map[string]int, ratings int, model, harness, effort, difficulty string) float64 {
-	weight := 1.0
-	if ratings >= protocol.QualityMinRatings {
-		weight = qualityRotationWeight(qualityPrediction(q, strong, model, harness, effort, difficulty), q.Average)
-	}
-	if len(r.Counts) > 0 {
-		weight *= reworkRotationWeight(r.predict(model, harness, effort, difficulty), r.Average)
-	}
-	return weight
-}
-
-func reworkRotationWeight(prediction, average float64) float64 {
-	if prediction <= 0 {
-		return 1
-	}
-	return math.Max(.5, math.Min(1.5, average/prediction))
 }

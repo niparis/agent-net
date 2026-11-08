@@ -291,6 +291,11 @@ var scoreWeights = []float64{0.20, 0.10, 0.20, 0.15, 0.15, 0.20}
 var labelCutPoints = []float64{1.5, 2.25, 3.0, 3.75}
 var labelNames = []string{"trivial", "simple", "normal", "hard", "very_complex"}
 
+// LabelCutPoints are the D values where the label changes: D below the first
+// is trivial, below the second simple, below the third normal, below the
+// fourth hard, and the rest very_complex. The caller owns the slice.
+func LabelCutPoints() []float64 { return append([]float64(nil), labelCutPoints...) }
+
 func labelIndex(d float64) int {
 	return sort.Search(len(labelCutPoints), func(i int) bool { return labelCutPoints[i] > d })
 }

@@ -39,6 +39,7 @@ type Store struct {
 	settingsHookMu  sync.RWMutex
 	settingsHook    func()
 	qualityMu       sync.Mutex
+	picker          pickerState
 	runsMu          sync.Mutex
 	runs            *runsSnapshot
 	quality         protocol.QualityAnalysis
