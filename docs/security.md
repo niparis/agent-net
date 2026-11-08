@@ -1087,6 +1087,12 @@ the gateway sends those frames; a node that sends one to the gateway gets
 agent-net older than v0.4.46, or is offline, is refused with a line that names
 it. This gives the owner nothing beyond an ssh to that machine.
 
+A start that answered `starting` and then failed in the background is reported
+with `session.start.failed`. The gateway accepts it only from the owner session
+of the sending machine. It records a `session.start_failed` event with the start
+ID, project, harness and the error cut to 300 characters. The frame cannot start,
+stop or change a session. Only the daemon of that machine sends it.
+
 `session_stop` accepts a session ID on this machine or, through the gateway,
 on another machine. It runs `claude stop`
 only when the Claude adapter identifies a background job. For shared-service

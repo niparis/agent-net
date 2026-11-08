@@ -1384,6 +1384,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return struct{}{}, st.ReserveSessionAgent(nc.id, p)
 
+	case "session.start.failed":
+		p, err := decode[protocol.SessionStartFailure](raw)
+		if err != nil {
+			return nil, reject("bad session.start.failed")
+		}
+		if err := st.RecordSessionStartFailure(nc.id, p); err != nil {
+			return nil, err
+		}
+		g.logLine("session.start_failed", "node", nc.id, "host", st.hostname(nc.id), "owner", p.Owner,
+			"start", p.StartID, "project", p.Project, "harness", p.Harness, "error", p.Error)
+		return struct{}{}, nil
+
 	case "session.upsert":
 		p, err := decode[protocol.SessionUpsert](raw)
 		if err != nil {

@@ -42,6 +42,15 @@ func newHomeRepo(t *testing.T, home, rel string) string {
 	return repo
 }
 
+// trustClaudeFolder answers the owner's trust question for dir in the test's
+// Claude configuration. A start by project name needs the answer first.
+func trustClaudeFolder(t *testing.T, dir string) {
+	t.Helper()
+	if err := claudetrust.Set(dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func sessionStartPathCall(t *testing.T, n *workerNode, req protocol.SessionStartRequest) protocol.StartedSession {
 	t.Helper()
 	raw, err := n.cli.call("session_start", req)
@@ -118,6 +127,42 @@ func TestSessionStartPathAsksBeforeTrustingClaude(t *testing.T) {
 	raw, err := c.cli.call("session_start", protocol.SessionStartRequest{
 		Path: repo, Harness: "claude", TrustClaude: true,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again protocol.StartedSession
+	mustJSON(t, raw, &again)
+	again = waitSessionStartPath(t, c.workerNode, again)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	if again.Status != "started" || again.Path != repo {
+		t.Fatalf("trusted start %+v", again)
+	}
+	if trusted, err := claudetrust.Trusted(repo); err != nil || !trusted {
+		t.Fatalf("the owner's trust was not saved: trusted=%v err=%v", trusted, err)
+	}
+}
+
+// A start by project name is checked like a typed path. Claude Code refuses an
+// untrusted folder in `claude --bg`, so the owner must answer first.
+func TestSessionStartProjectNameAsksBeforeTrustingClaude(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	repo := newHomeRepo(t, home, "code/garden")
+	c.register(t, repo)
+
+	r := sessionStartPathCall(t, c.workerNode, protocol.SessionStartRequest{Project: "garden", Harness: "claude"})
+	if r.Status != "needs_trust" || r.Path != repo {
+		t.Fatalf("untrusted project answered %+v, want needs_trust", r)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "fake-claude.json")); !os.IsNotExist(err) {
+		t.Fatalf("the session started before the owner trusted the folder: %v", err)
+	}
+	if trusted, err := claudetrust.Trusted(repo); err != nil || trusted {
+		t.Fatalf("the folder was trusted without the owner: trusted=%v err=%v", trusted, err)
+	}
+
+	raw, err := c.cli.call("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "claude", TrustClaude: true})
 	if err != nil {
 		t.Fatal(err)
 	}

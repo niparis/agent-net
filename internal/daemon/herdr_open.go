@@ -301,6 +301,17 @@ func (d *Daemon) notifySessionStart(r protocol.StartedSession) {
 	}
 }
 
+// notifySessionStartFailed tells the owner's TUI that a start answered as
+// starting did not start, and why. It uses the channel of a successful start.
+func (d *Daemon) notifySessionStartFailed(r protocol.StartedSession) {
+	name := cleanLine(r.Project)
+	if host := cleanLine(r.Hostname); host != "" {
+		name += " on " + host
+	}
+	reason := firstNonEmpty(cleanLine(r.Error), "no reason was reported")
+	d.broadcastCTOUI(protocol.UIRequest{Text: "Session not started: " + name + ". " + reason, DaemonNotice: true})
+}
+
 // A background session's attach client is a different process from the
 // background job. Herdr can report its native session ID, including after an
 // agent-net daemon restart, so check that before creating another client.
