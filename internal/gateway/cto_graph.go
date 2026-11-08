@@ -144,6 +144,9 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 			value = ""
 		}
 	case "node_settings_set":
+		if q.Setting == protocol.SettingWorkMode {
+			return "minor", nil
+		}
 		if _, moved := deliveryNodeKeys[q.Setting]; moved {
 			return "rule", nil
 		}
@@ -166,6 +169,10 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 }
 
 func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, error) {
+	// Work mode is advice at every level: the CTO sets it without a proposal.
+	if attr == protocol.AttrWorkMode || strings.HasSuffix(attr, ":"+protocol.AttrWorkMode) {
+		return "minor", nil
+	}
 	if typ == "lifecycle" || typ == "level_charter" {
 		return "rule", nil
 	}

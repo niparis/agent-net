@@ -20,7 +20,7 @@ const DecideRule = "Decide, do not defer: judge every request from another agent
 // charterSet tells whether a node has any charter at all.
 func charterSet(c Charter) bool {
 	return c.Purpose != "" || c.Maturity != "" || c.Accepts != "" || c.Refuses != "" ||
-		c.FeatureRequests != "" || c.Escalate != "" || c.MaturityNote != "" || c.Rules != ""
+		c.FeatureRequests != "" || c.Escalate != "" || c.MaturityNote != "" || c.Rules != "" || WorkModeLine(c) != ""
 }
 
 // CharterBrief is the whole charter, for a worker's brief. Empty when the node
@@ -103,6 +103,9 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 		if a.value != "" {
 			fmt.Fprintf(&b, "%s: %s\n", a.name, a.value)
 		}
+	}
+	if line := WorkModeLine(node.Charter); line != "" {
+		b.WriteString(line + "\n")
 	}
 	d := NodeDefaultsWithSettings(node.Charter.Maturity, node.Settings, snap, node.Name)
 	if rules := d.RulesText(); rules != "" {

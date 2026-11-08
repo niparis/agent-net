@@ -299,6 +299,22 @@ func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64, re
 // clears the override.
 func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...bool) error {
 	value = strings.ToLower(strings.TrimSpace(value))
+	if setting == protocol.SettingWorkMode {
+		// Work mode is a charter attribute, so a team and an agent can carry it
+		// too. This name is the repo level door for node_settings_set.
+		if err := protocol.ValidateWorkMode(value); err != nil {
+			return reject("%v", err)
+		}
+		if len(validate) > 0 && validate[0] {
+			tx, err := s.db.Begin()
+			if err != nil {
+				return err
+			}
+			defer tx.Rollback()
+			return setCharterTx(tx, node, protocol.AttrWorkMode, value, actor, s.now().UnixNano())
+		}
+		return s.SetCharter(node, protocol.AttrWorkMode, value, actor)
+	}
 	if err := protocol.ValidateNodeSetting(setting, value); err != nil {
 		return reject("%v", err)
 	}

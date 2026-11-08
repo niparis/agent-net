@@ -1408,7 +1408,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start a worker session with a complete brief, or continue one. Only when the owner asked for a worker. The difficulty judge chooses the level; difficulty and touches are accepted for older callers but ignored.",
+    "description": "Start a worker session with a complete brief, or continue one. Only when the owner asked for a worker, or when your effective work mode says workers write code. The difficulty judge chooses the level; difficulty and touches are accepted for older callers but ignored.",
     "inputSchema": {
       "type": "object",
       "properties": {

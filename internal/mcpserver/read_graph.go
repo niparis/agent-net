@@ -160,6 +160,7 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 				Accepts:         roCharterList(node.Charter.Accepts),
 				Refuses:         roCharterList(node.Charter.Refuses),
 				FeatureRequests: node.Charter.FeatureRequests,
+				WorkMode:        node.Charter.WorkMode,
 			}
 		}
 		rules := map[string]string{}

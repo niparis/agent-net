@@ -11,7 +11,7 @@ accept, test, review, merge, release, verify: caller
 IN 1                                                         OUT 2
 api-architect ──▶ deploys                                    ──▶ shop depends
                                                              ──▶ Alpha member_of
-Card 1-12/14  ctrl+u/d scroll ──────────────────────────────────────────────────────────────────────────────────────────
+Card 1-12/15  ctrl+u/d scroll ──────────────────────────────────────────────────────────────────────────────────────────
 PLACE ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 team       Alpha   mode charter first
 repo lead  ★ cogforge, reports to the owner

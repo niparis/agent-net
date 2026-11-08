@@ -8,7 +8,7 @@ accept, test, review, merge, release, verify: caller
 IN 2                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
 trading-architect ──▶ deploys
-Card 1-7/11  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-7/12  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.

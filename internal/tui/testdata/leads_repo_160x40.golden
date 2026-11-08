@@ -26,7 +26,7 @@ worker_sandbox     sandboxed              default
 judge_consumers    charter                default
 deploy_rule        brief                  default
 autonomy           off                    default
-
+work_mode          on_request             default
 
 
 RECENT  no changes yet

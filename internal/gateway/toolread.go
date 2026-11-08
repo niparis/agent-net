@@ -291,6 +291,7 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		row.Charter.Rules = c.Rules
 		row.Charter.Escalate = c.Escalate
 		row.Charter.Sources = c.Sources
+		row.Charter.WorkMode = c.WorkMode
 	}
 	if len(a.Charter.Rules) > 0 {
 		row.Rules = map[string]string{}
