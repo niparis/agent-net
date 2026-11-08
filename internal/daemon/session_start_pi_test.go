@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
+	"os"
 	"strings"
 	"testing"
 )
@@ -68,6 +69,39 @@ func TestSessionResumePiHerdr(t *testing.T) {
 		mustJSON(t, n.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
 		return r.Status == "started"
 	})
+}
+
+// Pi's fullscreen TUI captures the mouse, which stops the terminal's own text
+// selection, so copy-paste stops working. Every Pi TUI agent-net starts or
+// resumes asks for regular mode, the way Claude sessions get
+// CLAUDE_CODE_DISABLE_MOUSE=1.
+func TestSessionStartAndResumePiRunInRegularTuiMode(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "pi")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newRepo(t, "shop")
+	n.register(t, repo)
+
+	var started sessionStartTestResult
+	mustJSON(t, n.cli.mustCall("session_start", map[string]any{"project": "shop", "harness": "pi"}), &started)
+	requireHerdrOpened(t, log, "shop", bins["pi"], "--session-id", started.NativeID, "--name", "shop", "--tui-mode", "regular")
+
+	// Clear the calls so the resume check cannot pass on the start's command.
+	if err := os.WriteFile(log, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	native := "11111111-2222-4333-8444-555555555555"
+	id, err := g.gw.Store().UpsertSession(n.d.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: native, Cwd: repo, Name: "shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.gw.Store().SetSessionOffline(n.d.cfg.NodeID, id); err != nil {
+		t.Fatal(err)
+	}
+	var resumed sessionStartTestResult
+	mustJSON(t, n.cli.mustCall("session_resume", map[string]string{"session_id": id}), &resumed)
+	requireHerdrOpened(t, log, "shop", bins["pi"], "--session", native, "--tui-mode", "regular")
 }
 
 func TestSessionStartPiRequiresHerdr(t *testing.T) {

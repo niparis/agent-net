@@ -2610,7 +2610,7 @@ is missing or its address cannot be reached, the start is refused with
 the status code. The service password stays in HTTP authentication; it is never
 logged or put in a command argument or notice.
 
-For Pi, agent-net opens `pi --session-id <uuid> --name <project> [--model M]` in herdr. A resumed Pi conversation uses `pi --session <id>`. A first message is sent as an ordinary owner message after Pi registers. When herdr is unavailable, Pi start and resume fail with the folders searched.
+For Pi, agent-net opens `pi --session-id <uuid> --name <project> [--model M] --tui-mode regular` in herdr. A resumed Pi conversation uses `pi --session <id> --tui-mode regular`. Regular mode leaves the mouse to the terminal, so text selection and copy-paste work; Pi's default fullscreen mode captures the mouse. A first message is sent as an ordinary owner message after Pi registers. When herdr is unavailable, Pi start and resume fail with the folders searched.
 
 For Codex, agent-net opens `codex [-m MODEL] [prompt]` in herdr in the project folder. When herdr is unavailable, the answer contains an `enter_plan` and the TUI runs it in its own terminal. A remote start follows the same herdr or ssh rules as Enter. A locally approved CTO start fails if no herdr pane opens and there is no approving TUI to receive the plan. When the TUI receives a plan, the proposal says `handed_to_tui` until the TUI reports whether the process started using `proposal_start_ack`; after 60 seconds without confirmation it fails. A daemon restart also fails any handoff still awaiting confirmation. Remote CTO Codex fallback plans fail because the confirmation cannot reach the proposal on the other node.
 
