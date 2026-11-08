@@ -158,6 +158,70 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 	}
 	return out
 }
+
+const (
+	// toolConflictLogEvery keeps a standing state that cannot be fixed from
+	// filling the log. One line per conflict per hour is enough to notice it.
+	toolConflictLogEvery = time.Hour
+	// toolProbeSummaryEvery keeps repeated plan probes from writing a summary
+	// line on every tick.
+	toolProbeSummaryEvery = time.Minute
+)
+
+// toolConflictKey identifies one conflict for the log throttle.
+type toolConflictKey struct{ skill, project, reason string }
+
+// expectedToolProbeConflict reports a state that reconcile and project already
+// treat as normal: another copy owns the destination, or the machine cannot be
+// asked. Neither is a failure.
+func expectedToolProbeConflict(reason string) bool {
+	switch reason {
+	case "destination already exists and is not owned", "machine offline; destination cannot be inspected":
+		return true
+	}
+	return false
+}
+
+// logToolProbeConflict logs a real conflict at most once per hour for each
+// skill, project and reason. A plan probes each destination twice when the
+// gateway's batch call times out and it asks again one by one, and the same
+// conflict must not be logged twice for that.
+func (d *Daemon) logToolProbeConflict(skill, project, reason string) {
+	if reason == "" || expectedToolProbeConflict(reason) {
+		return
+	}
+	key := toolConflictKey{skill: skill, project: project, reason: reason}
+	now := time.Now()
+	d.toolsLogMu.Lock()
+	if d.toolsConflictLog == nil {
+		d.toolsConflictLog = map[toolConflictKey]time.Time{}
+	}
+	if last, ok := d.toolsConflictLog[key]; ok && now.Sub(last) < toolConflictLogEvery {
+		d.toolsLogMu.Unlock()
+		return
+	}
+	d.toolsConflictLog[key] = now
+	d.toolsLogMu.Unlock()
+	d.Logf("tool probe failed: skill=%q project=%q reason=%q", redact.Secrets(skill), redact.Secrets(project), redact.Secrets(reason))
+}
+
+// logToolProbeSummary writes one summary line, at most once a minute while
+// probes repeat. No probes means no line.
+func (d *Daemon) logToolProbeSummary(count int, start time.Time) {
+	if count == 0 {
+		return
+	}
+	now := time.Now()
+	d.toolsLogMu.Lock()
+	if !d.toolsSummaryAt.IsZero() && now.Sub(d.toolsSummaryAt) < toolProbeSummaryEvery {
+		d.toolsLogMu.Unlock()
+		return
+	}
+	d.toolsSummaryAt = now
+	d.toolsLogMu.Unlock()
+	d.Logf("tool probes: count=%d duration=%s", count, time.Since(start))
+}
+
 func (d *Daemon) probeToolDestinations(probes []protocol.ToolPlanProbe) []protocol.ToolPlanProbeResult {
 	start := time.Now()
 	results := make([]protocol.ToolPlanProbeResult, len(probes))
@@ -166,11 +230,9 @@ func (d *Daemon) probeToolDestinations(probes []protocol.ToolPlanProbe) []protoc
 		if probe.Operation == "repo_remove" {
 			results[i] = d.probeRepoSkillRemoval(probe)
 		}
-		if results[i].Conflict != "" {
-			d.Logf("tool probe failed: skill=%q project=%q reason=%q", redact.Secrets(probe.Name), redact.Secrets(probe.Project), redact.Secrets(results[i].Conflict))
-		}
+		d.logToolProbeConflict(probe.Name, probe.Project, results[i].Conflict)
 	}
-	d.Logf("tool probes: count=%d duration=%s", len(probes), time.Since(start))
+	d.logToolProbeSummary(len(probes), start)
 	return results
 }
 
@@ -194,9 +256,7 @@ func (d *Daemon) onToolPlanProbe(ctx context.Context, l *link, h protocol.Header
 	if p.Operation == "repo_remove" {
 		result = d.probeRepoSkillRemoval(p)
 	}
-	if result.Conflict != "" {
-		d.Logf("tool probe failed: skill=%q project=%q reason=%q", redact.Secrets(p.Name), redact.Secrets(p.Project), redact.Secrets(result.Conflict))
-	}
+	d.logToolProbeConflict(p.Name, p.Project, result.Conflict)
 	if b, err := protocol.EncodeResult(h.ID, result, nil); err == nil {
 		_ = l.write(ctx, b)
 	}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -472,5 +473,82 @@ func TestToolProbeBatchLogs(t *testing.T) {
 		if !strings.Contains(logs.String(), want) {
 			t.Errorf("missing %q: %s", want, logs.String())
 		}
+	}
+}
+
+func TestToolProbeExpectedConflictLogsNothing(t *testing.T) {
+	home := t.TempDir()
+	dest := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dest, 0700); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{InventoryHome: home}, log: log.New(&logs, "", 0)}
+	results := d.probeToolDestinations([]protocol.ToolPlanProbe{{Name: "demo", Harness: "claude"}})
+	if len(results) != 1 || results[0].Conflict != "destination already exists and is not owned" {
+		t.Fatalf("results: %+v", results)
+	}
+	if strings.Contains(logs.String(), "tool probe failed") {
+		t.Fatalf("expected conflict logged as a failure: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "tool probes: count=1") {
+		t.Fatalf("missing summary: %s", logs.String())
+	}
+	if !expectedToolProbeConflict("machine offline; destination cannot be inspected") {
+		t.Fatal("offline destination is not treated as expected")
+	}
+}
+
+func TestToolProbeRealConflictLogsOnceAnHour(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "elsewhere"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(home, "elsewhere"), filepath.Join(home, ".claude/skills")); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{InventoryHome: home}, log: log.New(&logs, "", 0)}
+	// A timed-out batch is asked again one probe at a time, so the same
+	// conflict arrives twice in a plan. It must be logged once.
+	probes := []protocol.ToolPlanProbe{{Name: "demo", Harness: "claude"}, {Name: "demo", Harness: "claude"}}
+	d.probeToolDestinations(probes)
+	if got := strings.Count(logs.String(), "tool probe failed"); got != 1 {
+		t.Fatalf("first plan logged %d conflicts: %s", got, logs.String())
+	}
+	d.probeToolDestinations(probes)
+	if got := strings.Count(logs.String(), "tool probe failed"); got != 1 {
+		t.Fatalf("second plan logged again: %s", logs.String())
+	}
+	key := toolConflictKey{skill: "demo", project: "", reason: "destination contains a symlink"}
+	d.toolsLogMu.Lock()
+	d.toolsConflictLog[key] = time.Now().Add(-toolConflictLogEvery - time.Minute)
+	d.toolsLogMu.Unlock()
+	d.probeToolDestinations(probes)
+	if got := strings.Count(logs.String(), "tool probe failed"); got != 2 {
+		t.Fatalf("conflict not logged again after an hour: %s", logs.String())
+	}
+}
+
+func TestToolProbeSummaryAtMostOnceAMinute(t *testing.T) {
+	home := t.TempDir()
+	var logs bytes.Buffer
+	d := &Daemon{cfg: Config{InventoryHome: home}, log: log.New(&logs, "", 0)}
+	probes := []protocol.ToolPlanProbe{{Name: "demo", Harness: "claude"}}
+	d.probeToolDestinations(probes)
+	d.probeToolDestinations(probes)
+	d.probeToolDestinations(nil)
+	if got := strings.Count(logs.String(), "tool probes: count=1"); got != 1 {
+		t.Fatalf("summary logged %d times: %s", got, logs.String())
+	}
+	d.toolsLogMu.Lock()
+	d.toolsSummaryAt = time.Now().Add(-toolProbeSummaryEvery - time.Second)
+	d.toolsLogMu.Unlock()
+	d.probeToolDestinations(probes)
+	if got := strings.Count(logs.String(), "tool probes: count=1"); got != 2 {
+		t.Fatalf("summary not logged again after a minute: %s", logs.String())
 	}
 }
