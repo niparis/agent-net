@@ -2793,7 +2793,33 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
 
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
-	rows, err := s.db.Query(agentSelect + ` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (` + piChildSQL + `) ORDER BY s.last_seen DESC, s.id`)
+	out, err := s.agentsBase(f)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyDelegation(out); err != nil {
+		return nil, err
+	}
+	if err := s.applyAgentCharters(out, true); err != nil {
+		return nil, err
+	}
+	if err := s.applyPending(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// agentsBase is Agents without delegation, charters and pending requests. A
+// caller that reads only the stored fields (id, node, harness, model, worker)
+// uses it, so it does not build the graph and the settings snapshot.
+func (s *Store) agentsBase(f protocol.QueryAgents) ([]protocol.AgentView, error) {
+	// The harness filter is applied here too, so the select list (a dozen
+	// subqueries per row) is only worked out for the sessions that stay.
+	where, args := ``, []any{}
+	if f.Harness != "" {
+		where, args = ` AND s.harness=?`, append(args, f.Harness)
+	}
+	rows, err := s.db.Query(agentSelect+` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (`+piChildSQL+`)`+where+` ORDER BY s.last_seen DESC, s.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2840,16 +2866,6 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		out = append(out, a)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	rows.Close() // one connection: free it before the next query
-	if err := s.applyDelegation(out); err != nil {
-		return nil, err
-	}
-	if err := s.applyAgentCharters(out, true); err != nil {
-		return nil, err
-	}
-	if err := s.applyPending(out); err != nil {
 		return nil, err
 	}
 	return out, nil

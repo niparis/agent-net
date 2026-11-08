@@ -888,8 +888,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	}
 	if typ == "session.sync" || typ == "session.upsert" || typ == "project.add" {
 		// Freeze defaults before discovery so existing off cells stay off.
-		if _, err := st.ToolProjectStates(); err != nil {
+		// Only a skill without its settings has defaults to freeze.
+		missing, err := st.skillSettingsMissing()
+		if err != nil {
 			return nil, err
+		}
+		if missing {
+			if _, err := st.ToolProjectStates(); err != nil {
+				return nil, err
+			}
 		}
 		defer g.scheduleNewSkillProjects()
 	}

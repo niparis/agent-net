@@ -97,6 +97,11 @@ func (s *Store) toolProjectStates(validate bool) ([]protocol.ToolProjectState, e
 	if err != nil {
 		return nil, err
 	}
+	return s.toolProjectStatesOf(items, validate)
+}
+
+// toolProjectStatesOf is toolProjectStates for skill items the caller has read.
+func (s *Store) toolProjectStatesOf(items []protocol.ToolItem, validate bool) ([]protocol.ToolProjectState, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -382,11 +387,11 @@ func (g *Gateway) stopStandingChoices() {
 func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 	g.skillProjectsMu.Lock()
 	defer g.skillProjectsMu.Unlock()
-	rows, err := g.store.ToolProjectStates()
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
 	if err != nil {
 		return err
 	}
-	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	rows, err := g.store.toolProjectStatesOf(items, false)
 	if err != nil {
 		return err
 	}
@@ -398,13 +403,13 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 				a = observedToolAssignment(item)
 			}
 		}
+		seen, err := g.store.toolProjectsSeen(row.Item)
+		if err != nil {
+			return err
+		}
 		unseen := []string{}
 		for name := range row.Projects {
-			var seen int
-			if err = g.store.db.QueryRow(`SELECT COUNT(*) FROM tool_project_seen WHERE item=? AND project=?`, row.Item, name).Scan(&seen); err != nil {
-				return err
-			}
-			if seen == 0 {
+			if !seen[name] {
 				unseen = append(unseen, name)
 			}
 		}
@@ -491,6 +496,34 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 		}
 	}
 	return firstErr
+}
+
+// skillSettingsMissing tells whether some skill has no project settings yet.
+// When none is missing, ToolProjectStates would change nothing. It may say yes
+// for an identity that ToolProjectStates would skip; it never says no when
+// there is something to write.
+func (s *Store) skillSettingsMissing() (bool, error) {
+	var missing bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tool_identities i WHERE i.kind=? AND NOT EXISTS (SELECT 1 FROM tool_project_settings t WHERE t.item=i.id))`, protocol.InventorySkill).Scan(&missing)
+	return missing, err
+}
+
+// toolProjectsSeen is the set of projects already marked seen for a skill.
+func (s *Store) toolProjectsSeen(item string) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT project FROM tool_project_seen WHERE item=?`, item)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		seen[name] = true
+	}
+	return seen, rows.Err()
 }
 
 // The setting is an owner choice immediately. A placement change still needs
