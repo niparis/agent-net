@@ -87,6 +87,13 @@ func (l *logBuf) Write(p []byte) (int, error) {
 	return l.b.Write(p)
 }
 
+// String returns everything logged so far, for a failure message.
+func (l *logBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
 // lines returns the log lines that hold every given text.
 func (l *logBuf) lines(parts ...string) []string {
 	l.mu.Lock()
