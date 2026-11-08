@@ -2518,7 +2518,7 @@ An empty or missing maturity uses the `growing` controls. Approval overrides sti
 
 The worker sandbox level from decision 0020 follows the node. The project policy form and `node_settings_set worker_sandbox` both change the repo setting. When it is unset, the node's maturity default applies. A node with no maturity and no override keeps `sandboxed`.
 
-**Autonomy.** A node's `autonomy` setting is `off` (the default) or `wake`. With `wake`, an idle check's `more` answer wakes the existing online session with one short continue notification instead of leaving an Inbox row. It never starts a new session or a clone: that stays with the owner, or with the CTO as a proposal. `blocked on X` always leaves an Inbox row. Wake-ups have their own daily cap of 6 per agent and stop after two in a row with no new message and no change in open work; the second leaves one row, `<name> was woken twice with no progress`, and a later change allows waking again. The gateway stores only the daily count, the no-progress streak and the progress markers it needs, never task content. Only the owner changes autonomy: on the Graph agent card press `a`, or with `node_settings_set`; the CTO proposes it with `node_settings_set` and the owner approves, like every node setting. The owner's answer to the session-start conflict in decision 0036 is that agent-net may wake an existing agent, but creating a new agent or a clone stays with the owner or the CTO.
+**Autonomy.** A node's `autonomy` setting is `off` (the default) or `wake`. With `wake`, an idle check's `more` answer wakes the existing online session with one short continue notification instead of leaving an Inbox row, and a message queued for an offline session of the agent wakes that session (see message delivery below: Claude interactive, Codex and OpenCode; not Pi). It never starts a new session or a clone: that stays with the owner, or with the CTO as a proposal. `blocked on X` always leaves an Inbox row. Wake-ups have their own daily cap of 6 per agent and stop after two in a row with no new message and no change in open work; the second leaves one row, `<name> was woken twice with no progress`, and a later change allows waking again. The gateway stores only the daily count, the no-progress streak and the progress markers it needs, never task content. Only the owner changes autonomy: on the Graph agent card press `a`, or with `node_settings_set`; the CTO proposes it with `node_settings_set` and the owner approves, like every node setting. The owner's answer to the session-start conflict in decision 0036 is that agent-net may wake an existing agent, but creating a new agent or a clone stays with the owner or the CTO.
 
 **Merge authority.** `full` lets the agent merge and push to the default branch. `delegated` needs an approval from the owner or from anyone above the node in the tree who holds merge: its repo lead or team lead. `ask` needs the owner's written approval. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text. For the exact merge, the owner approves directly or through an agent-net approval note from `agent_owner_ask` with kind `approval`; the repo lead or team lead approves in a message from them. On `ask`, always request the owner's written approval. An owner-instruction excerpt on its own does not approve a merge. The trust and owner-instruction notes use `recipient_merge_authority`, computed by the gateway for the receiving node at delivery. A sender cannot supply that field. The guidance block defers merges to this rule. Uninstall removes the guidance block as a whole.
 
@@ -2712,7 +2712,7 @@ Codex rows keep their existing enter plans, wrapped in the remote plan when the
 row is on another machine. Other offline harnesses are refused.
 
 A message to an offline Claude background session also asks its machine to
-resume it. A ready unclaimed delivery step assigned to the merger or caller
+resume it. This holds whatever the agent's autonomy is. A ready unclaimed delivery step assigned to the merger or caller
 asks that specific session's machine to resume it. Node-owned steps wait for an
 online session. Step notifications are queued after the session is online, so
 its backlog is sent in one batch. The machine checks the output of
@@ -2727,6 +2727,34 @@ session registers. If Claude resumes into a copy with a new native ID, the
 original agent-net session ID and its queued messages follow that copy. This
 background wake never opens a view. A message queued while its machine is
 disconnected is checked when the machine reconnects.
+
+**Wake on messages (autonomy `wake`).** When the agent of an offline owner
+session has autonomy `wake`, a queued message also asks that session's machine
+to resume the same session, then the gateway delivers the queued messages.
+The limits are the ones above: one attempt per session per 10 minutes, kept
+across gateway restarts, a failure logged once, never a worker, and never a new
+session or a clone. A wake never opens a view, a herdr pane or a window: the
+owner opens the session with Enter as usual. With autonomy `off` (the default)
+nothing changes, for every harness. What each harness does:
+
+- Claude, interactive: `claude --bg --resume <session id>` in the recorded
+  folder, through the same launcher as the background wake. The session is not
+  running, so it has no `done` record to check: the machine refuses when
+  `claude agents --json --all` lists a matching record that is running, is a
+  background record, or does not agree with the session ID, and when the
+  session was not recorded as an interactive one. A copy with a new native ID
+  keeps the agent-net session ID and its queued messages, as above.
+- Codex: `thread/resume` on the shared Codex app server, with the session's
+  folder. Codex lists the thread as loaded, the daemon registers it under the
+  same session ID, and the message is queued with `thread/queue/add`, which
+  starts a turn on an idle thread. The wake is refused when the app server is
+  not running.
+- OpenCode: the saved session is loaded in the owner's OpenCode service
+  (`service.json`), in the session's folder, so the plugin registers it again.
+  The wake creates no session and is refused when the service is not running.
+- Pi: not woken. Its rpc mode cannot open an existing session. The message
+  stays queued as before, and the sender's receipt note says `Pi sessions are
+  not woken by messages`.
 
 All three methods require the owner's CLI connection and refuse agent callers,
 including CLI commands inside agent, Codex app-server and OpenCode serve

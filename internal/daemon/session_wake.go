@@ -18,6 +18,13 @@ import (
 // matching background record in state done. The record, not gateway presence,
 // is authoritative about a stop or removal by the owner.
 func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error {
+	return d.wakeClaude(ctx, id, token, false)
+}
+
+// wakeClaude is the Claude wake. A background session is resumed only from a
+// retired record. With autonomy wake the gateway also asks for an interactive
+// session, which is resumed in the background the same way (never a view).
+func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 110*time.Second)
 	defer cancel()
 	for !d.claudeStartMu.TryLock() {
@@ -76,6 +83,10 @@ func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error 
 	}
 	matches := 0
 	retired := false
+	// An interactive session that is not running has no background record to
+	// check, so its absence is normal. Anything live, or any record that is
+	// not plainly an interactive one, is not.
+	interactive := autonomy && a.Mode == protocol.ModeForeground
 	for _, record := range agents {
 		// Some Claude records carry the full session ID. When they do, it
 		// must agree; otherwise use the short job ID only as a prefix.
@@ -89,8 +100,11 @@ func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error 
 		identity := full || (prefix && record.SessionID == "")
 		background := record.Kind == "background" || record.Kind == "bg" || (record.Kind == "" && a.Mode == protocol.ModeBackground)
 		retired = identity && background && record.PID == 0 && record.State == "done" && record.Cwd != "" && filepath.Clean(record.Cwd) == filepath.Clean(a.Cwd)
+		if record.Kind != "interactive" || record.PID != 0 || !identity {
+			interactive = false
+		}
 	}
-	if matches != 1 || !retired {
+	if !(matches == 1 && retired) && !interactive {
 		return errors.New("Claude background record is missing, ambiguous, or not retired")
 	}
 	// This is the same background launcher as owner resume, without any view.
@@ -129,12 +143,13 @@ func (d *Daemon) onSessionWakeFrame(ctx context.Context, l *link, h protocol.Hea
 	var p struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
+		Autonomy  string `json:"autonomy"`
 	}
 	var err error
 	if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
 		err = errors.New("bad session wake")
 	} else {
-		err = d.wakeRetiredClaude(ctx, p.SessionID, p.Token)
+		err = d.wakeSession(ctx, p.SessionID, p.Token, p.Autonomy == protocol.AutonomyWake)
 	}
 	if res, e := protocol.EncodeResult(h.ID, map[string]bool{"ok": err == nil}, err); e == nil {
 		l.write(ctx, res)

@@ -2406,7 +2406,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				g.dispatch(ctx, cp)
 			}
 		}
-		return map[string]any{"message": m, "routing": route}, nil
+		return map[string]any{"message": m, "routing": g.wakeReceiptNote(m, route)}, nil
 
 	case "msg.handoff":
 		p, err := decode[protocol.MsgHandoff](raw)
