@@ -1,20 +1,20 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
    Graph · all teams
-  ╭─ platform ───────────────────────╮    ╭─ forge ──────────────────────────╮
-  │     ★ shop                       │    │     ★ shop                       │
-  │     5 projects · 5 sessions      │    │     3 projects · 3 sessions      │
-  │  ●  1 busy                       │    │ (●) needs you                    │
-  │                                  │    │                                  │
-  ╰──────────────────────────────────╯    ╰──────────────────────────────────╯
-                     ──────────────────13───────────────────
-                                       │
-  ╭─ unassigned ─────────────────────╮ │
-  │     no lead                      │ │
-  │     10 projects · 8 sessions     │ │
-  │  ○  idle                         │ │
-  │                                  │ │
-  ╰──────────────────────────────────╯ │
-                     ──────────────────
+  ╭─ forge ──────────────╮  ╭─ platform ───────────╮  ╭─ unassigned ─────────╮
+  │  ★ shop              │ 3│  ★ shop              │  │  no lead             │
+  │  3 projects · 3 sess…│⠤⢤│  5 projects · 5 sess…│  │  10 projects · 8 ses…│
+  │(●) needs you         │  │ ● 1 busy             │⠤1│ ○ idle               │
+  │                      │  │                      │↖ │                      │
+  ╰──────────────────────╯  ╰──────────────────────╯  ╰──────────────────────╯
+
+
+
+
+
+
+
+
+
    4 dormant · d to show
   needs you: highlighted · busy: bright · offline: dim
   selected: forge · team · 0 edges

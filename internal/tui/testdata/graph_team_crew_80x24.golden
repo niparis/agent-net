@@ -1,21 +1,21 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
    Graph · team Crew
   ╭─ Crew ───────────────────────────────────────────────────────────────────╮
-  │ lead  · 3 projects · 5 sessions                                          │
-  │     qa                                 crew-a                            │
-  │  ○  1 sessions                   ⢀⣀(○) 1 sessions                        │
-  │                         ⢀⣀⣀⠤⠤⠒⠒⠊⠉⠁                                       │
-  │                 ⣀⣀⠤⠤⠔⠒⠊⠉⠁                                                │
-  │     crew-b⠤⠔⠒⠒⠉⠉                       crew-c                            │
-  │  ○⠤⠶1 sessions⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤→⠤⠤⠤⠤⠤⠤○  2 sessions                        │
+  │ no lead · 3 projects · 5 sessions                                        │
   │                                                                          │
   │                                                                          │
+  │                                     ○ qa                                 │
+  │                                       1 session                          │
   │                                                                          │
-  │                                                                          │
+  │         ⣀⣀⣀⡠⠤⠤⠤⠤⠤⠤⣀⣀⣀⡀                             ⣀⣀⣀⣀⠤⠤⠤⠤⠤⠤⣀⣀⣀⡀        │
+  │        ○ crew-c      ⠈⠉⠒⠤⣀⡀                   ⢀⡠⠤⠒⠉      crew-a (○)      │
+  │          2 sessions       ⠈⠑⠒⠤⡀           ⣀⠤⠒⠉⠁          1 session       │
+  │                               ⠈⠑⢄⡀     ⢀⠔⠉                               │
+  │                                  ⠈⠒⢄⢀⠔⠊⠁                                 │
+  │                                     ○ crew-b                             │
+  │                                       1 session                          │
   │                                                                          │
   ╰──────────────────────────────────────────────────────────────────────────╯
-
-   more teams
   needs you: highlighted · busy: bright · offline: dim
   selected: crew-a · repo · 0 edges
   accept, test, review, merge, release, verify: caller

@@ -2,19 +2,19 @@
    Graph · team forge
   ╭─ forge ──────────────────────────────────────────────────────────────────╮
   │ lead shop · 3 projects · 3 sessions                                      │
-  │     api                                checkout                          │
-  │  ●  1 sessions                      ●  1 sessions                        │
-  │  ↑  1 busy                                                               │
-  │  ⢸                                                                       │
-  │  ⢸  ★ shop                                                               │
-  │ (●) 1 sessions                                                           │
   │                                                                          │
   │                                                                          │
+  │                                                                          │
+  │                                                          ● checkout      │
+  │                      ⣀⠤⠔⠊⠉⠉⠉⠉⠉⠉⠉⠑⠢⠤⣀                       1 session     │
+  │                   ⡠⠒⠉              (●) ★ shop                            │
+  │                ⢀⠔⠊                     1 session                         │
+  │                ● api                                                     │
+  │                  1 session · 1 busy                                      │
   │                                                                          │
   │                                                                          │
   │                                                                          │
   ╰──────────────────────────────────────────────────────────────────────────╯
-
    more teams  unassigned
   needs you: highlighted · busy: bright · offline: dim
   selected: shop · repo · 0 edges

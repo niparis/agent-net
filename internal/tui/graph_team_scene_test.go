@@ -6,8 +6,10 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"golang.org/x/image/font"
@@ -152,8 +154,7 @@ func TestGraphFrameGoldens(t *testing.T) {
 				if c.Rune == ' ' {
 					continue
 				}
-				d := font.Drawer{Dst: img, Src: image.NewUniform(color.RGBA{215, 220, 229, 255}), Face: basicfont.Face7x13, Dot: fixed.P(pos.X*10, pos.Y*20+15)}
-				d.DrawString(string(c.Rune))
+				drawPreviewGlyph(img, pos.X*10, pos.Y*20, c.Rune, color.RGBA{215, 220, 229, 255})
 			}
 			path := filepath.Join("testdata", "team_graph_"+view+"_130x38.png")
 			var buf bytes.Buffer
@@ -175,4 +176,100 @@ func TestGraphFrameGoldens(t *testing.T) {
 			}
 		}
 	}
+}
+
+// drawPreviewGlyph draws one terminal cell into the preview image. The bitmap
+// font only covers ASCII, so symbols are drawn as small shapes instead of
+// letting the font fall back to a box or a zero.
+func drawPreviewGlyph(img *image.RGBA, x, y int, r rune, col color.RGBA) {
+	set := func(px, py int) {
+		if image.Pt(px, py).In(img.Bounds()) {
+			img.SetRGBA(px, py, col)
+		}
+	}
+	fillCircle := func(cx, cy, radius float64) {
+		for py := int(math.Floor(cy - radius)); py <= int(math.Ceil(cy+radius)); py++ {
+			for px := int(math.Floor(cx - radius)); px <= int(math.Ceil(cx+radius)); px++ {
+				if math.Hypot(float64(px)-cx, float64(py)-cy) <= radius {
+					set(px, py)
+				}
+			}
+		}
+	}
+	fillPoly := func(pts []image.Point) {
+		if len(pts) < 3 {
+			return
+		}
+		minY, maxY := pts[0].Y, pts[0].Y
+		for _, p := range pts {
+			minY, maxY = min(minY, p.Y), max(maxY, p.Y)
+		}
+		for py := minY; py <= maxY; py++ {
+			var xs []int
+			for i := range pts {
+				a, b := pts[i], pts[(i+1)%len(pts)]
+				if a.Y <= py && b.Y > py || b.Y <= py && a.Y > py {
+					t := float64(py-a.Y) / float64(b.Y-a.Y)
+					xs = append(xs, int(math.Round(float64(a.X)+t*float64(b.X-a.X))))
+				}
+			}
+			sort.Ints(xs)
+			for i := 0; i+1 < len(xs); i += 2 {
+				for px := xs[i]; px <= xs[i+1]; px++ {
+					set(px, py)
+				}
+			}
+		}
+	}
+	switch r {
+	case '·':
+		fillCircle(float64(x)+5, float64(y)+11, 1.4)
+		return
+	case '…':
+		for _, dx := range []int{3, 5, 7} {
+			fillCircle(float64(x+dx), float64(y)+14, 1)
+		}
+		return
+	case '★':
+		pts := make([]image.Point, 0, 10)
+		for i := 0; i < 10; i++ {
+			a := -math.Pi/2 + float64(i)*math.Pi/5
+			radius := 4.8
+			if i%2 == 1 {
+				radius = 2.1
+			}
+			pts = append(pts, image.Pt(int(math.Round(float64(x)+5+math.Cos(a)*radius)), int(math.Round(float64(y)+9+math.Sin(a)*radius))))
+		}
+		fillPoly(pts)
+		return
+	case '◆':
+		fillPoly([]image.Point{{x + 5, y + 4}, {x + 9, y + 9}, {x + 5, y + 14}, {x + 1, y + 9}})
+		return
+	case '▸':
+		fillPoly([]image.Point{{x + 3, y + 5}, {x + 8, y + 9}, {x + 3, y + 13}})
+		return
+	case '⇄':
+		for _, yy := range []int{7, 12} {
+			for px := x + 2; px <= x+8; px++ {
+				set(px, y+yy)
+			}
+		}
+		fillPoly([]image.Point{{x + 8, y + 5}, {x + 8, y + 9}, {x + 10, y + 7}})
+		fillPoly([]image.Point{{x + 2, y + 10}, {x + 2, y + 14}, {x, y + 12}})
+		return
+	case '●':
+		fillCircle(float64(x)+5, float64(y)+9, 3)
+		return
+	case '○':
+		for i := 0; i < 360; i++ {
+			a := float64(i) * math.Pi / 180
+			set(int(math.Round(float64(x)+5+math.Cos(a)*3.2)), int(math.Round(float64(y)+9+math.Sin(a)*3.2)))
+		}
+		return
+	}
+	if r < 32 || r > 126 {
+		r = '?'
+	}
+	d := font.Drawer{Dst: img, Src: image.NewUniform(col), Face: basicfont.Face7x13, Dot: fixed.P(x, y+15)}
+	d.DrawString(string(r))
 }

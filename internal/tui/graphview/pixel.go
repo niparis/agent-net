@@ -372,6 +372,9 @@ func nodeIndexAt(nodes []SceneNode, p Point) int {
 }
 
 func nodeRadius(n SceneNode, zoom float64) float64 {
+	if n.Kind == "tag" {
+		return 0
+	}
 	if n.Kind == "owner" || n.Kind == "cto" || n.Role == "cto" {
 		return 6
 	}
@@ -416,6 +419,9 @@ func maturityLevel(value string) string {
 }
 
 func (c *pixelCanvas) node(n SceneNode, level string, metrics PixelMetrics, dim bool) {
+	if n.Kind == "tag" {
+		return
+	}
 	cx, cy := c.px(n.Position)
 	r := nodeRadius(n, c.zoom)
 	if n.Kind == "owner" || n.Kind == "cto" || n.Role == "cto" {
@@ -557,14 +563,6 @@ func (c *pixelCanvas) talk(t SceneTalk) {
 }
 
 func (c *pixelCanvas) edge(e SceneEdge, nodes []SceneNode) {
-	if len(e.Path) > 1 {
-		points := make([]Point, len(e.Path))
-		for i, p := range e.Path {
-			points[i].X, points[i].Y = c.px(p)
-		}
-		c.stroke(points, 1.5, edgeColor(e.Kind), 1, e.Dashed)
-		return
-	}
 	col := edgeColor(e.Kind)
 	width := 1.5
 	alpha := 1.0
@@ -573,11 +571,19 @@ func (c *pixelCanvas) edge(e SceneEdge, nodes []SceneNode) {
 	} else if e.Dimmed {
 		alpha = pixelEdgeDimmed
 	}
-	ax, ay := c.px(e.From)
-	bx, by := c.px(e.To)
-	a, b := Point{ax, ay}, Point{bx, by}
-	ctrl := bendControl(a, b, .18)
-	points := sampleQuad(a, ctrl, b, 64)
+	var points []Point
+	if len(e.Path) > 1 {
+		points = make([]Point, len(e.Path))
+		for i, p := range e.Path {
+			points[i].X, points[i].Y = c.px(p)
+		}
+	} else {
+		ax, ay := c.px(e.From)
+		bx, by := c.px(e.To)
+		a, b := Point{ax, ay}, Point{bx, by}
+		ctrl := bendControl(a, b, .18)
+		points = sampleQuad(a, ctrl, b, 64)
+	}
 	if e.Kind == "deploys" {
 		c.stroke(points, 4.5, col, alpha*.35, false)
 	}
