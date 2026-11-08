@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -371,7 +372,7 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	one, err := g.MachineGet(protocol.MachineGetRequest{Machine: "research", Include: []string{"models"}, Limit: 2})
+	one, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models"}, Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +380,7 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 		t.Fatalf("models page: %+v", one.Models)
 	}
 	checkOutput(t, "agent_machine_get", one)
-	next, err := g.MachineGet(protocol.MachineGetRequest{Machine: "research", Include: []string{"models"}, Limit: 2, Cursor: one.Models.NextCursor})
+	next, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models"}, Limit: 2, Cursor: one.Models.NextCursor})
 	if err != nil || next.Models == nil || len(next.Models.Items) != 1 || next.Models.NextCursor != "" {
 		t.Fatalf("models second page: %+v %v", next, err)
 	}
@@ -392,7 +393,7 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 		seen[key] = true
 	}
 
-	if _, err := g.MachineGet(protocol.MachineGetRequest{Machine: "research", Include: []string{"models", "quotas"}}); err == nil ||
+	if _, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models", "quotas"}}); err == nil ||
 		!strings.Contains(err.Error(), "one") {
 		t.Fatalf("two include categories: %v", err)
 	}

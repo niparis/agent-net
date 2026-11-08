@@ -40,6 +40,7 @@ type psReader struct {
 	n    int
 	load [3]float64
 	used uint64
+	swap [2]uint64 // used, total
 }
 
 const slowEvery = 4
@@ -74,9 +75,13 @@ func (r *psReader) Read(ctx context.Context) (Snapshot, error) {
 		if out, err := r.run(ctx, "vm_stat"); err == nil {
 			r.used = parseVMStat(string(out))
 		}
+		if out, err := r.run(ctx, "sysctl", "-n", "vm.swapusage"); err == nil {
+			r.swap[0], r.swap[1] = parseSwapUsage(string(out))
+		}
 	}
 	r.n++
 	snap.M.Load, snap.M.MemUsed = r.load, r.used
+	snap.M.SwapUsed, snap.M.SwapTotal = r.swap[0], r.swap[1]
 	return snap, nil
 }
 
@@ -217,6 +222,68 @@ func (r *psReader) Args(ctx context.Context, pids []int) map[int]string {
 		}
 		if pid, err := strconv.Atoi(line[:i]); err == nil {
 			out[pid] = strings.TrimSpace(line[i+1:])
+		}
+	}
+	return out
+}
+
+// parseSwapUsage reads the output of: sysctl -n vm.swapusage
+// ("total = 2048.00M  used = 1024.50M  free = 1023.50M  (encrypted)").
+// It returns used and total in bytes, or 0 and 0 when it cannot read them.
+func parseSwapUsage(s string) (used, total uint64) {
+	f := strings.Fields(s)
+	read := func(key string) uint64 {
+		for i := 0; i+2 < len(f); i++ {
+			if f[i] != key || f[i+1] != "=" {
+				continue
+			}
+			v := f[i+2]
+			mult := 1.0
+			if n := len(v); n > 0 {
+				switch v[n-1] {
+				case 'K':
+					mult, v = 1<<10, v[:n-1]
+				case 'M':
+					mult, v = 1<<20, v[:n-1]
+				case 'G':
+					mult, v = 1<<30, v[:n-1]
+				}
+			}
+			x, err := strconv.ParseFloat(v, 64)
+			if err != nil || x < 0 {
+				return 0
+			}
+			return uint64(x * mult)
+		}
+		return 0
+	}
+	return read("used"), read("total")
+}
+
+// Elapsed runs ps once for the wanted processes and returns how long each has
+// run (the etime column: [[dd-]hh:]mm:ss).
+func (r *psReader) Elapsed(ctx context.Context, pids []int) map[int]time.Duration {
+	out := map[int]time.Duration{}
+	if len(pids) == 0 {
+		return out
+	}
+	ids := make([]string, len(pids))
+	for i, p := range pids {
+		ids[i] = strconv.Itoa(p)
+	}
+	b, err := r.run(ctx, "ps", "-p", strings.Join(ids, ","), "-o", "pid=,etime=")
+	if err != nil && len(b) == 0 {
+		return out
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(f[0])
+		secs, ok := parseCPUTime(f[1])
+		if err == nil && ok {
+			out[pid] = time.Duration(secs * float64(time.Second))
 		}
 	}
 	return out

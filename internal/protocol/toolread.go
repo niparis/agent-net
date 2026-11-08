@@ -279,8 +279,10 @@ type MachineHealth struct {
 // MachineGetResult answers agent_machine_get: the machine and the one
 // requested category.
 type MachineGetResult struct {
-	Machine     MachineRow           `json:"machine"`
-	Health      MachineHealth        `json:"health"`
+	Machine MachineRow    `json:"machine"`
+	Health  MachineHealth `json:"health"`
+	// Usage is set when no category is asked for.
+	Usage       *MachineUsageNow     `json:"usage,omitempty"`
 	Models      *MachineModelPage    `json:"models,omitempty"`
 	Quotas      *MachineQuotaPage    `json:"quotas,omitempty"`
 	TrackRecord *MachineTrackPage    `json:"track_record,omitempty"`
@@ -309,3 +311,77 @@ type ProjectsPage struct {
 	NextCursor string       `json:"next_cursor,omitempty"`
 	Note       string       `json:"note,omitempty"`
 }
+
+// Status values of MachineUsageNow.
+const (
+	MachineUsageOK          = "ok"
+	MachineUsageOffline     = "offline"
+	MachineUsageUnavailable = "unavailable"
+)
+
+// MachineUsageNow is the load and the busiest processes of one machine, read
+// from the daemon's own sampler (decision 0007). Status is "ok", "offline" or
+// "unavailable"; Note then says why. Memory is in bytes.
+type MachineUsageNow struct {
+	Status     string `json:"status"`
+	Note       string `json:"note,omitempty"`
+	AgeSeconds int    `json:"age_s"`
+	Cores      int    `json:"cores,omitempty"`
+	// Load is the 1, 5 and 15 minute load average.
+	Load []float64 `json:"load,omitempty"`
+	// CPUPct is the share of all cores in use over the last interval, 0 to 100.
+	CPUPct float64 `json:"cpu_pct"`
+	// Split is user, sys, nice, idle, iowait and steal in percent of all
+	// cores. It is empty on a platform that gives no split (macOS).
+	Split     *MachineCPUSplit `json:"cpu_split,omitempty"`
+	MemUsed   uint64           `json:"mem_used,omitempty"`
+	MemTotal  uint64           `json:"mem_total,omitempty"`
+	SwapUsed  uint64           `json:"swap_used,omitempty"`
+	SwapTotal uint64           `json:"swap_total,omitempty"`
+	// Top lists the processes that used the most CPU, busiest first.
+	Top []MachineProcRow `json:"top,omitempty"`
+}
+
+// MachineCPUSplit is the CPU time by kind, in percent of all cores.
+type MachineCPUSplit struct {
+	User   float64 `json:"user"`
+	Sys    float64 `json:"sys"`
+	Nice   float64 `json:"nice"`
+	Idle   float64 `json:"idle"`
+	IOWait float64 `json:"iowait"`
+	Steal  float64 `json:"steal"`
+}
+
+// Kinds of MachineProcRow.OwnerKind.
+const (
+	ProcOwnerSession = "session"
+	ProcOwnerWorker  = "worker"
+	ProcOwnerDaemon  = "daemon"
+	ProcOwnerGateway = "gateway"
+	ProcOwnerMCP     = "mcp"
+	ProcOwnerOther   = "other"
+)
+
+// MachineProcRow is one busy process. CPU is a percent of one core: 100 is one
+// full core. Cmd is the command line, cut to 120 characters with secrets masked.
+// Owner is the session or worker id (OwnerID) and name (Owner) whose process
+// tree holds the process, or "agent-net daemon", "agent-net gateway", "mcp
+// server <name>" or "other".
+type MachineProcRow struct {
+	PID            int     `json:"pid"`
+	PPID           int     `json:"ppid"`
+	CPU            float64 `json:"cpu"`
+	RSS            uint64  `json:"rss"`
+	ElapsedSeconds int64   `json:"elapsed_s,omitempty"`
+	Cmd            string  `json:"cmd"`
+	OwnerKind      string  `json:"owner_kind"`
+	Owner          string  `json:"owner"`
+	OwnerID        string  `json:"owner_id,omitempty"`
+}
+
+// MachineUsageTopN is how many processes MachineUsageNow lists.
+const MachineUsageTopN = 10
+
+// MachineUsageMaxAgeSeconds is how old a reading may be before the daemon takes a
+// new one for agent_machine_get.
+const MachineUsageMaxAgeSeconds = 10

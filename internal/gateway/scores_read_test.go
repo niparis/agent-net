@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -76,7 +77,7 @@ func TestMachineGetListsModelScores(t *testing.T) {
 	}
 	g := &Gateway{store: s, conns: map[string]*nodeConn{node: {id: node}}}
 
-	out, err := g.MachineGet(protocol.MachineGetRequest{Machine: "host", Include: []string{"models"}})
+	out, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "host", Include: []string{"models"}})
 	if err != nil {
 		t.Fatal(err)
 	}

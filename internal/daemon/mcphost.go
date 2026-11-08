@@ -170,6 +170,7 @@ type mcpRunner struct {
 
 	mu      sync.Mutex
 	sess    *mcp.ClientSession
+	pgid    int // process group leader of a stdio server, 0 for other transports
 	red     redactor
 	health  string
 	detail  string
@@ -218,6 +219,7 @@ func (r *mcpRunner) report() {
 func (r *mcpRunner) setDown(detail string) {
 	r.mu.Lock()
 	r.sess = nil
+	r.pgid = 0
 	r.health, r.detail = protocol.HealthError, detail
 	r.mu.Unlock()
 	r.report()
@@ -252,7 +254,7 @@ func (r *mcpRunner) run(ctx context.Context) {
 			r.logf("down: %v (retry in %s)", err, delay)
 		} else {
 			r.mu.Lock()
-			r.sess, r.red, r.tools = c.sess, c.red, tools
+			r.sess, r.red, r.tools, r.pgid = c.sess, c.red, tools, c.pgid
 			r.health, r.detail = protocol.HealthOK, ""
 			r.mu.Unlock()
 			r.dropItems()

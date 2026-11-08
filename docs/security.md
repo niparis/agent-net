@@ -917,6 +917,14 @@ harness inventory. The gateway stores the latest report and returns it to agents
 and the CTO through `agent_machine_get`. PATH and helper paths can reveal local
 folder names. An older daemon clears the previous health report on hello.
 
+**Machine load and processes.** `agent_machine_get` returns the load and the
+10 busiest processes of one online machine to agents, workers and the CTO. The
+gateway asks that machine's daemon each time and stores nothing. A row has the
+process ID, the parent, CPU, memory, run time, the owner and the command line.
+The daemon masks recognizable secrets in the command line (the same masking as
+the session top lists) and cuts it to 120 characters. Masking is best effort.
+Command lines can reveal folder and project names.
+
 **Service log reads.** Agents, workers and the CTO may call `agent_machine_log`
 for a daemon or gateway log on one online machine. The gateway relays the read
 to that machine's daemon. The daemon selects only the fixed service journal or

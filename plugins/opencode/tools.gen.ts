@@ -395,7 +395,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machine_get",
-    "description": "Read a machine's health and one category of details: models, quotas, track record or playbook. Pages long lists; ask for one category per call.",
+    "description": "Read a machine's health, load, CPU and busiest processes with their owner, or one category of details: models, quotas, track record or playbook. Pages long lists; ask for one category per call.",
     "inputSchema": {
       "type": "object",
       "properties": {

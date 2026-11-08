@@ -28,6 +28,15 @@ type Proc struct {
 	RSS uint64
 	// Comm is the short name of the program.
 	Comm string
+	// Elapsed is how long the process has run at the time of the snapshot.
+	// 0 when unknown.
+	Elapsed time.Duration
+}
+
+// CPUParts is the cumulative CPU time of all cores split by kind, in any one
+// unit. Only Linux gives it.
+type CPUParts struct {
+	User, Nice, Sys, Idle, IOWait, Steal float64
 }
 
 // Machine is the machine side of a snapshot.
@@ -39,6 +48,12 @@ type Machine struct {
 	CPUBusy, CPUTotal float64
 	MemUsed, MemTotal uint64
 	Load              [3]float64
+	// Parts is the CPU split. HaveParts is false when the platform has none.
+	Parts     CPUParts
+	HaveParts bool
+	// SwapUsed and SwapTotal are in bytes. Both are 0 when unknown or when
+	// the machine has no swap.
+	SwapUsed, SwapTotal uint64
 }
 
 // Snapshot is one reading.
