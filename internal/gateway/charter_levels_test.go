@@ -8,6 +8,19 @@ import (
 	"time"
 )
 
+// charterMigrationIndex is the schema version just before the charter levels
+// migration, so a rewind replays it and any migration after it.
+func charterMigrationIndex(t *testing.T) int {
+	t.Helper()
+	for i, m := range migrations {
+		if strings.Contains(m, "Charter levels and enum cutover") {
+			return i
+		}
+	}
+	t.Fatal("charter levels migration not found")
+	return 0
+}
+
 func TestCharterLevelsMigrationReplay(t *testing.T) {
 	s, _ := newTestStore(t)
 	attrs := map[string]string{"purpose": "purpose", "maturity": "mature - daily use", "accepts": "fixes", "refuses": "secrets", "feature_requests": "ideas", "escalate": "owner", "consumers": "clients", "needs": "database", "notes": "careful"}
@@ -16,8 +29,9 @@ func TestCharterLevelsMigrationReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Rewind only the new migration, as recovery of an interrupted upgrade does.
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, len(migrations)-1); err != nil {
+	// Rewind the charter migration and any after it, as recovery of an
+	// interrupted upgrade does.
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, charterMigrationIndex(t)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.migrate(); err != nil {
@@ -41,7 +55,7 @@ func TestCharterLevelsMigrationReplay(t *testing.T) {
 		if err := s.db.QueryRow(`SELECT count(*) FROM graph_charter WHERE attr IN ('consumers','needs','notes')`).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("dropped: %d %v", n, err)
 		}
-		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, len(migrations)-1); err != nil {
+		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, charterMigrationIndex(t)); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.migrate(); err != nil {
